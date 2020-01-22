@@ -3,62 +3,48 @@ package thorclient
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
-	"time"
+	"strings"
 
+	"gitlab.com/thorchain/thornode/bifrost/config"
+	"gitlab.com/thorchain/thornode/bifrost/helpers"
 	. "gopkg.in/check.v1"
-
-	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
-func TestValidators(t *testing.T) { TestingT(t) }
-
-type ValidatorsTestSuite struct{}
-
-var _ = Suite(&ValidatorsTestSuite{})
-
-func (*ValidatorsTestSuite) SetUpSuite(c *C) {
-	thorchain.SetupConfigForTest()
+type ValidatorsSuite struct {
+	server  *httptest.Server
+	bridge  *ThorchainBridge
+	cfg     config.ThorchainConfiguration
+	cleanup func()
+	fixture string
 }
 
-const normalResp = `{
-  "active_nodes": [
-    {
-      "node_address": "thor146z3xkdlyzmda639ljsk3qvucpem0f60d2lz62",
-      "status": "active",
-      "pub_key_set": {
-        "secp256k1": "thorpub1addwnpepq0t2qpwk0rx4da68zzvl6w7vdcdygyzau49ffc2kqnx0624ard576060nyk",
-        "ed25519": "thorpub1addwnpepq0t2qpwk0rx4da68zzvl6w7vdcdygyzau49ffc2kqnx0624ard576060nyk"
-      },
-      "validator_cons_pub_key": "thorcpub1zcjduepqx34rzj073kcqzwefz3j70rfcps2e3he7yx4qu45pv09nektnk67swkgalp",
-      "bond": "0",
-      "bond_address": "tbnb1ggdcyhk8rc7fgzp8wa2su220aclcggcsd94ye5",
-      "status_since": "1",
-      "observer_active": false,
-      "signer_active": false,
-      "signer_membership": [
-        "thorpub1addwnpepqw9gv9ffmua8xpgyqj5nn4slw62wpwvcfgj6xxwx9tuyg0x80xlf24a8s6c"
-      ],
-      "version": "0.1.0"
-    }
-  ],
-  "nominated": null,
-  "queued": null,
-  "rotate_at": "17281",
-  "rotate_window_open_at": "16081"
-}`
+var _ = Suite(&ValidatorsSuite{})
 
-func (*ValidatorsTestSuite) TestGetValidators(c *C) {
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		c.Assert(req.RequestURI, Equals, "/thorchain/validators")
-		_, err := rw.Write([]byte(normalResp))
-		c.Assert(err, IsNil)
+func (s *ValidatorsSuite) SetUpSuite(c *C) {
+	s.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasPrefix(req.RequestURI, ValidatorsEndpoint):
+			httpTestHandler(c, rw, s.fixture)
+		}
 	}))
-	defer server.Close()
-	httpClient := &http.Client{
-		Timeout: time.Second,
-	}
-	resp, err := GetValidators(httpClient, server.Listener.Addr().String())
+
+	s.cfg, _, s.cleanup = helpers.SetupStateChainForTest(c)
+	s.cfg.ChainHost = s.server.Listener.Addr().String()
+	var err error
+	s.bridge, err = NewThorchainBridge(s.cfg, helpers.GetMetricForTest(c))
+	s.bridge.httpClient.RetryMax = 1
+	c.Assert(err, IsNil)
+	c.Assert(s.bridge, NotNil)
+}
+
+func (s *ValidatorsSuite) TearDownSuite(c *C) {
+	s.cleanup()
+	s.server.Close()
+}
+
+func (s *ValidatorsSuite) TestGetValidators(c *C) {
+	s.fixture = "../../test/fixtures/endpoints/validators/template.json"
+	resp, err := s.bridge.GetValidators()
 	c.Assert(err, IsNil)
 	c.Assert(resp, NotNil)
 	c.Assert(resp.Nominated, IsNil)
