@@ -60,7 +60,7 @@ start_the_stack () {
         export TAG=${THORNODE_ENV}
     fi
     eval $(docker-machine env ${DOCKER_SERVER} --shell bash)
-    make run-${THORNODE_ENV}-genesis
+    make run-${THORNODE_ENV}-genesis-ci
     sleep 60
 }
 
