@@ -13,7 +13,6 @@ TENDERMINT_NODE="data-seed-pre-2-s1.binance.org:80"
 FUND_MEMO="fund validator"
 BOND_AMOUNT=100000000:RUNE-A1F
 GAS_FEE=37500
-export BOND_WALLET=bond-wallet
 
 ####################################
 # restore faucet wallet only on CI
