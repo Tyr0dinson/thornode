@@ -45,7 +45,7 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	}
 	// happy path
 	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
-	handler := NewBondHandler(k1)
+	handler := NewBondHandler(k1, NewVersionedEventMgr())
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
 	minimumBondInRune := constAccessor.GetInt64Value(constants.MinimumBondInRune)
@@ -54,7 +54,7 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{
-			common.NewCoin(common.RuneA1FAsset, sdk.NewUint(uint64(minimumBondInRune))),
+			common.NewCoin(common.RuneAsset(), sdk.NewUint(uint64(minimumBondInRune))),
 		},
 		common.Gas{},
 		"apply",
@@ -64,7 +64,7 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	c.Assert(result.IsOK(), Equals, true)
 
 	// invalid version
-	handler = NewBondHandler(k)
+	handler = NewBondHandler(k, NewVersionedEventMgr())
 	ver = semver.Version{}
 	result = handler.Run(ctx, msg, ver, constAccessor)
 	c.Assert(result.Code, Equals, CodeBadVersion)
@@ -84,7 +84,7 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
-	handler := NewBondHandler(k)
+	handler := NewBondHandler(k, NewVersionedEventMgr())
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
 	minimumBondInRune := constAccessor.GetInt64Value(constants.MinimumBondInRune)
@@ -93,7 +93,7 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{
-			common.NewCoin(common.RuneA1FAsset, sdk.NewUint(uint64(minimumBondInRune))),
+			common.NewCoin(common.RuneAsset(), sdk.NewUint(uint64(minimumBondInRune))),
 		},
 		common.Gas{},
 		"apply",

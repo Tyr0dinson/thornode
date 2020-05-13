@@ -57,6 +57,7 @@ func (AppModuleBasic) ValidateGenesis(bz json.RawMessage) error {
 func (AppModuleBasic) RegisterRESTRoutes(ctx context.CLIContext, rtr *mux.Router) {
 	rest.RegisterRoutes(ctx, rtr, StoreKey)
 	sdkRest.RegisterTxRoutes(ctx, rtr)
+	sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
 }
 
 // Get the root query command of this module
@@ -84,8 +85,8 @@ type AppModule struct {
 
 // NewAppModule creates a new AppModule Object
 func NewAppModule(k Keeper, bankKeeper bank.Keeper, supplyKeeper supply.Keeper) AppModule {
-	versionedTxOutStore := NewVersionedTxOutStore()
 	versionedEventManager := NewVersionedEventMgr()
+	versionedTxOutStore := NewVersionedTxOutStore(versionedEventManager)
 	versionedVaultMgr := NewVersionedVaultMgr(versionedTxOutStore, versionedEventManager)
 	return AppModule{
 		AppModuleBasic:           AppModuleBasic{},
@@ -112,7 +113,7 @@ func (am AppModule) Route() string {
 }
 
 func (am AppModule) NewHandler() sdk.Handler {
-	return NewHandler(am.keeper, am.txOutStore, am.validatorMgr, am.versionedVaultManager, am.versionedObserverManager, am.versionedGasManager, am.versionedEventManager)
+	return NewExternalHandler(am.keeper, am.txOutStore, am.validatorMgr, am.versionedVaultManager, am.versionedObserverManager, am.versionedGasManager, am.versionedEventManager)
 }
 
 func (am AppModule) QuerierRoute() string {
@@ -125,7 +126,6 @@ func (am AppModule) NewQuerierHandler() sdk.Querier {
 
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
-
 	version := am.keeper.GetLowestActiveVersion(ctx)
 	am.keeper.ClearObservingAddresses(ctx)
 	obMgr, err := am.versionedObserverManager.GetObserverManager(ctx, version)
@@ -134,13 +134,6 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 		return
 	}
 	obMgr.BeginBlock()
-
-	eventMgr, err := am.versionedEventManager.GetEventManager(ctx, version)
-	if err != nil {
-		ctx.Logger().Error(fmt.Sprintf("Event manager that compatible with version :%s is not available", version))
-		return
-	}
-	eventMgr.BeginBlock(ctx)
 
 	gasMgr, err := am.versionedGasManager.GetGasManager(ctx, version)
 	if err != nil {
@@ -154,7 +147,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 		return
 	}
 
-	slasher, err := NewSlasher(am.keeper, version)
+	slasher, err := NewSlasher(am.keeper, version, am.versionedEventManager)
 	if err != nil {
 		ctx.Logger().Error("fail to create slasher", "error", err)
 	}
@@ -163,7 +156,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	if err := am.validatorMgr.BeginBlock(ctx, version, constantValues); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
-	txStore, err := am.txOutStore.GetTxOutStore(am.keeper, version)
+	txStore, err := am.txOutStore.GetTxOutStore(ctx, am.keeper, version)
 	if err != nil {
 		ctx.Logger().Error("fail to get tx out store", "error", err)
 		return
@@ -180,18 +173,27 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		ctx.Logger().Error(fmt.Sprintf("constants for version(%s) is not available", version))
 		return nil
 	}
-	txStore, err := am.txOutStore.GetTxOutStore(am.keeper, version)
+	txStore, err := am.txOutStore.GetTxOutStore(ctx, am.keeper, version)
 	if err != nil {
 		ctx.Logger().Error("fail to get tx out store", "error", err)
 		return nil
 	}
 	eventMgr, err := am.versionedEventManager.GetEventManager(ctx, version)
 	if err != nil {
-		ctx.Logger().Error(fmt.Sprintf("Event manager that compatible with version :%s is not available", version))
+		ctx.Logger().Error(fmt.Sprintf("Events manager that compatible with version :%s is not available", version))
 		return nil
 	}
 
-	slasher, err := NewSlasher(am.keeper, version)
+	swapQueue, err := NewVersionedSwapQ(am.txOutStore, am.versionedEventManager).GetSwapQueue(ctx, am.keeper, version)
+	if err != nil {
+		ctx.Logger().Error("fail to get swap queue", "error", err)
+	} else {
+		if err := swapQueue.EndBlock(ctx, version, constantValues); err != nil {
+			ctx.Logger().Error("fail to process swap queue", "error", err)
+		}
+	}
+
+	slasher, err := NewSlasher(am.keeper, version, am.versionedEventManager)
 	if err != nil {
 		ctx.Logger().Error("fail to create slasher", "error", err)
 		return nil
@@ -237,7 +239,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		return nil
 	}
 	// update vault data to account for block rewards and reward units
-	if err := am.keeper.UpdateVaultData(ctx, constantValues, gasMgr); err != nil {
+	if err := am.keeper.UpdateVaultData(ctx, constantValues, gasMgr, eventMgr); err != nil {
 		ctx.Logger().Error("fail to save vault", "error", err)
 	}
 	vaultMgr, err := am.versionedVaultManager.GetVaultManager(ctx, am.keeper, version)
@@ -260,9 +262,6 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	}
 	gasMgr.EndBlock(ctx, am.keeper, eventMgr)
 
-	if eventMgr != nil {
-		eventMgr.EndBlock(ctx, am.keeper)
-	}
 	return validators
 }
 

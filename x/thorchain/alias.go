@@ -1,21 +1,30 @@
 package thorchain
 
 import (
+	"github.com/cosmos/cosmos-sdk/x/bank"
+
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 const (
 	ModuleName       = types.ModuleName
+	ReserveName      = types.ReserveName
+	AsgardName       = types.AsgardName
+	BondName         = types.BondName
 	RouterKey        = types.RouterKey
 	StoreKey         = types.StoreKey
 	DefaultCodespace = types.DefaultCodespace
-	PoolEnabled      = types.Enabled
-	PoolBootstrap    = types.Bootstrap
-	PoolSuspended    = types.Suspended
-	EventSuccess     = types.Success
-	EventPending     = types.Pending
-	EventFail        = types.Failed
-	EventRefund      = types.Refund
+
+	// pool status
+	PoolEnabled   = types.Enabled
+	PoolBootstrap = types.Bootstrap
+	PoolSuspended = types.Suspended
+
+	// event status
+	EventSuccess = types.Success
+	EventPending = types.Pending
+	EventFail    = types.Failed
+	RefundStatus = types.Refund
 
 	// Admin config keys
 	MaxUnstakeBasisPoints = types.MaxUnstakeBasisPoints
@@ -27,6 +36,7 @@ const (
 	InactiveVault  = types.InactiveVault
 	RetiringVault  = types.RetiringVault
 
+	// Node status
 	NodeActive      = types.Active
 	NodeWhiteListed = types.WhiteListed
 	NodeDisabled    = types.Disabled
@@ -34,6 +44,7 @@ const (
 	NodeStandby     = types.Standby
 	NodeUnknown     = types.Unknown
 
+	// Bond type
 	BondPaid     = types.BondPaid
 	BondReturned = types.BondReturned
 	AsgardKeygen = types.AsgardKeygen
@@ -48,6 +59,8 @@ var (
 	NewBanVoter                    = types.NewBanVoter
 	NewErrataTxVoter               = types.NewErrataTxVoter
 	NewObservedTxVoter             = types.NewObservedTxVoter
+	NewMsgMimir                    = types.NewMsgMimir
+	NewMsgNativeTx                 = types.NewMsgNativeTx
 	NewMsgTssPool                  = types.NewMsgTssPool
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
@@ -74,12 +87,13 @@ var (
 	NewEventSlash                  = types.NewEventSlash
 	NewEventReserve                = types.NewEventReserve
 	NewEventErrata                 = types.NewEventErrata
+	NewEventFee                    = types.NewEventFee
+	NewEventOutbound               = types.NewEventOutbound
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
 	NewMsgMigrate                  = types.NewMsgMigrate
 	NewMsgRagnarok                 = types.NewMsgRagnarok
-	NewMsgEndPool                  = types.NewMsgEndPool
 	NewQueryNodeAccount            = types.NewQueryNodeAccount
 	HasSuperMajority               = types.HasSuperMajority
 	ChooseSignerParty              = types.ChooseSignerParty
@@ -94,6 +108,7 @@ var (
 	NewMsgBond                     = types.NewMsgBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
 	NewMsgBan                      = types.NewMsgBan
+	NewMsgSwitch                   = types.NewMsgSwitch
 	NewMsgLeave                    = types.NewMsgLeave
 	NewMsgSetVersion               = types.NewMsgSetVersion
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
@@ -102,6 +117,8 @@ var (
 	GetRandomTx                    = types.GetRandomTx
 	GetRandomObservedTx            = types.GetRandomObservedTx
 	GetRandomNodeAccount           = types.GetRandomNodeAccount
+	GetRandomTHORAddress           = types.GetRandomTHORAddress
+	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress
 	GetRandomBTCAddress            = types.GetRandomBTCAddress
 	GetRandomTxHash                = types.GetRandomTxHash
@@ -111,16 +128,19 @@ var (
 	GetRandomPubKeySet             = types.GetRandomPubKeySet
 	SetupConfigForTest             = types.SetupConfigForTest
 	GetEventStatuses               = types.GetEventStatuses
-	NewBlockEvents                 = types.NewBlockEvents
 )
 
 type (
+	MsgSend               = bank.MsgSend
+	MsgNativeTx           = types.MsgNativeTx
+	MsgSwitch             = types.MsgSwitch
 	MsgBond               = types.MsgBond
 	MsgNoOp               = types.MsgNoOp
 	MsgAdd                = types.MsgAdd
 	MsgSetUnStake         = types.MsgSetUnStake
 	MsgSetStakeData       = types.MsgSetStakeData
 	MsgOutboundTx         = types.MsgOutboundTx
+	MsgMimir              = types.MsgMimir
 	MsgMigrate            = types.MsgMigrate
 	MsgRagnarok           = types.MsgRagnarok
 	MsgRefundTx           = types.MsgRefundTx
@@ -130,7 +150,6 @@ type (
 	MsgSetVersion         = types.MsgSetVersion
 	MsgSetIPAddress       = types.MsgSetIPAddress
 	MsgSetNodeKeys        = types.MsgSetNodeKeys
-	MsgEndPool            = types.MsgEndPool
 	MsgLeave              = types.MsgLeave
 	MsgReserveContributor = types.MsgReserveContributor
 	MsgYggdrasil          = types.MsgYggdrasil
@@ -165,12 +184,14 @@ type (
 	KeygenBlock           = types.KeygenBlock
 	Event                 = types.Event
 	Events                = types.Events
-	BlockEvents           = types.BlockEvents
 	EventSwap             = types.EventSwap
 	EventStake            = types.EventStake
+	EventUnstake          = types.EventUnstake
 	EventStatus           = types.EventStatus
+	EventAdd              = types.EventAdd
 	EventRewards          = types.EventRewards
 	EventErrata           = types.EventErrata
+	EventReserve          = types.EventReserve
 	PoolAmt               = types.PoolAmt
 	PoolMod               = types.PoolMod
 	PoolMods              = types.PoolMods
@@ -189,4 +210,9 @@ type (
 	TxMarker              = types.TxMarker
 	TxMarkers             = types.TxMarkers
 	EventPool             = types.EventPool
+	EventRefund           = types.EventRefund
+	EventBond             = types.EventBond
+	EventFee              = types.EventFee
+	EventSlash            = types.EventSlash
+	EventOutbound         = types.EventOutbound
 )

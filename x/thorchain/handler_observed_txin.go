@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -97,6 +98,8 @@ func (h ObservedTxInHandler) preflight(ctx sdk.Context, voter ObservedTxVoter, n
 		ok = true
 		voter.Height = ctx.BlockHeight()
 		voter.ProcessedIn = true
+		// this is the tx that has consensus
+		voter.Tx = voter.GetTx(nas)
 	}
 	h.keeper.SetObservedTxVoter(ctx, voter)
 
@@ -112,7 +115,7 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 		err = wrapError(ctx, err, "fail to get list of active node accounts")
 		return sdk.ErrInternal(err.Error()).Result()
 	}
-	txOutStore, err := h.versionedTxOutStore.GetTxOutStore(h.keeper, version)
+	txOutStore, err := h.versionedTxOutStore.GetTxOutStore(ctx, h.keeper, version)
 	if err != nil {
 		ctx.Logger().Error("fail to get txout store", "error", err)
 		return errBadVersion.Result()
@@ -122,7 +125,12 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 		ctx.Logger().Error("fail to get observer manager", "error", err)
 		return errBadVersion.Result()
 	}
-	handler := NewHandler(h.keeper, h.versionedTxOutStore, h.validatorMgr, h.versionedVaultManager, h.versionedObserverManager, h.versionedGasMgr, h.versionedEventManager)
+	eventMgr, err := h.versionedEventManager.GetEventManager(ctx, version)
+	if err != nil {
+		ctx.Logger().Error("fail to get event manager", "error", err)
+		return errFailGetEventManager.Result()
+	}
+	handler := NewInternalHandler(h.keeper, h.versionedTxOutStore, h.validatorMgr, h.versionedVaultManager, h.versionedObserverManager, h.versionedGasMgr, h.versionedEventManager)
 
 	for _, tx := range msg.Txs {
 
@@ -146,9 +154,23 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 			}
 			continue
 		}
+
+		tx.Tx.Memo = fetchMemo(ctx, constAccessor, h.keeper, tx.Tx)
+		if len(tx.Tx.Memo) == 0 {
+			// we didn't find our memo, it might be yggdrasil return. These are
+			// tx markers without coin amounts because we allow yggdrasil to
+			// figure out the coin amounts
+			txYgg := tx.Tx
+			txYgg.Coins = common.Coins{
+				common.NewCoin(common.RuneAsset(), sdk.ZeroUint()),
+			}
+			tx.Tx.Memo = fetchMemo(ctx, constAccessor, h.keeper, txYgg)
+		}
+
 		ctx.Logger().Info("handleMsgObservedTxIn request", "Tx:", tx.String())
 
 		txIn := voter.GetTx(activeNodeAccounts)
+		txIn.Tx.Memo = tx.Tx.Memo
 		vault, err := h.keeper.GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -180,14 +202,14 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 		if ok := isCurrentVaultPubKey(ctx, h.keeper, tx); !ok {
 			reason := fmt.Sprintf("vault %s is not current vault", tx.ObservedPubKey)
 			ctx.Logger().Info("refund reason", reason)
-			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, CodeInvalidVault, reason); err != nil {
+			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, CodeInvalidVault, reason, eventMgr); err != nil {
 				return sdk.ErrInternal(err.Error()).Result()
 			}
 			continue
 		}
 		// chain is empty
 		if tx.Tx.Chain.IsEmpty() {
-			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, CodeEmptyChain, "chain is empty"); err != nil {
+			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, CodeEmptyChain, "chain is empty", eventMgr); err != nil {
 				return sdk.ErrInternal(err.Error()).Result()
 			}
 			continue
@@ -197,7 +219,7 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 		m, txErr := processOneTxIn(ctx, h.keeper, txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
-			if newErr := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, txErr.Code(), fmt.Sprint(txErr.Data())); nil != newErr {
+			if newErr := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, txErr.Code(), fmt.Sprint(txErr.Data()), eventMgr); nil != newErr {
 				return sdk.ErrInternal(newErr.Error()).Result()
 			}
 			continue
@@ -216,13 +238,38 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 		// active/inactive observing node accounts
 		obMgr.AppendObserver(tx.Tx.Chain, txIn.Signers)
 
+		// check if we've halted trading
+		_, isSwap := m.(MsgSwap)
+		_, isStake := m.(MsgSetStakeData)
+		haltTrading, err := h.keeper.GetMimir(ctx, "HaltTrading")
+		if isSwap || isStake {
+			if (haltTrading > 0 && haltTrading < ctx.BlockHeight() && err == nil) || h.keeper.RagnarokInProgress(ctx) {
+				ctx.Logger().Info("trading is halted!!")
+				if newErr := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, sdk.CodeUnauthorized, "trading halted", eventMgr); nil != newErr {
+					return sdk.ErrInternal(newErr.Error()).Result()
+				}
+				continue
+			}
+		}
+
+		// if its a swap, send it to our queue for processing later
+		if isSwap {
+			if err := h.keeper.SetSwapQueueItem(ctx, m.(MsgSwap)); err != nil {
+				return sdk.ErrInternal(err.Error()).Result()
+			}
+			return sdk.Result{
+				Code:      sdk.CodeOK,
+				Codespace: DefaultCodespace,
+			}
+		}
+
 		result := handler(ctx, m)
 		if !result.IsOK() {
 			refundMsg, err := getErrMessageFromABCILog(result.Log)
 			if err != nil {
 				ctx.Logger().Error(err.Error())
 			}
-			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, result.Code, refundMsg); err != nil {
+			if err := refundTx(ctx, tx, txOutStore, h.keeper, constAccessor, result.Code, refundMsg, eventMgr); err != nil {
 				return sdk.ErrInternal(err.Error()).Result()
 			}
 		}

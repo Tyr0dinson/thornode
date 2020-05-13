@@ -25,14 +25,11 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 )
 
-var Gwei = big.NewInt(1000000000)
-
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
 type Client struct {
 	logger          zerolog.Logger
 	cfg             config.ChainConfiguration
 	chainID         types.ChainID
-	isTestNet       bool
 	pk              common.PubKey
 	client          *ethclient.Client
 	kw              *KeySignWrapper
@@ -87,7 +84,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		kw:              keysignWrapper,
 		thorchainBridge: thorchainBridge,
 	}
-	c.CheckIsTestNet()
+	c.InitChainID()
 
 	var path string // if not set later, will in memory storage
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
@@ -98,7 +95,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		return c, fmt.Errorf("fail to create blockscanner storage: %w", err)
 	}
 
-	c.ethScanner, err = NewBlockScanner(c.cfg.BlockScanner, storage, c.isTestNet, c.client, m)
+	c.ethScanner, err = NewBlockScanner(c.cfg.BlockScanner, storage, c.chainID, c.client, m)
 	if err != nil {
 		return c, fmt.Errorf("fail to create eth block scanner: %w", err)
 	}
@@ -125,20 +122,15 @@ func (c *Client) GetConfig() config.ChainConfiguration {
 }
 
 // IsTestNet determinate whether we are running on test net by checking the status
-func (c *Client) CheckIsTestNet() bool {
-	// Cached data after first call
-	if c.chainID > 0 {
-		return c.isTestNet
-	}
+func (c *Client) InitChainID() {
 	chainID, err := c.client.ChainID(context.Background())
 	if err != nil {
 		c.logger.Error().Err(err).Msg("Unable to get chain id")
 		chainID = big.NewInt(types.Localnet)
 	}
 	c.chainID = types.ChainID(chainID.Int64())
-	c.isTestNet = c.chainID > types.Mainnet
 	vByte = byte(int(vByte) + int(2*c.chainID))
-	return c.isTestNet
+	eipSigner = etypes.NewEIP155Signer(chainID)
 }
 
 func (c *Client) GetChain() common.Chain {
@@ -164,7 +156,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 func (c *Client) GetGasFee(count uint64) common.Gas {
-	return common.GetETHGasFee(big.NewInt(int64(count)))
+	return common.GetETHGasFee(big.NewInt(1), count)
 }
 
 func (c *Client) GetGasPrice() (*big.Int, error) {
@@ -183,11 +175,11 @@ func (c *Client) GetNonce(addr string) (uint64, error) {
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	toAddr := tx.ToAddress.String()
 
-	value := uint64(0)
+	value := big.NewInt(0)
 	for _, coin := range tx.Coins {
-		value += coin.Amount.Uint64()
+		value.Add(value, coin.Amount.BigInt())
 	}
-	if len(toAddr) == 0 || value == 0 {
+	if len(toAddr) == 0 || value.Uint64() == 0 {
 		c.logger.Error().Msg("invalid tx params")
 		return nil, nil
 	}
@@ -215,9 +207,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 
 	gasPrice := c.ethScanner.GetGasPrice()
 	encodedData := []byte(hex.EncodeToString([]byte(tx.Memo)))
-	scaledValue := big.NewInt(int64(value))
-	scaledValue = scaledValue.Mul(scaledValue, Gwei)
-	createdTx := etypes.NewTransaction(meta.Nonce, ecommon.HexToAddress(toAddr), scaledValue, ETHTransferGas, gasPrice, encodedData)
+	gasFee := common.GetETHGasFee(big.NewInt(1), uint64(len(tx.Memo)))[0].Amount.Uint64()
+	createdTx := etypes.NewTransaction(meta.Nonce, ecommon.HexToAddress(toAddr), value, gasFee, gasPrice, encodedData)
 
 	rawTx, err := c.sign(createdTx, fromAddr, tx.VaultPubKey, currentHeight, tx)
 	if err != nil || len(rawTx) == 0 {

@@ -15,7 +15,10 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-var kaboom = errors.New("Kaboom!!!")
+var (
+	kaboom    = errors.New("Kaboom!!!")
+	kaboomSdk = sdk.NewError(DefaultCodespace, 404, "kaboom!!!")
+)
 
 type KVStoreDummy struct{}
 
@@ -29,6 +32,23 @@ func (k KVStoreDummy) Logger(ctx sdk.Context) log.Logger {
 func (k KVStoreDummy) GetKey(_ sdk.Context, prefix dbPrefix, key string) string {
 	return fmt.Sprintf("%s/1/%s", prefix, key)
 }
+
+func (k KVStoreDummy) GetRuneBalaceOfModule(ctx sdk.Context, moduleName string) sdk.Uint {
+	return sdk.ZeroUint()
+}
+
+func (k KVStoreDummy) SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) sdk.Error {
+	return kaboomSdk
+}
+
+func (k KVStoreDummy) SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) sdk.Error {
+	return kaboomSdk
+}
+
+func (k KVStoreDummy) SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) sdk.Error {
+	return kaboomSdk
+}
+
 func (k KVStoreDummy) SetLastSignedHeight(_ sdk.Context, _ int64) { return }
 func (k KVStoreDummy) GetLastSignedHeight(_ sdk.Context) (int64, error) {
 	return 0, kaboom
@@ -196,7 +216,7 @@ func (k KVStoreDummy) HasValidVaultPools(_ sdk.Context) (bool, error)  { return 
 func (k KVStoreDummy) AddFeeToReserve(_ sdk.Context, _ sdk.Uint) error { return kaboom }
 func (k KVStoreDummy) GetVaultData(_ sdk.Context) (VaultData, error)   { return VaultData{}, kaboom }
 func (k KVStoreDummy) SetVaultData(_ sdk.Context, _ VaultData) error   { return kaboom }
-func (k KVStoreDummy) UpdateVaultData(_ sdk.Context, _ constants.ConstantValues, gasManager GasManager) error {
+func (k KVStoreDummy) UpdateVaultData(_ sdk.Context, _ constants.ConstantValues, gasManager GasManager, manager EventManager) error {
 	return kaboom
 }
 
@@ -232,17 +252,15 @@ func (k KVStoreDummy) SetBanVoter(_ sdk.Context, _ BanVoter) {}
 func (k KVStoreDummy) GetBanVoter(_ sdk.Context, _ sdk.AccAddress) (BanVoter, error) {
 	return BanVoter{}, kaboom
 }
-
-func (k KVStoreDummy) GetBlockEvents(ctx sdk.Context, height int64) (*BlockEvents, error) {
-	return nil, kaboom
+func (k KVStoreDummy) SetSwapQueueItem(ctx sdk.Context, msg MsgSwap) error { return kaboom }
+func (k KVStoreDummy) GetSwapQueueIterator(ctx sdk.Context) sdk.Iterator   { return nil }
+func (k KVStoreDummy) RemoveSwapQueueItem(ctx sdk.Context, _ common.TxID)  {}
+func (k KVStoreDummy) GetSwapQueueItem(ctx sdk.Context, txID common.TxID) (MsgSwap, error) {
+	return MsgSwap{}, kaboom
 }
-
-func (k KVStoreDummy) GetBlockEventsIterator(ctx sdk.Context) sdk.Iterator {
-	return nil
-}
-
-func (k KVStoreDummy) SetBlockEvents(ctx sdk.Context, blockEvents *BlockEvents) {
-}
+func (k KVStoreDummy) GetMimir(_ sdk.Context, key string) (int64, error) { return 0, kaboom }
+func (k KVStoreDummy) SetMimir(_ sdk.Context, key string, value int64)   {}
+func (k KVStoreDummy) GetMimirIterator(ctx sdk.Context) sdk.Iterator     { return nil }
 
 // a mock sdk.Iterator implementation for testing purposes
 type DummyIterator struct {

@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -46,11 +48,21 @@ func (h TssHandler) validateV1(ctx sdk.Context, msg MsgTssPool) sdk.Error {
 		return err
 	}
 
-	if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
-		return sdk.ErrUnauthorized("not authorized")
+	keygenBlock, err := h.keeper.GetKeygenBlock(ctx, msg.Height)
+	if err != nil {
+		return sdk.ErrUnauthorized(fmt.Errorf("fail to get keygen block from data store: %w", err).Error())
 	}
 
-	return nil
+	for _, keygen := range keygenBlock.Keygens {
+		for _, member := range keygen.Members {
+			addr, err := member.GetThorAddress()
+			if addr.Equals(msg.Signer) && err == nil {
+				return nil
+			}
+		}
+	}
+
+	return sdk.ErrUnauthorized("not authorized")
 }
 
 func (h TssHandler) handle(ctx sdk.Context, msg MsgTssPool, version semver.Version) sdk.Result {
@@ -63,12 +75,6 @@ func (h TssHandler) handle(ctx sdk.Context, msg MsgTssPool, version semver.Versi
 
 // Handle a message to observe inbound tx (v0.1.0)
 func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Version) sdk.Result {
-	active, err := h.keeper.ListActiveNodeAccounts(ctx)
-	if err != nil {
-		err = wrapError(ctx, err, "fail to get list of active node accounts")
-		return sdk.ErrInternal(err.Error()).Result()
-	}
-
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())
 	}
@@ -78,8 +84,10 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 		return sdk.ErrInternal(err.Error()).Result()
 	}
 
-	// when PoolPubKey is empty , which means TssVoter with id(msg.ID) doesn't exist before, this is the first time to create it
-	// set the PoolPubKey to the one in msg, there is no reason voter.PubKeys have anything in it either, thus override it with msg.PubKeys as well
+	// when PoolPubKey is empty , which means TssVoter with id(msg.ID) doesn't
+	// exist before, this is the first time to create it
+	// set the PoolPubKey to the one in msg, there is no reason voter.PubKeys
+	// have anything in it either, thus override it with msg.PubKeys as well
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
 		voter.PubKeys = msg.PubKeys
@@ -88,7 +96,7 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 	voter.Sign(msg.Signer, msg.Chains)
 	h.keeper.SetTssVoter(ctx, voter)
 	// doesn't have consensus yet
-	if !voter.HasConsensus(active) {
+	if !voter.HasConsensus() {
 		ctx.Logger().Info("not having consensus yet, return")
 		return sdk.Result{
 			Code:      sdk.CodeOK,
@@ -104,7 +112,7 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 			if msg.KeygenType == AsgardKeygen {
 				vaultType = AsgardVault
 			}
-			vault := NewVault(ctx.BlockHeight(), ActiveVault, vaultType, voter.PoolPubKey, voter.ConsensusChains(active))
+			vault := NewVault(ctx.BlockHeight(), ActiveVault, vaultType, voter.PoolPubKey, voter.ConsensusChains())
 			vault.Membership = voter.PubKeys
 			if err := h.keeper.SetVault(ctx, vault); err != nil {
 				ctx.Logger().Error("fail to save vault", "error", err)
@@ -122,17 +130,10 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 			// if a node fail to join the keygen, thus hold off the network from churning then it will be slashed accordingly
 			constAccessor := constants.GetConstantValues(version)
 			slashPoints := constAccessor.GetInt64Value(constants.FailKeygenSlashPoints)
-			reserveVault, err := h.keeper.GetVaultData(ctx)
-			if err != nil {
-				ctx.Logger().Error("fail to get reserve vault", "error", err)
-				return sdk.ErrInternal("fail to get reserve vault").Result()
-			}
-
-			slashBond := reserveVault.CalcNodeRewards(sdk.NewUint(uint64(slashPoints)))
-			for _, pubkeyStr := range msg.Blame.BlameNodes {
-				nodePubKey, err := common.NewPubKey(pubkeyStr)
+			for _, node := range msg.Blame.BlameNodes {
+				nodePubKey, err := common.NewPubKey(node.Pubkey)
 				if err != nil {
-					ctx.Logger().Error("fail to parse pubkey", "error", err, "pub key", pubkeyStr)
+					ctx.Logger().Error("fail to parse pubkey", "error", err, "pub key", node.Pubkey)
 					return sdk.ErrInternal("fail to parse pubkey").Result()
 				}
 
@@ -149,10 +150,26 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 				} else {
 					// take out bond from the node account and add it to vault bond reward RUNE
 					// thus good behaviour node will get reward
+					reserveVault, err := h.keeper.GetVaultData(ctx)
+					if err != nil {
+						ctx.Logger().Error("fail to get reserve vault", "error", err)
+						return sdk.ErrInternal("fail to get reserve vault").Result()
+					}
+
+					slashBond := reserveVault.CalcNodeRewards(sdk.NewUint(uint64(slashPoints)))
 					na.Bond = common.SafeSub(na.Bond, slashBond)
-					reserveVault.TotalReserve = reserveVault.TotalReserve.Add(slashBond)
-					if err := h.keeper.SetVaultData(ctx, reserveVault); err != nil {
-						ctx.Logger().Error("fail to set vault data", "error", err)
+					if common.RuneAsset().Chain.Equals(common.THORChain) {
+						coin := common.NewCoin(common.RuneNative, slashBond)
+						if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, coin); err != nil {
+							ctx.Logger().Error("fail to transfer funds from bond to reserve", "error", err)
+							return err.Result()
+
+						}
+					} else {
+						reserveVault.TotalReserve = reserveVault.TotalReserve.Add(slashBond)
+						if err := h.keeper.SetVaultData(ctx, reserveVault); err != nil {
+							ctx.Logger().Error("fail to set vault data", "error", err)
+						}
 					}
 
 				}

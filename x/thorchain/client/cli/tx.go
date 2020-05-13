@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/context"
@@ -28,13 +29,37 @@ func GetTxCmd(storeKey string, cdc *codec.Codec) *cobra.Command {
 
 	thorchainTxCmd.AddCommand(client.PostCommands(
 		GetCmdSetNodeKeys(cdc),
-		GetCmdEndPool(cdc),
 		GetCmdSetVersion(cdc),
 		GetCmdSetIPAddress(cdc),
 		GetCmdBan(cdc),
+		GetCmdMimir(cdc),
 	)...)
 
 	return thorchainTxCmd
+}
+
+// GetCmdMimir command to change a mimir attribute
+func GetCmdMimir(cdc *codec.Codec) *cobra.Command {
+	return &cobra.Command{
+		Use:   "mimir [key] [value]",
+		Short: "updates a mimir attribute (admin only)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cliCtx := context.NewCLIContext().WithCodec(cdc)
+			txBldr := auth.NewTxBuilderFromCLI().WithTxEncoder(utils.GetTxEncoder(cdc))
+
+			val, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid value (must be an integer): %w", err)
+			}
+
+			msg := types.NewMsgMimir(args[0], val, cliCtx.GetFromAddress())
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+			return utils.GenerateOrBroadcastMsgs(cliCtx, txBldr, []sdk.Msg{msg})
+		},
+	}
 }
 
 // GetCmdBan command to ban a node accounts
@@ -130,52 +155,6 @@ func GetCmdSetNodeKeys(cdc *codec.Codec) *cobra.Command {
 			msg := types.NewMsgSetNodeKeys(pk, validatorConsPubKeyStr, cliCtx.GetFromAddress())
 			err = msg.ValidateBasic()
 			if err != nil {
-				return err
-			}
-			return utils.GenerateOrBroadcastMsgs(cliCtx, txBldr, []sdk.Msg{msg})
-		},
-	}
-}
-
-// GetCmdEndPool
-func GetCmdEndPool(cdc *codec.Codec) *cobra.Command {
-	return &cobra.Command{
-		Use:   "set-end-pool [asset] [requester_bnb_address] [request_txhash]",
-		Short: "set end pool",
-		Args:  cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cliCtx := context.NewCLIContext().WithCodec(cdc)
-			txBldr := auth.NewTxBuilderFromCLI().WithTxEncoder(utils.GetTxEncoder(cdc))
-			txBldr = txBldr.WithGas(600000) // set gas
-
-			asset, err := common.NewAsset(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid asset: %w", err)
-			}
-			requester, err := common.NewAddress(args[1])
-			if err != nil {
-				return fmt.Errorf("invalid requster bnb address: %w", err)
-			}
-			txID, err := common.NewTxID(args[2])
-			if err != nil {
-				return fmt.Errorf("invalid tx hash: %w", err)
-			}
-
-			tx := common.Tx{
-				ID:          txID,
-				FromAddress: requester,
-				ToAddress:   requester,
-				Chain:       asset.Chain,
-				Coins: common.Coins{
-					common.Coin{
-						Asset:  asset,
-						Amount: sdk.NewUint(1),
-					},
-				},
-			}
-
-			msg := types.NewMsgEndPool(asset, tx, cliCtx.GetFromAddress())
-			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}
 			return utils.GenerateOrBroadcastMsgs(cliCtx, txBldr, []sdk.Msg{msg})

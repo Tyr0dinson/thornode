@@ -17,12 +17,15 @@ func (HandlerLeaveSuite) TestLeaveHandler_NotActiveNodeLeave(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	vault := GetRandomVault()
 	w.keeper.SetVault(w.ctx, vault)
-	leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore)
+	leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore, NewVersionedEventMgr())
 	acc2 := GetRandomNodeAccount(NodeStandby)
 	acc2.Bond = sdk.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.RuneAsset().Chain})
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
+
+	FundModule(c, w.ctx, w.keeper, AsgardName, 100)
+
 	txID := GetRandomTxHash()
 	tx := common.NewTx(
 		txID,
@@ -44,7 +47,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_NotActiveNodeLeave(c *C) {
 func (HandlerLeaveSuite) TestLeaveHandler_ActiveNodeLeave(c *C) {
 	var err error
 	w := getHandlerTestWrapper(c, 1, true, false)
-	leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore)
+	leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore, NewVersionedEventMgr())
 	acc2 := GetRandomNodeAccount(NodeActive)
 	acc2.Bond = sdk.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
@@ -148,7 +151,7 @@ func (HandlerLeaveSuite) TestLeaveValidation(c *C) {
 	}
 	for _, item := range testCases {
 		c.Log(item.name)
-		leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore)
+		leaveHandler := NewLeaveHandler(w.keeper, w.validatorMgr, w.versionedTxOutStore, NewVersionedEventMgr())
 		c.Assert(leaveHandler.Run(w.ctx, item.msgLeave, ver, constAccessor).Code, Equals, item.expectedCode)
 	}
 }

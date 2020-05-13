@@ -20,7 +20,6 @@ func RegisterCodec(cdc *codec.Codec) {
 	cdc.RegisterConcrete(MsgObservedTxIn{}, "thorchain/ObservedTxIn", nil)
 	cdc.RegisterConcrete(MsgObservedTxOut{}, "thorchain/ObservedTxOut", nil)
 	cdc.RegisterConcrete(MsgSetNodeKeys{}, "thorchain/MsgSetNodeKeys", nil)
-	cdc.RegisterConcrete(MsgEndPool{}, "thorchain/MsgEndPool", nil)
 	cdc.RegisterConcrete(MsgAdd{}, "thorchain/MsgAdd", nil)
 	cdc.RegisterConcrete(MsgBond{}, "thorchain/MsgBond", nil)
 	cdc.RegisterConcrete(MsgLeave{}, "thorchain/MsgLeave", nil)
@@ -32,4 +31,6 @@ func RegisterCodec(cdc *codec.Codec) {
 	cdc.RegisterConcrete(MsgReserveContributor{}, "thorchain/MsgReserveContributor", nil)
 	cdc.RegisterConcrete(MsgErrataTx{}, "thorchain/MsgErrataTx", nil)
 	cdc.RegisterConcrete(MsgBan{}, "thorchain/MsgBan", nil)
+	cdc.RegisterConcrete(MsgSwitch{}, "thorchain/MsgSwitch", nil)
+	cdc.RegisterConcrete(MsgMimir{}, "thorchain/MsgMimir", nil)
 }

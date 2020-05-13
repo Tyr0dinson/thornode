@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/blang/semver"
@@ -16,16 +15,18 @@ import (
 
 // Slasher implements SlashingModule interface provide the necessary functionality to slash node accounts
 type Slasher struct {
-	keeper  Keeper
-	version semver.Version
+	keeper                Keeper
+	version               semver.Version
+	versionedEventManager VersionedEventManager
 }
 
 // NewSlasher create a new instance of Slasher
-func NewSlasher(keeper Keeper, version semver.Version) (*Slasher, error) {
+func NewSlasher(keeper Keeper, version semver.Version, versionedEventManager VersionedEventManager) (*Slasher, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return &Slasher{
-			keeper:  keeper,
-			version: version,
+			keeper:                keeper,
+			version:               version,
+			versionedEventManager: versionedEventManager,
 		}, nil
 	}
 	return nil, errBadVersion
@@ -74,17 +75,28 @@ func (s *Slasher) HandleDoubleSign(ctx sdk.Context, addr crypto.Address, infract
 				return fmt.Errorf("found account to slash for double signing, but did not have any bond to slash: %s", addr)
 			}
 			// take 5% of the minimum bond, and put it into the reserve
-			minBond := constAccessor.GetInt64Value(constants.MinimumBondInRune)
+			minBond, err := s.keeper.GetMimir(ctx, constants.MinimumBondInRune.String())
+			if minBond < 0 || err != nil {
+				minBond = constAccessor.GetInt64Value(constants.MinimumBondInRune)
+			}
 			slashAmount := sdk.NewUint(uint64(minBond)).MulUint64(5).QuoUint64(100)
 			na.Bond = common.SafeSub(na.Bond, slashAmount)
 
-			vaultData, err := s.keeper.GetVaultData(ctx)
-			if err != nil {
-				return fmt.Errorf("fail to get vault data: %w", err)
-			}
-			vaultData.TotalReserve = vaultData.TotalReserve.Add(slashAmount)
-			if err := s.keeper.SetVaultData(ctx, vaultData); err != nil {
-				return fmt.Errorf("fail to save vault data: %w", err)
+			if common.RuneAsset().Chain.Equals(common.THORChain) {
+				coin := common.NewCoin(common.RuneNative, slashAmount)
+				if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, coin); err != nil {
+					ctx.Logger().Error("fail to transfer funds from reserve to asgard", "error", err)
+					return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
+				}
+			} else {
+				vaultData, err := s.keeper.GetVaultData(ctx)
+				if err != nil {
+					return fmt.Errorf("fail to get vault data: %w", err)
+				}
+				vaultData.TotalReserve = vaultData.TotalReserve.Add(slashAmount)
+				if err := s.keeper.SetVaultData(ctx, vaultData); err != nil {
+					return fmt.Errorf("fail to save vault data: %w", err)
+				}
 			}
 
 			return s.keeper.SetNodeAccount(ctx, na)
@@ -280,19 +292,13 @@ func (s *Slasher) SlashNodeAccount(ctx sdk.Context, observedPubKey common.PubKey
 		},
 	}
 	eventSlash := NewEventSlash(pool.Asset, poolSlashAmt)
-	slashBuf, err := json.Marshal(eventSlash)
+	eventMgr, err := s.versionedEventManager.GetEventManager(ctx, s.version)
 	if err != nil {
-		return fmt.Errorf("fail to marshal slash event to buf: %w", err)
+		return fmt.Errorf("fail to get event manager: %w", err)
 	}
-	event := NewEvent(
-		eventSlash.Type(),
-		ctx.BlockHeight(),
-		common.Tx{ID: common.BlankTxID},
-		slashBuf,
-		EventSuccess,
-	)
-	if err := s.keeper.UpsertEvent(ctx, event); err != nil {
-		return fmt.Errorf("fail to save event: %w", err)
+
+	if err := eventMgr.EmitSlashEvent(ctx, s.keeper, eventSlash); err != nil {
+		return fmt.Errorf("fail to emit slash event: %w", err)
 	}
 
 	return s.keeper.SetNodeAccount(ctx, nodeAccount)

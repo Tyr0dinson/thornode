@@ -14,6 +14,7 @@ var (
 	RuneA1FAsset = Asset{Chain: BNBChain, Symbol: "RUNE-A1F", Ticker: "RUNE"} // testnet
 	RuneB1AAsset = Asset{Chain: BNBChain, Symbol: "RUNE-B1A", Ticker: "RUNE"} // mainnet
 	EmptyAsset   = Asset{Chain: EmptyChain, Symbol: "", Ticker: ""}
+	RuneNative   = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE"}
 )
 
 type Asset struct {
@@ -29,7 +30,7 @@ func NewAsset(input string) (Asset, error) {
 	parts := strings.Split(input, ".")
 	var sym string
 	if len(parts) == 1 {
-		asset.Chain = BNBChain
+		asset.Chain = THORChain
 		sym = parts[0]
 	} else {
 		asset.Chain, err = NewChain(parts[0])
@@ -57,6 +58,10 @@ func (a Asset) Equals(a2 Asset) bool {
 	return a.Chain.Equals(a2.Chain) && a.Symbol.Equals(a2.Symbol) && a.Ticker.Equals(a2.Ticker)
 }
 
+func (a Asset) Native() string {
+	return strings.ToLower(a.Symbol.String())
+}
+
 func (a Asset) IsEmpty() bool {
 	return a.Chain.IsEmpty() || a.Symbol.IsEmpty() || a.Ticker.IsEmpty()
 }
@@ -66,7 +71,7 @@ func (a Asset) String() string {
 }
 
 func (a Asset) IsRune() bool {
-	return a.Equals(RuneA1FAsset) || a.Equals(RuneB1AAsset)
+	return a.Equals(RuneA1FAsset) || a.Equals(RuneB1AAsset) || a.Equals(RuneNative)
 }
 
 func (a Asset) IsBNB() bool {
@@ -88,6 +93,7 @@ func (a *Asset) UnmarshalJSON(data []byte) error {
 }
 
 func RuneAsset() Asset {
+	// TODO: when should we return rune native?
 	if strings.EqualFold(os.Getenv("NET"), "testnet") || strings.EqualFold(os.Getenv("NET"), "mocknet") {
 		return RuneA1FAsset
 	}

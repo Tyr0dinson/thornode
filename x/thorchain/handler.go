@@ -57,8 +57,8 @@ var (
 	errFailGetEventManager = sdk.NewError(DefaultCodespace, CodeFailEventManager, "fail to get event manager")
 )
 
-// NewHandler returns a handler for "thorchain" type messages.
-func NewHandler(keeper Keeper,
+// NewExternalHandler returns a handler for "thorchain" type messages.
+func NewExternalHandler(keeper Keeper,
 	versionedTxOutStore VersionedTxOutStore,
 	validatorMgr VersionedValidatorManager,
 	versionedVaultManager VersionedVaultManager,
@@ -66,6 +66,59 @@ func NewHandler(keeper Keeper,
 	versionedGasMgr VersionedGasManager,
 	versionedEventManager VersionedEventManager) sdk.Handler {
 	handlerMap := getHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
+
+	return func(ctx sdk.Context, msg sdk.Msg) sdk.Result {
+		ctx = ctx.WithEventManager(sdk.NewEventManager())
+		version := keeper.GetLowestActiveVersion(ctx)
+		constantValues := constants.GetConstantValues(version)
+		if constantValues == nil {
+			return errConstNotAvailable.Result()
+		}
+		h, ok := handlerMap[msg.Type()]
+		if !ok {
+			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msg.Type())
+			return sdk.ErrUnknownRequest(errMsg).Result()
+		}
+		result := h.Run(ctx, msg, version, constantValues)
+		if len(ctx.EventManager().Events()) > 0 {
+			result.Events = result.Events.AppendEvents(ctx.EventManager().Events())
+		}
+		return result
+	}
+}
+
+func getHandlerMapping(keeper Keeper,
+	versionedTxOutStore VersionedTxOutStore,
+	validatorMgr VersionedValidatorManager,
+	versionedVaultManager VersionedVaultManager,
+	versionedObserverManager VersionedObserverManager,
+	versionedGasMgr VersionedGasManager,
+	versionedEventManager VersionedEventManager) map[string]MsgHandler {
+	// New arch handlers
+	m := make(map[string]MsgHandler)
+	m[MsgTssPool{}.Type()] = NewTssHandler(keeper, versionedVaultManager)
+	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(keeper)
+	m[MsgSetVersion{}.Type()] = NewVersionHandler(keeper)
+	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(keeper)
+	m[MsgNativeTx{}.Type()] = NewNativeTxHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
+	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
+	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
+	m[MsgTssKeysignFail{}.Type()] = NewTssKeysignHandler(keeper)
+	m[MsgErrataTx{}.Type()] = NewErrataTxHandler(keeper, versionedEventManager)
+	m[MsgSend{}.Type()] = NewSendHandler(keeper)
+	m[MsgMimir{}.Type()] = NewMimirHandler(keeper)
+	return m
+}
+
+// NewInternalHandler returns a handler for "thorchain" internal type messages.
+func NewInternalHandler(keeper Keeper,
+	versionedTxOutStore VersionedTxOutStore,
+	validatorMgr VersionedValidatorManager,
+	versionedVaultManager VersionedVaultManager,
+	versionedObserverManager VersionedObserverManager,
+	versionedGasMgr VersionedGasManager,
+	versionedEventManager VersionedEventManager) sdk.Handler {
+	handlerMap := getInternalHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
 
 	return func(ctx sdk.Context, msg sdk.Msg) sdk.Result {
 		version := keeper.GetLowestActiveVersion(ctx)
@@ -82,7 +135,7 @@ func NewHandler(keeper Keeper,
 	}
 }
 
-func getHandlerMapping(keeper Keeper,
+func getInternalHandlerMapping(keeper Keeper,
 	versionedTxOutStore VersionedTxOutStore,
 	validatorMgr VersionedValidatorManager,
 	versionedVaultManager VersionedVaultManager,
@@ -91,27 +144,19 @@ func getHandlerMapping(keeper Keeper,
 	versionedEventManager VersionedEventManager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
-	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(keeper)
-	m[MsgTssPool{}.Type()] = NewTssHandler(keeper, versionedVaultManager)
-	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(keeper, versionedTxOutStore, validatorMgr)
-	m[MsgEndPool{}.Type()] = NewEndPoolHandler(keeper, versionedTxOutStore, versionedEventManager)
-	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(keeper)
-	m[MsgSwap{}.Type()] = NewSwapHandler(keeper, versionedTxOutStore)
-	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(keeper)
-	m[MsgSetVersion{}.Type()] = NewVersionHandler(keeper)
-	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(keeper)
-	m[MsgBond{}.Type()] = NewBondHandler(keeper)
-	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
-	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
-	m[MsgLeave{}.Type()] = NewLeaveHandler(keeper, validatorMgr, versionedTxOutStore)
-	m[MsgAdd{}.Type()] = NewAddHandler(keeper)
+	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(keeper, versionedEventManager)
+	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(keeper, versionedTxOutStore, validatorMgr, versionedEventManager)
+	m[MsgSwap{}.Type()] = NewSwapHandler(keeper, versionedTxOutStore, versionedEventManager)
+	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(keeper, versionedEventManager)
+	m[MsgBond{}.Type()] = NewBondHandler(keeper, versionedEventManager)
+	m[MsgLeave{}.Type()] = NewLeaveHandler(keeper, validatorMgr, versionedTxOutStore, versionedEventManager)
+	m[MsgAdd{}.Type()] = NewAddHandler(keeper, versionedEventManager)
 	m[MsgSetUnStake{}.Type()] = NewUnstakeHandler(keeper, versionedTxOutStore, versionedEventManager)
-	m[MsgSetStakeData{}.Type()] = NewStakeHandler(keeper)
-	m[MsgRefundTx{}.Type()] = NewRefundHandler(keeper)
-	m[MsgTssKeysignFail{}.Type()] = NewTssKeysignHandler(keeper)
-	m[MsgMigrate{}.Type()] = NewMigrateHandler(keeper)
-	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(keeper)
-	m[MsgErrataTx{}.Type()] = NewErrataTxHandler(keeper, versionedEventManager)
+	m[MsgSetStakeData{}.Type()] = NewStakeHandler(keeper, versionedEventManager)
+	m[MsgRefundTx{}.Type()] = NewRefundHandler(keeper, versionedEventManager)
+	m[MsgMigrate{}.Type()] = NewMigrateHandler(keeper, versionedEventManager)
+	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(keeper, versionedEventManager)
+	m[MsgSwitch{}.Type()] = NewSwitchHandler(keeper, versionedTxOutStore)
 	return m
 }
 
@@ -218,6 +263,8 @@ func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.Ac
 	case ReserveMemo:
 		res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins[0].Amount)
 		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
+	case SwitchMemo:
+		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
 
 	default:
 		return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid memo")
@@ -380,5 +427,5 @@ func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer sdk.AccAddress) (sd
 	if runeAmount.IsZero() {
 		return nil, errors.New("RUNE amount is 0")
 	}
-	return NewMsgBond(tx.Tx, memo.GetNodeAddress(), runeAmount, tx.Tx.FromAddress, signer), nil
+	return NewMsgBond(tx.Tx, memo.GetAccAddress(), runeAmount, tx.Tx.FromAddress, signer), nil
 }

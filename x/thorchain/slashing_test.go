@@ -85,7 +85,7 @@ func (s *SlashingSuite) TestObservingSlashing(c *C) {
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
 
-	slasher, err := NewSlasher(keeper, ver)
+	slasher, err := NewSlasher(keeper, ver, NewVersionedEventMgr())
 	c.Assert(err, IsNil)
 	// should slash na2 only
 	lackOfObservationPenalty := constAccessor.GetInt64Value(constants.LackOfObservationPenalty)
@@ -119,7 +119,7 @@ func (s *SlashingSuite) TestLackObservingErrors(c *C) {
 	}
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
-	slasher, err := NewSlasher(keeper, ver)
+	slasher, err := NewSlasher(keeper, ver, NewVersionedEventMgr())
 	c.Assert(err, IsNil)
 	keeper.failGetObservingAddress = true
 	c.Assert(slasher.LackObserving(ctx, constAccessor), NotNil)
@@ -281,29 +281,30 @@ func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 		ver := constants.SWVersion
 		constAccessor := constants.GetConstantValues(ver)
 		na := GetRandomNodeAccount(NodeActive)
-
+		inTx := common.NewTx(
+			GetRandomTxHash(),
+			GetRandomBNBAddress(),
+			GetRandomBNBAddress(),
+			common.Coins{
+				common.NewCoin(common.BNBAsset, sdk.NewUint(320000000)),
+				common.NewCoin(common.RuneAsset(), sdk.NewUint(420000000)),
+			},
+			nil,
+			"SWAP:BNB.BNB",
+		)
 		swapEvt := NewEventSwap(
 			common.BNBAsset,
 			sdk.NewUint(5),
 			sdk.NewUint(5),
 			sdk.NewUint(5),
 			sdk.NewUint(5),
+			inTx,
 		)
 
 		swapBytes, _ := json.Marshal(swapEvt)
 		evt := NewEvent(swapEvt.Type(),
 			3,
-			common.NewTx(
-				GetRandomTxHash(),
-				GetRandomBNBAddress(),
-				GetRandomBNBAddress(),
-				common.Coins{
-					common.NewCoin(common.BNBAsset, sdk.NewUint(320000000)),
-					common.NewCoin(common.RuneAsset(), sdk.NewUint(420000000)),
-				},
-				nil,
-				"SWAP:BNB.BNB",
-			),
+			inTx,
 			swapBytes,
 			EventSuccess,
 		)
@@ -335,7 +336,7 @@ func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 		ctx = ctx.WithBlockHeight(evt.Height + signingTransactionPeriod)
 		version := constants.SWVersion
-		slasher, err := NewSlasher(keeper, version)
+		slasher, err := NewSlasher(keeper, version, NewVersionedEventMgr())
 		c.Assert(err, IsNil)
 		item.condition(keeper)
 		if item.shouldError {
@@ -353,29 +354,30 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
 	na := GetRandomNodeAccount(NodeActive)
-
+	inTx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.BNBAsset, sdk.NewUint(320000000)),
+			common.NewCoin(common.RuneAsset(), sdk.NewUint(420000000)),
+		},
+		nil,
+		"SWAP:BNB.BNB",
+	)
 	swapEvt := NewEventSwap(
 		common.BNBAsset,
 		sdk.NewUint(5),
 		sdk.NewUint(5),
 		sdk.NewUint(5),
 		sdk.NewUint(5),
+		inTx,
 	)
 
 	swapBytes, _ := json.Marshal(swapEvt)
 	evt := NewEvent(swapEvt.Type(),
 		3,
-		common.NewTx(
-			GetRandomTxHash(),
-			GetRandomBNBAddress(),
-			GetRandomBNBAddress(),
-			common.Coins{
-				common.NewCoin(common.BNBAsset, sdk.NewUint(320000000)),
-				common.NewCoin(common.RuneAsset(), sdk.NewUint(420000000)),
-			},
-			nil,
-			"SWAP:BNB.BNB",
-		),
+		inTx,
 		swapBytes,
 		EventSuccess,
 	)
@@ -407,7 +409,7 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	ctx = ctx.WithBlockHeight(evt.Height + signingTransactionPeriod)
 	version := constants.SWVersion
-	slasher, err := NewSlasher(keeper, version)
+	slasher, err := NewSlasher(keeper, version, NewVersionedEventMgr())
 	c.Assert(err, IsNil)
 	c.Assert(slasher.LackSigning(ctx, constAccessor, txOutStore), IsNil)
 
@@ -433,7 +435,7 @@ func (s *SlashingSuite) TestNewSlasher(c *C) {
 		slashPts: make(map[string]int64, 0),
 	}
 	ver := semver.MustParse("0.0.1")
-	slasher, err := NewSlasher(keeper, ver)
+	slasher, err := NewSlasher(keeper, ver, NewVersionedEventMgr())
 	c.Assert(err, Equals, errBadVersion)
 	c.Assert(slasher, IsNil)
 }
@@ -473,7 +475,7 @@ func (s *SlashingSuite) TestDoubleSign(c *C) {
 		na:        na,
 		vaultData: NewVaultData(),
 	}
-	slasher, err := NewSlasher(keeper, constants.SWVersion)
+	slasher, err := NewSlasher(keeper, constants.SWVersion, NewVersionedEventMgr())
 	c.Assert(err, IsNil)
 
 	pk, err := sdk.GetConsPubKeyBech32(na.ValidatorConsPubKey)
