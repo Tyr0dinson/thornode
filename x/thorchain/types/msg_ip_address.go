@@ -4,6 +4,8 @@ import (
 	"net"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgSetIPAddress defines a MsgSetIPAddress message
@@ -27,12 +29,12 @@ func (msg MsgSetIPAddress) Route() string { return RouterKey }
 func (msg MsgSetIPAddress) Type() string { return "set_ip_address" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSetIPAddress) ValidateBasic() sdk.Error {
+func (msg MsgSetIPAddress) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if net.ParseIP(msg.IPAddress) == nil {
-		return sdk.ErrUnknownRequest("invalid IP address")
+		return common.ErrUnknownRequest("invalid IP address")
 	}
 	return nil
 }

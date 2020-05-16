@@ -36,22 +36,22 @@ func (msg MsgSetStakeData) Route() string { return RouterKey }
 func (msg MsgSetStakeData) Type() string { return "set_stakedata" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSetStakeData) ValidateBasic() sdk.Error {
+func (msg MsgSetStakeData) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.Asset.IsEmpty() {
-		return sdk.ErrUnknownRequest("Stake asset cannot be empty")
+		return common.ErrUnknownRequest("Stake asset cannot be empty")
 	}
 	if err := msg.Tx.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	if msg.RuneAddress.IsEmpty() {
-		return sdk.ErrUnknownRequest("rune address cannot be empty")
+		return common.ErrUnknownRequest("rune address cannot be empty")
 	}
 	if !msg.Asset.Chain.IsBNB() {
 		if msg.AssetAddress.IsEmpty() {
-			return sdk.ErrUnknownRequest("asset address cannot be empty")
+			return common.ErrUnknownRequest("asset address cannot be empty")
 		}
 	}
 	return nil

@@ -33,21 +33,21 @@ func (msg MsgBond) Route() string { return RouterKey }
 func (msg MsgBond) Type() string { return "validator_apply" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgBond) ValidateBasic() sdk.Error {
+func (msg MsgBond) ValidateBasic() error {
 	if msg.NodeAddress.Empty() {
-		return sdk.ErrUnknownRequest("node address cannot be empty")
+		return common.ErrUnknownRequest("node address cannot be empty")
 	}
 	if msg.Bond.IsZero() {
-		return sdk.ErrUnknownRequest("bond cannot be zero")
+		return common.ErrUnknownRequest("bond cannot be zero")
 	}
 	if msg.BondAddress.IsEmpty() {
-		return sdk.ErrUnknownRequest("bond address cannot be empty")
+		return common.ErrUnknownRequest("bond address cannot be empty")
 	}
 	if msg.TxIn.IsEmpty() {
-		return sdk.ErrUnknownRequest("request tx cannot be empty")
+		return common.ErrUnknownRequest("request tx cannot be empty")
 	}
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress("empty signer address")
+		return common.ErrInvalidAddress("empty signer address")
 	}
 	return nil
 }

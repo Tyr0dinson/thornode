@@ -32,26 +32,26 @@ func (msg MsgSwap) Route() string { return RouterKey }
 func (msg MsgSwap) Type() string { return "swap" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSwap) ValidateBasic() sdk.Error {
+func (msg MsgSwap) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if err := msg.Tx.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	if msg.TargetAsset.IsEmpty() {
-		return sdk.ErrUnknownRequest("Swap Target cannot be empty")
+		return common.ErrUnknownRequest("swap Target cannot be empty")
 	}
 	for _, coin := range msg.Tx.Coins {
 		if coin.Asset.Equals(msg.TargetAsset) {
-			return sdk.ErrUnknownRequest("Swap Source and Target cannot be the same.")
+			return common.ErrUnknownRequest("swap Source and Target cannot be the same.")
 		}
 	}
 	if msg.Destination.IsEmpty() {
-		return sdk.ErrUnknownRequest("Swap Destination cannot be empty")
+		return common.ErrUnknownRequest("swap Destination cannot be empty")
 	}
 	if !msg.Destination.IsChain(msg.TargetAsset.Chain) {
-		return sdk.ErrUnknownRequest("swap destination and swap target asset must be the same chain")
+		return common.ErrUnknownRequest("swap destination and swap target asset must be the same chain")
 	}
 	return nil
 }

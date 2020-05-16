@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgBan defines a MsgBan message
@@ -25,12 +27,12 @@ func (msg MsgBan) Route() string { return RouterKey }
 func (msg MsgBan) Type() string { return "ban" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgBan) ValidateBasic() sdk.Error {
+func (msg MsgBan) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.NodeAddress.Empty() {
-		return sdk.ErrInvalidAddress(msg.NodeAddress.String())
+		return common.ErrInvalidAddress(msg.NodeAddress.String())
 	}
 	return nil
 }

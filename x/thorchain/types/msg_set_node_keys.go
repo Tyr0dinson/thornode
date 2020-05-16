@@ -29,15 +29,15 @@ func (msg MsgSetNodeKeys) Route() string { return RouterKey }
 func (msg MsgSetNodeKeys) Type() string { return "set_node_keys" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSetNodeKeys) ValidateBasic() sdk.Error {
+func (msg MsgSetNodeKeys) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if len(msg.ValidatorConsPubKey) == 0 {
-		return sdk.ErrUnknownRequest("validator consensus pubkey cannot be empty")
+		return common.ErrUnknownRequest("validator consensus pubkey cannot be empty")
 	}
 	if msg.PubKeySetSet.IsEmpty() {
-		return sdk.ErrUnknownRequest("node pub keys cannot be empty")
+		return common.ErrUnknownRequest("node pub keys cannot be empty")
 	}
 	return nil
 }

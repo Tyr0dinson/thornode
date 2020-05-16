@@ -29,15 +29,15 @@ func (msg MsgErrataTx) Route() string { return RouterKey }
 func (msg MsgErrataTx) Type() string { return "errata_tx" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgErrataTx) ValidateBasic() sdk.Error {
+func (msg MsgErrataTx) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.TxID.IsEmpty() {
-		return sdk.ErrUnknownRequest("tx id cannot be empty")
+		return common.ErrUnknownRequest("tx id cannot be empty")
 	}
 	if msg.Chain.IsEmpty() {
-		return sdk.ErrUnknownRequest("chain cannot be empty")
+		return common.ErrUnknownRequest("chain cannot be empty")
 	}
 	return nil
 }

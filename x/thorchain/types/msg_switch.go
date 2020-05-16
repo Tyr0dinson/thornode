@@ -2,7 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	common "gitlab.com/thorchain/thornode/common"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgSwitch defines a MsgSwitch message
@@ -28,22 +29,22 @@ func (msg MsgSwitch) Route() string { return RouterKey }
 func (msg MsgSwitch) Type() string { return "switch" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSwitch) ValidateBasic() sdk.Error {
+func (msg MsgSwitch) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.Destination.IsEmpty() {
-		return sdk.ErrInvalidAddress(msg.Destination.String())
+		return common.ErrInvalidAddress(msg.Destination.String())
 	}
 	if err := msg.Tx.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	// cannot be more or less than one coin
 	if len(msg.Tx.Coins) != 1 {
-		return sdk.ErrInvalidCoins("must be only one coin (rune)")
+		return common.ErrInvalidCoins("must be only one coin (rune)")
 	}
 	if !msg.Tx.Coins[0].Asset.IsRune() {
-		return sdk.ErrInvalidCoins("must be rune")
+		return common.ErrInvalidCoins("must be rune")
 	}
 	return nil
 }

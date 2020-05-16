@@ -127,6 +127,7 @@ func (h ObservedTxInHandler) handleV1(ctx sdk.Context, version semver.Version, m
 	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")
+
 		return sdk.ErrInternal(err.Error()).Result()
 	}
 	txOutStore, err := h.versionedTxOutStore.GetTxOutStore(ctx, h.keeper, version)

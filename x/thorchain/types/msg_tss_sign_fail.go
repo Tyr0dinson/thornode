@@ -9,8 +9,9 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/tss/go-tss/blame"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgTssKeysignFail means TSS keysign failed
@@ -64,23 +65,23 @@ func (msg MsgTssKeysignFail) Route() string { return RouterKey }
 func (msg MsgTssKeysignFail) Type() string { return "set_tss_keysign_fail" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgTssKeysignFail) ValidateBasic() sdk.Error {
+func (msg MsgTssKeysignFail) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if len(msg.ID) == 0 {
-		return sdk.ErrUnknownRequest("ID cannot be blank")
+		return common.ErrUnknownRequest("ID cannot be blank")
 	}
 	if len(msg.Coins) == 0 {
-		return sdk.ErrUnknownRequest("no coins")
+		return common.ErrUnknownRequest("no coins")
 	}
 	for _, c := range msg.Coins {
 		if err := c.IsValid(); err != nil {
-			return sdk.ErrInvalidCoins(err.Error())
+			return common.ErrInvalidCoins(err.Error())
 		}
 	}
 	if msg.Blame.IsEmpty() {
-		return sdk.ErrUnknownRequest("tss blame is empty")
+		return common.ErrUnknownRequest("tss blame is empty")
 	}
 	return nil
 }

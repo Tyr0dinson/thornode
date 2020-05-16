@@ -33,22 +33,22 @@ func (msg MsgYggdrasil) Route() string { return RouterKey }
 func (msg MsgYggdrasil) Type() string { return "set_yggdrasil" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgYggdrasil) ValidateBasic() sdk.Error {
+func (msg MsgYggdrasil) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.PubKey.IsEmpty() {
-		return sdk.ErrUnknownRequest("pubkey cannot be empty")
+		return common.ErrUnknownRequest("pubkey cannot be empty")
 	}
 	if msg.BlockHeight <= 0 {
-		return sdk.ErrUnknownRequest("invalid block height")
+		return common.ErrUnknownRequest("invalid block height")
 	}
 	if msg.Tx.IsEmpty() {
-		return sdk.ErrUnknownRequest("request tx cannot be empty")
+		return common.ErrUnknownRequest("request tx cannot be empty")
 	}
 	for _, coin := range msg.Coins {
 		if err := coin.IsValid(); err != nil {
-			return sdk.ErrInvalidCoins(err.Error())
+			return common.ErrInvalidCoins(err.Error())
 		}
 	}
 	return nil

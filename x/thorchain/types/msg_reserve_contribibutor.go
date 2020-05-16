@@ -27,15 +27,15 @@ func (msg MsgReserveContributor) Route() string { return RouterKey }
 func (msg MsgReserveContributor) Type() string { return "set_reserve_contributor" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgReserveContributor) ValidateBasic() sdk.Error {
+func (msg MsgReserveContributor) ValidateBasic() error {
 	if err := msg.Tx.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if err := msg.Contributor.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }

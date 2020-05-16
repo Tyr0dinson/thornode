@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgRagnarok defines a MsgRagnarok message
@@ -27,15 +29,15 @@ func (msg MsgRagnarok) Route() string { return RouterKey }
 func (msg MsgRagnarok) Type() string { return "ragnarok" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgRagnarok) ValidateBasic() sdk.Error {
+func (msg MsgRagnarok) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.BlockHeight <= 0 {
-		return sdk.ErrUnknownRequest("invalid block height")
+		return common.ErrUnknownRequest("invalid block height")
 	}
 	if err := msg.Tx.Valid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }

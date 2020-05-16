@@ -44,7 +44,7 @@ func NewPubKey(key string) (PubKey, error) {
 	if len(key) == 0 {
 		return EmptyPubKey, nil
 	}
-	_, err := sdk.GetAccPubKeyBech32(key)
+	_, err := sdk.GetPubKeyFromBech32(sdk.Bech32PubKeyTypeAccPub, key)
 	if err != nil {
 		return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
 	}
@@ -53,7 +53,7 @@ func NewPubKey(key string) (PubKey, error) {
 
 // NewPubKeyFromCrypto
 func NewPubKeyFromCrypto(pk crypto.PubKey) (PubKey, error) {
-	s, err := sdk.Bech32ifyAccPub(pk)
+	s, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, pk)
 	if err != nil {
 		return EmptyPubKey, fmt.Errorf("fail to create PubKey from crypto.PubKey,err:%w", err)
 	}
@@ -83,7 +83,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 	chainNetwork := GetCurrentChainNetwork()
 	switch chain {
 	case BNBChain:
-		pk, err := sdk.GetAccPubKeyBech32(string(pubKey))
+		pk, err := sdk.GetPubKeyFromBech32(sdk.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
 			return NoAddress, err
 		}
@@ -93,7 +93,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		return NewAddress(str)
 	case THORChain:
-		pk, err := sdk.GetAccPubKeyBech32(string(pubKey))
+		pk, err := sdk.GetPubKeyFromBech32(sdk.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
 			return NoAddress, err
 		}
@@ -104,7 +104,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		return NewAddress(str)
 	case ETHChain:
 		// retrieve compressed pubkey bytes from bechh32 encoded str
-		pk, err := sdk.GetAccPubKeyBech32(string(pubKey))
+		pk, err := sdk.GetPubKeyFromBech32(sdk.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
 			return NoAddress, err
 		}
@@ -116,7 +116,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		str := strings.ToLower(eth.PubkeyToAddress(*pub.ToECDSA()).String())
 		return NewAddress(str)
 	case BTCChain:
-		pk, err := sdk.GetAccPubKeyBech32(string(pubKey))
+		pk, err := sdk.GetPubKeyFromBech32(sdk.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
 			return NoAddress, err
 		}
@@ -168,7 +168,7 @@ func (pubKey *PubKey) UnmarshalJSON(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("fail to create pub key from bytes,err:%w", err)
 		}
-		s, err = sdk.Bech32ifyAccPub(pk)
+		s, err = sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, pk)
 		if err != nil {
 			return fmt.Errorf("fail to bech32 acc pub:%w", err)
 		}

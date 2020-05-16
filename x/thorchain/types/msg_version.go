@@ -3,6 +3,8 @@ package types
 import (
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgSetVersion defines a MsgSetVersion message
@@ -26,12 +28,12 @@ func (msg MsgSetVersion) Route() string { return RouterKey }
 func (msg MsgSetVersion) Type() string { return "set_version" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgSetVersion) ValidateBasic() sdk.Error {
+func (msg MsgSetVersion) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if err := msg.Version.Validate(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }

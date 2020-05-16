@@ -4,7 +4,8 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	common "gitlab.com/thorchain/thornode/common"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgNativeTx defines a MsgNativeTx message
@@ -30,21 +31,21 @@ func (msg MsgNativeTx) Route() string { return RouterKey }
 func (msg MsgNativeTx) Type() string { return "native_tx" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgNativeTx) ValidateBasic() sdk.Error {
+func (msg MsgNativeTx) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if err := msg.Coins.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	for _, coin := range msg.Coins {
 		if !coin.IsNative() {
-			return sdk.ErrUnknownRequest("all coins must be native to THORChain")
+			return common.ErrUnknownRequest("all coins must be native to THORChain")
 		}
 	}
 	if len([]byte(msg.Memo)) > 150 {
-		err := fmt.Errorf("Memo must not exceed 150 bytes: %d", len([]byte(msg.Memo)))
-		return sdk.ErrUnknownRequest(err.Error())
+		err := fmt.Errorf("memo must not exceed 150 bytes: %d", len([]byte(msg.Memo)))
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }

@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgObservedTxOut defines a MsgObservedTxOut message
@@ -25,29 +27,29 @@ func (msg MsgObservedTxOut) Route() string { return RouterKey }
 func (msg MsgObservedTxOut) Type() string { return "set_observed_txout" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgObservedTxOut) ValidateBasic() sdk.Error {
+func (msg MsgObservedTxOut) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if len(msg.Txs) == 0 {
-		return sdk.ErrUnknownRequest("Txs cannot be empty")
+		return common.ErrUnknownRequest("Txs cannot be empty")
 	}
 	for _, tx := range msg.Txs {
 		if err := tx.Valid(); err != nil {
-			return sdk.ErrUnknownRequest(err.Error())
+			return common.ErrUnknownRequest(err.Error())
 		}
 		obAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Coins[0].Asset.Chain)
 		if err != nil {
-			return sdk.ErrUnknownRequest(err.Error())
+			return common.ErrUnknownRequest(err.Error())
 		}
 		if !tx.Tx.FromAddress.Equals(obAddr) {
-			return sdk.ErrUnknownRequest("Request is not an outbound observed transaction")
+			return common.ErrUnknownRequest("Request is not an outbound observed transaction")
 		}
 		if len(tx.Signers) > 0 {
-			return sdk.ErrUnknownRequest("signers must be empty")
+			return common.ErrUnknownRequest("signers must be empty")
 		}
 		if len(tx.OutHashes) > 0 {
-			return sdk.ErrUnknownRequest("out hashes must be empty")
+			return common.ErrUnknownRequest("out hashes must be empty")
 		}
 	}
 	return nil

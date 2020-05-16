@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	blame "gitlab.com/thorchain/tss/go-tss/blame"
+	"gitlab.com/thorchain/tss/go-tss/blame"
 
 	"gitlab.com/thorchain/thornode/common"
 )
@@ -62,33 +62,33 @@ func (msg MsgTssPool) Route() string { return RouterKey }
 func (msg MsgTssPool) Type() string { return "set_tss_pool" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgTssPool) ValidateBasic() sdk.Error {
+func (msg MsgTssPool) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if len(msg.ID) == 0 {
-		return sdk.ErrUnknownRequest("ID cannot be blank")
+		return common.ErrUnknownRequest("ID cannot be blank")
 	}
 	if len(msg.PubKeys) < 2 {
-		return sdk.ErrUnknownRequest("Must have at least 2 pub keys")
+		return common.ErrUnknownRequest("Must have at least 2 pub keys")
 	}
 	if len(msg.PubKeys) > 100 {
-		return sdk.ErrUnknownRequest("Must have no more then 100 pub keys")
+		return common.ErrUnknownRequest("Must have no more then 100 pub keys")
 	}
 	for _, pk := range msg.PubKeys {
 		if pk.IsEmpty() {
-			return sdk.ErrUnknownRequest("Pubkey cannot be empty")
+			return common.ErrUnknownRequest("Pubkey cannot be empty")
 		}
 	}
 	// PoolPubKey can't be empty only when keygen success
 	if msg.IsSuccess() {
 		if msg.PoolPubKey.IsEmpty() {
-			return sdk.ErrUnknownRequest("Pool pubkey cannot be empty")
+			return common.ErrUnknownRequest("Pool pubkey cannot be empty")
 		}
 	}
 	// ensure pool pubkey is a valid bech32 pubkey
 	if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 
 	// ensure we have rune chain
@@ -100,7 +100,7 @@ func (msg MsgTssPool) ValidateBasic() sdk.Error {
 		}
 	}
 	if !found {
-		return sdk.ErrUnknownRequest("must support rune asset chain")
+		return common.ErrUnknownRequest("must support rune asset chain")
 	}
 
 	// ensure there are no duplicate chains
@@ -113,7 +113,7 @@ func (msg MsgTssPool) ValidateBasic() sdk.Error {
 	}
 	for k, v := range chainDup {
 		if v > 1 {
-			return sdk.ErrUnknownRequest(fmt.Sprintf("cannot have duplicate chains (%s)", k.String()))
+			return common.ErrUnknownRequest(fmt.Sprintf("cannot have duplicate chains (%s)", k.String()))
 		}
 	}
 

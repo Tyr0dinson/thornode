@@ -29,15 +29,15 @@ func (msg MsgRefundTx) Route() string { return RouterKey }
 func (msg MsgRefundTx) Type() string { return "set_tx_refund" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgRefundTx) ValidateBasic() sdk.Error {
+func (msg MsgRefundTx) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.InTxID.IsEmpty() {
-		return sdk.ErrUnknownRequest("In Tx ID cannot be empty")
+		return common.ErrUnknownRequest("In Tx ID cannot be empty")
 	}
 	if err := msg.Tx.Valid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }

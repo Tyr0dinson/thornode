@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgNoOp defines a no op message
@@ -25,12 +27,12 @@ func (msg MsgNoOp) Route() string { return RouterKey }
 func (msg MsgNoOp) Type() string { return "set_noop" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgNoOp) ValidateBasic() sdk.Error {
+func (msg MsgNoOp) ValidateBasic() error {
 	if err := msg.ObservedTx.Valid(); err != nil {
-		return sdk.ErrInvalidCoins(err.Error())
+		return common.ErrInvalidCoins(err.Error())
 	}
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	return nil
 }

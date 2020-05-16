@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgMimir defines a no op message
@@ -27,12 +29,12 @@ func (msg MsgMimir) Route() string { return RouterKey }
 func (msg MsgMimir) Type() string { return "set_mimir_attr" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgMimir) ValidateBasic() sdk.Error {
+func (msg MsgMimir) ValidateBasic() error {
 	if msg.Key == "" {
-		return sdk.ErrUnknownRequest("key cannot be empty")
+		return common.ErrUnknownRequest("key cannot be empty")
 	}
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	return nil
 }

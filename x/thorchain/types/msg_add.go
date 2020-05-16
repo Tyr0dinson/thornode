@@ -2,7 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	common "gitlab.com/thorchain/thornode/common"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // MsgAdd defines a add message
@@ -32,15 +33,15 @@ func (msg MsgAdd) Route() string { return RouterKey }
 func (msg MsgAdd) Type() string { return "set_add" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgAdd) ValidateBasic() sdk.Error {
+func (msg MsgAdd) ValidateBasic() error {
 	if msg.Signer.Empty() {
-		return sdk.ErrInvalidAddress(msg.Signer.String())
+		return common.ErrInvalidAddress(msg.Signer.String())
 	}
 	if msg.Asset.IsEmpty() {
-		return sdk.ErrUnknownRequest("Add Asset cannot be empty")
+		return common.ErrUnknownRequest("Add Asset cannot be empty")
 	}
 	if err := msg.Tx.IsValid(); err != nil {
-		return sdk.ErrUnknownRequest(err.Error())
+		return common.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }
