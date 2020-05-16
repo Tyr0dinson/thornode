@@ -145,7 +145,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgNoOp(GetRandomObservedTx(), helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, helper.version, helper.constAccessor)
 			},
 			expectedResult: CodeInvalidMessage,
@@ -155,7 +155,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.0.1"), helper.constAccessor)
 			},
 			expectedResult: CodeBadVersion,
@@ -165,7 +165,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, GetRandomBech32Addr())
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnauthorized,
@@ -175,7 +175,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), "", 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, GetRandomBech32Addr())
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -185,7 +185,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(common.Tx{}, GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, GetRandomBech32Addr())
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -195,7 +195,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.EmptyAsset, sdk.OneUint())}, GetRandomBech32Addr())
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInvalidCoins,
@@ -205,7 +205,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, sdk.AccAddress{})
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInvalidAddress,
@@ -215,7 +215,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), GetRandomPubKey(), 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errGetVault = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -226,7 +226,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), helper.asgardVault.PubKey, 13, true, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,
@@ -236,7 +236,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), helper.yggVault.PubKey, 13, true, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,
@@ -260,7 +260,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				}
 				return NewMsgYggdrasil(tx, helper.yggVault.PubKey, 12, false, coins, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,
@@ -276,7 +276,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 			messageCreator: func(helper yggdrasilHandlerTestHelper) sdk.Msg {
 				return NewMsgYggdrasil(GetRandomTx(), helper.yggVault.PubKey, 12, false, common.Coins{common.NewCoin(common.BNBAsset, sdk.OneUint())}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errGetAsgardVaults = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -301,7 +301,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				}
 				return NewMsgYggdrasil(tx, GetRandomPubKey(), 12, false, coins, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				ygg := msg.(MsgYggdrasil)
 				addr, _ := ygg.PubKey.GetThorAddress()
 				helper.keeper.errGetNodeAccount = addr
@@ -328,7 +328,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				}
 				return NewMsgYggdrasil(tx, helper.yggVault.PubKey, 12, false, coins, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errGetPool = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -353,7 +353,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				}
 				return NewMsgYggdrasil(tx, helper.asgardVault.PubKey, 12, false, coins, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,
@@ -383,7 +383,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				}
 				return NewMsgYggdrasil(tx, vault.PubKey, 12, false, coins, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) sdk.Result {
+			runner: func(handler YggdrasilHandler, msg sdk.Msg, helper yggdrasilHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			validator: func(helper yggdrasilHandlerTestHelper, msg sdk.Msg, result sdk.Result, c *C) {

@@ -26,7 +26,7 @@ func NewUnstakeHandler(keeper Keeper, txOutStore VersionedTxOutStore, versionedE
 	}
 }
 
-func (h UnstakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h UnstakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetUnStake)
 	if !ok {
 		return errInvalidMessage.Result()

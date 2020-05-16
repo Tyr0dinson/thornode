@@ -23,7 +23,7 @@ func NewReserveContributorHandler(keeper Keeper, versionedEventManager Versioned
 	}
 }
 
-func (h ReserveContributorHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h ReserveContributorHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgReserveContributor)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -54,7 +54,7 @@ func (h ReserveContributorHandler) ValidateV1(ctx sdk.Context, msg MsgReserveCon
 	return nil
 }
 
-func (h ReserveContributorHandler) Handle(ctx sdk.Context, msg MsgReserveContributor, version semver.Version) sdk.Result {
+func (h ReserveContributorHandler) Handle(ctx sdk.Context, msg MsgReserveContributor, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgReserveContributor request")
 	if version.GTE(semver.MustParse("0.1.0")) {
 		if err := h.HandleV1(ctx, msg, version); err != nil {

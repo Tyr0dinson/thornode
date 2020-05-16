@@ -25,7 +25,7 @@ func NewSwitchHandler(keeper Keeper, versionedTxOutStore VersionedTxOutStore) Sw
 }
 
 // Run it the main entry point to execute Switch logic
-func (h SwitchHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SwitchHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSwitch)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -57,7 +57,7 @@ func (h SwitchHandler) validateV1(ctx sdk.Context, msg MsgSwitch) error {
 	return nil
 }
 
-func (h SwitchHandler) handle(ctx sdk.Context, msg MsgSwitch, version semver.Version) sdk.Result {
+func (h SwitchHandler) handle(ctx sdk.Context, msg MsgSwitch, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgSwitch request", "destination address", msg.Destination.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
@@ -67,7 +67,7 @@ func (h SwitchHandler) handle(ctx sdk.Context, msg MsgSwitch, version semver.Ver
 	}
 }
 
-func (h SwitchHandler) handleV1(ctx sdk.Context, msg MsgSwitch, version semver.Version) sdk.Result {
+func (h SwitchHandler) handleV1(ctx sdk.Context, msg MsgSwitch, version semver.Version) (*sdk.Result, error) {
 	bank := h.keeper.CoinKeeper()
 
 	vaultData, err := h.keeper.GetVaultData(ctx)

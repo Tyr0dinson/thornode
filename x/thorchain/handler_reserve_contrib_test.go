@@ -112,7 +112,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgNoOp(GetRandomObservedTx(), helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, helper.version, helper.constAccessor)
 			},
 			expectedResult: CodeInvalidMessage,
@@ -122,7 +122,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.0.1"), helper.constAccessor)
 			},
 			expectedResult: CodeBadVersion,
@@ -132,7 +132,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, GetRandomBech32Addr())
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnauthorized,
@@ -142,7 +142,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, sdk.AccAddress{})
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInvalidAddress,
@@ -155,7 +155,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 					Amount:  sdk.NewUint(100),
 				}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -168,7 +168,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 					Amount:  sdk.ZeroUint(),
 				}, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -180,7 +180,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 				tx.ID = ""
 				return NewMsgReserveContributor(tx, helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -190,7 +190,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetReserveContributors = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -201,7 +201,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetReserveContributors = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -212,7 +212,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -223,7 +223,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -234,7 +234,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetEvents = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -245,7 +245,7 @@ func (h HandlerReserveContributorSuite) TestReserveContributorHandler(c *C) {
 			messageCreator: func(helper reserveContributorHandlerHelper) sdk.Msg {
 				return NewMsgReserveContributor(GetRandomTx(), helper.reserveContributor, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler ReserveContributorHandler, helper reserveContributorHandlerHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			validator: func(helper reserveContributorHandlerHelper, msg sdk.Msg, result sdk.Result, c *C) {

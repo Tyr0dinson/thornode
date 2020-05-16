@@ -24,7 +24,7 @@ func NewSwapHandler(keeper Keeper, versionedTxOutStore VersionedTxOutStore, vers
 	}
 }
 
-func (h SwapHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SwapHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSwap)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -57,7 +57,7 @@ func (h SwapHandler) validateV1(ctx sdk.Context, msg MsgSwap) error {
 	return nil
 }
 
-func (h SwapHandler) handle(ctx sdk.Context, msg MsgSwap, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SwapHandler) handle(ctx sdk.Context, msg MsgSwap, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version, constAccessor)
@@ -67,7 +67,7 @@ func (h SwapHandler) handle(ctx sdk.Context, msg MsgSwap, version semver.Version
 	}
 }
 
-func (h SwapHandler) handleV1(ctx sdk.Context, msg MsgSwap, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SwapHandler) handleV1(ctx sdk.Context, msg MsgSwap, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	transactionFee := constAccessor.GetInt64Value(constants.TransactionFee)
 	amount, events, swapErr := swap(
 		ctx,

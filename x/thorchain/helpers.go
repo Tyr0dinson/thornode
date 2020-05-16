@@ -11,7 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-func refundTx(ctx sdk.Context, tx ObservedTx, store TxOutStore, keeper Keeper, constAccessor constants.ConstantValues, refundCode sdk.CodeType, refundReason string, eventMgr EventManager) error {
+func refundTx(ctx sdk.Context, tx ObservedTx, store TxOutStore, keeper Keeper, constAccessor constants.ConstantValues, refundCode uint32, refundReason string, eventMgr EventManager) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 	var refundCoins common.Coins

@@ -39,7 +39,7 @@ func (h CommonOutboundTxHandler) slash(ctx sdk.Context, version semver.Version, 
 	return returnErr
 }
 
-func (h CommonOutboundTxHandler) handle(ctx sdk.Context, version semver.Version, tx ObservedTx, inTxID common.TxID, status EventStatus) sdk.Result {
+func (h CommonOutboundTxHandler) handle(ctx sdk.Context, version semver.Version, tx ObservedTx, inTxID common.TxID, status EventStatus) (*sdk.Result, error) {
 	voter, err := h.keeper.GetObservedTxVoter(ctx, inTxID)
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)

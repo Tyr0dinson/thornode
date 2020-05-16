@@ -25,7 +25,7 @@ func NewMimirHandler(keeper Keeper) MimirHandler {
 }
 
 // Run is the main entry point to execute mimir logic
-func (h MimirHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h MimirHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgMimir)
 	if !ok {
 		return errInvalidMessage.Result()

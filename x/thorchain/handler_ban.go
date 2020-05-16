@@ -23,7 +23,7 @@ func NewBanHandler(keeper Keeper) BanHandler {
 }
 
 // Run is the main entry point to execute Ban logic
-func (h BanHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h BanHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgBan)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -55,7 +55,7 @@ func (h BanHandler) validateV1(ctx sdk.Context, msg MsgBan) error {
 	return nil
 }
 
-func (h BanHandler) handle(ctx sdk.Context, msg MsgBan, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h BanHandler) handle(ctx sdk.Context, msg MsgBan, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgBan request", "node address", msg.NodeAddress.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, constAccessor)
@@ -65,7 +65,7 @@ func (h BanHandler) handle(ctx sdk.Context, msg MsgBan, version semver.Version, 
 	}
 }
 
-func (h BanHandler) handleV1(ctx sdk.Context, msg MsgBan, constAccessor constants.ConstantValues) sdk.Result {
+func (h BanHandler) handleV1(ctx sdk.Context, msg MsgBan, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	toBan, err := h.keeper.GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get to ban node account")

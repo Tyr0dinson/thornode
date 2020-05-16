@@ -23,7 +23,7 @@ func NewTssKeysignHandler(keeper Keeper, versionedEventManager VersionedEventMan
 	}
 }
 
-func (h TssKeysignHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h TssKeysignHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgTssKeysignFail)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -55,7 +55,7 @@ func (h TssKeysignHandler) validateV1(ctx sdk.Context, msg MsgTssKeysignFail) er
 	return nil
 }
 
-func (h TssKeysignHandler) handle(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) sdk.Result {
+func (h TssKeysignHandler) handle(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("handle MsgTssKeysignFail request", "ID:", msg.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
@@ -64,7 +64,7 @@ func (h TssKeysignHandler) handle(ctx sdk.Context, msg MsgTssKeysignFail, versio
 }
 
 // Handle a message to observe inbound tx
-func (h TssKeysignHandler) handleV1(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) sdk.Result {
+func (h TssKeysignHandler) handleV1(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) (*sdk.Result, error) {
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")

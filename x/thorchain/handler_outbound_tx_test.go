@@ -275,7 +275,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgNoOp(GetRandomObservedTx(), helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, helper.version, helper.constAccessor)
 			},
 			expectedResult: CodeInvalidMessage,
@@ -285,7 +285,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, tx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.0.1"), helper.constAccessor)
 			},
 			expectedResult: CodeBadVersion,
@@ -295,7 +295,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, tx.Tx.ID, GetRandomNodeAccount(NodeActive).NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.2.0"), helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnauthorized,
@@ -305,7 +305,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, helper.keeper.observeTxVoterErrHash, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInternal,
@@ -315,7 +315,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.failGetPendingEvent = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -326,7 +326,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetTxOut = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -338,7 +338,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, sdk.NewUint(common.One)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -350,7 +350,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, sdk.NewUint(common.One)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetPool = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -362,7 +362,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, sdk.NewUint(common.One)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetPool = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -374,7 +374,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, sdk.NewUint(common.One)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -387,7 +387,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.RuneAsset(), sdk.NewUint(common.One*2)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errGetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -400,7 +400,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.RuneAsset(), sdk.NewUint(common.One*2)))
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				helper.keeper.errSetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -411,7 +411,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 			messageCreator: func(helper outboundTxHandlerTestHelper, tx ObservedTx) sdk.Msg {
 				return NewMsgOutboundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) sdk.Result {
+			runner: func(handler OutboundTxHandler, helper outboundTxHandlerTestHelper, msg sdk.Msg) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,

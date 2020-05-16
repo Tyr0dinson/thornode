@@ -23,7 +23,7 @@ func NewMigrateHandler(keeper Keeper, versionedEventManager VersionedEventManage
 	}
 }
 
-func (h MigrateHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h MigrateHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgMigrate)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -55,7 +55,7 @@ func (h MigrateHandler) validateV1(ctx sdk.Context, msg MsgMigrate) error {
 	return nil
 }
 
-func (h MigrateHandler) handle(ctx sdk.Context, msg MsgMigrate, version semver.Version) sdk.Result {
+func (h MigrateHandler) handle(ctx sdk.Context, msg MsgMigrate, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgMigrate", "request tx hash", msg.Tx.Tx.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg)
@@ -79,7 +79,7 @@ func (h MigrateHandler) slash(ctx sdk.Context, version semver.Version, tx Observ
 	return returnErr
 }
 
-func (h MigrateHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgMigrate) sdk.Result {
+func (h MigrateHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgMigrate) (*sdk.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.keeper.GetTxOut(ctx, msg.BlockHeight)
 	if err != nil {

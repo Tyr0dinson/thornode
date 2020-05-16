@@ -24,7 +24,7 @@ func NewRefundHandler(keeper Keeper, versionedEventManager VersionedEventManager
 	}
 }
 
-func (h RefundHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h RefundHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgRefundTx)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -57,6 +57,6 @@ func (h RefundHandler) validateV1(ctx sdk.Context, version semver.Version, msg M
 	return nil
 }
 
-func (h RefundHandler) handle(ctx sdk.Context, msg MsgRefundTx, version semver.Version) sdk.Result {
+func (h RefundHandler) handle(ctx sdk.Context, msg MsgRefundTx, version semver.Version) (*sdk.Result, error) {
 	return h.ch.handle(ctx, version, msg.Tx, msg.InTxID, RefundStatus)
 }

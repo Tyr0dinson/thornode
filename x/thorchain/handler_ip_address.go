@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -22,25 +23,22 @@ func NewIPAddressHandler(keeper Keeper) IPAddressHandler {
 }
 
 // Run it the main entry point to execute ip address logic
-func (h IPAddressHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h IPAddressHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetIPAddress)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info("receive ip address", "address", msg.IPAddress)
 	if err := h.validate(ctx, msg, version); err != nil {
 		ctx.Logger().Error("msg set version failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	if err := h.handle(ctx, msg, version); err != nil {
 		ctx.Logger().Error("fail to process msg set version", "error", err)
-		return err.Result()
+		return nil, err
 	}
 
-	return sdk.Result{
-		Code:      sdk.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &sdk.Result{}, nil
 }
 
 func (h IPAddressHandler) validate(ctx sdk.Context, msg MsgSetIPAddress, version semver.Version) error {
@@ -59,11 +57,11 @@ func (h IPAddressHandler) validateV1(ctx sdk.Context, msg MsgSetIPAddress) error
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 	}
 	if nodeAccount.IsEmpty() {
 		ctx.Logger().Error("unauthorized account", "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 	}
 
 	return nil
@@ -83,14 +81,12 @@ func (h IPAddressHandler) handleV1(ctx sdk.Context, msg MsgSetIPAddress) error {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("unable to find account: %s", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("unable to find account: %s", msg.Signer))
 	}
 
 	nodeAccount.IPAddress = msg.IPAddress
-
 	if err := h.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
-		ctx.Logger().Error("fail to save node account", "error", err)
-		return sdk.ErrInternal("fail to save node account")
+		return fmt.Errorf("fail to save node account: %w", err)
 	}
 
 	ctx.EventManager().EmitEvent(

@@ -22,7 +22,7 @@ func NewRagnarokHandler(keeper Keeper, versionedEventManager VersionedEventManag
 	}
 }
 
-func (h RagnarokHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h RagnarokHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgRagnarok)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -54,7 +54,7 @@ func (h RagnarokHandler) validateV1(ctx sdk.Context, msg MsgRagnarok) error {
 	return nil
 }
 
-func (h RagnarokHandler) handle(ctx sdk.Context, version semver.Version, msg MsgRagnarok) sdk.Result {
+func (h RagnarokHandler) handle(ctx sdk.Context, version semver.Version, msg MsgRagnarok) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgRagnarok", "request tx hash", msg.Tx.Tx.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg)
@@ -78,7 +78,7 @@ func (h RagnarokHandler) slash(ctx sdk.Context, version semver.Version, tx Obser
 	return returnErr
 }
 
-func (h RagnarokHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgRagnarok) sdk.Result {
+func (h RagnarokHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgRagnarok) (*sdk.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.keeper.GetTxOut(ctx, msg.BlockHeight)
 	if err != nil {

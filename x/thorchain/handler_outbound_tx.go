@@ -21,7 +21,7 @@ func NewOutboundTxHandler(keeper Keeper, versionedEventManager VersionedEventMan
 	}
 }
 
-func (h OutboundTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h OutboundTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgOutboundTx)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -53,7 +53,7 @@ func (h OutboundTxHandler) validateV1(ctx sdk.Context, msg MsgOutboundTx) error 
 	return nil
 }
 
-func (h OutboundTxHandler) handle(ctx sdk.Context, msg MsgOutboundTx, version semver.Version) sdk.Result {
+func (h OutboundTxHandler) handle(ctx sdk.Context, msg MsgOutboundTx, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgOutboundTx", "request outbound tx hash", msg.Tx.Tx.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg)
@@ -62,6 +62,6 @@ func (h OutboundTxHandler) handle(ctx sdk.Context, msg MsgOutboundTx, version se
 	return errBadVersion.Result()
 }
 
-func (h OutboundTxHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgOutboundTx) sdk.Result {
+func (h OutboundTxHandler) handleV1(ctx sdk.Context, version semver.Version, msg MsgOutboundTx) (*sdk.Result, error) {
 	return h.ch.handle(ctx, version, msg.Tx, msg.InTxID, EventSuccess)
 }

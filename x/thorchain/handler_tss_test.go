@@ -156,7 +156,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			messageCreator: func(helper tssHandlerTestHelper) sdk.Msg {
 				return NewMsgNoOp(GetRandomObservedTx(), helper.signer)
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, helper.version, helper.constAccessor)
 			},
 			expectedResult: CodeInvalidMessage,
@@ -166,7 +166,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			messageCreator: func(helper tssHandlerTestHelper) sdk.Msg {
 				return NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.0.1"), helper.constAccessor)
 			},
 			expectedResult: CodeBadVersion,
@@ -176,7 +176,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			messageCreator: func(helper tssHandlerTestHelper) sdk.Msg {
 				return NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, GetRandomNodeAccount(NodeActive).NodeAddress)
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnauthorized,
@@ -186,7 +186,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			messageCreator: func(helper tssHandlerTestHelper) sdk.Msg {
 				return NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, sdk.AccAddress{})
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInvalidAddress,
@@ -198,7 +198,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg.ID = ""
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -209,7 +209,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(common.PubKeys{}, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -220,7 +220,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(common.PubKeys{GetRandomPubKey()}, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -231,7 +231,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), common.EmptyPubKey}, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -242,7 +242,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(helper.members, common.EmptyPubKey, AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -253,7 +253,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(helper.members, "whatever", AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeUnknownRequest,
@@ -264,7 +264,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errGetTssVoter = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -287,7 +287,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errFailSaveVault = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -299,7 +299,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				for i := 0; i < 8; i++ {
 					na := GetRandomNodeAccount(NodeActive)
 					_ = helper.keeper.SetNodeAccount(helper.ctx, na)
@@ -314,7 +314,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				tssMsg := NewMsgTssPool(helper.members, GetRandomPubKey(), AsgardKeygen, helper.ctx.BlockHeight(), blame.Blame{}, common.Chains{common.RuneAsset().Chain}, helper.signer)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeOK,
@@ -345,7 +345,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
 			expectedResult: sdk.CodeInternal,
@@ -380,7 +380,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				m, _ := msg.(MsgTssPool)
 				voter, _ := helper.keeper.GetTssVoter(helper.ctx, m.ID)
 				if voter.PoolPubKey.IsEmpty() {
@@ -429,7 +429,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errFailGetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -461,7 +461,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				vd := VaultData{
 					BondRewardRune: sdk.NewUint(5000 * common.One),
 					TotalBondUnits: sdk.NewUint(10000),
@@ -504,7 +504,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				vd := VaultData{
 					BondRewardRune: sdk.NewUint(5000 * common.One),
 					TotalBondUnits: sdk.NewUint(10000),
@@ -538,7 +538,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errFailGetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
@@ -567,7 +567,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				helper.keeper.SetTssVoter(helper.ctx, voter)
 				return tssMsg
 			},
-			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) sdk.Result {
+			runner: func(handler TssHandler, msg sdk.Msg, helper tssHandlerTestHelper) (*sdk.Result, error) {
 				helper.keeper.errFailSetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},

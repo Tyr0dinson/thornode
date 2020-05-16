@@ -76,7 +76,7 @@ func (h StakeHandler) validateV1(ctx sdk.Context, msg MsgSetStakeData, constAcce
 }
 
 // Run execute the handler
-func (h StakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h StakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetStakeData)
 	if !ok {
 		return errInvalidMessage.Result()

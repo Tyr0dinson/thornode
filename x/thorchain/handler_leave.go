@@ -49,7 +49,7 @@ func (h LeaveHandler) validateV1(ctx sdk.Context, msg MsgLeave) error {
 }
 
 // Run execute the handler
-func (h LeaveHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h LeaveHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgLeave)
 	if !ok {
 		return errInvalidMessage.Result()

@@ -67,7 +67,7 @@ func (h BondHandler) validateV1(ctx sdk.Context, version semver.Version, msg Msg
 }
 
 // Run execute the handler
-func (h BondHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h BondHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgBond)
 	if !ok {
 		return errInvalidMessage.Result()

@@ -56,6 +56,7 @@ var (
 	errInvalidMessage      = se.Register(DefaultCodespace, CodeInvalidMessage, "invalid message")
 	errConstNotAvailable   = se.Register(DefaultCodespace, CodeConstantsNotAvailable, "constant values not available")
 	errFailGetEventManager = se.Register(DefaultCodespace, CodeFailEventManager, "fail to get event manager")
+	errInvalidMemo         = se.Register(DefaultCodespace, CodeInvalidMemo, "invalid memo")
 )
 
 // NewExternalHandler returns a handler for "thorchain" type messages.
@@ -124,16 +125,16 @@ func NewInternalHandler(keeper Keeper,
 	versionedEventManager VersionedEventManager) sdk.Handler {
 	handlerMap := getInternalHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
 
-	return func(ctx sdk.Context, msg sdk.Msg) sdk.Result {
+	return func(ctx sdk.Context, msg sdk.Msg) (*sdk.Result, error) {
 		version := keeper.GetLowestActiveVersion(ctx)
 		constantValues := constants.GetConstantValues(version)
 		if constantValues == nil {
-			return errConstNotAvailable.Result()
+			return nil, errConstNotAvailable
 		}
 		h, ok := handlerMap[msg.Type()]
 		if !ok {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msg.Type())
-			return sdk.ErrUnknownRequest(errMsg).Result()
+			return nil, common.ErrUnknownRequest(errMsg)
 		}
 		return h.Run(ctx, msg, version, constantValues)
 	}
@@ -198,13 +199,13 @@ func fetchMemo(ctx sdk.Context, constAccessor constants.ConstantValues, keeper K
 
 func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.AccAddress) (sdk.Msg, error) {
 	if len(tx.Tx.Coins) == 0 {
-		return nil, sdk.ErrUnknownRequest("no coin found")
+		return nil, common.ErrUnknownRequest("no coin found")
 	}
 
 	memo, err := ParseMemo(tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
-		return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, err.Error())
+		return nil, se.Wrapf(errInvalidMemo, "fail to parse memo: %s", err)
 	}
 	// THORNode should not have one tx across chain, if it is cross chain it should be separate tx
 	var newMsg sdk.Msg
@@ -213,53 +214,53 @@ func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.Ac
 	case StakeMemo:
 		newMsg, err = getMsgStakeFromMemo(ctx, m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid stake memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid stake memo: %s", err)
 		}
 
 	case UnstakeMemo:
 		newMsg, err = getMsgUnstakeFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid withdraw memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid withdraw memo: %s", err)
 		}
 	case SwapMemo:
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid swap memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid swap memo: %s", err)
 		}
 	case AddMemo:
 		newMsg, err = getMsgAddFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid add memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid add memo: %s", err)
 		}
 	case GasMemo:
 		newMsg, err = getMsgNoOpFromMemo(tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid noop memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid noop memo: %s", err)
 		}
 	case RefundMemo:
 		newMsg, err = getMsgRefundFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid refund memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid refund memo: %s", err)
 		}
 	case OutboundMemo:
 		newMsg, err = getMsgOutboundFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid outbound memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid outbound memo: %s", err)
 		}
 	case MigrateMemo:
 		newMsg, err = getMsgMigrateFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid migrate memo: %s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid migrate memo: %s", err)
 		}
 	case BondMemo:
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid bond memo:%s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid bond memo: %s", err)
 		}
 	case RagnarokMemo:
 		newMsg, err = getMsgRagnarokFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid ragnarok memo: %s", err.Error())
+			return nil, se.Wrapf(errInvalidMemo, "invalid ragnarok memo: %s", err)
 		}
 	case LeaveMemo:
 		newMsg = NewMsgLeave(tx.Tx, signer)
@@ -272,13 +273,12 @@ func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.Ac
 		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
 	case SwitchMemo:
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
-
 	default:
-		return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid memo")
+		return nil, errInvalidMemo
 	}
 
 	if err := newMsg.ValidateBasic(); err != nil {
-		return nil, sdk.NewError(DefaultCodespace, CodeInvalidMemo, "invalid message:%s", err.Error())
+		return nil, se.Wrapf(errInvalidMemo, "invalid message: %s", err)
 	}
 	return newMsg, nil
 }

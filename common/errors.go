@@ -16,3 +16,6 @@ func ErrInvalidCoins(msg string) error {
 func ErrUnauthorized(msg string) error {
 	return se.Wrap(se.ErrUnauthorized, msg)
 }
+func ErrInsufficientCoins(msg string) error {
+	return se.Wrap(se.ErrInsufficientFunds, msg)
+}

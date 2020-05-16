@@ -19,7 +19,7 @@ func NewSendHandler(keeper Keeper) SendHandler {
 	}
 }
 
-func (h SendHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SendHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSend)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -48,7 +48,7 @@ func (h SendHandler) validateV1(ctx sdk.Context, msg MsgSend) error {
 	return nil
 }
 
-func (h SendHandler) handle(ctx sdk.Context, msg MsgSend, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SendHandler) handle(ctx sdk.Context, msg MsgSend, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgSend", "from", msg.FromAddress, "to", msg.ToAddress, "coins", msg.Amount)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version, constAccessor)
@@ -58,7 +58,7 @@ func (h SendHandler) handle(ctx sdk.Context, msg MsgSend, version semver.Version
 	}
 }
 
-func (h SendHandler) handleV1(ctx sdk.Context, msg MsgSend, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SendHandler) handleV1(ctx sdk.Context, msg MsgSend, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	banker := h.keeper.CoinKeeper()
 	supplier := h.keeper.Supply()
 	// TODO: this shouldn't be tied to swaps, and should be cheaper. But

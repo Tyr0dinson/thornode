@@ -36,7 +36,7 @@ func NewYggdrasilHandler(keeper Keeper, txOutStore VersionedTxOutStore, validato
 }
 
 // Run execute the logic in Yggdrasil Handler
-func (h YggdrasilHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h YggdrasilHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgYggdrasil)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -67,7 +67,7 @@ func (h YggdrasilHandler) validateV1(ctx sdk.Context, msg MsgYggdrasil) error {
 	return nil
 }
 
-func (h YggdrasilHandler) handle(ctx sdk.Context, msg MsgYggdrasil, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h YggdrasilHandler) handle(ctx sdk.Context, msg MsgYggdrasil, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	ctx.Logger().Info("receive MsgYggdrasil", "pubkey", msg.PubKey.String(), "add_funds", msg.AddFunds, "coins", msg.Coins)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
@@ -92,7 +92,7 @@ func (h YggdrasilHandler) slash(ctx sdk.Context, version semver.Version, pk comm
 	return returnErr
 }
 
-func (h YggdrasilHandler) handleV1(ctx sdk.Context, msg MsgYggdrasil, version semver.Version) sdk.Result {
+func (h YggdrasilHandler) handleV1(ctx sdk.Context, msg MsgYggdrasil, version semver.Version) (*sdk.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.keeper.GetTxOut(ctx, msg.BlockHeight)
 	if err != nil {
@@ -154,7 +154,7 @@ func (h YggdrasilHandler) handleV1(ctx sdk.Context, msg MsgYggdrasil, version se
 	return h.handleYggdrasilReturn(ctx, msg, vault, version)
 }
 
-func (h YggdrasilHandler) handleYggdrasilFund(ctx sdk.Context, msg MsgYggdrasil, vault Vault) sdk.Result {
+func (h YggdrasilHandler) handleYggdrasilFund(ctx sdk.Context, msg MsgYggdrasil, vault Vault) (*sdk.Result, error) {
 	if vault.Type == AsgardVault {
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent("asgard_fund_yggdrasil",
@@ -179,7 +179,7 @@ func (h YggdrasilHandler) handleYggdrasilFund(ctx sdk.Context, msg MsgYggdrasil,
 	}
 }
 
-func (h YggdrasilHandler) handleYggdrasilReturn(ctx sdk.Context, msg MsgYggdrasil, vault Vault, version semver.Version) sdk.Result {
+func (h YggdrasilHandler) handleYggdrasilReturn(ctx sdk.Context, msg MsgYggdrasil, vault Vault, version semver.Version) (*sdk.Result, error) {
 	// observe an outbound tx from yggdrasil vault
 	if vault.Type == YggdrasilVault {
 		asgardVaults, err := h.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)

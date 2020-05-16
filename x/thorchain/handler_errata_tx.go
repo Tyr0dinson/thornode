@@ -25,7 +25,7 @@ func NewErrataTxHandler(keeper Keeper, versionedEventManager VersionedEventManag
 }
 
 // Run it the main entry point to execute ErrataTx logic
-func (h ErrataTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h ErrataTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgErrataTx)
 	if !ok {
 		return errInvalidMessage.Result()
@@ -57,7 +57,7 @@ func (h ErrataTxHandler) validateV1(ctx sdk.Context, msg MsgErrataTx) error {
 	return nil
 }
 
-func (h ErrataTxHandler) handle(ctx sdk.Context, msg MsgErrataTx, version semver.Version) sdk.Result {
+func (h ErrataTxHandler) handle(ctx sdk.Context, msg MsgErrataTx, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
@@ -67,7 +67,7 @@ func (h ErrataTxHandler) handle(ctx sdk.Context, msg MsgErrataTx, version semver
 	}
 }
 
-func (h ErrataTxHandler) handleV1(ctx sdk.Context, msg MsgErrataTx, version semver.Version) sdk.Result {
+func (h ErrataTxHandler) handleV1(ctx sdk.Context, msg MsgErrataTx, version semver.Version) (*sdk.Result, error) {
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")

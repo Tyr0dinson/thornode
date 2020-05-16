@@ -24,10 +24,10 @@ func NewAddHandler(keeper Keeper, versionedEventManager VersionedEventManager) A
 }
 
 // Run is the main entry point to execute Add logic
-func (ah AddHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (ah AddHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgAdd)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info(fmt.Sprintf("receive msg add %s", msg.Tx.ID))
 	if err := ah.validate(ctx, msg, version); err != nil {
