@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -22,26 +23,23 @@ func NewVersionHandler(keeper Keeper) VersionHandler {
 }
 
 // Run it the main entry point to execute Version logic
-func (h VersionHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) sdk.Result {
+func (h VersionHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetVersion)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info("receive version number",
 		"version", msg.Version.String())
 	if err := h.validate(ctx, msg, version); err != nil {
 		ctx.Logger().Error("msg set version failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	if err := h.handle(ctx, msg, version); err != nil {
 		ctx.Logger().Error("fail to process msg set version", "error", err)
-		return err.Result()
+		return nil, err
 	}
 
-	return sdk.Result{
-		Code:      sdk.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &sdk.Result{}, nil
 }
 
 func (h VersionHandler) validate(ctx sdk.Context, msg MsgSetVersion, version semver.Version) error {
@@ -60,11 +58,11 @@ func (h VersionHandler) validateV1(ctx sdk.Context, msg MsgSetVersion) error {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 	}
 	if nodeAccount.IsEmpty() {
 		ctx.Logger().Error("unauthorized account", "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 	}
 
 	return nil
@@ -84,7 +82,7 @@ func (h VersionHandler) handleV1(ctx sdk.Context, msg MsgSetVersion) error {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("unable to find account: %s", msg.Signer))
+		return common.ErrUnauthorized(fmt.Sprintf("unable to find account: %s", msg.Signer))
 	}
 
 	if nodeAccount.Version.LT(msg.Version) {
@@ -93,7 +91,7 @@ func (h VersionHandler) handleV1(ctx sdk.Context, msg MsgSetVersion) error {
 
 	if err := h.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
 		ctx.Logger().Error("fail to save node account", "error", err)
-		return sdk.ErrInternal("fail to save node account")
+		return fmt.Errorf("fail to save node account: %w", err)
 	}
 
 	ctx.EventManager().EmitEvent(

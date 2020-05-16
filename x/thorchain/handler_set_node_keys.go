@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -22,10 +23,10 @@ func NewSetNodeKeysHandler(keeper Keeper) SetNodeKeysHandler {
 func (h SetNodeKeysHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetNodeKeys)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	if err := h.validate(ctx, msg, version); err != nil {
-		return sdk.ErrInternal(err.Error()).Result()
+		return nil, err
 	}
 	return h.handle(ctx, msg, version, constAccessor)
 }
@@ -73,22 +74,22 @@ func (h SetNodeKeysHandler) validateV1(ctx sdk.Context, msg MsgSetNodeKeys) erro
 	return nil
 }
 
-func (h SetNodeKeysHandler) handle(ctx sdk.Context, msg MsgSetNodeKeys, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SetNodeKeysHandler) handle(ctx sdk.Context, msg MsgSetNodeKeys, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgSetNodeKeys request")
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version, constAccessor)
 	} else {
 		ctx.Logger().Error(errInvalidVersion.Error())
-		return errBadVersion.Result()
+		return nil, errBadVersion
 	}
 }
 
 // Handle a message to set node keys
-func (h SetNodeKeysHandler) handleV1(ctx sdk.Context, msg MsgSetNodeKeys, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SetNodeKeysHandler) handleV1(ctx sdk.Context, msg MsgSetNodeKeys, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
-		return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer)).Result()
+		return nil, common.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
 	}
 
 	// Here make sure THORNode don't change the node account's bond
@@ -96,8 +97,7 @@ func (h SetNodeKeysHandler) handleV1(ctx sdk.Context, msg MsgSetNodeKeys, versio
 	nodeAccount.PubKeySet = msg.PubKeySetSet
 	nodeAccount.ValidatorConsPubKey = msg.ValidatorConsPubKey
 	if err := h.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
-		ctx.Logger().Error(fmt.Sprintf("fail to save node account: %s", nodeAccount), "error", err)
-		return sdk.ErrInternal("fail to save node account").Result()
+		return nil, fmt.Errorf("fail to save node account: %w", err)
 	}
 
 	// Set version number
@@ -106,7 +106,7 @@ func (h SetNodeKeysHandler) handleV1(ctx sdk.Context, msg MsgSetNodeKeys, versio
 	result := setVersionHandler.Run(ctx, setVersionMsg, version, constAccessor)
 	if !result.IsOK() {
 		ctx.Logger().Error("fail to set version", "version", version, "error", result.Log)
-		return result
+		return nil, result
 	}
 
 	ctx.EventManager().EmitEvent(
@@ -116,8 +116,5 @@ func (h SetNodeKeysHandler) handleV1(ctx sdk.Context, msg MsgSetNodeKeys, versio
 			sdk.NewAttribute("node_ed25519_pubkey", msg.PubKeySetSet.Ed25519.String()),
 			sdk.NewAttribute("validator_consensus_pub_key", msg.ValidatorConsPubKey)))
 
-	return sdk.Result{
-		Code:      sdk.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &sdk.Result{}, nil
 }
