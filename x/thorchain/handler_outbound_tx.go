@@ -32,7 +32,7 @@ func (h OutboundTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Versio
 	return h.handle(ctx, msg, version)
 }
 
-func (h OutboundTxHandler) validate(ctx sdk.Context, msg MsgOutboundTx, version semver.Version) sdk.Error {
+func (h OutboundTxHandler) validate(ctx sdk.Context, msg MsgOutboundTx, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
@@ -40,7 +40,7 @@ func (h OutboundTxHandler) validate(ctx sdk.Context, msg MsgOutboundTx, version 
 	return errBadVersion
 }
 
-func (h OutboundTxHandler) validateV1(ctx sdk.Context, msg MsgOutboundTx) sdk.Error {
+func (h OutboundTxHandler) validateV1(ctx sdk.Context, msg MsgOutboundTx) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error(err.Error())
 		return err

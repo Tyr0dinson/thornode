@@ -24,14 +24,14 @@ func NewBondHandler(keeper Keeper, versionedEventManager VersionedEventManager) 
 	}
 }
 
-func (h BondHandler) validate(ctx sdk.Context, msg MsgBond, version semver.Version, constAccessor constants.ConstantValues) sdk.Error {
+func (h BondHandler) validate(ctx sdk.Context, msg MsgBond, version semver.Version, constAccessor constants.ConstantValues) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, version, msg, constAccessor)
 	}
 	return errBadVersion
 }
 
-func (h BondHandler) validateV1(ctx sdk.Context, version semver.Version, msg MsgBond, constAccessor constants.ConstantValues) sdk.Error {
+func (h BondHandler) validateV1(ctx sdk.Context, version semver.Version, msg MsgBond, constAccessor constants.ConstantValues) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (h BondHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, con
 	}
 }
 
-func (h BondHandler) handle(ctx sdk.Context, msg MsgBond, version semver.Version, constAccessor constants.ConstantValues) sdk.Error {
+func (h BondHandler) handle(ctx sdk.Context, msg MsgBond, version semver.Version, constAccessor constants.ConstantValues) error {
 	// THORNode will not have pub keys at the moment, so have to leave it empty
 	emptyPubKeySet := common.PubKeySet{
 		Secp256k1: common.EmptyPubKey,
@@ -130,7 +130,7 @@ func (h BondHandler) handle(ctx sdk.Context, msg MsgBond, version semver.Version
 	return h.mintGasAsset(ctx, msg, constAccessor)
 }
 
-func (h BondHandler) mintGasAsset(ctx sdk.Context, msg MsgBond, constAccessor constants.ConstantValues) sdk.Error {
+func (h BondHandler) mintGasAsset(ctx sdk.Context, msg MsgBond, constAccessor constants.ConstantValues) error {
 	whiteListGasAsset := constAccessor.GetInt64Value(constants.WhiteListGasAsset)
 	coinsToMint, err := sdk.ParseCoins(fmt.Sprintf("%dthor", whiteListGasAsset))
 	if err != nil {

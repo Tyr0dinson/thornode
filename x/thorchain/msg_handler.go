@@ -9,5 +9,5 @@ import (
 
 // MsgHandler is an interface expect all handler to implement
 type MsgHandler interface {
-	Run(ctx sdk.Context, msg sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result
+	Run(ctx sdk.Context, msg sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error)
 }

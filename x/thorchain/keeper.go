@@ -9,6 +9,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/cosmos-sdk/x/supply"
 	"github.com/tendermint/tendermint/libs/log"
+
 	"gitlab.com/thorchain/thornode/common"
 )
 
@@ -19,9 +20,9 @@ type Keeper interface {
 	Logger(ctx sdk.Context) log.Logger
 	GetKey(ctx sdk.Context, prefix dbPrefix, key string) string
 	GetRuneBalaceOfModule(ctx sdk.Context, moduleName string) sdk.Uint
-	SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) sdk.Error
-	SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) sdk.Error
-	SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) sdk.Error
+	SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) error
+	SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) error
+	SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) esrror
 
 	// Keeper Interfaces
 	KeeperPool
@@ -140,21 +141,21 @@ func (k KVStore) GetRuneBalaceOfModule(ctx sdk.Context, moduleName string) sdk.U
 	return sdk.NewUintFromBigInt(amt.BigInt())
 }
 
-func (k KVStore) SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) sdk.Error {
+func (k KVStore) SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) error {
 	coins := sdk.NewCoins(
 		sdk.NewCoin(coin.Asset.Native(), sdk.NewIntFromBigInt(coin.Amount.BigInt())),
 	)
 	return k.Supply().SendCoinsFromModuleToModule(ctx, from, to, coins)
 }
 
-func (k KVStore) SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) sdk.Error {
+func (k KVStore) SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) error {
 	coins := sdk.NewCoins(
 		sdk.NewCoin(coin.Asset.Native(), sdk.NewIntFromBigInt(coin.Amount.BigInt())),
 	)
 	return k.Supply().SendCoinsFromAccountToModule(ctx, from, to, coins)
 }
 
-func (k KVStore) SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) sdk.Error {
+func (k KVStore) SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) error {
 	coins := sdk.NewCoins(
 		sdk.NewCoin(coin.Asset.Native(), sdk.NewIntFromBigInt(coin.Amount.BigInt())),
 	)

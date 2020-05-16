@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
@@ -13,48 +14,48 @@ import (
 // THORChain error code start at 101
 const (
 	// CodeBadVersion error code for bad version
-	CodeBadVersion            sdk.CodeType = 101
-	CodeInvalidMessage        sdk.CodeType = 102
-	CodeConstantsNotAvailable sdk.CodeType = 103
-	CodeInvalidVault          sdk.CodeType = 104
-	CodeInvalidMemo           sdk.CodeType = 105
-	CodeValidationError       sdk.CodeType = 106
-	CodeInvalidPoolStatus     sdk.CodeType = 107
+	CodeBadVersion            uint32 = 101
+	CodeInvalidMessage        uint32 = 102
+	CodeConstantsNotAvailable uint32 = 103
+	CodeInvalidVault          uint32 = 104
+	CodeInvalidMemo           uint32 = 105
+	CodeValidationError       uint32 = 106
+	CodeInvalidPoolStatus     uint32 = 107
 
-	CodeSwapFail                 sdk.CodeType = 108
-	CodeSwapFailTradeTarget      sdk.CodeType = 109
-	CodeSwapFailNotEnoughFee     sdk.CodeType = 110
-	CodeSwapFailZeroEmitAsset    sdk.CodeType = 111
-	CodeSwapFailPoolNotExist     sdk.CodeType = 112
-	CodeSwapFailInvalidAmount    sdk.CodeType = 113
-	CodeSwapFailInvalidBalance   sdk.CodeType = 114
-	CodeSwapFailNotEnoughBalance sdk.CodeType = 115
+	CodeSwapFail                 uint32 = 108
+	CodeSwapFailTradeTarget      uint32 = 109
+	CodeSwapFailNotEnoughFee     uint32 = 110
+	CodeSwapFailZeroEmitAsset    uint32 = 111
+	CodeSwapFailPoolNotExist     uint32 = 112
+	CodeSwapFailInvalidAmount    uint32 = 113
+	CodeSwapFailInvalidBalance   uint32 = 114
+	CodeSwapFailNotEnoughBalance uint32 = 115
 
-	CodeStakeFailValidation    sdk.CodeType = 120
-	CodeFailGetStaker          sdk.CodeType = 122
-	CodeStakeMismatchAssetAddr sdk.CodeType = 123
-	CodeStakeInvalidPoolAsset  sdk.CodeType = 124
-	CodeStakeRUNEOverLimit     sdk.CodeType = 125
-	CodeStakeRUNEMoreThanBond  sdk.CodeType = 126
+	CodeStakeFailValidation    uint32 = 120
+	CodeFailGetStaker          uint32 = 122
+	CodeStakeMismatchAssetAddr uint32 = 123
+	CodeStakeInvalidPoolAsset  uint32 = 124
+	CodeStakeRUNEOverLimit     uint32 = 125
+	CodeStakeRUNEMoreThanBond  uint32 = 126
 
-	CodeUnstakeFailValidation sdk.CodeType = 130
-	CodeFailAddOutboundTx     sdk.CodeType = 131
-	CodeFailSaveEvent         sdk.CodeType = 132
-	CodeStakerNotExist        sdk.CodeType = 133
-	CodeNoStakeUnitLeft       sdk.CodeType = 135
-	CodeUnstakeWithin24Hours  sdk.CodeType = 136
-	CodeUnstakeFail           sdk.CodeType = 137
-	CodeEmptyChain            sdk.CodeType = 138
-	CodeFailEventManager      sdk.CodeType = 139
+	CodeUnstakeFailValidation uint32 = 130
+	CodeFailAddOutboundTx     uint32 = 131
+	CodeFailSaveEvent         uint32 = 132
+	CodeStakerNotExist        uint32 = 133
+	CodeNoStakeUnitLeft       uint32 = 135
+	CodeUnstakeWithin24Hours  uint32 = 136
+	CodeUnstakeFail           uint32 = 137
+	CodeEmptyChain            uint32 = 138
+	CodeFailEventManager      uint32 = 139
 )
 
 var (
 	notAuthorized          = fmt.Errorf("not authorized")
 	errInvalidVersion      = fmt.Errorf("bad version")
-	errBadVersion          = sdk.NewError(DefaultCodespace, CodeBadVersion, errInvalidVersion.Error())
-	errInvalidMessage      = sdk.NewError(DefaultCodespace, CodeInvalidMessage, "invalid message")
-	errConstNotAvailable   = sdk.NewError(DefaultCodespace, CodeConstantsNotAvailable, "constant values not available")
-	errFailGetEventManager = sdk.NewError(DefaultCodespace, CodeFailEventManager, "fail to get event manager")
+	errBadVersion          = se.Register(DefaultCodespace, CodeBadVersion, errInvalidVersion.Error())
+	errInvalidMessage      = se.Register(DefaultCodespace, CodeInvalidMessage, "invalid message")
+	errConstNotAvailable   = se.Register(DefaultCodespace, CodeConstantsNotAvailable, "constant values not available")
+	errFailGetEventManager = se.Register(DefaultCodespace, CodeFailEventManager, "fail to get event manager")
 )
 
 // NewExternalHandler returns a handler for "thorchain" type messages.
@@ -67,23 +68,26 @@ func NewExternalHandler(keeper Keeper,
 	versionedEventManager VersionedEventManager) sdk.Handler {
 	handlerMap := getHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
 
-	return func(ctx sdk.Context, msg sdk.Msg) sdk.Result {
+	return func(ctx sdk.Context, msg sdk.Msg) (*sdk.Result, error) {
 		ctx = ctx.WithEventManager(sdk.NewEventManager())
 		version := keeper.GetLowestActiveVersion(ctx)
 		constantValues := constants.GetConstantValues(version)
 		if constantValues == nil {
-			return errConstNotAvailable.Result()
+			return nil, errConstNotAvailable
 		}
 		h, ok := handlerMap[msg.Type()]
 		if !ok {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msg.Type())
-			return sdk.ErrUnknownRequest(errMsg).Result()
+			return nil, common.ErrUnknownRequest(errMsg)
 		}
-		result := h.Run(ctx, msg, version, constantValues)
+		result, err := h.Run(ctx, msg, version, constantValues)
+		if err != nil {
+			return nil, err
+		}
 		if len(ctx.EventManager().Events()) > 0 {
 			result.Events = result.Events.AppendEvents(ctx.EventManager().Events())
 		}
-		return result
+		return result, nil
 	}
 }
 
@@ -192,7 +196,7 @@ func fetchMemo(ctx sdk.Context, constAccessor constants.ConstantValues, keeper K
 	return memo
 }
 
-func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.AccAddress) (sdk.Msg, sdk.Error) {
+func processOneTxIn(ctx sdk.Context, keeper Keeper, tx ObservedTx, signer sdk.AccAddress) (sdk.Msg, error) {
 	if len(tx.Tx.Coins) == 0 {
 		return nil, sdk.ErrUnknownRequest("no coin found")
 	}

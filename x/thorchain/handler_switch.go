@@ -37,7 +37,7 @@ func (h SwitchHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, c
 	return h.handle(ctx, msg, version)
 }
 
-func (h SwitchHandler) validate(ctx sdk.Context, msg MsgSwitch, version semver.Version) sdk.Error {
+func (h SwitchHandler) validate(ctx sdk.Context, msg MsgSwitch, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -45,7 +45,7 @@ func (h SwitchHandler) validate(ctx sdk.Context, msg MsgSwitch, version semver.V
 	}
 }
 
-func (h SwitchHandler) validateV1(ctx sdk.Context, msg MsgSwitch) sdk.Error {
+func (h SwitchHandler) validateV1(ctx sdk.Context, msg MsgSwitch) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

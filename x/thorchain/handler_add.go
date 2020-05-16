@@ -45,14 +45,14 @@ func (ah AddHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ c
 	}
 }
 
-func (ah AddHandler) validate(ctx sdk.Context, msg MsgAdd, version semver.Version) sdk.Error {
+func (ah AddHandler) validate(ctx sdk.Context, msg MsgAdd, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return ah.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (ah AddHandler) validateV1(ctx sdk.Context, msg MsgAdd) sdk.Error {
+func (ah AddHandler) validateV1(ctx sdk.Context, msg MsgAdd) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (ah AddHandler) validateV1(ctx sdk.Context, msg MsgAdd) sdk.Error {
 }
 
 // handle  process MsgAdd
-func (ah AddHandler) handle(ctx sdk.Context, msg MsgAdd, version semver.Version) sdk.Error {
+func (ah AddHandler) handle(ctx sdk.Context, msg MsgAdd, version semver.Version) error {
 	pool, err := ah.keeper.GetPool(ctx, msg.Asset)
 	if err != nil {
 		return sdk.ErrInternal(fmt.Errorf("fail to get pool for (%s): %w", msg.Asset, err).Error())

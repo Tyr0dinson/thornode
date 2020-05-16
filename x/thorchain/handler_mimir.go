@@ -46,7 +46,7 @@ func (h MimirHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ 
 	}
 }
 
-func (h MimirHandler) validate(ctx sdk.Context, msg MsgMimir, version semver.Version) sdk.Error {
+func (h MimirHandler) validate(ctx sdk.Context, msg MsgMimir, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -54,7 +54,7 @@ func (h MimirHandler) validate(ctx sdk.Context, msg MsgMimir, version semver.Ver
 	}
 }
 
-func (h MimirHandler) validateV1(ctx sdk.Context, msg MsgMimir) sdk.Error {
+func (h MimirHandler) validateV1(ctx sdk.Context, msg MsgMimir) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (h MimirHandler) validateV1(ctx sdk.Context, msg MsgMimir) sdk.Error {
 	return sdk.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 }
 
-func (h MimirHandler) handle(ctx sdk.Context, msg MsgMimir, version semver.Version) sdk.Error {
+func (h MimirHandler) handle(ctx sdk.Context, msg MsgMimir, version semver.Version) error {
 	ctx.Logger().Info("handleMsgMimir request", "key", msg.Key, "value", msg.Value)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
@@ -80,7 +80,7 @@ func (h MimirHandler) handle(ctx sdk.Context, msg MsgMimir, version semver.Versi
 	}
 }
 
-func (h MimirHandler) handleV1(ctx sdk.Context, msg MsgMimir) sdk.Error {
+func (h MimirHandler) handleV1(ctx sdk.Context, msg MsgMimir) error {
 	h.keeper.SetMimir(ctx, msg.Key, msg.Value)
 
 	ctx.EventManager().EmitEvent(

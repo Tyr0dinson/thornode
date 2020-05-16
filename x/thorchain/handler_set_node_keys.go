@@ -19,7 +19,7 @@ func NewSetNodeKeysHandler(keeper Keeper) SetNodeKeysHandler {
 	}
 }
 
-func (h SetNodeKeysHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h SetNodeKeysHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgSetNodeKeys)
 	if !ok {
 		return errInvalidMessage.Result()

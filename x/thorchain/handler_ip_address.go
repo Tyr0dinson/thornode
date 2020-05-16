@@ -43,7 +43,7 @@ func (h IPAddressHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version
 	}
 }
 
-func (h IPAddressHandler) validate(ctx sdk.Context, msg MsgSetIPAddress, version semver.Version) sdk.Error {
+func (h IPAddressHandler) validate(ctx sdk.Context, msg MsgSetIPAddress, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -51,7 +51,7 @@ func (h IPAddressHandler) validate(ctx sdk.Context, msg MsgSetIPAddress, version
 	}
 }
 
-func (h IPAddressHandler) validateV1(ctx sdk.Context, msg MsgSetIPAddress) sdk.Error {
+func (h IPAddressHandler) validateV1(ctx sdk.Context, msg MsgSetIPAddress) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (h IPAddressHandler) validateV1(ctx sdk.Context, msg MsgSetIPAddress) sdk.E
 	return nil
 }
 
-func (h IPAddressHandler) handle(ctx sdk.Context, msg MsgSetIPAddress, version semver.Version) sdk.Error {
+func (h IPAddressHandler) handle(ctx sdk.Context, msg MsgSetIPAddress, version semver.Version) error {
 	ctx.Logger().Info("handleMsgSetIPAddress request", "ip address", msg.IPAddress)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
@@ -79,7 +79,7 @@ func (h IPAddressHandler) handle(ctx sdk.Context, msg MsgSetIPAddress, version s
 	}
 }
 
-func (h IPAddressHandler) handleV1(ctx sdk.Context, msg MsgSetIPAddress) sdk.Error {
+func (h IPAddressHandler) handleV1(ctx sdk.Context, msg MsgSetIPAddress) error {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())

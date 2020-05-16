@@ -37,15 +37,15 @@ func (k KVStoreDummy) GetRuneBalaceOfModule(ctx sdk.Context, moduleName string) 
 	return sdk.ZeroUint()
 }
 
-func (k KVStoreDummy) SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) sdk.Error {
+func (k KVStoreDummy) SendFromModuleToModule(ctx sdk.Context, from, to string, coin common.Coin) error {
 	return kaboomSdk
 }
 
-func (k KVStoreDummy) SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) sdk.Error {
+func (k KVStoreDummy) SendFromAccountToModule(ctx sdk.Context, from sdk.AccAddress, to string, coin common.Coin) error {
 	return kaboomSdk
 }
 
-func (k KVStoreDummy) SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) sdk.Error {
+func (k KVStoreDummy) SendFromModuleToAccount(ctx sdk.Context, from string, to sdk.AccAddress, coin common.Coin) error {
 	return kaboomSdk
 }
 

@@ -34,7 +34,7 @@ func validateUnstake(ctx sdk.Context, keeper Keeper, msg MsgSetUnStake) error {
 
 // unstake withdraw all the asset
 // it returns runeAmt,assetAmount,units, lastUnstake,err
-func unstake(ctx sdk.Context, version semver.Version, keeper Keeper, msg MsgSetUnStake, eventManager EventManager) (sdk.Uint, sdk.Uint, sdk.Uint, sdk.Uint, sdk.Error) {
+func unstake(ctx sdk.Context, version semver.Version, keeper Keeper, msg MsgSetUnStake, eventManager EventManager) (sdk.Uint, sdk.Uint, sdk.Uint, sdk.Uint, error) {
 	if err := validateUnstake(ctx, keeper, msg); err != nil {
 		ctx.Logger().Error("msg unstake fail validation", "error", err)
 		return sdk.ZeroUint(), sdk.ZeroUint(), sdk.ZeroUint(), sdk.ZeroUint(), sdk.NewError(DefaultCodespace, CodeUnstakeFailValidation, err.Error())

@@ -35,7 +35,7 @@ func (h BanHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, cons
 	return h.handle(ctx, msg, version, constAccessor)
 }
 
-func (h BanHandler) validate(ctx sdk.Context, msg MsgBan, version semver.Version) sdk.Error {
+func (h BanHandler) validate(ctx sdk.Context, msg MsgBan, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -43,7 +43,7 @@ func (h BanHandler) validate(ctx sdk.Context, msg MsgBan, version semver.Version
 	}
 }
 
-func (h BanHandler) validateV1(ctx sdk.Context, msg MsgBan) sdk.Error {
+func (h BanHandler) validateV1(ctx sdk.Context, msg MsgBan) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

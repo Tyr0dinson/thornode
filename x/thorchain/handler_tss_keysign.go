@@ -36,14 +36,14 @@ func (h TssKeysignHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Versio
 	return h.handle(ctx, msg, version)
 }
 
-func (h TssKeysignHandler) validate(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) sdk.Error {
+func (h TssKeysignHandler) validate(ctx sdk.Context, msg MsgTssKeysignFail, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h TssKeysignHandler) validateV1(ctx sdk.Context, msg MsgTssKeysignFail) sdk.Error {
+func (h TssKeysignHandler) validateV1(ctx sdk.Context, msg MsgTssKeysignFail) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

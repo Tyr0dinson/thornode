@@ -30,14 +30,14 @@ func NewLeaveHandler(keeper Keeper, validatorManager VersionedValidatorManager, 
 	}
 }
 
-func (h LeaveHandler) validate(ctx sdk.Context, msg MsgLeave, version semver.Version) sdk.Error {
+func (h LeaveHandler) validate(ctx sdk.Context, msg MsgLeave, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LeaveHandler) validateV1(ctx sdk.Context, msg MsgLeave) sdk.Error {
+func (h LeaveHandler) validateV1(ctx sdk.Context, msg MsgLeave) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (h LeaveHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, _ 
 	}
 }
 
-func (h LeaveHandler) handle(ctx sdk.Context, msg MsgLeave, version semver.Version) sdk.Error {
+func (h LeaveHandler) handle(ctx sdk.Context, msg MsgLeave, version semver.Version) error {
 	nodeAcc, err := h.keeper.GetNodeAccountByBondAddress(ctx, msg.Tx.FromAddress)
 	if err != nil {
 		return sdk.ErrInternal(fmt.Errorf("fail to get node account by bond address: %w", err).Error())

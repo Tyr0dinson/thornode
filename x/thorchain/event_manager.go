@@ -284,7 +284,7 @@ func (m *EventMgr) EmitAddEvent(ctx sdk.Context, keeper Keeper, addEvt EventAdd)
 		EventSuccess,
 	)
 	if err := keeper.UpsertEvent(ctx, evt); err != nil {
-		return sdk.ErrInternal(fmt.Errorf("fail to save event: %w", err).Error())
+		return fmt.Errorf("fail to save event: %w", err)
 	}
 	events, err := addEvt.Events()
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 // validate if pools exist
-func validatePools(ctx sdk.Context, keeper Keeper, assets ...common.Asset) sdk.Error {
+func validatePools(ctx sdk.Context, keeper Keeper, assets ...common.Asset) error {
 	for _, asset := range assets {
 		if !asset.IsRune() {
 			if !keeper.PoolExist(ctx, asset) {
@@ -49,7 +49,7 @@ func swap(ctx sdk.Context,
 	target common.Asset,
 	destination common.Address,
 	tradeTarget sdk.Uint,
-	transactionFee sdk.Uint) (sdk.Uint, []EventSwap, sdk.Error) {
+	transactionFee sdk.Uint) (sdk.Uint, []EventSwap, error) {
 	var swapEvents []EventSwap
 
 	if err := validateMessage(tx, target, destination); err != nil {
@@ -63,7 +63,7 @@ func swap(ctx sdk.Context,
 	pools := make([]Pool, 0)
 	isDoubleSwap := !source.IsRune() && !target.IsRune()
 	if isDoubleSwap {
-		var swapErr sdk.Error
+		var swapErr error
 		var swapEvt EventSwap
 		var amt sdk.Uint
 		// Here we use a tradeTarget of 0 because the target is for the next swap asset in a double swap
@@ -112,7 +112,7 @@ func swapOne(ctx sdk.Context,
 	target common.Asset,
 	destination common.Address,
 	tradeTarget sdk.Uint,
-	transactionFee sdk.Uint) (amt sdk.Uint, poolResult Pool, evt EventSwap, swapErr sdk.Error) {
+	transactionFee sdk.Uint) (amt sdk.Uint, poolResult Pool, evt EventSwap, swapErr error) {
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
 

@@ -37,7 +37,7 @@ func (h ErrataTxHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version,
 	return h.handle(ctx, msg, version)
 }
 
-func (h ErrataTxHandler) validate(ctx sdk.Context, msg MsgErrataTx, version semver.Version) sdk.Error {
+func (h ErrataTxHandler) validate(ctx sdk.Context, msg MsgErrataTx, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -45,7 +45,7 @@ func (h ErrataTxHandler) validate(ctx sdk.Context, msg MsgErrataTx, version semv
 	}
 }
 
-func (h ErrataTxHandler) validateV1(ctx sdk.Context, msg MsgErrataTx) sdk.Error {
+func (h ErrataTxHandler) validateV1(ctx sdk.Context, msg MsgErrataTx) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

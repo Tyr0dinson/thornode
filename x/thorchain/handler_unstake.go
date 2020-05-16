@@ -50,7 +50,7 @@ func (h UnstakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, 
 	}
 }
 
-func (h UnstakeHandler) validate(ctx sdk.Context, msg MsgSetUnStake, version semver.Version) sdk.Error {
+func (h UnstakeHandler) validate(ctx sdk.Context, msg MsgSetUnStake, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -58,7 +58,7 @@ func (h UnstakeHandler) validate(ctx sdk.Context, msg MsgSetUnStake, version sem
 	}
 }
 
-func (h UnstakeHandler) validateV1(ctx sdk.Context, msg MsgSetUnStake) sdk.Error {
+func (h UnstakeHandler) validateV1(ctx sdk.Context, msg MsgSetUnStake) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error("unstake msg fail validation", "error", err.ABCILog())
 		return sdk.NewError(DefaultCodespace, CodeUnstakeFailValidation, err.Error())
@@ -87,7 +87,7 @@ func (h UnstakeHandler) validateV1(ctx sdk.Context, msg MsgSetUnStake) sdk.Error
 	return nil
 }
 
-func (h UnstakeHandler) handle(ctx sdk.Context, msg MsgSetUnStake, version semver.Version) ([]byte, sdk.Error) {
+func (h UnstakeHandler) handle(ctx sdk.Context, msg MsgSetUnStake, version semver.Version) ([]byte, error) {
 	staker, err := h.keeper.GetStaker(ctx, msg.Asset, msg.RuneAddress)
 	if err != nil {
 		ctx.Logger().Error("fail to get staker", "error", err)

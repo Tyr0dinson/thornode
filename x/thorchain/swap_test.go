@@ -94,7 +94,7 @@ func (s *SwapSuite) TestSwap(c *C) {
 		destination   common.Address
 		returnAmount  sdk.Uint
 		tradeTarget   sdk.Uint
-		expectedErr   sdk.Error
+		expectedErr   error
 		events        []Event
 	}{
 		{

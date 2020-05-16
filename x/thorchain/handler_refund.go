@@ -39,14 +39,14 @@ func (h RefundHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, c
 	return h.handle(ctx, msg, version)
 }
 
-func (h RefundHandler) validate(ctx sdk.Context, msg MsgRefundTx, version semver.Version, constAccessor constants.ConstantValues) sdk.Error {
+func (h RefundHandler) validate(ctx sdk.Context, msg MsgRefundTx, version semver.Version, constAccessor constants.ConstantValues) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, version, msg, constAccessor)
 	}
 	return errBadVersion
 }
 
-func (h RefundHandler) validateV1(ctx sdk.Context, version semver.Version, msg MsgRefundTx, constAccessor constants.ConstantValues) sdk.Error {
+func (h RefundHandler) validateV1(ctx sdk.Context, version semver.Version, msg MsgRefundTx, constAccessor constants.ConstantValues) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

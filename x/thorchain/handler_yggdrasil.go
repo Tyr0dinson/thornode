@@ -47,7 +47,7 @@ func (h YggdrasilHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version
 	return h.handle(ctx, msg, version, constAccessor)
 }
 
-func (h YggdrasilHandler) validate(ctx sdk.Context, msg MsgYggdrasil, version semver.Version) sdk.Error {
+func (h YggdrasilHandler) validate(ctx sdk.Context, msg MsgYggdrasil, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
@@ -55,7 +55,7 @@ func (h YggdrasilHandler) validate(ctx sdk.Context, msg MsgYggdrasil, version se
 	return errBadVersion
 }
 
-func (h YggdrasilHandler) validateV1(ctx sdk.Context, msg MsgYggdrasil) sdk.Error {
+func (h YggdrasilHandler) validateV1(ctx sdk.Context, msg MsgYggdrasil) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error(err.Error())
 		return err

@@ -25,34 +25,34 @@ func NewTssHandler(keeper Keeper, versionedVaultManager VersionedVaultManager, v
 	}
 }
 
-func (h TssHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) sdk.Result {
+func (h TssHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, constAccessor constants.ConstantValues) (*sdk.Result, error) {
 	msg, ok := m.(MsgTssPool)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	err := h.validate(ctx, msg, version)
 	if err != nil {
 		ctx.Logger().Error("msg_tss_pool failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	return h.handle(ctx, msg, version)
 }
 
-func (h TssHandler) validate(ctx sdk.Context, msg MsgTssPool, version semver.Version) sdk.Error {
+func (h TssHandler) validate(ctx sdk.Context, msg MsgTssPool, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h TssHandler) validateV1(ctx sdk.Context, msg MsgTssPool) sdk.Error {
+func (h TssHandler) validateV1(ctx sdk.Context, msg MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 
 	keygenBlock, err := h.keeper.GetKeygenBlock(ctx, msg.Height)
 	if err != nil {
-		return sdk.ErrUnauthorized(fmt.Errorf("fail to get keygen block from data store: %w", err).Error())
+		return fmt.Errorf("fail to get keygen block from data store: %w", err)
 	}
 
 	for _, keygen := range keygenBlock.Keygens {
@@ -64,26 +64,26 @@ func (h TssHandler) validateV1(ctx sdk.Context, msg MsgTssPool) sdk.Error {
 		}
 	}
 
-	return sdk.ErrUnauthorized("not authorized")
+	return common.ErrUnauthorized("not authorized")
 }
 
-func (h TssHandler) handle(ctx sdk.Context, msg MsgTssPool, version semver.Version) sdk.Result {
+func (h TssHandler) handle(ctx sdk.Context, msg MsgTssPool, version semver.Version) (*sdk.Result, error) {
 	ctx.Logger().Info("handleMsgTssPool request", "ID:", msg.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
 	}
-	return errBadVersion.Result()
+	return nil, errBadVersion
 }
 
 // Handle a message to observe inbound tx (v0.1.0)
-func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Version) sdk.Result {
+func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Version) (*sdk.Result, error) {
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())
 	}
 
 	voter, err := h.keeper.GetTssVoter(ctx, msg.ID)
 	if err != nil {
-		return sdk.ErrInternal(err.Error()).Result()
+		return nil, fmt.Errorf("fail to get tss voter: %w", err)
 	}
 
 	// when PoolPubKey is empty , which means TssVoter with id(msg.ID) doesn't
@@ -96,27 +96,21 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 	}
 	slasher, err := NewSlasher(h.keeper, version, h.versionedEventManager)
 	if err != nil {
-		ctx.Logger().Error("fail to create slasher", "error", err)
-		return sdk.ErrInternal("fail to create slasher").Result()
+		return nil, fmt.Errorf("fail to create slasher: %w", err)
 	}
 	constAccessor := constants.GetConstantValues(version)
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	slasher.IncSlashPoints(ctx, observeSlashPoints, msg.Signer)
 	if !voter.Sign(msg.Signer, msg.Chains) {
 		ctx.Logger().Info("signer already signed MsgTssPool", "signer", msg.Signer.String(), "txid", msg.ID)
-		return sdk.Result{
-			Code:      sdk.CodeOK,
-			Codespace: DefaultCodespace,
-		}
+		return &sdk.Result{}, nil
+
 	}
 	h.keeper.SetTssVoter(ctx, voter)
 	// doesn't have consensus yet
 	if !voter.HasConsensus() {
 		ctx.Logger().Info("not having consensus yet, return")
-		return sdk.Result{
-			Code:      sdk.CodeOK,
-			Codespace: DefaultCodespace,
-		}
+		return &sdk.Result{}, nil
 	}
 
 	if voter.BlockHeight == 0 {
@@ -131,16 +125,14 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 			vault := NewVault(ctx.BlockHeight(), ActiveVault, vaultType, voter.PoolPubKey, voter.ConsensusChains())
 			vault.Membership = voter.PubKeys
 			if err := h.keeper.SetVault(ctx, vault); err != nil {
-				ctx.Logger().Error("fail to save vault", "error", err)
-				return sdk.ErrInternal("fail to save vault").Result()
+				return nil, fmt.Errorf("fail to save vault: %w", err)
 			}
 			vaultMgr, err := h.versionedVaultManager.GetVaultManager(ctx, h.keeper, version)
 			if err != nil {
-				ctx.Logger().Error("fail to get a valid vault manager", "error", err)
-				return sdk.ErrInternal(err.Error()).Result()
+				return nil, fmt.Errorf("fail to get a valid vault manager: %w", err)
 			}
 			if err := vaultMgr.RotateVault(ctx, vault); err != nil {
-				return sdk.ErrInternal(err.Error()).Result()
+				return nil, fmt.Errorf("fail to rotate vault: %w", err)
 			}
 		} else {
 			// if a node fail to join the keygen, thus hold off the network from churning then it will be slashed accordingly
@@ -149,14 +141,12 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 			for _, node := range msg.Blame.BlameNodes {
 				nodePubKey, err := common.NewPubKey(node.Pubkey)
 				if err != nil {
-					ctx.Logger().Error("fail to parse pubkey", "error", err, "pub key", node.Pubkey)
-					return sdk.ErrInternal("fail to parse pubkey").Result()
+					return nil, fmt.Errorf("fail to parse pubkey(%s): %w", node.Pubkey, err)
 				}
 
 				na, err := h.keeper.GetNodeAccountByPubKey(ctx, nodePubKey)
 				if err != nil {
-					ctx.Logger().Error("fail to get node from it's pub key", "error", err, "pub key", nodePubKey.String())
-					return sdk.ErrInternal("fail to get node account").Result()
+					return nil, fmt.Errorf("fail to get node from it's pub key(%s): %w", nodePubKey, err)
 				}
 				if na.Status == NodeActive {
 					// 720 blocks per hour
@@ -169,7 +159,7 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 					reserveVault, err := h.keeper.GetVaultData(ctx)
 					if err != nil {
 						ctx.Logger().Error("fail to get reserve vault", "error", err)
-						return sdk.ErrInternal("fail to get reserve vault").Result()
+						return nil, fmt.Errorf("fail to get reserve vault: %w", err)
 					}
 
 					slashBond := reserveVault.CalcNodeRewards(sdk.NewUint(uint64(slashPoints)))
@@ -177,8 +167,7 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 					if common.RuneAsset().Chain.Equals(common.THORChain) {
 						coin := common.NewCoin(common.RuneNative, slashBond)
 						if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, coin); err != nil {
-							ctx.Logger().Error("fail to transfer funds from bond to reserve", "error", err)
-							return err.Result()
+							return nil, fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
 
 						}
 					} else {
@@ -190,24 +179,17 @@ func (h TssHandler) handleV1(ctx sdk.Context, msg MsgTssPool, version semver.Ver
 
 				}
 				if err := h.keeper.SetNodeAccount(ctx, na); err != nil {
-					ctx.Logger().Error("fail to save node account", "error", err)
-					return sdk.ErrInternal("fail to save node account").Result()
+					return nil, fmt.Errorf("fail to save node account: %w", err)
 				}
 			}
 
 		}
-		return sdk.Result{
-			Code:      sdk.CodeOK,
-			Codespace: DefaultCodespace,
-		}
+		return &sdk.Result{}, nil
 	}
 
 	if voter.BlockHeight == ctx.BlockHeight() {
 		slasher.DecSlashPoints(ctx, observeSlashPoints, msg.Signer)
 	}
 
-	return sdk.Result{
-		Code:      sdk.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &sdk.Result{}, nil
 }

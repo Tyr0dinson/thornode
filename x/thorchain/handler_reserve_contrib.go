@@ -35,14 +35,14 @@ func (h ReserveContributorHandler) Run(ctx sdk.Context, m sdk.Msg, version semve
 	return h.Handle(ctx, msg, version)
 }
 
-func (h ReserveContributorHandler) Validate(ctx sdk.Context, msg MsgReserveContributor, version semver.Version) sdk.Error {
+func (h ReserveContributorHandler) Validate(ctx sdk.Context, msg MsgReserveContributor, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.ValidateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h ReserveContributorHandler) ValidateV1(ctx sdk.Context, msg MsgReserveContributor) sdk.Error {
+func (h ReserveContributorHandler) ValidateV1(ctx sdk.Context, msg MsgReserveContributor) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

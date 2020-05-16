@@ -23,14 +23,14 @@ func NewStakeHandler(keeper Keeper, versionedEventManager VersionedEventManager)
 	}
 }
 
-func (h StakeHandler) validate(ctx sdk.Context, msg MsgSetStakeData, version semver.Version, constAccessor constants.ConstantValues) sdk.Error {
+func (h StakeHandler) validate(ctx sdk.Context, msg MsgSetStakeData, version semver.Version, constAccessor constants.ConstantValues) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg, constAccessor)
 	}
 	return errBadVersion
 }
 
-func (h StakeHandler) validateV1(ctx sdk.Context, msg MsgSetStakeData, constAccessor constants.ConstantValues) sdk.Error {
+func (h StakeHandler) validateV1(ctx sdk.Context, msg MsgSetStakeData, constAccessor constants.ConstantValues) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error(err.ABCILog())
 		return sdk.NewError(DefaultCodespace, CodeStakeFailValidation, err.Error())
@@ -100,7 +100,7 @@ func (h StakeHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, co
 	}
 }
 
-func (h StakeHandler) handle(ctx sdk.Context, msg MsgSetStakeData, version semver.Version, constAccessor constants.ConstantValues) (errResult sdk.Error) {
+func (h StakeHandler) handle(ctx sdk.Context, msg MsgSetStakeData, version semver.Version, constAccessor constants.ConstantValues) (errResult error) {
 	pool, err := h.keeper.GetPool(ctx, msg.Asset)
 	if err != nil {
 		return sdk.ErrInternal(fmt.Errorf("fail to get pool: %w", err).Error())

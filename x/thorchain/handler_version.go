@@ -44,7 +44,7 @@ func (h VersionHandler) Run(ctx sdk.Context, m sdk.Msg, version semver.Version, 
 	}
 }
 
-func (h VersionHandler) validate(ctx sdk.Context, msg MsgSetVersion, version semver.Version) sdk.Error {
+func (h VersionHandler) validate(ctx sdk.Context, msg MsgSetVersion, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -52,7 +52,7 @@ func (h VersionHandler) validate(ctx sdk.Context, msg MsgSetVersion, version sem
 	}
 }
 
-func (h VersionHandler) validateV1(ctx sdk.Context, msg MsgSetVersion) sdk.Error {
+func (h VersionHandler) validateV1(ctx sdk.Context, msg MsgSetVersion) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (h VersionHandler) validateV1(ctx sdk.Context, msg MsgSetVersion) sdk.Error
 	return nil
 }
 
-func (h VersionHandler) handle(ctx sdk.Context, msg MsgSetVersion, version semver.Version) sdk.Error {
+func (h VersionHandler) handle(ctx sdk.Context, msg MsgSetVersion, version semver.Version) error {
 	ctx.Logger().Info("handleMsgSetVersion request", "Version:", msg.Version.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
@@ -80,7 +80,7 @@ func (h VersionHandler) handle(ctx sdk.Context, msg MsgSetVersion, version semve
 	}
 }
 
-func (h VersionHandler) handleV1(ctx sdk.Context, msg MsgSetVersion) sdk.Error {
+func (h VersionHandler) handleV1(ctx sdk.Context, msg MsgSetVersion) error {
 	nodeAccount, err := h.keeper.GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", msg.Signer.String())
