@@ -124,7 +124,24 @@ func (s *EthereumSuite) TearDownSuite(c *C) {
 	}
 }
 
-var account = "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae"
+func (s *EthereumSuite) TestGetTxHash(c *C) {
+	encodedTx := []byte(`{
+		"from":"0xa7d9ddbe1f17865597fbd27ec712455208b6b76d",
+		"gas":"0xc350",
+		"gasPrice":"0x4a817c800",
+		"input":"0x68656c6c6f21",
+		"nonce":"0x15",
+		"to":"0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb",
+		"value":"0xf3dbb76162000",
+		"v":"0x25",
+		"r":"0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea",
+		"s":"0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c"
+	}`)
+	expectedTxHash := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+	obtainedTxHash, err := GetTxHash(encodedTx)
+	c.Assert(err, IsNil)
+	c.Assert(obtainedTxHash, Equals, expectedTxHash)
+}
 
 func (s *EthereumSuite) TestClient(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m)
@@ -152,15 +169,34 @@ func (s *EthereumSuite) TestClient(c *C) {
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_chainId" {
-			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x2"}`))
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xf"}`))
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_gasPrice" {
-			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0xd"}`))
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+			c.Assert(err, IsNil)
+		}
+		if rpcRequest.Method == "eth_estimateGas" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x493df"}`))
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_sendRawTransaction" {
 			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}`))
+			c.Assert(err, IsNil)
+		}
+		if rpcRequest.Method == "eth_getTransactionReceipt" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{
+				"transactionHash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
+				"transactionIndex":"0x0",
+				"blockNumber":"0x1",
+				"blockHash":"0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba",
+				"cumulativeGasUsed":"0xc350",
+				"contractAddress":"0x2a65aca4d5fc5b5c859090a6c34d164135398226",
+				"gasUsed":"0x4dc",
+				"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+				"logs":[],
+				"status":"0x1"
+			}}`))
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_getBlockByNumber" {
@@ -204,7 +240,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	c.Check(height, Equals, int64(1))
 	gasPrice, err := e2.GetGasPrice()
 	c.Assert(err, IsNil)
-	c.Check(gasPrice.Uint64(), Equals, uint64(13))
+	c.Check(gasPrice.Uint64(), Equals, uint64(1))
 
 	acct, err := e2.GetAccount(types2.GetRandomPubKey())
 	c.Assert(err, IsNil)
@@ -228,7 +264,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	}`))
 	c.Assert(err, IsNil)
 
-	input := []byte(`{ "height": "1", "hash": "", "tx_array": [ { "vault_pubkey":"thorpub1addwnpepq2jgpsw2lalzuk7sgtmyakj7l6890f5cfpwjyfp8k4y4t7cw2vk8vcglsjy","seq_no":"0","to":"0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae", "coin": { "asset": "ETH.ETH", "amount": "194765912" }, "max_gas": [ { "asset": "ETH.ETH", "amount": "3000000" } ] } ]}`)
+	input := []byte(`{ "height": "1", "hash": "", "tx_array": [ { "vault_pubkey":"thorpub1addwnpepq2jgpsw2lalzuk7sgtmyakj7l6890f5cfpwjyfp8k4y4t7cw2vk8vcglsjy","seq_no":"0","to":"0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae", "coin": { "asset": "ETH.ETH", "amount": "194765912" }, "max_gas": [ { "asset": "ETH.ETH", "amount": "300000" } ] } ]}`)
 	var txOut stypes.TxOut
 	err = json.Unmarshal(input, &txOut)
 	c.Check(err, IsNil)
@@ -244,9 +280,4 @@ func (s *EthereumSuite) TestClient(c *C) {
 
 	err = e2.BroadcastTx(out, r)
 	c.Assert(err, IsNil)
-	meta := e2.accts.Get(out.VaultPubKey)
-	addr = e2.GetAddress(out.VaultPubKey)
-	c.Assert(err, IsNil)
-	c.Check(meta.Address, Equals, addr)
-	c.Check(meta.Nonce, Equals, uint64(1))
 }

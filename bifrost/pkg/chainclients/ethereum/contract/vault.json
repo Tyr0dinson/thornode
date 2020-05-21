@@ -1,0 +1,189 @@
+[
+{
+  "inputs": [
+    {
+      "internalType": "string",
+      "name": "newSeed",
+      "type": "string"
+    }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+},
+{
+  "anonymous": false,
+  "inputs": [
+    {
+      "indexed": false,
+      "internalType": "address",
+      "name": "token",
+      "type": "address"
+    },
+    {
+      "indexed": false,
+      "internalType": "uint256",
+      "name": "value",
+      "type": "uint256"
+    },
+    {
+      "indexed": false,
+      "internalType": "string",
+      "name": "memo",
+      "type": "string"
+    }
+  ],
+  "name": "Deposit",
+  "type": "event"
+},
+{
+  "anonymous": false,
+  "inputs": [
+    {
+      "indexed": false,
+      "internalType": "address",
+      "name": "asgard",
+      "type": "address"
+    },
+    {
+      "indexed": false,
+      "internalType": "string",
+      "name": "seed",
+      "type": "string"
+    }
+  ],
+  "name": "NewAsgard",
+  "type": "event"
+},
+{
+  "anonymous": false,
+  "inputs": [
+    {
+      "indexed": false,
+      "internalType": "address",
+      "name": "to",
+      "type": "address"
+    },
+    {
+      "indexed": false,
+      "internalType": "address",
+      "name": "token",
+      "type": "address"
+    },
+    {
+      "indexed": false,
+      "internalType": "uint256",
+      "name": "value",
+      "type": "uint256"
+    }
+  ],
+  "name": "Transfer",
+  "type": "event"
+},
+{
+  "inputs": [],
+  "name": "asgard",
+  "outputs": [
+    {
+      "internalType": "address",
+      "name": "",
+      "type": "address"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [
+    {
+      "internalType": "address",
+      "name": "token",
+      "type": "address"
+    },
+    {
+      "internalType": "uint256",
+      "name": "value",
+      "type": "uint256"
+    },
+    {
+      "internalType": "string",
+      "name": "memo",
+      "type": "string"
+    }
+  ],
+  "name": "deposit",
+  "outputs": [],
+  "stateMutability": "payable",
+  "type": "function"
+},
+{
+  "inputs": [],
+  "name": "getSeed",
+  "outputs": [
+    {
+      "internalType": "string",
+      "name": "",
+      "type": "string"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [],
+  "name": "seed",
+  "outputs": [
+    {
+      "internalType": "string",
+      "name": "",
+      "type": "string"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [
+    {
+      "internalType": "address",
+      "name": "receiver",
+      "type": "address"
+    },
+    {
+      "internalType": "address",
+      "name": "token",
+      "type": "address"
+    },
+    {
+      "internalType": "uint256",
+      "name": "value",
+      "type": "uint256"
+    }
+  ],
+  "name": "transfer",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+},
+{
+  "inputs": [
+    {
+      "internalType": "address",
+      "name": "newAsgard",
+      "type": "address"
+    },
+    {
+      "internalType": "string",
+      "name": "newSeed",
+      "type": "string"
+    }
+  ],
+  "name": "updateAsgard",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+},
+{
+  "stateMutability": "payable",
+  "type": "receive"
+}
+]
