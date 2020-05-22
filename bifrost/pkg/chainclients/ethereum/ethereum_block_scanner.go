@@ -32,8 +32,8 @@ import (
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
 	BlockCacheSize               = 200
-	DepositEvent                 = "Deposit(address,uint256,string)"
-	TransferEvent                = "Transfer(address,address,uint256)"
+	DepositEvent                 = "DepositIn(address,uint256,string)"
+	TransferEvent                = "TransferOut(address,address,uint256)"
 	ETHToken                     = "0x0000000000000000000000000000000000000000"
 )
 

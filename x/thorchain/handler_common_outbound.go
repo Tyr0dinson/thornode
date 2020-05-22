@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -12,26 +10,22 @@ import (
 // CommonOutboundTxHandler is the place where those common logic can be shared between multiple different kind of outbound tx handler
 // at the moment, handler_refund, and handler_outbound_tx are largely the same , only some small difference
 type CommonOutboundTxHandler struct {
-	keeper                Keeper
-	versionedEventManager VersionedEventManager
+	keeper Keeper
+	mgr    Manager
 }
 
 // NewCommonOutboundTxHandler create a new instance of the CommonOutboundTxHandler
-func NewCommonOutboundTxHandler(k Keeper, versionedEventManager VersionedEventManager) CommonOutboundTxHandler {
+func NewCommonOutboundTxHandler(k Keeper, mgr Manager) CommonOutboundTxHandler {
 	return CommonOutboundTxHandler{
-		keeper:                k,
-		versionedEventManager: versionedEventManager,
+		keeper: k,
+		mgr:    mgr,
 	}
 }
 
 func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, version semver.Version, tx ObservedTx) error {
 	var returnErr error
-	slasher, err := NewSlasher(h.keeper, version, h.versionedEventManager)
-	if err != nil {
-		return fmt.Errorf("fail to create new slasher,error:%w", err)
-	}
 	for _, c := range tx.Tx.Coins {
-		if err := slasher.SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount); err != nil {
+		if err := h.mgr.Slasher().SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount, h.mgr); err != nil {
 			ctx.Logger().Error("fail to slash account", "error", err)
 			returnErr = err
 		}
@@ -39,11 +33,10 @@ func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, version semver.Versio
 	return returnErr
 }
 
-func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Version, tx ObservedTx, inTxID common.TxID, status EventStatus) cosmos.Result {
+func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Version, tx ObservedTx, inTxID common.TxID, status EventStatus) (*cosmos.Result, error) {
 	voter, err := h.keeper.GetObservedTxVoter(ctx, inTxID)
 	if err != nil {
-		ctx.Logger().Error("fail to get observed tx voter", "error", err)
-		return cosmos.ErrInternal("fail to get observed tx voter").Result()
+		return nil, ErrInternal(err, "fail to get observed tx voter")
 	}
 
 	if voter.Height > 0 {
@@ -55,18 +48,11 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 	if voter.IsDone() {
 		err := completeEvents(ctx, h.keeper, inTxID, voter.OutTxs, status)
 		if err != nil {
-			ctx.Logger().Error("unable to complete events", "error", err)
-			return cosmos.ErrInternal(err.Error()).Result()
-		}
-		eventMgr, err := h.versionedEventManager.GetEventManager(ctx, version)
-		if err != nil {
-			ctx.Logger().Error("fail to get event manager", "error", err)
-			return errFailGetEventManager.Result()
+			return nil, ErrInternal(err, "unable to complete events")
 		}
 		for _, item := range voter.OutTxs {
-			if err := eventMgr.EmitOutboundEvent(ctx, NewEventOutbound(inTxID, item)); err != nil {
-				ctx.Logger().Error("fail to emit outbound event", "error", err)
-				return cosmos.ErrInternal("fail to emit outbound event").Result()
+			if err := h.mgr.EventMgr().EmitOutboundEvent(ctx, NewEventOutbound(inTxID, item)); err != nil {
+				return nil, ErrInternal(err, "fail to emit outbound event")
 			}
 		}
 	}
@@ -75,7 +61,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 	txOut, err := h.keeper.GetTxOut(ctx, voter.Height)
 	if err != nil {
 		ctx.Logger().Error("unable to get txOut record", "error", err)
-		return cosmos.ErrUnknownRequest(err.Error()).Result()
+		return nil, cosmos.ErrUnknownRequest(err.Error())
 	}
 
 	// Save TxOut back with the TxID only when the TxOut on the block height is
@@ -107,14 +93,11 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 
 	if shouldSlash {
 		if err := h.slash(ctx, version, tx); err != nil {
-			return cosmos.ErrInternal("fail to slash account").Result()
+			return nil, ErrInternal(err, "fail to slash account")
 		}
 	}
 
 	h.keeper.SetLastSignedHeight(ctx, voter.Height)
 
-	return cosmos.Result{
-		Code:      cosmos.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &cosmos.Result{}, nil
 }

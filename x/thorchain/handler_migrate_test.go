@@ -35,7 +35,7 @@ func (HandlerMigrateSuite) TestMigrate(c *C) {
 		vault:             GetRandomVault(),
 	}
 
-	handler := NewMigrateHandler(keeper, NewVersionedEventMgr())
+	handler := NewMigrateHandler(keeper, NewDummyMgr())
 
 	addr, err := keeper.vault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -136,7 +136,7 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 	}
 	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
-	handler := NewMigrateHandler(keeper, NewVersionedEventMgr())
+	handler := NewMigrateHandler(keeper, NewDummyMgr())
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
@@ -150,8 +150,8 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 	}, 1, retireVault.PubKey)
 
 	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	result := handler.handleV1(ctx, constants.SWVersion, msgMigrate)
-	c.Assert(result.Code, Equals, cosmos.CodeOK)
+	_, err = handler.handleV1(ctx, constants.SWVersion, msgMigrate)
+	c.Assert(err, IsNil)
 	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
 }
 
@@ -179,7 +179,9 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 	}
 	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
-	handler := NewMigrateHandler(keeper, NewVersionedEventMgr())
+	mgr := NewDummyMgr()
+	mgr.slasher = NewSlasherV1(keeper)
+	handler := NewMigrateHandler(keeper, mgr)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
@@ -193,7 +195,7 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 	}, 1, retireVault.PubKey)
 
 	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	result := handler.handleV1(ctx, constants.SWVersion, msgMigrate)
-	c.Assert(result.Code, Equals, cosmos.CodeOK, Commentf("%s", result.Log))
+	_, err = handler.handleV1(ctx, constants.SWVersion, msgMigrate)
+	c.Assert(err, IsNil)
 	c.Assert(keeper.activeNodeAccount.Bond.Equal(cosmos.NewUint(9999998464)), Equals, true, Commentf("%d", keeper.activeNodeAccount.Bond.Uint64()))
 }

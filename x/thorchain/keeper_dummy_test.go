@@ -14,10 +14,7 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-var (
-	kaboom    = errors.New("Kaboom!!!")
-	kaboomSdk = cosmos.NewError(DefaultCodespace, 404, "kaboom!!!")
-)
+var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
@@ -36,16 +33,16 @@ func (k KVStoreDummy) GetRuneBalaceOfModule(ctx cosmos.Context, moduleName strin
 	return cosmos.ZeroUint()
 }
 
-func (k KVStoreDummy) SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coin) cosmos.Error {
-	return kaboomSdk
+func (k KVStoreDummy) SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coin) error {
+	return kaboom
 }
 
-func (k KVStoreDummy) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coin) cosmos.Error {
-	return kaboomSdk
+func (k KVStoreDummy) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coin) error {
+	return kaboom
 }
 
-func (k KVStoreDummy) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coin) cosmos.Error {
-	return kaboomSdk
+func (k KVStoreDummy) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coin) error {
+	return kaboom
 }
 
 func (k KVStoreDummy) SetLastSignedHeight(_ cosmos.Context, _ int64) { return }
@@ -105,7 +102,11 @@ func (k KVStoreDummy) ListActiveNodeAccounts(_ cosmos.Context) (NodeAccounts, er
 }
 
 func (k KVStoreDummy) GetLowestActiveVersion(_ cosmos.Context) semver.Version {
-	return semver.Version{}
+	return semver.Version{
+		Major: 0,
+		Minor: 1,
+		Patch: 0,
+	}
 }
 func (k KVStoreDummy) GetMinJoinVersion(_ cosmos.Context) semver.Version { return semver.Version{} }
 func (k KVStoreDummy) GetNodeAccount(_ cosmos.Context, _ cosmos.AccAddress) (NodeAccount, error) {

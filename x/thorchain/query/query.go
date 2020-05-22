@@ -40,9 +40,9 @@ var (
 	QueryKeysignArray       = Query{Key: "keysign", EndpointTemplate: "/%s/keysign/{%s}"}
 	QueryKeysignArrayPubkey = Query{Key: "keysignpubkey", EndpointTemplate: "/%s/keysign/{%s}/{%s}"}
 	QueryKeygensPubkey      = Query{Key: "keygenspubkey", EndpointTemplate: "/%s/keygen/{%s}/{%s}"}
+	QueryEventsByTxHash     = Query{Key: "txhash_events", EndpointTemplate: "/%s/events/tx/{%s}"}
 	QueryCompEvents         = Query{Key: "comp_events", EndpointTemplate: "/%s/events/{%s}"}
 	QueryCompEventsByChain  = Query{Key: "comp_events_chain", EndpointTemplate: "/%s/events/{%s}/{%s}"}
-	QueryEventsByTxHash     = Query{Key: "txhash_events", EndpointTemplate: "/%s/events/tx/{%s}"}
 	QueryHeights            = Query{Key: "heights", EndpointTemplate: "/%s/lastblock"}
 	QueryChainHeights       = Query{Key: "chainheights", EndpointTemplate: "/%s/lastblock/{%s}"}
 	QueryObservers          = Query{Key: "observers", EndpointTemplate: "/%s/observers"}
@@ -51,6 +51,7 @@ var (
 	QueryNodeAccount        = Query{Key: "nodeaccount", EndpointTemplate: "/%s/nodeaccount/{%s}"}
 	QueryPoolAddresses      = Query{Key: "pooladdresses", EndpointTemplate: "/%s/pool_addresses"}
 	QueryVaultData          = Query{Key: "vaultdata", EndpointTemplate: "/%s/vault"}
+	QueryBalanceModule      = Query{Key: "balancemodule", EndpointTemplate: "/%s/balance/module/{%s}"}
 	QueryVaultsAsgard       = Query{Key: "vaultsasgard", EndpointTemplate: "/%s/vaults/asgard"}
 	QueryVaultsYggdrasil    = Query{Key: "vaultsyggdrasil", EndpointTemplate: "/%s/vaults/yggdrasil"}
 	QueryVaultPubkeys       = Query{Key: "vaultpubkeys", EndpointTemplate: "/%s/vaults/pubkeys"}
@@ -79,6 +80,7 @@ var Queries = []Query{
 	QueryNodeAccounts,
 	QueryPoolAddresses,
 	QueryVaultData,
+	QueryBalanceModule,
 	QueryVaultsAsgard,
 	QueryVaultsYggdrasil,
 	QueryVaultPubkeys,

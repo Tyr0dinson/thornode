@@ -9,154 +9,87 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-// THORChain error code start at 101
-const (
-	// CodeBadVersion error code for bad version
-	CodeBadVersion            cosmos.CodeType = 101
-	CodeInvalidMessage        cosmos.CodeType = 102
-	CodeConstantsNotAvailable cosmos.CodeType = 103
-	CodeInvalidVault          cosmos.CodeType = 104
-	CodeInvalidMemo           cosmos.CodeType = 105
-	CodeValidationError       cosmos.CodeType = 106
-	CodeInvalidPoolStatus     cosmos.CodeType = 107
-
-	CodeSwapFail                 cosmos.CodeType = 108
-	CodeSwapFailTradeTarget      cosmos.CodeType = 109
-	CodeSwapFailNotEnoughFee     cosmos.CodeType = 110
-	CodeSwapFailZeroEmitAsset    cosmos.CodeType = 111
-	CodeSwapFailPoolNotExist     cosmos.CodeType = 112
-	CodeSwapFailInvalidAmount    cosmos.CodeType = 113
-	CodeSwapFailInvalidBalance   cosmos.CodeType = 114
-	CodeSwapFailNotEnoughBalance cosmos.CodeType = 115
-
-	CodeStakeFailValidation    cosmos.CodeType = 120
-	CodeFailGetStaker          cosmos.CodeType = 122
-	CodeStakeMismatchAssetAddr cosmos.CodeType = 123
-	CodeStakeInvalidPoolAsset  cosmos.CodeType = 124
-	CodeStakeRUNEOverLimit     cosmos.CodeType = 125
-	CodeStakeRUNEMoreThanBond  cosmos.CodeType = 126
-
-	CodeUnstakeFailValidation cosmos.CodeType = 130
-	CodeFailAddOutboundTx     cosmos.CodeType = 131
-	CodeFailSaveEvent         cosmos.CodeType = 132
-	CodeStakerNotExist        cosmos.CodeType = 133
-	CodeNoStakeUnitLeft       cosmos.CodeType = 135
-	CodeUnstakeWithin24Hours  cosmos.CodeType = 136
-	CodeUnstakeFail           cosmos.CodeType = 137
-	CodeEmptyChain            cosmos.CodeType = 138
-	CodeFailEventManager      cosmos.CodeType = 139
-)
-
-var (
-	notAuthorized          = fmt.Errorf("not authorized")
-	errInvalidVersion      = fmt.Errorf("bad version")
-	errBadVersion          = cosmos.NewError(DefaultCodespace, CodeBadVersion, errInvalidVersion.Error())
-	errInvalidMessage      = cosmos.NewError(DefaultCodespace, CodeInvalidMessage, "invalid message")
-	errConstNotAvailable   = cosmos.NewError(DefaultCodespace, CodeConstantsNotAvailable, "constant values not available")
-	errFailGetEventManager = cosmos.NewError(DefaultCodespace, CodeFailEventManager, "fail to get event manager")
-)
-
 // NewExternalHandler returns a handler for "thorchain" type messages.
-func NewExternalHandler(keeper Keeper,
-	versionedTxOutStore VersionedTxOutStore,
-	validatorMgr VersionedValidatorManager,
-	versionedVaultManager VersionedVaultManager,
-	versionedObserverManager VersionedObserverManager,
-	versionedGasMgr VersionedGasManager,
-	versionedEventManager VersionedEventManager) cosmos.Handler {
-	handlerMap := getHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
-
-	return func(ctx cosmos.Context, msg cosmos.Msg) cosmos.Result {
+func NewExternalHandler(keeper Keeper, mgr Manager) cosmos.Handler {
+	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
 		ctx = ctx.WithEventManager(cosmos.NewEventManager())
 		version := keeper.GetLowestActiveVersion(ctx)
 		constantValues := constants.GetConstantValues(version)
 		if constantValues == nil {
-			return errConstNotAvailable.Result()
+			return nil, errConstNotAvailable
 		}
+		handlerMap := getHandlerMapping(keeper, mgr)
 		h, ok := handlerMap[msg.Type()]
 		if !ok {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msg.Type())
-			return cosmos.ErrUnknownRequest(errMsg).Result()
+			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
-		result := h.Run(ctx, msg, version, constantValues)
+		result, err := h.Run(ctx, msg, version, constantValues)
+		if err != nil {
+			return nil, err
+		}
+		if result == nil {
+			result = &cosmos.Result{}
+		}
 		if len(ctx.EventManager().Events()) > 0 {
 			result.Events = result.Events.AppendEvents(ctx.EventManager().Events())
 		}
-		return result
+		return result, nil
 	}
 }
 
-func getHandlerMapping(keeper Keeper,
-	versionedTxOutStore VersionedTxOutStore,
-	validatorMgr VersionedValidatorManager,
-	versionedVaultManager VersionedVaultManager,
-	versionedObserverManager VersionedObserverManager,
-	versionedGasMgr VersionedGasManager,
-	versionedEventManager VersionedEventManager) map[string]MsgHandler {
+func getHandlerMapping(keeper Keeper, mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
-	m[MsgTssPool{}.Type()] = NewTssHandler(keeper, versionedVaultManager, versionedEventManager)
-	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(keeper)
-	m[MsgSetVersion{}.Type()] = NewVersionHandler(keeper)
-	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(keeper)
-	m[MsgNativeTx{}.Type()] = NewNativeTxHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
-	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
-	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(keeper, versionedObserverManager, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedGasMgr, versionedEventManager)
-	m[MsgTssKeysignFail{}.Type()] = NewTssKeysignHandler(keeper, versionedEventManager)
-	m[MsgErrataTx{}.Type()] = NewErrataTxHandler(keeper, versionedEventManager)
-	m[MsgSend{}.Type()] = NewSendHandler(keeper)
-	m[MsgMimir{}.Type()] = NewMimirHandler(keeper)
-	m[MsgBan{}.Type()] = NewBanHandler(keeper)
+	m[MsgTssPool{}.Type()] = NewTssHandler(keeper, mgr)
+	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(keeper, mgr)
+	m[MsgSetVersion{}.Type()] = NewVersionHandler(keeper, mgr)
+	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(keeper, mgr)
+	m[MsgNativeTx{}.Type()] = NewNativeTxHandler(keeper, mgr)
+	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(keeper, mgr)
+	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(keeper, mgr)
+	m[MsgTssKeysignFail{}.Type()] = NewTssKeysignHandler(keeper, mgr)
+	m[MsgErrataTx{}.Type()] = NewErrataTxHandler(keeper, mgr)
+	m[MsgSend{}.Type()] = NewSendHandler(keeper, mgr)
+	m[MsgMimir{}.Type()] = NewMimirHandler(keeper, mgr)
+	m[MsgBan{}.Type()] = NewBanHandler(keeper, mgr)
 	return m
 }
 
 // NewInternalHandler returns a handler for "thorchain" internal type messages.
-func NewInternalHandler(keeper Keeper,
-	versionedTxOutStore VersionedTxOutStore,
-	validatorMgr VersionedValidatorManager,
-	versionedVaultManager VersionedVaultManager,
-	versionedObserverManager VersionedObserverManager,
-	versionedGasMgr VersionedGasManager,
-	versionedEventManager VersionedEventManager) cosmos.Handler {
-	handlerMap := getInternalHandlerMapping(keeper, versionedTxOutStore, validatorMgr, versionedVaultManager, versionedObserverManager, versionedGasMgr, versionedEventManager)
-
-	return func(ctx cosmos.Context, msg cosmos.Msg) cosmos.Result {
+func NewInternalHandler(keeper Keeper, mgr Manager) cosmos.Handler {
+	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
 		version := keeper.GetLowestActiveVersion(ctx)
 		constantValues := constants.GetConstantValues(version)
 		if constantValues == nil {
-			return errConstNotAvailable.Result()
+			return nil, errConstNotAvailable
 		}
+		handlerMap := getInternalHandlerMapping(keeper, mgr)
 		h, ok := handlerMap[msg.Type()]
 		if !ok {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", msg.Type())
-			return cosmos.ErrUnknownRequest(errMsg).Result()
+			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
 		return h.Run(ctx, msg, version, constantValues)
 	}
 }
 
-func getInternalHandlerMapping(keeper Keeper,
-	versionedTxOutStore VersionedTxOutStore,
-	validatorMgr VersionedValidatorManager,
-	versionedVaultManager VersionedVaultManager,
-	versionedObserverManager VersionedObserverManager,
-	versionedGasMgr VersionedGasManager,
-	versionedEventManager VersionedEventManager) map[string]MsgHandler {
+func getInternalHandlerMapping(keeper Keeper, mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
-	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(keeper, versionedEventManager)
-	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(keeper, versionedTxOutStore, validatorMgr, versionedEventManager)
-	m[MsgSwap{}.Type()] = NewSwapHandler(keeper, versionedTxOutStore, versionedEventManager)
-	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(keeper, versionedEventManager)
-	m[MsgBond{}.Type()] = NewBondHandler(keeper, versionedEventManager)
-	m[MsgLeave{}.Type()] = NewLeaveHandler(keeper, validatorMgr, versionedTxOutStore, versionedEventManager)
-	m[MsgAdd{}.Type()] = NewAddHandler(keeper, versionedEventManager)
-	m[MsgSetUnStake{}.Type()] = NewUnstakeHandler(keeper, versionedTxOutStore, versionedEventManager)
-	m[MsgSetStakeData{}.Type()] = NewStakeHandler(keeper, versionedEventManager)
-	m[MsgRefundTx{}.Type()] = NewRefundHandler(keeper, versionedEventManager)
-	m[MsgMigrate{}.Type()] = NewMigrateHandler(keeper, versionedEventManager)
-	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(keeper, versionedEventManager)
-	m[MsgSwitch{}.Type()] = NewSwitchHandler(keeper, versionedTxOutStore)
+	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(keeper, mgr)
+	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(keeper, mgr)
+	m[MsgSwap{}.Type()] = NewSwapHandler(keeper, mgr)
+	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(keeper, mgr)
+	m[MsgBond{}.Type()] = NewBondHandler(keeper, mgr)
+	m[MsgLeave{}.Type()] = NewLeaveHandler(keeper, mgr)
+	m[MsgAdd{}.Type()] = NewAddHandler(keeper, mgr)
+	m[MsgSetUnStake{}.Type()] = NewUnstakeHandler(keeper, mgr)
+	m[MsgSetStakeData{}.Type()] = NewStakeHandler(keeper, mgr)
+	m[MsgRefundTx{}.Type()] = NewRefundHandler(keeper, mgr)
+	m[MsgMigrate{}.Type()] = NewMigrateHandler(keeper, mgr)
+	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(keeper, mgr)
+	m[MsgSwitch{}.Type()] = NewSwitchHandler(keeper, mgr)
 	return m
 }
 
@@ -192,7 +125,7 @@ func fetchMemo(ctx cosmos.Context, constAccessor constants.ConstantValues, keepe
 	return memo
 }
 
-func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, cosmos.Error) {
+func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if len(tx.Tx.Coins) == 0 {
 		return nil, cosmos.ErrUnknownRequest("no coin found")
 	}
@@ -200,7 +133,7 @@ func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cos
 	memo, err := ParseMemo(tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
-		return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, err.Error())
+		return nil, err
 	}
 	// THORNode should not have one tx across chain, if it is cross chain it should be separate tx
 	var newMsg cosmos.Msg
@@ -209,53 +142,53 @@ func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cos
 	case StakeMemo:
 		newMsg, err = getMsgStakeFromMemo(ctx, m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid stake memo:%s", err.Error())
+			return nil, fmt.Errorf("invalid stake memo:%w", err)
 		}
 
 	case UnstakeMemo:
 		newMsg, err = getMsgUnstakeFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid withdraw memo:%s", err.Error())
+			return nil, err
 		}
 	case SwapMemo:
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid swap memo:%s", err.Error())
+			return nil, fmt.Errorf("invalid swap memo:%w", err)
 		}
 	case AddMemo:
 		newMsg, err = getMsgAddFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid add memo:%s", err.Error())
+			return nil, err
 		}
 	case GasMemo:
 		newMsg, err = getMsgNoOpFromMemo(tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid noop memo:%s", err.Error())
+			return nil, err
 		}
 	case RefundMemo:
 		newMsg, err = getMsgRefundFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid refund memo:%s", err.Error())
+			return nil, err
 		}
 	case OutboundMemo:
 		newMsg, err = getMsgOutboundFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid outbound memo:%s", err.Error())
+			return nil, err
 		}
 	case MigrateMemo:
 		newMsg, err = getMsgMigrateFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid migrate memo: %s", err.Error())
+			return nil, err
 		}
 	case BondMemo:
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid bond memo:%s", err.Error())
+			return nil, err
 		}
 	case RagnarokMemo:
 		newMsg, err = getMsgRagnarokFromMemo(m, tx, signer)
 		if err != nil {
-			return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid ragnarok memo: %s", err.Error())
+			return nil, err
 		}
 	case LeaveMemo:
 		newMsg = NewMsgLeave(tx.Tx, signer)
@@ -268,13 +201,12 @@ func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cos
 		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
 	case SwitchMemo:
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
-
 	default:
-		return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid memo")
+		return nil, errInvalidMemo
 	}
 
 	if err := newMsg.ValidateBasic(); err != nil {
-		return nil, cosmos.NewError(DefaultCodespace, CodeInvalidMemo, "invalid message:%s", err.Error())
+		return nil, err
 	}
 	return newMsg, nil
 }
@@ -282,7 +214,7 @@ func processOneTxIn(ctx cosmos.Context, keeper Keeper, tx ObservedTx, signer cos
 func getMsgNoOpFromMemo(tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	for _, coin := range tx.Tx.Coins {
 		if !coin.Asset.Chain.Equals(common.RuneAsset().Chain) {
-			return nil, fmt.Errorf("Only accepts %s coins", common.RuneAsset().Chain)
+			return nil, fmt.Errorf("only accepts %s coins", common.RuneAsset().Chain)
 		}
 	}
 	return NewMsgNoOp(tx, signer), nil

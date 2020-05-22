@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -11,24 +9,24 @@ import (
 )
 
 type RagnarokHandler struct {
-	keeper                Keeper
-	versionedEventManager VersionedEventManager
+	keeper Keeper
+	mgr    Manager
 }
 
-func NewRagnarokHandler(keeper Keeper, versionedEventManager VersionedEventManager) RagnarokHandler {
+func NewRagnarokHandler(keeper Keeper, mgr Manager) RagnarokHandler {
 	return RagnarokHandler{
-		keeper:                keeper,
-		versionedEventManager: versionedEventManager,
+		keeper: keeper,
+		mgr:    mgr,
 	}
 }
 
-func (h RagnarokHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) cosmos.Result {
+func (h RagnarokHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) (*cosmos.Result, error) {
 	msg, ok := m.(MsgRagnarok)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	if err := h.validate(ctx, msg, version); err != nil {
-		return cosmos.ErrInternal(err.Error()).Result()
+		return nil, err
 	}
 	return h.handle(ctx, version, msg)
 }
@@ -49,23 +47,19 @@ func (h RagnarokHandler) validateV1(ctx cosmos.Context, msg MsgRagnarok) error {
 	return nil
 }
 
-func (h RagnarokHandler) handle(ctx cosmos.Context, version semver.Version, msg MsgRagnarok) cosmos.Result {
+func (h RagnarokHandler) handle(ctx cosmos.Context, version semver.Version, msg MsgRagnarok) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgRagnarok", "request tx hash", msg.Tx.Tx.ID)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg)
 	}
 	ctx.Logger().Error(errInvalidVersion.Error())
-	return errBadVersion.Result()
+	return nil, errBadVersion
 }
 
 func (h RagnarokHandler) slash(ctx cosmos.Context, version semver.Version, tx ObservedTx) error {
 	var returnErr error
-	slasher, err := NewSlasher(h.keeper, version, h.versionedEventManager)
-	if err != nil {
-		return fmt.Errorf("fail to create slasher: %w", err)
-	}
 	for _, c := range tx.Tx.Coins {
-		if err := slasher.SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount); err != nil {
+		if err := h.mgr.Slasher().SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount, h.mgr); err != nil {
 			ctx.Logger().Error("fail to slash account", "error", err)
 			returnErr = err
 		}
@@ -73,12 +67,12 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, version semver.Version, tx Ob
 	return returnErr
 }
 
-func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgRagnarok) cosmos.Result {
+func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgRagnarok) (*cosmos.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.keeper.GetTxOut(ctx, msg.BlockHeight)
 	if err != nil {
 		ctx.Logger().Error("unable to get txOut record", "error", err)
-		return cosmos.ErrUnknownRequest(err.Error()).Result()
+		return nil, cosmos.ErrUnknownRequest(err.Error())
 	}
 
 	shouldSlash := true
@@ -98,8 +92,7 @@ func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, ms
 			txOut.TxArray[i].OutHash = msg.Tx.Tx.ID
 			shouldSlash = false
 			if err := h.keeper.SetTxOut(ctx, txOut); nil != err {
-				ctx.Logger().Error("fail to save tx out", "error", err)
-				return cosmos.ErrInternal("fail to save tx out").Result()
+				return nil, ErrInternal(err, "fail to save tx out")
 			}
 
 			break
@@ -108,14 +101,11 @@ func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, ms
 
 	if shouldSlash {
 		if err := h.slash(ctx, version, msg.Tx); err != nil {
-			return cosmos.ErrInternal("fail to slash account").Result()
+			return nil, ErrInternal(err, "fail to slash account")
 		}
 	}
 
 	h.keeper.SetLastSignedHeight(ctx, msg.BlockHeight)
 
-	return cosmos.Result{
-		Code:      cosmos.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &cosmos.Result{}, nil
 }

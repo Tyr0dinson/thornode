@@ -48,12 +48,20 @@ disable_bank_send () {
 }
 
 add_account () {
-    jq --arg ADDRESS $1 --arg ASSET $2 --arg AMOUNT $3 '.app_state.accounts += [{
-        "address": $ADDRESS,
-        "coins": [{
-            "denom": $ASSET,
-            "amount": $AMOUNT
-        }]
+    jq --arg ADDRESS $1 --arg ASSET $2 --arg AMOUNT $3 '.app_state.auth.accounts += [{
+        "type": "cosmos-sdk/Account",
+        "value": {
+          "address": $ADDRESS,
+          "coins": [
+            {
+              "denom": $ASSET,
+              "amount": $AMOUNT
+            }
+          ],
+          "public_key": "",
+          "account_number": 0,
+          "sequence": 0
+        }
     }]' <~/.thord/config/genesis.json >/tmp/genesis.json
     mv /tmp/genesis.json ~/.thord/config/genesis.json
 }
@@ -76,7 +84,7 @@ init_chain () {
     export IFS=","
 
     thord init local --chain-id thorchain
-    thorcli keys list
+    echo $SIGNER_PASSWD | thorcli keys list
 
     for user in $@; do # iterate over our list of comma separated users "alice,jack"
         thord add-genesis-account $user 1000thor
@@ -140,4 +148,19 @@ fetch_node_id () {
 
 fetch_version () {
     thorcli query thorchain version --chain-id thorchain --trust-node --output json | jq -r .version
+}
+
+run_cmd_auth () {
+    type expect || (apk update && apk add expect)
+    CMD=$1
+    PASS=$2
+    echo $CMD
+expect <<- DONE
+    spawn $CMD
+    expect "Enter*"
+    send -- "$PASS\n"
+    expect "Enter*"
+    send -- "$PASS\n"
+    expect eof
+DONE
 }

@@ -11,58 +11,54 @@ import (
 
 // ReserveContributorHandler is handler to process MsgReserveContributor
 type ReserveContributorHandler struct {
-	keeper                Keeper
-	versionedEventManager VersionedEventManager
+	keeper Keeper
+	mgr    Manager
 }
 
 // NewReserveContributorHandler create a new instance of ReserveContributorHandler
-func NewReserveContributorHandler(keeper Keeper, versionedEventManager VersionedEventManager) ReserveContributorHandler {
+func NewReserveContributorHandler(keeper Keeper, mgr Manager) ReserveContributorHandler {
 	return ReserveContributorHandler{
-		keeper:                keeper,
-		versionedEventManager: versionedEventManager,
+		keeper: keeper,
+		mgr:    mgr,
 	}
 }
 
-func (h ReserveContributorHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) cosmos.Result {
+func (h ReserveContributorHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) (*cosmos.Result, error) {
 	msg, ok := m.(MsgReserveContributor)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	if err := h.Validate(ctx, msg, version); err != nil {
 		ctx.Logger().Error("MsgReserveContributor failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	return h.Handle(ctx, msg, version)
 }
 
-func (h ReserveContributorHandler) Validate(ctx cosmos.Context, msg MsgReserveContributor, version semver.Version) cosmos.Error {
+func (h ReserveContributorHandler) Validate(ctx cosmos.Context, msg MsgReserveContributor, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.ValidateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h ReserveContributorHandler) ValidateV1(ctx cosmos.Context, msg MsgReserveContributor) cosmos.Error {
+func (h ReserveContributorHandler) ValidateV1(ctx cosmos.Context, msg MsgReserveContributor) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (h ReserveContributorHandler) Handle(ctx cosmos.Context, msg MsgReserveContributor, version semver.Version) cosmos.Result {
+func (h ReserveContributorHandler) Handle(ctx cosmos.Context, msg MsgReserveContributor, version semver.Version) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgReserveContributor request")
 	if version.GTE(semver.MustParse("0.1.0")) {
 		if err := h.HandleV1(ctx, msg, version); err != nil {
-			ctx.Logger().Error("fail to process MsgReserveContributor", "error", err)
-			return cosmos.ErrInternal("fail to process reserve contributor").Result()
+			return nil, ErrInternal(err, "fail to process reserve contributor")
 		}
-		return cosmos.Result{
-			Code:      cosmos.CodeOK,
-			Codespace: DefaultCodespace,
-		}
+		return &cosmos.Result{}, nil
 	}
 	ctx.Logger().Error(errInvalidVersion.Error())
-	return errBadVersion.Result()
+	return nil, errBadVersion
 }
 
 // HandleV1  process MsgReserveContributor
@@ -90,12 +86,8 @@ func (h ReserveContributorHandler) HandleV1(ctx cosmos.Context, msg MsgReserveCo
 		ctx.Logger().Error("fail to save vault data", "error", err)
 		return err
 	}
-	eventMgr, err := h.versionedEventManager.GetEventManager(ctx, version)
-	if err != nil {
-		return errFailGetEventManager
-	}
 	reserveEvent := NewEventReserve(msg.Contributor, msg.Tx)
-	if err := eventMgr.EmitReserveEvent(ctx, h.keeper, reserveEvent); err != nil {
+	if err := h.mgr.EventMgr().EmitReserveEvent(ctx, h.keeper, reserveEvent); err != nil {
 		return fmt.Errorf("fail to emit reserve event: %w", err)
 	}
 	return nil

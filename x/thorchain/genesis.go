@@ -101,7 +101,7 @@ func InitGenesis(ctx cosmos.Context, keeper Keeper, data GenesisState) []abci.Va
 	for _, nodeAccount := range data.NodeAccounts {
 		if nodeAccount.Status == NodeActive {
 			// Only Active node will become validator
-			pk, err := cosmos.GetConsPubKeyBech32(nodeAccount.ValidatorConsPubKey)
+			pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, nodeAccount.ValidatorConsPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to parse consensus public key", "key", nodeAccount.ValidatorConsPubKey, "error", err)
 				panic(err)
@@ -184,6 +184,12 @@ func InitGenesis(ctx cosmos.Context, keeper Keeper, data GenesisState) []abci.Va
 		if err := keeper.Supply().SendCoinsFromModuleToAccount(ctx, ModuleName, addr, coinsToMint); err != nil {
 			panic(err)
 		}
+	}
+
+	if common.RuneAsset().Chain.Equals(common.THORChain) {
+		ctx.Logger().Info("Reserve Module", "address", keeper.Supply().GetModuleAddress(ReserveName).String())
+		ctx.Logger().Info("Bond    Module", "address", keeper.Supply().GetModuleAddress(BondName).String())
+		ctx.Logger().Info("Asgard  Module", "address", keeper.Supply().GetModuleAddress(AsgardName).String())
 	}
 
 	return validators

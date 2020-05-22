@@ -230,7 +230,7 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 func (c *Client) createInput(token, receiver string, value *big.Int) ([]byte, error) {
-	input, err := c.contractABI.Pack(TransferMethod, ecommon.HexToAddress(token), ecommon.HexToAddress(receiver), value)
+	input, err := c.contractABI.Pack(TransferMethod, ecommon.HexToAddress(receiver), ecommon.HexToAddress(token), value)
 	if err != nil {
 		return nil, err
 	}
@@ -306,17 +306,18 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	gasOut.Div(gasOut, gasPrice)
 
+	data, err := c.createInput(token, toAddr, value)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to create input")
+		return nil, err
+	}
+
 	nonce, err := c.GetNonce(fromAddr)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("fail to fetch account nonce")
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
-	data, err := c.createInput(token, toAddr, value)
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to create input")
-		return nil, err
-	}
 	createdTx := etypes.NewTransaction(nonce, c.contractAddress, big.NewInt(0), gasOut.Uint64(), gasPrice, data)
 	estimatedGas, err := c.estimateGas(fromAddr, createdTx)
 	if err != nil {

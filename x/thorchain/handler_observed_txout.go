@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -11,40 +9,24 @@ import (
 )
 
 type ObservedTxOutHandler struct {
-	keeper                   Keeper
-	versionedTxOutStore      VersionedTxOutStore
-	validatorMgr             VersionedValidatorManager
-	versionedVaultManager    VersionedVaultManager
-	versionedGasMgr          VersionedGasManager
-	versionedObserverManager VersionedObserverManager
-	versionedEventManager    VersionedEventManager
+	keeper Keeper
+	mgr    Manager
 }
 
-func NewObservedTxOutHandler(keeper Keeper,
-	versionedObserverManager VersionedObserverManager,
-	txOutStore VersionedTxOutStore,
-	validatorMgr VersionedValidatorManager,
-	versionedVaultManager VersionedVaultManager,
-	versionedGasMgr VersionedGasManager,
-	versionedEventManager VersionedEventManager) ObservedTxOutHandler {
+func NewObservedTxOutHandler(keeper Keeper, mgr Manager) ObservedTxOutHandler {
 	return ObservedTxOutHandler{
-		keeper:                   keeper,
-		versionedTxOutStore:      txOutStore,
-		validatorMgr:             validatorMgr,
-		versionedVaultManager:    versionedVaultManager,
-		versionedGasMgr:          versionedGasMgr,
-		versionedObserverManager: versionedObserverManager,
-		versionedEventManager:    versionedEventManager,
+		keeper: keeper,
+		mgr:    mgr,
 	}
 }
 
-func (h ObservedTxOutHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) cosmos.Result {
+func (h ObservedTxOutHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) (*cosmos.Result, error) {
 	msg, ok := m.(MsgObservedTxOut)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	if err := h.validate(ctx, msg, version); err != nil {
-		return cosmos.ErrInternal(err.Error()).Result()
+		return nil, err
 	}
 	return h.handle(ctx, msg, version)
 }
@@ -72,20 +54,20 @@ func (h ObservedTxOutHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxOu
 	return nil
 }
 
-func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut, version semver.Version) cosmos.Result {
+func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut, version semver.Version) (*cosmos.Result, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg)
 	} else {
 		ctx.Logger().Error(errInvalidVersion.Error())
-		return errBadVersion.Result()
+		return nil, errBadVersion
 	}
 }
 
-func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress, slasher *Slasher, version semver.Version) (ObservedTxVoter, bool) {
+func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress, version semver.Version) (ObservedTxVoter, bool) {
 	constAccessor := constants.GetConstantValues(version)
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	ok := false
-	slasher.IncSlashPoints(ctx, observeSlashPoints, signer)
+	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, signer)
 	if !voter.Add(tx, signer) {
 		return voter, ok
 	}
@@ -95,12 +77,12 @@ func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVote
 			voter.Height = ctx.BlockHeight()
 			voter.Tx = voter.GetTx(nas)
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
-			slasher.DecSlashPoints(ctx, observeSlashPoints, voter.Tx.Signers...)
+			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.Signers...)
 
 		} else {
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			if ctx.BlockHeight() == voter.Height && voter.Tx.Equals(tx) {
-				slasher.DecSlashPoints(ctx, observeSlashPoints, signer)
+				h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, signer)
 			}
 		}
 	}
@@ -111,31 +93,15 @@ func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVote
 }
 
 // Handle a message to observe outbound tx
-func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut) cosmos.Result {
+func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	constAccessor := constants.GetConstantValues(version)
 	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")
-		return cosmos.ErrInternal(err.Error()).Result()
+		return nil, err
 	}
 
-	obMgr, err := h.versionedObserverManager.GetObserverManager(ctx, version)
-	if err != nil {
-		ctx.Logger().Error("fail to get observer manager", "error", err)
-		return errBadVersion.Result()
-	}
-
-	gasMgr, err := h.versionedGasMgr.GetGasManager(ctx, version)
-	if err != nil {
-		ctx.Logger().Error(fmt.Sprintf("gas manager that compatible with version :%s is not available", version))
-		return cosmos.ErrInternal("fail to get gas manager").Result()
-	}
-	slasher, err := NewSlasher(h.keeper, version, h.versionedEventManager)
-	if err != nil {
-		ctx.Logger().Error("fail to create slasher", "error", err)
-		return cosmos.ErrInternal("fail to create slasher").Result()
-	}
-	handler := NewInternalHandler(h.keeper, h.versionedTxOutStore, h.validatorMgr, h.versionedVaultManager, h.versionedObserverManager, h.versionedGasMgr, h.versionedEventManager)
+	handler := NewInternalHandler(h.keeper, h.mgr)
 
 	for _, tx := range msg.Txs {
 		// check we are sending from a valid vault
@@ -146,16 +112,16 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 
 		voter, err := h.keeper.GetObservedTxVoter(ctx, tx.Tx.ID)
 		if err != nil {
-			return cosmos.ErrInternal(err.Error()).Result()
+			return nil, err
 		}
 
 		// check whether the tx has consensus
-		voter, ok := h.preflight(ctx, voter, activeNodeAccounts, tx, msg.Signer, slasher, version)
+		voter, ok := h.preflight(ctx, voter, activeNodeAccounts, tx, msg.Signer, version)
 		if !ok {
 			if voter.Height == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
-				obMgr.AppendObserver(tx.Tx.Chain, msg.GetSigners())
+				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
 			}
 			continue
 		}
@@ -184,7 +150,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 			if vault.IsYggdrasil() {
 				// a yggdrasil vault has apparently stolen funds, slash them
 				for _, c := range append(tx.Tx.Coins, tx.Tx.Gas.ToCoins()...) {
-					if err := slasher.SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount); err != nil {
+					if err := h.mgr.Slasher().SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount, h.mgr); err != nil {
 						ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
 					}
 				}
@@ -208,8 +174,8 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 		}
 
 		// Apply Gas fees
-		if err := AddGasFees(ctx, h.keeper, tx, gasMgr); err != nil {
-			return cosmos.ErrInternal(fmt.Errorf("fail to add gas fee: %w", err).Error()).Result()
+		if err := AddGasFees(ctx, h.keeper, tx, h.mgr.GasMgr()); err != nil {
+			return nil, ErrInternal(err, "fail to add gas fee")
 		}
 
 		// If sending from one of our vaults, decrement coins
@@ -225,22 +191,19 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
 		}
 		if err := h.keeper.SetVault(ctx, vault); err != nil {
-			ctx.Logger().Error("fail to save vault", "error", err)
-			return cosmos.ErrInternal("fail to save vault").Result()
+			return nil, ErrInternal(err, "fail to save vault")
 		}
 
 		// add addresses to observing addresses. This is used to detect
 		// active/inactive observing node accounts
-		obMgr.AppendObserver(tx.Tx.Chain, txOut.Signers)
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txOut.Signers)
 
-		result := handler(ctx, m)
-		if !result.IsOK() {
-			ctx.Logger().Error("Handler failed:", "error", result.Log)
+		_, err = handler(ctx, m)
+		if err != nil {
+			ctx.Logger().Error("Handler failed:", "error", err)
+			continue
 		}
 	}
 
-	return cosmos.Result{
-		Code:      cosmos.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &cosmos.Result{}, nil
 }

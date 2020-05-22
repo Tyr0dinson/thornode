@@ -2,10 +2,11 @@ package thorchain
 
 import (
 	"github.com/blang/semver"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	. "gopkg.in/check.v1"
 )
 
 var _ = Suite(&HandlerSwitchSuite{})
@@ -27,22 +28,28 @@ func (s *HandlerSwitchSuite) TestValidate(c *C) {
 	}
 	destination := GetRandomBNBAddress()
 
-	versionedTxOutStoreDummy := NewVersionedTxOutStoreDummy()
+	handler := NewSwitchHandler(k, NewDummyMgr())
 
-	handler := NewSwitchHandler(k, versionedTxOutStoreDummy)
-	// happy path
-	msg := NewMsgSwitch(tx, destination, na.NodeAddress)
-	err := handler.validate(ctx, msg, constants.SWVersion)
-	c.Assert(err, IsNil)
+	if common.RuneAsset().Chain.Equals(common.THORChain) {
+		// happy path
+		msg := NewMsgSwitch(tx, destination, na.NodeAddress)
+		err := handler.validate(ctx, msg, constants.SWVersion)
+		c.Assert(err, IsNil)
 
-	// invalid version
-	err = handler.validate(ctx, msg, semver.Version{})
-	c.Assert(err, Equals, errBadVersion)
+		// invalid version
+		err = handler.validate(ctx, msg, semver.Version{})
+		c.Assert(err, Equals, errBadVersion)
 
-	// invalid msg
-	msg = MsgSwitch{}
-	err = handler.validate(ctx, msg, constants.SWVersion)
-	c.Assert(err, NotNil)
+		// invalid msg
+		msg = MsgSwitch{}
+		err = handler.validate(ctx, msg, constants.SWVersion)
+		c.Assert(err, NotNil)
+	} else {
+		// no swapping when using BEP2 rune
+		msg := NewMsgSwitch(tx, destination, na.NodeAddress)
+		err := handler.validate(ctx, msg, constants.SWVersion)
+		c.Assert(err, NotNil)
+	}
 }
 
 func (s *HandlerSwitchSuite) TestGettingNativeTokens(c *C) {
@@ -56,12 +63,11 @@ func (s *HandlerSwitchSuite) TestGettingNativeTokens(c *C) {
 	}
 	destination := GetRandomTHORAddress()
 
-	versionedTxOutStoreDummy := NewVersionedTxOutStoreDummy()
-	handler := NewSwitchHandler(k, versionedTxOutStoreDummy)
+	handler := NewSwitchHandler(k, NewDummyMgr())
 
 	msg := NewMsgSwitch(tx, destination, na.NodeAddress)
-	result := handler.handle(ctx, msg, constants.SWVersion)
-	c.Assert(result.IsOK(), Equals, true, Commentf("%+v", result.Log))
+	_, err := handler.handle(ctx, msg, constants.SWVersion)
+	c.Assert(err, IsNil)
 	coin, err := common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One)).Native()
 	c.Assert(err, IsNil)
 	addr, err := cosmos.AccAddressFromBech32(destination.String())
@@ -72,8 +78,8 @@ func (s *HandlerSwitchSuite) TestGettingNativeTokens(c *C) {
 	c.Check(vaultData.TotalBEP2Rune.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 
 	// check that we can add more an account
-	result = handler.handle(ctx, msg, constants.SWVersion)
-	c.Assert(result.IsOK(), Equals, true, Commentf("%+v", result.Log))
+	_, err = handler.handle(ctx, msg, constants.SWVersion)
+	c.Assert(err, IsNil)
 	coin, err = common.NewCoin(common.RuneNative, cosmos.NewUint(200*common.One)).Native()
 	c.Assert(err, IsNil)
 	c.Check(k.CoinKeeper().HasCoins(ctx, addr, cosmos.NewCoins(coin)), Equals, true)
@@ -104,12 +110,12 @@ func (s *HandlerSwitchSuite) TestGettingBEP2Tokens(c *C) {
 	c.Assert(err, IsNil)
 	k.CoinKeeper().AddCoins(ctx, from, cosmos.NewCoins(coin))
 
-	versionedTxOutStoreDummy := NewVersionedTxOutStoreDummy()
-	handler := NewSwitchHandler(k, versionedTxOutStoreDummy)
+	mgr := NewDummyMgr()
+	handler := NewSwitchHandler(k, mgr)
 
 	msg := NewMsgSwitch(tx, destination, na.NodeAddress)
-	result := handler.handle(ctx, msg, constants.SWVersion)
-	c.Assert(result.IsOK(), Equals, true, Commentf("%+v", result.Log))
+	_, err = handler.handle(ctx, msg, constants.SWVersion)
+	c.Assert(err, IsNil)
 
 	coin, err = common.NewCoin(common.RuneNative, cosmos.NewUint(700*common.One)).Native()
 	c.Assert(err, IsNil)
@@ -117,7 +123,7 @@ func (s *HandlerSwitchSuite) TestGettingBEP2Tokens(c *C) {
 	vaultData, err = k.GetVaultData(ctx)
 	c.Assert(err, IsNil)
 	c.Check(vaultData.TotalBEP2Rune.Equal(cosmos.NewUint(400*common.One)), Equals, true)
-	items, err := versionedTxOutStoreDummy.txoutStore.GetOutboundItems(ctx)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	if common.RuneAsset().Chain.Equals(common.THORChain) {
 		c.Assert(items, HasLen, 0)
@@ -126,15 +132,15 @@ func (s *HandlerSwitchSuite) TestGettingBEP2Tokens(c *C) {
 	}
 
 	// check that we can subtract more an account
-	result = handler.handle(ctx, msg, constants.SWVersion)
-	c.Assert(result.IsOK(), Equals, true, Commentf("%+v", result.Log))
+	_, err = handler.handle(ctx, msg, constants.SWVersion)
+	c.Assert(err, IsNil)
 	coin, err = common.NewCoin(common.RuneNative, cosmos.NewUint(600*common.One)).Native()
 	c.Assert(err, IsNil)
 	c.Check(k.CoinKeeper().HasCoins(ctx, from, cosmos.NewCoins(coin)), Equals, true)
 	vaultData, err = k.GetVaultData(ctx)
 	c.Assert(err, IsNil)
 	c.Check(vaultData.TotalBEP2Rune.Equal(cosmos.NewUint(300*common.One)), Equals, true, Commentf("%d", vaultData.TotalBEP2Rune.Uint64()))
-	items, err = versionedTxOutStoreDummy.txoutStore.GetOutboundItems(ctx)
+	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	if common.RuneAsset().Chain.Equals(common.THORChain) {
 		c.Assert(items, HasLen, 0)
@@ -144,15 +150,15 @@ func (s *HandlerSwitchSuite) TestGettingBEP2Tokens(c *C) {
 
 	// check that we can't overdraw
 	msg.Tx.Coins[0].Amount = cosmos.NewUint(400 * common.One)
-	result = handler.handle(ctx, msg, constants.SWVersion)
-	c.Assert(result.IsOK(), Equals, false, Commentf("%+v", result.Log))
+	_, err = handler.handle(ctx, msg, constants.SWVersion)
+	c.Assert(err, NotNil)
 	coin, err = common.NewCoin(common.RuneNative, cosmos.NewUint(600*common.One)).Native()
 	c.Assert(err, IsNil)
 	c.Check(k.CoinKeeper().HasCoins(ctx, from, cosmos.NewCoins(coin)), Equals, true)
 	vaultData, err = k.GetVaultData(ctx)
 	c.Assert(err, IsNil)
 	c.Check(vaultData.TotalBEP2Rune.Equal(cosmos.NewUint(300*common.One)), Equals, true, Commentf("%d", vaultData.TotalBEP2Rune.Uint64()))
-	items, err = versionedTxOutStoreDummy.txoutStore.GetOutboundItems(ctx)
+	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	if common.RuneAsset().Chain.Equals(common.THORChain) {
 		c.Assert(items, HasLen, 0)

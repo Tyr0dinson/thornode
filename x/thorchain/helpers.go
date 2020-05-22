@@ -1,16 +1,17 @@
 package thorchain
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/hashicorp/go-multierror"
 
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-func refundTx(ctx cosmos.Context, tx ObservedTx, store TxOutStore, keeper Keeper, constAccessor constants.ConstantValues, refundCode cosmos.CodeType, refundReason string, eventMgr EventManager) error {
+func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, keeper Keeper, constAccessor constants.ConstantValues, refundCode uint32, refundReason string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -26,7 +27,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, store TxOutStore, keeper Keeper
 			eventRefund = NewEventRefund(refundCode, refundReason, newTx, fee)
 			status = EventPending
 		}
-		if err := eventMgr.EmitRefundEvent(ctx, keeper, eventRefund, status); err != nil {
+		if err := mgr.EventMgr().EmitRefundEvent(ctx, keeper, eventRefund, status); err != nil {
 			return fmt.Errorf("fail to emit refund event: %w", err)
 		}
 		return nil
@@ -62,7 +63,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, store TxOutStore, keeper Keeper
 				Memo:        NewRefundMemo(tx.Tx.ID).String(),
 			}
 
-			success, err := store.TryAddTxOutItem(ctx, toi)
+			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
 			if err != nil {
 				return fmt.Errorf("fail to prepare outbund tx: %w", err)
 			}
@@ -98,9 +99,13 @@ func getFee(input, output common.Coins, transactionFee int64) common.Fee {
 			}
 		}
 		if outCoin.IsEmpty() {
-			fee.Coins = append(fee.Coins, common.NewCoin(in.Asset, in.Amount))
+			if !in.Amount.IsZero() {
+				fee.Coins = append(fee.Coins, common.NewCoin(in.Asset, in.Amount))
+			}
 		} else {
-			fee.Coins = append(fee.Coins, common.NewCoin(in.Asset, in.Amount.Sub(outCoin.Amount)))
+			if !in.Amount.Sub(outCoin.Amount).IsZero() {
+				fee.Coins = append(fee.Coins, common.NewCoin(in.Asset, in.Amount.Sub(outCoin.Amount)))
+			}
 		}
 	}
 	fee.PoolDeduct = cosmos.NewUint(uint64(transactionFee) * uint64(assetTxCount))
@@ -183,7 +188,7 @@ func getTotalYggValueInRune(ctx cosmos.Context, keeper Keeper, ygg Vault) (cosmo
 	return yggRune, nil
 }
 
-func refundBond(ctx cosmos.Context, tx common.Tx, nodeAcc NodeAccount, keeper Keeper, txOut TxOutStore, eventMgr EventManager) error {
+func refundBond(ctx cosmos.Context, tx common.Tx, nodeAcc NodeAccount, keeper Keeper, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active , cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
@@ -228,7 +233,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, nodeAcc NodeAccount, keeper Ke
 		}
 
 		bondEvent := NewEventBond(nodeAcc.Bond, BondReturned, tx)
-		if err := eventMgr.EmitBondEvent(ctx, keeper, bondEvent); err != nil {
+		if err := mgr.EventMgr().EmitBondEvent(ctx, keeper, bondEvent); err != nil {
 			return fmt.Errorf("fail to emit bond event: %w", err)
 		}
 
@@ -246,7 +251,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, nodeAcc NodeAccount, keeper Ke
 			Coin:        common.NewCoin(common.RuneAsset(), nodeAcc.Bond),
 			ModuleName:  BondName,
 		}
-		_, err = txOut.TryAddTxOutItem(ctx, txOutItem)
+		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
@@ -367,7 +372,11 @@ func updateEventFee(ctx cosmos.Context, keeper Keeper, txID common.TxID, fee com
 	}
 
 	ctx.Logger().Info(fmt.Sprintf("Update fee for event %d, fee:%s", eventID, fee))
-	event.Fee.Coins = append(event.Fee.Coins, fee.Coins...)
+	for _, feeCoin := range fee.Coins {
+		if !feeCoin.IsEmpty() {
+			event.Fee.Coins = append(event.Fee.Coins, feeCoin)
+		}
+	}
 	event.Fee.PoolDeduct = event.Fee.PoolDeduct.Add(fee.PoolDeduct)
 	return keeper.UpsertEvent(ctx, event)
 }
@@ -429,7 +438,7 @@ func enableNextPool(ctx cosmos.Context, keeper Keeper, eventManager EventManager
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
 	err = fmt.Errorf("%s: %w", wrap, err)
 	ctx.Logger().Error(err.Error())
-	return err
+	return multierror.Append(errInternal, err)
 }
 
 func AddGasFees(ctx cosmos.Context, keeper Keeper, tx ObservedTx, gasManager GasManager) error {
@@ -467,16 +476,4 @@ func AddGasFees(ctx cosmos.Context, keeper Keeper, tx ObservedTx, gasManager Gas
 		}
 	}
 	return nil
-}
-
-func getErrMessageFromABCILog(content string) (string, error) {
-	var humanReadableError struct {
-		Codespace cosmos.CodespaceType `json:"codespace"`
-		Code      cosmos.CodeType      `json:"code"`
-		Message   string               `json:"message"`
-	}
-	if err := json.Unmarshal([]byte(content), &humanReadableError); err != nil {
-		return "", err
-	}
-	return humanReadableError.Message, nil
 }

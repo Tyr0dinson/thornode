@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/blang/semver"
 
@@ -12,32 +12,32 @@ import (
 
 // SwitchHandler is to handle Switch message
 type SwitchHandler struct {
-	keeper              Keeper
-	versionedTxOutStore VersionedTxOutStore
+	keeper Keeper
+	mgr    Manager
 }
 
 // NewSwitchHandler create new instance of SwitchHandler
-func NewSwitchHandler(keeper Keeper, versionedTxOutStore VersionedTxOutStore) SwitchHandler {
+func NewSwitchHandler(keeper Keeper, mgr Manager) SwitchHandler {
 	return SwitchHandler{
-		keeper:              keeper,
-		versionedTxOutStore: versionedTxOutStore,
+		keeper: keeper,
+		mgr:    mgr,
 	}
 }
 
 // Run it the main entry point to execute Switch logic
-func (h SwitchHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, constAccessor constants.ConstantValues) cosmos.Result {
+func (h SwitchHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	msg, ok := m.(MsgSwitch)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	if err := h.validate(ctx, msg, version); err != nil {
 		ctx.Logger().Error("msg switch failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	return h.handle(ctx, msg, version)
 }
 
-func (h SwitchHandler) validate(ctx cosmos.Context, msg MsgSwitch, version semver.Version) cosmos.Error {
+func (h SwitchHandler) validate(ctx cosmos.Context, msg MsgSwitch, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -45,112 +45,120 @@ func (h SwitchHandler) validate(ctx cosmos.Context, msg MsgSwitch, version semve
 	}
 }
 
-func (h SwitchHandler) validateV1(ctx cosmos.Context, msg MsgSwitch) cosmos.Error {
+func (h SwitchHandler) validateV1(ctx cosmos.Context, msg MsgSwitch) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 
-	if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
-		return cosmos.ErrUnauthorized(notAuthorized.Error())
+	// when using BEP2 rune, cannot swap rune
+	if !common.RuneAsset().Chain.Equals(common.THORChain) {
+		return errors.New("when using BEP2 rune, cannot swap rune assets")
+	}
+
+	// if we are getting a non-native asset, ensure its signed by an active
+	// node account
+	if !msg.Tx.Coins[0].IsNative() {
+		if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
+			return cosmos.ErrUnauthorized(notAuthorized.Error())
+		}
 	}
 
 	return nil
 }
 
-func (h SwitchHandler) handle(ctx cosmos.Context, msg MsgSwitch, version semver.Version) cosmos.Result {
+func (h SwitchHandler) handle(ctx cosmos.Context, msg MsgSwitch, version semver.Version) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgSwitch request", "destination address", msg.Destination.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version)
 	} else {
 		ctx.Logger().Error(errInvalidVersion.Error())
-		return errBadVersion.Result()
+		return nil, errBadVersion
 	}
 }
 
-func (h SwitchHandler) handleV1(ctx cosmos.Context, msg MsgSwitch, version semver.Version) cosmos.Result {
+func (h SwitchHandler) handleV1(ctx cosmos.Context, msg MsgSwitch, version semver.Version) (*cosmos.Result, error) {
+	if msg.Tx.Coins[0].IsNative() {
+		return h.toBEP2(ctx, msg)
+	}
+
+	return h.toNative(ctx, msg)
+}
+
+func (h SwitchHandler) toBEP2(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
 	bank := h.keeper.CoinKeeper()
 
 	vaultData, err := h.keeper.GetVaultData(ctx)
 	if err != nil {
-		ctx.Logger().Error("fail to get vault data", "error", err)
-		return cosmos.ErrInternal("fail to get vault data").Result()
+		return nil, ErrInternal(err, "fail to get vault data")
+	}
+	coin, err := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount).Native()
+	if err != nil {
+		return nil, ErrInternal(err, "fail to get native coin")
 	}
 
-	if msg.Tx.Coins[0].IsNative() {
-		coin, err := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount).Native()
-		if err != nil {
-			ctx.Logger().Error("fail to get native coin", "error", err)
-			return cosmos.ErrInternal("fail to get native coin").Result()
-		}
+	// ensure we have enough BEP2 rune assets to fulfill the request
+	if vaultData.TotalBEP2Rune.LT(msg.Tx.Coins[0].Amount) {
+		return nil, ErrInternal(err, "not enough funds in the vault")
+	}
 
-		// ensure we have enough BEP2 rune assets to fulfill the request
-		if vaultData.TotalBEP2Rune.LT(msg.Tx.Coins[0].Amount) {
-			ctx.Logger().Error("not enough funds in the vault", "error", err)
-			return cosmos.ErrInternal("not enough funds in the vault").Result()
-		}
+	addr, err := cosmos.AccAddressFromBech32(msg.Tx.FromAddress.String())
+	if err != nil {
+		return nil, ErrInternal(err, "fail to parse thor address")
+	}
 
-		addr, err := cosmos.AccAddressFromBech32(msg.Tx.FromAddress.String())
-		if err != nil {
-			ctx.Logger().Error("fail to parse thor address", "error", err)
-			return cosmos.ErrInternal("fail to parse thor address").Result()
-		}
+	if !bank.HasCoins(ctx, addr, cosmos.NewCoins(coin)) {
+		return nil, ErrInternal(err, "insufficient funds")
+	}
+	if _, err := bank.SubtractCoins(ctx, addr, cosmos.NewCoins(coin)); err != nil {
+		return nil, ErrInternal(err, "fail to burn native rune coins")
+	}
 
-		if !bank.HasCoins(ctx, addr, cosmos.NewCoins(coin)) {
-			ctx.Logger().Error("insufficient funds", "error", err)
-			return cosmos.ErrInternal("insufficient funds").Result()
-		}
-		if _, err := bank.SubtractCoins(ctx, addr, cosmos.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to burn native rune coins", "error", err)
-			return cosmos.ErrInternal("fail to burn native rune coins").Result()
-		}
+	vaultData.TotalBEP2Rune = common.SafeSub(vaultData.TotalBEP2Rune, msg.Tx.Coins[0].Amount)
 
-		vaultData.TotalBEP2Rune = common.SafeSub(vaultData.TotalBEP2Rune, msg.Tx.Coins[0].Amount)
-
-		txOutStore, err := h.versionedTxOutStore.GetTxOutStore(ctx, h.keeper, version)
-		if err != nil {
-			ctx.Logger().Error("fail to get txout store", "error", err)
-			return errBadVersion.Result()
-		}
-		toi := &TxOutItem{
-			Chain:     common.RuneAsset().Chain,
-			InHash:    msg.Tx.ID,
-			ToAddress: msg.Destination,
-			Coin:      common.NewCoin(common.RuneAsset(), msg.Tx.Coins[0].Amount),
-		}
-		ok, err := txOutStore.TryAddTxOutItem(ctx, toi)
-		if err != nil {
-			ctx.Logger().Error("fail to add outbound tx", "error", err)
-			return cosmos.ErrInternal(fmt.Errorf("fail to add outbound tx: %w", err).Error()).Result()
-		}
-		if !ok {
-			return cosmos.NewError(DefaultCodespace, CodeFailAddOutboundTx, "prepare outbound tx not successful").Result()
-		}
-	} else {
-		coin, err := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount).Native()
-		if err != nil {
-			ctx.Logger().Error("fail to get native coin", "error", err)
-			return cosmos.ErrInternal("fail to get native coin").Result()
-		}
-
-		addr, err := cosmos.AccAddressFromBech32(msg.Destination.String())
-		if err != nil {
-			ctx.Logger().Error("fail to parse thor address", "error", err)
-			return cosmos.ErrInternal("fail to parse thor address").Result()
-		}
-		if _, err := bank.AddCoins(ctx, addr, cosmos.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to mint native rune coins", "error", err)
-			return cosmos.ErrInternal("fail to mint native rune coins").Result()
-		}
-		vaultData.TotalBEP2Rune = vaultData.TotalBEP2Rune.Add(msg.Tx.Coins[0].Amount)
+	toi := &TxOutItem{
+		Chain:     common.RuneAsset().Chain,
+		InHash:    msg.Tx.ID,
+		ToAddress: msg.Destination,
+		Coin:      common.NewCoin(common.RuneAsset(), msg.Tx.Coins[0].Amount),
+	}
+	ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
+	if err != nil {
+		return nil, ErrInternal(err, "fail to add outbound tx")
+	}
+	if !ok {
+		return nil, errFailAddOutboundTx
 	}
 
 	if err := h.keeper.SetVaultData(ctx, vaultData); err != nil {
-		ctx.Logger().Error("fail to set vault data", "error", err)
-		return cosmos.ErrInternal("fail to set vault data").Result()
+		return nil, ErrInternal(err, "fail to set vault data")
+	}
+	return &cosmos.Result{}, nil
+}
+
+func (h SwitchHandler) toNative(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
+	bank := h.keeper.CoinKeeper()
+
+	vaultData, err := h.keeper.GetVaultData(ctx)
+	if err != nil {
+		return nil, ErrInternal(err, "fail to get vault data")
 	}
 
-	return cosmos.Result{
-		Code:      cosmos.CodeOK,
-		Codespace: DefaultCodespace,
+	coin, err := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount).Native()
+	if err != nil {
+		return nil, ErrInternal(err, "fail to get native coin")
 	}
+
+	addr, err := cosmos.AccAddressFromBech32(msg.Destination.String())
+	if err != nil {
+		return nil, ErrInternal(err, "fail to parse thor address")
+	}
+	if _, err := bank.AddCoins(ctx, addr, cosmos.NewCoins(coin)); err != nil {
+		return nil, ErrInternal(err, "fail to mint native rune coins")
+	}
+	vaultData.TotalBEP2Rune = vaultData.TotalBEP2Rune.Add(msg.Tx.Coins[0].Amount)
+
+	if err := h.keeper.SetVaultData(ctx, vaultData); err != nil {
+		return nil, ErrInternal(err, "fail to set vault data")
+	}
+	return &cosmos.Result{}, nil
 }

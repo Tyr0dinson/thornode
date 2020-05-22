@@ -80,7 +80,7 @@ func (s *HandlerErrataTxSuite) TestValidate(c *C) {
 		na: GetRandomNodeAccount(NodeActive),
 	}
 
-	handler := NewErrataTxHandler(keeper, NewDummyVersionedEventMgr())
+	handler := NewErrataTxHandler(keeper, NewDummyMgr())
 	// happy path
 	ver := constants.SWVersion
 	msg := NewMsgErrataTx(GetRandomTxHash(), common.BNBChain, keeper.na.NodeAddress)
@@ -142,11 +142,13 @@ func (s *HandlerErrataTxSuite) TestHandle(c *C) {
 			},
 		},
 	}
-	versionedEventManager := NewVersionedEventMgr()
-	handler := NewErrataTxHandler(keeper, versionedEventManager)
+
+	mgr := NewManagers(keeper)
+	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	handler := NewErrataTxHandler(keeper, mgr)
 	msg := NewMsgErrataTx(txID, common.BNBChain, na.NodeAddress)
-	result := handler.handle(ctx, msg, ver)
-	c.Assert(result.IsOK(), Equals, true)
+	_, err := handler.handle(ctx, msg, ver)
+	c.Assert(err, IsNil)
 	c.Check(keeper.pool.BalanceRune.Equal(cosmos.NewUint(70*common.One)), Equals, true)
 	c.Check(keeper.pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 	c.Check(keeper.stakers[0].Units.IsZero(), Equals, true, Commentf("%d", keeper.stakers[0].Units.Uint64()))

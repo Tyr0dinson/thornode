@@ -92,7 +92,9 @@ func (HandlerStakeSuite) TestStakeHandler(c *C) {
 		},
 	}
 	// happy path
-	stakeHandler := NewStakeHandler(k, NewVersionedEventMgr())
+	mgr := NewManagers(k)
+	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	stakeHandler := NewStakeHandler(k, mgr)
 	preStakePool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	bnbAddr := GetRandomBNBAddress()
@@ -115,8 +117,8 @@ func (HandlerStakeSuite) TestStakeHandler(c *C) {
 		bnbAddr,
 		bnbAddr,
 		activeNodeAccount.NodeAddress)
-	result := stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
-	c.Assert(result.Code, Equals, cosmos.CodeOK)
+	_, err = stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
+	c.Assert(err, IsNil)
 	postStakePool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(postStakePool.BalanceAsset.String(), Equals, preStakePool.BalanceAsset.Add(msgSetStake.AssetAmount).String())
@@ -137,7 +139,9 @@ func (HandlerStakeSuite) TestStakeHandler_NoPool_ShouldCreateNewPool(c *C) {
 		},
 	}
 	// happy path
-	stakeHandler := NewStakeHandler(k, NewVersionedEventMgr())
+	mgr := NewManagers(k)
+	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	stakeHandler := NewStakeHandler(k, mgr)
 	preStakePool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(preStakePool.Empty(), Equals, true)
@@ -166,8 +170,8 @@ func (HandlerStakeSuite) TestStakeHandler_NoPool_ShouldCreateNewPool(c *C) {
 		bnbAddr,
 		bnbAddr,
 		activeNodeAccount.NodeAddress)
-	result := stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
-	c.Assert(result.Code, Equals, cosmos.CodeOK)
+	_, err = stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
+	c.Assert(err, IsNil)
 	postStakePool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(postStakePool.BalanceAsset.String(), Equals, preStakePool.BalanceAsset.Add(msgSetStake.AssetAmount).String())
@@ -175,8 +179,8 @@ func (HandlerStakeSuite) TestStakeHandler_NoPool_ShouldCreateNewPool(c *C) {
 	c.Check(k.addedEvent, Equals, true)
 
 	// bad version
-	result = stakeHandler.Run(ctx, msgSetStake, semver.Version{}, constAccessor)
-	c.Assert(result.Code, Equals, CodeBadVersion)
+	_, err = stakeHandler.Run(ctx, msgSetStake, semver.Version{}, constAccessor)
+	c.Assert(err, NotNil)
 }
 
 func (HandlerStakeSuite) TestStakeHandlerValidation(c *C) {
@@ -196,32 +200,32 @@ func (HandlerStakeSuite) TestStakeHandlerValidation(c *C) {
 	testCases := []struct {
 		name           string
 		msg            MsgSetStakeData
-		expectedResult cosmos.CodeType
+		expectedResult error
 	}{
 		{
 			name:           "empty signer should fail",
 			msg:            NewMsgSetStakeData(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), cosmos.AccAddress{}),
-			expectedResult: CodeStakeFailValidation,
+			expectedResult: errStakeFailValidation,
 		},
 		{
 			name:           "empty asset should fail",
 			msg:            NewMsgSetStakeData(GetRandomTx(), common.Asset{}, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), GetRandomNodeAccount(NodeActive).NodeAddress),
-			expectedResult: CodeStakeFailValidation,
+			expectedResult: errStakeFailValidation,
 		},
 		{
 			name:           "empty RUNE address should fail",
 			msg:            NewMsgSetStakeData(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), common.NoAddress, GetRandomBNBAddress(), GetRandomNodeAccount(NodeActive).NodeAddress),
-			expectedResult: CodeStakeFailValidation,
+			expectedResult: errStakeFailValidation,
 		},
 		{
 			name:           "empty ASSET address should fail",
 			msg:            NewMsgSetStakeData(GetRandomTx(), common.BTCAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), common.NoAddress, GetRandomNodeAccount(NodeActive).NodeAddress),
-			expectedResult: CodeStakeFailValidation,
+			expectedResult: errStakeFailValidation,
 		},
 		{
 			name:           "total staker is more than total bond should fail",
 			msg:            NewMsgSetStakeData(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5000), cosmos.NewUint(common.One*5000), GetRandomBNBAddress(), GetRandomBNBAddress(), activeNodeAccount.NodeAddress),
-			expectedResult: CodeStakeRUNEMoreThanBond,
+			expectedResult: errStakeRUNEMoreThanBond,
 		},
 	}
 	ver := constants.SWVersion
@@ -232,9 +236,9 @@ func (HandlerStakeSuite) TestStakeHandlerValidation(c *C) {
 	}, map[constants.ConstantName]string{})
 
 	for _, item := range testCases {
-		stakeHandler := NewStakeHandler(k, NewVersionedEventMgr())
-		result := stakeHandler.Run(ctx, item.msg, ver, constAccessor)
-		c.Assert(result.Code, Equals, item.expectedResult, Commentf(item.name))
+		stakeHandler := NewStakeHandler(k, NewDummyMgr())
+		_, err := stakeHandler.Run(ctx, item.msg, ver, constAccessor)
+		c.Assert(errors.Is(err, item.expectedResult), Equals, true, Commentf("name:%s", item.name))
 	}
 }
 
@@ -253,7 +257,7 @@ func (HandlerStakeSuite) TestHandlerStakeFailScenario(c *C) {
 	testCases := []struct {
 		name           string
 		k              Keeper
-		expectedResult cosmos.CodeType
+		expectedResult error
 	}{
 		{
 			name: "fail to get pool should fail stake",
@@ -262,7 +266,7 @@ func (HandlerStakeSuite) TestHandlerStakeFailScenario(c *C) {
 				currentPool:       emptyPool,
 				failGetPool:       true,
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "suspended pool should fail stake",
@@ -276,7 +280,7 @@ func (HandlerStakeSuite) TestHandlerStakeFailScenario(c *C) {
 					Status:       PoolSuspended,
 				},
 			},
-			expectedResult: CodeInvalidPoolStatus,
+			expectedResult: errInvalidPoolStatus,
 		},
 		{
 			name: "fail to get next event id should fail stake",
@@ -285,7 +289,7 @@ func (HandlerStakeSuite) TestHandlerStakeFailScenario(c *C) {
 				currentPool:        emptyPool,
 				failGetNextEventID: true,
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 	}
 	for _, tc := range testCases {
@@ -309,8 +313,10 @@ func (HandlerStakeSuite) TestHandlerStakeFailScenario(c *C) {
 			bnbAddr,
 			bnbAddr,
 			activeNodeAccount.NodeAddress)
-		stakeHandler := NewStakeHandler(tc.k, NewVersionedEventMgr())
-		result := stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
-		c.Assert(result.Code, Equals, tc.expectedResult, Commentf(tc.name))
+		mgr := NewManagers(tc.k)
+		c.Assert(mgr.BeginBlock(ctx), IsNil)
+		stakeHandler := NewStakeHandler(tc.k, mgr)
+		_, err := stakeHandler.Run(ctx, msgSetStake, ver, constAccessor)
+		c.Assert(errors.Is(err, tc.expectedResult), Equals, true, Commentf(tc.name))
 	}
 }

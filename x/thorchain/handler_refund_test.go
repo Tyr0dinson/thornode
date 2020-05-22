@@ -2,8 +2,10 @@ package thorchain
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/blang/semver"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	. "gopkg.in/check.v1"
 
@@ -28,6 +30,7 @@ type refundTxHandlerTestHelper struct {
 	inboundTx     ObservedTx
 	toi           *TxOutItem
 	event         Event
+	mgr           Manager
 }
 
 type refundTxHandlerKeeperTestHelper struct {
@@ -153,6 +156,9 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 	voter.Height = ctx.BlockHeight()
 	keeper.SetObservedTxVoter(ctx, voter)
 
+	mgr := NewDummyMgr()
+	mgr.slasher = NewSlasherV1(keeper)
+
 	nodeAccount := GetRandomNodeAccount(NodeActive)
 	nodeAccount.NodeAddress, err = yggVault.PubKey.GetThorAddress()
 	c.Assert(err, IsNil)
@@ -162,9 +168,8 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 
-	txOutStorage := NewTxOutStorageV1(keeper, NewEventMgr())
 	constAccessor := constants.GetConstantValues(version)
-	txOutStorage.NewBlock(ctx.BlockHeight(), constAccessor)
+	txOutStorage := NewTxOutStorageV1(keeper, constAccessor, NewDummyEventMgr())
 	toi := &TxOutItem{
 		Chain:       common.BNBChain,
 		ToAddress:   tx.Tx.FromAddress,
@@ -173,7 +178,7 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 		Memo:        NewRefundMemo(tx.Tx.ID).String(),
 		InHash:      tx.Tx.ID,
 	}
-	result, err := txOutStorage.TryAddTxOutItem(ctx, toi)
+	result, err := txOutStorage.TryAddTxOutItem(ctx, mgr, toi)
 	c.Assert(err, IsNil)
 	c.Check(result, Equals, true)
 
@@ -195,6 +200,7 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 		inboundTx:     tx,
 		toi:           toi,
 		constAccessor: constAccessor,
+		mgr:           mgr,
 	}
 }
 
@@ -202,60 +208,60 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 	testCases := []struct {
 		name           string
 		messageCreator func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg
-		runner         func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result
-		expectedResult cosmos.CodeType
+		runner         func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error)
+		expectedResult error
 	}{
 		{
 			name: "invalid message should return an error",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgNoOp(GetRandomObservedTx(), helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				return handler.Run(helper.ctx, msg, helper.version, helper.constAccessor)
 			},
-			expectedResult: CodeInvalidMessage,
+			expectedResult: errInvalidMessage,
 		},
 		{
 			name: "if the version is lower than expected, it should return an error",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgRefundTx(tx, tx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				return handler.Run(helper.ctx, msg, semver.MustParse("0.0.1"), helper.constAccessor)
 			},
-			expectedResult: CodeBadVersion,
+			expectedResult: errBadVersion,
 		},
 		{
 			name: "fail to get observed TxVoter should result in an error",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgRefundTx(tx, helper.keeper.observeTxVoterErrHash, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to complete events should result in an error",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.failGetPendingEvent = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: kaboom,
 		},
 		{
 			name: "fail to get txout should result in an error",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errGetTxOut = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeUnknownRequest,
+			expectedResult: se.ErrUnknownRequest,
 		},
 		{
 			name: "fail to get node account should result in an error",
@@ -263,11 +269,11 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errGetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to get pool should result in an error",
@@ -275,11 +281,11 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errGetPool = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to set pool should result in an error",
@@ -287,11 +293,11 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errSetPool = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to set node account should result in an error",
@@ -299,11 +305,11 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errSetNodeAccount = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to get vault data should result in an error",
@@ -312,11 +318,11 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One*2)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errGetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "fail to set vault data should result in an error",
@@ -325,27 +331,27 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 				tx.Tx.Coins = append(tx.Tx.Coins, common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One*2)))
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				helper.keeper.errSetVaultData = true
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeInternal,
+			expectedResult: errInternal,
 		},
 		{
 			name: "valid outbound message, no event, no txout",
 			messageCreator: func(helper refundTxHandlerTestHelper, tx ObservedTx) cosmos.Msg {
 				return NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
 			},
-			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) cosmos.Result {
+			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				return handler.Run(helper.ctx, msg, constants.SWVersion, helper.constAccessor)
 			},
-			expectedResult: cosmos.CodeOK,
+			expectedResult: nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		helper := newRefundTxHandlerTestHelper(c)
-		handler := NewRefundHandler(helper.keeper, NewVersionedEventMgr())
+		handler := NewRefundHandler(helper.keeper, helper.mgr)
 		fromAddr, err := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 		c.Assert(err, IsNil)
 		tx := NewObservedTx(common.Tx{
@@ -360,13 +366,18 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 			Gas:         BNBGasFeeSingleton,
 		}, helper.ctx.BlockHeight(), helper.yggVault.PubKey)
 		msg := tc.messageCreator(helper, tx)
-		c.Assert(tc.runner(handler, helper, msg).Code, Equals, tc.expectedResult, Commentf("name:%s", tc.name))
+		_, err = tc.runner(handler, helper, msg)
+		if tc.expectedResult == nil {
+			c.Check(err, IsNil)
+		} else {
+			c.Check(errors.Is(err, tc.expectedResult), Equals, true, Commentf("name:%s", tc.name))
+		}
 	}
 }
 
 func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.keeper, NewVersionedEventMgr())
+	handler := NewRefundHandler(helper.keeper, helper.mgr)
 
 	fromAddr, err := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -383,7 +394,8 @@ func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 	}, helper.ctx.BlockHeight(), helper.yggVault.PubKey)
 	// valid outbound message, with event, with txout
 	outMsg := NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
-	c.Assert(handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor).Code, Equals, cosmos.CodeOK)
+	_, err = handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor)
+	c.Assert(err, IsNil)
 	// event should set to complete
 	ev, err := helper.keeper.GetEvent(helper.ctx, 1)
 	c.Assert(err, IsNil)
@@ -397,7 +409,7 @@ func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 
 func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.keeper, NewVersionedEventMgr())
+	handler := NewRefundHandler(helper.keeper, helper.mgr)
 	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
@@ -417,7 +429,8 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *
 	expectedVaultTotalReserve := vaultData.TotalReserve.Add(cosmos.NewUint(common.One * 2).QuoUint64(2))
 	// valid outbound message, with event, with txout
 	outMsg := NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
-	c.Assert(handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor).Code, Equals, cosmos.CodeOK)
+	_, err = handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor)
+	c.Assert(err, IsNil)
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true)
 	vaultData, err = helper.keeper.GetVaultData(helper.ctx)
@@ -427,7 +440,7 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *
 
 func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.keeper, NewVersionedEventMgr())
+	handler := NewRefundHandler(helper.keeper, helper.mgr)
 	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
@@ -445,14 +458,15 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSla
 	expectedBond := cosmos.NewUint(9702970297)
 	// slash one BNB and one rune
 	outMsg := NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
-	c.Assert(handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor).Code, Equals, cosmos.CodeOK)
+	_, err = handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor)
+	c.Assert(err, IsNil)
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true, Commentf("Bond: %d != %d", na.Bond.Uint64(), expectedBond.Uint64()))
 }
 
 func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSlash(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.keeper, NewVersionedEventMgr())
+	handler := NewRefundHandler(helper.keeper, helper.mgr)
 	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
@@ -479,7 +493,8 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSl
 
 	// given the outbound tx doesn't have relevant OservedTxVoter in system , thus it should be slashed with 1.5 * the full amount of assets
 	outMsg := NewMsgRefundTx(tx, tx.Tx.ID, helper.nodeAccount.NodeAddress)
-	c.Assert(handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor).Code, Equals, cosmos.CodeOK)
+	_, err = handler.Run(helper.ctx, outMsg, constants.SWVersion, helper.constAccessor)
+	c.Assert(err, IsNil)
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true, Commentf("Bond: %d != %d", na.Bond.Uint64(), expectedBond.Uint64()))
 

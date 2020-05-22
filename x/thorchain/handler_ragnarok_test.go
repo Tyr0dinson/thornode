@@ -34,7 +34,7 @@ func (HandlerRagnarokSuite) TestRagnarok(c *C) {
 		vault:             GetRandomVault(),
 	}
 
-	handler := NewRagnarokHandler(keeper, NewVersionedEventMgr())
+	handler := NewRagnarokHandler(keeper, NewDummyMgr())
 
 	addr, err := keeper.vault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -135,7 +135,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 	}
 	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
-	handler := NewRagnarokHandler(keeper, NewVersionedEventMgr())
+	handler := NewRagnarokHandler(keeper, NewDummyMgr())
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
@@ -150,8 +150,8 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 
 	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
 	ver := constants.SWVersion
-	result := handler.handleV1(ctx, ver, msgRagnarok)
-	c.Assert(result.Code, Equals, cosmos.CodeOK)
+	_, err = handler.handleV1(ctx, ver, msgRagnarok)
+	c.Assert(err, IsNil)
 	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
 }
 
@@ -179,7 +179,11 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	}
 	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
-	handler := NewRagnarokHandler(keeper, NewVersionedEventMgr())
+
+	mgr := NewDummyMgr()
+	mgr.slasher = NewSlasherV1(keeper)
+	handler := NewRagnarokHandler(keeper, mgr)
+
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
@@ -193,7 +197,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	}, 1, retireVault.PubKey)
 
 	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	result := handler.handleV1(ctx, constants.SWVersion, msgRagnarok)
-	c.Assert(result.Code, Equals, cosmos.CodeOK, Commentf("%s", result.Log))
+	_, err = handler.handleV1(ctx, constants.SWVersion, msgRagnarok)
+	c.Assert(err, IsNil)
 	c.Assert(keeper.activeNodeAccount.Bond.Equal(cosmos.NewUint(9999998464)), Equals, true, Commentf("%d", keeper.activeNodeAccount.Bond.Uint64()))
 }

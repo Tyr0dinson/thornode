@@ -15,38 +15,37 @@ var ADMINS = []string{"thor1x0akdepu6vs40cv30xqz3qnd85mh7gkf5a0z89", "thor1app3q
 // MimirHandler is to handle admin messages
 type MimirHandler struct {
 	keeper Keeper
+	mgr    Manager
 }
 
 // NewMimirHandler create new instance of MimirHandler
-func NewMimirHandler(keeper Keeper) MimirHandler {
+func NewMimirHandler(keeper Keeper, mgr Manager) MimirHandler {
 	return MimirHandler{
 		keeper: keeper,
+		mgr:    mgr,
 	}
 }
 
 // Run is the main entry point to execute mimir logic
-func (h MimirHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) cosmos.Result {
+func (h MimirHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, _ constants.ConstantValues) (*cosmos.Result, error) {
 	msg, ok := m.(MsgMimir)
 	if !ok {
-		return errInvalidMessage.Result()
+		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info("receive mimir", "key", msg.Key, "value", msg.Value)
 	if err := h.validate(ctx, msg, version); err != nil {
 		ctx.Logger().Error("msg mimir failed validation", "error", err)
-		return err.Result()
+		return nil, err
 	}
 	if err := h.handle(ctx, msg, version); err != nil {
 		ctx.Logger().Error("fail to process msg set mimir", "error", err)
-		return err.Result()
+		return nil, err
 	}
 
-	return cosmos.Result{
-		Code:      cosmos.CodeOK,
-		Codespace: DefaultCodespace,
-	}
+	return &cosmos.Result{}, nil
 }
 
-func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir, version semver.Version) cosmos.Error {
+func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	} else {
@@ -54,7 +53,7 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir, version semver.
 	}
 }
 
-func (h MimirHandler) validateV1(ctx cosmos.Context, msg MsgMimir) cosmos.Error {
+func (h MimirHandler) validateV1(ctx cosmos.Context, msg MsgMimir) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func (h MimirHandler) validateV1(ctx cosmos.Context, msg MsgMimir) cosmos.Error 
 	return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 }
 
-func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir, version semver.Version) cosmos.Error {
+func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir, version semver.Version) error {
 	ctx.Logger().Info("handleMsgMimir request", "key", msg.Key, "value", msg.Value)
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
@@ -80,7 +79,7 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir, version semver.Ve
 	}
 }
 
-func (h MimirHandler) handleV1(ctx cosmos.Context, msg MsgMimir) cosmos.Error {
+func (h MimirHandler) handleV1(ctx cosmos.Context, msg MsgMimir) error {
 	h.keeper.SetMimir(ctx, msg.Key, msg.Value)
 
 	ctx.EventManager().EmitEvent(
