@@ -31,7 +31,7 @@ curl -v -s -X POST -d "[{
       {\"denom\": \"RUNE-A1F\", \"amount\": 200000000000000}
   ],
   \"memo\": \"\"
-}]" $1:26660/broadcast/easy
+}]" $1/broadcast/easy
 
 curl -v -s -X POST -d "[{
   \"from\": \"$2\",
@@ -40,4 +40,4 @@ curl -v -s -X POST -d "[{
       {\"denom\": \"RUNE-A1F\", \"amount\": 100000000000000}
   ],
   \"memo\": \"BOND:$3\"
-}]" $1:26660/broadcast/easy
+}]" $1/broadcast/easy
