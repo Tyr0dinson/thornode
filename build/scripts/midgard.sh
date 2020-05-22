@@ -24,6 +24,7 @@ echo "{
     \"scheme\": \"$CHAIN_SCHEME\",
     \"host\": \"$CHAIN_API\",
     \"rpc_host\": \"$CHAIN_RPC\",
+    \"tendermint_addr\": \"http://$CHAIN_RPC\",
     \"enable_scan\": true,
     \"no_events_backoff\": \"5s\",
     \"scanners_update_interval\": \"10s\",
