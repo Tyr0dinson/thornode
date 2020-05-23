@@ -415,7 +415,6 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "fail to keygen but can't get vault data should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-
 				b := blame.Blame{
 					FailReason: "who knows",
 					BlameNodes: []blame.Node{
@@ -485,7 +484,6 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "fail to keygen and none active account, fail to set vault data should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-
 				b := blame.Blame{
 					FailReason: "who knows",
 					BlameNodes: []blame.Node{
@@ -580,7 +578,6 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		helper := newTssHandlerTestHelper(c)
 		handler := NewTssHandler(helper.keeper, NewDummyMgr())
 		msg := tc.messageCreator(helper)
-		fmt.Println(tc.name)
 		result, err := tc.runner(handler, msg, helper)
 		if tc.expectedResult == nil {
 			c.Assert(err, IsNil)
