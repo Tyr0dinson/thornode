@@ -71,6 +71,11 @@ if [ "$SEED" = "$(hostname)" ]; then
       fi
     done
 
+    # disable addr book strict to allow private networks
+    disable_strict_routing
+
+    add_external_ip
+
     # add gases
     add_gas_config "BNB.BNB" 37500 30000
 

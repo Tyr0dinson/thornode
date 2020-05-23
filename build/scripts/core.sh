@@ -97,14 +97,27 @@ init_chain () {
 }
 
 peer_list () {
-    PEERUSER="$1@$2:26656"
-    ADDR='addr_book_strict = true'
-    ADDR_STRICT_FALSE='addr_book_strict = false'
+    PEER=$2
+    if ! expr "$PEER" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+      PEER=$(host $PEER | awk '{print $4}')
+    fi
+    PEERUSER="$1@$PEER:26656"
     PEERSISTENT_PEER_TARGET='persistent_peers = ""'
-
-    sed -i -e "s/$ADDR/$ADDR_STRICT_FALSE/g" ~/.thord/config/config.toml
     sed -i -e "s/$PEERSISTENT_PEER_TARGET/persistent_peers = \"$PEERUSER\"/g" ~/.thord/config/config.toml
 }
+
+disable_strict_routing () {
+    ADDR='addr_book_strict = true'
+    ADDR_STRICT_FALSE='addr_book_strict = false'
+    sed -i -e "s/$ADDR/$ADDR_STRICT_FALSE/g" ~/.thord/config/config.toml
+}
+
+add_external_ip () {
+    IP='external_address = ""'
+    IP_VALID="external_address = \"tcp://$EXTERNAL_IP:26656\""
+    sed -i -e "s|$IP|$IP_VALID|g" ~/.thord/config/config.toml
+}
+
 
 gen_bnb_address () {
     if [ ! -f ~/.bond/private_key.txt ]; then

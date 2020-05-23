@@ -35,6 +35,11 @@ if [ ! -f ~/.thord/config/genesis.json ]; then
     NODE_ID=$(fetch_node_id $PEER)
     peer_list $NODE_ID $PEER
 
+    # disable addr book strict to allow private networks
+    disable_strict_routing
+
+    add_external_ip
+
     if [[ "$NET" == "mocknet" ]]; then
         # create a binance wallet and bond/register
         gen_bnb_address
