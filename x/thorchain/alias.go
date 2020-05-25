@@ -3,6 +3,7 @@ package thorchain
 import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 
+	"gitlab.com/thorchain/thornode/x/thorchain/managers"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -132,6 +133,7 @@ var (
 )
 
 type (
+	Manager               = managers.Manager
 	MsgSend               = bank.MsgSend
 	MsgNativeTx           = types.MsgNativeTx
 	MsgSwitch             = types.MsgSwitch
