@@ -3,6 +3,7 @@ package thorchain
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/cosmos/cosmos-sdk/client/context"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -76,16 +77,22 @@ type AppModule struct {
 	coinKeeper   bank.Keeper
 	supplyKeeper supply.Keeper
 	mgr          *Mgrs
+	keybaseStore KeybaseStore
 }
 
 // NewAppModule creates a new AppModule Object
 func NewAppModule(k Keeper, bankKeeper bank.Keeper, supplyKeeper supply.Keeper) AppModule {
+	kb, err := getKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
+	if err != nil {
+		panic(err)
+	}
 	return AppModule{
 		AppModuleBasic: AppModuleBasic{},
 		keeper:         k,
 		coinKeeper:     bankKeeper,
 		supplyKeeper:   supplyKeeper,
 		mgr:            NewManagers(k),
+		keybaseStore:   kb,
 	}
 }
 
@@ -108,12 +115,19 @@ func (am AppModule) QuerierRoute() string {
 }
 
 func (am AppModule) NewQuerierHandler() sdk.Querier {
-	return NewQuerier(am.keeper)
+	return NewQuerier(am.keeper, am.keybaseStore)
 }
 
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
 	version := am.keeper.GetLowestActiveVersion(ctx)
+
+	// Does a kvstore migration
+	smgr := NewStoreMgr(am.keeper)
+	if err := smgr.Iterator(ctx); err != nil {
+		panic(err) // halt the chain if unsuccessful
+	}
+
 	am.keeper.ClearObservingAddresses(ctx)
 	if err := am.mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)

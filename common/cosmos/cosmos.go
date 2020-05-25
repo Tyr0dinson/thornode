@@ -3,9 +3,11 @@ package common
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/hashicorp/go-multierror"
 )
 
 var (
+	KeyringServiceName      = sdk.KeyringServiceName
 	NewUint                 = sdk.NewUint
 	ParseUint               = sdk.ParseUint
 	NewInt                  = sdk.NewInt
@@ -81,6 +83,6 @@ func ErrUnauthorized(msg string) error {
 	return se.Wrap(se.ErrUnauthorized, msg)
 }
 
-func ErrInsufficientCoins(msg string) error {
-	return se.Wrap(se.ErrInsufficientFunds, msg)
+func ErrInsufficientCoins(err error, msg string) error {
+	return se.Wrap(multierror.Append(se.ErrInsufficientFunds, err), msg)
 }

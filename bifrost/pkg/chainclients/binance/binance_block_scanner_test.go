@@ -13,6 +13,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/x/thorchain"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -62,17 +63,7 @@ func getStdTx(f, t string, coins []types.Coin, memo string) (tx.StdTx, error) {
 }
 
 func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
-	c.Skip("skip")
-	bs, err := NewBinanceBlockScanner(getConfigForTest(""), blockscanner.NewMockScannerStorage(), true, s.m)
-	c.Assert(err, NotNil)
-	c.Assert(bs, IsNil)
-	bs, err = NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), blockscanner.NewMockScannerStorage(), true, s.m)
-	c.Assert(err, NotNil)
-	c.Assert(bs, IsNil)
-	bs, err = NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), nil, true, s.m)
-	c.Assert(err, NotNil)
-	c.Assert(bs, IsNil)
-	bs, err = NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), blockscanner.NewMockScannerStorage(), true, s.m)
+	bs, err := NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), nil, true, s.m)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 	bs, err = NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), blockscanner.NewMockScannerStorage(), true, s.m)
@@ -143,7 +134,6 @@ const (
 )
 
 func (s *BlockScannerTestSuite) TestSearchTxInABlockFromServer(c *C) {
-	c.Skip("skip")
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
 		switch r.RequestURI {
@@ -236,7 +226,6 @@ func (s *BlockScannerTestSuite) TestGetTxHash(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
-	c.Skip("skip")
 	testFunc := func(input string, txInItemCheck, errCheck Checker) []stypes.TxInItem {
 		var query btypes.RPCTxSearch
 		err := json.Unmarshal([]byte(input), &query)
@@ -286,7 +275,6 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestFromStdTx(c *C) {
-	c.Skip("skip")
 	bs, err := NewBinanceBlockScanner(
 		getConfigForTest("127.0.0.1"),
 		blockscanner.NewMockScannerStorage(),
@@ -321,11 +309,13 @@ func (s *BlockScannerTestSuite) TestFromStdTx(c *C) {
 		"",
 	)
 	c.Assert(err, IsNil)
-	items, err = bs.fromStdTx("abcd", stdTx)
+	txhash := thorchain.GetRandomTxHash().String()
+	items, err = bs.fromStdTx(txhash, stdTx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 	item = items[0]
-	c.Assert(item, IsNil)
+	c.Assert(item, NotNil)
+	c.Assert(item.Tx, Equals, txhash)
 
 	// register yggdrasil
 	stdTx, err = getStdTx(

@@ -124,7 +124,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)
 		if strings.HasPrefix(req.RequestURI, "/txs") {
-			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
+			_, err := rw.Write([]byte(`{"height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}]}`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/errata") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
@@ -178,7 +178,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 	pk, err := common.NewPubKeyFromCrypto(priv.PubKey())
 	c.Assert(err, IsNil)
-	txOut := getTxOutFromJsonInput(`{ "height": "0", "hash": "", "tx_array": [ { "vault_pubkey":"", "seq_no":"0","to": "tbnb186nvjtqk4kkea3f8a30xh4vqtkrlu2rm9xgly3", "memo": "migrate", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
+	txOut := getTxOutFromJsonInput(`{ "height": "0", "tx_array": [ { "vault_pubkey":"", "seq_no":"0","to": "tbnb186nvjtqk4kkea3f8a30xh4vqtkrlu2rm9xgly3", "memo": "migrate", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk
 	out := txOut.TxArray[0].TxOutItem()
 
