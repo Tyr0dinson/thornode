@@ -2,7 +2,6 @@ package ethereum
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -31,10 +30,10 @@ import (
 
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
-	BlockCacheSize               = 200
+	BlockCacheSize               = 6000
 	DepositEvent                 = "DepositIn(address,uint256,string)"
 	TransferEvent                = "TransferOut(address,address,uint256)"
-	ETHToken                     = "0x0000000000000000000000000000000000000000"
+	ETHToken                     = "0X0000000000000000000000000000000000000000"
 )
 
 // BlockScanner is to scan the blocks
@@ -49,6 +48,7 @@ type BlockScanner struct {
 	blockMetaAccessor BlockMetaAccessor
 	globalErrataQueue chan<- stypes.ErrataBlock
 	ContractAddress   ecommon.Address
+	ContractOwner     string
 	ContractABI       *abi.ABI
 }
 
@@ -151,11 +151,12 @@ func (e *BlockScanner) parseDeposit(data []byte) (string, *big.Int, string, erro
 		Value *big.Int
 		Memo  string
 	}{}
-	err := e.ContractABI.Unpack(&event, "Deposit", data)
+	err := e.ContractABI.Unpack(&event, "DepositIn", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse deposit event")
 		return "", nil, "", err
 	}
+	e.logger.Info().Msgf("token %s value %d memo %s",  event.Token.String(), event.Value, event.Memo)
 	return event.Token.String(), event.Value, event.Memo, nil
 }
 
@@ -165,7 +166,7 @@ func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, err
 		Token ecommon.Address
 		Value *big.Int
 	}{}
-	err := e.ContractABI.Unpack(&event, "Transfer", data)
+	err := e.ContractABI.Unpack(&event, "TransferOut", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse transfer event")
 		return "", "", nil, err
@@ -346,7 +347,7 @@ func (e *BlockScanner) getRPCBlock(height int64) (*etypes.Block, error) {
 }
 
 func (e *BlockScanner) getSymbol(from, token string) (string, error) {
-	if token == ETHToken {
+	if token[2:] == ETHToken[2:] {
 		return "ETH", nil
 	}
 	toAddr := &ecommon.Address{}
@@ -359,11 +360,10 @@ func (e *BlockScanner) getSymbol(from, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	symbol, err := hex.DecodeString(string(res))
-	if err != nil {
-		return "", err
-	}
-	return string(symbol), nil
+	res = ecommon.TrimLeftZeroes(res)
+	res = ecommon.TrimRightZeroes(res)
+	res = res[len(res)-3:]
+	return string(res), nil
 }
 
 func (e *BlockScanner) getTransactionsFromBlock(block *etypes.Block) ([]string, error) {
@@ -401,19 +401,33 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 	if err != nil {
 		return nil, err
 	}
-
 	value := tx.Value()
 	for _, log := range receipt.Logs {
+		e.logger.Info().Msgf("log %s %s", log.Address.String(), e.ContractAddress.String())
 		if log.Address != e.ContractAddress {
 			continue
 		}
 		token := ETHToken
 		if e.matchDeposit(log.Topics[0]) {
-			token, value, txInItem.Memo, err = e.parseDeposit(log.Data)
+			memo := ""
+			token, value, memo, err = e.parseDeposit(log.Data)
 			if err != nil {
 				return nil, err
 			}
-			txInItem.Memo += ":" + txInItem.Sender
+			parts := strings.Split(memo, ":")
+			if len(parts) != 3 {
+				return nil, err
+			}
+			index := strings.LastIndex(memo, ":")
+			if index == -1 {
+				return nil, fmt.Errorf("incorrect memo")
+			}
+			if strings.Index(memo, ":ETH.") != -1 {
+				txInItem.Memo = memo[:index] + "-" + token + memo[index:]
+			} else {
+				txInItem.Memo = memo
+			}
+			txInItem.To = e.ContractOwner
 		}
 		if e.matchTransfer(log.Topics[0]) {
 			to := ""
@@ -422,17 +436,16 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 				return nil, err
 			}
 			txInItem.To = strings.ToLower(to)
-			txInItem.Sender = strings.ToLower(e.ContractAddress.String())
 		}
 		symbol, err := e.getSymbol(tx.To().String(), token)
 		if err != nil {
 			return nil, err
 		}
-		ticker := symbol + "-" + token
-		asset.Symbol = common.Symbol(symbol)
-		asset.Ticker = common.Ticker(ticker)
+		asset, err = common.NewAsset("ETH." + symbol + "-" + strings.ToUpper(token))
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(value)))
 	txInItem.Gas = common.MakeETHGas(tx.GasPrice(), receipt.CumulativeGasUsed)
 	return txInItem, nil

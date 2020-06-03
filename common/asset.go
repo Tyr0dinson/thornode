@@ -10,7 +10,7 @@ import (
 var (
 	BNBAsset     = Asset{Chain: BNBChain, Symbol: "BNB", Ticker: "BNB"}
 	BTCAsset     = Asset{Chain: BTCChain, Symbol: "BTC", Ticker: "BTC"}
-	ETHAsset     = Asset{Chain: ETHChain, Symbol: "ETH", Ticker: "ETH"}
+	ETHAsset     = Asset{Chain: ETHChain, Symbol: "ETH-0x0000000000000000000000000000000000000000", Ticker: "ETH"}
 	RuneA1FAsset = Asset{Chain: BNBChain, Symbol: "RUNE-A1F", Ticker: "RUNE"} // testnet
 	RuneB1AAsset = Asset{Chain: BNBChain, Symbol: "RUNE-B1A", Ticker: "RUNE"} // mainnet
 	EmptyAsset   = Asset{Chain: EmptyChain, Symbol: "", Ticker: ""}

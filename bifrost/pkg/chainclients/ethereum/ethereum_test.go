@@ -233,8 +233,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	height, err := e2.GetHeight()
 	c.Assert(err, IsNil)
 	c.Check(height, Equals, int64(1))
-	gasPrice, err := e2.GetGasPrice()
-	c.Assert(err, IsNil)
+	gasPrice := e2.GetGasPrice()
 	c.Check(gasPrice.Uint64(), Equals, uint64(1))
 
 	acct, err := e2.GetAccount(types2.GetRandomPubKey())
