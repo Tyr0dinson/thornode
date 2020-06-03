@@ -57,14 +57,14 @@ func (b *ThorchainBridge) GetKeysign(blockHeight int64, pk string) (types.TxOut,
 	}
 	for _, item := range query.Keysign.TxArray {
 		txOut.TxArray = append(txOut.TxArray, types.TxArrayItem{
-			Chain: item.Chain,
-			ToAddress: item.ToAddress,
+			Chain:       item.Chain,
+			ToAddress:   item.ToAddress,
 			VaultPubKey: item.VaultPubKey,
-			Coin: item.Coin,
-			Memo: item.Memo,
-			MaxGas: item.MaxGas,
-			InHash: item.InHash,
-			OutHash: item.OutHash,
+			Coin:        item.Coin,
+			Memo:        item.Memo,
+			MaxGas:      item.MaxGas,
+			InHash:      item.InHash,
+			OutHash:     item.OutHash,
 		})
 	}
 	return txOut, nil
