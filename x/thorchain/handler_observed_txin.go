@@ -31,14 +31,12 @@ func (h ObservedTxInHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semve
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	isNewSigner, err := h.validate(ctx, msg, version)
+	err := h.validate(ctx, msg, version)
 	if err != nil {
 		ctx.Logger().Error("MsgObservedTxIn failed validation", "error", err)
 		return nil, err
 	}
-	if isNewSigner {
-		return &cosmos.Result{}, nil
-	}
+
 	result, err := h.handle(ctx, msg, version)
 	if err != nil {
 		ctx.Logger().Error("fail to handle MsgObservedTxIn message", "error", err)
@@ -46,23 +44,23 @@ func (h ObservedTxInHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semve
 	return result, err
 }
 
-func (h ObservedTxInHandler) validate(ctx cosmos.Context, msg MsgObservedTxIn, version semver.Version) (bool, error) {
+func (h ObservedTxInHandler) validate(ctx cosmos.Context, msg MsgObservedTxIn, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
-	return false, errInvalidVersion
+	return errInvalidVersion
 }
 
-func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn) (bool, error) {
+func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn) error {
 	if err := msg.ValidateBasic(); err != nil {
-		return false, err
+		return err
 	}
 
 	if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
-		return false, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", msg.GetSigners()))
+		return cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", msg.GetSigners()))
 	}
 
-	return false, nil
+	return nil
 }
 
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn, version semver.Version) (*cosmos.Result, error) {
@@ -97,7 +95,7 @@ func (h ObservedTxInHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter
 			}
 		}
 	}
-	h.keeper.SetObservedTxVoter(ctx, voter)
+	h.keeper.SetObservedTxInVoter(ctx, voter)
 
 	// Check to see if we have enough identical observations to process the transaction
 	return voter, ok
@@ -119,7 +117,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			continue
 		}
 
-		voter, err := h.keeper.GetObservedTxVoter(ctx, tx.Tx.ID)
+		voter, err := h.keeper.GetObservedTxInVoter(ctx, tx.Tx.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -174,6 +172,11 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			continue
 		}
 
+		if memo.IsOutbound() || memo.IsInternal() {
+			// do not process outbound handlers here, or internal handlers
+			continue
+		}
+
 		// tx is not observed at current vault - refund
 		// yggdrasil pool is ok
 		if ok := isCurrentVaultPubKey(ctx, h.keeper, tx); !ok {
@@ -199,11 +202,6 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			if newErr := refundTx(ctx, tx, h.mgr, h.keeper, constAccessor, CodeInvalidMemo, txErr.Error()); nil != newErr {
 				return nil, ErrInternal(newErr, "fail to refund")
 			}
-			continue
-		}
-
-		if memo.IsOutbound() {
-			// no one should send an outbound tx to vault
 			continue
 		}
 

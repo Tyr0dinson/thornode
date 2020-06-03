@@ -23,9 +23,10 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 const (
@@ -50,10 +51,11 @@ type BlockScanner struct {
 	ContractAddress   ecommon.Address
 	ContractOwner     string
 	ContractABI       *abi.ABI
+	bridge            *thorclient.ThorchainBridge
 }
 
 // NewBlockScanner create a new instance of BlockScan
-func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.ScannerStorage, chainID types.ChainID, client *ethclient.Client, m *metrics.Metrics) (*BlockScanner, error) {
+func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.ScannerStorage, chainID types.ChainID, client *ethclient.Client, bridge *thorclient.ThorchainBridge, m *metrics.Metrics) (*BlockScanner, error) {
 	if storage == nil {
 		return nil, errors.New("storage is nil")
 	}
@@ -83,6 +85,7 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.
 		m:                 m,
 		gasPrice:          gasPrice,
 		blockMetaAccessor: blockMetaAccessor,
+		bridge:            bridge,
 	}, nil
 }
 
@@ -133,6 +136,10 @@ func (e *BlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 				e.logger.Err(err).Msgf("fail to prune block meta, height(%d)", pruneHeight)
 			}
 		}()
+	}
+
+	if _, err := e.bridge.PostNetworkFee(height, common.ETHChain, 1, cosmos.NewUintFromBigInt(e.GetGasPrice())); err != nil {
+		e.logger.Err(err).Msg("fail to post ETH chain single transfer fee to THORNode")
 	}
 	return txIn, nil
 }

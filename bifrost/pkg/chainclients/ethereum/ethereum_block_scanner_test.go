@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/cosmos/cosmos-sdk/client/keys"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	. "gopkg.in/check.v1"
@@ -17,14 +19,16 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 func Test(t *testing.T) { TestingT(t) }
 
 type BlockScannerTestSuite struct {
-	m *metrics.Metrics
+	m      *metrics.Metrics
+	bridge *thorclient.ThorchainBridge
 }
 
 var _ = Suite(&BlockScannerTestSuite{})
@@ -32,6 +36,21 @@ var _ = Suite(&BlockScannerTestSuite{})
 func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
+	cfg := config.ClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       "localhost",
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: "",
+	}
+
+	kb := keys.NewInMemoryKeyBase()
+	info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
+	c.Assert(err, IsNil)
+	thorKeys := thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
+	c.Assert(err, IsNil)
+	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, thorKeys)
+	c.Assert(err, IsNil)
 }
 
 func getConfigForTest(rpcHost string) config.BlockScannerConfiguration {
@@ -74,13 +93,13 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	}))
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
-	bs, err := NewBlockScanner(getConfigForTest(""), nil, types.Mainnet, ethClient, s.m)
+	bs, err := NewBlockScanner(getConfigForTest(""), nil, types.Mainnet, ethClient, s.bridge, s.m)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
-	bs, err = NewBlockScanner(getConfigForTest("127.0.0.1"), storage, types.Mainnet, nil, s.m)
+	bs, err = NewBlockScanner(getConfigForTest("127.0.0.1"), storage, types.Mainnet, nil, s.bridge, s.m)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
-	bs, err = NewBlockScanner(getConfigForTest("127.0.0.1"), storage, types.Mainnet, ethClient, s.m)
+	bs, err = NewBlockScanner(getConfigForTest("127.0.0.1"), storage, types.Mainnet, ethClient, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 }
@@ -170,7 +189,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
-	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.m)
+	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
 	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
@@ -222,7 +241,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
-	bs, err := NewBlockScanner(getConfigForTest(server.URL), blockscanner.NewMockScannerStorage(), types.Mainnet, ethClient, s.m)
+	bs, err := NewBlockScanner(getConfigForTest(server.URL), blockscanner.NewMockScannerStorage(), types.Mainnet, ethClient, s.bridge, s.m)
 	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
@@ -340,7 +359,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
-	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.m)
+	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
 	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)

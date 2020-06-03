@@ -154,10 +154,15 @@ func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddre
 func (k KVStoreDummy) AddObservingAddresses(_ cosmos.Context, _ []cosmos.AccAddress) error {
 	return kaboom
 }
-func (k KVStoreDummy) ClearObservingAddresses(_ cosmos.Context)                    {}
-func (k KVStoreDummy) SetObservedTxVoter(_ cosmos.Context, _ ObservedTxVoter)      {}
-func (k KVStoreDummy) GetObservedTxVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) GetObservedTxVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
+func (k KVStoreDummy) ClearObservingAddresses(_ cosmos.Context)                      {}
+func (k KVStoreDummy) SetObservedTxInVoter(_ cosmos.Context, _ ObservedTxVoter)      {}
+func (k KVStoreDummy) GetObservedTxInVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
+	return ObservedTxVoter{}, kaboom
+}
+func (k KVStoreDummy) SetObservedTxOutVoter(_ cosmos.Context, _ ObservedTxVoter)      {}
+func (k KVStoreDummy) GetObservedTxOutVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return ObservedTxVoter{}, kaboom
 }
 func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)             {}
@@ -258,6 +263,28 @@ func (k KVStoreDummy) GetSwapQueueItem(ctx cosmos.Context, txID common.TxID) (Ms
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
 func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64)   {}
 func (k KVStoreDummy) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator  { return nil }
+func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
+	return NetworkFee{}, kaboom
+}
+
+func (k KVStoreDummy) SaveNetworkFee(ctx cosmos.Context, chain common.Chain, networkFee NetworkFee) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetNetworkFeeIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter) {
+}
+
+func (k KVStoreDummy) GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain) (ObservedNetworkFeeVoter, error) {
+	return ObservedNetworkFeeVoter{}, nil
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

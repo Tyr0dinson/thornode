@@ -24,7 +24,8 @@ import (
 const (
 	version                  int64            = 1
 	prefixStoreVersion       kvTypes.DbPrefix = "_ver"
-	prefixObservedTx         kvTypes.DbPrefix = "observed_tx/"
+	prefixObservedTxIn       kvTypes.DbPrefix = "observed_tx_in/"
+	prefixObservedTxOut      kvTypes.DbPrefix = "observed_tx_out/"
 	prefixPool               kvTypes.DbPrefix = "pool/"
 	prefixTxOut              kvTypes.DbPrefix = "txout/"
 	prefixTotalLiquidityFee  kvTypes.DbPrefix = "total_liquidity_fee/"
@@ -49,6 +50,8 @@ const (
 	prefixNodeSlashPoints    kvTypes.DbPrefix = "slash/"
 	prefixSwapQueueItem      kvTypes.DbPrefix = "swapitem/"
 	prefixMimir              kvTypes.DbPrefix = "mimir/"
+	prefixNetworkFee         kvTypes.DbPrefix = "network_fee/"
+	prefixNetworkFeeVoter    kvTypes.DbPrefix = "network_fee_voter/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
