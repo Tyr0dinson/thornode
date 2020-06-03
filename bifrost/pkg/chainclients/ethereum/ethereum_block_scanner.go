@@ -170,7 +170,7 @@ func (e *BlockScanner) parseDeposit(data []byte) (string, *big.Int, string, erro
 		e.logger.Error().Err(err).Msg("fail to parse deposit event")
 		return "", nil, "", err
 	}
-	e.logger.Info().Msgf("token %s value %d memo %s",  event.Token.String(), event.Value, event.Memo)
+	e.logger.Info().Msgf("token %s value %d memo %s", event.Token.String(), event.Value, event.Memo)
 	return event.Token.String(), event.Value, event.Memo, nil
 }
 
