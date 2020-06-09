@@ -110,7 +110,7 @@ func fetchMemo(ctx cosmos.Context, constAccessor constants.ConstantValues, keepe
 	if len(marks) > 0 {
 		// filter out expired tx markers
 		period := constAccessor.GetInt64Value(constants.SigningTransactionPeriod) * 3
-		marks = marks.FilterByMinHeight(ctx.BlockHeight() - period)
+		marks = marks.FilterByMinHeight(common.BlockHeight(ctx) - period)
 
 		// if we still have a marker, add the memo
 		if len(marks) > 0 {
@@ -193,7 +193,10 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 			return nil, err
 		}
 	case LeaveMemo:
-		newMsg = NewMsgLeave(tx.Tx, signer)
+		newMsg, err = getMsgLeaveFromMemo(m, tx, signer)
+		if err != nil {
+			return nil, err
+		}
 	case YggdrasilFundMemo:
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), true, tx.Tx.Coins, signer)
 	case YggdrasilReturnMemo:
@@ -352,6 +355,10 @@ func getMsgMigrateFromMemo(memo MigrateMemo, tx ObservedTx, signer cosmos.AccAdd
 
 func getMsgRagnarokFromMemo(memo RagnarokMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgRagnarok(tx, memo.GetBlockHeight(), signer), nil
+}
+
+func getMsgLeaveFromMemo(memo LeaveMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgLeave(tx.Tx, memo.GetAccAddress(), signer), nil
 }
 
 func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
