@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -172,8 +171,10 @@ func (n NodeAccount) String() string {
 
 // CalcBondUnits calculate bond
 func (n *NodeAccount) CalcBondUnits(height, slashpoints int64) cosmos.Uint {
-	// ensure slashpoints is not negative
-	slashpoints = int64(math.Max(float64(0), float64(slashpoints)))
+	// ensure slash points is not negative
+	if slashpoints < 0 {
+		slashpoints = 0
+	}
 	if height < 0 || n.ActiveBlockHeight < 0 || slashpoints < 0 {
 		return cosmos.ZeroUint()
 	}

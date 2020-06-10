@@ -308,6 +308,10 @@ func (vm *validatorMgrV1) payNodeAccountBondAward(ctx cosmos.Context, na NodeAcc
 	if na.ActiveBlockHeight == 0 || na.Bond.IsZero() {
 		return nil
 	}
+	// don't pay bond award when the node is still active
+	if na.Status == NodeActive {
+		return nil
+	}
 	// The node account seems to have become a non active node account.
 	// Therefore, lets give them their bond rewards.
 	vault, err := vm.k.GetVaultData(ctx)
@@ -322,24 +326,35 @@ func (vm *validatorMgrV1) payNodeAccountBondAward(ctx cosmos.Context, na NodeAcc
 
 	// Find number of blocks they have been an active node
 	totalActiveBlocks := common.BlockHeight(ctx) - na.ActiveBlockHeight
+	if totalActiveBlocks < 0 {
+		return nil
+	}
 
-	// find number of blocks they were well behaved (ie active - slash points)
-	earnedBlocks := na.CalcBondUnits(common.BlockHeight(ctx), slashPts)
+	if slashPts > totalActiveBlocks {
+		// more slash point than active blocks , take bond , and add it to Bond Reward Rune
+		// one RUNE per slash point
+		gap := slashPts - totalActiveBlocks
+		na.Bond = na.Bond.Sub(cosmos.NewUint(uint64(gap)))
+		vault.BondRewardRune = vault.BondRewardRune.Add(cosmos.NewUint(uint64(gap)))
+	} else {
+		// find number of blocks they were well behaved (ie active - slash points)
+		earnedBlocks := na.CalcBondUnits(common.BlockHeight(ctx), slashPts)
 
-	// calc number of rune they are awarded
-	reward := vault.CalcNodeRewards(earnedBlocks)
+		// calc number of rune they are awarded
+		reward := vault.CalcNodeRewards(earnedBlocks)
 
-	// Add to their bond the amount rewarded
-	na.Bond = na.Bond.Add(reward)
+		// Add to their bond the amount rewarded
+		na.Bond = na.Bond.Add(reward)
 
-	// Minus the number of rune THORNode have awarded them
-	vault.BondRewardRune = common.SafeSub(vault.BondRewardRune, reward)
+		// Minus the number of rune THORNode have awarded them
+		vault.BondRewardRune = common.SafeSub(vault.BondRewardRune, reward)
 
-	// Minus the number of units na has (do not include slash points)
-	vault.TotalBondUnits = common.SafeSub(
-		vault.TotalBondUnits,
-		cosmos.NewUint(uint64(totalActiveBlocks)),
-	)
+		// Minus the number of units na has (do not include slash points)
+		vault.TotalBondUnits = common.SafeSub(
+			vault.TotalBondUnits,
+			cosmos.NewUint(uint64(totalActiveBlocks)),
+		)
+	}
 
 	if err := vm.k.SetVaultData(ctx, vault); err != nil {
 		return fmt.Errorf("fail to save vault data: %w", err)

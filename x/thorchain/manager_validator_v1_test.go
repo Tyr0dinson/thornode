@@ -278,3 +278,36 @@ func (vts *ValidatorMgrV1TestSuite) TestFindMaxAbleToLeave(c *C) {
 	c.Check(findMaxAbleToLeave(11), Equals, 3)
 	c.Check(findMaxAbleToLeave(12), Equals, 3)
 }
+
+func (vts *ValidatorMgrV1TestSuite) TestPayNodeAccountBondAward(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1)
+	ver := constants.SWVersion
+
+	mgr := NewDummyMgr()
+	vMgr := NewValidatorMgrV1(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(vMgr, NotNil)
+
+	constAccessor := constants.GetConstantValues(ver)
+	err := vMgr.setupValidatorNodes(ctx, 0, constAccessor)
+	c.Assert(err, IsNil)
+	vaultData, err := k.GetVaultData(ctx)
+	c.Assert(err, IsNil)
+	vaultData.BondRewardRune = cosmos.NewUint(uint64(100))
+	vaultData.TotalBondUnits = cosmos.NewUint(uint64(100))
+	c.Assert(k.SetVaultData(ctx, vaultData), IsNil)
+	activeNode := GetRandomNodeAccount(NodeActive)
+	activeNode.Bond = cosmos.NewUint(uint64(100))
+	activeNode.Status = NodeStandby
+	k.SetNodeAccount(ctx, activeNode)
+	err = k.IncNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 100)
+	c.Assert(err, IsNil)
+	ctx = ctx.WithBlockHeight(100)
+	vMgr.payNodeAccountBondAward(ctx, activeNode)
+	activeNode, err = k.GetNodeAccount(ctx, activeNode.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(activeNode.Bond.Equal(cosmos.NewUint(90)), Equals, true)
+	vaultData, err = k.GetVaultData(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaultData.BondRewardRune.Equal(cosmos.NewUint(110)), Equals, true)
+}
