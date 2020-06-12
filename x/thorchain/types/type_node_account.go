@@ -10,7 +10,7 @@ import (
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // NodeStatus Represent the Node status
@@ -170,16 +170,12 @@ func (n NodeAccount) String() string {
 }
 
 // CalcBondUnits calculate bond
-func (n *NodeAccount) CalcBondUnits(height, slashpoints int64) cosmos.Uint {
-	// ensure slash points is not negative
-	if slashpoints < 0 {
-		slashpoints = 0
-	}
-	if height < 0 || n.ActiveBlockHeight < 0 || slashpoints < 0 {
+func (n *NodeAccount) CalcBondUnits(height int64) cosmos.Uint {
+	if height <= 0 || n.ActiveBlockHeight <= 0 {
 		return cosmos.ZeroUint()
 	}
 
-	blockCount := height - (n.ActiveBlockHeight + slashpoints)
+	blockCount := height - n.ActiveBlockHeight
 	if blockCount < 0 { // ensure we're never negative
 		blockCount = 0
 	}

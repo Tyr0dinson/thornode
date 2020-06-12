@@ -7,9 +7,9 @@ import (
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 
 	. "gopkg.in/check.v1"
 )
@@ -103,7 +103,7 @@ func newYggdrasilHandlerTestHelper(c *C) yggdrasilHandlerTestHelper {
 	constAccessor := constants.GetConstantValues(version)
 
 	mgr := NewDummyMgr()
-	mgr.validatorMgr = NewValidatorMgrV1(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.validatorMgr = newValidatorMgrV1(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	mgr.slasher = NewSlasherV1(keeper)
 	c.Assert(mgr.ValidatorMgr().BeginBlock(ctx, constAccessor), IsNil)
 	asgardVault := GetRandomVault()

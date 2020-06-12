@@ -10,9 +10,9 @@ import (
 	tmtypes "github.com/tendermint/tendermint/types"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 const (
@@ -28,7 +28,7 @@ type validatorMgrV1 struct {
 }
 
 // newValidatorMgrV1 create a new instance of ValidatorManager
-func NewValidatorMgrV1(k keeper.Keeper, vaultMgr VaultManager, txOutStore TxOutStore, eventMgr EventManager) *validatorMgrV1 {
+func newValidatorMgrV1(k keeper.Keeper, vaultMgr VaultManager, txOutStore TxOutStore, eventMgr EventManager) *validatorMgrV1 {
 	return &validatorMgrV1{
 		k:          k,
 		vaultMgr:   vaultMgr,
@@ -330,31 +330,26 @@ func (vm *validatorMgrV1) payNodeAccountBondAward(ctx cosmos.Context, na NodeAcc
 		return nil
 	}
 
-	if slashPts > totalActiveBlocks {
-		// more slash point than active blocks , take bond , and add it to Bond Reward Rune
-		// one RUNE per slash point
-		gap := slashPts - totalActiveBlocks
-		na.Bond = na.Bond.Sub(cosmos.NewUint(uint64(gap)))
-		vault.BondRewardRune = vault.BondRewardRune.Add(cosmos.NewUint(uint64(gap)))
-	} else {
-		// find number of blocks they were well behaved (ie active - slash points)
-		earnedBlocks := na.CalcBondUnits(common.BlockHeight(ctx), slashPts)
+	// first of all , deduct all the slash points
+	na.Bond = na.Bond.Sub(cosmos.NewUint(uint64(slashPts)))
 
-		// calc number of rune they are awarded
-		reward := vault.CalcNodeRewards(earnedBlocks)
+	// find number of blocks they were  active
+	earnedBlocks := na.CalcBondUnits(common.BlockHeight(ctx))
 
-		// Add to their bond the amount rewarded
-		na.Bond = na.Bond.Add(reward)
+	// calc number of rune they are awarded
+	reward := vault.CalcNodeRewards(earnedBlocks)
 
-		// Minus the number of rune THORNode have awarded them
-		vault.BondRewardRune = common.SafeSub(vault.BondRewardRune, reward)
+	// Add to their bond the amount rewarded
+	na.Bond = na.Bond.Add(reward)
 
-		// Minus the number of units na has (do not include slash points)
-		vault.TotalBondUnits = common.SafeSub(
-			vault.TotalBondUnits,
-			cosmos.NewUint(uint64(totalActiveBlocks)),
-		)
-	}
+	// Minus the number of rune THORNode have awarded them
+	vault.BondRewardRune = common.SafeSub(vault.BondRewardRune, reward)
+
+	// Minus the number of units na has (do not include slash points)
+	vault.TotalBondUnits = common.SafeSub(
+		vault.TotalBondUnits,
+		cosmos.NewUint(uint64(totalActiveBlocks)),
+	)
 
 	if err := vm.k.SetVaultData(ctx, vault); err != nil {
 		return fmt.Errorf("fail to save vault data: %w", err)
@@ -1070,7 +1065,7 @@ func findCountToRemove(blockHeight int64, active NodeAccounts) (toRemove int) {
 	var candidateCount int
 	for _, na := range active {
 		if na.LeaveHeight > 0 {
-			candidateCount += 1
+			candidateCount++
 			continue
 		}
 	}

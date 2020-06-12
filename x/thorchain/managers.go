@@ -8,9 +8,9 @@ import (
 	"github.com/tendermint/tendermint/crypto"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type Manager interface {
@@ -220,7 +220,7 @@ func GetVaultManager(keeper keeper.Keeper, version semver.Version, txOutStore Tx
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(keeper keeper.Keeper, version semver.Version, vaultMgr VaultManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return NewValidatorMgrV1(keeper, vaultMgr, txOutStore, eventMgr), nil
+		return newValidatorMgrV1(keeper, vaultMgr, txOutStore, eventMgr), nil
 	}
 	return nil, errBadVersion
 }
