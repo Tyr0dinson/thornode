@@ -31,10 +31,11 @@ import (
 
 const (
 	Zero                = "0x0000000000000000000000000000000000000000"
-	ByteCode            = "608060405234801561001057600080fd5b50336000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff160217905550610a07806100606000396000f3fe6080604052600436106100435760003560e01c806318aad8471461004f5780638077f5ab146100a6578063beabacc8146100f7578063bfe07da6146101725761004a565b3661004a57005b600080fd5b34801561005b57600080fd5b50610064610257565b604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b3480156100b257600080fd5b506100f5600480360360208110156100c957600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff16906020019092919050505061027c565b005b34801561010357600080fd5b506101706004803603606081101561011a57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff169060200190929190803573ffffffffffffffffffffffffffffffffffffffff1690602001909291908035906020019092919050505061043b565b005b6102556004803603606081101561018857600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff16906020019092919080359060200190929190803590602001906401000000008111156101cf57600080fd5b8201836020820111156101e157600080fd5b8035906020019184600183028401116401000000008311171561020357600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f82011690508083019250505050505050919291929050505061075c565b005b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1681565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff16148061032357506000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163273ffffffffffffffffffffffffffffffffffffffff16145b610395576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b806000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055507f3d6017a0fe091729e8fa2ce2345c813da543a07f4ae7636bf382d5cf4f20068981604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390a150565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff1614806104e257506000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163273ffffffffffffffffffffffffffffffffffffffff16145b610554576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b600073ffffffffffffffffffffffffffffffffffffffff168273ffffffffffffffffffffffffffffffffffffffff1614156105f4578273ffffffffffffffffffffffffffffffffffffffff168160405180600001905060006040518083038185875af1925050503d80600081146105e7576040519150601f19603f3d011682016040523d82523d6000602084013e6105ec565b606091505b5050506106b8565b8173ffffffffffffffffffffffffffffffffffffffff1663a9059cbb84836040518363ffffffff1660e01b8152600401808373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200182815260200192505050602060405180830381600087803b15801561067b57600080fd5b505af115801561068f573d6000803e3d6000fd5b505050506040513d60208110156106a557600080fd5b8101908080519060200190929190505050505b7f5d2c285d7e86ec84b7a404ba6d7627ca0a71709acce9c1cc05fada583e3ded81838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001828152602001935050505060405180910390a1505050565b600073ffffffffffffffffffffffffffffffffffffffff168373ffffffffffffffffffffffffffffffffffffffff1614156107fc573073ffffffffffffffffffffffffffffffffffffffff163460405180600001905060006040518083038185875af1925050503d80600081146107ef576040519150601f19603f3d011682016040523d82523d6000602084013e6107f4565b606091505b5050506108f4565b8273ffffffffffffffffffffffffffffffffffffffff166323b872dd3330856040518463ffffffff1660e01b8152600401808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018281526020019350505050602060405180830381600087803b1580156108b757600080fd5b505af11580156108cb573d6000803e3d6000fd5b505050506040513d60208110156108e157600080fd5b8101908080519060200190929190505050505b7f539cb25ae7dd78b2dc737ff535d8378b7e61b8a59e174aa8d2a859112c020726838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200183815260200180602001828103825283818151815260200191508051906020019080838360005b83811015610990578082015181840152602081019050610975565b50505050905090810190601f1680156109bd5780820380516001836020036101000a031916815260200191505b5094505050505060405180910390a150505056fea26469706673582212203a11edb3c92b23496f406e0f87f594096aa15fcad66110b32a8090cb2e38aca964736f6c63430006050033"
-	VaultJSON           = `[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"},{"indexed":false,"internalType":"string","name":"memo","type":"string"}],"name":"DepositIn","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asgard","type":"address"}],"name":"NewAsgard","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"TransferOut","type":"event"},{"inputs":[],"name":"asgard","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"},{"internalType":"string","name":"memo","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"address","name":"receiver","type":"address"},{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"newAsgard","type":"address"}],"name":"updateAsgard","outputs":[],"stateMutability":"nonpayable","type":"function"},{"stateMutability":"payable","type":"receive"}]`
+	ByteCode            = "608060405234801561001057600080fd5b50336000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff160217905550610a5c806100606000396000f3fe60806040526004361061003f5760003560e01c806318aad847146100445780638077f5ab1461009b578063beabacc8146100ec578063bfe07da614610167575b600080fd5b34801561005057600080fd5b5061005961024c565b604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b3480156100a757600080fd5b506100ea600480360360208110156100be57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff169060200190929190505050610271565b005b3480156100f857600080fd5b506101656004803603606081101561010f57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff169060200190929190803573ffffffffffffffffffffffffffffffffffffffff169060200190929190803590602001909291905050506103d9565b005b61024a6004803603606081101561017d57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff16906020019092919080359060200190929190803590602001906401000000008111156101c457600080fd5b8201836020820111156101d657600080fd5b803590602001918460018302840111640100000000831117156101f857600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f8201169050808301925050505050505091929192905050506106a5565b005b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1681565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff1614610333576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b806000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055507f3d6017a0fe091729e8fa2ce2345c813da543a07f4ae7636bf382d5cf4f20068981604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390a150565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff161461049b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b600073ffffffffffffffffffffffffffffffffffffffff168273ffffffffffffffffffffffffffffffffffffffff16141561053e576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252601e8152602001807f4574686572206d7573742062652073656e742066726f6d20417367617264000081525060200191505060405180910390fd5b8173ffffffffffffffffffffffffffffffffffffffff1663a9059cbb84836040518363ffffffff1660e01b8152600401808373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200182815260200192505050602060405180830381600087803b1580156105c557600080fd5b505af11580156105d9573d6000803e3d6000fd5b505050506040513d60208110156105ef57600080fd5b8101908080519060200190929190505050507fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001828152602001935050505060405180910390a1505050565b6000821161071b576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260158152602001807f75736572206d7573742073656e6420617373657473000000000000000000000081525060200191505060405180910390fd5b600073ffffffffffffffffffffffffffffffffffffffff168373ffffffffffffffffffffffffffffffffffffffff161415610851578134146107c5576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260188152602001807f75736572206d7573742073656e6420746865206574686572000000000000000081525060200191505060405180910390fd5b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163460405180600001905060006040518083038185875af1925050503d8060008114610844576040519150601f19603f3d011682016040523d82523d6000602084013e610849565b606091505b505050610949565b8273ffffffffffffffffffffffffffffffffffffffff166323b872dd3330856040518463ffffffff1660e01b8152600401808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018281526020019350505050602060405180830381600087803b15801561090c57600080fd5b505af1158015610920573d6000803e3d6000fd5b505050506040513d602081101561093657600080fd5b8101908080519060200190929190505050505b7f643e927b32d5bfd08eccd2fcbd97057ad413850f857a2359639114e8e8dd3d7b838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200183815260200180602001828103825283818151815260200191508051906020019080838360005b838110156109e55780820151818401526020810190506109ca565b50505050905090810190601f168015610a125780820380516001836020036101000a031916815260200191505b5094505050505060405180910390a150505056fea26469706673582212208cb64977b4c91fd065c4d8a53314dee39d322591fec151fa9e93014968e8c91364736f6c63430006050033"
+	VaultJSON           = `[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asset","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"},{"indexed":false,"internalType":"string","name":"memo","type":"string"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asgard","type":"address"}],"name":"NewAsgard","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[],"name":"asgard","outputs":[{"internalType":"addresspayable","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"asset","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"},{"internalType":"string","name":"memo","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"address","name":"receiver","type":"address"},{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"newAsgard","type":"address"}],"name":"updateAsgard","outputs":[],"stateMutability":"nonpayable","type":"function"}]`
 	ContractCreationGas = uint64(5000000)
 	Confirmations       = 12
+	NewAsgardGas        = uint64(50000)
 	TransferMethod      = "transfer"
 	ETHTransferGas      = uint64(21000)
 	MasterPrivKey       = "ef235aacf90d9f4aadd8c92e4b2562e1d9eb97f0df9ba3b508258739cb013db2"
@@ -51,8 +52,8 @@ type Client struct {
 	ethScanner      *BlockScanner
 	thorchainBridge *thorclient.ThorchainBridge
 	blockScanner    *blockscanner.BlockScanner
-	contractAddress ecommon.Address
 	contractABI     *abi.ABI
+	contracts       map[common.PubKey]ecommon.Address
 }
 
 // NewClient create new instance of Ethereum client
@@ -174,6 +175,96 @@ func (c *Client) sendETH(value *big.Int, toAddr string) error {
 	return nil
 }
 
+// sendETH sends ETH
+func (c *Client) moveFunds(value *big.Int, toAddr string) error {
+	from := c.GetAddress(c.pk)
+	balance, err := c.GetBalance(from)
+	if err != nil {
+		return err
+	}
+	value := balance
+	gasPrice := c.GetGasPrice()
+	value = value.Sub(value, common.MakeETHGas(gasPrice, ETHTransferGas))
+	nonce, err := c.GetNonce(from)
+	if err != nil {
+		return err
+	}
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(toAddr), value, ETHTransferGas, gasPrice, []byte{})
+	
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
+		return nil, err
+	}
+
+	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk})
+	if err != nil || len(rawTx) == 0 {
+		return nil, fmt.Errorf("fail to sign message: %w", err)
+	}
+	err = c.BroadcastTx(rawTx)
+	if err != nil {
+		return err
+	}
+	tx := &etypes.Transaction{}
+	if err := tx.UnmarshalJSON(rawTx); err != nil {
+		return err
+	}
+	_, err = c.waitBlocks(tx.Hash().Hex())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Churn changes asgard owner
+func (c *Client) Churn(pk common.PubKey) error {
+	newAsgard := c.GetAddress(pk)
+	gasPrice := c.GetGasPrice()
+	nonce, err := c.GetNonce(from)
+	if err != nil {
+		return err
+	}
+	data, err := c.inputAsgard(newAsgard)
+	if err != nil {
+		return err
+	}
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(toAddr), big.NewInt(0), NewAsgardGas, gasPrice, data)
+
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
+		return err
+	}
+
+	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk})
+	if err != nil || len(rawTx) == 0 {
+		return fmt.Errorf("fail to sign message: %w", err)
+	}
+
+	err = c.BroadcastTx(rawTx)
+	if err != nil {
+		return err
+	}
+
+	tx := &etypes.Transaction{}
+	if err := tx.UnmarshalJSON(rawTx); err != nil {
+		return err
+	}
+	_, err = c.waitBlocks(tx.Hash().Hex())
+	if err != nil {
+		return err
+	}
+
+	err = c.moveFunds(newAsgard)
+	if err != nil {
+		return err
+	}
+
+	c.contracts[pk] = c.contracts[c.pk]
+	delete(c.contracts, c.pk)
+	c.pk = pk
+}
+
 // InitContract, should be done only once for mainnet on genesis block
 func (c *Client) InitContract() error {
 	bytes, err := hex.DecodeString(ByteCode)
@@ -210,11 +301,11 @@ func (c *Client) InitContract() error {
 		return fmt.Errorf("fail to wait blocks and get receipt: %w", err)
 	}
 
-	c.contractAddress = receipt.ContractAddress
-	if len(c.contractAddress.String()) == 0 || c.contractAddress.String() == Zero {
+	c.contracts[c.pk] = receipt.ContractAddress
+	if len(receipt.ContractAddress.String()) == 0 || receipt.ContractAddress.String() == Zero {
 		return fmt.Errorf("incorrect contract creation")
 	}
-	c.ethScanner.ContractAddress = c.contractAddress
+	c.ethScanner.Contracts[receipt.ContractAddress] = c.pk
 	vaultABI := &abi.ABI{}
 	err = vaultABI.UnmarshalJSON([]byte(VaultJSON))
 	if err != nil {
@@ -222,7 +313,6 @@ func (c *Client) InitContract() error {
 	}
 	c.ethScanner.ContractABI = vaultABI
 	c.contractABI = vaultABI
-	c.ethScanner.ContractOwner = from
 	return nil
 }
 
@@ -275,6 +365,15 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 // createInput for contract method
+func (c *Client) inputAsgard(newAsgard string) ([]byte, error) {
+	input, err := c.contractABI.Pack("NewAsgard", ecommon.HexToAddress(newAsgard))
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+// createInput for contract method
 func (c *Client) createInput(token, receiver string, value *big.Int) ([]byte, error) {
 	input, err := c.contractABI.Pack(TransferMethod, ecommon.HexToAddress(receiver), ecommon.HexToAddress(token), value)
 	if err != nil {
@@ -305,7 +404,13 @@ func (c *Client) GetGasFee(count uint64) common.Gas {
 
 // GetGasPrice gets gas price from eth scanner
 func (c *Client) GetGasPrice() *big.Int {
-	return c.ethScanner.GetGasPrice()
+	gasPrice := c.ethScanner.GetGasPrice()
+	// increase by 40%
+	if c.chainID != types.Localnet {
+		gasPrice = gasPrice.Mul(gasPrice, 7)
+		gasPrice = gasPrice.Div(gasPrice, 5)
+	}
+	return gasPrice
 }
 
 // estimateGas estimates gas for tx
@@ -344,23 +449,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 
 	to := tx.ToAddress.String()
 	from := c.GetAddress(tx.VaultPubKey)
+	if !c.contrats.HasKey(tx.VaultPubKey) {
+		return nil, fmt.Errorf("pubkey contract is missing")
+	}
 
 	if len(to) == 0 || value.Uint64() == 0 {
 		c.logger.Error().Msg("invalid tx params")
-		return nil, nil
-	}
-
-	gasPrice := c.GetGasPrice()
-	gasOut := big.NewInt(0)
-	for _, coin := range tx.MaxGas {
-		gasOut.Add(gasOut, coin.Amount.BigInt())
-	}
-	gasOut.Div(gasOut, gasPrice)
-
-	data, err := c.createInput(token, to, value)
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to create input")
-		return nil, err
+		return nil, fmt.Errorf("invalid tx params")
 	}
 
 	nonce, err := c.GetNonce(from)
@@ -369,7 +464,26 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
-	createdTx := etypes.NewTransaction(nonce, c.contractAddress, big.NewInt(0), gasOut.Uint64(), gasPrice, data)
+	dest := ecommon.HexToAddress(to)
+	data := []byte{}
+	if token != strings.ToLower(ETHToken) {
+		data, err = c.createInput(token, to, value)
+		if err != nil {
+			c.logger.Error().Err(err).Msg("fail to create input")
+			return nil, err
+		}
+		value = big.NewInt(0)
+		dest = c.contracts[tx.VaultPubKey]
+	}
+
+	gasOut := big.NewInt(0)
+	for _, coin := range tx.MaxGas {
+		gasOut.Add(gasOut, coin.Amount.BigInt())
+	}
+	gasPrice := c.GetGasPrice()
+	gasOut.Div(gasOut, gasPrice)
+
+	createdTx := etypes.NewTransaction(nonce, dest, value, gasOut.Uint64(), gasPrice, data)
 	estimatedGas, err := c.estimateGas(from, createdTx)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("fail to estimate gas")
@@ -391,6 +505,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	if err != nil || len(rawTx) == 0 {
 		return nil, fmt.Errorf("fail to sign message: %w", err)
 	}
+
 	return rawTx, nil
 }
 
@@ -438,14 +553,11 @@ func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	if pk == c.pk {
-		addr = c.contractAddress.String()
-	}
 	balance, err := c.GetBalance(addr)
 	if err != nil {
 		return common.Account{}, fmt.Errorf("fail to get account nonce: %w", err)
 	}
-	account := common.NewAccount(int64(nonce), 0, common.AccountCoins{common.AccountCoin{Amount: balance.Uint64(), Denom: "ETH.ETH"}})
+	account := common.NewAccount(int64(nonce), 0, common.AccountCoins{common.AccountCoin{Amount: balance.Uint64(), Denom: "ETH.ETH-0X0000000000000000000000000000000000000000"}})
 	return account, nil
 }
 
