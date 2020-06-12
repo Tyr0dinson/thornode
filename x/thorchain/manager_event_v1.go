@@ -172,3 +172,13 @@ func (m *EventMgrV1) EmitOutboundEvent(ctx cosmos.Context, outbound EventOutboun
 	ctx.EventManager().EmitEvents(events)
 	return nil
 }
+
+// EmitSettlementEvent emit a settlement event
+func (m *EventMgrV1) EmitSettlementEvent(ctx cosmos.Context, settlement EventSettlement) error {
+	events, err := settlement.Events()
+	if err != nil {
+		return fmt.Errorf("fail to emit settlement event: %w", err)
+	}
+	ctx.EventManager().EmitEvents(events)
+	return nil
+}

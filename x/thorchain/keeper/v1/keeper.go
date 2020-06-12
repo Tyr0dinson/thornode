@@ -42,6 +42,7 @@ const (
 	prefixReserves           kvTypes.DbPrefix = "reserves/"
 	prefixTss                kvTypes.DbPrefix = "tss/"
 	prefixTssKeysignFailure  kvTypes.DbPrefix = "tssKeysignFailure/"
+	prefixLedger             kvTypes.DbPrefix = "ledger/"
 	prefixKeygen             kvTypes.DbPrefix = "keygen/"
 	prefixRagnarok           kvTypes.DbPrefix = "ragnarok/"
 	prefixGas                kvTypes.DbPrefix = "gas/"

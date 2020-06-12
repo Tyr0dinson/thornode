@@ -28,3 +28,12 @@ func (s CoinSuite) TestCoin(c *C) {
 	c.Check(sdkCoin.Denom, Equals, "rune")
 	c.Check(sdkCoin.Amount.Equal(cosmos.NewInt(230)), Equals, true)
 }
+
+func (s CoinSuite) TestCoins(c *C) {
+	coins := Coins{}
+	coins = coins.Add(NewCoin(BNBAsset, cosmos.NewUint(100)))
+	c.Assert(coins, HasLen, 1)
+	coins = coins.Add(NewCoin(BNBAsset, cosmos.NewUint(100)))
+	c.Assert(coins, HasLen, 1)
+	c.Assert(coins[0].Amount.Equal(cosmos.NewUint(200)), Equals, true)
+}

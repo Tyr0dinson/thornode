@@ -9,20 +9,21 @@ import (
 )
 
 const (
-	SwapEventType     = `swap`
-	StakeEventType    = `stake`
-	UnstakeEventType  = `unstake`
-	AddEventType      = `add`
-	PoolEventType     = `pool`
-	RewardEventType   = `rewards`
-	RefundEventType   = `refund`
-	BondEventType     = `bond`
-	GasEventType      = `gas`
-	ReserveEventType  = `reserve`
-	SlashEventType    = `slash`
-	ErrataEventType   = `errata`
-	FeeEventType      = `fee`
-	OutboundEventType = `outbound`
+	SwapEventType       = `swap`
+	StakeEventType      = `stake`
+	UnstakeEventType    = `unstake`
+	AddEventType        = `add`
+	PoolEventType       = `pool`
+	RewardEventType     = `rewards`
+	RefundEventType     = `refund`
+	BondEventType       = `bond`
+	GasEventType        = `gas`
+	ReserveEventType    = `reserve`
+	SlashEventType      = `slash`
+	ErrataEventType     = `errata`
+	FeeEventType        = `fee`
+	OutboundEventType   = `outbound`
+	SettlementEventType = `settlement`
 )
 
 type PoolMod struct {
@@ -525,5 +526,36 @@ func (e EventOutbound) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(e.Type(),
 		cosmos.NewAttribute("in_tx_id", e.InTxID.String()))
 	evt = evt.AppendAttributes(e.Tx.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
+// EventSettlement represent a settlement of vault/pools
+type EventSettlement struct {
+	VaultSurplus common.Coins
+	VaultDeficit common.Coins
+	PoolSurplus  common.Coins
+	PoolDeficit  common.Coins
+}
+
+func NewEventSettlement(vs, vd, ps, pd common.Coins) EventSettlement {
+	return EventSettlement{
+		VaultSurplus: vs,
+		VaultDeficit: vd,
+		PoolSurplus:  ps,
+		PoolDeficit:  pd,
+	}
+}
+
+func (e EventSettlement) Type() string {
+	return SettlementEventType
+}
+
+func (e EventSettlement) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(e.Type(),
+		cosmos.NewAttribute("vault_surplus", e.VaultSurplus.String()),
+		cosmos.NewAttribute("vault_deficit", e.VaultDeficit.String()),
+		cosmos.NewAttribute("pool_surplus", e.PoolSurplus.String()),
+		cosmos.NewAttribute("pool_deficit", e.PoolDeficit.String()),
+	)
 	return cosmos.Events{evt}, nil
 }

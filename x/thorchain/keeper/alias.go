@@ -42,6 +42,7 @@ type (
 	BanVoter                = types.BanVoter
 	ErrataTxVoter           = types.ErrataTxVoter
 	TssVoter                = types.TssVoter
+	LedgerVoter             = types.LedgerVoter
 	TssKeysignFailVoter     = types.TssKeysignFailVoter
 	TxOutItem               = types.TxOutItem
 	TxOut                   = types.TxOut

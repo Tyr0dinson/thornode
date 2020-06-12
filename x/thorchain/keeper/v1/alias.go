@@ -66,6 +66,7 @@ type (
 	ErrataTxVoter           = types.ErrataTxVoter
 	TssVoter                = types.TssVoter
 	TssKeysignFailVoter     = types.TssKeysignFailVoter
+	LedgerVoter             = types.LedgerVoter
 	TxOutItem               = types.TxOutItem
 	TxOut                   = types.TxOut
 	KeygenBlock             = types.KeygenBlock

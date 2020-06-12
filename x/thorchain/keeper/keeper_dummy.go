@@ -243,6 +243,14 @@ func (k KVStoreDummy) GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKey
 	return TssKeysignFailVoter{}, kaboom
 }
 
+func (k KVStoreDummy) SetLedgerVoter(ctx cosmos.Context, ledger LedgerVoter) {}
+func (k KVStoreDummy) GetLedgerVoterIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+func (k KVStoreDummy) GetLedgerVoter(ctx cosmos.Context, id string) (LedgerVoter, error) {
+	return LedgerVoter{}, kaboom
+}
+
 func (k KVStoreDummy) GetGas(_ cosmos.Context, _ common.Asset) ([]cosmos.Uint, error) {
 	return nil, kaboom
 }

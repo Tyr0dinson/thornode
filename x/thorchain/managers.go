@@ -50,6 +50,7 @@ type EventManager interface {
 	EmitFeeEvent(ctx cosmos.Context, feeEvent EventFee) error
 	EmitSlashEvent(ctx cosmos.Context, slashEvt EventSlash) error
 	EmitOutboundEvent(ctx cosmos.Context, outbound EventOutbound) error
+	EmitSettlementEvent(ctx cosmos.Context, settlement EventSettlement) error
 }
 
 type TxOutStore interface {

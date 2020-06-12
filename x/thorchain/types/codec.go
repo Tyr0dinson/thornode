@@ -35,4 +35,5 @@ func RegisterCodec(cdc *codec.Codec) {
 	cdc.RegisterConcrete(MsgMimir{}, "thorchain/MsgMimir", nil)
 	cdc.RegisterConcrete(MsgNativeTx{}, "thorchain/MsgNativeTx", nil)
 	cdc.RegisterConcrete(MsgNetworkFee{}, "thorchain/MsgNetworkFee", nil)
+	cdc.RegisterConcrete(MsgLedger{}, "thorchain/MsgLedger", nil)
 }

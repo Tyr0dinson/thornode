@@ -66,6 +66,7 @@ var (
 	NewMsgMimir                    = types.NewMsgMimir
 	NewMsgNativeTx                 = types.NewMsgNativeTx
 	NewMsgTssPool                  = types.NewMsgTssPool
+	NewMsgLedger                   = types.NewMsgLedger
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut
@@ -92,6 +93,7 @@ var (
 	NewEventErrata                 = types.NewEventErrata
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
+	NewEventSettlement             = types.NewEventSettlement
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
@@ -167,6 +169,7 @@ type (
 	MsgObservedTxIn                = types.MsgObservedTxIn
 	MsgObservedTxOut               = types.MsgObservedTxOut
 	MsgTssPool                     = types.MsgTssPool
+	MsgLedger                      = types.MsgLedger
 	MsgTssKeysignFail              = types.MsgTssKeysignFail
 	MsgNetworkFee                  = types.MsgNetworkFee
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck
@@ -189,6 +192,8 @@ type (
 	BanVoter                       = types.BanVoter
 	ErrataTxVoter                  = types.ErrataTxVoter
 	TssVoter                       = types.TssVoter
+	Ledger                         = types.Ledger
+	LedgerVoter                    = types.LedgerVoter
 	TssKeysignFailVoter            = types.TssKeysignFailVoter
 	TxOutItem                      = types.TxOutItem
 	TxOut                          = types.TxOut
@@ -223,6 +228,7 @@ type (
 	EventFee                       = types.EventFee
 	EventSlash                     = types.EventSlash
 	EventOutbound                  = types.EventOutbound
+	EventSettlement                = types.EventSettlement
 	NetworkFee                     = types.NetworkFee
 	ObservedNetworkFeeVoter        = types.ObservedNetworkFeeVoter
 

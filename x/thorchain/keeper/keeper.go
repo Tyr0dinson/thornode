@@ -51,6 +51,7 @@ type Keeper interface {
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
+	KeeperLedgers
 }
 
 type KeeperPool interface {
@@ -161,6 +162,12 @@ type KeeperTssKeysignFail interface {
 	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter)
 	GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator
 	GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error)
+}
+
+type KeeperLedgers interface {
+	SetLedgerVoter(_ cosmos.Context, ledger LedgerVoter)
+	GetLedgerVoterIterator(_ cosmos.Context) cosmos.Iterator
+	GetLedgerVoter(_ cosmos.Context, _ string) (LedgerVoter, error)
 }
 
 type KeeperKeygen interface {

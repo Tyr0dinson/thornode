@@ -31,6 +31,7 @@ type GenesisState struct {
 	VaultData            VaultData                 `json:"vault_data"`
 	TssVoters            []TssVoter                `json:"tss_voters"`
 	TssKeysignFailVoters []TssKeysignFailVoter     `json:"tss_keysign_fail_voters"`
+	LedgerVoter          []LedgerVoter             `json:"ledger_voter"`
 	KeygenBlocks         []KeygenBlock             `json:"keygen_blocks"`
 	AllTxMarkers         map[string]TxMarkers      `json:"all_tx_markers"`
 	ErrataTxVoters       []ErrataTxVoter           `json:"errata_tx_voters"`
@@ -146,6 +147,7 @@ func DefaultGenesisState() GenesisState {
 		VaultData:            NewVaultData(),
 		TssVoters:            make([]TssVoter, 0),
 		TssKeysignFailVoters: make([]TssKeysignFailVoter, 0),
+		LedgerVoter:          make([]LedgerVoter, 0),
 		KeygenBlocks:         make([]KeygenBlock, 0),
 		AllTxMarkers:         make(map[string]TxMarkers),
 		ErrataTxVoters:       make([]ErrataTxVoter, 0),
@@ -254,6 +256,13 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			continue
 		}
 		keeper.SetTssKeysignFailVoter(ctx, item)
+	}
+
+	for _, item := range data.LedgerVoter {
+		if item.Empty() {
+			continue
+		}
+		keeper.SetLedgerVoter(ctx, item)
 	}
 
 	for _, item := range data.KeygenBlocks {
@@ -465,6 +474,15 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		var t TssKeysignFailVoter
 		k.Cdc().MustUnmarshalBinaryBare(iterTssKeysignFailVoter.Value(), &t)
 		tssKeySignFailVoters = append(tssKeySignFailVoters, t)
+	}
+
+	ledgerVoters := make([]LedgerVoter, 0)
+	iterLedgerVoter := k.GetLedgerVoterIterator(ctx)
+	defer iterLedgerVoter.Close()
+	for ; iterLedgerVoter.Valid(); iterLedgerVoter.Next() {
+		var l LedgerVoter
+		k.Cdc().MustUnmarshalBinaryBare(iterLedgerVoter.Value(), &l)
+		ledgerVoters = append(ledgerVoters, l)
 	}
 
 	keygenBlocks := make([]KeygenBlock, 0)

@@ -159,3 +159,17 @@ func (cs Coins) GetCoin(asset Asset) Coin {
 	}
 	return NoCoin
 }
+
+func (cs Coins) Add(coin Coin) Coins {
+	found := false
+	for i, item := range cs {
+		if coin.Asset.Equals(item.Asset) {
+			cs[i].Amount = cs[i].Amount.Add(coin.Amount)
+			found = true
+		}
+	}
+	if !found {
+		cs = append(cs, coin)
+	}
+	return cs
+}
