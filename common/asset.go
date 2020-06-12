@@ -8,7 +8,6 @@ import (
 )
 
 var (
-<<<<<<< HEAD
 	// EmptyAsset empty asset, not valid
 	EmptyAsset = Asset{Chain: EmptyChain, Symbol: "", Ticker: ""}
 	// BNBAsset BNB
