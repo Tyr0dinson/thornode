@@ -309,5 +309,6 @@ func (vts *ValidatorMgrV1TestSuite) TestPayNodeAccountBondAward(c *C) {
 	c.Assert(activeNode.Bond.Equal(cosmos.NewUint(90)), Equals, true)
 	vaultData, err = k.GetVaultData(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(vaultData.BondRewardRune.Equal(cosmos.NewUint(110)), Equals, true)
+	c.Assert(vaultData.BondRewardRune.Equal(cosmos.NewUint(10)), Equals, true, Commentf("expect:10, however got:%s", vaultData.BondRewardRune))
+	c.Assert(vaultData.TotalReserve.Equal(cosmos.NewUint(100)), Equals, true, Commentf("expect:%d, however we got: %s", 100, vaultData.TotalReserve))
 }

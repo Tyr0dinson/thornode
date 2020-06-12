@@ -152,30 +152,12 @@ func (s *NodeAccountSuite) TestCalcNodeRewards(c *C) {
 	na := NodeAccount{
 		ActiveBlockHeight: 30,
 	}
-	blocks := na.CalcBondUnits(50, 2)
-	c.Check(blocks.Uint64(), Equals, uint64(18))
-
-	na = NodeAccount{
-		ActiveBlockHeight: 30,
-	}
-	blocks = na.CalcBondUnits(50, 100000)
-	c.Check(blocks.Uint64(), Equals, uint64(0))
-
-	na = NodeAccount{
-		ActiveBlockHeight: 100,
-	}
-	blocks = na.CalcBondUnits(50, 0)
-	c.Check(blocks.Uint64(), Equals, uint64(0))
-
-	na = NodeAccount{
-		ActiveBlockHeight: 30,
-	}
-	blocks = na.CalcBondUnits(-50, 0)
-	c.Check(blocks.Uint64(), Equals, uint64(0))
+	blocks := na.CalcBondUnits(50)
+	c.Check(blocks.Uint64(), Equals, uint64(20))
 
 	na = NodeAccount{
 		ActiveBlockHeight: -100,
 	}
-	blocks = na.CalcBondUnits(50, 0)
+	blocks = na.CalcBondUnits(50)
 	c.Check(blocks.Uint64(), Equals, uint64(0), Commentf("%d", blocks.Uint64()))
 }

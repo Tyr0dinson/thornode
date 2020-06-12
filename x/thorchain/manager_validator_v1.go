@@ -324,14 +324,17 @@ func (vm *validatorMgrV1) payNodeAccountBondAward(ctx cosmos.Context, na NodeAcc
 		return fmt.Errorf("fail to get node slash points: %w", err)
 	}
 
+	// first of all , deduct all the slash points
+	na.Bond = na.Bond.Sub(cosmos.NewUint(uint64(slashPts)))
+
+	// add slashed bond to reserve
+	vault.TotalReserve = vault.TotalReserve.Add(cosmos.NewUint(uint64(slashPts)))
+
 	// Find number of blocks they have been an active node
 	totalActiveBlocks := common.BlockHeight(ctx) - na.ActiveBlockHeight
 	if totalActiveBlocks < 0 {
 		return nil
 	}
-
-	// first of all , deduct all the slash points
-	na.Bond = na.Bond.Sub(cosmos.NewUint(uint64(slashPts)))
 
 	// find number of blocks they were  active
 	earnedBlocks := na.CalcBondUnits(common.BlockHeight(ctx))
