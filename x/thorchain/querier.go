@@ -44,6 +44,8 @@ func NewQuerier(keeper keeper.Keeper, kbs KeybaseStore) cosmos.Querier {
 			return queryObserver(ctx, path[1:], req, keeper)
 		case q.QueryNodeAccount.Key:
 			return queryNodeAccount(ctx, path[1:], req, keeper)
+		case q.QueryNodeAccountCheck.Key:
+			return queryNodeAccountCheck(ctx, path[1:], req, keeper)
 		case q.QueryNodeAccounts.Key:
 			return queryNodeAccounts(ctx, path[1:], req, keeper)
 		case q.QueryPoolAddresses.Key:
@@ -236,6 +238,8 @@ func queryVaultData(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	return res, nil
 }
 
+// TODO: select vault by bond/funds ratio
+// TODO: if asgard vaults hold more non-rune funds than bond, do not give address, and error
 func queryPoolAddresses(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	active, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -253,30 +257,28 @@ func queryPoolAddresses(ctx cosmos.Context, path []string, req abci.RequestQuery
 		Current []address `json:"current"`
 	}
 
-	if len(active) > 0 {
-		// select vault with lowest amount of rune
-		vault := active.SelectByMinCoin(common.RuneAsset())
-		chains := vault.Chains
+	// select vault with lowest amount of rune
+	vault := active.SelectByMinCoin(common.RuneAsset())
+	chains := vault.Chains
 
-		if len(chains) == 0 {
-			chains = common.Chains{common.RuneAsset().Chain}
+	if len(chains) == 0 {
+		chains = common.Chains{common.RuneAsset().Chain}
+	}
+
+	for _, chain := range chains {
+		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		if err != nil {
+			ctx.Logger().Error("fail to get address for chain", "error", err)
+			return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
 
-		for _, chain := range chains {
-			vaultAddress, err := vault.PubKey.GetAddress(chain)
-			if err != nil {
-				ctx.Logger().Error("fail to get address for chain", "error", err)
-				return nil, fmt.Errorf("fail to get address for chain: %w", err)
-			}
-
-			addr := address{
-				Chain:   chain,
-				PubKey:  vault.PubKey,
-				Address: vaultAddress,
-			}
-
-			resp.Current = append(resp.Current, addr)
+		addr := address{
+			Chain:   chain,
+			PubKey:  vault.PubKey,
+			Address: vaultAddress,
 		}
+
+		resp.Current = append(resp.Current, addr)
 	}
 
 	res, err := codec.MarshalJSONIndent(keeper.Cdc(), resp)
@@ -312,6 +314,49 @@ func queryNodeAccount(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 	result := NewQueryNodeAccount(nodeAcc)
 	result.SlashPoints = slashPts
 	result.Jail = jail
+	res, err := codec.MarshalJSONIndent(keeper.Cdc(), result)
+	if err != nil {
+		return nil, fmt.Errorf("fail to marshal node account to json: %w", err)
+	}
+
+	return res, nil
+}
+
+func queryNodeAccountCheck(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+	nodeAddress := path[0]
+	addr, err := cosmos.AccAddressFromBech32(nodeAddress)
+	if err != nil {
+		return nil, cosmos.ErrUnknownRequest("invalid account address")
+	}
+
+	nodeAcc, err := keeper.GetNodeAccount(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+
+	version := keeper.GetLowestActiveVersion(ctx)
+	constAccessor := constants.GetConstantValues(version)
+	if constAccessor == nil {
+		return nil, fmt.Errorf("constants for version(%s) is not available", version)
+	}
+
+	mgr := NewManagers(keeper)
+	err = mgr.BeginBlock(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build manager: %w", err)
+	}
+	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
+
+	result := QueryNodeAccountPreflightCheck{
+		Status:      status,
+		Description: err.Error(),
+		Code:        1,
+	}
+	if err == nil {
+		result.Description = "OK"
+		result.Code = 0
+	}
+
 	res, err := codec.MarshalJSONIndent(keeper.Cdc(), result)
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal node account to json: %w", err)

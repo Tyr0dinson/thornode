@@ -95,6 +95,26 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 		}
 	}
 
+	// clear any tx markers
+	// markers usually clear themselves, but in rare situations, where we get
+	// two different transactions with matching hashes (but not matching
+	// memos), we want to clear the markers with the memo we just used cleared.
+	hash := tx.Tx.Hash()
+	marks, err := h.keeper.ListTxMarker(ctx, hash)
+	if err != nil {
+		ctx.Logger().Error("fail to get tx marker", "error", err)
+	}
+	var newMarks TxMarkers
+	for _, mark := range marks {
+		if mark.Memo != tx.Tx.Memo {
+			newMarks = append(newMarks, mark)
+		}
+	}
+	// update our marker list
+	if err := h.keeper.SetTxMarkers(ctx, hash, newMarks); err != nil {
+		ctx.Logger().Error("fail to set tx markers", "error", err)
+	}
+
 	if shouldSlash {
 		ctx.Logger().Info("slash node account, no matched tx out item", "inbound txid", inTxID, "outbound tx", tx.Tx)
 		if err := h.slash(ctx, version, tx); err != nil {
@@ -102,7 +122,9 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 		}
 	}
 
-	h.keeper.SetLastSignedHeight(ctx, voter.Height)
+	if err := h.keeper.SetLastSignedHeight(ctx, voter.Height); err != nil {
+		ctx.Logger().Error("fail to update last signed height", "error", err)
+	}
 
 	return &cosmos.Result{}, nil
 }
