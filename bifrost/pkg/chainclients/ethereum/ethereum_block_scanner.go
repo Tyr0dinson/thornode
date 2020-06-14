@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -32,8 +33,8 @@ import (
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
 	BlockCacheSize               = 6000
-	DepositEvent                 = "DepositIn(address,uint256,string)"
-	TransferEvent                = "TransferOut(address,address,uint256)"
+	DepositEvent                 = "Deposit(address,uint256,string)"
+	TransferEvent                = "Transfer(address,address,uint256)"
 	ETHToken                     = "0X0000000000000000000000000000000000000000"
 )
 
@@ -49,8 +50,8 @@ type BlockScanner struct {
 	blockMetaAccessor BlockMetaAccessor
 	globalErrataQueue chan<- stypes.ErrataBlock
 	ContractAddress   ecommon.Address
-	ContractOwner     string
 	ContractABI       *abi.ABI
+	ContractOwner     string
 	bridge            *thorclient.ThorchainBridge
 }
 
@@ -70,7 +71,6 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.
 	if err != nil {
 		return nil, err
 	}
-
 	blockMetaAccessor, err := NewLevelDBBlockMetaAccessor(storage.GetInternalDb())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create block meta accessor: %w", err)
@@ -154,17 +154,16 @@ func (e *BlockScanner) updateGasPrice() {
 
 func (e *BlockScanner) parseDeposit(data []byte) (string, *big.Int, string, error) {
 	event := struct {
-		Token ecommon.Address
+		Asset ecommon.Address
 		Value *big.Int
 		Memo  string
 	}{}
-	err := e.ContractABI.Unpack(&event, "DepositIn", data)
+	err := e.ContractABI.Unpack(&event, "Deposit", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse deposit event")
 		return "", nil, "", err
 	}
-	e.logger.Info().Msgf("token %s value %d memo %s", event.Token.String(), event.Value, event.Memo)
-	return event.Token.String(), event.Value, event.Memo, nil
+	return event.Asset.String(), event.Value, event.Memo, nil
 }
 
 func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, error) {
@@ -173,7 +172,7 @@ func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, err
 		Token ecommon.Address
 		Value *big.Int
 	}{}
-	err := e.ContractABI.Unpack(&event, "TransferOut", data)
+	err := e.ContractABI.Unpack(&event, "Transfer", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse transfer event")
 		return "", "", nil, err
@@ -222,7 +221,7 @@ func (e *BlockScanner) processBlock(block *etypes.Block, rawTxs []string) (stype
 		return noTx, err
 	}
 
-	blockMeta := types.NewBlockMeta(block, e.ContractAddress)
+	blockMeta := types.NewBlockMeta(block)
 	if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 		e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 	}
@@ -233,7 +232,7 @@ func (e *BlockScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	noTx := stypes.TxIn{}
 	var txIn stypes.TxIn
 	for _, tx := range block.Transactions() {
-		if tx.To() == nil || *tx.To() != e.ContractAddress {
+		if tx.To() == nil {
 			continue
 		}
 		txInItem, err := e.fromTxToTxIn(tx)
@@ -362,13 +361,20 @@ func (e *BlockScanner) getSymbol(from, token string) (string, error) {
 	res, err := e.client.CallContract(context.Background(), ethereum.CallMsg{
 		From: ecommon.HexToAddress(from),
 		To:   toAddr,
-		Data: ecrypto.Keccak256Hash([]byte("symbol()")).Bytes(),
+		Data: ecrypto.Keccak256([]byte("symbol()"))[:4],
 	}, nil)
 	if err != nil {
 		return "", err
 	}
+	e.logger.Debug().Msgf("symbol %s", res)
+	symbol := ""
+	err = json.Unmarshal(res, symbol)
+	if err != nil {
+		e.logger.Debug().Msgf("symb %s", symbol)
+	}
 	res = ecommon.TrimLeftZeroes(res)
 	res = ecommon.TrimRightZeroes(res)
+	e.logger.Debug().Msgf("symbol %d", len(res))
 	res = res[len(res)-3:]
 	return string(res), nil
 }
@@ -409,8 +415,11 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 		return nil, err
 	}
 	value := tx.Value()
+	e.logger.Debug().Msgf("logs %d", len(receipt.Logs))
+	if len(receipt.Logs) > 0 {
+		e.logger.Debug().Msgf("log addr %s", receipt.Logs[0].Address.String())
+	}
 	for _, log := range receipt.Logs {
-		e.logger.Info().Msgf("log %s %s", log.Address.String(), e.ContractAddress.String())
 		if log.Address != e.ContractAddress {
 			continue
 		}
@@ -453,6 +462,8 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 			return nil, err
 		}
 	}
+
+	e.logger.Debug().Msgf("loool %s %s %s", txInItem.Memo, txInItem.To, txInItem.Sender)
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(value)))
 	txInItem.Gas = common.MakeETHGas(tx.GasPrice(), receipt.CumulativeGasUsed)
 	return txInItem, nil

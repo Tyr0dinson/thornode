@@ -369,7 +369,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	blockNew, err := CreateBlock(1)
 	c.Assert(err, IsNil)
 	c.Assert(blockNew, NotNil)
-	blockMeta := types.NewBlockMeta(block, common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb"))
+	blockMeta := types.NewBlockMeta(block)
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)

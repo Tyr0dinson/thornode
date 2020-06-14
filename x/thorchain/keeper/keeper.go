@@ -62,7 +62,7 @@ type KeeperPool interface {
 }
 
 type KeeperLastHeight interface {
-	SetLastSignedHeight(ctx cosmos.Context, height int64)
+	SetLastSignedHeight(ctx cosmos.Context, height int64) error
 	GetLastSignedHeight(ctx cosmos.Context) (int64, error)
 	SetLastChainHeight(ctx cosmos.Context, chain common.Chain, height int64) error
 	GetLastChainHeight(ctx cosmos.Context, chain common.Chain) (int64, error)
@@ -93,6 +93,8 @@ type KeeperNodeAccount interface {
 	IncNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error
 	DecNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error
 	ResetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress)
+	GetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress) (Jail, error)
+	SetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress, height int64, reason string) error
 }
 
 type KeeperObserver interface {

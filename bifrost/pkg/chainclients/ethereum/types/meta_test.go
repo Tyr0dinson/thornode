@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	. "gopkg.in/check.v1"
 )
@@ -58,6 +57,6 @@ func (b *MetaTestSuite) TestMeta(c *C) {
 	err := json.Unmarshal([]byte(blockJson), &header)
 	c.Assert(err, IsNil)
 	block := etypes.NewBlock(&header, nil, nil, nil)
-	blockMeta := NewBlockMeta(block, common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb"))
+	blockMeta := NewBlockMeta(block)
 	c.Assert(blockMeta, NotNil)
 }

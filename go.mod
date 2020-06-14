@@ -12,12 +12,8 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cosmos/cosmos-sdk v0.38.4
 	github.com/didip/tollbooth v4.0.2+incompatible
-<<<<<<< HEAD
 	github.com/ethereum/go-ethereum v1.9.14
 	github.com/go-kit/kit v0.10.0
-=======
-	github.com/ethereum/go-ethereum v1.9.12
->>>>>>> 268338107eed2a00245c1de7c3d53e9ca411eabc
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/hashicorp/go-retryablehttp v0.6.4
@@ -47,10 +43,10 @@ require (
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37 // indirect
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/sys v0.0.0-20200515095857-1151b9dac4a9 // indirect
-	golang.org/x/tools v0.0.0-20200409210453-700752c24408 // indirect
 	google.golang.org/genproto v0.0.0-20200304201815-d429ff31ee6c // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 	gopkg.in/ini.v1 v1.52.0 // indirect
+	mvdan.cc/gofumpt v0.0.0-20200513141252-abc0db2c416a // indirect
 )
 
 replace (
