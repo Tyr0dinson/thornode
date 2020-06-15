@@ -22,7 +22,7 @@ type TransactionMeta struct {
 }
 
 type TokenMeta struct {
-	Symbol  string `json":symbool"`
+	Symbol  string `json:"symbool"`
 	Address string `json:"address"`
 }
 
