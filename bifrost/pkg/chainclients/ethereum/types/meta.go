@@ -20,6 +20,11 @@ type TransactionMeta struct {
 	BlockHeight int64    `json:"block_height"`
 }
 
+type TokenMeta struct {
+	Symbol  string `json":symbool"`
+	Address string `json:"address"`
+}
+
 // NewBlockMeta create a new instance of BlockMeta
 func NewBlockMeta(block *types.Block) *BlockMeta {
 	txsMeta := make([]TransactionMeta, 0)
@@ -35,5 +40,13 @@ func NewBlockMeta(block *types.Block) *BlockMeta {
 		Height:       int64(block.NumberU64()),
 		BlockHash:    block.Hash().Hex(),
 		Transactions: txsMeta,
+	}
+}
+
+// NewTokenMeta create a new instance of TokenMeta
+func NewTokenMeta(symbol, address string) *TokenMeta {
+	return &TokenMeta{
+		Symbol:  symbol,
+		Address: address,
 	}
 }

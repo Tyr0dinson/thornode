@@ -169,7 +169,7 @@ func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
 	}
 	return common.NewAccount(0, 0, common.AccountCoins{
 		common.AccountCoin{
-			Amount: uint64(totalAmt),
+			Amount: cosmos.NewUint(uint64(totalAmt)),
 			Denom:  common.BTCAsset.String(),
 		},
 	}), nil
