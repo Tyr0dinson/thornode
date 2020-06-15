@@ -375,7 +375,6 @@ func (e *BlockScanner) getSymbol(from, token string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	e.logger.Debug().Msgf("wo")
 	res, err := e.client.CallContract(context.Background(), ethereum.CallMsg{
 		From: ecommon.HexToAddress(from),
 		To:   to,
@@ -384,13 +383,11 @@ func (e *BlockScanner) getSymbol(from, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	e.logger.Debug().Msgf("too")
 	symbol := ""
 	err = e.ERC20ABI.Unpack(&symbol, SymbolMethod, res)
 	if err != nil {
 		return "", err
 	}
-	e.logger.Debug().Msgf("symb %s", symbol)
 	return symbol, nil
 }
 
