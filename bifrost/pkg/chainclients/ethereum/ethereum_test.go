@@ -27,10 +27,11 @@ import (
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type EthereumSuite struct {
-	thordir  string
-	thorKeys *thorclient.Keys
-	bridge   *thorclient.ThorchainBridge
-	m        *metrics.Metrics
+	thordir         string
+	thorKeys        *thorclient.Keys
+	bridge          *thorclient.ThorchainBridge
+	m               *metrics.Metrics
+	keySignPartyMgr *thorclient.KeySignPartyMgr
 }
 
 var _ = Suite(&EthereumSuite{})
@@ -109,6 +110,7 @@ func (s *EthereumSuite) SetUpSuite(c *C) {
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(err, IsNil)
+	s.keySignPartyMgr = thorclient.NewKeySignPartyMgr(s.bridge)
 }
 
 func (s *EthereumSuite) TearDownSuite(c *C) {
@@ -139,7 +141,7 @@ func (s *EthereumSuite) TestGetTxHash(c *C) {
 }
 
 func (s *EthereumSuite) TestClient(c *C) {
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m)
+	e, err := NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m, s.keySignPartyMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
 
@@ -230,7 +232,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 			`[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asset","type":"address"},{"indexed":false,"internalType":"address","name":"receiver","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"},{"indexed":false,"internalType":"string","name":"memo","type":"string"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asgard","type":"address"}],"name":"NewAsgard","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asgard","type":"address"}],"name":"RemoveAsgard","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"receiver","type":"address"},{"indexed":false,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[],"name":"asgard","outputs":[{"internalType":"addresspayable","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"asgards","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"asset","type":"address"},{"internalType":"addresspayable","name":"receiver","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"},{"internalType":"string","name":"memo","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"address","name":"oldAsgard","type":"address"}],"name":"removeAsgard","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"receiver","type":"address"},{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"newAsgard","type":"address"}],"name":"updateAsgard","outputs":[],"stateMutability":"nonpayable","type":"function"}]`,
 			`[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"spender","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"address","name":"","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"success","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"decimals","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"success","type":"bool"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transferFrom","outputs":[{"internalType":"bool","name":"success","type":"bool"}],"stateMutability":"nonpayable","type":"function"}]`,
 		},
-	}, nil, s.bridge, s.m)
+	}, nil, s.bridge, s.m, s.keySignPartyMgr)
 	c.Assert(err2, IsNil)
 	c.Assert(e2, NotNil)
 

@@ -21,7 +21,7 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/blame"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 
@@ -42,6 +42,7 @@ const (
 	SignerMembershipEndpoint = "/thorchain/vaults/%s/signers"
 	StatusEndpoint           = "/status"
 	AsgardVault              = "/thorchain/vaults/asgard"
+	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
 	RagnarokEndpoint         = "/thorchain/ragnarok"
 )
@@ -186,6 +187,7 @@ func (b *ThorchainBridge) getAccountNumberAndSequenceNumber() (uint64, uint64, e
 	return acc.AccountNumber, acc.Sequence, nil
 }
 
+// GetConfig return the configuration
 func (b *ThorchainBridge) GetConfig() config.ClientConfiguration {
 	return b.cfg
 }
@@ -304,6 +306,7 @@ func (b *ThorchainBridge) EnsureNodeWhitelisted() error {
 	return nil
 }
 
+// FetchNodeStatus get current node status from thorchain
 func (b *ThorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
 	bepAddr := b.keys.GetSignerInfo().GetAddress().String()
 	if len(bepAddr) == 0 {
@@ -358,6 +361,7 @@ func (b *ThorchainBridge) IsCatchingUp() (bool, error) {
 	return resp.Result.SyncInfo.CatchingUp, nil
 }
 
+// WaitToCatchUp wait for thorchain to catch up
 func (b *ThorchainBridge) WaitToCatchUp() error {
 	for {
 		yes, err := b.IsCatchingUp()
@@ -389,8 +393,35 @@ func (b *ThorchainBridge) GetAsgards() (stypes.Vaults, error) {
 	return vaults, nil
 }
 
+func (b *ThorchainBridge) GetPubKeys() (common.PubKeys, error) {
+	buf, s, err := b.getWithPath(PubKeysEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", s)
+	}
+	var pubs struct {
+		Asgard    common.PubKeys `json:"asgard"`
+		Yggdrasil common.PubKeys `json:"yggdrasil"`
+	}
+	if err := b.cdc.UnmarshalJSON(buf, &pubs); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal pubkeys: %w", err)
+	}
+	pubkeys := append(pubs.Asgard, pubs.Yggdrasil...)
+	return pubkeys, nil
+}
+
 // PostNetworkFee send network fee message to THORNode
 func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, transactionSize int64, transactionRate sdk.Uint) (common.TxID, error) {
+	nodeStatus, err := b.FetchNodeStatus()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("failed to get node status: %w", err)
+	}
+
+	if nodeStatus != stypes.Active {
+		return common.BlankTxID, nil
+	}
 	start := time.Now()
 	defer func() {
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
