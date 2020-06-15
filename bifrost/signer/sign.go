@@ -22,7 +22,6 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
@@ -409,8 +408,8 @@ func (s *Signer) handleYggReturn(height int64, tx types.TxOutItem) (types.TxOutI
 			s.logger.Error().Err(err).Msg("failed to parse asset")
 			return tx, err
 		}
-		if coin.Amount > 0 {
-			amount := cosmos.NewUint(coin.Amount)
+		if coin.Amount.Uint64() > 0 {
+			amount := coin.Amount
 			tx.Coins = append(tx.Coins, common.NewCoin(asset, amount))
 		}
 	}

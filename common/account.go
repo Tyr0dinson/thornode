@@ -2,10 +2,12 @@ package common
 
 import (
 	"github.com/binance-chain/go-sdk/common/types"
+
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 type AccountCoin struct {
-	Amount uint64
+	Amount cosmos.Uint
 	Denom  string
 }
 
@@ -21,7 +23,7 @@ type Account struct {
 func GetCoins(accCoins []types.Coin) AccountCoins {
 	coins := make(AccountCoins, 0)
 	for _, coin := range accCoins {
-		coins = append(coins, AccountCoin{Amount: uint64(coin.Amount), Denom: coin.Denom})
+		coins = append(coins, AccountCoin{Amount: cosmos.NewUint(uint64(coin.Amount)), Denom: coin.Denom})
 	}
 	return coins
 }

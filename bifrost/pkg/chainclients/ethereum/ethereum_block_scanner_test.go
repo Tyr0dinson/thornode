@@ -132,7 +132,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 				"blockNumber":"0x1",
 				"blockHash":"0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba",
 				"cumulativeGasUsed":"0xc350",
-				"contractAddress":"0x2a65aca4d5fc5b5c859090a6c34d164135398226",
+				"VaultAddress":"0x2a65aca4d5fc5b5c859090a6c34d164135398226",
 				"gasUsed":"0x4dc",
 				"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
 				"logs":[],
@@ -190,7 +190,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
-	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	txIn, err := bs.FetchTxs(int64(1))
@@ -242,7 +242,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
 	bs, err := NewBlockScanner(getConfigForTest(server.URL), blockscanner.NewMockScannerStorage(), types.Mainnet, ethClient, s.bridge, s.m)
-	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
@@ -360,7 +360,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
-	bs.ContractAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	block, err := CreateBlock(0)

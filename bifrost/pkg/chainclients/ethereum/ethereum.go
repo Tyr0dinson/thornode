@@ -2,7 +2,6 @@ package ethereum
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -13,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
-	ecrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
@@ -28,18 +26,19 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
+	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 const (
-	Zero                = "0x0000000000000000000000000000000000000000"
-	ByteCode            = "608060405234801561001057600080fd5b50336000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff160217905550610a5c806100606000396000f3fe60806040526004361061003f5760003560e01c806318aad847146100445780638077f5ab1461009b578063beabacc8146100ec578063bfe07da614610167575b600080fd5b34801561005057600080fd5b5061005961024c565b604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b3480156100a757600080fd5b506100ea600480360360208110156100be57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff169060200190929190505050610271565b005b3480156100f857600080fd5b506101656004803603606081101561010f57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff169060200190929190803573ffffffffffffffffffffffffffffffffffffffff169060200190929190803590602001909291905050506103d9565b005b61024a6004803603606081101561017d57600080fd5b81019080803573ffffffffffffffffffffffffffffffffffffffff16906020019092919080359060200190929190803590602001906401000000008111156101c457600080fd5b8201836020820111156101d657600080fd5b803590602001918460018302840111640100000000831117156101f857600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600081840152601f19601f8201169050808301925050505050505091929192905050506106a5565b005b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1681565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff1614610333576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b806000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055507f3d6017a0fe091729e8fa2ce2345c813da543a07f4ae7636bf382d5cf4f20068981604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390a150565b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163373ffffffffffffffffffffffffffffffffffffffff161461049b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252600e8152602001807f4d7573742062652041736761726400000000000000000000000000000000000081525060200191505060405180910390fd5b600073ffffffffffffffffffffffffffffffffffffffff168273ffffffffffffffffffffffffffffffffffffffff16141561053e576040517f08c379a000000000000000000000000000000000000000000000000000000000815260040180806020018281038252601e8152602001807f4574686572206d7573742062652073656e742066726f6d20417367617264000081525060200191505060405180910390fd5b8173ffffffffffffffffffffffffffffffffffffffff1663a9059cbb84836040518363ffffffff1660e01b8152600401808373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200182815260200192505050602060405180830381600087803b1580156105c557600080fd5b505af11580156105d9573d6000803e3d6000fd5b505050506040513d60208110156105ef57600080fd5b8101908080519060200190929190505050507fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001828152602001935050505060405180910390a1505050565b6000821161071b576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260158152602001807f75736572206d7573742073656e6420617373657473000000000000000000000081525060200191505060405180910390fd5b600073ffffffffffffffffffffffffffffffffffffffff168373ffffffffffffffffffffffffffffffffffffffff161415610851578134146107c5576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260188152602001807f75736572206d7573742073656e6420746865206574686572000000000000000081525060200191505060405180910390fd5b6000809054906101000a900473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff163460405180600001905060006040518083038185875af1925050503d8060008114610844576040519150601f19603f3d011682016040523d82523d6000602084013e610849565b606091505b505050610949565b8273ffffffffffffffffffffffffffffffffffffffff166323b872dd3330856040518463ffffffff1660e01b8152600401808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020018281526020019350505050602060405180830381600087803b15801561090c57600080fd5b505af1158015610920573d6000803e3d6000fd5b505050506040513d602081101561093657600080fd5b8101908080519060200190929190505050505b7f643e927b32d5bfd08eccd2fcbd97057ad413850f857a2359639114e8e8dd3d7b838383604051808473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200183815260200180602001828103825283818151815260200191508051906020019080838360005b838110156109e55780820151818401526020810190506109ca565b50505050905090810190601f168015610a125780820380516001836020036101000a031916815260200191505b5094505050505060405180910390a150505056fea26469706673582212208cb64977b4c91fd065c4d8a53314dee39d322591fec151fa9e93014968e8c91364736f6c63430006050033"
-	VaultJSON           = `[{"inputs":[],"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asset","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"},{"indexed":false,"internalType":"string","name":"memo","type":"string"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"asgard","type":"address"}],"name":"NewAsgard","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"address","name":"token","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},{"inputs":[],"name":"asgard","outputs":[{"internalType":"addresspayable","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"asset","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"},{"internalType":"string","name":"memo","type":"string"}],"name":"deposit","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"address","name":"receiver","type":"address"},{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"addresspayable","name":"newAsgard","type":"address"}],"name":"updateAsgard","outputs":[],"stateMutability":"nonpayable","type":"function"}]`
 	ContractCreationGas = uint64(5000000)
 	Confirmations       = 12
-	NewAsgardGas        = uint64(50000)
+	AddAsgardGas        = uint64(60000)
+	RemoveAsgardGas     = uint64(60000)
 	TransferMethod      = "transfer"
+	AddAsgard           = "addAsgard"
+	RemoveAsgard        = "removeAsgard"
+	BalanceOf           = "balanceOf(address)"
 	ETHTransferGas      = uint64(21000)
-	MasterPrivKey       = "ef235aacf90d9f4aadd8c92e4b2562e1d9eb97f0df9ba3b508258739cb013db2"
 )
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
@@ -54,9 +53,9 @@ type Client struct {
 	thorchainBridge *thorclient.ThorchainBridge
 	blockScanner    *blockscanner.BlockScanner
 	keySignPartyMgr *thorclient.KeySignPartyMgr
-	contractAddress ecommon.Address
-	contractABI     *abi.ABI
-	contracts       map[common.PubKey]ecommon.Address
+	vaultABI        *abi.ABI
+	erc20ABI        *abi.ABI
+	vaultAddress    ecommon.Address
 }
 
 // NewClient create new instance of Ethereum client
@@ -125,7 +124,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
 	}
 
-	if err = c.InitContract(); err != nil {
+	if err = c.InitContracts(cfg); err != nil {
 		return c, fmt.Errorf("fail to create contract: %w", err)
 	}
 	return c, nil
@@ -158,31 +157,10 @@ func (c *Client) waitBlocks(hash string) (*etypes.Receipt, error) {
 	return receipt, nil
 }
 
-// sendETH sends ETH
-func (c *Client) sendETH(value *big.Int, toAddr string) error {
-	createdTx := etypes.NewTransaction(0, ecommon.HexToAddress(toAddr), value, ETHTransferGas, c.GetGasPrice(), []byte{})
-	pk, err := ecrypto.HexToECDSA(MasterPrivKey)
-	if err != nil {
-		return err
-	}
-	tx, err := etypes.SignTx(createdTx, eipSigner, pk)
-	if err != nil {
-		return fmt.Errorf("fail to sign tx: %w", err)
-	}
-	if err := c.client.SendTransaction(context.Background(), tx); err != nil {
-		return err
-	}
-	_, err = c.waitBlocks(tx.Hash().Hex())
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// sendETH sends ETH
-func (c *Client) moveFunds(value *big.Int, toAddr string) error {
+// moveFunds moves ETH and contract ownership
+func (c *Client) moveFunds(to string) error {
 	from := c.GetAddress(c.pk)
-	balance, err := c.GetBalance(from)
+	balance, err := c.GetBalance(from, strings.ToLower(ETHToken))
 	if err != nil {
 		return err
 	}
@@ -228,11 +206,13 @@ func (c *Client) Churn(pk common.PubKey) error {
 	if err != nil {
 		return err
 	}
-	data, err := c.inputAsgard(newAsgard)
+	data, err := c.inputAddAsgard(newAsgard)
 	if err != nil {
 		return err
 	}
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(toAddr), big.NewInt(0), NewAsgardGas, gasPrice, data)
+
+	to := c.vaultAddress
+	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), AddAsgardGas, gasPrice, data)
 
 	currentHeight, err := c.GetHeight()
 	if err != nil {
@@ -260,63 +240,29 @@ func (c *Client) Churn(pk common.PubKey) error {
 	}
 
 	err = c.moveFunds(newAsgard)
-	if err != nil {
-		return err
-	}
-
-	c.contracts[pk] = c.contracts[c.pk]
-	delete(c.contracts, c.pk)
-	c.pk = pk
+	c.ethScanner.VaultOwner = newAsgard
+	return nil
 }
 
-// InitContract, should be done only once for mainnet on genesis block
-func (c *Client) InitContract() error {
-	bytes, err := hex.DecodeString(ByteCode)
-	if err != nil {
-		return fmt.Errorf("failed to decode code: %w", err)
-	}
-	createdTx := etypes.NewContractCreation(0, big.NewInt(0), ContractCreationGas, c.GetGasPrice(), bytes)
-	// send initial ETH to create contract
-	err = c.sendETH(big.NewInt(int64(createdTx.Gas())), c.GetAddress(c.pk))
-	if err != nil {
-		return fmt.Errorf("failed to send init ETH: %w", err)
-	}
-
-	height, err := c.GetHeight()
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
-		return fmt.Errorf("fail to get block height: %w", err)
-	}
-	from := c.GetAddress(c.pk)
-	rawTx, err := c.sign(createdTx, fromAddr, c.pk, height, stypes.TxOutItem{}, 0)
-	if err != nil || len(rawTx) == 0 {
-		return fmt.Errorf("fail to sign message: %w", err)
-	}
-	hash, err := GetTxHash(rawTx)
-	if err != nil {
-		return fmt.Errorf("fail to get tx hash: %w %s", err, hash)
-	}
-
-	if err = c.BroadcastTx(stypes.TxOutItem{VaultPubKey: c.pk}, rawTx); err != nil {
-		return fmt.Errorf("fail to broadcast contract: %w", err)
-	}
-	receipt, err := c.waitBlocks(hash)
-	if err != nil {
-		return fmt.Errorf("fail to wait blocks and get receipt: %w", err)
-	}
-
-	c.contracts[c.pk] = receipt.ContractAddress
-	if len(receipt.ContractAddress.String()) == 0 || receipt.ContractAddress.String() == Zero {
-		return fmt.Errorf("incorrect contract creation")
-	}
-	c.ethScanner.Contracts[receipt.ContractAddress] = c.pk
+// InitContracts
+func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
+	c.vaultAddress = ecommon.HexToAddress(cfg.Contract)
+	c.ethScanner.VaultAddress = ecommon.HexToAddress(cfg.Contract)
 	vaultABI := &abi.ABI{}
-	err = vaultABI.UnmarshalJSON([]byte(VaultJSON))
+	err := vaultABI.UnmarshalJSON([]byte(cfg.Jsons[0]))
 	if err != nil {
 		return err
 	}
-	c.ethScanner.ContractABI = vaultABI
-	c.contractABI = vaultABI
+	c.ethScanner.VaultABI = vaultABI
+	c.ethScanner.VaultOwner = c.GetAddress(c.pk)
+	c.vaultABI = vaultABI
+	erc20ABI := &abi.ABI{}
+	err = erc20ABI.UnmarshalJSON([]byte(cfg.Jsons[1]))
+	if err != nil {
+		return err
+	}
+	c.ethScanner.ERC20ABI = erc20ABI
+	c.erc20ABI = erc20ABI
 	return nil
 }
 
@@ -368,18 +314,27 @@ func (c *Client) GetHeight() (int64, error) {
 	return c.ethScanner.GetHeight()
 }
 
-// createInput for contract method
-func (c *Client) inputAsgard(newAsgard string) ([]byte, error) {
-	input, err := c.contractABI.Pack("NewAsgard", ecommon.HexToAddress(newAsgard))
+// inputAddAsgard
+func (c *Client) inputAddAsgard(newAsgard string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(AddAsgard, ecommon.HexToAddress(newAsgard))
 	if err != nil {
 		return nil, err
 	}
 	return input, nil
 }
 
-// createInput for contract method
-func (c *Client) createInput(token, receiver string, value *big.Int) ([]byte, error) {
-	input, err := c.contractABI.Pack(TransferMethod, ecommon.HexToAddress(token), ecommon.HexToAddress(receiver), value)
+// inputRemoveAsgard
+func (c *Client) inputRemoveAsgard(oldAsgard string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(RemoveAsgard, ecommon.HexToAddress(oldAsgard))
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+// inputTransfer
+func (c *Client) inputTransfer(token, receiver string, value *big.Int, memo string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(TransferMethod, ecommon.HexToAddress(receiver), ecommon.HexToAddress(token), value, memo)
 	if err != nil {
 		return nil, err
 	}
@@ -469,15 +424,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
 	dest := ecommon.HexToAddress(to)
-	data := []byte{}
+	data := []byte(tx.Memo)
 	if token != strings.ToLower(ETHToken) {
-		data, err = c.createInput(token, to, value)
+		data, err = c.inputTransfer(token, to, value, tx.Memo)
 		if err != nil {
 			c.logger.Error().Err(err).Msg("fail to create input")
 			return nil, err
 		}
 		value = big.NewInt(0)
-		dest = c.contracts[tx.VaultPubKey]
+		dest = c.vaultAddress
 	}
 
 	gasOut := big.NewInt(0)
@@ -545,9 +500,50 @@ func (c *Client) sign(tx *etypes.Transaction, from string, poolPubKey common.Pub
 	return nil, err
 }
 
+func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
+	if token == strings.ToLower(ETHToken) {
+		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
+	}
+	input, err := c.erc20ABI.Pack(BalanceOf, ecommon.HexToAddress(addr))
+	if err != nil {
+		return nil, err
+	}
+	to := &ecommon.Address{}
+	*to = ecommon.HexToAddress(token)
+	res, err := c.client.CallContract(context.Background(), ethereum.CallMsg{
+		From: ecommon.HexToAddress(addr),
+		To:   to,
+		Data: input,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	value := big.NewInt(0)
+	err = c.vaultABI.Unpack(&value, "balanceOf", res)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
 // GetBalance gets balance
-func (c *Client) GetBalance(addr string) (*big.Int, error) {
-	return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
+func (c *Client) GetBalances(addr string) (common.AccountCoins, error) {
+	tokens, err := c.ethScanner.GetTokens()
+	if err != nil {
+		return nil, err
+	}
+	coins := common.AccountCoins{}
+	for _, token := range tokens {
+		balance, err := c.GetBalance(addr, token.Address)
+		if err != nil {
+			continue
+		}
+		coins = append(coins, common.AccountCoin{Amount: cosmos.NewUintFromBigInt(balance), Denom: "ETH." + token.Symbol + "-" + strings.ToUpper(token.Address)})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return coins, nil
 }
 
 // GetAccount gets account by address in eth client
@@ -557,11 +553,19 @@ func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	balance, err := c.GetBalance(addr)
+	balance, err := c.GetBalance(addr, strings.ToLower(ETHToken))
 	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get account nonce: %w", err)
+		return common.Account{}, err
 	}
-	account := common.NewAccount(int64(nonce), 0, common.AccountCoins{common.AccountCoin{Amount: balance.Uint64(), Denom: "ETH.ETH-0X0000000000000000000000000000000000000000"}})
+	if pk == c.pk {
+		addr = c.vaultAddress.String()
+	}
+	coins, err := c.GetBalances(addr)
+	if err != nil {
+		return common.Account{}, err
+	}
+	coins = append(coins, common.AccountCoin{Amount: cosmos.NewUintFromBigInt(balance), Denom: "ETH.ETH-0X0000000000000000000000000000000000000000"})
+	account := common.NewAccount(int64(nonce), 0, coins)
 	return account, nil
 }
 
