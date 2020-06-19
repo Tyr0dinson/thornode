@@ -30,15 +30,18 @@ import (
 )
 
 const (
-	ContractCreationGas = uint64(5000000)
-	Confirmations       = 12
-	AddAsgardGas        = uint64(60000)
-	RemoveAsgardGas     = uint64(60000)
-	TransferMethod      = "transfer"
-	AddAsgard           = "addAsgard"
-	RemoveAsgard        = "removeAsgard"
-	BalanceOf           = "balanceOf(address)"
-	ETHTransferGas      = uint64(21000)
+	Confirmations     = 12
+	GasLimit          = uint64(5000000)
+	AsgardTransfer    = "asgardTransfer"
+	YggdrasilTransfer = "yggdrasilTransfer"
+	YggdrasilPlus     = "yggdrasilPlus"
+	YggdrasilMinus    = "yggdrasilMinus"
+	Allowance         = "allowance"
+	YggAllowance      = "yggAllowance"
+	AddAsgard         = "addAsgard"
+	YggPlusMemo       = "yggdrasil+"
+	YggMinusMemo      = "yggdrasil-"
+	ETHTransferGas    = uint64(21000)
 )
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
@@ -206,7 +209,7 @@ func (c *Client) Churn(pk common.PubKey) error {
 	if err != nil {
 		return err
 	}
-	data, err := c.inputAddAsgard(newAsgard)
+	data, err := c.inputAddAsgard([]string{newAsgard, from})
 	if err != nil {
 		return err
 	}
@@ -220,27 +223,17 @@ func (c *Client) Churn(pk common.PubKey) error {
 		return err
 	}
 
-	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk})
+	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk}, 0)
 	if err != nil || len(rawTx) == 0 {
 		return fmt.Errorf("fail to sign message: %w", err)
 	}
 
-	err = c.BroadcastTx(rawTx)
-	if err != nil {
+	if err = c.BroadcastTx(stypes.TxOutItem{VaultPubKey: c.pk}, rawTx); err != nil {
 		return err
 	}
 
-	tx := &etypes.Transaction{}
-	if err := tx.UnmarshalJSON(rawTx); err != nil {
-		return err
-	}
-	_, err = c.waitBlocks(tx.Hash().Hex())
-	if err != nil {
-		return err
-	}
-
-	err = c.moveFunds(newAsgard)
 	c.ethScanner.VaultOwner = newAsgard
+	c.pk = pk
 	return nil
 }
 
@@ -323,18 +316,18 @@ func (c *Client) inputAddAsgard(newAsgard string) ([]byte, error) {
 	return input, nil
 }
 
-// inputRemoveAsgard
-func (c *Client) inputRemoveAsgard(oldAsgard string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(RemoveAsgard, ecommon.HexToAddress(oldAsgard))
+// inputTransfer
+func (c *Client) inputTransfer(transferType, to, token string, value *big.Int, memo string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(transferType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value, memo)
 	if err != nil {
 		return nil, err
 	}
 	return input, nil
 }
 
-// inputTransfer
-func (c *Client) inputTransfer(token, receiver string, value *big.Int, memo string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(TransferMethod, ecommon.HexToAddress(receiver), ecommon.HexToAddress(token), value, memo)
+// inputYggdrasil
+func (c *Client) inputYggdrasil(yggdrasilType, to, token string, value *big.Int) ([]byte, error) {
+	input, err := c.vaultABI.Pack(yggdrasilType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value)
 	if err != nil {
 		return nil, err
 	}
@@ -430,6 +423,33 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 		if err != nil {
 			c.logger.Error().Err(err).Msg("fail to create input")
 			return nil, err
+		}
+		if tx.Memo == YggPlusMemo {
+			data, err = c.inputYggdrasil(YggdrasilPlus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else if tx.Memo == YggMinusMemo {
+			data, err = c.inputYggdrasil(YggdrasilMinus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else {
+			if _, ok := c.asgards[from]; ok {
+				data, err = c.inputTransfer(AsgardTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			} else {
+				data, err = c.inputTransfer(YggdrasilTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			}
 		}
 		value = big.NewInt(0)
 		dest = c.vaultAddress

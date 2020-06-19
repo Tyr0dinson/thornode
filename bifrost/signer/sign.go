@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	ecore "github.com/ethereum/go-ethereum/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -257,7 +258,13 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 					s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
 				}
 
-				if err := s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type); err != nil {
+				if err = s.chains[common.ETHChain].Churn(pubKey.Secp256k1); err != nil && err != ecore.ErrAlreadyKnown {
+					s.errCounter.WithLabelValues("fail_to_churn_eth", "").Inc()
+					s.logger.Error().Err(err).Msg("fail to churn asgard for ETH")
+					continue
+				}
+
+				if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type); err != nil {
 					s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 					s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 				}

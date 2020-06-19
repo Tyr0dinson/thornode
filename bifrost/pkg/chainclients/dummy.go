@@ -25,5 +25,6 @@ func (DummyChain) GetAccount(addr string) (common.Account, error) {
 }
 func (DummyChain) GetChain() common.Chain                { return "" }
 func (DummyChain) GetGasFee(count uint64) common.Gas     { return nil }
+func (DummyChain) Churn(pubKey common.PubKey) error      { return nil }
 func (DummyChain) Start(globalTxsQueue chan stypes.TxIn) {}
 func (DummyChain) Stop()                                 {}

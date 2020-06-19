@@ -139,6 +139,11 @@ func (c *Client) GetHeight() (int64, error) {
 	return c.client.GetBlockCount()
 }
 
+// Churn
+func (c *Client) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 // GetAddress returns address from pubkey
 func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 	addr, err := poolPubKey.GetAddress(common.BTCChain)

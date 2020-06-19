@@ -131,6 +131,11 @@ func (b *Binance) GetConfig() config.ChainConfiguration {
 	return b.cfg
 }
 
+// Churn
+func (b *Binance) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 // checkIsTestNet determinate whether we are running on test net by checking the status
 func (b *Binance) checkIsTestNet() error {
 	// Cached data after first call
