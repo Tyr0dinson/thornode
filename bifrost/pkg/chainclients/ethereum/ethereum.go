@@ -38,7 +38,6 @@ const (
 	YggdrasilMinus    = "yggdrasilMinus"
 	Allowance         = "allowance"
 	YggAllowance      = "yggAllowance"
-	NewAsgard         = "migrate"
 	AddAsgard         = "addAsgard"
 	YggPlusMemo       = "yggdrasil+"
 	YggMinusMemo      = "yggdrasil-"
@@ -218,7 +217,7 @@ func (c *Client) Churn(pk common.PubKey) error {
 	if err != nil {
 		return err
 	}
-	data, err := c.inputAddAsgard([]string{newAsgard})
+	data, err := c.inputAddAsgard([]string{newAsgard, from})
 	if err != nil {
 		return err
 	}
@@ -244,23 +243,10 @@ func (c *Client) Churn(pk common.PubKey) error {
 	}
 
 	if err = c.BroadcastTx(stypes.TxOutItem{VaultPubKey: c.pk}, rawTx); err != nil {
-		return fmt.Errorf("fail to broadcast tx: %w", err)
-	}
-
-	hash, err := GetTxHash(rawTx)
-	if err != nil {
-		return fmt.Errorf("fail to get tx hash: %w %s", err, hash)
-	}
-	_, err = c.waitBlocks(hash)
-	if err != nil {
 		return err
 	}
 
-	err = c.moveFunds(newAsgard)
 	c.ethScanner.VaultOwner = newAsgard
-	if err != nil {
-		return err
-	}
 	c.pk = pk
 	return nil
 }
@@ -348,7 +334,7 @@ func (c *Client) inputAddAsgard(newAsgards []string) ([]byte, error) {
 }
 
 // inputTransfer
-func (c *Client) inputTransfer(transferType string, to, token string, value *big.Int, memo string) ([]byte, error) {
+func (c *Client) inputTransfer(transferType, to, token string, value *big.Int, memo string) ([]byte, error) {
 	input, err := c.vaultABI.Pack(transferType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value, memo)
 	if err != nil {
 		return nil, err
@@ -357,7 +343,7 @@ func (c *Client) inputTransfer(transferType string, to, token string, value *big
 }
 
 // inputYggdrasil
-func (c *Client) inputYggdrasil(yggdrasilType string, to, token string, value *big.Int) ([]byte, error) {
+func (c *Client) inputYggdrasil(yggdrasilType, to, token string, value *big.Int) ([]byte, error) {
 	input, err := c.vaultABI.Pack(yggdrasilType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value)
 	if err != nil {
 		return nil, err
@@ -447,14 +433,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	dest := ecommon.HexToAddress(to)
 	data := []byte(tx.Memo)
 	if token != strings.ToLower(ETHToken) {
-		if tx.Memo == NewAsgard {
-			data, err = c.inputAddAsgard([]string{to, from})
-			if err != nil {
-				c.logger.Error().Err(err).Msg("fail to create input")
-				return nil, err
-			}
-			c.asgards[to] = c.pk
-		} else if tx.Memo == YggPlusMemo {
+		if tx.Memo == YggPlusMemo {
 			data, err = c.inputYggdrasil(YggdrasilPlus, to, token, value)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("fail to create input")

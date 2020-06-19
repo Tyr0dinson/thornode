@@ -202,6 +202,10 @@ func (b *MockChainClient) GetChain() common.Chain {
 	return common.BNBChain
 }
 
+func (b *MockChainClient) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 func (b *MockChainClient) BroadcastTx(_ stypes.TxOutItem, tx []byte) error {
 	return nil
 }
