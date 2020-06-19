@@ -534,7 +534,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
 	}
 	var err error
-	input := []byte{}
+	var input []byte
 	method := ""
 	if _, ok := c.asgards[addr]; ok {
 		method = Allowance
