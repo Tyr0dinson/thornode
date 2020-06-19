@@ -306,10 +306,14 @@ func (c *Client) GetChain() common.Chain {
 func (c *Client) GetHeight() (int64, error) {
 	return c.ethScanner.GetHeight()
 }
-
+	
 // inputAddAsgard
-func (c *Client) inputAddAsgard(newAsgard string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(AddAsgard, ecommon.HexToAddress(newAsgard))
+func (c *Client) inputAddAsgard(newAsgards []string) ([]byte, error) {
+	asgards := []ecommon.Address{}
+	for _, newAsgard := range newAsgards {
+		asgards = append(asgards, ecommon.HexToAddress(newAsgard))
+	}
+	input, err := c.vaultABI.Pack(AddAsgard, asgards)
 	if err != nil {
 		return nil, err
 	}
@@ -524,7 +528,17 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if token == strings.ToLower(ETHToken) {
 		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
 	}
-	input, err := c.erc20ABI.Pack(BalanceOf, ecommon.HexToAddress(addr))
+	var err error
+	var input []byte
+	method := ""
+	if _, ok := c.asgards[addr]; ok {
+		method = Allowance
+		addr = c.vaultAddress.String()
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token))
+	} else {
+		method = YggAllowance
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
+	}
 	if err != nil {
 		return nil, err
 	}
