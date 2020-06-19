@@ -28,7 +28,7 @@ type validatorMgrV1 struct {
 }
 
 // newValidatorMgrV1 create a new instance of ValidatorManager
-func NewValidatorMgrV1(k keeper.Keeper, vaultMgr VaultManager, txOutStore TxOutStore, eventMgr EventManager) *validatorMgrV1 {
+func newValidatorMgrV1(k keeper.Keeper, vaultMgr VaultManager, txOutStore TxOutStore, eventMgr EventManager) *validatorMgrV1 {
 	return &validatorMgrV1{
 		k:          k,
 		vaultMgr:   vaultMgr,
@@ -370,18 +370,28 @@ func (vm *validatorMgrV1) processRagnarok(ctx cosmos.Context, mgr Manager, const
 		return nil
 	}
 
-	migrateInterval, err := vm.k.GetMimir(ctx, constants.FundMigrationInterval.String())
-	if migrateInterval < 0 || err != nil {
-		migrateInterval = constAccessor.GetInt64Value(constants.FundMigrationInterval)
+	// check if we have any pending ragnarok transactions
+	pending, err := vm.k.GetRagnarokPending(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get ragnarok pending: %w", err)
 	}
-	if (common.BlockHeight(ctx)-ragnarokHeight)%migrateInterval == 0 {
-		nth := (common.BlockHeight(ctx) - ragnarokHeight) / migrateInterval
-		err := vm.ragnarokProtocolStage2(ctx, nth, mgr, constAccessor)
-		if err != nil {
-			ctx.Logger().Error("fail to execute ragnarok protocol step 2", "error", err)
-			return err
-		}
+	if pending > 0 {
+		ctx.Logger().Info("awaiting previous ragnarok transction to clear before continuing", "count", pending)
+		return nil
 	}
+
+	nth, err := vm.k.GetRagnarokNth(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get ragnarok nth: %w", err)
+	}
+	nth += 1 // increment by 1
+	ctx.Logger().Info("starting next ragnarok iteration", "iteration", nth)
+	err = vm.ragnarokProtocolStage2(ctx, nth, mgr, constAccessor)
+	if err != nil {
+		ctx.Logger().Error("fail to execute ragnarok protocol step 2", "error", err)
+		return err
+	}
+	vm.k.SetRagnarokNth(ctx, nth)
 
 	return nil
 }
@@ -490,7 +500,7 @@ func (vm *validatorMgrV1) ragnarokReserve(ctx cosmos.Context, nth int64, mgr Man
 			Memo:      NewRagnarokMemo(common.BlockHeight(ctx)).String(),
 		}
 		_, err = vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem)
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {
 			return fmt.Errorf("fail to add outbound transaction")
 		}
 	}
@@ -534,7 +544,7 @@ func (vm *validatorMgrV1) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manage
 			}
 		}
 
-		if nth > 10 { // cap at 10
+		if nth >= 9 { // cap at 10
 			nth = 10
 		}
 		amt := na.Bond.MulUint64(uint64(nth)).QuoUint64(10)
@@ -550,7 +560,10 @@ func (vm *validatorMgrV1) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manage
 		}
 		ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem)
 		if err != nil {
-			return err
+			if !errors.Is(err, ErrNotEnoughToPayFee) {
+				return err
+			}
+			ok = true
 		}
 		if !ok {
 			continue
@@ -1070,7 +1083,7 @@ func findCountToRemove(blockHeight int64, active NodeAccounts) (toRemove int) {
 	var candidateCount int
 	for _, na := range active {
 		if na.LeaveHeight > 0 {
-			candidateCount += 1
+			candidateCount++
 			continue
 		}
 	}

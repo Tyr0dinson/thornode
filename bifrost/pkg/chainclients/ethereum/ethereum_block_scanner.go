@@ -32,8 +32,11 @@ import (
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
 	BlockCacheSize               = 6000
-	DepositEvent                 = "Deposit(address,address,uint256,string)"
+	DepositEvent                 = "Deposit(address,uint256,string)"
 	TransferEvent                = "Transfer(address,address,uint256,string)"
+	PlusEvent                    = "YggdrasilPlus(address,address,uint256)"
+	MinusEvent                   = "YggdrasilMinus(address,address,uint256)"
+	AddAsgardEvent               = "AddAsgard([]address)"
 	ETHToken                     = "0X0000000000000000000000000000000000000000"
 	SymbolMethod                 = "symbol"
 )
@@ -80,6 +83,10 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.
 	tokens, err := NewLevelDBTokenMeta(storage.GetInternalDb())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create token meta db: %w", err)
+	}
+	err = tokens.SaveTokenMeta("ETH", strings.ToLower(ETHToken))
+	if err != nil {
+		return nil, err
 	}
 
 	return &BlockScanner{
@@ -163,45 +170,51 @@ func (e *BlockScanner) updateGasPrice() {
 	e.gasPrice = gasPrice
 }
 
-func (e *BlockScanner) parseDeposit(data []byte) (string, string, *big.Int, string, error) {
+func (e *BlockScanner) parseDeposit(data []byte) (string, *big.Int, string, error) {
 	event := struct {
-		Asset    ecommon.Address
-		Receiver ecommon.Address
-		Value    *big.Int
-		Memo     string
+		Asset ecommon.Address
+		Value *big.Int
+		Memo  string
 	}{}
 	err := e.VaultABI.Unpack(&event, "Deposit", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse deposit event")
-		return "", "", nil, "", err
+		return "", nil, "", err
 	}
-	return event.Asset.String(), event.Receiver.String(), event.Value, event.Memo, nil
+	return event.Asset.String(), event.Value, event.Memo, nil
 }
 
 func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, string, error) {
 	event := struct {
-		Receiver ecommon.Address
-		Token    ecommon.Address
-		Value    *big.Int
-		Memo     string
+		To    ecommon.Address
+		Asset ecommon.Address
+		Value *big.Int
+		Memo  string
 	}{}
 	err := e.VaultABI.Unpack(&event, "Transfer", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse transfer event")
 		return "", "", nil, "", err
 	}
-	return event.Receiver.String(), event.Token.String(), event.Value, event.Memo, nil
+	return event.To.String(), event.Asset.String(), event.Value, event.Memo, nil
 }
 
-func (e *BlockScanner) matchDeposit(sig ecommon.Hash) bool {
-	if ecrypto.Keccak256Hash([]byte(DepositEvent)) == sig {
-		return true
+func (e *BlockScanner) parseYggdrasil(data []byte, yggdrasil string) (string, string, *big.Int, error) {
+	event := struct {
+		Yggdrasil ecommon.Address
+		Asset     ecommon.Address
+		Value     *big.Int
+	}{}
+	err := e.VaultABI.Unpack(&event, "Yggdrasil"+yggdrasil, data)
+	if err != nil {
+		e.logger.Error().Err(err).Msg("fail to parse transfer event")
+		return "", "", nil, err
 	}
-	return false
+	return event.Yggdrasil.String(), event.Asset.String(), event.Value, nil
 }
 
-func (e *BlockScanner) matchTransfer(sig ecommon.Hash) bool {
-	if ecrypto.Keccak256Hash([]byte(TransferEvent)) == sig {
+func (e *BlockScanner) matchEvent(event string, sig ecommon.Hash) bool {
+	if ecrypto.Keccak256Hash([]byte(event)) == sig {
 		return true
 	}
 	return false
@@ -434,9 +447,9 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 		}
 		token := ETHToken
 		memo := ""
-		receiver := ""
-		if e.matchDeposit(log.Topics[0]) {
-			token, receiver, value, memo, err = e.parseDeposit(log.Data)
+		to := ""
+		if e.matchEvent(DepositEvent, log.Topics[0]) {
+			token, value, memo, err = e.parseDeposit(log.Data)
 			if err != nil {
 				return nil, err
 			}
@@ -453,15 +466,31 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 			} else {
 				txInItem.Memo = memo
 			}
-			txInItem.To = receiver
+			txInItem.To = e.VaultOwner
 		}
-		if e.matchTransfer(log.Topics[0]) {
-			receiver, token, value, memo, err = e.parseTransfer(log.Data)
+		if e.matchEvent(TransferEvent, log.Topics[0]) {
+			to, token, value, memo, err = e.parseTransfer(log.Data)
 			if err != nil {
 				return nil, err
 			}
-			txInItem.To = strings.ToLower(receiver)
+			txInItem.To = strings.ToLower(to)
 			txInItem.Memo = memo
+		}
+		if e.matchEvent(PlusEvent, log.Topics[0]) {
+			to, token, value, err = e.parseYggdrasil(log.Data, "Plus")
+			if err != nil {
+				return nil, err
+			}
+			txInItem.To = to
+			txInItem.Memo = YggPlusMemo
+		}
+		if e.matchEvent(MinusEvent, log.Topics[0]) {
+			to, token, value, err = e.parseYggdrasil(log.Data, "Minus")
+			if err != nil {
+				return nil, err
+			}
+			txInItem.To = e.VaultOwner
+			txInItem.Memo = YggMinusMemo
 		}
 		tokenMeta, err := e.tokens.GetTokenMeta(token)
 		if err != nil {

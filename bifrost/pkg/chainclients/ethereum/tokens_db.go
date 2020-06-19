@@ -73,7 +73,7 @@ func (t *LevelDBTokenMeta) GetTokens() ([]*types.TokenMeta, error) {
 		}
 		var TokenMeta types.TokenMeta
 		if err := json.Unmarshal(buf, &TokenMeta); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal block meta: %w", err)
+			return nil, fmt.Errorf("fail to unmarshal token meta: %w", err)
 		}
 		TokenMetas = append(TokenMetas, &TokenMeta)
 	}

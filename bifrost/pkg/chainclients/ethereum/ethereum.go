@@ -30,15 +30,19 @@ import (
 )
 
 const (
-	ContractCreationGas = uint64(5000000)
-	Confirmations       = 12
-	AddAsgardGas        = uint64(60000)
-	RemoveAsgardGas     = uint64(60000)
-	TransferMethod      = "transfer"
-	AddAsgard           = "addAsgard"
-	RemoveAsgard        = "removeAsgard"
-	BalanceOf           = "balanceOf(address)"
-	ETHTransferGas      = uint64(21000)
+	Confirmations     = 12
+	GasLimit          = uint64(5000000)
+	AsgardTransfer    = "asgardTransfer"
+	YggdrasilTransfer = "yggdrasilTransfer"
+	YggdrasilPlus     = "yggdrasilPlus"
+	YggdrasilMinus    = "yggdrasilMinus"
+	Allowance         = "allowance"
+	YggAllowance      = "yggAllowance"
+	NewAsgard         = "migrate"
+	AddAsgard         = "addAsgard"
+	YggPlusMemo       = "yggdrasil+"
+	YggMinusMemo      = "yggdrasil-"
+	ETHTransferGas    = uint64(21000)
 )
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
@@ -53,9 +57,9 @@ type Client struct {
 	thorchainBridge *thorclient.ThorchainBridge
 	blockScanner    *blockscanner.BlockScanner
 	vaultABI        *abi.ABI
-	erc20ABI        *abi.ABI
 	vaultAddress    ecommon.Address
 	keySignPartyMgr *thorclient.KeySignPartyMgr
+	asgards         map[string]common.PubKey
 }
 
 // NewClient create new instance of Ethereum client
@@ -102,7 +106,9 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		kw:              keysignWrapper,
 		thorchainBridge: thorchainBridge,
 		keySignPartyMgr: keySignPartyMgr,
+		asgards:         map[string]common.PubKey{},
 	}
+	c.asgards[c.GetAddress(pk)] = pk
 	c.InitChainID()
 
 	var path string // if not set later, will in memory storage
@@ -203,7 +209,7 @@ func (c *Client) moveFunds(to string) error {
 	return nil
 }
 
-// Churn changes asgard owner
+// Churn changes asgard owner separately from SignTx
 func (c *Client) Churn(pk common.PubKey) error {
 	newAsgard := c.GetAddress(pk)
 	from := c.GetAddress(c.pk)
@@ -212,12 +218,12 @@ func (c *Client) Churn(pk common.PubKey) error {
 	if err != nil {
 		return err
 	}
-	data, err := c.inputAddAsgard(newAsgard)
+	data, err := c.inputAddAsgard([]string{newAsgard})
 	if err != nil {
 		return err
 	}
 	to := c.vaultAddress
-	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), AddAsgardGas, gasPrice, data)
+	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), GasLimit, gasPrice, data)
 
 	currentHeight, err := c.GetHeight()
 	if err != nil {
@@ -277,7 +283,6 @@ func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
 		return err
 	}
 	c.ethScanner.ERC20ABI = erc20ABI
-	c.erc20ABI = erc20ABI
 	return nil
 }
 
@@ -330,17 +335,12 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 // inputAddAsgard
-func (c *Client) inputAddAsgard(newAsgard string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(AddAsgard, ecommon.HexToAddress(newAsgard))
-	if err != nil {
-		return nil, err
+func (c *Client) inputAddAsgard(newAsgards []string) ([]byte, error) {
+	asgards := []ecommon.Address{}
+	for _, newAsgard := range newAsgards {
+		asgards = append(asgards, ecommon.HexToAddress(newAsgard))
 	}
-	return input, nil
-}
-
-// inputRemoveAsgard
-func (c *Client) inputRemoveAsgard(oldAsgard string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(RemoveAsgard, ecommon.HexToAddress(oldAsgard))
+	input, err := c.vaultABI.Pack(AddAsgard, asgards)
 	if err != nil {
 		return nil, err
 	}
@@ -348,8 +348,17 @@ func (c *Client) inputRemoveAsgard(oldAsgard string) ([]byte, error) {
 }
 
 // inputTransfer
-func (c *Client) inputTransfer(token, receiver string, value *big.Int, memo string) ([]byte, error) {
-	input, err := c.vaultABI.Pack(TransferMethod, ecommon.HexToAddress(receiver), ecommon.HexToAddress(token), value, memo)
+func (c *Client) inputTransfer(transferType string, to, token string, value *big.Int, memo string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(transferType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value, memo)
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+// inputYggdrasil
+func (c *Client) inputYggdrasil(yggdrasilType string, to, token string, value *big.Int) ([]byte, error) {
+	input, err := c.vaultABI.Pack(yggdrasilType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value)
 	if err != nil {
 		return nil, err
 	}
@@ -438,10 +447,39 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	dest := ecommon.HexToAddress(to)
 	data := []byte(tx.Memo)
 	if token != strings.ToLower(ETHToken) {
-		data, err = c.inputTransfer(token, to, value, tx.Memo)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("fail to create input")
-			return nil, err
+		if tx.Memo == NewAsgard {
+			data, err = c.inputAddAsgard([]string{to, from})
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+			c.asgards[to] = c.pk
+		} else if tx.Memo == YggPlusMemo {
+			data, err = c.inputYggdrasil(YggdrasilPlus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else if tx.Memo == YggMinusMemo {
+			data, err = c.inputYggdrasil(YggdrasilMinus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else {
+			if _, ok := c.asgards[from]; ok {
+				data, err = c.inputTransfer(AsgardTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			} else {
+				data, err = c.inputTransfer(YggdrasilTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			}
 		}
 		value = big.NewInt(0)
 		dest = c.vaultAddress
@@ -454,7 +492,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	gasPrice := c.GetGasPrice()
 	gasOut.Div(gasOut, gasPrice)
 
-	createdTx := etypes.NewTransaction(nonce, dest, value, gasOut.Uint64(), gasPrice, data)
+	createdTx := etypes.NewTransaction(nonce, dest, value, GasLimit, gasPrice, data)
 	estimatedGas, err := c.estimateGas(from, createdTx)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("fail to estimate gas")
@@ -516,12 +554,22 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if token == strings.ToLower(ETHToken) {
 		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
 	}
-	input, err := c.erc20ABI.Pack(BalanceOf, ecommon.HexToAddress(addr))
+	var err error
+	input := []byte{}
+	method := ""
+	if _, ok := c.asgards[addr]; ok {
+		method = Allowance
+		addr = c.vaultAddress.String()
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token))
+	} else {
+		method = YggAllowance
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
+	}
 	if err != nil {
 		return nil, err
 	}
 	to := &ecommon.Address{}
-	*to = ecommon.HexToAddress(token)
+	*to = c.vaultAddress
 	res, err := c.client.CallContract(context.Background(), ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
 		To:   to,
@@ -531,7 +579,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 		return nil, err
 	}
 	value := big.NewInt(0)
-	err = c.vaultABI.Unpack(&value, "balanceOf", res)
+	err = c.vaultABI.Unpack(&value, method, res)
 	if err != nil {
 		return nil, err
 	}
@@ -565,18 +613,10 @@ func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	balance, err := c.GetBalance(addr, strings.ToLower(ETHToken))
-	if err != nil {
-		return common.Account{}, err
-	}
-	if pk == c.pk {
-		addr = c.vaultAddress.String()
-	}
 	coins, err := c.GetBalances(addr)
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins = append(coins, common.AccountCoin{Amount: cosmos.NewUintFromBigInt(balance), Denom: "ETH.ETH-0X0000000000000000000000000000000000000000"})
 	account := common.NewAccount(int64(nonce), 0, coins)
 	return account, nil
 }
