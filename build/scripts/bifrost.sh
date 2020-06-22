@@ -10,8 +10,8 @@ CHAIN_API="${CHAIN_API:=127.0.0.1:1317}"
 CHAIN_RPC="${CHAIN_RPC:=127.0.0.1:26657}"
 SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
-START_BLOCK_HEIGHT="${START_BLOCK_HEIGHT:=1}"
-CONTRACT="${CONTRACT:=0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44}"
+START_BLOCK_HEIGHT="${START_BLOCK_HEIGHT:=0}"
+CONTRACT="${CONTRACT:=0xe73f532881d5A6770B9E5535B876E1937dA404B1}"
 
 $(dirname "$0")/wait-for-thorchain-api.sh $CHAIN_API
 
@@ -113,7 +113,7 @@ if [ ! -f /etc/bifrost/config.json ]; then
             \"http_request_read_timeout\": \"30s\",
             \"http_request_write_timeout\": \"30s\",
             \"max_http_request_retry\": 10,
-            \"start_block_height\": 0,
+            \"start_block_height\": 6712254,
             \"db_path\": \"$OBSERVER_PATH\"
           }
         }

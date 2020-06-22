@@ -97,6 +97,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 	if err != nil {
 		return nil, err
 	}
+
 	c := &Client{
 		logger:          log.With().Str("module", "ethereum").Logger(),
 		cfg:             cfg,
@@ -107,6 +108,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		keySignPartyMgr: keySignPartyMgr,
 	}
 	c.InitChainID()
+	c.logger.Info().Msgf("ETH address %s", c.GetAddress(pk))
 
 	var path string // if not set later, will in memory storage
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
