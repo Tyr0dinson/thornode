@@ -17,7 +17,7 @@ services:
       CHAIN_RPC: thor-daemon:26657
       BINANCE_HOST: ${BINANCE_HOST:-http://binance-mock:26660}
       BTC_HOST: ${BTC_HOST:-bitcoin-regtest:18443}
-      ETH_HOST: ${ETH_HOST:-https://rinkeby.infura.io/v3/a83241eb99b34718a1a507be1b27065c}
+      ETH_HOST: ${ETH_HOST:-http://ethereum-localnet:8545}
       PEER: ${PEER:-}
       SIGNER_PASSWD: ${SIGNER_PASSWD:-}
       SIGNER_SEED_PHRASE: ${SIGNER_SEED_PHRASE:-}
