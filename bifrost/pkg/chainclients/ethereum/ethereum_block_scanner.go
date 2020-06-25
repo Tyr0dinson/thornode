@@ -164,7 +164,7 @@ func (e *BlockScanner) updateGasPrice() {
 	e.gasPrice = gasPrice
 }
 
-func (e *BlockScanner) parseDeposit(data []byte) (string, string, *big.Int, string, error) {
+func (e *BlockScanner) parseDeposit(sender string, data []byte) (string, *big.Int, string, error) {
 	event := struct {
 		Asset    ecommon.Address
 		Receiver ecommon.Address
@@ -174,12 +174,17 @@ func (e *BlockScanner) parseDeposit(data []byte) (string, string, *big.Int, stri
 	err := e.VaultABI.Unpack(&event, "Deposit", data)
 	if err != nil {
 		e.logger.Error().Err(err).Msg("fail to parse deposit event")
-		return "", "", nil, "", err
+		return "", nil, "", err
+	}
+	token := strings.ToLower(event.Asset.String())
+	memo, err := e.handleMemo(event.Memo, token, sender)
+	if err != nil {
+		return "", nil, "", err
 	}
 	return event.Asset.String(), event.Receiver.String(), event.Value, event.Memo, nil
 }
 
-func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, string, error) {
+func (e *BlockScanner) parseTransfer(sender string, data []byte) (string, string, *big.Int, string, error) {
 	event := struct {
 		Receiver ecommon.Address
 		Token    ecommon.Address
@@ -191,7 +196,12 @@ func (e *BlockScanner) parseTransfer(data []byte) (string, string, *big.Int, str
 		e.logger.Error().Err(err).Msg("fail to parse transfer event")
 		return "", "", nil, "", err
 	}
-	return event.Receiver.String(), event.Token.String(), event.Value, event.Memo, nil
+	token := strings.ToLower(event.Asset.String())
+	memo, err := e.handleMemo(event.Memo, token, sender)
+	if err != nil {
+		return "", "", nil, "", err
+	}
+	return event.To.String(), token, event.Value, memo, nil
 }
 
 func (e *BlockScanner) matchDeposit(sig ecommon.Hash) bool {
@@ -404,6 +414,83 @@ func (e *BlockScanner) getTransactionsFromBlock(block *etypes.Block) ([]string, 
 	return txs, nil
 }
 
+func (e *BlockScanner) handleMemo(memo, token, sender string) (string, error) {
+	parsedMemo, err := thorchain.ParseMemo(memo)
+	if err != nil {
+		return "", err
+	}
+	memo, err = e.updateCase(memo, sender)
+	if err != nil {
+		return "", err
+	}
+	if parsedMemo.IsOutbound() {
+		return memo, nil
+	}
+	if parsedMemo.GetAsset().Chain != common.ETHChain {
+		return memo, nil
+	}
+	memo, err = e.insertToken(memo, token)
+	if err != nil {
+		return "", err
+	}
+	return memo, nil
+}
+
+func (e *BlockScanner) updateCase(memo, sender string) (string, error) {
+	index := strings.LastIndex(memo, ":")
+	if index == -1 {
+		return "", fmt.Errorf("incorrect memo %s", memo)
+	}
+	if index+1 == len(memo) {
+		memo += strings.ToLower(sender)
+	}
+	memo = memo[:index] + strings.ToLower(memo[index:])
+	ind := strings.LastIndex(memo, "-")
+	if ind == -1 {
+		return memo, nil
+	}
+	return memo[:ind] + strings.ToUpper(memo[ind:index]) + memo[index:], nil
+}
+
+func (e *BlockScanner) insertToken(memo, token string) (string, error) {
+	if strings.Index(memo, common.ETHAsset.String()) != -1 {
+		return memo, nil
+	}
+	index := strings.LastIndex(memo, "-")
+	ind := strings.LastIndex(memo, ":")
+	if ind == -1 {
+		return "", fmt.Errorf("incorrect memo %s", memo)
+	}
+	if index == -1 {
+		memo = memo[:ind] + "-" + strings.ToUpper(token) + memo[ind:]
+		return memo, nil
+	}
+	if index >= len(memo)-2 || memo[index:index+3] != "-0X" {
+		return "", fmt.Errorf("incorrect memo %s", memo)
+	}
+	if !strings.HasPrefix(memo, "SWAP:") {
+		return memo, nil
+	}
+	tm, err := e.tokens.GetTokenMeta(token)
+	if err != nil || tm == nil {
+		return "", fmt.Errorf("missing from asset %s", token)
+	}
+	address := strings.ToLower(memo[index+1 : ind])
+	tm, err = e.tokens.GetTokenMeta(address)
+	if err != nil || tm == nil {
+		return "", fmt.Errorf("missing to asset %s", token)
+	}
+	dot := strings.LastIndex(memo[:index], ".")
+	if dot == -1 {
+		return "", fmt.Errorf("missing dot %s", memo)
+	}
+	if memo[dot+1:index] != tm.Symbol {
+		return "", fmt.Errorf("token symbol in memo doesn't match real symbol %s %s", memo, tm.Symbol)
+	}
+	return memo, nil
+}
+
+>>>>>>> Omit sender in memo
 func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
@@ -434,35 +521,20 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 			continue
 		}
 		token := ETHToken
-		memo := ""
-		receiver := ""
+		var memo, to
 		if e.matchDeposit(log.Topics[0]) {
-			token, receiver, value, memo, err = e.parseDeposit(log.Data)
+			token, to, value, txInItem.Memo, err = e.parseDeposit(log.Data)
 			if err != nil {
 				return nil, err
 			}
-			parts := strings.Split(memo, ":")
-			if len(parts) != 3 {
-				return nil, err
-			}
-			index := strings.LastIndex(memo, ":")
-			if index == -1 {
-				return nil, fmt.Errorf("incorrect memo")
-			}
-			if strings.Index(memo, ":ETH.") != -1 {
-				txInItem.Memo = memo[:index] + "-" + token + memo[index:]
-			} else {
-				txInItem.Memo = memo
-			}
-			txInItem.To = receiver
+			txInItem.To = e.VaultOwner
 		}
 		if e.matchTransfer(log.Topics[0]) {
-			receiver, token, value, memo, err = e.parseTransfer(log.Data)
+			to, token, value, txInItem.Memo, err = e.parseTransfer(log.Data)
 			if err != nil {
 				return nil, err
 			}
-			txInItem.To = strings.ToLower(receiver)
-			txInItem.Memo = memo
+			txInItem.To = strings.ToLower(to)
 		}
 		tokenMeta, err := e.tokens.GetTokenMeta(token)
 		if err != nil {
