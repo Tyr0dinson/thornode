@@ -36,7 +36,7 @@ const (
 	YggdrasilTransfer = "yggdrasilTransfer"
 	YggdrasilPlus     = "yggdrasilPlus"
 	YggdrasilMinus    = "yggdrasilMinus"
-	Allowance         = "allowance"
+	AsgardAllowance   = "asgardAllowance"
 	YggAllowance      = "yggAllowance"
 	AddAsgard         = "addAsgard"
 	YggPlusMemo       = "yggdrasil+"
@@ -534,7 +534,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	var input []byte
 	method := ""
 	if _, ok := c.asgards[addr]; ok {
-		method = Allowance
+		method = AsgardAllowance
 		addr = c.vaultAddress.String()
 		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token))
 	} else {
