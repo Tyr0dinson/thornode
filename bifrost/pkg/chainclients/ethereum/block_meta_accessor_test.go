@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -100,7 +99,7 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 
 	block, err := CreateBlock(1722479)
 	c.Assert(err, IsNil)
-	blockMeta := types.NewBlockMeta(block, common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb"))
+	blockMeta := types.NewBlockMeta(block)
 	c.Assert(blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
 
 	key := blockMetaAccessor.getBlockMetaKey(blockMeta.Height)
@@ -117,7 +116,7 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 	for i := 0; i < 1024; i++ {
 		block, err = CreateBlock(i)
 		c.Assert(err, IsNil)
-		bm := types.NewBlockMeta(block, common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb"))
+		bm := types.NewBlockMeta(block)
 		c.Assert(blockMetaAccessor.SaveBlockMeta(bm.Height, bm), IsNil)
 	}
 	blockMetas, err := blockMetaAccessor.GetBlockMetas()

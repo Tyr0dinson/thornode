@@ -172,11 +172,8 @@ func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
 	if err != nil {
 		return acct, fmt.Errorf("fail to convert total amount: %w", err)
 	}
-	return common.NewAccount(0, 0, common.AccountCoins{
-		common.AccountCoin{
-			Amount: cosmos.NewUint(uint64(totalAmt)),
-			Denom:  common.BTCAsset.String(),
-		},
+	return common.NewAccount(0, 0, common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(uint64(totalAmt))),
 	}), nil
 }
 

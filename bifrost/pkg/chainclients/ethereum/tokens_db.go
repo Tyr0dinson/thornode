@@ -12,7 +12,7 @@ import (
 
 // PrefixTxStorage declares prefix to use in leveldb to avoid conflicts
 const (
-	PrefixTokenMeta = `tokenmeta-`
+	PrefixTokenMeta = `eth-tokenmeta-`
 )
 
 // LevelDBTokenMeta struct
@@ -26,7 +26,7 @@ func NewLevelDBTokenMeta(db *leveldb.DB) (*LevelDBTokenMeta, error) {
 }
 
 func (t *LevelDBTokenMeta) getTokenMetaKey(address string) string {
-	return fmt.Sprintf(PrefixTokenMeta+"%s", address)
+	return fmt.Sprintf("%s%s", PrefixTokenMeta, address)
 }
 
 // GetTokenMeta for given token address
@@ -73,7 +73,7 @@ func (t *LevelDBTokenMeta) GetTokens() ([]*types.TokenMeta, error) {
 		}
 		var TokenMeta types.TokenMeta
 		if err := json.Unmarshal(buf, &TokenMeta); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal block meta: %w", err)
+			return nil, fmt.Errorf("fail to unmarshal token meta: %w", err)
 		}
 		TokenMetas = append(TokenMetas, &TokenMeta)
 	}

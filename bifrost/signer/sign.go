@@ -261,7 +261,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 				if err = s.chains[common.ETHChain].Churn(pubKey.Secp256k1); err != nil && err != ecore.ErrAlreadyKnown {
 					s.errCounter.WithLabelValues("fail_to_churn_eth", "").Inc()
 					s.logger.Error().Err(err).Msg("fail to churn asgard for ETH")
-					continue
+					return
 				}
 
 				if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type); err != nil {
@@ -409,7 +409,7 @@ func (s *Signer) handleYggReturn(height int64, tx types.TxOutItem) (types.TxOutI
 	}
 	tx.Coins = make(common.Coins, 0)
 	for _, coin := range acct.Coins {
-		asset, err := common.NewAsset(coin.Denom)
+		asset, err := common.NewAsset(coin.Asset.String())
 		asset.Chain = tx.Chain
 		if err != nil {
 			s.logger.Error().Err(err).Msg("failed to parse asset")

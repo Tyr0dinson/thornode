@@ -241,7 +241,10 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
-	bs, err := NewBlockScanner(getConfigForTest(server.URL), blockscanner.NewMockScannerStorage(), types.Mainnet, ethClient, s.bridge, s.m)
+	storage, err := blockscanner.NewBlockScannerStorage("")
+	c.Assert(err, IsNil)
+	c.Assert(storage, NotNil)
+	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
 	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
@@ -272,7 +275,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Check(txInItem.Sender, Equals, "0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
 	c.Check(txInItem.To, Equals, "0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Check(len(txInItem.Coins), Equals, 1)
-	c.Check(txInItem.Coins[0].Asset.String(), Equals, "ETH.ETH-0X0000000000000000000000000000000000000000")
+	c.Check(txInItem.Coins[0].Asset.String(), Equals, "ETH.ETH")
 	c.Check(
 		txInItem.Coins[0].Amount.Equal(cosmos.NewUint(4290000000000000)),
 		Equals,
@@ -369,7 +372,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	blockNew, err := CreateBlock(1)
 	c.Assert(err, IsNil)
 	c.Assert(blockNew, NotNil)
-	blockMeta := types.NewBlockMeta(block, common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb"))
+	blockMeta := types.NewBlockMeta(block)
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)

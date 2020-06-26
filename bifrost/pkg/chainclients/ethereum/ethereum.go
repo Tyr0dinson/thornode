@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,10 +26,10 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
 const (
-	Confirmations     = 12
 	GasLimit          = uint64(5000000)
 	AsgardTransfer    = "asgardTransfer"
 	YggdrasilTransfer = "yggdrasilTransfer"
@@ -55,10 +54,10 @@ type Client struct {
 	ethScanner      *BlockScanner
 	thorchainBridge *thorclient.ThorchainBridge
 	blockScanner    *blockscanner.BlockScanner
-	keySignPartyMgr *thorclient.KeySignPartyMgr
 	vaultABI        *abi.ABI
-	erc20ABI        *abi.ABI
 	vaultAddress    ecommon.Address
+	keySignPartyMgr *thorclient.KeySignPartyMgr
+	asgards         map[string]common.PubKey
 }
 
 // NewClient create new instance of Ethereum client
@@ -106,9 +105,11 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		kw:              keysignWrapper,
 		thorchainBridge: thorchainBridge,
 		keySignPartyMgr: keySignPartyMgr,
+		asgards:         make(map[string]common.PubKey, 0),
 	}
+	c.asgards[c.GetAddress(pk)] = pk
 	c.InitChainID()
-	c.logger.Info().Msgf("ETH address %s", c.GetAddress(pk))
+	c.logger.Info().Msgf("ETH asgard address %s", c.GetAddress(pk))
 
 	var path string // if not set later, will in memory storage
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
@@ -135,77 +136,10 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 	return c, nil
 }
 
-// waitBlocks waits for 12 confirmations
-func (c *Client) waitBlocks(hash string) (*etypes.Receipt, error) {
-	startHeight, err := c.GetHeight()
-	if err != nil {
-		return nil, err
-	}
-	if c.chainID != types.Localnet {
-		for {
-			time.Sleep(time.Millisecond * 100)
-			height, err := c.GetHeight()
-			if err != nil {
-				c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
-				continue
-			}
-			if height > startHeight+Confirmations {
-				break
-			}
-		}
-	}
-	receipt, err := c.getReceipt(hash)
-	for err != nil {
-		time.Sleep(time.Millisecond * 100)
-		receipt, err = c.getReceipt(hash)
-	}
-	return receipt, nil
-}
-
-// moveFunds moves ETH and contract ownership
-func (c *Client) moveFunds(to string) error {
-	from := c.GetAddress(c.pk)
-	balance, err := c.GetBalance(from, strings.ToLower(ETHToken))
-	if err != nil {
-		return err
-	}
-	value := balance
-	gasPrice := c.GetGasPrice()
-	value = value.Sub(value, common.MakeETHGas(gasPrice, ETHTransferGas))
-	nonce, err := c.GetNonce(from)
-	if err != nil {
-		return err
-	}
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(toAddr), value, ETHTransferGas, gasPrice, []byte{})
-	
-	currentHeight, err := c.GetHeight()
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
-		return nil, err
-	}
-
-	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk})
-	if err != nil || len(rawTx) == 0 {
-		return nil, fmt.Errorf("fail to sign message: %w", err)
-	}
-	err = c.BroadcastTx(rawTx)
-	if err != nil {
-		return err
-	}
-	tx := &etypes.Transaction{}
-	if err := tx.UnmarshalJSON(rawTx); err != nil {
-		return err
-	}
-	_, err = c.waitBlocks(tx.Hash().Hex())
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// Churn changes asgard owner
+// Churn changes asgard owner separately from SignTx
 func (c *Client) Churn(pk common.PubKey) error {
 	newAsgard := c.GetAddress(pk)
+	from := c.GetAddress(c.pk)
 	gasPrice := c.GetGasPrice()
 	nonce, err := c.GetNonce(from)
 	if err != nil {
@@ -215,9 +149,8 @@ func (c *Client) Churn(pk common.PubKey) error {
 	if err != nil {
 		return err
 	}
-
 	to := c.vaultAddress
-	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), AddAsgardGas, gasPrice, data)
+	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), GasLimit, gasPrice, data)
 
 	currentHeight, err := c.GetHeight()
 	if err != nil {
@@ -226,8 +159,11 @@ func (c *Client) Churn(pk common.PubKey) error {
 	}
 
 	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk}, 0)
-	if err != nil || len(rawTx) == 0 {
-		return fmt.Errorf("fail to sign message: %w", err)
+	if err != nil {
+		return err
+	}
+	if len(rawTx) == 0 {
+		return fmt.Errorf("signing returned 0 len tx")
 	}
 
 	if err = c.BroadcastTx(stypes.TxOutItem{VaultPubKey: c.pk}, rawTx); err != nil {
@@ -244,7 +180,7 @@ func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
 	c.vaultAddress = ecommon.HexToAddress(cfg.Contract)
 	c.ethScanner.VaultAddress = ecommon.HexToAddress(cfg.Contract)
 	vaultABI := &abi.ABI{}
-	err := vaultABI.UnmarshalJSON([]byte(cfg.Jsons[0]))
+	err := vaultABI.UnmarshalJSON(cfg.OptionalData[0])
 	if err != nil {
 		return err
 	}
@@ -252,13 +188,16 @@ func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
 	c.ethScanner.VaultOwner = c.GetAddress(c.pk)
 	c.vaultABI = vaultABI
 	erc20ABI := &abi.ABI{}
-	err = erc20ABI.UnmarshalJSON([]byte(cfg.Jsons[1]))
+	err = erc20ABI.UnmarshalJSON(cfg.OptionalData[1])
 	if err != nil {
 		return err
 	}
 	c.ethScanner.ERC20ABI = erc20ABI
-	c.erc20ABI = erc20ABI
 	return nil
+}
+
+func IsETH(token string) bool {
+	return strings.ToLower(token) == ETHToken
 }
 
 // GetTxHash return hex formatted value of tx hash
@@ -308,7 +247,7 @@ func (c *Client) GetChain() common.Chain {
 func (c *Client) GetHeight() (int64, error) {
 	return c.ethScanner.GetHeight()
 }
-	
+
 // inputAddAsgard
 func (c *Client) inputAddAsgard(newAsgards []string) ([]byte, error) {
 	asgards := []ecommon.Address{}
@@ -356,8 +295,8 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 // GetGasFee gets gas fee
-func (c *Client) GetGasFee(count uint64) common.Gas {
-	return common.GetETHGasFee(big.NewInt(1), count)
+func (c *Client) GetGasFee(gas uint64) common.Gas {
+	return common.GetETHGasFee(c.GetGasPrice(), gas)
 }
 
 // GetGasPrice gets gas price from eth scanner
@@ -365,8 +304,7 @@ func (c *Client) GetGasPrice() *big.Int {
 	gasPrice := c.ethScanner.GetGasPrice()
 	// increase by 40%
 	if c.chainID != types.Localnet {
-		gasPrice = gasPrice.Mul(gasPrice, 7)
-		gasPrice = gasPrice.Div(gasPrice, 5)
+		gasPrice = gasPrice.Mul(gasPrice, big.NewInt(2))
 	}
 	return gasPrice
 }
@@ -393,7 +331,7 @@ func (c *Client) GetNonce(addr string) (uint64, error) {
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte, error) {
+func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64, retry uint64) ([]byte, error) {
 	value := big.NewInt(0)
 	token := strings.ToLower(ETHToken)
 	for _, coin := range tx.Coins {
@@ -407,11 +345,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 
 	to := tx.ToAddress.String()
 	from := c.GetAddress(tx.VaultPubKey)
-	if !c.contrats.HasKey(tx.VaultPubKey) {
-		return nil, fmt.Errorf("pubkey contract is missing")
-	}
 
-	if len(to) == 0 || value.Uint64() == 0 {
+	if len(to) == 0 {
 		c.logger.Error().Msg("invalid tx params")
 		return nil, fmt.Errorf("invalid tx params")
 	}
@@ -419,24 +354,31 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	nonce, err := c.GetNonce(from)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("fail to fetch account nonce")
+		return nil, err
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
 	dest := ecommon.HexToAddress(to)
+	if len(tx.Memo) == 0 {
+		tx.Memo = thorchain.NewOutboundMemo(tx.InHash).String()
+	}
 	data := []byte(tx.Memo)
 	if token != strings.ToLower(ETHToken) {
-		data, err = c.inputTransfer(token, to, value, tx.Memo)
-		if err != nil {
-			c.logger.Error().Err(err).Msg("fail to create input")
-			return nil, err
-		}
-		if tx.Memo == YggPlusMemo {
+		if strings.EqualFold(tx.Memo, thorchain.NewYggdrasilFund(thorchainHeight).String()) {
 			data, err = c.inputYggdrasil(YggdrasilPlus, to, token, value)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("fail to create input")
 				return nil, err
 			}
-		} else if tx.Memo == YggMinusMemo {
+		} else if strings.EqualFold(tx.Memo, thorchain.NewYggdrasilReturn(thorchainHeight).String()) {
+			// for yggdrasil, need to leave some ETH to pay for funds return fee
+			if IsETH(token) {
+				gasPrice := c.GetGasPrice()
+				value = value.Sub(value, gasPrice.Mul(gasPrice, big.NewInt(int64(ETHTransferGas))))
+				if value.Sign() == -1 {
+					return nil, fmt.Errorf("not enough funds to make yggdrasil return")
+				}
+			}
 			data, err = c.inputYggdrasil(YggdrasilMinus, to, token, value)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("fail to create input")
@@ -468,7 +410,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte
 	gasPrice := c.GetGasPrice()
 	gasOut.Div(gasOut, gasPrice)
 
-	createdTx := etypes.NewTransaction(nonce, dest, value, gasOut.Uint64(), gasPrice, data)
+	createdTx := etypes.NewTransaction(nonce, dest, value, GasLimit, gasPrice, data)
 	estimatedGas, err := c.estimateGas(from, createdTx)
 	if err != nil {
 		c.logger.Error().Err(err).Msg("fail to estimate gas")
@@ -527,7 +469,7 @@ func (c *Client) sign(tx *etypes.Transaction, from string, poolPubKey common.Pub
 }
 
 func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
-	if token == strings.ToLower(ETHToken) {
+	if IsETH(token) {
 		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
 	}
 	var err error
@@ -544,18 +486,16 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	to := &ecommon.Address{}
-	*to = ecommon.HexToAddress(token)
 	res, err := c.client.CallContract(context.Background(), ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
-		To:   to,
+		To:   &c.vaultAddress,
 		Data: input,
 	}, nil)
 	if err != nil {
 		return nil, err
 	}
 	value := big.NewInt(0)
-	err = c.vaultABI.Unpack(&value, "balanceOf", res)
+	err = c.vaultABI.Unpack(&value, method, res)
 	if err != nil {
 		return nil, err
 	}
@@ -563,18 +503,25 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 }
 
 // GetBalance gets balance
-func (c *Client) GetBalances(addr string) (common.AccountCoins, error) {
+func (c *Client) GetBalances(addr string) (common.Coins, error) {
 	tokens, err := c.ethScanner.GetTokens()
 	if err != nil {
 		return nil, err
 	}
-	coins := common.AccountCoins{}
+	coins := common.Coins{}
 	for _, token := range tokens {
 		balance, err := c.GetBalance(addr, token.Address)
 		if err != nil {
 			continue
 		}
-		coins = append(coins, common.AccountCoin{Amount: cosmos.NewUintFromBigInt(balance), Denom: "ETH." + token.Symbol + "-" + strings.ToUpper(token.Address)})
+		asset := common.ETHAsset
+		if !IsETH(token.Address) {
+			asset, err = common.NewAsset(fmt.Sprintf("ETH.%s-%s", token.Symbol, strings.ToUpper(token.Address)))
+			if err != nil {
+				return nil, err
+			}
+		}
+		coins = append(coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(balance)))
 	}
 	if err != nil {
 		return nil, err
@@ -589,18 +536,10 @@ func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	balance, err := c.GetBalance(addr, strings.ToLower(ETHToken))
-	if err != nil {
-		return common.Account{}, err
-	}
-	if pk == c.pk {
-		addr = c.vaultAddress.String()
-	}
 	coins, err := c.GetBalances(addr)
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins = append(coins, common.AccountCoin{Amount: cosmos.NewUintFromBigInt(balance), Denom: "ETH.ETH-0X0000000000000000000000000000000000000000"})
 	account := common.NewAccount(int64(nonce), 0, coins)
 	return account, nil
 }

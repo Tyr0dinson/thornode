@@ -27,14 +27,18 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
 	BlockCacheSize               = 6000
-	DepositEvent                 = "Deposit(address,address,uint256,string)"
+	DepositEvent                 = "Deposit(address,uint256,string)"
 	TransferEvent                = "Transfer(address,address,uint256,string)"
-	ETHToken                     = "0X0000000000000000000000000000000000000000"
+	PlusEvent                    = "YggdrasilPlus(address,address,uint256)"
+	MinusEvent                   = "YggdrasilMinus(address,address,uint256)"
+	AddAsgardEvent               = "AddAsgard([]address)"
+	ETHToken                     = "0x0000000000000000000000000000000000000000"
 	SymbolMethod                 = "symbol"
 )
 
@@ -73,7 +77,6 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.
 	if err != nil {
 		return nil, err
 	}
-
 	blockMetaAccessor, err := NewLevelDBBlockMetaAccessor(storage.GetInternalDb())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create block meta accessor: %w", err)
@@ -81,6 +84,10 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, storage blockscanner.
 	tokens, err := NewLevelDBTokenMeta(storage.GetInternalDb())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create token meta db: %w", err)
+	}
+	err = tokens.SaveTokenMeta("ETH", ETHToken)
+	if err != nil {
+		return nil, err
 	}
 
 	return &BlockScanner{
@@ -166,10 +173,9 @@ func (e *BlockScanner) updateGasPrice() {
 
 func (e *BlockScanner) parseDeposit(sender string, data []byte) (string, *big.Int, string, error) {
 	event := struct {
-		Asset    ecommon.Address
-		Receiver ecommon.Address
-		Value    *big.Int
-		Memo     string
+		Asset ecommon.Address
+		Value *big.Int
+		Memo  string
 	}{}
 	err := e.VaultABI.Unpack(&event, "Deposit", data)
 	if err != nil {
@@ -181,15 +187,15 @@ func (e *BlockScanner) parseDeposit(sender string, data []byte) (string, *big.In
 	if err != nil {
 		return "", nil, "", err
 	}
-	return event.Asset.String(), event.Receiver.String(), event.Value, event.Memo, nil
+	return token, event.Value, memo, nil
 }
 
 func (e *BlockScanner) parseTransfer(sender string, data []byte) (string, string, *big.Int, string, error) {
 	event := struct {
-		Receiver ecommon.Address
-		Token    ecommon.Address
-		Value    *big.Int
-		Memo     string
+		To    ecommon.Address
+		Asset ecommon.Address
+		Value *big.Int
+		Memo  string
 	}{}
 	err := e.VaultABI.Unpack(&event, "Transfer", data)
 	if err != nil {
@@ -204,15 +210,22 @@ func (e *BlockScanner) parseTransfer(sender string, data []byte) (string, string
 	return event.To.String(), token, event.Value, memo, nil
 }
 
-func (e *BlockScanner) matchDeposit(sig ecommon.Hash) bool {
-	if ecrypto.Keccak256Hash([]byte(DepositEvent)) == sig {
-		return true
+func (e *BlockScanner) parseYggdrasil(data []byte, yggdrasil string) (string, string, *big.Int, error) {
+	event := struct {
+		Yggdrasil ecommon.Address
+		Asset     ecommon.Address
+		Value     *big.Int
+	}{}
+	err := e.VaultABI.Unpack(&event, "Yggdrasil"+yggdrasil, data)
+	if err != nil {
+		e.logger.Error().Err(err).Msg("fail to parse transfer event")
+		return "", "", nil, err
 	}
-	return false
+	return event.Yggdrasil.String(), event.Asset.String(), event.Value, nil
 }
 
-func (e *BlockScanner) matchTransfer(sig ecommon.Hash) bool {
-	if ecrypto.Keccak256Hash([]byte(TransferEvent)) == sig {
+func (e *BlockScanner) matchEvent(event string, sig ecommon.Hash) bool {
+	if ecrypto.Keccak256Hash([]byte(event)) == sig {
 		return true
 	}
 	return false
@@ -245,7 +258,7 @@ func (e *BlockScanner) processBlock(block *etypes.Block, rawTxs []string) (stype
 		return noTx, err
 	}
 
-	blockMeta := types.NewBlockMeta(block, e.ContractAddress)
+	blockMeta := types.NewBlockMeta(block)
 	if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 		e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 	}
@@ -256,7 +269,7 @@ func (e *BlockScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	noTx := stypes.TxIn{}
 	var txIn stypes.TxIn
 	for _, tx := range block.Transactions() {
-		if tx.To() == nil || *tx.To() != e.ContractAddress {
+		if tx.To() == nil {
 			continue
 		}
 		txInItem, err := e.fromTxToTxIn(tx)
@@ -377,18 +390,17 @@ func (e *BlockScanner) getRPCBlock(height int64) (*etypes.Block, error) {
 }
 
 func (e *BlockScanner) getSymbol(from, token string) (string, error) {
-	if token[2:] == ETHToken[2:] {
+	if IsETH(token) {
 		return "ETH", nil
 	}
-	to := &ecommon.Address{}
-	*to = ecommon.HexToAddress(token)
+	to := ecommon.HexToAddress(token)
 	input, err := e.ERC20ABI.Pack(SymbolMethod)
 	if err != nil {
 		return "", nil
 	}
 	res, err := e.client.CallContract(context.Background(), ethereum.CallMsg{
 		From: ecommon.HexToAddress(from),
-		To:   to,
+		To:   &to,
 		Data: input,
 	}, nil)
 	if err != nil {
@@ -398,6 +410,11 @@ func (e *BlockScanner) getSymbol(from, token string) (string, error) {
 	err = e.ERC20ABI.Unpack(&symbol, SymbolMethod, res)
 	if err != nil {
 		return "", err
+	}
+	if strings.IndexFunc(symbol, func(c rune) bool {
+		return c < 'A' || c > 'Z'
+	}) != -1 {
+		return "", fmt.Errorf("incorrect token symbol")
 	}
 	return symbol, nil
 }
@@ -490,16 +507,11 @@ func (e *BlockScanner) insertToken(memo, token string) (string, error) {
 	return memo, nil
 }
 
->>>>>>> Omit sender in memo
 func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
 	}
-	asset, err := common.NewAsset("ETH.ETH-" + ETHToken)
-	if err != nil {
-		e.errCounter.WithLabelValues("fail_create_ticker", "ETH").Inc()
-		return nil, fmt.Errorf("fail to create asset, ETH is not valid: %w", err)
-	}
+	asset := common.ETHAsset
 	sender, err := eipSigner.Sender(tx)
 	if err != nil {
 		return nil, err
@@ -521,20 +533,36 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 			continue
 		}
 		token := ETHToken
-		var memo, to
-		if e.matchDeposit(log.Topics[0]) {
-			token, to, value, txInItem.Memo, err = e.parseDeposit(log.Data)
+		to := ""
+		if e.matchEvent(DepositEvent, log.Topics[0]) {
+			token, value, txInItem.Memo, err = e.parseDeposit(txInItem.Sender, log.Data)
 			if err != nil {
 				return nil, err
 			}
 			txInItem.To = e.VaultOwner
 		}
-		if e.matchTransfer(log.Topics[0]) {
-			to, token, value, txInItem.Memo, err = e.parseTransfer(log.Data)
+		if e.matchEvent(TransferEvent, log.Topics[0]) {
+			to, token, value, txInItem.Memo, err = e.parseTransfer(txInItem.Sender, log.Data)
 			if err != nil {
 				return nil, err
 			}
 			txInItem.To = strings.ToLower(to)
+		}
+		if e.matchEvent(PlusEvent, log.Topics[0]) {
+			to, token, value, err = e.parseYggdrasil(log.Data, "Plus")
+			if err != nil {
+				return nil, err
+			}
+			txInItem.To = to
+			txInItem.Memo = YggPlusMemo
+		}
+		if e.matchEvent(MinusEvent, log.Topics[0]) {
+			to, token, value, err = e.parseYggdrasil(log.Data, "Minus")
+			if err != nil {
+				return nil, err
+			}
+			txInItem.To = e.VaultOwner
+			txInItem.Memo = YggMinusMemo
 		}
 		tokenMeta, err := e.tokens.GetTokenMeta(token)
 		if err != nil {
@@ -545,16 +573,17 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 			if err != nil {
 				return nil, err
 			}
-			symbol = strings.ToUpper(symbol)
 			tokenMeta = types.NewTokenMeta(symbol, token)
 			err = e.tokens.SaveTokenMeta(symbol, token)
 			if err != nil {
 				return nil, err
 			}
 		}
-		asset, err = common.NewAsset("ETH." + tokenMeta.Symbol + "-" + strings.ToUpper(tokenMeta.Address))
-		if err != nil {
-			return nil, err
+		if tokenMeta.Symbol != common.ETHChain.String() {
+			asset, err = common.NewAsset(fmt.Sprintf("ETH.%s-%s", tokenMeta.Symbol, strings.ToUpper(tokenMeta.Address)))
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(value)))
