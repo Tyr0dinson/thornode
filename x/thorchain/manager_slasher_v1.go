@@ -13,6 +13,7 @@ import (
 	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
+// SlasherV1 is v1 implementation os slasher
 type SlasherV1 struct {
 	keeper keeper.Keeper
 }
@@ -75,8 +76,8 @@ func (s *SlasherV1) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, in
 			if common.RuneAsset().Chain.Equals(common.THORChain) {
 				coin := common.NewCoin(common.RuneNative, slashAmount)
 				if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, coin); err != nil {
-					ctx.Logger().Error("fail to transfer funds from reserve to asgard", "error", err)
-					return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
+					ctx.Logger().Error("fail to transfer funds from bond to reserve", "error", err)
+					return fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
 				}
 			} else {
 				vaultData, err := s.keeper.GetVaultData(ctx)
