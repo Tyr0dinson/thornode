@@ -202,6 +202,10 @@ func (b *MockChainClient) GetChain() common.Chain {
 	return common.BNBChain
 }
 
+func (b *MockChainClient) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 func (b *MockChainClient) BroadcastTx(_ stypes.TxOutItem, tx []byte) error {
 	return nil
 }
@@ -228,8 +232,8 @@ func (s *SignSuite) TestHandleYggReturn_Success_FeeSingleton(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
-					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
+					Coins: common.Coins{
+						common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
 					},
 				},
 			},
@@ -251,9 +255,9 @@ func (s *SignSuite) TestHandleYggReturn_Success_FeeMulti(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
-					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
-						common.AccountCoin{Denom: "RUNE", Amount: 1000000},
+					Coins: common.Coins{
+						common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
+						common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000000)),
 					},
 				},
 			},
@@ -275,8 +279,8 @@ func (s *SignSuite) TestHandleYggReturn_Success_NotEnough(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
-					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 0},
+					Coins: common.Coins{
+						common.NewCoin(common.BNBAsset, cosmos.NewUint(0)),
 					},
 				},
 			},
@@ -311,9 +315,9 @@ func (s *SignSuite) TestProcess(c *C) {
 	chains := map[common.Chain]chainclients.ChainClient{
 		common.BNBChain: &MockChainClient{
 			account: common.Account{
-				Coins: common.AccountCoins{
-					common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
-					common.AccountCoin{Denom: "RUNE", Amount: 1000000},
+				Coins: common.Coins{
+					common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
+					common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000000)),
 				},
 			},
 		},

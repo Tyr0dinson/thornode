@@ -126,6 +126,11 @@ func (b *Binance) Stop() {
 	b.blockScanner.Stop()
 }
 
+// Churn
+func (b *Binance) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 // GetConfig return the configuration used by Binance chain client
 func (b *Binance) GetConfig() config.ChainConfiguration {
 	return b.cfg
@@ -444,7 +449,11 @@ func (b *Binance) GetAccount(pkey common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	account := common.NewAccount(acc.BaseAccount.Sequence, acc.BaseAccount.AccountNumber, common.GetCoins(acc.BaseAccount.Coins))
+	coins, err := common.GetCoins(common.BNBChain, acc.BaseAccount.Coins)
+	if err != nil {
+		return common.Account{}, err
+	}
+	account := common.NewAccount(acc.BaseAccount.Sequence, acc.BaseAccount.AccountNumber, coins)
 	return account, nil
 }
 

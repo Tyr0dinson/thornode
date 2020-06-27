@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	ecore "github.com/ethereum/go-ethereum/core"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -22,7 +23,6 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
@@ -258,10 +258,17 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 					s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
 				}
 
-				if err := s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type); err != nil {
+				if err = s.chains[common.ETHChain].Churn(pubKey.Secp256k1); err != nil && err != ecore.ErrAlreadyKnown {
+					s.errCounter.WithLabelValues("fail_to_churn_eth", "").Inc()
+					s.logger.Error().Err(err).Msg("fail to churn asgard for ETH")
+					return
+				}
+
+				if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type); err != nil {
 					s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 					s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 				}
+
 			}
 		}
 	}
@@ -403,14 +410,14 @@ func (s *Signer) handleYggReturn(height int64, tx types.TxOutItem) (types.TxOutI
 	}
 	tx.Coins = make(common.Coins, 0)
 	for _, coin := range acct.Coins {
-		asset, err := common.NewAsset(coin.Denom)
+		asset, err := common.NewAsset(coin.Asset.String())
 		asset.Chain = tx.Chain
 		if err != nil {
 			s.logger.Error().Err(err).Msg("failed to parse asset")
 			return tx, err
 		}
-		if coin.Amount > 0 {
-			amount := cosmos.NewUint(coin.Amount)
+		if coin.Amount.Uint64() > 0 {
+			amount := coin.Amount
 			tx.Coins = append(tx.Coins, common.NewCoin(asset, amount))
 		}
 	}

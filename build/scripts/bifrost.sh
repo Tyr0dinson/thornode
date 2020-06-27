@@ -11,6 +11,7 @@ CHAIN_RPC="${CHAIN_RPC:=127.0.0.1:26657}"
 SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
 START_BLOCK_HEIGHT="${START_BLOCK_HEIGHT:=1}"
+CONTRACT="${CONTRACT:=0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44}"
 
 $(dirname "$0")/wait-for-thorchain-api.sh $CHAIN_API
 
@@ -100,6 +101,7 @@ if [ ! -f /etc/bifrost/config.json ]; then
           \"password\": \"$SIGNER_PASSWD\",
           \"http_post_mode\": 1,
           \"disable_tls\": 1,
+          \"contract\": \"$CONTRACT\",
           \"block_scanner\": {
             \"rpc_host\": \"$ETH_HOST\",
             \"enforce_block_height\": false,

@@ -2,12 +2,13 @@ package ethereum
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -24,6 +25,22 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
+	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain"
+)
+
+const (
+	GasLimit          = uint64(5000000)
+	AsgardTransfer    = "asgardTransfer"
+	YggdrasilTransfer = "yggdrasilTransfer"
+	YggdrasilPlus     = "yggdrasilPlus"
+	YggdrasilMinus    = "yggdrasilMinus"
+	AsgardAllowance   = "asgardAllowance"
+	YggAllowance      = "yggAllowance"
+	AddAsgard         = "addAsgard"
+	YggPlusMemo       = "yggdrasil+"
+	YggMinusMemo      = "yggdrasil-"
+	ETHTransferGas    = uint64(21000)
 )
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
@@ -37,7 +54,10 @@ type Client struct {
 	ethScanner      *BlockScanner
 	thorchainBridge *thorclient.ThorchainBridge
 	blockScanner    *blockscanner.BlockScanner
+	vaultABI        *abi.ABI
+	vaultAddress    ecommon.Address
 	keySignPartyMgr *thorclient.KeySignPartyMgr
+	asgards         map[string]common.PubKey
 }
 
 // NewClient create new instance of Ethereum client
@@ -76,6 +96,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 	if err != nil {
 		return nil, err
 	}
+
 	c := &Client{
 		logger:          log.With().Str("module", "ethereum").Logger(),
 		cfg:             cfg,
@@ -84,8 +105,11 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		kw:              keysignWrapper,
 		thorchainBridge: thorchainBridge,
 		keySignPartyMgr: keySignPartyMgr,
+		asgards:         make(map[string]common.PubKey, 0),
 	}
+	c.asgards[c.GetAddress(pk)] = pk
 	c.InitChainID()
+	c.logger.Info().Msgf("ETH asgard address %s", c.GetAddress(pk))
 
 	var path string // if not set later, will in memory storage
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
@@ -106,19 +130,89 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
 	}
 
+	if err = c.InitContracts(cfg); err != nil {
+		return c, fmt.Errorf("fail to create contract: %w", err)
+	}
 	return c, nil
 }
 
+// Churn changes asgard owner separately from SignTx
+func (c *Client) Churn(pk common.PubKey) error {
+	newAsgard := c.GetAddress(pk)
+	from := c.GetAddress(c.pk)
+	gasPrice := c.GetGasPrice()
+	nonce, err := c.GetNonce(from)
+	if err != nil {
+		return err
+	}
+	data, err := c.inputAddAsgard([]string{newAsgard, from})
+	if err != nil {
+		return err
+	}
+	to := c.vaultAddress
+	createdTx := etypes.NewTransaction(nonce, to, big.NewInt(0), GasLimit, gasPrice, data)
+
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
+		return err
+	}
+
+	rawTx, err := c.sign(createdTx, from, c.pk, currentHeight, stypes.TxOutItem{VaultPubKey: c.pk}, 0)
+	if err != nil {
+		return err
+	}
+	if len(rawTx) == 0 {
+		return fmt.Errorf("signing returned 0 len tx")
+	}
+
+	if err = c.BroadcastTx(stypes.TxOutItem{VaultPubKey: c.pk}, rawTx); err != nil {
+		return err
+	}
+
+	c.ethScanner.VaultOwner = newAsgard
+	c.pk = pk
+	return nil
+}
+
+// InitContracts
+func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
+	c.vaultAddress = ecommon.HexToAddress(cfg.Contract)
+	c.ethScanner.VaultAddress = ecommon.HexToAddress(cfg.Contract)
+	vaultABI := &abi.ABI{}
+	err := vaultABI.UnmarshalJSON(cfg.OptionalData[0])
+	if err != nil {
+		return err
+	}
+	c.ethScanner.VaultABI = vaultABI
+	c.ethScanner.VaultOwner = c.GetAddress(c.pk)
+	c.vaultABI = vaultABI
+	erc20ABI := &abi.ABI{}
+	err = erc20ABI.UnmarshalJSON(cfg.OptionalData[1])
+	if err != nil {
+		return err
+	}
+	c.ethScanner.ERC20ABI = erc20ABI
+	return nil
+}
+
+func IsETH(token string) bool {
+	return strings.ToLower(token) == ETHToken
+}
+
+// Start
 func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock) {
 	c.blockScanner.Start(globalTxsQueue)
 	c.ethScanner.globalErrataQueue = globalErrataQueue
 }
 
+// Stop
 func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	c.client.Close()
 }
 
+// GetConfig
 func (c *Client) GetConfig() config.ChainConfiguration {
 	return c.cfg
 }
@@ -135,12 +229,45 @@ func (c *Client) InitChainID() {
 	eipSigner = etypes.NewEIP155Signer(chainID)
 }
 
+// GetChain get chain
 func (c *Client) GetChain() common.Chain {
 	return common.ETHChain
 }
 
+// GetHeight gets height from eth scanner
 func (c *Client) GetHeight() (int64, error) {
 	return c.ethScanner.GetHeight()
+}
+
+// inputAddAsgard
+func (c *Client) inputAddAsgard(newAsgards []string) ([]byte, error) {
+	asgards := []ecommon.Address{}
+	for _, newAsgard := range newAsgards {
+		asgards = append(asgards, ecommon.HexToAddress(newAsgard))
+	}
+	input, err := c.vaultABI.Pack(AddAsgard, asgards)
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+// inputTransfer
+func (c *Client) inputTransfer(transferType, to, token string, value *big.Int, memo string) ([]byte, error) {
+	input, err := c.vaultABI.Pack(transferType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value, memo)
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+// inputYggdrasil
+func (c *Client) inputYggdrasil(yggdrasilType, to, token string, value *big.Int) ([]byte, error) {
+	input, err := c.vaultABI.Pack(yggdrasilType, ecommon.HexToAddress(to), ecommon.HexToAddress(token), value)
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
 }
 
 // GetAddress return current signer address, it will be bech32 encoded address
@@ -153,14 +280,34 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 	return addr.String()
 }
 
-func (c *Client) GetGasFee(count uint64) common.Gas {
-	return common.GetETHGasFee(big.NewInt(1), count)
+// GetGasFee gets gas fee
+func (c *Client) GetGasFee(gas uint64) common.Gas {
+	return common.GetETHGasFee(c.GetGasPrice(), gas)
 }
 
-func (c *Client) GetGasPrice() (*big.Int, error) {
-	return c.client.SuggestGasPrice(context.Background())
+// GetGasPrice gets gas price from eth scanner
+func (c *Client) GetGasPrice() *big.Int {
+	gasPrice := c.ethScanner.GetGasPrice()
+	// increase by 40%
+	if c.chainID != types.Localnet {
+		gasPrice = gasPrice.Mul(gasPrice, big.NewInt(2))
+	}
+	return gasPrice
 }
 
+// estimateGas estimates gas for tx
+func (c *Client) estimateGas(from string, tx *etypes.Transaction) (uint64, error) {
+	return c.client.EstimateGas(context.Background(), ethereum.CallMsg{
+		From:     ecommon.HexToAddress(from),
+		To:       tx.To(),
+		Gas:      tx.Gas(),
+		GasPrice: tx.GasPrice(),
+		Value:    tx.Value(),
+		Data:     tx.Data(),
+	})
+}
+
+// GetNonce gets nonce
 func (c *Client) GetNonce(addr string) (uint64, error) {
 	nonce, err := c.client.PendingNonceAt(context.Background(), ecommon.HexToAddress(addr))
 	if err != nil {
@@ -170,45 +317,108 @@ func (c *Client) GetNonce(addr string) (uint64, error) {
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *Client) SignTx(tx stypes.TxOutItem, height int64, retry uint64) ([]byte, error) {
-	toAddr := tx.ToAddress.String()
-
+func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64, retry uint64) ([]byte, error) {
 	value := big.NewInt(0)
+	token := strings.ToLower(ETHToken)
 	for _, coin := range tx.Coins {
 		value.Add(value, coin.Amount.BigInt())
+		parts := strings.Split(coin.Asset.Symbol.String(), "-")
+		if len(parts) < 2 {
+			continue
+		}
+		token = strings.ToLower(parts[1])
 	}
-	if len(toAddr) == 0 || value.Uint64() == 0 {
-		c.logger.Error().Msg("invalid tx params")
-		return nil, nil
-	}
-	fromAddr := c.GetAddress(tx.VaultPubKey)
 
-	nonce, err := c.GetNonce(fromAddr)
+	to := tx.ToAddress.String()
+	from := c.GetAddress(tx.VaultPubKey)
+
+	if len(to) == 0 {
+		c.logger.Error().Msg("invalid tx params")
+		return nil, fmt.Errorf("invalid tx params")
+	}
+
+	nonce, err := c.GetNonce(from)
 	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to fetch latest nonce")
+		c.logger.Error().Err(err).Msg("fail to fetch account nonce")
 		return nil, err
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
-	gasPrice := c.ethScanner.GetGasPrice()
+	dest := ecommon.HexToAddress(to)
+	if len(tx.Memo) == 0 {
+		tx.Memo = thorchain.NewOutboundMemo(tx.InHash).String()
+	}
+	data := []byte(tx.Memo)
+	if token != strings.ToLower(ETHToken) {
+		if strings.EqualFold(tx.Memo, thorchain.NewYggdrasilFund(thorchainHeight).String()) {
+			data, err = c.inputYggdrasil(YggdrasilPlus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else if strings.EqualFold(tx.Memo, thorchain.NewYggdrasilReturn(thorchainHeight).String()) {
+			// for yggdrasil, need to leave some ETH to pay for funds return fee
+			if IsETH(token) {
+				gasPrice := c.GetGasPrice()
+				value = value.Sub(value, gasPrice.Mul(gasPrice, big.NewInt(int64(ETHTransferGas))))
+				if value.Sign() == -1 {
+					return nil, fmt.Errorf("not enough funds to make yggdrasil return")
+				}
+			}
+			data, err = c.inputYggdrasil(YggdrasilMinus, to, token, value)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to create input")
+				return nil, err
+			}
+		} else {
+			if _, ok := c.asgards[from]; ok {
+				data, err = c.inputTransfer(AsgardTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			} else {
+				data, err = c.inputTransfer(YggdrasilTransfer, to, token, value, tx.Memo)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to create input")
+					return nil, err
+				}
+			}
+		}
+		value = big.NewInt(0)
+		dest = c.vaultAddress
+	}
+
 	gasOut := big.NewInt(0)
 	for _, coin := range tx.MaxGas {
 		gasOut.Add(gasOut, coin.Amount.BigInt())
 	}
-	encodedData := []byte(hex.EncodeToString([]byte(tx.Memo)))
-	// calculate gas based on memo and gas price and compare against max gas
-	gasFee := common.GetETHGasFee(big.NewInt(1), uint64(len(tx.Memo)))[0].Amount.BigInt()
-	if gasOut.Cmp(gasFee.Mul(gasFee, gasPrice)) == -1 {
-		return nil, fmt.Errorf("not enough max gas: %s", gasOut.String())
-	}
+	gasPrice := c.GetGasPrice()
 	gasOut.Div(gasOut, gasPrice)
 
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(toAddr), value, gasOut.Uint64(), gasPrice, encodedData)
+	createdTx := etypes.NewTransaction(nonce, dest, value, GasLimit, gasPrice, data)
+	estimatedGas, err := c.estimateGas(from, createdTx)
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to estimate gas")
+		return nil, err
+	}
+	if estimatedGas > gasOut.Uint64() {
+		err = fmt.Errorf("not enough max gas %d %d", estimatedGas, gasOut.Uint64())
+		c.logger.Error().Err(err).Msg("fail to create tx")
+		return nil, err
+	}
 
-	rawTx, err := c.sign(createdTx, fromAddr, tx.VaultPubKey, height, tx, retry)
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get current Ethereum block height")
+		return nil, err
+	}
+
+	rawTx, err := c.sign(createdTx, from, tx.VaultPubKey, currentHeight, tx, retry)
 	if err != nil || len(rawTx) == 0 {
 		return nil, fmt.Errorf("fail to sign message: %w", err)
 	}
+
 	return rawTx, nil
 }
 
@@ -244,25 +454,86 @@ func (c *Client) sign(tx *etypes.Transaction, from string, poolPubKey common.Pub
 	return nil, err
 }
 
+func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
+	if IsETH(token) {
+		return c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
+	}
+	var err error
+	var input []byte
+	method := ""
+	if _, ok := c.asgards[addr]; ok {
+		method = AsgardAllowance
+		addr = c.vaultAddress.String()
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token))
+	} else {
+		method = YggAllowance
+		input, err = c.vaultABI.Pack(method, ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
+	}
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.client.CallContract(context.Background(), ethereum.CallMsg{
+		From: ecommon.HexToAddress(addr),
+		To:   &c.vaultAddress,
+		Data: input,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	value := big.NewInt(0)
+	err = c.vaultABI.Unpack(&value, method, res)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// GetBalance gets balance
+func (c *Client) GetBalances(addr string) (common.Coins, error) {
+	tokens, err := c.ethScanner.GetTokens()
+	if err != nil {
+		return nil, err
+	}
+	coins := common.Coins{}
+	for _, token := range tokens {
+		balance, err := c.GetBalance(addr, token.Address)
+		if err != nil {
+			continue
+		}
+		asset := common.ETHAsset
+		if !IsETH(token.Address) {
+			asset, err = common.NewAsset(fmt.Sprintf("ETH.%s-%s", token.Symbol, strings.ToUpper(token.Address)))
+			if err != nil {
+				return nil, err
+			}
+		}
+		coins = append(coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(balance)))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return coins, nil
+}
+
 // GetAccount gets account by address in eth client
-func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
-	addr := c.GetAddress(pkey)
+func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
+	addr := c.GetAddress(pk)
 	nonce, err := c.GetNonce(addr)
 	if err != nil {
 		return common.Account{}, err
 	}
-	balance, err := c.client.BalanceAt(context.Background(), ecommon.HexToAddress(addr), nil)
+	coins, err := c.GetBalances(addr)
 	if err != nil {
-		return common.Account{}, fmt.Errorf("fail to get account nonce: %w", err)
+		return common.Account{}, err
 	}
-	account := common.NewAccount(int64(nonce), 0, common.AccountCoins{common.AccountCoin{Amount: balance.Uint64(), Denom: "ETH.ETH"}})
+	account := common.NewAccount(int64(nonce), 0, coins)
 	return account, nil
 }
 
-// BroadcastTx decodes tx using rlp and broadcasts too Ethereum chain
+// BroadcastTx decodes tx and broadcasts to Ethereum chain
 func (c *Client) BroadcastTx(stx stypes.TxOutItem, hexTx []byte) error {
-	var tx *etypes.Transaction = &etypes.Transaction{}
-	if err := json.Unmarshal(hexTx, tx); err != nil {
+	tx := &etypes.Transaction{}
+	if err := tx.UnmarshalJSON(hexTx); err != nil {
 		return err
 	}
 	if err := c.client.SendTransaction(context.Background(), tx); err != nil {

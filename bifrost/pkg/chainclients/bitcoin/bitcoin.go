@@ -124,6 +124,11 @@ func (c *Client) Stop() {
 	c.blockScanner.Stop()
 }
 
+// Churn
+func (c *Client) Churn(pubKey common.PubKey) error {
+	return nil
+}
+
 // GetConfig - get the chain configuration
 func (c *Client) GetConfig() config.ChainConfiguration {
 	return c.cfg
@@ -167,11 +172,8 @@ func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
 	if err != nil {
 		return acct, fmt.Errorf("fail to convert total amount: %w", err)
 	}
-	return common.NewAccount(0, 0, common.AccountCoins{
-		common.AccountCoin{
-			Amount: uint64(totalAmt),
-			Denom:  common.BTCAsset.String(),
-		},
+	return common.NewAccount(0, 0, common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(uint64(totalAmt))),
 	}), nil
 }
 

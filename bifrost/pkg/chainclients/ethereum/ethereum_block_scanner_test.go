@@ -10,6 +10,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	. "gopkg.in/check.v1"
@@ -124,6 +125,25 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x3b9aca00"}`))
 			c.Assert(err, IsNil)
 		}
+		if rpcRequest.Method == "eth_getTransactionReceipt" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{
+				"transactionHash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
+				"transactionIndex":"0x0",
+				"blockNumber":"0x1",
+				"blockHash":"0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba",
+				"cumulativeGasUsed":"0xc350",
+				"VaultAddress":"0x2a65aca4d5fc5b5c859090a6c34d164135398226",
+				"gasUsed":"0x4dc",
+				"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+				"logs":[],
+				"status":"0x1"
+			}}`))
+			c.Assert(err, IsNil)
+		}
+		if rpcRequest.Method == "eth_call" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x52554e45"}`))
+			c.Assert(err, IsNil)
+		}
 		if rpcRequest.Method == "eth_getBlockByNumber" {
 			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{
 				"parentHash":"0x8b535592eb3192017a527bbf8e3596da86b3abea51d6257898b2ced9d3a83826",
@@ -170,6 +190,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	txIn, err := bs.FetchTxs(int64(1))
@@ -190,8 +211,16 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		var rpcRequest RPCRequest
 		err = json.Unmarshal(body, &rpcRequest)
 		c.Assert(err, IsNil)
+		if rpcRequest.Method == "eth_chainId" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+			c.Assert(err, IsNil)
+		}
 		if rpcRequest.Method == "eth_gasPrice" {
 			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+			c.Assert(err, IsNil)
+		}
+		if rpcRequest.Method == "eth_call" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x52554e45"}`))
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_getTransactionReceipt" {
@@ -212,7 +241,11 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
-	bs, err := NewBlockScanner(getConfigForTest(server.URL), blockscanner.NewMockScannerStorage(), types.Mainnet, ethClient, s.bridge, s.m)
+	storage, err := blockscanner.NewBlockScannerStorage("")
+	c.Assert(err, IsNil)
+	c.Assert(storage, NotNil)
+	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
@@ -232,14 +265,13 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		"r":"0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea",
 		"s":"0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c"
 	}`
-	var tx *etypes.Transaction = &etypes.Transaction{}
+	tx := &etypes.Transaction{}
 	err = tx.UnmarshalJSON([]byte(encodedTx))
 	c.Assert(err, IsNil)
 
 	txInItem, err := bs.fromTxToTxIn(tx)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
-	c.Check(txInItem.Memo, Equals, "hello!")
 	c.Check(txInItem.Sender, Equals, "0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
 	c.Check(txInItem.To, Equals, "0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Check(len(txInItem.Coins), Equals, 1)
@@ -250,7 +282,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		true,
 	)
 	c.Check(
-		txInItem.Gas[0].Amount.Equal(cosmos.NewUint(50000)),
+		txInItem.Gas[0].Amount.Equal(cosmos.NewUint(50000*20000000000)),
 		Equals,
 		true,
 	)
@@ -279,6 +311,10 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 		}
 		if rpcRequest.Method == "eth_getTransactionReceipt" {
 			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32700,"message":"Not found tx"},"id": null}`))
+			c.Assert(err, IsNil)
+		}
+		if rpcRequest.Method == "eth_call" {
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x52554e45"}`))
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_getBlockByNumber" {
@@ -327,6 +363,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	bs, err := NewBlockScanner(getConfigForTest(server.URL), storage, types.Mainnet, ethClient, s.bridge, s.m)
+	bs.VaultAddress = common.HexToAddress("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	block, err := CreateBlock(0)

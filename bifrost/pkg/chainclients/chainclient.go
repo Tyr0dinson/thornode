@@ -28,5 +28,6 @@ type ChainClient interface {
 	GetChain() common.Chain
 	Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock)
 	GetConfig() config.ChainConfiguration
+	Churn(pubKey common.PubKey) error
 	Stop()
 }
