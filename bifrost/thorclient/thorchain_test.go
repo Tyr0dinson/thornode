@@ -9,13 +9,12 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -235,7 +234,7 @@ func (s *ThorchainSuite) TestGetPubKeys(c *C) {
 
 func (s *ThorchainSuite) TestPostNetworkFee(c *C) {
 	s.authAccountFixture = "../../test/fixtures/endpoints/auth/accounts/template.json"
-	txid, err := s.bridge.PostNetworkFee(1024, common.BNBChain, 100, sdk.NewUint(100))
+	txid, err := s.bridge.PostNetworkFee(1024, common.BNBChain, 100, 100)
 	c.Assert(err, IsNil)
 	c.Assert(txid.IsEmpty(), Equals, false)
 }

@@ -224,10 +224,14 @@ func (HandlerSuite) TestHandleTxInUnstakeMemo(c *C) {
 	handler := NewInternalHandler(w.keeper, w.mgr)
 
 	FundModule(c, w.ctx, w.keeper, AsgardName, 500)
+	w.keeper.SaveNetworkFee(w.ctx, common.BNBChain, NetworkFee{
+		Chain:              common.BNBChain,
+		TransactionSize:    1,
+		TransactionFeeRate: bnbSingleTxFee.Uint64(),
+	})
 
 	_, err = handler(w.ctx, msg)
 	c.Assert(err, IsNil)
-
 	pool, err = w.keeper.GetPool(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(pool.IsEmpty(), Equals, false)
@@ -443,7 +447,7 @@ func (s *HandlerSuite) TestExternalHandler(c *C) {
 	mgr := NewManagers(k)
 	handler := NewExternalHandler(k, mgr)
 	ctx = ctx.WithBlockHeight(1024)
-	msg := NewMsgNetworkFee(1024, common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr())
+	msg := NewMsgNetworkFee(1024, common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
 	result, err := handler(ctx, msg)
 	c.Check(err, NotNil)
 	c.Check(errors.Is(err, se.ErrUnauthorized), Equals, true)

@@ -4,7 +4,8 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type TxOutStoreSuite struct{}
@@ -14,8 +15,9 @@ var _ = Suite(&TxOutStoreSuite{})
 func (s TxOutStoreSuite) TestAddGasFees(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	tx := GetRandomObservedTx()
-
-	gasMgr := NewGasMgrV1()
+	version := constants.SWVersion
+	constAccessor := constants.GetConstantValues(version)
+	gasMgr := NewGasMgrV1(constAccessor, k)
 	err := AddGasFees(ctx, k, tx, gasMgr)
 	c.Assert(err, IsNil)
 	c.Assert(gasMgr.gas, HasLen, 1)

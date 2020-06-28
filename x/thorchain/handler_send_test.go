@@ -65,7 +65,7 @@ func (s *HandlerSendSuite) TestHandle(c *C) {
 	c.Assert(err, IsNil)
 
 	// invalid msg should result in a error
-	result, err := handler.Run(ctx, NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr()), constants.SWVersion, constAccessor)
+	result, err := handler.Run(ctx, NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr()), constants.SWVersion, constAccessor)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	// insufficient funds

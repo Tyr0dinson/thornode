@@ -207,7 +207,7 @@ func (HandlerMigrateSuite) TestHandlerMigrateValidation(c *C) {
 	mgr.BeginBlock(ctx)
 	h := NewMigrateHandler(k, mgr)
 	constantAccessor := constants.GetConstantValues(constants.SWVersion)
-	result, err := h.Run(ctx, NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr()), semver.MustParse("0.1.0"), constantAccessor)
+	result, err := h.Run(ctx, NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr()), semver.MustParse("0.1.0"), constantAccessor)
 	c.Check(err, NotNil)
 	c.Check(result, IsNil)
 	c.Check(errors.Is(err, errInvalidMessage), Equals, true)

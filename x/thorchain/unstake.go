@@ -7,9 +7,9 @@ import (
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 func validateUnstake(ctx cosmos.Context, keeper keeper.Keeper, msg MsgUnStake) error {
@@ -35,7 +35,7 @@ func validateUnstake(ctx cosmos.Context, keeper keeper.Keeper, msg MsgUnStake) e
 
 // unstake withdraw all the asset
 // it returns runeAmt,assetAmount,units, lastUnstake,err
-func unstake(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, msg MsgUnStake, eventManager EventManager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func unstake(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, msg MsgUnStake, manager Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if err := validateUnstake(ctx, keeper, msg); err != nil {
 		ctx.Logger().Error("msg unstake fail validation", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
@@ -78,29 +78,22 @@ func unstake(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, m
 	gasAsset := cosmos.ZeroUint()
 	// If the pool is empty, and there is a gas asset, subtract required gas
 	if common.SafeSub(poolUnits, fStakerUnit).Add(unitAfter).IsZero() {
+		maxGas, err := manager.GasMgr().GetMaxGas(ctx, pool.Asset.Chain)
+		if err != nil {
+			ctx.Logger().Error("fail to get gas for asset", "asset", pool.Asset, "error", err)
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errUnstakeFail
+		}
 		// minus gas costs for our transactions
-		// TODO: chain specific logic should be in a single location
-		if pool.Asset.IsBNB() {
-			gasInfo, err := keeper.GetGas(ctx, pool.Asset)
-			if err != nil {
-				ctx.Logger().Error("fail to get gas for asset", "asset", pool.Asset, "error", err)
-				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errUnstakeFail
-			}
+		if pool.Asset.IsBNB() && !common.RuneAsset().Chain.Equals(common.THORChain) {
 			originalAsset := withDrawAsset
-			multiplier := uint64(2)
-			if common.RuneAsset().Chain.Equals(common.THORChain) {
-				multiplier = 1
-			}
 			withDrawAsset = common.SafeSub(
 				withDrawAsset,
-				gasInfo[0].MulUint64(multiplier),
+				maxGas.Amount.MulUint64(2), // RUNE asset is on binance chain
 			)
 			gasAsset = originalAsset.Sub(withDrawAsset)
 		} else if pool.Asset.Chain.GetGasAsset().Equals(pool.Asset) {
-			// leave half a RUNE as gas fee for BTC chain and ETH chain
-			transactionFee := cv.GetInt64Value(constants.TransactionFee)
-			gasAsset = pool.RuneValueInAsset(cosmos.NewUint(uint64(transactionFee / 2)))
-			withDrawAsset = common.SafeSub(withDrawAsset, gasAsset)
+			gasAsset = maxGas.Amount
+			withDrawAsset = common.SafeSub(withDrawAsset, maxGas.Amount)
 		}
 	}
 
@@ -121,7 +114,7 @@ func unstake(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, m
 	// Create a pool event if THORNode have no rune or assets
 	if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
 		poolEvt := NewEventPool(pool.Asset, PoolBootstrap)
-		if err := eventManager.EmitEvent(ctx, poolEvt); nil != err {
+		if err := manager.EventMgr().EmitPoolEvent(ctx, poolEvt); nil != err {
 			ctx.Logger().Error("fail to emit pool event", "error", err)
 		}
 		pool.Status = PoolBootstrap

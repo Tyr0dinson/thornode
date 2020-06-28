@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // TXTYPE:STATE1:STATE2:STATE3:FINALMEMO

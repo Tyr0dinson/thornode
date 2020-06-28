@@ -1,8 +1,6 @@
 package keeperv1
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -12,7 +10,7 @@ func (k KVStore) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkF
 	record := NetworkFee{
 		Chain:              chain,
 		TransactionSize:    0,
-		TransactionFeeRate: sdk.ZeroUint(),
+		TransactionFeeRate: 0,
 	}
 	_, err := k.get(ctx, k.GetKey(ctx, prefixNetworkFee, chain.String()), &record)
 	return record, err

@@ -9,9 +9,9 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type HandlerRefundSuite struct{}
@@ -160,7 +160,7 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 
 	constAccessor := constants.GetConstantValues(version)
-	txOutStorage := NewTxOutStorageV1(keeper, constAccessor, NewDummyEventMgr())
+	txOutStorage := NewTxOutStorageV1(keeper, constAccessor, NewDummyEventMgr(), NewGasMgrV1(constAccessor, keeper))
 	toi := &TxOutItem{
 		Chain:       common.BNBChain,
 		ToAddress:   tx.Tx.FromAddress,

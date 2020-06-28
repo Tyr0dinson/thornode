@@ -86,7 +86,7 @@ func (s *HandlerNativeTxSuite) TestDifferentValidation(c *C) {
 		{
 			name: "invalid message should result an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerNativeTxTestHelper) cosmos.Msg {
-				return NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr())
+				return NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerNativeTxTestHelper, name string) {
 				c.Check(err, NotNil, Commentf(name))

@@ -18,6 +18,17 @@ func NewEventMgrV1() *EventMgrV1 {
 	return &EventMgrV1{}
 }
 
+// EmitPoolEvent is going to save a pool event to storage
+func (m *EventMgrV1) EmitPoolEvent(ctx cosmos.Context, poolEvt EventPool) error {
+	events, err := poolEvt.Events()
+	if err != nil {
+		return fmt.Errorf("fail to get pool events: %w", err)
+	}
+	ctx.EventManager().EmitEvents(events)
+
+	return nil
+}
+
 func (m *EventMgrV1) EmitEvent(ctx cosmos.Context, evt EmitEventItem) error {
 	events, err := evt.Events()
 	if err != nil {
