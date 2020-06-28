@@ -33,6 +33,7 @@ import (
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
 	BlockCacheSize               = 6000
+	MaxContractGas               = 62000
 	DepositEvent                 = "Deposit(address,uint256,string)"
 	TransferEvent                = "Transfer(address,address,uint256,string)"
 	PlusEvent                    = "YggdrasilPlus(address,address,uint256)"
@@ -157,8 +158,7 @@ func (e *BlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 		}()
 	}
 	// at the moment ,we pay fixed fee
-	ethTransferFee := common.ETHGasFeeTransfer[0].Amount
-	if _, err := e.bridge.PostNetworkFee(height, common.ETHChain, 1, ethTransferFee.Uint64()); err != nil {
+	if _, err := e.bridge.PostNetworkFee(height, common.ETHChain, 1, MaxContractGas*e.GetGasPrice().Uint64()); err != nil {
 		e.logger.Err(err).Msg("fail to post ETH chain single transfer fee to THORNode")
 	}
 	return txIn, nil

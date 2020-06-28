@@ -201,7 +201,6 @@ func swapOne(ctx cosmos.Context,
 		pool.BalanceRune = common.SafeSub(Y, emitAssets)
 	}
 	ctx.Logger().Debug(fmt.Sprintf("Post-swap: %sRune %sAsset , user get:%s ", pool.BalanceRune, pool.BalanceAsset, emitAssets))
-
 	return emitAssets, pool, swapEvt, nil
 }
 

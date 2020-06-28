@@ -288,10 +288,6 @@ func (c *Client) GetGasFee(gas uint64) common.Gas {
 // GetGasPrice gets gas price from eth scanner
 func (c *Client) GetGasPrice() *big.Int {
 	gasPrice := c.ethScanner.GetGasPrice()
-	// increase by 40%
-	if c.chainID != types.Localnet {
-		gasPrice = gasPrice.Mul(gasPrice, big.NewInt(2))
-	}
 	return gasPrice
 }
 
