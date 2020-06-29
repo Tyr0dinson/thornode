@@ -14,7 +14,6 @@ require (
 	github.com/didip/tollbooth v4.0.2+incompatible
 	github.com/ethereum/go-ethereum v1.9.14
 	github.com/go-kit/kit v0.10.0
-	github.com/google/go-cmp v0.4.1 // indirect
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/hashicorp/go-retryablehttp v0.6.4

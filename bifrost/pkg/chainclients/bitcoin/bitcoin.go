@@ -123,11 +123,6 @@ func (c *Client) Stop() {
 	c.blockScanner.Stop()
 }
 
-// Churn
-func (c *Client) Churn(pubKey common.PubKey) error {
-	return nil
-}
-
 // GetConfig - get the chain configuration
 func (c *Client) GetConfig() config.ChainConfiguration {
 	return c.cfg
@@ -141,6 +136,11 @@ func (c *Client) GetChain() common.Chain {
 // GetHeight returns current block height
 func (c *Client) GetHeight() (int64, error) {
 	return c.client.GetBlockCount()
+}
+
+// Churn
+func (c *Client) Churn(pubKey common.PubKey) error {
+	return nil
 }
 
 // GetAddress returns address from pubkey

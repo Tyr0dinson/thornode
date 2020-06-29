@@ -17,6 +17,7 @@ import (
 // GetAccount   gets account from thorclient in cain
 // GetGasFee    calculates gas fee based on number of simple transfer sents
 // GetConfig	gets the chain configuration
+// Churn        churns asgard
 // Start
 // Stop
 type ChainClient interface {

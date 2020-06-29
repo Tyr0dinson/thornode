@@ -15,11 +15,14 @@ func (KeeperNetworkFeeSuite) TestNetworkFee(c *C) {
 	networkFee := NewNetworkFee(common.BNBChain, 1, 37500)
 	c.Check(k.SaveNetworkFee(ctx, common.BNBChain, networkFee), IsNil)
 
-	networkFee1, err := k.GetNetworkFee(ctx, common.ETHChain)
+	networkFee1 := NewNetworkFee(common.BNBChain, 0, 37500)
+	c.Check(k.SaveNetworkFee(ctx, common.BNBChain, networkFee1), NotNil)
+
+	networkFee2, err := k.GetNetworkFee(ctx, common.ETHChain)
 	c.Check(err, IsNil)
-	c.Check(networkFee1.Valid(), NotNil)
+	c.Check(networkFee2.Valid(), NotNil)
 	c.Check(k.GetNetworkFeeIterator(ctx), NotNil)
-	networkFee2, err := k.GetNetworkFee(ctx, common.BNBChain)
+	networkFee3, err := k.GetNetworkFee(ctx, common.BNBChain)
 	c.Check(err, IsNil)
-	c.Check(networkFee2.Valid(), IsNil)
+	c.Check(networkFee3.Valid(), IsNil)
 }

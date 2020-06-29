@@ -126,14 +126,14 @@ func (b *Binance) Stop() {
 	b.blockScanner.Stop()
 }
 
-// Churn
-func (b *Binance) Churn(pubKey common.PubKey) error {
-	return nil
-}
-
 // GetConfig return the configuration used by Binance chain client
 func (b *Binance) GetConfig() config.ChainConfiguration {
 	return b.cfg
+}
+
+// Churn
+func (b *Binance) Churn(pubKey common.PubKey) error {
+	return nil
 }
 
 // checkIsTestNet determinate whether we are running on test net by checking the status

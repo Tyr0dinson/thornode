@@ -45,10 +45,11 @@ func (gm *GasMgrV1) BeginBlock() {
 func (gm *GasMgrV1) AddGasAsset(gas common.Gas) {
 	gm.gas = gm.gas.Add(gas)
 	for _, coin := range gas {
-		gm.gasCount[coin.Asset] += 1
+		gm.gasCount[coin.Asset]++
 	}
 }
 
+// GetGas return gas
 func (gm *GasMgrV1) GetGas() common.Gas {
 	return gm.gas
 }
