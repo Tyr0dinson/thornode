@@ -1,9 +1,9 @@
 package types
 
 import (
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/core/types"
+
+	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 )
 
 // BlockMeta is a structure to store the blocks bifrost scanned
@@ -15,9 +15,8 @@ type BlockMeta struct {
 }
 
 type TransactionMeta struct {
-	Hash        string   `json:"hash"`
-	Value       *big.Int `json:"value"`
-	BlockHeight int64    `json:"block_height"`
+	Hash        string `json:"hash"`
+	BlockHeight int64  `json:"block_height"`
 }
 
 type TokenMeta struct {
@@ -26,18 +25,17 @@ type TokenMeta struct {
 }
 
 // NewBlockMeta create a new instance of BlockMeta
-func NewBlockMeta(block *types.Block) *BlockMeta {
+func NewBlockMeta(block *types.Header, txIn stypes.TxIn) *BlockMeta {
 	txsMeta := make([]TransactionMeta, 0)
-	for _, tx := range block.Transactions() {
+	for _, tx := range txIn.TxArray {
 		txsMeta = append(txsMeta, TransactionMeta{
-			Hash:        tx.Hash().Hex(),
-			Value:       tx.Value(),
-			BlockHeight: int64(block.NumberU64()),
+			Hash:        tx.Tx,
+			BlockHeight: block.Number.Int64(),
 		})
 	}
 	return &BlockMeta{
-		PreviousHash: block.ParentHash().Hex(),
-		Height:       int64(block.NumberU64()),
+		PreviousHash: block.ParentHash.Hex(),
+		Height:       block.Number.Int64(),
 		BlockHash:    block.Hash().Hex(),
 		Transactions: txsMeta,
 	}

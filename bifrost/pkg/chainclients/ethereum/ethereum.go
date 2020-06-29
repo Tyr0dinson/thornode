@@ -107,9 +107,10 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		keySignPartyMgr: keySignPartyMgr,
 		asgards:         make(map[string]common.PubKey, 0),
 	}
-	c.asgards[c.GetAddress(pk)] = pk
+	ethAddress := c.GetAddress(pk)
+	c.asgards[ethAddress] = pk
 	c.InitChainID()
-	c.logger.Info().Msgf("ETH asgard address %s", c.GetAddress(pk))
+	c.logger.Debug().Msgf("ETH asgard address %s", ethAddress)
 
 	var path string // if not set later, will in memory storage
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
@@ -170,7 +171,7 @@ func (c *Client) Churn(pk common.PubKey) error {
 		return err
 	}
 
-	c.ethScanner.VaultOwner = newAsgard
+	c.ethScanner.VaultOwner = strings.ToLower(newAsgard)
 	c.pk = pk
 	return nil
 }
@@ -185,7 +186,7 @@ func (c *Client) InitContracts(cfg config.ChainConfiguration) error {
 		return err
 	}
 	c.ethScanner.VaultABI = vaultABI
-	c.ethScanner.VaultOwner = c.GetAddress(c.pk)
+	c.ethScanner.VaultOwner = strings.ToLower(c.GetAddress(c.pk))
 	c.vaultABI = vaultABI
 	erc20ABI := &abi.ABI{}
 	err = erc20ABI.UnmarshalJSON(cfg.OptionalData[1])

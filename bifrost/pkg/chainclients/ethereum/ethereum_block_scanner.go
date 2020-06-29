@@ -32,7 +32,7 @@ import (
 
 const (
 	DefaultObserverLevelDBFolder = `observer_data`
-	BlockCacheSize               = 6000
+	BlockCacheSize               = 100
 	MaxContractGas               = 62000
 	DepositEvent                 = "Deposit(address,uint256,string)"
 	TransferEvent                = "Transfer(address,address,uint256,string)"
@@ -245,7 +245,7 @@ func (e *BlockScanner) processBlock(block *etypes.Block, rawTxs []string) (stype
 	// Update gas price
 	e.updateGasPrice()
 
-	if err := e.processReorg(block); err != nil {
+	if err := e.processReorg(block.Header()); err != nil {
 		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", height)
 		return noTx, err
 	}
@@ -259,7 +259,7 @@ func (e *BlockScanner) processBlock(block *etypes.Block, rawTxs []string) (stype
 		return noTx, err
 	}
 
-	blockMeta := types.NewBlockMeta(block)
+	blockMeta := types.NewBlockMeta(block.Header(), txIn)
 	if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 		e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 	}
@@ -298,8 +298,8 @@ func (e *BlockScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *BlockScanner) processReorg(block *etypes.Block) error {
-	previousHeight := int64(block.NumberU64()) - 1
+func (e *BlockScanner) processReorg(block *etypes.Header) error {
+	previousHeight := block.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
 		return fmt.Errorf("fail to get block meta of height(%d) : %w", previousHeight, err)
@@ -309,11 +309,11 @@ func (e *BlockScanner) processReorg(block *etypes.Block) error {
 	}
 	// the block's previous hash need to be the same as the block hash chain client recorded in block meta
 	// blockMetas[PreviousHeight].BlockHash == Block.PreviousHash
-	if strings.EqualFold(prevBlockMeta.BlockHash, block.ParentHash().Hex()) {
+	if strings.EqualFold(prevBlockMeta.BlockHash, block.ParentHash.Hex()) {
 		return nil
 	}
 
-	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", block.NumberU64(), block.ParentHash().Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
+	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", block.Number.Int64(), block.ParentHash.Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
 	return e.reprocessTxs()
 }
 
@@ -329,10 +329,12 @@ func (e *BlockScanner) reprocessTxs() error {
 	}
 
 	for _, blockMeta := range blockMetas {
+		metaTxs := make([]types.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
 			if e.checkTransaction(tx.Hash) {
 				e.logger.Info().Msgf("block height: %d, tx: %s still exist", blockMeta.Height, tx.Hash)
+				metaTxs = append(metaTxs, tx)
 				continue
 			}
 			// this means the tx doesn't exist in chain ,thus should errata it
@@ -349,12 +351,13 @@ func (e *BlockScanner) reprocessTxs() error {
 			Txs:    errataTxs,
 		}
 		// Let's get the block again to fix the block hash
-		block, err := e.getBlock(blockMeta.Height)
+		block, err := e.getHeader(blockMeta.Height)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
 		}
-		blockMeta.PreviousHash = block.ParentHash().Hex()
+		blockMeta.PreviousHash = block.ParentHash.Hex()
 		blockMeta.BlockHash = block.Hash().Hex()
+		blockMeta.Transactions = metaTxs
 		if err := e.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta); err != nil {
 			e.logger.Err(err).Msgf("fail to save block meta of height: %d ", blockMeta.Height)
 		}
@@ -372,6 +375,10 @@ func (e *BlockScanner) checkTransaction(hash string) bool {
 
 func (e *BlockScanner) getReceipt(hash string) (*etypes.Receipt, error) {
 	return e.client.TransactionReceipt(context.Background(), ecommon.HexToHash(hash))
+}
+
+func (e *BlockScanner) getHeader(height int64) (*etypes.Header, error) {
+	return e.client.HeaderByNumber(context.Background(), big.NewInt(height))
 }
 
 func (e *BlockScanner) getBlock(height int64) (*etypes.Block, error) {
@@ -522,6 +529,10 @@ func (e *BlockScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, e
 		return nil, err
 	}
 	txInItem.To = strings.ToLower(tx.To().String())
+	// we don't need to track txs except asgard and vault
+	if txInItem.Sender != e.VaultOwner && txInItem.To != e.VaultOwner && txInItem.To != strings.ToLower(e.VaultAddress.String()) {
+		return nil, nil
+	}
 
 	receipt, err := e.getReceipt(tx.Hash().Hex())
 	if err != nil {
