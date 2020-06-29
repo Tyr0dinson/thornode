@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 // ErrNotEnoughToPayFee will happen when the emitted asset is not enough to pay for fee
@@ -18,14 +18,16 @@ type TxOutStorageV1 struct {
 	keeper        keeper.Keeper
 	constAccessor constants.ConstantValues
 	eventMgr      EventManager
+	gasManager    GasManager
 }
 
 // NewTxOutStorageV1 will create a new instance of TxOutStore.
-func NewTxOutStorageV1(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager) *TxOutStorageV1 {
+func NewTxOutStorageV1(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorageV1 {
 	return &TxOutStorageV1{
 		keeper:        keeper,
 		eventMgr:      eventMgr,
 		constAccessor: constAccessor,
+		gasManager:    gasManager,
 	}
 }
 
@@ -160,18 +162,14 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi *TxOutItem) 
 		toi.InHash = common.BlankTxID
 	}
 
-	transactionFee := tos.constAccessor.GetInt64Value(constants.TransactionFee)
+	transactionFee := tos.gasManager.GetFee(ctx, toi.Chain)
 	if toi.MaxGas.IsEmpty() {
-		gasAsset := toi.Chain.GetGasAsset()
-		pool, err := tos.keeper.GetPool(ctx, gasAsset)
+		maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 		if err != nil {
-			return false, fmt.Errorf("failed to get gas asset pool: %w", err)
+			return false, fmt.Errorf("fail to get maximum gas: %w", err)
 		}
-
-		// max gas amount is the transaction fee divided by two, in asset amount
-		maxAmt := pool.RuneValueInAsset(cosmos.NewUint(uint64(transactionFee / 2)))
 		toi.MaxGas = common.Gas{
-			common.NewCoin(gasAsset, maxAmt),
+			maxGasCoin,
 		}
 	}
 
@@ -322,8 +320,7 @@ func (tos *TxOutStorageV1) nativeTxOut(ctx cosmos.Context, mgr Manager, toi *TxO
 		return err
 	}
 
-	transactionFee := tos.constAccessor.GetInt64Value(constants.TransactionFee)
-
+	transactionFee := tos.gasManager.GetFee(ctx, common.THORChain)
 	tx := common.NewTx(
 		common.BlankTxID,
 		from,

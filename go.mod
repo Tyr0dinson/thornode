@@ -42,6 +42,7 @@ require (
 	go.uber.org/multierr v1.5.0 // indirect
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37 // indirect
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
+	golang.org/x/mod v0.3.0 // indirect
 	golang.org/x/sys v0.0.0-20200515095857-1151b9dac4a9 // indirect
 	golang.org/x/tools v0.0.0-20200428185508-e9a00ec82136 // indirect
 	google.golang.org/genproto v0.0.0-20200304201815-d429ff31ee6c // indirect

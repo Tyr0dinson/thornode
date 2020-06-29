@@ -8,9 +8,9 @@ import (
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type VaultManagerTestSuite struct{}
@@ -170,13 +170,13 @@ func (s *VaultManagerTestSuite) TestRagnarokChain(c *C) {
 
 	addr := GetRandomRUNEAddress()
 	stakers := []Staker{
-		Staker{
+		{
 			RuneAddress:     addr,
 			LastStakeHeight: 5,
 			Units:           btcPool.PoolUnits.QuoUint64(2),
 			PendingRune:     cosmos.ZeroUint(),
 		},
-		Staker{
+		{
 			RuneAddress:     GetRandomRUNEAddress(),
 			LastStakeHeight: 10,
 			Units:           btcPool.PoolUnits.QuoUint64(2),

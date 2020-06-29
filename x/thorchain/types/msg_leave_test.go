@@ -7,7 +7,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 type MsgLeaveSuite struct{}
@@ -20,10 +20,10 @@ func (*MsgLeaveSuite) SetupSuite(c *C) {
 
 func (MsgLeaveSuite) TestMsgLeave(c *C) {
 	nodeAddr := GetRandomBech32Addr()
-	txId := GetRandomTxHash()
+	txID := GetRandomTxHash()
 	senderBNBAddr := GetRandomBNBAddress()
 	tx := GetRandomTx()
-	tx.ID = txId
+	tx.ID = txID
 	tx.FromAddress = senderBNBAddr
 	msgLeave := NewMsgLeave(tx, nodeAddr, nodeAddr)
 	EnsureMsgBasicCorrect(msgLeave, c)
@@ -36,7 +36,7 @@ func (MsgLeaveSuite) TestMsgLeave(c *C) {
 	c.Assert(msgLeave2.ValidateBasic(), NotNil)
 	msgLeave3 := NewMsgLeave(tx, nodeAddr, cosmos.AccAddress{})
 	c.Assert(msgLeave3.ValidateBasic(), NotNil)
-	msgLeave4 := NewMsgLeave(common.Tx{ID: txId, FromAddress: ""}, nodeAddr, nodeAddr)
+	msgLeave4 := NewMsgLeave(common.Tx{ID: txID, FromAddress: ""}, nodeAddr, nodeAddr)
 	c.Assert(msgLeave4.ValidateBasic(), NotNil)
 
 	msgLeave5 := NewMsgLeave(tx, cosmos.AccAddress{}, nodeAddr)

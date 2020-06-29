@@ -40,7 +40,7 @@ func (HandlerRagnarokSuite) TestRagnarok(c *C) {
 	handler := NewRagnarokHandler(keeper, NewDummyMgr())
 
 	// invalid message should result errors
-	msg := NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr())
+	msg := NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
 	result, err := handler.Run(ctx, msg, constants.SWVersion, constants.GetConstantValues(constants.SWVersion))
 	c.Check(result, IsNil, Commentf("invalid message should result an error"))
 	c.Check(err, NotNil, Commentf("invalid message should result an error"))

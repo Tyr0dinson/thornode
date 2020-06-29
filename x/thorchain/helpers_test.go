@@ -4,8 +4,9 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -375,11 +376,13 @@ func newAddGasFeeTestHelper(c *C) addGasFeeTestHelper {
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	yggVault := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, common.Chains{common.BNBChain})
 	c.Assert(k.SetVault(ctx, yggVault), IsNil)
+	version := constants.SWVersion
+	constAccessor := constants.GetConstantValues(version)
 	return addGasFeeTestHelper{
 		ctx:        ctx,
 		k:          keeper,
 		na:         na,
-		gasManager: NewGasMgrV1(),
+		gasManager: NewGasMgrV1(constAccessor, keeper),
 	}
 }
 

@@ -217,7 +217,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 		{
 			name: "invalid message should return an error",
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
-				return NewMsgNetworkFee(1024, common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr())
+				return NewMsgNetworkFee(1024, common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
 				c.Check(result, IsNil, Commentf(name))

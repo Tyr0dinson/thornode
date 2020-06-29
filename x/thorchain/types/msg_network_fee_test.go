@@ -1,7 +1,6 @@
 package types
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -13,7 +12,7 @@ type MsgNetworkFeeSuite struct{}
 var _ = Suite(&MsgNetworkFeeSuite{})
 
 func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
-	msg := NewMsgNetworkFee(1024, common.BNBChain, 1, sdk.NewUint(37500), GetRandomBech32Addr())
+	msg := NewMsgNetworkFee(1024, common.BNBChain, 1, 37500, GetRandomBech32Addr())
 	c.Assert(msg.Type(), Equals, "set_network_fee")
 	EnsureMsgBasicCorrect(msg, c)
 
@@ -21,8 +20,8 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 		blockHeight        int64
 		name               string
 		chain              common.Chain
-		transactionSize    int64
-		transactionFeeRate sdk.Uint
+		transactionSize    uint64
+		transactionFeeRate uint64
 		signer             cosmos.AccAddress
 		expectErr          bool
 	}{
@@ -31,7 +30,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			blockHeight:        1024,
 			chain:              common.EmptyChain,
 			transactionSize:    100,
-			transactionFeeRate: sdk.NewUint(100),
+			transactionFeeRate: 100,
 			signer:             GetRandomBech32Addr(),
 			expectErr:          true,
 		},
@@ -39,8 +38,8 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			name:               "invalid transaction size should return error",
 			blockHeight:        1024,
 			chain:              common.BNBChain,
-			transactionSize:    -1,
-			transactionFeeRate: sdk.NewUint(100),
+			transactionSize:    0,
+			transactionFeeRate: 100,
 			signer:             GetRandomBech32Addr(),
 			expectErr:          true,
 		},
@@ -49,7 +48,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			blockHeight:        1024,
 			chain:              common.BNBChain,
 			transactionSize:    100,
-			transactionFeeRate: sdk.ZeroUint(),
+			transactionFeeRate: 0,
 			signer:             GetRandomBech32Addr(),
 			expectErr:          true,
 		},
@@ -58,7 +57,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			blockHeight:        1024,
 			chain:              common.BNBChain,
 			transactionSize:    100,
-			transactionFeeRate: sdk.NewUint(100),
+			transactionFeeRate: 100,
 			signer:             cosmos.AccAddress(""),
 			expectErr:          true,
 		},
@@ -67,7 +66,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			blockHeight:        -1024,
 			chain:              common.BNBChain,
 			transactionSize:    100,
-			transactionFeeRate: sdk.NewUint(100),
+			transactionFeeRate: 100,
 			signer:             GetRandomBech32Addr(),
 			expectErr:          true,
 		},
@@ -76,7 +75,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 			blockHeight:        1024,
 			chain:              common.BNBChain,
 			transactionSize:    100,
-			transactionFeeRate: sdk.NewUint(100),
+			transactionFeeRate: 100,
 			signer:             GetRandomBech32Addr(),
 			expectErr:          false,
 		},

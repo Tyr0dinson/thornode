@@ -51,7 +51,7 @@ func (s *HandlerMimirSuite) TestHandle(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(val, Equals, int64(55))
 
-	invalidMsg := NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee, GetRandomBech32Addr())
+	invalidMsg := NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
 	result, err := handler.Run(ctx, invalidMsg, constants.SWVersion, constants.GetConstantValues(constants.SWVersion))
 	c.Check(err, NotNil)
 	c.Check(result, IsNil)

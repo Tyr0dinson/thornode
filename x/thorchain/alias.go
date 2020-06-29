@@ -117,6 +117,7 @@ var (
 	NewMsgSetVersion               = types.NewMsgSetVersion
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
+	NewNetworkFee                  = types.NewNetworkFee
 	GetPoolStatus                  = types.GetPoolStatus
 	GetRandomVault                 = types.GetRandomVault
 	GetRandomTx                    = types.GetRandomTx
@@ -226,6 +227,7 @@ type (
 	EventOutbound                  = types.EventOutbound
 	NetworkFee                     = types.NetworkFee
 	ObservedNetworkFeeVoter        = types.ObservedNetworkFeeVoter
+	Jail                           = types.Jail
 
 	// Memo
 	SwapMemo            = mem.SwapMemo

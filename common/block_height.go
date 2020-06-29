@@ -1,7 +1,7 @@
 package common
 
 import (
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // This shifts the block height to be a larger number. The reason why this is

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/client_golang/prometheus"
@@ -413,7 +412,7 @@ func (b *ThorchainBridge) GetPubKeys() (common.PubKeys, error) {
 }
 
 // PostNetworkFee send network fee message to THORNode
-func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, transactionSize int64, transactionRate sdk.Uint) (common.TxID, error) {
+func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) {
 	nodeStatus, err := b.FetchNodeStatus()
 	if err != nil {
 		return common.BlankTxID, fmt.Errorf("failed to get node status: %w", err)
