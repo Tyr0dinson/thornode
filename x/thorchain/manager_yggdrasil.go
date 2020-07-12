@@ -40,6 +40,7 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 	}
 	if len(retiring) > 0 {
 		// skip yggdrasil funding while a migration is in progress
+		ctx.Logger().Info("migration in progress , skip yggdrasil funding")
 		return nil
 	}
 
@@ -76,6 +77,7 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 		minBond = constAccessor.GetInt64Value(constants.MinimumBondInRune)
 	}
 	if na.Bond.LT(cosmos.NewUint(uint64(minBond))) {
+		ctx.Logger().Info("bond is less than minimum bond,skip yggdrasil funding")
 		return nil
 	}
 
@@ -95,6 +97,7 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 		}
 	}
 	if !ygg.IsYggdrasil() {
+		ctx.Logger().Info("vault is not yggdrasil , skip yggdrasil funding")
 		return nil
 	}
 	pendingTxCount := ygg.LenPendingTxBlockHeights(common.BlockHeight(ctx), constAccessor)
@@ -119,6 +122,7 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 	// if the ygg total value is more than 25% bond, funds aren't low enough
 	// yet to top up
 	if totalValue.MulUint64(4).GTE(na.Bond) {
+		ctx.Logger().Info(fmt.Sprintf("total value: %s is more than 25% bond , skip yggdrasil funding", totalValue))
 		return nil
 	}
 
@@ -147,6 +151,8 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 					common.SafeSub(targetCoin.Amount, yggCoin.Amount),
 				),
 			)
+		} else {
+			ctx.Logger().Info(fmt.Sprintf("ygg coin: %s, target coin: %s", yggCoin, targetCoin))
 		}
 	}
 
