@@ -11,7 +11,7 @@ import (
 	"github.com/tendermint/tendermint/libs/log"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -117,6 +117,10 @@ func (k KVStoreDummy) ListNodeAccountsWithBond(_ cosmos.Context) (NodeAccounts, 
 }
 
 func (k KVStoreDummy) ListNodeAccountsByStatus(_ cosmos.Context, _ NodeStatus) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ListNodeAccountsByStatusWithMinimumAge(ctx cosmos.Context, status NodeStatus, age int64) (NodeAccounts, error) {
 	return nil, kaboom
 }
 
