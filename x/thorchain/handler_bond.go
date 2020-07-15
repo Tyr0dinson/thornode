@@ -78,7 +78,7 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Versio
 		"request hash", msg.TxIn.ID,
 		"bond", msg.Bond)
 	// this is keep it here to test version upgrade
-	if version.GT(semver.MustParse("0.2.0")) {
+	if version.GT(semver.MustParse("0.1.0")) {
 		ctx.Logger().Info("not accepting bond any more", "version", version.String())
 		return &cosmos.Result{}, nil
 	}
