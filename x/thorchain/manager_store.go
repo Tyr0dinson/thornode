@@ -26,11 +26,15 @@ func NewStoreMgr(keeper keeper.Keeper) *StoreMgr {
 // Iterator implement StoreManager interface decide whether it need to upgrade store
 func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 	version := smgr.keeper.GetLowestActiveVersion(ctx)
-
+	ctx.Logger().Info(fmt.Sprintf("current version:%s", version))
 	if version.Major > constants.SWVersion.Major || version.Minor > constants.SWVersion.Minor {
 		return fmt.Errorf("out of date software: have %s, network running %s", constants.SWVersion, version)
 	}
-
+	// when the lowest active version is the same as current build version, then nothing need to migrate
+	if version.EQ(constants.SWVersion) {
+		ctx.Logger().Info("nothing to migrate")
+		return nil
+	}
 	storeVer := smgr.keeper.GetStoreVersion(ctx)
 	if storeVer < 0 {
 		return fmt.Errorf("unable to get store version: %d", storeVer)
