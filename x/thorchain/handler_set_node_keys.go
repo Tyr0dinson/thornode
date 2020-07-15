@@ -131,7 +131,7 @@ func (h SetNodeKeysHandler) handleV1(ctx cosmos.Context, msg MsgSetNodeKeys, ver
 	}
 
 	// Set version number
-	setVersionMsg := NewMsgSetVersion(version, msg.Signer)
+	setVersionMsg := NewMsgSetVersion(constants.SWVersion, msg.Signer)
 	setVersionHandler := NewVersionHandler(h.keeper, h.mgr)
 	_, err = setVersionHandler.Run(ctx, setVersionMsg, version, constAccessor)
 	if err != nil {
