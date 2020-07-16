@@ -9,9 +9,9 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type HandlerSetNodeKeysSuite struct{}
@@ -206,9 +206,6 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 	// update version
 	_, err = handler.handle(ctx, msgNodeKeys, semver.MustParse("2.0.0"), constAccessor)
 	c.Assert(err, IsNil)
-	na, err = helper.Keeper.GetNodeAccount(ctx, msgNodeKeys.Signer)
-	c.Assert(err, IsNil)
-	c.Check(na.Version.String(), Equals, "2.0.0")
 
 	testCases := []struct {
 		name              string

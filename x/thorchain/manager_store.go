@@ -3,10 +3,14 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
+
+var defaultStartVersion = semver.MustParse("0.0.0")
 
 // StoreManager define the method as the entry point for store upgrade
 type StoreManager interface {
@@ -15,26 +19,38 @@ type StoreManager interface {
 
 // StoreMgr implement StoreManager interface
 type StoreMgr struct {
-	keeper keeper.Keeper
+	keeper           keeper.Keeper
+	lastChainVersion semver.Version
 }
 
 // NewStoreMgr create a new instance of StoreMgr
 func NewStoreMgr(keeper keeper.Keeper) *StoreMgr {
-	return &StoreMgr{keeper: keeper}
+	return &StoreMgr{
+		keeper:           keeper,
+		lastChainVersion: defaultStartVersion,
+	}
 }
 
 // Iterator implement StoreManager interface decide whether it need to upgrade store
 func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 	version := smgr.keeper.GetLowestActiveVersion(ctx)
-	ctx.Logger().Info(fmt.Sprintf("current version:%s", version))
+	if smgr.lastChainVersion.EQ(defaultStartVersion) {
+		// it knows nothing at the moment , so keep the version and return
+		smgr.lastChainVersion = version
+		return nil
+	}
 	if version.Major > constants.SWVersion.Major || version.Minor > constants.SWVersion.Minor {
 		return fmt.Errorf("out of date software: have %s, network running %s", constants.SWVersion, version)
 	}
+	ctx.Logger().Info(fmt.Sprintf("current version:%s", version))
+	// what's the chain version , what's the version of local node account
 	// when the lowest active version is the same as current build version, then nothing need to migrate
-	if version.EQ(constants.SWVersion) {
+	if version.EQ(smgr.lastChainVersion) {
 		ctx.Logger().Info("nothing to migrate")
 		return nil
 	}
+
+	// get to here , means version get bumped
 	storeVer := smgr.keeper.GetStoreVersion(ctx)
 	if storeVer < 0 {
 		return fmt.Errorf("unable to get store version: %d", storeVer)

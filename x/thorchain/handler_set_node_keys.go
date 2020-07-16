@@ -130,14 +130,6 @@ func (h SetNodeKeysHandler) handleV1(ctx cosmos.Context, msg MsgSetNodeKeys, ver
 		}
 	}
 
-	// Set version number
-	setVersionMsg := NewMsgSetVersion(constants.SWVersion, msg.Signer)
-	setVersionHandler := NewVersionHandler(h.keeper, h.mgr)
-	_, err = setVersionHandler.Run(ctx, setVersionMsg, version, constAccessor)
-	if err != nil {
-		return nil, fmt.Errorf("fail to set version(%s):%w", version, err)
-	}
-
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("set_node_keys",
 			cosmos.NewAttribute("node_address", msg.Signer.String()),
