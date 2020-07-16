@@ -65,6 +65,7 @@ func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 	} else {
 		ctx.Logger().Debug("No store migration needed")
 	}
+	smgr.lastChainVersion = version
 	return nil
 }
 
