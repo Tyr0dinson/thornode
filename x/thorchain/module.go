@@ -21,7 +21,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 // type check to ensure the interface is properly implemented
@@ -80,6 +80,7 @@ type AppModule struct {
 	supplyKeeper supply.Keeper
 	mgr          *Mgrs
 	keybaseStore KeybaseStore
+	smgr         StoreManager
 }
 
 // NewAppModule creates a new AppModule Object
@@ -95,6 +96,7 @@ func NewAppModule(k keeper.Keeper, bankKeeper bank.Keeper, supplyKeeper supply.K
 		supplyKeeper:   supplyKeeper,
 		mgr:            NewManagers(k),
 		keybaseStore:   kb,
+		smgr:           NewStoreMgr(k),
 	}
 }
 
@@ -123,10 +125,7 @@ func (am AppModule) NewQuerierHandler() sdk.Querier {
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
 	version := am.keeper.GetLowestActiveVersion(ctx)
-
-	// Does a kvstore migration
-	smgr := NewStoreMgr(am.keeper)
-	if err := smgr.Iterator(ctx); err != nil {
+	if err := am.smgr.Iterator(ctx); err != nil {
 		panic(err) // halt the chain if unsuccessful
 	}
 
