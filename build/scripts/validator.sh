@@ -64,7 +64,7 @@ if [ ! -f ~/.thord/config/genesis.json ]; then
 
         # set version
         VERSION=$(fetch_version)
-        until printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli tx thorchain set-version --node tcp://$PEER:26657 --from $SIGNER_NAME --yes; do
+        until printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli tx thorchain set-version --from $SIGNER_NAME --yes; do
           sleep 5
         done
 
