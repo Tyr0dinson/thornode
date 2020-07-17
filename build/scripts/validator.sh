@@ -62,12 +62,6 @@ if [ ! -f ~/.thord/config/genesis.json ]; then
           sleep 5
         done
 
-        # set version
-        VERSION=$(fetch_version)
-        until printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli tx thorchain set-version --from $SIGNER_NAME --yes; do
-          sleep 5
-        done
-
         # add IP address
         sleep 10 # wait for thorchain to commit a block
 
