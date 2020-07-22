@@ -1085,6 +1085,8 @@ gitlab.com/thorchain/tss/go-tss v0.0.0-20200720121540-e27845befb9e h1:Cc8raduoVb
 gitlab.com/thorchain/tss/go-tss v0.0.0-20200720121540-e27845befb9e/go.mod h1:tvTBp/W94aRAElL5tRaJ0KLWRWSZa6Qg+q8HMQb0unM=
 gitlab.com/thorchain/tss/go-tss v0.0.0-20200721224920-7546ee7076e8 h1:tvwJ1fYMDqNLtOjXR2P6GclJd7KMMq2xgEBCTkKdQos=
 gitlab.com/thorchain/tss/go-tss v0.0.0-20200721224920-7546ee7076e8/go.mod h1:tvTBp/W94aRAElL5tRaJ0KLWRWSZa6Qg+q8HMQb0unM=
+gitlab.com/thorchain/tss/go-tss v0.0.0-20200722213514-fc1f7be73080 h1:nEmD1QkVwkwK5iWEiqbZi87d+nCPgwVDlbQ93FNXRt8=
+gitlab.com/thorchain/tss/go-tss v0.0.0-20200722213514-fc1f7be73080/go.mod h1:tvTBp/W94aRAElL5tRaJ0KLWRWSZa6Qg+q8HMQb0unM=
 gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b h1:YHIcnYNNp7iCyQw6MXbiRSN0YtrpKR8E/fr7Y5HwDHM=
 gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b/go.mod h1:QwJJ+VjsoP0Cm9YC7ROmX0VIDuNxqBKIDGKRMkWkL3M=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
