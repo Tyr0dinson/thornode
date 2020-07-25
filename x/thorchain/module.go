@@ -126,7 +126,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
 	version := am.keeper.GetLowestActiveVersion(ctx)
 	if err := am.smgr.Iterator(ctx); err != nil {
-		panic(err) // halt the chain if unsuccessful
+		os.Exit(10) // halt the chain if unsuccessful
 	}
 
 	am.keeper.ClearObservingAddresses(ctx)
