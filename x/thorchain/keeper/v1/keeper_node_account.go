@@ -37,24 +37,6 @@ func (k KVStore) ListNodeAccountsWithBond(ctx cosmos.Context) (NodeAccounts, err
 	return nodeAccounts, nil
 }
 
-// ListNodeAccountsByStatusWithMinimumAge get a list of node account with the given status , and also has been on the status for at least given age(block height)
-func (k KVStore) ListNodeAccountsByStatusWithMinimumAge(ctx cosmos.Context, status NodeStatus, age int64) (NodeAccounts, error) {
-	nodeAccounts := make(NodeAccounts, 0)
-	naIterator := k.GetNodeAccountIterator(ctx)
-	defer naIterator.Close()
-	for ; naIterator.Valid(); naIterator.Next() {
-		var na NodeAccount
-		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
-		}
-
-		if na.Status == status && (ctx.BlockHeight()-na.StatusSince) > age {
-			nodeAccounts = append(nodeAccounts, na)
-		}
-	}
-	return nodeAccounts, nil
-}
-
 // ListNodeAccountsByStatus - get a list of node accounts with the given status
 func (k KVStore) ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
@@ -130,8 +112,7 @@ func (k KVStore) GetMinJoinVersion(ctx cosmos.Context) semver.Version {
 
 // GetLowestActiveVersion - get version number of lowest active node
 func (k KVStore) GetLowestActiveVersion(ctx cosmos.Context) semver.Version {
-	// TODO add a constant value for the minimum age
-	nodes, err := k.ListNodeAccountsByStatusWithMinimumAge(ctx, NodeActive, 5)
+	nodes, err := k.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		_ = dbError(ctx, "Unable to list active node accounts", err)
 		return constants.SWVersion

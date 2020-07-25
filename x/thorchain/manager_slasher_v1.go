@@ -352,7 +352,6 @@ func (s *SlasherV1) SlashNodeAccount(ctx cosmos.Context, observedPubKey common.P
 
 // IncSlashPoints will increase the given account's slash points
 func (s *SlasherV1) IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
-	ctx.Logger().Info("increase node account slash point", "address", addresses)
 	for _, addr := range addresses {
 		if err := s.keeper.IncNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to increase node account slash point", "error", err, "address", addr.String())
@@ -362,7 +361,6 @@ func (s *SlasherV1) IncSlashPoints(ctx cosmos.Context, point int64, addresses ..
 
 // DecSlashPoints will decrease the given account's slash points
 func (s *SlasherV1) DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
-	ctx.Logger().Info("decrease node account slash point", "address", addresses)
 	for _, addr := range addresses {
 		if err := s.keeper.DecNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to decrease node account slash point", "error", err, "address", addr.String())

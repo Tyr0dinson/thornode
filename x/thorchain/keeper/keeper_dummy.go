@@ -121,10 +121,6 @@ func (k KVStoreDummy) ListNodeAccountsByStatus(_ cosmos.Context, _ NodeStatus) (
 	return nil, kaboom
 }
 
-func (k KVStoreDummy) ListNodeAccountsByStatusWithMinimumAge(ctx cosmos.Context, status NodeStatus, age int64) (NodeAccounts, error) {
-	return nil, kaboom
-}
-
 func (k KVStoreDummy) ListActiveNodeAccounts(_ cosmos.Context) (NodeAccounts, error) {
 	return nil, kaboom
 }

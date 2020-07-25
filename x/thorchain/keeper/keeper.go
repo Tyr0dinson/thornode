@@ -79,7 +79,6 @@ type KeeperNodeAccount interface {
 	TotalActiveNodeAccount(ctx cosmos.Context) (int, error)
 	ListNodeAccountsWithBond(ctx cosmos.Context) (NodeAccounts, error)
 	ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error)
-	ListNodeAccountsByStatusWithMinimumAge(ctx cosmos.Context, status NodeStatus, age int64) (NodeAccounts, error)
 	ListActiveNodeAccounts(ctx cosmos.Context) (NodeAccounts, error)
 	GetLowestActiveVersion(ctx cosmos.Context) semver.Version
 	GetMinJoinVersion(ctx cosmos.Context) semver.Version
