@@ -55,6 +55,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 	switch i {
 	case uint64(2):
 		err = migrateStoreV2(ctx, smgr.keeper)
+	case uint64(3):
+		// no migration
 	default:
 		err = fmt.Errorf("unsupported store version: %d", i)
 	}
@@ -62,7 +64,6 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		ctx.Logger().Error("fail to migrate kvstore", "error", err)
 		return err
 	}
-
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
 }
