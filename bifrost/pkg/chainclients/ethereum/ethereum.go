@@ -220,7 +220,7 @@ func (c *Client) sign(tx *etypes.Transaction, from string, poolPubKey common.Pub
 		return nil, err
 	}
 	// let's retry before we give up on the signing party
-	retryMax := 3
+	retryMax := 10
 	var finalErr error
 	for i := 0; i < retryMax; i++ {
 		rawBytes, err := c.kw.Sign(tx, poolPubKey, keySignParty)

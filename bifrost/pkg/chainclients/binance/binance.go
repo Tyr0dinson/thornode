@@ -361,7 +361,7 @@ func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common
 		return nil, err
 	}
 	// let's retry before we give up on the signing party
-	retryMax := 3
+	retryMax := 10
 	var finalErr error
 	for i := 0; i < retryMax; i++ {
 		rawBytes, err := b.sign(signMsg, poolPubKey, keySignParty)
