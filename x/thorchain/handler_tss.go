@@ -75,6 +75,9 @@ func (h TssHandler) validateV1(ctx cosmos.Context, msg MsgTssPool) error {
 
 func (h TssHandler) handle(ctx cosmos.Context, msg MsgTssPool, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgTssPool request", "ID:", msg.ID)
+	if version.GTE(semver.MustParse("0.5.0")) {
+		return h.handleV5(ctx, msg, version, constAccessor)
+	}
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version, constAccessor)
 	}
@@ -275,18 +278,20 @@ func (h TssHandler) handleV5(ctx cosmos.Context, msg MsgTssPool, version semver.
 				if err != nil {
 					return nil, fmt.Errorf("fail to get node from it's pub key: %w", err)
 				}
+
+				// go to jail
+				jailTime := constAccessor.GetInt64Value(constants.JailTimeKeygen)
+				releaseHeight := common.BlockHeight(ctx) + jailTime
+				reason := "failed to perform keygen"
+				if err := h.keeper.SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
+					ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
+				}
+
 				if na.Status == NodeActive {
 					if err := h.keeper.IncNodeAccountSlashPoints(ctx, na.NodeAddress, slashPoints); err != nil {
 						ctx.Logger().Error("fail to inc slash points", "error", err)
 					}
 				} else {
-					// go to jail
-					jailTime := constAccessor.GetInt64Value(constants.JailTimeKeygen)
-					releaseHeight := common.BlockHeight(ctx) + jailTime
-					reason := "failed to perform keygen"
-					if err := h.keeper.SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
-						ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
-					}
 
 					// take out bond from the node account and add it to vault bond reward RUNE
 					// thus good behaviour node will get reward
