@@ -406,8 +406,15 @@ func (vm *validatorMgrV5) processRagnarok(ctx cosmos.Context, mgr Manager, const
 		return fmt.Errorf("fail to get ragnarok pending: %w", err)
 	}
 	if pending > 0 {
-		ctx.Logger().Info("awaiting previous ragnarok transction to clear before continuing", "nth", nth, "count", pending)
-		return nil
+		txOutQueue, err := vm.getPendingTxOut(ctx, constAccessor)
+		if err != nil {
+			ctx.Logger().Error("fail to get pending tx out item", "error", err)
+			return nil
+		}
+		if txOutQueue > 0 {
+			ctx.Logger().Info("awaiting previous ragnarok transaction to clear before continuing", "nth", nth, "count", pending)
+			return nil
+		}
 	}
 
 	nth++ // increment by 1
@@ -420,6 +427,25 @@ func (vm *validatorMgrV5) processRagnarok(ctx cosmos.Context, mgr Manager, const
 	vm.k.SetRagnarokNth(ctx, nth)
 
 	return nil
+}
+
+func (vm *validatorMgrV5) getPendingTxOut(ctx cosmos.Context, constAccessor constants.ConstantValues) (int64, error) {
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
+	count := int64(0)
+	for height := startHeight; height <= common.BlockHeight(ctx); height++ {
+		txs, err := vm.k.GetTxOut(ctx, height)
+		if err != nil {
+			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
+			return 0, fmt.Errorf("fail to get tx out array from key value store: %w", err)
+		}
+		for _, tx := range txs.TxArray {
+			if tx.OutHash.IsEmpty() {
+				count++
+			}
+		}
+	}
+	return count, nil
 }
 
 // ragnarokProtocolStage1 - request all yggdrasil pool to return the fund
