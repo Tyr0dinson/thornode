@@ -138,6 +138,7 @@ func (k *TestRagnarokChainKeeper) AddFeeToReserve(_ cosmos.Context, _ cosmos.Uin
 func (k *TestRagnarokChainKeeper) IsActiveObserver(_ cosmos.Context, _ cosmos.AccAddress) bool {
 	return true
 }
+
 func (s *VaultManagerV1TestSuite) TestRagnarokChain(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(100000)
@@ -433,6 +434,7 @@ func (h *VaultManagerTestHelpKeeper) GetPools(ctx cosmos.Context) (Pools, error)
 	}
 	return h.Keeper.GetPools(ctx)
 }
+
 func (*VaultManagerV1TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ver := constants.SWVersion
