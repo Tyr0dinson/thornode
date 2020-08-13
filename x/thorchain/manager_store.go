@@ -49,18 +49,8 @@ func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 }
 
 func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
-	var err error
 	ctx.Logger().Info("Migrating store to new version", "version", i)
-
-	switch i {
-	default:
-		return nil
-	}
-	if err != nil {
-		ctx.Logger().Error("fail to migrate kvstore", "error", err)
-		return err
-	}
-
+	// add the logic to migrate store here when it is needed
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
 }
