@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/blang/semver"
@@ -46,6 +48,20 @@ func (vm *SwapQv1) FetchQueue(ctx cosmos.Context) ([]MsgSwap, error) {
 
 // EndBlock trigger the real swap to be processed
 func (vm *SwapQv1) EndBlock(ctx cosmos.Context, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error {
+	vault, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active asgard vault: %w", err)
+	}
+	isEmptyActiveVault := true
+	for _, v := range vault {
+		if !v.Coins.IsEmpty() {
+			isEmptyActiveVault = false
+		}
+	}
+	if isEmptyActiveVault {
+		return errors.New("active asgard vault is empty right now , swap paused")
+	}
+
 	handler := NewSwapHandler(vm.k, mgr)
 
 	msgs, err := vm.FetchQueue(ctx)
