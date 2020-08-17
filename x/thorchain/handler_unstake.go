@@ -39,6 +39,13 @@ func (h UnstakeHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Ver
 		ctx.Logger().Error("MsgUnStake failed validation", "error", err)
 		return nil, err
 	}
+	if version.GTE(semver.MustParse("0.7.0")) {
+		result, err := h.handleV2(ctx, msg, version)
+		if err != nil {
+			ctx.Logger().Error("failed to process MsgUnStake", "error", err)
+		}
+		return result, err
+	}
 	result, err := h.handle(ctx, msg, version)
 	if err != nil {
 		ctx.Logger().Error("failed to process MsgUnStake", "error", err)
@@ -173,6 +180,10 @@ func (h UnstakeHandler) handleV2(ctx cosmos.Context, msg MsgUnStake, version sem
 	if err != nil {
 		return nil, multierror.Append(errFailGetStaker, err)
 	}
+	pool, err := h.keeper.GetPool(ctx, msg.Asset)
+	if err != nil {
+		return nil, ErrInternal(err, "fail to get pool")
+	}
 	runeAmt, assetAmount, units, gasAsset, err := unstake(ctx, version, h.keeper, msg, h.mgr.EventMgr())
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process UnStake request")
@@ -215,8 +226,15 @@ func (h UnstakeHandler) handleV2(ctx cosmos.Context, msg MsgUnStake, version sem
 
 	okAsset, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
 	if err != nil {
+		// the emit asset not enough to pay fee,continue
+		// other situation will be none of the vault has enough fund to fulfill this unstake
+		// thus unstake need to be revert
 		if !errors.Is(err, ErrNotEnoughToPayFee) {
-			// the emit asset not enough to pay fee,continue
+			// restore pool and staker
+			if err := h.keeper.SetPool(ctx, pool); err != nil {
+				return nil, ErrInternal(err, "fail to save pool")
+			}
+			h.keeper.SetStaker(ctx, staker)
 			return nil, multierror.Append(errFailAddOutboundTx, err)
 		}
 		okAsset = true
@@ -241,6 +259,7 @@ func (h UnstakeHandler) handleV2(ctx cosmos.Context, msg MsgUnStake, version sem
 			}
 		}
 	}
+	// there is much much less chance thorchain doesn't have enough RUNE
 	okRune, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
 	if err != nil {
 		// emitted asset doesn't enough to cover fee, continue
