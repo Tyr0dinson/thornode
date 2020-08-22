@@ -292,9 +292,6 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 // signAndBroadcast retry a few times before THORNode move on to he next block
 func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 	start := time.Now()
-	defer func() {
-		s.logger.Info().Msgf("sign and broadcast takes %s", time.Now().Sub(start).String())
-	}()
 	height := item.Height
 	tx := item.TxOutItem
 	blockHeight, err := s.thorchainBridge.GetBlockHeight()
