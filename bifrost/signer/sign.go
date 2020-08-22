@@ -357,7 +357,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 
 	// only need to double check the keysign object from thorchain when it is asgard , and using TSS
 	// once a txout item assigned to yggdrasil , only the assigned yggdrasil pool will process it
-	//if !tx.VaultPubKey.Equals(s.pubkeyMgr.GetNodePubKey()) {
+	// if !tx.VaultPubKey.Equals(s.pubkeyMgr.GetNodePubKey()) {
 	// We get the keysign object from thorchain again to ensure it hasn't
 	// been signed already, and we can skip. This helps us not get stuck on
 	// a task that we'll never sign, because 2/3rds already has and will
