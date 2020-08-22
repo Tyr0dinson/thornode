@@ -291,6 +291,10 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 
 // signAndBroadcast retry a few times before THORNode move on to he next block
 func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
+	start := time.Now()
+	defer func() {
+		s.logger.Info().Msgf("sign and broadcast takes %s", time.Now().Sub(start).String())
+	}()
 	height := item.Height
 	tx := item.TxOutItem
 	blockHeight, err := s.thorchainBridge.GetBlockHeight()
@@ -342,7 +346,6 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 		}
 	}
 
-	start := time.Now()
 	defer func() {
 		s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
 	}()
@@ -354,24 +357,24 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 
 	// only need to double check the keysign object from thorchain when it is asgard , and using TSS
 	// once a txout item assigned to yggdrasil , only the assigned yggdrasil pool will process it
-	if !tx.VaultPubKey.Equals(s.pubkeyMgr.GetNodePubKey()) {
-		// We get the keysign object from thorchain again to ensure it hasn't
-		// been signed already, and we can skip. This helps us not get stuck on
-		// a task that we'll never sign, because 2/3rds already has and will
-		// never be available to sign again.
-		txOut, err := s.thorchainBridge.GetKeysign(height, tx.VaultPubKey.String())
-		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to get keysign items")
-			return err
-		}
-		for _, txArray := range txOut.TxArray {
-			if txArray.TxOutItem().Equals(tx) && !txArray.OutHash.IsEmpty() {
-				// already been signed, we can skip it
-				s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
-				return nil
-			}
+	//if !tx.VaultPubKey.Equals(s.pubkeyMgr.GetNodePubKey()) {
+	// We get the keysign object from thorchain again to ensure it hasn't
+	// been signed already, and we can skip. This helps us not get stuck on
+	// a task that we'll never sign, because 2/3rds already has and will
+	// never be available to sign again.
+	txOut, err := s.thorchainBridge.GetKeysign(height, tx.VaultPubKey.String())
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get keysign items")
+		return err
+	}
+	for _, txArray := range txOut.TxArray {
+		if txArray.TxOutItem().Equals(tx) && !txArray.OutHash.IsEmpty() {
+			// already been signed, we can skip it
+			s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
+			return nil
 		}
 	}
+	//}
 	signedTx, err := chain.SignTx(tx, height)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to sign tx")
