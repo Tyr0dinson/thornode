@@ -39,6 +39,7 @@ func (s TypesSuite) TestHasSuperMajority(c *C) {
 	c.Check(HasSuperMajority(67, 100), Equals, true)
 
 	// unhappy path
+	c.Check(HasSuperMajority(8, 15), Equals, false)
 	c.Check(HasSuperMajority(2, 4), Equals, false)
 	c.Check(HasSuperMajority(9, 4), Equals, false)
 	c.Check(HasSuperMajority(-9, 4), Equals, false)

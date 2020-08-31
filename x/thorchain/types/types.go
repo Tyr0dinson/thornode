@@ -3,17 +3,17 @@ package types
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
 
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 const (
-	SuperMajorityFactor uint64 = 3
-	MajorityFactor      uint64 = 2
+	SuperMajorityFactor  int = 3
+	SimpleMajorityFactor int = 2
 )
 
 // HasSuperMajority return true when it has 2/3 majority
@@ -24,16 +24,12 @@ func HasSuperMajority(signers, total int) bool {
 	if signers <= 0 {
 		return false // edge case
 	}
-	mU := cosmos.NewUint(SuperMajorityFactor)
-
-	// 10*4 / (6.67*2) <= 3
-	// 4*4 / (3*2) <= 3
-	// 3*4 / (2*2) <= 3
-	// Is able to determine "majority" without needing floats or DECs
-	tU := cosmos.NewUint(uint64(total))
-	sU := cosmos.NewUint(uint64(signers))
-	factor := tU.MulUint64(2).Quo(sU)
-	return mU.GTE(factor)
+	min := total * 2 / SuperMajorityFactor
+	if (total*2)%SuperMajorityFactor > 0 {
+		min += 1
+	}
+	log.Printf("%d/%d == %d", signers, total, min)
+	return signers >= min
 }
 
 // HasMajority return true when it has more than 1/2
@@ -44,13 +40,11 @@ func HasSimpleMajority(signers, total int) bool {
 	if signers <= 0 {
 		return false // edge case
 	}
-	mU := cosmos.NewUint(MajorityFactor)
-
-	// Is able to determine "majority" without needing floats or DECs
-	tU := cosmos.NewUint(uint64(total))
-	sU := cosmos.NewUint(uint64(signers))
-	factor := tU.Quo(sU)
-	return mU.GTE(factor)
+	min := total / SimpleMajorityFactor
+	if total%SimpleMajorityFactor > 0 {
+		min += 1
+	}
+	return signers >= min
 }
 
 // GetThreshold calculate threshold
