@@ -13,6 +13,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cosmos/cosmos-sdk v0.39.0
 	github.com/cosmos/go-bip39 v0.0.0-20180819234021-555e2067c45d
+	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/edwards v1.0.0
 	github.com/didip/tollbooth v4.0.2+incompatible
 	github.com/ethereum/go-ethereum v1.9.12
@@ -39,8 +40,9 @@ require (
 	github.com/tendermint/tendermint v0.33.6
 	github.com/tendermint/tm-db v0.5.1
 	github.com/zondax/ledger-go v0.11.0 // indirect
-	gitlab.com/thorchain/tss/go-tss v1.0.0
+	gitlab.com/thorchain/tss/go-tss v1.0.1-0.20200901035024-77304ec7257a
 	gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b
+	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a // indirect
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/tools v0.0.0-20200731060945-b5fad4ed8dd6 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
