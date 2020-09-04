@@ -69,7 +69,6 @@ func (kts *KeyGenTestSuite) TestNewTssKenGen(c *C) {
 	c.Assert(k, NotNil)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)
-
 	}))
 	b, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
 		ChainID:      "thorchain",
