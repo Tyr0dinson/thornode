@@ -41,6 +41,7 @@ func (ts *TssSignable) Sign(payload []byte) (*btcec.Signature, error) {
 		ts.logger.Error().Err(err).Msg("fail to get keysign party")
 		return nil, err
 	}
+	// TODO get the block height from here
 	retry := 3
 	var result []byte
 	for i := 0; i < retry; i++ {

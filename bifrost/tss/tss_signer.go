@@ -10,6 +10,7 @@ import (
 	ctypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/binance-chain/go-sdk/keys"
 	"github.com/binance-chain/go-sdk/types/tx"
+	"github.com/blang/semver"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
@@ -17,20 +18,26 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
+	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+var newJoinPartyVersion = semver.MustParse("0.12.0")
+
 // KeySign is a proxy between signer and TSS
 type KeySign struct {
-	logger zerolog.Logger
-	server *tss.TssServer
+	logger         zerolog.Logger
+	server         *tss.TssServer
+	bridge         *thorclient.ThorchainBridge
+	currentVersion semver.Version
 }
 
 // NewKeySign create a new instance of KeySign
-func NewKeySign(server *tss.TssServer) (*KeySign, error) {
+func NewKeySign(server *tss.TssServer, bridge *thorclient.ThorchainBridge) (*KeySign, error) {
 	return &KeySign{
 		server: server,
+		bridge: bridge,
 		logger: log.With().Str("module", "tss_signer").Logger(),
 	}, nil
 }
@@ -162,6 +169,19 @@ func getSignature(r, s string) ([]byte, error) {
 	return sigBytes, nil
 }
 
+func (s *KeySign) isNewJoinParty() bool {
+	// once the chain's version is greater than newJoinPartyVersion then , it doesn't need to check it again
+	if s.currentVersion.GTE(newJoinPartyVersion) {
+		return true
+	}
+	currentVersion, err := s.bridge.GetThorchainVersion()
+	if err != nil {
+		return false
+	}
+	s.currentVersion = currentVersion
+	return s.currentVersion.GTE(newJoinPartyVersion)
+}
+
 // toLocalTSSSigner will send the request to local signer
 func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys common.PubKeys) (string, string, error) {
 	tssMsg := keysign.Request{
@@ -171,6 +191,19 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 	for _, k := range signerPubKeys {
 		tssMsg.SignerPubKeys = append(tssMsg.SignerPubKeys, k.String())
 	}
+
+	if s.isNewJoinParty() {
+		s.logger.Info().Msg("Let's try the new join party")
+		// get current thorchain block height
+		blockHeight, err := s.bridge.GetBlockHeight()
+		if err != nil {
+			return "", "", fmt.Errorf("fail to get current thorchain block height: %w", err)
+		}
+
+		// this is just round the block height to the nearest 10
+		tssMsg.BlockHeight = blockHeight / 10 * 10
+	}
+
 	s.logger.Debug().Str("payload", fmt.Sprintf("PoolPubKey: %s, Message: %s, Signers: %+v", tssMsg.PoolPubKey, tssMsg.Message, tssMsg.SignerPubKeys)).Msg("msg to tss Local node")
 
 	ch := make(chan bool, 1)

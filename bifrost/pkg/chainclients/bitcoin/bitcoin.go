@@ -58,7 +58,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 	if err != nil {
 		return nil, fmt.Errorf("fail to create bitcoin rpc client: %w", err)
 	}
-	tssKm, err := tss.NewKeySign(server)
+	tssKm, err := tss.NewKeySign(server, bridge)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create tss signer: %w", err)
 	}

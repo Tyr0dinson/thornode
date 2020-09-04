@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -45,6 +46,7 @@ const (
 	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
 	RagnarokEndpoint         = "/thorchain/ragnarok"
+	ChainVersionEndpoint     = "/thorchain/version"
 )
 
 // ThorchainBridge will be used to send tx to thorchain
@@ -468,4 +470,20 @@ func (b *ThorchainBridge) RagnarokInProgress() (bool, error) {
 		return false, fmt.Errorf("fail to unmarshal ragnarok status: %w", err)
 	}
 	return ragnarok, nil
+}
+
+// GetThorchainVersion retrieve thorchain version
+func (b *ThorchainBridge) GetThorchainVersion() (semver.Version, error) {
+	buf, s, err := b.getWithPath(ChainVersionEndpoint)
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("fail to get THORChain version: %w", err)
+	}
+	if s != http.StatusOK {
+		return semver.Version{}, fmt.Errorf("unexpected status code: %d", s)
+	}
+	var version stypes.QueryVersion
+	if err := json.Unmarshal(buf, &version); err != nil {
+		return semver.Version{}, fmt.Errorf("fail to unmarshal THORChain version : %w", err)
+	}
+	return version.Current, nil
 }

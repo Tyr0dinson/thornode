@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,7 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -60,7 +61,8 @@ func (s *ThorchainSuite) SetUpSuite(c *C) {
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/constants/constants.json")
 		case strings.HasPrefix(req.RequestURI, RagnarokEndpoint):
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/ragnarok/ragnarok.json")
-
+		case strings.HasPrefix(req.RequestURI, ChainVersionEndpoint):
+			httpTestHandler(c, rw, "../../test/fixtures/endpoints/version/version.json")
 		}
 	}))
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
@@ -250,4 +252,10 @@ func (s *ThorchainSuite) TestGetRagnarok(c *C) {
 	result, err := s.bridge.RagnarokInProgress()
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, false)
+}
+
+func (s *ThorchainSuite) TestGetThorchainVersion(c *C) {
+	result, err := s.bridge.GetThorchainVersion()
+	c.Assert(err, IsNil)
+	c.Assert(result.EQ(semver.MustParse("0.11.0")), Equals, true)
 }
