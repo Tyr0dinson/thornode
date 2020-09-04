@@ -14,6 +14,8 @@ func init() {
 		FundMigrationInterval: 10,
 		StakeLockUpBlocks:     0,
 		CliTxCost:             0,
+
+		MinimumNodesForYggdrasil: 12, // TODO remove me
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondStakeRatio: false,
