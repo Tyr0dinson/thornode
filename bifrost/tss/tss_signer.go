@@ -23,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-var newJoinPartyVersion = semver.MustParse("0.12.0")
+var newJoinPartyVersion = semver.MustParse("0.13.0")
 
 // KeySign is a proxy between signer and TSS
 type KeySign struct {
