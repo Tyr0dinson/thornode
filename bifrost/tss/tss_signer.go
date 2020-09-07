@@ -188,9 +188,6 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 		PoolPubKey: poolPubKey,
 		Message:    sendmsg,
 	}
-	for _, k := range signerPubKeys {
-		tssMsg.SignerPubKeys = append(tssMsg.SignerPubKeys, k.String())
-	}
 
 	if s.isNewJoinParty() {
 		s.logger.Info().Msg("Let's try the new join party")
@@ -202,6 +199,10 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 
 		// this is just round the block height to the nearest 10
 		tssMsg.BlockHeight = blockHeight / 10 * 10
+	} else {
+		for _, k := range signerPubKeys {
+			tssMsg.SignerPubKeys = append(tssMsg.SignerPubKeys, k.String())
+		}
 	}
 
 	s.logger.Debug().Str("payload", fmt.Sprintf("PoolPubKey: %s, Message: %s, Signers: %+v", tssMsg.PoolPubKey, tssMsg.Message, tssMsg.SignerPubKeys)).Msg("msg to tss Local node")
