@@ -89,7 +89,6 @@ func (h StakeHandler) validateV13(ctx cosmos.Context, msg MsgStake, constAccesso
 	}
 
 	// total staked RUNE after current stake
-	totalStakeRUNE = totalStakeRUNE.Add(msg.RuneAmount)
 	maximumStakeRune, err := h.keeper.GetMimir(ctx, constants.MaximumStakeRune.String())
 	if maximumStakeRune < 0 || err != nil {
 		maximumStakeRune = constAccessor.GetInt64Value(constants.MaximumStakeRune)
