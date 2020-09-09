@@ -3,6 +3,8 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -27,21 +29,23 @@ func NewStoreMgr(keeper keeper.Keeper) *StoreMgr {
 // Iterator implement StoreManager interface decide whether it need to upgrade store
 func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 	version := smgr.keeper.GetLowestActiveVersion(ctx)
-	//addr, err := cosmos.AccAddressFromBech32("tthor1vrdqcd0cvv85tmjzzvs3due6tga5wqkp5qfau6")
-	//if err != nil {
-	//	ctx.Logger().Error("fail to parse address", "error", err, "address", "tthor1vrdqcd0cvv85tmjzzvs3due6tga5wqkp5qfau6")
-	//}
-	//nodeAccount, err := smgr.keeper.GetNodeAccount(ctx, addr)
-	//if nodeAccount.IsEmpty() {
-	//	nodeAccount.NodeAddress = addr
-	//	nodeAccount.Status = NodeReady
-	//	nodeAccount.IPAddress = "127.0.0.1"
-	//	nodeAccount.Bond = cosmos.NewUint(100000000000000)
-	//	nodeAccount.Version = semver.MustParse("0.13.0")
-	//	if err := smgr.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
-	//		ctx.Logger().Error("fail to set node account", "error", err)
-	//	}
-	//}
+	addr, err := cosmos.AccAddressFromBech32("tthor1vrdqcd0cvv85tmjzzvs3due6tga5wqkp5qfau6")
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err, "address", "tthor1vrdqcd0cvv85tmjzzvs3due6tga5wqkp5qfau6")
+	}
+	nodeAccount, err := smgr.keeper.GetNodeAccount(ctx, addr)
+	if err != nil {
+		ctx.Logger().Error("fail to get node account", "error", err)
+	} else if nodeAccount.IsEmpty() {
+		nodeAccount.NodeAddress = addr
+		nodeAccount.Status = NodeReady
+		nodeAccount.IPAddress = "127.0.0.1"
+		nodeAccount.Bond = cosmos.NewUint(100000000000000)
+		nodeAccount.Version = semver.MustParse("0.13.0")
+		if err := smgr.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
+			ctx.Logger().Error("fail to set node account", "error", err)
+		}
+	}
 	if version.Major > constants.SWVersion.Major || version.Minor > constants.SWVersion.Minor {
 		return fmt.Errorf("out of date software: have %s, network running %s", constants.SWVersion, version)
 	}
