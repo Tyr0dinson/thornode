@@ -27,13 +27,55 @@ func NewStakeHandler(keeper keeper.Keeper, mgr Manager) StakeHandler {
 }
 
 func (h StakeHandler) validate(ctx cosmos.Context, msg MsgStake, version semver.Version, constAccessor constants.ConstantValues) error {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.13.0")) {
+		return h.validateV13(ctx, msg, constAccessor)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg, constAccessor)
 	}
 	return errBadVersion
 }
 
 func (h StakeHandler) validateV1(ctx cosmos.Context, msg MsgStake, constAccessor constants.ConstantValues) error {
+	if err := msg.ValidateBasic(); err != nil {
+		ctx.Logger().Error(err.Error())
+		return errStakeFailValidation
+	}
+
+	ensureStakeNoLargerThanBond := constAccessor.GetBoolValue(constants.StrictBondStakeRatio)
+	// the following  only applicable for chaosnet
+	totalStakeRUNE, err := h.getTotalStakeRUNE(ctx)
+	if err != nil {
+		return ErrInternal(err, "fail to get total staked RUNE")
+	}
+
+	// total staked RUNE after current stake
+	totalStakeRUNE = totalStakeRUNE.Add(msg.RuneAmount)
+	maximumStakeRune, err := h.keeper.GetMimir(ctx, constants.MaximumStakeRune.String())
+	if maximumStakeRune < 0 || err != nil {
+		maximumStakeRune = constAccessor.GetInt64Value(constants.MaximumStakeRune)
+	}
+	if maximumStakeRune > 0 {
+		if totalStakeRUNE.GT(cosmos.NewUint(uint64(maximumStakeRune))) {
+			return errStakeRUNEOverLimit
+		}
+	}
+
+	if !ensureStakeNoLargerThanBond {
+		return nil
+	}
+	totalBondRune, err := h.getTotalBond(ctx)
+	if err != nil {
+		return ErrInternal(err, "fail to get total bond RUNE")
+	}
+	if totalStakeRUNE.GT(totalBondRune) {
+		ctx.Logger().Info(fmt.Sprintf("total stake RUNE(%s) is more than total Bond(%s)", totalStakeRUNE, totalBondRune))
+		return errStakeRUNEMoreThanBond
+	}
+
+	return nil
+}
+
+func (h StakeHandler) validateV13(ctx cosmos.Context, msg MsgStake, constAccessor constants.ConstantValues) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error(err.Error())
 		return errStakeFailValidation
