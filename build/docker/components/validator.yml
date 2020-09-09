@@ -48,6 +48,7 @@ services:
       NET: ${NET}
       PEER: ${PEER}
       SIGNER_PASSWD: ${SIGNER_PASSWD}
+      SIGNER_SEED_PHRASE: ${SIGNER_SEED_PHRASE:-}
     ports:
       - "26657:26657"
       - "26656:26656"
@@ -61,7 +62,7 @@ services:
       - ${HOME}/.thornode/validator/.thord:/root/.thord
       - ${HOME}/.thornode/validator/.thorcli:/root/.thorcli
       - ${HOME}/.thornode/validator/.bond:/root/.bond
-    command: [ "thord", "start", "--log_level", "main:info,state:debug,*:error", "--rpc.laddr", "tcp://0.0.0.0:26657"]
+    command: [ "thord", "start", "--log_level", "main:info,state:debug,*:error", "--rpc.laddr", "tcp://0.0.0.0:26657" ]
     logging:
       driver: "json-file"
       options:
