@@ -77,6 +77,7 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.
 
 		// this is just round the block height to the nearest 10
 		keyGenReq.BlockHeight = blockHeight / 10 * 10
+		keyGenReq.Version = kg.currentVersion.String()
 	}
 	ch := make(chan bool, 1)
 	defer close(ch)

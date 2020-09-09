@@ -23,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-var newJoinPartyVersion = semver.MustParse("0.13.0")
+var newJoinPartyVersion = semver.MustParse("0.14.0")
 
 // KeySign is a proxy between signer and TSS
 type KeySign struct {
@@ -196,7 +196,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 		if err != nil {
 			return "", "", fmt.Errorf("fail to get current thorchain block height: %w", err)
 		}
-
+		tssMsg.Version = s.currentVersion.String()
 		// this is just round the block height to the nearest 10
 		tssMsg.BlockHeight = blockHeight / 10 * 10
 	} else {
