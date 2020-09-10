@@ -23,7 +23,7 @@ if [ ! -f ~/.thord/config/genesis.json ]; then
     if [ $? -gt 0 ]; then
       if [ "$SIGNER_SEED_PHRASE" != "" ]; then
         printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli keys add $SIGNER_NAME --recover
-        NODE_PUB_KEY_ED25519=$(echo "$SIGNER_PASSWD\n$SIGNER_SEED_PHRASE\n" | thorcli ed25519)
+        NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$SIGNER_SEED_PHRASE\n" | thorcli ed25519)
       else
         RESULT=$(printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli keys add $SIGNER_NAME -o json 2>&1 >/dev/null)
         MNEMONIC=$(echo $RESULT|jq -r '.mnemonic')
