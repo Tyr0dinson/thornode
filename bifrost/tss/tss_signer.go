@@ -169,17 +169,11 @@ func getSignature(r, s string) ([]byte, error) {
 	return sigBytes, nil
 }
 
-func (s *KeySign) isNewJoinParty() bool {
-	// once the chain's version is greater than newJoinPartyVersion then , it doesn't need to check it again
-	if s.currentVersion.GTE(newJoinPartyVersion) {
+func (s *KeySign) isNewJoinParty(currentVersion semver.Version) bool {
+	if currentVersion.GTE(newJoinPartyVersion) {
 		return true
 	}
-	currentVersion, err := s.bridge.GetThorchainVersion()
-	if err != nil {
-		return false
-	}
-	s.currentVersion = currentVersion
-	return s.currentVersion.GTE(newJoinPartyVersion)
+	return false
 }
 
 // toLocalTSSSigner will send the request to local signer
@@ -188,15 +182,18 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 		PoolPubKey: poolPubKey,
 		Message:    sendmsg,
 	}
-
-	if s.isNewJoinParty() {
-		s.logger.Info().Msg("Let's try the new join party")
+	currentVersion, err := s.bridge.GetThorchainVersion()
+	if err != nil {
+		return "", "", fmt.Errorf("fail to get current thorchain version: %w", err)
+	}
+	tssMsg.Version = s.currentVersion.String()
+	if s.isNewJoinParty(currentVersion) {
+		s.logger.Info().Msg("new TSS join party")
 		// get current thorchain block height
 		blockHeight, err := s.bridge.GetBlockHeight()
 		if err != nil {
 			return "", "", fmt.Errorf("fail to get current thorchain block height: %w", err)
 		}
-		tssMsg.Version = s.currentVersion.String()
 		// this is just round the block height to the nearest 10
 		tssMsg.BlockHeight = blockHeight / 10 * 10
 	} else {
@@ -213,7 +210,6 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 	defer timer.Stop()
 
 	var keySignResp keysign.Response
-	var err error
 	go func() {
 		keySignResp, err = s.server.KeySign(tssMsg)
 		ch <- true

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/blang/semver"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/tss/go-tss/blame"
@@ -18,12 +17,11 @@ import (
 
 // KeyGen is
 type KeyGen struct {
-	keys           *thorclient.Keys
-	logger         zerolog.Logger
-	client         *http.Client
-	server         *tss.TssServer
-	bridge         *thorclient.ThorchainBridge
-	currentVersion semver.Version
+	keys   *thorclient.Keys
+	logger zerolog.Logger
+	client *http.Client
+	server *tss.TssServer
+	bridge *thorclient.ThorchainBridge
 }
 
 // NewTssKeyGen create a new instance of TssKeyGen which will look after TSS key stuff
@@ -42,19 +40,6 @@ func NewTssKeyGen(keys *thorclient.Keys, server *tss.TssServer, bridge *thorclie
 	}, nil
 }
 
-func (kg *KeyGen) isNewJoinParty() bool {
-	// once the chain's version is greater than newJoinPartyVersion then , it doesn't need to check it again
-	if kg.currentVersion.GTE(newJoinPartyVersion) {
-		return true
-	}
-	currentVersion, err := kg.bridge.GetThorchainVersion()
-	if err != nil {
-		return false
-	}
-	kg.currentVersion = currentVersion
-	return kg.currentVersion.GTE(newJoinPartyVersion)
-}
-
 func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.Blame, error) {
 	// No need to do key gen
 	if len(pKeys) == 0 {
@@ -67,25 +52,28 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.
 	keyGenReq := keygen.Request{
 		Keys: keys,
 	}
-	if kg.isNewJoinParty() {
-		kg.logger.Info().Msg("Let's try the new join party")
-		// get current thorchain block height
-		blockHeight, err := kg.bridge.GetBlockHeight()
-		if err != nil {
-			return common.EmptyPubKeySet, blame.Blame{}, fmt.Errorf("fail to get current thorchain block height: %w", err)
-		}
-
-		// this is just round the block height to the nearest 10
-		keyGenReq.BlockHeight = blockHeight / 10 * 10
-		keyGenReq.Version = kg.currentVersion.String()
+	currentVersion, err := kg.bridge.GetThorchainVersion()
+	if err != nil {
+		return common.EmptyPubKeySet, blame.Blame{}, fmt.Errorf("fail to get current chain version: %w", err)
 	}
+
+	kg.logger.Info().Msg("new TSS join party")
+	// get current THORChain block height
+	blockHeight, err := kg.bridge.GetBlockHeight()
+	if err != nil {
+		return common.EmptyPubKeySet, blame.Blame{}, fmt.Errorf("fail to get current thorchain block height: %w", err)
+	}
+
+	// this is just round the block height to the nearest 10
+	keyGenReq.BlockHeight = blockHeight / 10 * 10
+	keyGenReq.Version = currentVersion.String()
+
 	ch := make(chan bool, 1)
 	defer close(ch)
 	timer := time.NewTimer(30 * time.Minute)
 	defer timer.Stop()
 
 	var resp keygen.Response
-	var err error
 	go func() {
 		resp, err = kg.server.Keygen(keyGenReq)
 		ch <- true
