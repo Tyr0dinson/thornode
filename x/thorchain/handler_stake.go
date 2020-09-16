@@ -283,6 +283,33 @@ func calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset
 	return newPoolUnit, stakeUnits, nil
 }
 
+// calculatePoolUnits calculate the pool units and staker units
+// returns newPoolUnit,stakerUnit, error
+// r = rune staked;
+// a = asset staked
+// R = rune Balance (before)
+// A = asset Balance (before)
+// P = existing Pool Units
+// units = (P (a R + A r))/(2 A R)
+
+func calculatePoolUnitsV14(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+	if stakeRune.Add(poolRune).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
+	}
+	if stakeAsset.Add(poolAsset).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
+	}
+	if poolRune.IsZero() || poolAsset.IsZero() {
+		return stakeRune, stakeRune, nil
+	}
+	// (P (a R + A r))/(2 A R)
+	nominator1 := stakeAsset.Mul(poolRune).Add(poolAsset.Mul(stakeRune)).Mul(oldPoolUnits)
+	denominator := cosmos.NewUint(2).Mul(poolRune).Mul(poolAsset)
+	stakeUnits := nominator1.Quo(denominator)
+	newPoolUnit := oldPoolUnits.Add(stakeUnits)
+	return newPoolUnit, stakeUnits, nil
+}
+
 // getTotalBond
 func (h StakeHandler) getTotalBond(ctx cosmos.Context) (cosmos.Uint, error) {
 	nodeAccounts, err := h.keeper.ListNodeAccountsWithBond(ctx)

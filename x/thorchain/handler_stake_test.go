@@ -2,14 +2,16 @@ package thorchain
 
 import (
 	"errors"
+	"fmt"
+	"math/rand"
 
 	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type HandlerStakeSuite struct{}
@@ -448,6 +450,76 @@ func (HandlerStakeSuite) TestValidateStakeMessage(c *C) {
 	c.Assert(h.validateStakeMessage(ctx, ps, common.BNBAsset, txID, bnbAddress, assetAddress), Equals, nil)
 }
 
+func (HandlerStakeSuite) TestStakeAdhoc(c *C) {
+	oldPoolUnits := cosmos.ZeroUint()
+	poolRune := cosmos.ZeroUint()
+	poolAsset := cosmos.ZeroUint()
+
+	type staker struct {
+		idx   int
+		rune  cosmos.Uint
+		asset cosmos.Uint
+		unit  cosmos.Uint
+	}
+	var allStakers []staker
+
+	for i := 0; i < 1000; i++ {
+		stakeRune := cosmos.NewUint(uint64(rand.Uint32()))
+		stakeAsset := cosmos.NewUint(uint64(rand.Uint32()))
+
+		fmt.Printf("oldPoolUnit:%s , pool Rune: %s, pool Asset: %s ,staker rune: %s, staker asset: %s\n", oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset)
+		poolUnits, stakerUnits, err := calculatePoolUnitsV14(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("pool unit:%s , staker unit: %s \n", poolUnits, stakerUnits)
+		allStakers = append(allStakers, staker{
+			rune:  stakeRune,
+			asset: stakeAsset,
+			unit:  stakerUnits,
+		})
+
+		oldPoolUnits = poolUnits
+		poolRune = poolRune.Add(stakeRune)
+		poolAsset = poolAsset.Add(stakeAsset)
+
+		runeAfter := stakerUnits.Mul(poolRune).Quo(oldPoolUnits)
+		assetAfter := stakerUnits.Mul(poolAsset).Quo(oldPoolUnits)
+		if runeAfter.GT(stakeRune) && assetAfter.GT(stakeAsset) {
+			fmt.Printf("staker rune: %s , stake asset: %s , rune after: %s , asset after: %s \n", stakeRune, stakeAsset, runeAfter, assetAfter)
+			fmt.Println("STOP>>>>>>>>.")
+			return
+		}
+
+		// unstake one
+		if i > 100 {
+			idx := rand.Intn(len(allStakers))
+			fmt.Println("withdraw staker: ", idx)
+			s := allStakers[idx]
+			withdrawRune, withDrawAsset, _, err := calculateUnstake(poolUnits, poolRune, poolAsset, s.unit, cosmos.NewUint(10000))
+			if err != nil {
+				panic(err)
+			}
+			poolRune = common.SafeSub(poolRune, withdrawRune)
+			poolAsset = common.SafeSub(poolAsset, withDrawAsset)
+			allStakers = append(allStakers[:idx], allStakers[idx+1:]...)
+			oldPoolUnits = common.SafeSub(oldPoolUnits, s.unit)
+		}
+
+		for _, item := range allStakers {
+			runeNow := item.unit.Mul(poolRune).Quo(oldPoolUnits)
+			assetNow := item.unit.Mul(poolAsset).Quo(oldPoolUnits)
+			if runeNow.LT(item.rune) && assetNow.LT(item.asset) {
+				fmt.Printf("iternation %d\n", i)
+				fmt.Printf("staker: %d\n", item.idx)
+				fmt.Printf("I suppose to have %s RUNE, %s Asset, however I got %s RUNE, %s Asset\n", item.rune, item.asset, runeNow, assetNow)
+				fmt.Println("###############")
+				//return
+			}
+		}
+	}
+
+}
 func (HandlerStakeSuite) TestStake(c *C) {
 	ps := NewStakeTestKeeper()
 	ctx, _ := setupKeeperForTest(c)
