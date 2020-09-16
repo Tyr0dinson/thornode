@@ -310,6 +310,84 @@ func calculatePoolUnitsV14(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAs
 	return newPoolUnit, stakeUnits, nil
 }
 
+// P(rA + Ra) * (2-ABS((Ar-aR)/A(a+A))) / (4RA)
+func calculatePoolUnitsV14_1(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+	if stakeRune.Add(poolRune).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
+	}
+	if stakeAsset.Add(poolAsset).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
+	}
+	if poolRune.IsZero() || poolAsset.IsZero() {
+		return stakeRune, stakeRune, nil
+	}
+	// P(rA +Ra)
+	nominator1 := stakeAsset.Mul(poolRune).Add(poolAsset.Mul(stakeRune)).Mul(oldPoolUnits)
+	// A(a+A)
+	denomintor1 := poolAsset.Mul(stakeAsset.Add(poolAsset))
+	// Ar / A(a+A)
+	Ar := poolAsset.Mul(stakeRune).Quo(denomintor1)
+	// aR / A(a+A)
+	aR := stakeAsset.Mul(poolRune).Quo(denomintor1)
+	result := cosmos.ZeroUint()
+	if Ar.GT(aR) {
+		result = Ar.Sub(aR)
+	} else {
+		result = aR.Sub(Ar)
+	}
+
+	nominator2 := nominator1.MulUint64(2).Sub(result.Mul(nominator1))
+
+	denominator := cosmos.NewUint(4).Mul(poolRune).Mul(poolAsset)
+	stakeUnits := nominator2.Quo(denominator)
+	newPoolUnit := oldPoolUnits.Add(stakeUnits)
+	return newPoolUnit, stakeUnits, nil
+}
+
+// slipAdjustment = (1 - ABS((R a - r A)/((2 r + R) (a + A))))
+// units = ((P (a R + A r))/(2 A R))*slidAdjustment
+func calculatePoolUnitsV14_2(oldPoolUnits, poolRune, poolAsset, stakeRune, stakeAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+	if stakeRune.Add(poolRune).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
+	}
+	if stakeAsset.Add(poolAsset).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
+	}
+	if poolRune.IsZero() || poolAsset.IsZero() {
+		return stakeRune, stakeRune, nil
+	}
+	dPoolUnits := cosmos.NewDecFromBigInt(oldPoolUnits.BigInt())
+	dPoolRune := cosmos.NewDecFromBigInt(poolRune.BigInt())
+	dPoolAsset := cosmos.NewDecFromBigInt(poolAsset.BigInt())
+	dStakeRune := cosmos.NewDecFromBigInt(stakeRune.BigInt())
+	dStakeAsset := cosmos.NewDecFromBigInt(stakeAsset.BigInt())
+	// (2 r + R) (a + A)
+	denomintor1 := dStakeRune.MulInt64(2).Add(dPoolRune).Mul(dStakeAsset.Add(dPoolRune))
+	// Ra / ((2 r + R) (a + A))
+	aR := dStakeAsset.Mul(dPoolRune).Quo(denomintor1)
+	// rA / ((2 r + R) (a + A))
+	rA := dStakeRune.Mul(dPoolAsset).Quo(denomintor1)
+
+	// ABS((R a - r A)/((2 r + R) (a + A)))
+	result := cosmos.ZeroDec()
+	if aR.GT(rA) {
+		result = aR.Sub(rA)
+	} else {
+		result = rA.Sub(aR)
+	}
+	// (1 - ABS((R a - r A)/((2 r + R) (a + A))))
+	slipAdjustment := cosmos.NewDec(1).Sub(result)
+
+	// ((P (a R + A r))
+	norminator := dStakeAsset.Mul(dPoolRune).Add(dStakeRune.Mul(dPoolAsset)).Mul(dPoolUnits)
+	// 2AR
+	denominator := cosmos.NewDec(2).Mul(dPoolRune).Mul(dPoolAsset)
+	stakeUnits := norminator.Quo(denominator).Mul(slipAdjustment)
+	newPoolUnit := dPoolUnits.Add(stakeUnits)
+
+	return cosmos.NewUintFromBigInt(newPoolUnit.TruncateInt().BigInt()), cosmos.NewUintFromBigInt(stakeUnits.TruncateInt().BigInt()), nil
+}
+
 // getTotalBond
 func (h StakeHandler) getTotalBond(ctx cosmos.Context) (cosmos.Uint, error) {
 	nodeAccounts, err := h.keeper.ListNodeAccountsWithBond(ctx)
