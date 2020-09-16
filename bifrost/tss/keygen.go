@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/tss/go-tss/blame"
@@ -13,15 +14,18 @@ import (
 
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 // KeyGen is
 type KeyGen struct {
-	keys   *thorclient.Keys
-	logger zerolog.Logger
-	client *http.Client
-	server *tss.TssServer
-	bridge *thorclient.ThorchainBridge
+	keys           *thorclient.Keys
+	logger         zerolog.Logger
+	client         *http.Client
+	server         *tss.TssServer
+	bridge         *thorclient.ThorchainBridge
+	currentVersion semver.Version
+	lastCheck      time.Time
 }
 
 // NewTssKeyGen create a new instance of TssKeyGen which will look after TSS key stuff
@@ -40,6 +44,21 @@ func NewTssKeyGen(keys *thorclient.Keys, server *tss.TssServer, bridge *thorclie
 	}, nil
 }
 
+func (kg *KeyGen) getVersion() semver.Version {
+	requestTime := time.Now()
+	if !kg.currentVersion.Equals(semver.Version{}) && requestTime.Sub(kg.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
+		return kg.currentVersion
+	}
+	version, err := kg.bridge.GetThorchainVersion()
+	if err != nil {
+		kg.logger.Err(err).Msg("fail to get current thorchain version")
+		return kg.currentVersion
+	}
+	kg.currentVersion = version
+	kg.lastCheck = requestTime
+	return kg.currentVersion
+}
+
 func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.Blame, error) {
 	// No need to do key gen
 	if len(pKeys) == 0 {
@@ -52,12 +71,7 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.
 	keyGenReq := keygen.Request{
 		Keys: keys,
 	}
-	currentVersion, err := kg.bridge.GetThorchainVersion()
-	if err != nil {
-		return common.EmptyPubKeySet, blame.Blame{}, fmt.Errorf("fail to get current chain version: %w", err)
-	}
-
-	kg.logger.Info().Msg("new TSS join party")
+	currentVersion := kg.getVersion()
 	// get current THORChain block height
 	blockHeight, err := kg.bridge.GetBlockHeight()
 	if err != nil {

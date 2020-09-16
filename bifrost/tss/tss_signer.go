@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 var newJoinPartyVersion = semver.MustParse("0.14.0")
@@ -31,6 +32,7 @@ type KeySign struct {
 	server         *tss.TssServer
 	bridge         *thorclient.ThorchainBridge
 	currentVersion semver.Version
+	lastCheck      time.Time
 }
 
 // NewKeySign create a new instance of KeySign
@@ -176,17 +178,29 @@ func (s *KeySign) isNewJoinParty(currentVersion semver.Version) bool {
 	return false
 }
 
+func (s *KeySign) getVersion() semver.Version {
+	requestTime := time.Now()
+	if !s.currentVersion.Equals(semver.Version{}) && requestTime.Sub(s.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
+		return s.currentVersion
+	}
+	version, err := s.bridge.GetThorchainVersion()
+	if err != nil {
+		s.logger.Err(err).Msg("fail to get current thorchain version")
+		return s.currentVersion
+	}
+	s.currentVersion = version
+	s.lastCheck = requestTime
+	return s.currentVersion
+}
+
 // toLocalTSSSigner will send the request to local signer
 func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys common.PubKeys) (string, string, error) {
 	tssMsg := keysign.Request{
 		PoolPubKey: poolPubKey,
 		Message:    sendmsg,
 	}
-	currentVersion, err := s.bridge.GetThorchainVersion()
-	if err != nil {
-		return "", "", fmt.Errorf("fail to get current thorchain version: %w", err)
-	}
-	tssMsg.Version = s.currentVersion.String()
+	currentVersion := s.getVersion()
+	tssMsg.Version = currentVersion.String()
 	if s.isNewJoinParty(currentVersion) {
 		s.logger.Info().Msg("new TSS join party")
 		// get current thorchain block height
@@ -208,7 +222,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, sendmsg string, signerPubKeys com
 	defer close(ch)
 	timer := time.NewTimer(5 * time.Minute)
 	defer timer.Stop()
-
+	var err error
 	var keySignResp keysign.Response
 	go func() {
 		keySignResp, err = s.server.KeySign(tssMsg)
