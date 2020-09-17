@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ const (
 	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
 	RagnarokEndpoint         = "/thorchain/ragnarok"
+	MimirEndpoint            = "/thorchain/mimir"
 	ChainVersionEndpoint     = "/thorchain/version"
 )
 
@@ -486,4 +488,23 @@ func (b *ThorchainBridge) GetThorchainVersion() (semver.Version, error) {
 		return semver.Version{}, fmt.Errorf("fail to unmarshal THORChain version : %w", err)
 	}
 	return version.Current, nil
+}
+
+// Mimir - get mimir settings
+func (b *ThorchainBridge) GetMimir(key string) (int64, error) {
+	buf, s, err := b.getWithPath(MimirEndpoint)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get mimir: %w", err)
+	}
+	if s != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status code: %d", s)
+	}
+	values := make(map[string]string, 0)
+	if err := json.Unmarshal(buf, &values); err != nil {
+		return 0, fmt.Errorf("fail to unmarshal mimir: %w", err)
+	}
+	if val, ok := values[fmt.Sprintf("mimir//%s", strings.ToUpper(key))]; ok {
+		return strconv.ParseInt(val, 10, 64)
+	}
+	return 0, nil
 }

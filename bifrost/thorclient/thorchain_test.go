@@ -63,6 +63,9 @@ func (s *ThorchainSuite) SetUpSuite(c *C) {
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/ragnarok/ragnarok.json")
 		case strings.HasPrefix(req.RequestURI, ChainVersionEndpoint):
 			httpTestHandler(c, rw, "../../test/fixtures/endpoints/version/version.json")
+		case strings.HasPrefix(req.RequestURI, MimirEndpoint):
+			httpTestHandler(c, rw, "../../test/fixtures/endpoints/mimir/mimir.json")
+
 		}
 	}))
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
@@ -258,4 +261,10 @@ func (s *ThorchainSuite) TestGetThorchainVersion(c *C) {
 	result, err := s.bridge.GetThorchainVersion()
 	c.Assert(err, IsNil)
 	c.Assert(result.EQ(semver.MustParse("0.11.0")), Equals, true)
+}
+
+func (s *ThorchainSuite) TestGetMimir(c *C) {
+	result, err := s.bridge.GetMimir("HaltBNBChain")
+	c.Assert(err, IsNil)
+	c.Assert(result, Equals, int64(10))
 }
