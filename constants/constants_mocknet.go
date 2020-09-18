@@ -16,6 +16,7 @@ func init() {
 		CliTxCost:             0,
 		JailTimeKeygen:        10,
 		JailTimeKeysign:       10,
+		RotateRetryBlocks:     10,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondStakeRatio: false,
