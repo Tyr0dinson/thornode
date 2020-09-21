@@ -220,6 +220,11 @@ func (s *VaultManagerV15TestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(bondR.Uint64(), Equals, uint64(2641), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(stakerD.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
+
+	bondR, poolR, stakerD = vaultMgr.calcBlockRewards(cosmos.NewUint(1000*common.One), cosmos.NewUint(3001*common.One), cosmos.NewUint(1000*common.One), cosmos.ZeroUint(), emissionCurve, blocksPerYear)
+	c.Check(bondR.Uint64(), Equals, uint64(1320), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(1321), Commentf("%d", poolR.Uint64()))
+	c.Check(stakerD.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 }
 
 func (s *VaultManagerV15TestSuite) TestCalcPoolDeficit(c *C) {

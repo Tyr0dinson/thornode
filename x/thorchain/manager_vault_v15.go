@@ -718,6 +718,10 @@ func (vm *VaultMgrV15) getPoolShare(totalStaked, totalBonded, totalRewards cosmo
 	if totalStaked.GTE(totalBonded) { // Zero payments to stakers when staked == bonded
 		return cosmos.ZeroUint()
 	}
-	factor := totalBonded.Add(totalStaked).Quo(common.SafeSub(totalBonded, totalStaked)) // (y + x) / (y - x)
-	return totalRewards.Quo(factor)
+
+	// factor = (y + x) / (y - x).
+	// pool share = 1 / factor
+	total := totalBonded.Add(totalStaked)
+	part := common.SafeSub(totalBonded, totalStaked)
+	return common.GetShare(part, total, totalRewards)
 }
