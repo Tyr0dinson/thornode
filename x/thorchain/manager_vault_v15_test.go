@@ -75,7 +75,7 @@ func (s *VaultManagerV15TestSuite) TestRagnarokChain(c *C) {
 
 	mgr := NewDummyMgr()
 
-	vaultMgr := NewVaultMgrV1(keeper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(keeper, mgr.TxOutStore(), mgr.EventMgr())
 
 	err := vaultMgr.manageChains(ctx, mgr, constAccessor)
 	c.Assert(err, IsNil)
@@ -105,7 +105,7 @@ func (s *VaultManagerV15TestSuite) TestRagnarokChain(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr1 := NewManagers(helper)
 	mgr1.BeginBlock(ctx)
-	vaultMgr1 := NewVaultMgrV1(helper, mgr1.TxOutStore(), mgr1.EventMgr())
+	vaultMgr1 := NewVaultMgrV15(helper, mgr1.TxOutStore(), mgr1.EventMgr())
 	// fail to get active nodes should error out
 	helper.failToListActiveAccounts = true
 	c.Assert(vaultMgr1.ragnarokChain(ctx, common.BNBChain, 1, mgr, constAccessor), NotNil)
@@ -134,7 +134,7 @@ func (s *VaultManagerV15TestSuite) TestUpdateVaultData(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 
 	// fail to get VaultData should return error
 	helper.failGetVaultData = true
@@ -185,7 +185,7 @@ func (s *VaultManagerV15TestSuite) TestUpdateVaultData(c *C) {
 
 func (s *VaultManagerV15TestSuite) TestCalcBlockRewards(c *C) {
 	mgr := NewDummyMgr()
-	vaultMgr := NewVaultMgrV1(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
 
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
@@ -233,7 +233,7 @@ func (s *VaultManagerV15TestSuite) TestCalcPoolDeficit(c *C) {
 	totalFees := cosmos.NewUint(4000)
 
 	mgr := NewDummyMgr()
-	vaultMgr := NewVaultMgrV1(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
 
 	stakerDeficit := cosmos.NewUint(1120)
 	amt1 := vaultMgr.calcPoolDeficit(stakerDeficit, totalFees, pool1Fees)
@@ -251,7 +251,7 @@ func (*VaultManagerV15TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx = ctx.WithBlockHeight(1)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// no active account
 	c.Assert(vaultMgr.EndBlock(ctx, mgr, constAccessor), NotNil)
 
@@ -276,7 +276,7 @@ func (*VaultManagerV15TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx = ctx.WithBlockHeight(1)
 	mgr = NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr = NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr = NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	c.Assert(vaultMgr.EndBlock(ctx, mgr, constAccessor), NotNil)
 	helper.failToListActiveAccounts = false
@@ -300,7 +300,7 @@ func (*VaultManagerV15TestSuite) TestGetTotalActiveBond(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	bond, err := vaultMgr.getTotalActiveBond(ctx)
 	c.Assert(err, NotNil)
@@ -317,7 +317,7 @@ func (*VaultManagerV15TestSuite) TestGetTotalStakedRune(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
 	p.BalanceRune = cosmos.NewUint(common.One * 100)
@@ -335,7 +335,7 @@ func (*VaultManagerV15TestSuite) TestPayPoolRewards(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
 	p.BalanceRune = cosmos.NewUint(common.One * 100)
@@ -352,7 +352,7 @@ func (*VaultManagerV15TestSuite) TestFindChainsToRetire(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// fail to get active asgard vault
 	helper.failGetActiveAsgardVault = true
 	chains, err := vaultMgr.findChainsToRetire(ctx)
@@ -373,7 +373,7 @@ func (*VaultManagerV15TestSuite) TestRecallChainFunds(c *C) {
 	helper := NewVaultGenesisSetupTestHelper(k)
 	mgr := NewManagers(helper)
 	mgr.BeginBlock(ctx)
-	vaultMgr := NewVaultMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
+	vaultMgr := NewVaultMgrV15(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	c.Assert(vaultMgr.recallChainFunds(ctx, common.BNBChain, mgr), NotNil)
 	helper.failToListActiveAccounts = false
