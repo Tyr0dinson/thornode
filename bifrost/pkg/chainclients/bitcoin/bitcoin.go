@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
@@ -296,7 +295,6 @@ func (c *Client) confirmTx(txHash *chainhash.Hash) bool {
 func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	block, err := c.getBlock(height)
 	if err != nil {
-		time.Sleep(c.cfg.BlockScanner.BlockHeightDiscoverBackoff)
 		if rpcErr, ok := err.(*btcjson.RPCError); ok && rpcErr.Code == btcjson.ErrRPCInvalidParameter {
 			// this means the tx had been broadcast to chain, it must be another signer finished quicker then us
 			return types.TxIn{}, btypes.UnavailableBlock
@@ -378,7 +376,8 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 
 		sender, err := c.getSender(&tx)
 		if err != nil {
-			return types.TxIn{}, fmt.Errorf("fail to get sender from tx: %w", err)
+			c.logger.Warn().Msgf("fail to get sender from tx: %v", err)
+			continue
 		}
 		memo, err := c.getMemo(&tx)
 		if err != nil {
@@ -390,6 +389,9 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 
 		output := c.getOutput(sender, &tx)
+		if len(output.ScriptPubKey.Addresses) == 0 {
+			continue
+		}
 		amount, err := btcutil.NewAmount(output.Value)
 		if err != nil {
 			return types.TxIn{}, fmt.Errorf("fail to parse float64: %w", err)
