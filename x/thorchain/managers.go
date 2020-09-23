@@ -231,7 +231,9 @@ func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventM
 
 // GetVaultManager retrieve a VaultManager that is compatible with the given version
 func GetVaultManager(keeper keeper.Keeper, version semver.Version, txOutStore TxOutStore, eventMgr EventManager) (VaultManager, error) {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.15.0")) {
+		return NewVaultMgrV15(keeper, txOutStore, eventMgr), nil
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return NewVaultMgrV1(keeper, txOutStore, eventMgr), nil
 	}
 	return nil, errInvalidVersion
