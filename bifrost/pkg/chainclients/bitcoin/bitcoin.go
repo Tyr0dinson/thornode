@@ -373,10 +373,14 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		if c.ignoreTx(&tx) {
 			continue
 		}
-
 		sender, err := c.getSender(&tx)
 		if err != nil {
 			c.logger.Warn().Msgf("fail to get sender from tx: %v", err)
+			continue
+		}
+		output, err := c.getOutput(sender, &tx)
+		if err != nil {
+			c.logger.Warn().Msgf("fail to get output from tx: %v", err)
 			continue
 		}
 		memo, err := c.getMemo(&tx)
@@ -387,8 +391,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		if err != nil {
 			return types.TxIn{}, fmt.Errorf("fail to get gas from tx: %w", err)
 		}
-
-		output := c.getOutput(sender, &tx)
 		amount, err := btcutil.NewAmount(output.Value)
 		if err != nil {
 			return types.TxIn{}, fmt.Errorf("fail to parse float64: %w", err)
@@ -457,13 +459,16 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult) bool {
 // back to the vault and we need to select the other output
 // as Bifrost already filtered the txs to only have here
 // txs with max 2 outputs with values
-func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult) btcjson.Vout {
+func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult) (btcjson.Vout, error) {
 	for _, vout := range tx.Vout {
+		if len(vout.ScriptPubKey.Addresses) != 1 {
+			return btcjson.Vout{}, fmt.Errorf("no vout address available")
+		}
 		if vout.Value > 0 && vout.ScriptPubKey.Addresses[0] != sender {
-			return vout
+			return vout, nil
 		}
 	}
-	return btcjson.Vout{}
+	return btcjson.Vout{}, fmt.Errorf("fail to get output matching criteria")
 }
 
 // getSender returns sender address for a btc tx, using vin:0
