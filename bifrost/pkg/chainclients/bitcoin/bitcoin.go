@@ -389,9 +389,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 
 		output := c.getOutput(sender, &tx)
-		if len(output.ScriptPubKey.Addresses) == 0 {
-			continue
-		}
 		amount, err := btcutil.NewAmount(output.Value)
 		if err != nil {
 			return types.TxIn{}, fmt.Errorf("fail to parse float64: %w", err)
@@ -437,14 +434,15 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult) bool {
 	if tx.Vout[0].Value == 0 || tx.Vin[0].Txid == "" {
 		return true
 	}
-	// TODO check what we do if get multiple addresses
-	if len(tx.Vout[0].ScriptPubKey.Addresses) != 1 {
-		return true
-	}
 	countWithOutput := 0
-	for _, vout := range tx.Vout {
+	for idx, vout := range tx.Vout {
 		if vout.Value > 0 {
 			countWithOutput++
+		}
+		// check we have one address on the first 2 outputs
+		// TODO check what we do if get multiple addresses
+		if idx < 2 && len(vout.ScriptPubKey.Addresses) != 1 {
+			return true
 		}
 	}
 	if countWithOutput > 2 {
