@@ -385,7 +385,8 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 		memo, err := c.getMemo(&tx)
 		if err != nil {
-			return types.TxIn{}, fmt.Errorf("fail to get memo from tx: %w", err)
+			c.logger.Warn().Msgf("fail to get memo from tx: %v", err)
+			continue
 		}
 		gas, err := c.getGas(&tx)
 		if err != nil {
@@ -502,7 +503,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 	}
 	decoded, err := hex.DecodeString(opreturns)
 	if err != nil {
-		return "", fmt.Errorf("fail to decode OP_RETURN string")
+		return "", fmt.Errorf("fail to decode OP_RETURN string: %s", opreturns)
 	}
 	return string(decoded), nil
 }
