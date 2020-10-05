@@ -496,9 +496,11 @@ func (c *Client) getSender(tx *btcjson.TxRawResult) (string, error) {
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 	var opreturns string
 	for _, vout := range tx.Vout {
-		if strings.HasPrefix(vout.ScriptPubKey.Asm, "OP_RETURN") {
+		if vout.ScriptPubKey.Type == "nulldata" {
 			opreturn := strings.Split(vout.ScriptPubKey.Asm, " ")
-			opreturns += opreturn[1]
+			if len(opreturn) == 2 {
+				opreturns += opreturn[1]
+			}
 		}
 	}
 	decoded, err := hex.DecodeString(opreturns)
