@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -22,7 +23,8 @@ func (s TxOutStoreV16Suite) TestAddGasFees(c *C) {
 }
 
 func (s TxOutStoreV16Suite) TestAddOutTxItem(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
+	version := semver.MustParse("0.16.0")
+	w := getHandlerTestWrapperWithVersion(c, 1, true, true, version)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
@@ -31,8 +33,11 @@ func (s TxOutStoreV16Suite) TestAddOutTxItem(c *C) {
 	w.keeper.SetVault(w.ctx, vault)
 
 	acc1 := GetRandomNodeAccount(NodeActive)
+	acc1.Version = version
 	acc2 := GetRandomNodeAccount(NodeActive)
+	acc2.Version = version
 	acc3 := GetRandomNodeAccount(NodeActive)
+	acc3.Version = version
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
@@ -117,7 +122,8 @@ func (s TxOutStoreV16Suite) TestAddOutTxItem(c *C) {
 }
 
 func (s TxOutStoreV16Suite) TestAddOutTxItemWithoutBFT(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
+	version := semver.MustParse("0.16.0")
+	w := getHandlerTestWrapperWithVersion(c, 1, true, true, version)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -139,4 +145,39 @@ func (s TxOutStoreV16Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(19*common.One)), Equals, true)
+}
+
+func (s TxOutStoreV16Suite) TestAsgardDeductedOutstandingBalance(c *C) {
+	version := semver.MustParse("0.16.0")
+	w := getHandlerTestWrapperWithVersion(c, 1024, true, true, version)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
+	}
+	w.keeper.SetVault(w.ctx, vault)
+	inTxID := GetRandomTxHash()
+	item := &TxOutItem{
+		Chain:     common.BNBChain,
+		ToAddress: GetRandomBNBAddress(),
+		InHash:    inTxID,
+		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
+	}
+	txOutStore := w.mgr.TxOutStore()
+	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item)
+	c.Assert(err, IsNil)
+	c.Assert(success, Equals, true)
+	newHeight := w.ctx.BlockHeight() + 1
+	w.ctx = w.ctx.WithBlockHeight(newHeight)
+
+	// asgard vault has an outstanding tx out item , it doesn't have enough to fulfil the outbound
+	item1 := &TxOutItem{
+		Chain:     common.BNBChain,
+		ToAddress: GetRandomBNBAddress(),
+		InHash:    GetRandomTxHash(),
+		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(90*common.One)),
+	}
+	success, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1)
+	c.Assert(err, NotNil)
+	c.Assert(success, Equals, false)
 }
