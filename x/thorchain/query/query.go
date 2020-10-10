@@ -62,7 +62,7 @@ var (
 	QueryMimirValues        = Query{Key: "mimirs", EndpointTemplate: "/%s/mimir"}
 	QueryBan                = Query{Key: "ban", EndpointTemplate: "/%s/ban/{%s}"}
 	QueryRagnarok           = Query{Key: "ragnarok", EndpointTemplate: "/%s/ragnarok"}
-	QueryPendingOutbound    = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/outbound/pending"}
+	QueryPendingOutbound    = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
 )
 
 // Queries all queries

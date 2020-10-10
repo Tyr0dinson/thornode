@@ -442,7 +442,11 @@ func (tos *TxOutStorageV16) deductVaultPendingOutboundBalance(ctx cosmos.Context
 	// go back SigningTransactionPeriod blocks to see whether there are outstanding tx, the vault need to send out
 	// if there is , deduct it from their balance
 	signingPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	for i := block.Height - signingPeriod; i < block.Height; i++ {
+	startHeight := block.Height - signingPeriod
+	if startHeight < 1 {
+		startHeight = 1
+	}
+	for i := startHeight; i < block.Height; i++ {
 		blockOut, err := tos.keeper.GetTxOut(ctx, i)
 		if err != nil {
 			ctx.Logger().Error("fail to get block tx out", "error", err)
