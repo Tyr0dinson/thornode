@@ -30,7 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/signer"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/cmd"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // THORNode define version / revision here , so THORNode could inject the version from CI pipeline if THORNode want to
@@ -125,8 +125,8 @@ func main() {
 		app.DefaultCLIHome,
 		common.TssConfig{
 			KeyGenTimeout:   240 * time.Second, // must be shorter than cosntants.JailTimeKeygen
-			KeySignTimeout:  120 * time.Second, // must be shorter than constants.JailTimeKeysign
-			PartyTimeout:    20 * time.Second,
+			KeySignTimeout:  180 * time.Second, // must be shorter than constants.JailTimeKeysign
+			PartyTimeout:    30 * time.Second,
 			PreParamTimeout: 5 * time.Minute,
 		},
 		getLocalPreParam(*tssPreParam),
