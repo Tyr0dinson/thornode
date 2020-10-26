@@ -79,6 +79,12 @@ func swap(ctx cosmos.Context,
 		tx.Gas = nil
 		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
 		swapEvents = append(swapEvents, swapEvt)
+
+		msg := NewMsgSwap(tx, target, destination, tradeTarget, cosmos.AccAddress{})
+		if err := keeper.SetSwapQueueItem(ctx, msg); err != nil {
+			ctx.Logger().Error("fail to add swap to queue", "error", err)
+		}
+		return amt, swapEvents, nil
 	}
 
 	assetAmount, poolBefore, pool, swapEvt, swapErr := swapOne(ctx, keeper, tx, target, destination, tradeTarget, transactionFee)
