@@ -38,7 +38,7 @@ import (
 type Binance struct {
 	logger          zerolog.Logger
 	cfg             config.ChainConfiguration
-	cdc             *codec.Codec
+	cdc             *codec.AminoCodec
 	chainID         string
 	isTestNet       bool
 	client          *http.Client

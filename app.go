@@ -2,10 +2,20 @@ package app
 
 import (
 	"encoding/json"
+	"io"
 	"os"
+	"path/filepath"
 
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/codec/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
+	"github.com/cosmos/cosmos-sdk/x/mint"
 	"github.com/cosmos/cosmos-sdk/x/supply"
+	tmjson "github.com/tendermint/tendermint/libs/json"
+	"honnef.co/go/tools/version"
+
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
 	tmos "github.com/tendermint/tendermint/libs/os"
@@ -19,8 +29,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/cosmos-sdk/x/params"
-	"github.com/cosmos/cosmos-sdk/x/staking"
 
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	mintkeeper "github.com/cosmos/cosmos-sdk/x/mint/keeper"
+	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
+	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
+	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
@@ -29,10 +45,10 @@ const appPoolData = "thorchain"
 
 var (
 	// default home directories for the application CLI
-	DefaultCLIHome = os.ExpandEnv("$HOME/.thorcli")
+	DefaultCLIHome string
 
 	// DefaultNodeHome sets the folder where the applcation data and configuration will be stored
-	DefaultNodeHome = os.ExpandEnv("$HOME/.thord")
+	DefaultNodeHome string
 
 	// ModuleBasicManager is in charge of setting up basic module elemnets
 	ModuleBasics = module.NewBasicManager(
@@ -40,40 +56,54 @@ var (
 		auth.AppModuleBasic{},
 		bank.AppModuleBasic{},
 		params.AppModuleBasic{},
-		supply.AppModuleBasic{},
 		thorchain.AppModule{},
 	)
 
 	// account permissions
 	maccPerms = map[string][]string{
-		auth.FeeCollectorName: nil,
-		thorchain.ModuleName:  {supply.Minter, supply.Burner},
-		thorchain.ReserveName: {},
-		thorchain.BondName:    {supply.Staking},
-		thorchain.AsgardName:  {},
+		authtypes.FeeCollectorName: nil,
+		thorchain.ModuleName:       {authtypes.Minter, authtypes.Burner},
+		thorchain.ReserveName:      {},
+		thorchain.BondName:         {authtypes.Staking},
+		thorchain.AsgardName:       {},
+	}
+	// module accounts that are allowed to receive tokens
+	allowedReceivingModAcc = map[string]bool{
+		distrtypes.ModuleName: true,
 	}
 )
 
+func init() {
+	userHomeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
+	DefaultNodeHome = filepath.Join(userHomeDir, ".thord")
+	DefaultCLIHome = filepath.Join(userHomeDir, ".thorcli")
+}
+
 // MakeCodec generates the necessary codecs for Amino
-func MakeCodec() *codec.Codec {
-	cdc := codec.New()
-	ModuleBasics.RegisterCodec(cdc)
-	sdk.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
-	return cdc
+func MakeCodecs() (codec.Marshaler, *codec.LegacyAmino) {
+	config := MakeEncodingConfig()
+	return config.Marshaler, config.Amino
 }
 
 type thorChainApp struct {
 	*bam.BaseApp
-	cdc *codec.Codec
+	legacyAmino       *codec.LegacyAmino
+	appCodec          codec.Marshaler
+	interfaceRegistry types.InterfaceRegistry
+
+	invCheckPeriod uint
 
 	keys  map[string]*sdk.KVStoreKey
 	tkeys map[string]*sdk.TransientStoreKey
 	// Keepers
-	accountKeeper   auth.AccountKeeper
-	bankKeeper      bank.Keeper
-	supplyKeeper    supply.Keeper
-	paramsKeeper    params.Keeper
+	accountKeeper   authkeeper.AccountKeeper
+	bankKeeper      bankkeeper.Keeper
+	supplyKeeper    mintkeeper.Keeper
+	paramsKeeper    paramskeeper.Keeper
 	thorchainKeeper keeper.Keeper
 
 	// Module Manager
@@ -81,51 +111,54 @@ type thorChainApp struct {
 }
 
 // NewThorchainApp is a constructor function for thorChainApp
-func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.BaseApp)) *thorChainApp {
+func NewThorchainApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool, skipUpgradeHeights map[int64]bool,
+	homePath string, invCheckPeriod uint, encodingConfig EncodingConfig, baseAppOptions ...func(*baseapp.BaseApp)) *thorChainApp {
 	// First define the top level codec that will be shared by the different modules
-	cdc := MakeCodec()
-
+	appCodec := encodingConfig.Marshaler
+	legacyAmino := encodingConfig.Amino
+	interfaceRegistry := encodingConfig.InterfaceRegistry
 	// BaseApp handles interactions with Tendermint through the ABCI protocol
-	bApp := bam.NewBaseApp(appPoolData, logger, db, auth.DefaultTxDecoder(cdc), baseAppOptions...)
-	keys := sdk.NewKVStoreKeys(bam.MainStoreKey, auth.StoreKey, supply.StoreKey, thorchain.StoreKey, params.StoreKey)
-	tkeys := sdk.NewTransientStoreKeys(staking.TStoreKey, params.TStoreKey)
+	bApp := bam.NewBaseApp(appPoolData, logger, db, encodingConfig.TxConfig.TxDecoder(), baseAppOptions...)
+	bApp.SetCommitMultiStoreTracer(traceStore)
+	bApp.SetAppVersion(version.Version)
+	bApp.SetInterfaceRegistry(interfaceRegistry)
+	bApp.GRPCQueryRouter().RegisterSimulateService(bApp.Simulate, interfaceRegistry)
+
+	keys := sdk.NewKVStoreKeys(authtypes.StoreKey, minttypes.StoreKey, thorchain.StoreKey, paramstypes.StoreKey)
+	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
 
 	// Here you initialize your application with the store keys it requires
 	app := &thorChainApp{
-		BaseApp: bApp,
-		cdc:     cdc,
-
-		keys:  keys,
-		tkeys: tkeys,
+		BaseApp:           bApp,
+		legacyAmino:       legacyAmino,
+		appCodec:          appCodec,
+		interfaceRegistry: interfaceRegistry,
+		invCheckPeriod:    invCheckPeriod,
+		keys:              keys,
+		tkeys:             tkeys,
 	}
 
 	// The ParamsKeeper handles parameter storage for the application
-	app.paramsKeeper = params.NewKeeper(app.cdc, keys[params.StoreKey], tkeys[params.TStoreKey])
+	app.paramsKeeper = initParamsKeeper(appCodec, legacyAmino, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
+
+	// set the BaseApp's parameter store
+	bApp.SetParamStore(app.paramsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramskeeper.ConsensusParamsKeyTable()))
 	// Set specific supspaces
-	authSubspace := app.paramsKeeper.Subspace(auth.DefaultParamspace)
-	bankSupspace := app.paramsKeeper.Subspace(bank.DefaultParamspace)
-
-	// The AccountKeeper handles address -> account lookups
-	app.accountKeeper = auth.NewAccountKeeper(
-		app.cdc,
-		keys[auth.StoreKey],
-		authSubspace,
-		auth.ProtoBaseAccount,
+	authSubspace, _ := app.paramsKeeper.GetSubspace(authtypes.ModuleName)
+	bankSupspace, _ := app.paramsKeeper.GetSubspace(banktypes.ModuleName)
+	mintSubspace, _ := app.paramsKeeper.GetSubspace(minttypes.ModuleName)
+	// add keepers
+	app.accountKeeper = authkeeper.NewAccountKeeper(
+		appCodec, keys[authtypes.StoreKey], authSubspace, authtypes.ProtoBaseAccount, maccPerms,
+	)
+	app.bankKeeper = bankkeeper.NewBaseKeeper(
+		appCodec, keys[banktypes.StoreKey], app.accountKeeper, bankSupspace, app.BlockedAddrs(),
 	)
 
-	// The BankKeeper allows you perform sdk.Coins interactions
-	app.bankKeeper = bank.NewBaseKeeper(
-		app.accountKeeper,
-		bankSupspace,
-		app.ModuleAccountAddrs(),
+	app.supplyKeeper = mintkeeper.NewKeeper(
+		appCodec, keys[minttypes.StoreKey], mintSubspace, nil,
+		app.accountKeeper, app.bankKeeper, authtypes.FeeCollectorName,
 	)
-
-	app.supplyKeeper = supply.NewKeeper(
-		app.cdc,
-		keys[supply.StoreKey],
-		app.accountKeeper,
-		app.bankKeeper,
-		maccPerms)
 
 	// thorchain keeper holds thorchain data/kvstore
 	app.thorchainKeeper = keeper.NewKVStore(
@@ -138,7 +171,7 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 	app.mm = module.NewManager(
 		auth.NewAppModule(app.accountKeeper),
 		bank.NewAppModule(app.bankKeeper, app.accountKeeper),
-		supply.NewAppModule(app.supplyKeeper, app.accountKeeper),
+		mint.NewAppModule(app.supplyKeeper, app.accountKeeper),
 		thorchain.NewAppModule(app.thorchainKeeper, app.bankKeeper, app.supplyKeeper),
 	)
 
@@ -173,7 +206,7 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 	app.MountKVStores(keys)
 	app.MountTransientStores(tkeys)
 
-	err := app.LoadLatestVersion(app.keys[bam.MainStoreKey])
+	err := app.LoadLatestVersion()
 	if err != nil {
 		tmos.Exit(err.Error())
 	}
@@ -185,18 +218,17 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 type GenesisState map[string]json.RawMessage
 
 func NewDefaultGenesisState() GenesisState {
-	return ModuleBasics.DefaultGenesis()
+	encCfg := MakeEncodingConfig()
+	return ModuleBasics.DefaultGenesis(encCfg.Marshaler)
+
 }
 
 func (app *thorChainApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
 	var genesisState GenesisState
-
-	err := app.cdc.UnmarshalJSON(req.AppStateBytes, &genesisState)
-	if err != nil {
+	if err := tmjson.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 		panic(err)
 	}
-
-	return app.mm.InitGenesis(ctx, genesisState)
+	return app.mm.InitGenesis(ctx, app.appCodec, genesisState)
 }
 
 func (app *thorChainApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
@@ -208,14 +240,36 @@ func (app *thorChainApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) a
 }
 
 func (app *thorChainApp) LoadHeight(height int64) error {
-	return app.LoadVersion(height, app.keys[bam.MainStoreKey])
+	return app.LoadVersion(height)
+}
+
+// BlockedAddrs returns all the app's module account addresses that are not
+// allowed to receive external tokens.
+func (app *thorChainApp) BlockedAddrs() map[string]bool {
+	blockedAddrs := make(map[string]bool)
+	for acc := range maccPerms {
+		blockedAddrs[authtypes.NewModuleAddress(acc).String()] = !allowedReceivingModAcc[acc]
+	}
+
+	return blockedAddrs
+}
+
+// initParamsKeeper init params keeper and its subspaces
+func initParamsKeeper(appCodec codec.BinaryMarshaler, legacyAmino *codec.LegacyAmino, key, tkey sdk.StoreKey) paramskeeper.Keeper {
+	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+
+	paramsKeeper.Subspace(authtypes.ModuleName)
+	paramsKeeper.Subspace(banktypes.ModuleName)
+	paramsKeeper.Subspace(minttypes.ModuleName)
+
+	return paramsKeeper
 }
 
 // ModuleAccountAddrs returns all the app's module account addresses.
 func (app *thorChainApp) ModuleAccountAddrs() map[string]bool {
 	modAccAddrs := make(map[string]bool)
 	for acc := range maccPerms {
-		modAccAddrs[supply.NewModuleAddress(acc).String()] = true
+		modAccAddrs[authtypes.NewModuleAddress(acc).String()] = true
 	}
 
 	return modAccAddrs
