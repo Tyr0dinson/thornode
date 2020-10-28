@@ -2,16 +2,21 @@ package types
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 )
 
-var ModuleCdc = codec.New()
+var (
+	amino     = codec.NewLegacyAmino()
+	ModuleCdc = codec.NewAminoCodec(amino)
+)
 
 func init() {
-	RegisterCodec(ModuleCdc)
+	RegisterCodec(amino)
+	cryptocodec.RegisterCrypto(amino)
 }
 
 // RegisterCodec registers concrete types on the Amino codec
-func RegisterCodec(cdc *codec.Codec) {
+func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(MsgSwap{}, "thorchain/Swap", nil)
 	cdc.RegisterConcrete(MsgTssPool{}, "thorchain/TssPool", nil)
 	cdc.RegisterConcrete(MsgTssKeysignFail{}, "thorchain/TssKeysignFail", nil)
@@ -40,4 +45,5 @@ func RegisterCodec(cdc *codec.Codec) {
 	cdc.RegisterConcrete(MsgRagnarok{}, "thorchain/MsgRagnarok", nil)
 	cdc.RegisterConcrete(MsgRefundTx{}, "thorchain/MsgRefundTx", nil)
 	cdc.RegisterConcrete(MsgSend{}, "thorchain/MsgSend", nil)
+
 }

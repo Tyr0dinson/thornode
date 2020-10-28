@@ -8,6 +8,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
@@ -37,6 +38,8 @@ import (
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
@@ -165,13 +168,13 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLat
 		app.bankKeeper,
 		app.supplyKeeper,
 		keys[thorchain.StoreKey],
-		app.cdc,
+		appCodec,
 	)
 
 	app.mm = module.NewManager(
-		auth.NewAppModule(app.accountKeeper),
-		bank.NewAppModule(app.bankKeeper, app.accountKeeper),
-		mint.NewAppModule(app.supplyKeeper, app.accountKeeper),
+		auth.NewAppModule(appCodec, app.accountKeeper, simulation.RandomGenesisAccounts),
+		bank.NewAppModule(appCodec, app.bankKeeper, app.accountKeeper),
+		mint.NewAppModule(appCodec, app.supplyKeeper, app.accountKeeper),
 		thorchain.NewAppModule(app.thorchainKeeper, app.bankKeeper, app.supplyKeeper),
 	)
 
@@ -280,10 +283,10 @@ func (app *thorChainApp) ModuleAccountAddrs() map[string]bool {
 func (app *thorChainApp) ExportAppStateAndValidators(forZeroHeight bool, jailWhiteList []string,
 ) (appState json.RawMessage, validators []tmtypes.GenesisValidator, err error) {
 	// as if they could withdraw from the start of the next block
-	ctx := app.NewContext(true, abci.Header{Height: app.LastBlockHeight()})
+	ctx := app.NewContext(true, tmproto.Header{Height: app.LastBlockHeight()})
 
-	genState := app.mm.ExportGenesis(ctx)
-	appState, err = codec.MarshalJSONIndent(app.cdc, genState)
+	genState := app.mm.ExportGenesis(ctx, app.appCodec)
+	appState, err = codec.MarshalJSONIndent(app.legacyAmino, genState)
 	if err != nil {
 		return nil, nil, err
 	}

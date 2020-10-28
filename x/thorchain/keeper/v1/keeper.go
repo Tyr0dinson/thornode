@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/x/bank"
-	"github.com/cosmos/cosmos-sdk/x/supply"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	mintkeeper "github.com/cosmos/cosmos-sdk/x/mint/keeper"
+	gogotypes "github.com/gogo/protobuf/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -66,15 +67,15 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
-	coinKeeper   bank.Keeper
-	supplyKeeper supply.Keeper
+	coinKeeper   bankkeeper.Keeper
+	supplyKeeper mintkeeper.Keeper
 	storeKey     cosmos.StoreKey // Unexposed key to access store from cosmos.Context
-	cdc          *codec.Codec    // The wire codec for binary encoding/decoding.
+	cdc          codec.Marshaler
 	version      int64
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bank.Keeper, supplyKeeper supply.Keeper, storeKey cosmos.StoreKey, cdc *codec.Codec) KVStore {
+func NewKVStore(coinKeeper bankkeeper.Keeper, supplyKeeper mintkeeper.Keeper, storeKey cosmos.StoreKey, cdc codec.Marshaler) KVStore {
 	return KVStore{
 		coinKeeper:   coinKeeper,
 		supplyKeeper: supplyKeeper,
@@ -85,17 +86,17 @@ func NewKVStore(coinKeeper bank.Keeper, supplyKeeper supply.Keeper, storeKey cos
 }
 
 // Cdc return the amino codec
-func (k KVStore) Cdc() *codec.Codec {
+func (k KVStore) Cdc() codec.Marshaler {
 	return k.cdc
 }
 
 // Supply return the keeper from supply handler
-func (k KVStore) Supply() supply.Keeper {
+func (k KVStore) Supply() mintkeeper.Keeper {
 	return k.supplyKeeper
 }
 
 // CoinKeeper return the keeper from bank handler
-func (k KVStore) CoinKeeper() bank.Keeper {
+func (k KVStore) CoinKeeper() bankkeeper.Keeper {
 	return k.coinKeeper
 }
 
@@ -117,10 +118,10 @@ func (k KVStore) GetStoreVersion(ctx cosmos.Context) int64 {
 		// thornode start at version 0.6.0, thus when there is no store version , it return 6
 		return 6
 	}
-	var value int64
+	val := gogotypes.Int64Value{}
 	buf := store.Get([]byte(key))
-	k.cdc.MustUnmarshalBinaryBare(buf, &value)
-	return value
+	k.cdc.MustUnmarshalBinaryBare(buf, &val)
+	return val.Value
 }
 
 // getIterator - get an iterator for given prefix
@@ -132,7 +133,11 @@ func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.I
 // set - save data from the kvstore
 func (k KVStore) set(ctx cosmos.Context, key string, record interface{}) {
 	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshalBinaryBare(record)
+
+	buf, err := codec.MarshalAny(k.cdc, record)
+	if err != nil {
+		panic(err)
+	}
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -154,9 +159,8 @@ func (k KVStore) get(ctx cosmos.Context, key string, record interface{}) (bool, 
 	if !store.Has([]byte(key)) {
 		return false, nil
 	}
-
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+	if err := codec.UnmarshalAny(k.cdc, record, bz); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: %s", key), err)
 	}
 	return true, nil
@@ -172,7 +176,8 @@ func (k KVStore) has(ctx cosmos.Context, key string) bool {
 func (k KVStore) SetStoreVersion(ctx cosmos.Context, value int64) {
 	key := k.GetKey(ctx, prefixStoreVersion, "")
 	store := ctx.KVStore(k.storeKey)
-	store.Set([]byte(key), k.cdc.MustMarshalBinaryBare(value))
+	val := gogotypes.Int64Value{Value: value}
+	store.Set([]byte(key), k.cdc.MustMarshalBinaryBare(&val))
 }
 
 // GetRuneBalanceOfModule get the RUNE balance
