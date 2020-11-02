@@ -45,7 +45,7 @@ unit_tests_native:
 
 
 lint_code:
-  image: golangci/golangci-lint
+  image: golangci/golangci-lint:v1.32.0
   stage: test
   tags:
     - thorchain
