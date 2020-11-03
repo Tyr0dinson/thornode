@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/keygen"
-	tss "gitlab.com/thorchain/tss/go-tss/tss"
+	"gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
@@ -71,7 +71,11 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.
 	}
 
 	if err != nil {
-		return common.EmptyPubKeySet, blame.Blame{}, fmt.Errorf("fail to keygen,err:%w", err)
+		// the resp from kg.server.Keygen will not be nil
+		if resp.Blame.IsEmpty() {
+			resp.Blame.FailReason = err.Error()
+		}
+		return common.EmptyPubKeySet, resp.Blame, fmt.Errorf("fail to keygen,err:%w", err)
 	}
 
 	cpk, err := common.NewPubKey(resp.PubKey)
