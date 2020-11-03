@@ -72,6 +72,9 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, blame.
 
 	if err != nil {
 		// the resp from kg.server.Keygen will not be nil
+		if resp.Blame.IsEmpty() {
+			resp.Blame.FailReason = err.Error()
+		}
 		return common.EmptyPubKeySet, resp.Blame, fmt.Errorf("fail to keygen,err:%w", err)
 	}
 
