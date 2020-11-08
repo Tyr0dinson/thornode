@@ -197,7 +197,100 @@ func (vm *VaultMgrV17) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor c
 			return err
 		}
 	}
+
+	return vm.reCalibrateVaultToPool(ctx, constAccessor)
+}
+
+func (vm *VaultMgrV17) reCalibrateVaultToPool(ctx cosmos.Context, constAccessor constants.ConstantValues) error {
+	rotatePerBlockHeight, err := vm.k.GetMimir(ctx, constants.RotatePerBlockHeight.String())
+	if rotatePerBlockHeight < 0 || err != nil {
+		rotatePerBlockHeight = constAccessor.GetInt64Value(constants.RotatePerBlockHeight)
+	}
+	if ctx.BlockHeight()%rotatePerBlockHeight != 0 {
+		return nil
+	}
+	ctx.Logger().Error("calibrate vault asset to pool")
+	pools, err := vm.k.GetPools(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get pools: %w", err)
+	}
+
+	for _, pool := range pools {
+		total, err := vm.getTotalVaultAsset(ctx, pool.Asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get total vault asset", "error", err, "asset", pool.Asset.String())
+			continue
+		}
+		outbound, err := vm.getOutstandingOutbound(ctx, pool.Asset, constAccessor)
+		if err != nil {
+			ctx.Logger().Error("fail to get total outstanding outboudn asset", "error", err, "asset", pool.Asset)
+			continue
+		}
+
+		pool.BalanceAsset = common.SafeSub(total, outbound)
+		if err := vm.k.SetPool(ctx, pool); err != nil {
+			ctx.Logger().Error("fail to save pool to key value store", "error", err)
+		}
+	}
 	return nil
+}
+
+func (vm *VaultMgrV17) getTotalVaultAsset(ctx cosmos.Context, asset common.Asset) (cosmos.Uint, error) {
+	iter := vm.k.GetVaultIterator(ctx)
+	defer iter.Close()
+	total := cosmos.ZeroUint()
+	for ; iter.Valid(); iter.Next() {
+		var vault Vault
+		err := vm.k.Cdc().UnmarshalBinaryBare(iter.Value(), &vault)
+		if err != nil {
+			ctx.Logger().Error("fail to unmarshal vault", "error", err)
+			continue
+		}
+		if vault.IsEmpty() {
+			continue
+		}
+		c := vault.GetCoin(asset)
+		if c.IsEmpty() {
+			continue
+		}
+		total = total.Add(c.Amount)
+
+	}
+	return total, nil
+}
+
+func (vm *VaultMgrV17) getOutstandingOutbound(ctx cosmos.Context, asset common.Asset, constAccessor constants.ConstantValues) (cosmos.Uint, error) {
+	signingPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	startHeight := common.BlockHeight(ctx) - signingPeriod
+	if startHeight <= 0 {
+		return cosmos.ZeroUint(), nil
+	}
+	total := cosmos.ZeroUint()
+	for height := startHeight; height <= common.BlockHeight(ctx); height++ {
+		txs, err := vm.k.GetTxOut(ctx, height)
+		if err != nil {
+			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
+			continue
+		}
+		for _, tx := range txs.TxArray {
+			if !tx.OutHash.IsEmpty() {
+				continue
+			}
+			if tx.Coin.Asset != asset {
+				continue
+			}
+			m, err := ParseMemo(tx.Memo)
+			if err != nil {
+				ctx.Logger().Error("fail to parse memo: %w", err)
+				continue
+			}
+			if m.IsInternal() {
+				continue
+			}
+			total = total.Add(tx.Coin.Amount)
+		}
+	}
+	return total, nil
 }
 
 // TriggerKeygen generate a record to instruct signer kick off keygen process
