@@ -198,10 +198,10 @@ func (vm *VaultMgrV17) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor c
 		}
 	}
 
-	return vm.reCalibrateVaultToPool(ctx, constAccessor)
+	return vm.calibrateVaultToPool(ctx, constAccessor)
 }
 
-func (vm *VaultMgrV17) reCalibrateVaultToPool(ctx cosmos.Context, constAccessor constants.ConstantValues) error {
+func (vm *VaultMgrV17) calibrateVaultToPool(ctx cosmos.Context, constAccessor constants.ConstantValues) error {
 	rotatePerBlockHeight, err := vm.k.GetMimir(ctx, constants.RotatePerBlockHeight.String())
 	if rotatePerBlockHeight < 0 || err != nil {
 		rotatePerBlockHeight = constAccessor.GetInt64Value(constants.RotatePerBlockHeight)
@@ -209,6 +209,7 @@ func (vm *VaultMgrV17) reCalibrateVaultToPool(ctx cosmos.Context, constAccessor 
 	if ctx.BlockHeight()%rotatePerBlockHeight != 0 {
 		return nil
 	}
+
 	ctx.Logger().Error("calibrate vault asset to pool")
 	pools, err := vm.k.GetPools(ctx)
 	if err != nil {
@@ -216,6 +217,9 @@ func (vm *VaultMgrV17) reCalibrateVaultToPool(ctx cosmos.Context, constAccessor 
 	}
 
 	for _, pool := range pools {
+		if pool.Status == PoolSuspended {
+			continue
+		}
 		total, err := vm.getTotalVaultAsset(ctx, pool.Asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get total vault asset", "error", err, "asset", pool.Asset.String())
@@ -226,10 +230,23 @@ func (vm *VaultMgrV17) reCalibrateVaultToPool(ctx cosmos.Context, constAccessor 
 			ctx.Logger().Error("fail to get total outstanding outboudn asset", "error", err, "asset", pool.Asset)
 			continue
 		}
-
-		pool.BalanceAsset = common.SafeSub(total, outbound)
+		newBalance := common.SafeSub(total, outbound)
+		if newBalance.Equal(pool.BalanceAsset) {
+			continue
+		}
+		var evt EventCalibrate
+		if pool.BalanceAsset.GT(newBalance) {
+			evt = NewEventCalibrate(pool.Asset, common.SafeSub(pool.BalanceAsset, newBalance), false)
+		} else {
+			evt = NewEventCalibrate(pool.Asset, common.SafeSub(newBalance, pool.BalanceAsset), true)
+		}
+		pool.BalanceAsset = newBalance
 		if err := vm.k.SetPool(ctx, pool); err != nil {
 			ctx.Logger().Error("fail to save pool to key value store", "error", err)
+		} else {
+			if err := vm.eventMgr.EmitEvent(ctx, evt); err != nil {
+				ctx.Logger().Error("fail to emit calibrate event", "error", err)
+			}
 		}
 	}
 	return nil

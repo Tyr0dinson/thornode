@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -381,4 +382,75 @@ func (*VaultManagerV17TestSuite) TestRecallChainFunds(c *C) {
 	helper.failGetActiveAsgardVault = true
 	c.Assert(vaultMgr.recallChainFunds(ctx, common.BNBChain, mgr), NotNil)
 	helper.failGetActiveAsgardVault = false
+}
+
+func (*VaultManagerV17TestSuite) TestCalibrateVaultToPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(k)
+	mgr := NewManagers(helper)
+	mgr.BeginBlock(ctx)
+	vaultMgr := NewVaultMgrV17(helper, mgr.TxOutStore(), mgr.EventMgr())
+	constAccessor := constants.GetConstantValues(semver.MustParse("0.17.0"))
+	ctx = ctx.WithBlockHeight(constAccessor.GetInt64Value(constants.RotatePerBlockHeight) * 2)
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BNBAsset, cosmos.NewUint(1005*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(2005*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(3005*common.One)),
+	}
+	// asgard
+	k.SetVault(ctx, vault)
+
+	vaultYgg1 := GetRandomVault()
+	vaultYgg1.Status = ActiveVault
+	vaultYgg1.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
+	}
+	k.SetVault(ctx, vaultYgg1)
+
+	bnbPool := NewPool()
+	bnbPool.Asset = common.BNBAsset
+	bnbPool.BalanceAsset = cosmos.NewUint(1006 * common.One)
+	bnbPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	k.SetPool(ctx, bnbPool)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(2005 * common.One)
+	k.SetPool(ctx, btcPool)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(3005 * common.One)
+	k.SetPool(ctx, ethPool)
+
+	blockTxOut := NewTxOut(ctx.BlockHeight() - 1)
+	txID := GetRandomTxHash()
+	blockTxOut.TxArray = append(blockTxOut.TxArray, &TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   GetRandomBNBAddress(),
+		VaultPubKey: vault.PubKey,
+		Coin:        common.Coin{},
+		Memo:        "outbound:" + txID.String(),
+		InHash:      txID,
+		OutHash:     "",
+		ModuleName:  AsgardName,
+	})
+	k.SetTxOut(ctx, blockTxOut)
+	c.Assert(vaultMgr.calibrateVaultToPool(ctx, constAccessor), IsNil)
+
+	bnbPool, err := k.GetPool(ctx, common.BNBAsset)
+	c.Assert(err, IsNil)
+	c.Assert(bnbPool.BalanceAsset.Equal(cosmos.NewUint(1005*common.One)), Equals, true)
+
+	btcPool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(btcPool.BalanceAsset.Equal(cosmos.NewUint(2008*common.One)), Equals, true)
+
+	ethPool, err = k.GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(ethPool.BalanceAsset.Equal(cosmos.NewUint(3005*common.One)), Equals, true)
 }

@@ -93,6 +93,7 @@ var (
 	NewEventErrata                 = types.NewEventErrata
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
+	NewEventCalibrate              = types.NewEventCalibrate
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
@@ -227,6 +228,7 @@ type (
 	EventFee                       = types.EventFee
 	EventSlash                     = types.EventSlash
 	EventOutbound                  = types.EventOutbound
+	EventCalibrate                 = types.EventCalibrate
 	NetworkFee                     = types.NetworkFee
 	ObservedNetworkFeeVoter        = types.ObservedNetworkFeeVoter
 	Jail                           = types.Jail

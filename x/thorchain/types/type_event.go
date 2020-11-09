@@ -10,20 +10,21 @@ import (
 
 // all event types support by THORChain
 const (
-	SwapEventType     = `swap`
-	StakeEventType    = `stake`
-	UnstakeEventType  = `unstake`
-	AddEventType      = `add`
-	PoolEventType     = `pool`
-	RewardEventType   = `rewards`
-	RefundEventType   = `refund`
-	BondEventType     = `bond`
-	GasEventType      = `gas`
-	ReserveEventType  = `reserve`
-	SlashEventType    = `slash`
-	ErrataEventType   = `errata`
-	FeeEventType      = `fee`
-	OutboundEventType = `outbound`
+	SwapEventType      = `swap`
+	StakeEventType     = `stake`
+	UnstakeEventType   = `unstake`
+	AddEventType       = `add`
+	PoolEventType      = `pool`
+	RewardEventType    = `rewards`
+	RefundEventType    = `refund`
+	BondEventType      = `bond`
+	GasEventType       = `gas`
+	ReserveEventType   = `reserve`
+	SlashEventType     = `slash`
+	ErrataEventType    = `errata`
+	FeeEventType       = `fee`
+	OutboundEventType  = `outbound`
+	CalibrateEventType = `calibrate`
 )
 
 // PoolMod pool modifications
@@ -531,5 +532,35 @@ func (e EventOutbound) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(e.Type(),
 		cosmos.NewAttribute("in_tx_id", e.InTxID.String()))
 	evt = evt.AppendAttributes(e.Tx.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
+// EventCalibrate represent the changes happen to pool when asset get credit to pool or removed from pool
+type EventCalibrate struct {
+	Asset    common.Asset `json:"asset"`
+	Amount   cosmos.Uint  `json:"amount"`
+	AssetAdd bool         `json:"asset_add"` // when AssetAdd is false , and Amount is not zero , that means the amount of asset should be take away from pool
+}
+
+// NewEventCalibrate create a new EventCalibrate
+func NewEventCalibrate(asset common.Asset, amount cosmos.Uint, add bool) EventCalibrate {
+	return EventCalibrate{
+		Asset:    asset,
+		Amount:   amount,
+		AssetAdd: add,
+	}
+}
+
+// Type get a string represent the event type
+func (e EventCalibrate) Type() string {
+	return CalibrateEventType
+}
+
+// Events return a cosmos.Events type
+func (e EventCalibrate) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(e.Type(),
+		cosmos.NewAttribute("asset", e.Asset.String()),
+		cosmos.NewAttribute("asset_amt", e.Amount.String()),
+		cosmos.NewAttribute("asset_add", strconv.FormatBool(e.AssetAdd)))
 	return cosmos.Events{evt}, nil
 }
