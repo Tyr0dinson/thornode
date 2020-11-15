@@ -96,6 +96,10 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 				return err
 			}
 		}
+	case 17:
+		if err := smgr.calibrateVaultToPool(ctx); err != nil {
+			ctx.Logger().Error("fail to calibrate pool asset balance from vault", "error", err)
+		}
 	}
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
