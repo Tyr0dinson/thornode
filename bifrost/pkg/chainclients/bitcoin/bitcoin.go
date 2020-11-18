@@ -759,7 +759,7 @@ func (c *Client) RegisterPublicKey(pkey common.PubKey) error {
 
 // getBlockRequiredConfirmation find out how many confirmation the given txIn need to have before it can be send to THORChain
 func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (int64, error) {
-	totalTxValue := txIn.GetTotalTransactionValue(common.BTCAsset)
+	totalTxValue := txIn.GetTotalTransactionValue(common.BTCAsset, c.asgardAddresses)
 	stats, err := c.client.GetBlockStats(height, nil)
 	if err != nil {
 		return 0, fmt.Errorf("fail to get block stats with height(%d): %w", height, err)
