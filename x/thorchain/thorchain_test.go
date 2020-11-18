@@ -502,22 +502,6 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 
 	}
 
-	// Add reserve contributors
-	contrib1 := GetRandomBNBAddress()
-	contrib2 := GetRandomBNBAddress()
-	reserves := ReserveContributors{
-		NewReserveContributor(contrib1, cosmos.NewUint(400_000_000*common.One)),
-		NewReserveContributor(contrib2, cosmos.NewUint(100_000*common.One)),
-	}
-	resHandler := NewReserveContributorHandler(keeper, mgr)
-	for _, res := range reserves {
-		asgard.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), res.Amount),
-		})
-		msg := NewMsgReserveContributor(GetRandomTx(), res, bonders[0].NodeAddress)
-		_, err := resHandler.handle(ctx, msg, ver)
-		c.Assert(err, IsNil)
-	}
 	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
 	asgard.Membership = asgard.Membership[:len(asgard.Membership)-1]
 	c.Assert(keeper.SetVault(ctx, asgard), IsNil)

@@ -24,7 +24,6 @@ const (
 	TxLeave
 	TxYggdrasilFund
 	TxYggdrasilReturn
-	TxReserve
 	TxRefund
 	TxMigrate
 	TxRagnarok
@@ -48,7 +47,6 @@ var stringToTxTypeMap = map[string]TxType{
 	"leave":      TxLeave,
 	"yggdrasil+": TxYggdrasilFund,
 	"yggdrasil-": TxYggdrasilReturn,
-	"reserve":    TxReserve,
 	"refund":     TxRefund,
 	"migrate":    TxMigrate,
 	"ragnarok":   TxRagnarok,
@@ -67,7 +65,6 @@ var txToStringMap = map[TxType]string{
 	TxLeave:           "leave",
 	TxYggdrasilFund:   "yggdrasil+",
 	TxYggdrasilReturn: "yggdrasil-",
-	TxReserve:         "reserve",
 	TxMigrate:         "migrate",
 	TxRagnarok:        "ragnarok",
 	TxSwitch:          "switch",
@@ -85,7 +82,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve:
+	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch:
 		return true
 	default:
 		return false
@@ -209,8 +206,6 @@ func ParseMemo(memo string) (Memo, error) {
 		return ParseYggdrasilFundMemo(parts)
 	case TxYggdrasilReturn:
 		return ParseYggdrasilReturnMemo(parts)
-	case TxReserve:
-		return NewReserveMemo(), nil
 	case TxMigrate:
 		return ParseMigrateMemo(parts)
 	case TxRagnarok:

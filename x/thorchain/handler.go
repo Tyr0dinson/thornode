@@ -94,7 +94,6 @@ func getInternalHandlerMapping(keeper keeper.Keeper, mgr Manager) map[string]Msg
 	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(keeper, mgr)
 	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(keeper, mgr)
 	m[MsgSwap{}.Type()] = NewSwapHandler(keeper, mgr)
-	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(keeper, mgr)
 	m[MsgBond{}.Type()] = NewBondHandler(keeper, mgr)
 	m[MsgUnBond{}.Type()] = NewUnBondHandler(keeper, mgr)
 	m[MsgLeave{}.Type()] = NewLeaveHandler(keeper, mgr)
@@ -180,9 +179,6 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), true, tx.Tx.Coins, signer)
 	case YggdrasilReturnMemo:
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), false, tx.Tx.Coins, signer)
-	case ReserveMemo:
-		res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins.GetCoin(common.RuneAsset()).Amount)
-		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
 	case SwitchMemo:
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
 	default:

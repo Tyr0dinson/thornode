@@ -35,7 +35,6 @@ type Keeper interface {
 	KeeperTxOut
 	KeeperLiquidityFees
 	KeeperVault
-	KeeperReserveContributors
 	KeeperVaultData
 	KeeperTss
 	KeeperTssKeysignFail
@@ -145,16 +144,11 @@ type KeeperVault interface {
 	DeleteVault(ctx cosmos.Context, pk common.PubKey) error
 }
 
-type KeeperReserveContributors interface {
-	GetReservesContributors(ctx cosmos.Context) (ReserveContributors, error)
-	SetReserveContributors(ctx cosmos.Context, contributors ReserveContributors) error
-	AddFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
-}
-
 // KeeperVaultData func to access Vault in key value store
 type KeeperVaultData interface {
 	GetVaultData(ctx cosmos.Context) (VaultData, error)
 	SetVaultData(ctx cosmos.Context, data VaultData) error
+	AddFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
 }
 
 type KeeperTss interface {

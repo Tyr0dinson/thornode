@@ -116,8 +116,6 @@ func (h NativeTxHandler) handleV1(ctx cosmos.Context, msg MsgNativeTx, version s
 	switch memo.GetType() {
 	case TxBond:
 		targetModule = BondName
-	case TxReserve:
-		targetModule = ReserveName
 	default:
 		targetModule = AsgardName
 	}

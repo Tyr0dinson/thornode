@@ -130,13 +130,6 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(memo.IsType(TxSwitch), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 
-	memo, err = ParseMemo("reserve")
-	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxReserve), Equals, true)
-	c.Check(memo.IsInbound(), Equals, true)
-	c.Check(memo.IsInternal(), Equals, false)
-	c.Check(memo.IsOutbound(), Equals, false)
-
 	// unhappy paths
 	_, err = ParseMemo("")
 	c.Assert(err, NotNil)

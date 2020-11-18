@@ -50,7 +50,6 @@ const (
 	TxYggdrasilReturn = mem.TxYggdrasilReturn
 	TxMigrate         = mem.TxMigrate
 	TxRagnarok        = mem.TxRagnarok
-	TxReserve         = mem.TxReserve
 )
 
 var (
@@ -87,7 +86,6 @@ var (
 	NewEventBond                   = types.NewEventBond
 	NewEventGas                    = types.NewEventGas
 	NewEventSlash                  = types.NewEventSlash
-	NewEventReserve                = types.NewEventReserve
 	NewEventErrata                 = types.NewEventErrata
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
@@ -103,9 +101,7 @@ var (
 	RegisterCodec                  = types.RegisterCodec
 	NewNodeAccount                 = types.NewNodeAccount
 	NewVault                       = types.NewVault
-	NewReserveContributor          = types.NewReserveContributor
 	NewMsgYggdrasil                = types.NewMsgYggdrasil
-	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
 	NewMsgUnBond                   = types.NewMsgUnBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
@@ -165,7 +161,6 @@ type (
 	MsgSetIPAddress                = types.MsgSetIPAddress
 	MsgSetNodeKeys                 = types.MsgSetNodeKeys
 	MsgLeave                       = types.MsgLeave
-	MsgReserveContributor          = types.MsgReserveContributor
 	MsgYggdrasil                   = types.MsgYggdrasil
 	MsgObservedTxIn                = types.MsgObservedTxIn
 	MsgObservedTxOut               = types.MsgObservedTxOut
@@ -204,12 +199,9 @@ type (
 	EventDonate                    = types.EventDonate
 	EventRewards                   = types.EventRewards
 	EventErrata                    = types.EventErrata
-	EventReserve                   = types.EventReserve
 	PoolAmt                        = types.PoolAmt
 	PoolMod                        = types.PoolMod
 	PoolMods                       = types.PoolMods
-	ReserveContributor             = types.ReserveContributor
-	ReserveContributors            = types.ReserveContributors
 	Vault                          = types.Vault
 	Vaults                         = types.Vaults
 	NodeAccount                    = types.NodeAccount
@@ -246,6 +238,5 @@ type (
 	LeaveMemo             = mem.LeaveMemo
 	YggdrasilFundMemo     = mem.YggdrasilFundMemo
 	YggdrasilReturnMemo   = mem.YggdrasilReturnMemo
-	ReserveMemo           = mem.ReserveMemo
 	SwitchMemo            = mem.SwitchMemo
 )

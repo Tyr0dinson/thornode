@@ -25,7 +25,6 @@ type GenesisState struct {
 	BanVoters            []BanVoter                `json:"ban_voters"`
 	LastSignedHeight     int64                     `json:"last_signed_height"`
 	LastChainHeights     map[string]int64          `json:"last_chain_heights"`
-	ReserveContributors  ReserveContributors       `json:"reserve_contributors"`
 	VaultData            VaultData                 `json:"vault_data"`
 	TssVoters            []TssVoter                `json:"tss_voters"`
 	TssKeysignFailVoters []TssKeysignFailVoter     `json:"tss_keysign_fail_voters"`
@@ -94,11 +93,6 @@ func ValidateGenesis(data GenesisState) error {
 			return fmt.Errorf("invalid chain(%s) height", c)
 		}
 	}
-	for _, r := range data.ReserveContributors {
-		if err := r.Valid(); err != nil {
-			return fmt.Errorf("invalid reserve contributor:%w", err)
-		}
-	}
 
 	for _, b := range data.KeygenBlocks {
 		for _, kb := range b.Keygens {
@@ -134,7 +128,6 @@ func DefaultGenesisState() GenesisState {
 		BanVoters:            make([]BanVoter, 0),
 		LastSignedHeight:     0,
 		LastChainHeights:     make(map[string]int64),
-		ReserveContributors:  ReserveContributors{},
 		VaultData:            NewVaultData(),
 		TssVoters:            make([]TssVoter, 0),
 		TssKeysignFailVoters: make([]TssKeysignFailVoter, 0),
@@ -217,11 +210,6 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			panic(err)
 		}
 		if err := keeper.SetLastChainHeight(ctx, chain, h); err != nil {
-			panic(err)
-		}
-	}
-	if len(data.ReserveContributors) > 0 {
-		if err := keeper.SetReserveContributors(ctx, data.ReserveContributors); err != nil {
 			panic(err)
 		}
 	}
@@ -401,11 +389,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		lastChainHeights[k.String()] = v
 	}
 
-	reserveContributors, err := k.GetReservesContributors(ctx)
-	if err != nil {
-		panic(err)
-	}
-
 	vaultData, err := k.GetVaultData(ctx)
 	if err != nil {
 		panic(err)
@@ -497,7 +480,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		BanVoters:            banVoters,
 		LastSignedHeight:     lastSignedHeight,
 		LastChainHeights:     lastChainHeights,
-		ReserveContributors:  reserveContributors,
 		VaultData:            vaultData,
 		TssVoters:            tssVoters,
 		TssKeysignFailVoters: tssKeySignFailVoters,
