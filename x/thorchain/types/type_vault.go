@@ -148,9 +148,12 @@ func (v Vault) CoinLength() (count int) {
 }
 
 // CoinLengthByChain - count the number of coins this vault has for the given chain
-func (v Vault) CoinLengthByChain(c common.Chain) int {
+func (v Vault) CoinLengthByChain(c common.Chain, excludeRRUNE bool) int {
 	total := 0
 	for _, coin := range v.Coins {
+		if coin.Asset.IsRune() && excludeRRUNE {
+			continue
+		}
 		if coin.Asset.Chain.Equals(c) && !coin.Amount.IsZero() {
 			total++
 		}

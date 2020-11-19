@@ -89,7 +89,7 @@ func (c *Client) isYggdrasil(key common.PubKey) bool {
 
 // getAllUtxos go through all the block meta in the local storage, it will spend all UTXOs in  block that might be evicted from local storage soon
 // it also try to spend enough UTXOs that can add up to more than the given total
-func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64, tx stypes.TxOutItem) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64) ([]btcjson.ListUnspentResult, error) {
 	var result []btcjson.ListUnspentResult
 	minConfirmation := 0
 	// Yggdrasil vault is funded by asgard , which will only spend UTXO that is older than 10 blocks, so yggdrasil doesn't need
@@ -113,16 +113,10 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64, tx stypes.T
 	for _, item := range utxos {
 		if isYggdrasil || item.Confirmations >= MinUTXOConfirmation || c.isSelfTransaction(item.TxID) {
 			result = append(result, item)
-			target += item.Amount
-			if target >= total {
-				// ensure the total amount is enough to pay customer and gas
-				size := c.estimateTxSize(len(result))
-				estimateGasSats := int64(size) * tx.GasRate
-				if (target - btcutil.Amount(tx.Coins.GetCoin(common.BTCAsset).Amount.Uint64()).ToBTC()) >= btcutil.Amount(estimateGasSats).ToBTC() {
-					break
-				}
+			if item.Amount+target >= total {
+				break
 			}
-
+			target += item.Amount
 		}
 	}
 	return result, nil
@@ -179,6 +173,10 @@ func (c *Client) getBlockHeight() (int64, error) {
 func (c *Client) getBTCPaymentAmount(tx stypes.TxOutItem) float64 {
 	amtToPay := tx.Coins.GetCoin(common.BTCAsset).Amount.Uint64()
 	amtToPayInBTC := btcutil.Amount(int64(amtToPay)).ToBTC()
+	if !tx.MaxGas.IsEmpty() {
+		gasAmt := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount
+		amtToPayInBTC += btcutil.Amount(int64(gasAmt.Uint64())).ToBTC()
+	}
 	return amtToPayInBTC
 }
 
@@ -196,6 +194,15 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 	return txscript.PayToAddrScript(addr)
 }
 
+func (c *Client) isMigration(tx stypes.TxOutItem) bool {
+	m, err := thorchain.ParseMemo(tx.Memo)
+	if err != nil {
+		c.logger.Error().Err(err).Msgf("fail to parse memo: %s", tx.Memo)
+		return false
+	}
+	return m.IsType(thorchain.TxMigrate)
+}
+
 // SignTx is going to generate the outbound transaction, and also sign it
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, error) {
 	if !tx.Chain.Equals(common.BTCChain) {
@@ -209,7 +216,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("fail to get source pay to address script: %w", err)
 	}
-	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getBTCPaymentAmount(tx), tx)
+	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getBTCPaymentAmount(tx))
 	if err != nil {
 		return nil, fmt.Errorf("fail to get unspent UTXO")
 	}
@@ -278,6 +285,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
 	if !tx.MaxGas.IsEmpty() {
 		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset)
+		// If the txoutitem is migration , and estimated gas is less than MaxGas , let's just spend MaxGas
+		// if we spend less, then they will have some dust left in the vault , as a result , vault can't finish migration
+		if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
+			gasAmtSats = maxGasCoin.Amount.Uint64()
+		}
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
 			gap := gasAmtSats - maxGasCoin.Amount.Uint64()
 			c.logger.Info().Msgf("max gas: %s, need to spend on gas: %s , gap: %d will be deduct from payment to customer", tx.MaxGas, gasCoin, gap)
