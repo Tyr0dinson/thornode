@@ -390,5 +390,5 @@ func (s *BitcoinSignerSuite) TestEstimateTxSize(c *C) {
 		},
 	})
 	c.Assert(err, IsNil)
-	c.Assert(size, Equals, int64(233))
+	c.Assert(size, Equals, int64(177))
 }

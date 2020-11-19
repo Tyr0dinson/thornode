@@ -228,7 +228,7 @@ func (c *Client) estimateTxSize(tx stypes.TxOutItem, txes []btcjson.ListUnspentR
 		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
 	}
 	// given the output in redeemTx has not been signed , so estimate each input will have about 28 vbyte
-	return mempool.GetTxVirtualSize(btcutil.NewTx(redeemTx)) + int64(28*len(txes)), nil
+	return mempool.GetTxVirtualSize(btcutil.NewTx(redeemTx)), nil
 }
 
 // SignTx is going to generate the outbound transaction, and also sign it
@@ -321,6 +321,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 			c.logger.Info().Msgf("max gas: %s, need to spend on gas: %s , gap: %d will be deduct from payment to customer", tx.MaxGas, gasCoin, gap)
 			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
 		} else if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
+			// migration is an internal transaction used by THORChain itself to migrate fund from a retiring vault to next active vault
+			// if the migration tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
+			// which will be send to next vault , this is quite important ,because if we don't do that , it might have dust get left
+			// in the vault and block the vault from finishing churning
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
 			c.logger.Info().Msgf("migration tx , max gas is: %s, however only: %d is required, gap: %d goes to next vault", tx.MaxGas, gasAmtSats, gap)
 			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
