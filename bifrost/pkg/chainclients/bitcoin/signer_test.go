@@ -378,12 +378,12 @@ func (s *BitcoinSignerSuite) TestEstimateTxSize(c *C) {
 		Memo:    "MIGRATE:1234",
 	}
 	size, err := s.client.estimateTxSize(txOutItem, []btcjson.ListUnspentResult{
-		btcjson.ListUnspentResult{
+		{
 			TxID:      "66d2d6b5eb564972c59e4797683a1225a02515a41119f0a8919381236b63e948",
 			Vout:      0,
 			Spendable: true,
 		},
-		btcjson.ListUnspentResult{
+		{
 			TxID:      "c5946215d82d5870ba2b1e8f245d8aa1446783975aa3a592cf55589fccbf285f",
 			Vout:      0,
 			Spendable: true,
