@@ -271,6 +271,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 		coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gasAmtSats))
 	}
 
+	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
+	if !tx.MaxGas.IsEmpty() {
+		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset)
+		// If the txoutitem is migration , and estimated gas is less than MaxGas , let's just spend MaxGas
+		// if we spend less, then they will have some dust left in the vault , as a result , vault can't finish migration
+		if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
+			gasAmtSats = maxGasCoin.Amount.Uint64()
+		}
+	}
+
 	// make sure the transaction fee is not more than 0.1 BTC / kb , otherwise it might reject the transaction
 	if gasAmtSats > uint64(maxFeeSats) {
 		diffSats := gasAmtSats - uint64(maxFeeSats) // in sats
@@ -285,15 +295,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
 	if !tx.MaxGas.IsEmpty() {
 		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset)
-		// If the txoutitem is migration , and estimated gas is less than MaxGas , let's just spend MaxGas
-		// if we spend less, then they will have some dust left in the vault , as a result , vault can't finish migration
-		if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
-			gasAmtSats = maxGasCoin.Amount.Uint64()
-		}
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
 			gap := gasAmtSats - maxGasCoin.Amount.Uint64()
 			c.logger.Info().Msgf("max gas: %s, need to spend on gas: %s , gap: %d will be deduct from payment to customer", tx.MaxGas, gasCoin, gap)
 			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
+		} else if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
+			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
+			c.logger.Info().Msgf("migration tx , max gas is: %s, however only: %d is required, gap: %d goes to next vault", tx.MaxGas, gasAmtSats, gap)
+			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
 		}
 	}
 	gasAmt := btcutil.Amount(gasAmtSats)
