@@ -18,13 +18,36 @@ const (
 
 // ObservedTx is design to track if THORNode have processed a specific tx
 type ObservedTx struct {
-	Tx             common.Tx           `json:"tx"`
-	Status         status              `json:"status"`
-	OutHashes      common.TxIDs        `json:"out_hashes"` // completed chain tx hash. This is a slice to track if we've "double spent" an input
-	BlockHeight    int64               `json:"block_height"`
-	Signers        []cosmos.AccAddress `json:"signers"` // node keys of node account saw this tx
-	ObservedPubKey common.PubKey       `json:"observed_pub_key"`
-	KeysignMs      int64               `json:"keysign_ms"` // this field is optional
+	// Tx observed tx information
+	Tx common.Tx `json:"tx"`
+
+	// Status of this TX
+	Status status `json:"status"`
+
+	// OutHashes completed chain tx hash. This is a slice to track if we've "double spent" an input
+	OutHashes common.TxIDs `json:"out_hashes"`
+
+	// BlockHeight which block height this tx was observed
+	BlockHeight int64 `json:"block_height"`
+
+	// Signers  node account address saw this tx
+	Signers []cosmos.AccAddress `json:"signers"`
+
+	// ObservedPubKey the vault public key that observed this tx
+	ObservedPubKey common.PubKey `json:"observed_pub_key"`
+
+	// KeysingMs this field will only have value for outbound tx, indicate how many milliseconds THORChain TSS spent to send it out
+	KeysignMs int64 `json:"keysign_ms"` // this field is optional
+
+	// Finalised for some of the Proof of work chain , THORChain will need to do confirmation counting to avoid been double spend
+	// Finalised == false , means the tx had been observed by THORChain , but need to wait for conformation counting reach a threshold before process it
+	// Finalised == true , means the tx had been finalised , can be processed immediately
+	// Chains that have instant finality will have Finalised == true
+	Finalised bool `json:"finalised"`
+
+	// ConfirmationRequired represent number of confirmation required before this tx can be processed
+	// 0 means this tx doesn't need confirmation counting
+	ConfirmationRequired uint64 `json:"confirmation_required"`
 }
 
 // ObservedTxs a list of ObservedTx
@@ -68,6 +91,12 @@ func (tx ObservedTx) Equals(tx2 ObservedTx) bool {
 		return false
 	}
 	if !tx.ObservedPubKey.Equals(tx2.ObservedPubKey) {
+		return false
+	}
+	if tx.Finalised != tx2.Finalised {
+		return false
+	}
+	if tx.ConfirmationRequired != tx2.ConfirmationRequired {
 		return false
 	}
 	return true
@@ -147,6 +176,7 @@ func (tx ObservedTxVoter) Valid() error {
 		return errors.New("cannot have an empty tx id")
 	}
 
+	// check all other normal tx
 	for _, in := range tx.Txs {
 		if err := in.Valid(); err != nil {
 			return err

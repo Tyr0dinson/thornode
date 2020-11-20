@@ -158,7 +158,9 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			continue
 		}
 		if vault.IsAsgard() {
-			vault.AddFunds(tx.Tx.Coins)
+			if !tx.Finalised || (tx.Finalised && tx.ConfirmationRequired == 0) {
+				vault.AddFunds(tx.Tx.Coins)
+			}
 		}
 		vault.InboundTxCount++
 		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
@@ -166,6 +168,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault
 			// those will be ignored
+			// also only asgard will send fund to yggdrasil , thus doesn't need to have confirmation counting
 			vault.AddFunds(tx.Tx.Coins)
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
 		}
