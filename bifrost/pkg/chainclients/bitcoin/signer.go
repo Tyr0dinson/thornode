@@ -227,7 +227,7 @@ func (c *Client) estimateTxSize(tx stypes.TxOutItem, txes []btcjson.ListUnspentR
 		}
 		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
 	}
-	// given the output in redeemTx has not been signed , so estimate each input will have about 28 vbyte
+	// given the output in redeemTx has not been signed , so the estimated tx size will be smaller than the real size
 	return mempool.GetTxVirtualSize(btcutil.NewTx(redeemTx)), nil
 }
 
