@@ -224,10 +224,6 @@ func (v *Vault) SubFunds(coins common.Coins) {
 func (v *Vault) subFund(coin common.Coin) {
 	for i, ycoin := range v.Coins {
 		if coin.Asset.Equals(ycoin.Asset) {
-			// safeguard to protect against enter negative values
-			if coin.Amount.GTE(ycoin.Amount) {
-				coin.Amount = ycoin.Amount
-			}
 			v.Coins[i].Amount = common.SafeSub(ycoin.Amount, coin.Amount)
 			return
 		}
