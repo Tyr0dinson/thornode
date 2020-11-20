@@ -661,7 +661,6 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper ke
 	if err != nil {
 		ctx.Logger().Error("fatil to get keysign metrics", "error", err)
 	}
-	ctx.Logger().Info(fmt.Sprintf("keysign metric: %+v", keysignMetric))
 	result := struct {
 		ObservedTx     `json:"observed_tx"`
 		KeysignMetrics types.TssKeysignMetric `json:"keysign_metric"`
