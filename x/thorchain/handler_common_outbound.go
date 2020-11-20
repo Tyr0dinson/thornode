@@ -42,6 +42,12 @@ func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, version semver.Versio
 func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Version, tx ObservedTx, inTxID common.TxID, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	// note: Outbound tx usually it is related to an inbound tx except migration
 	// thus here try to get the ObservedTxInVoter,  and set the tx out hash accordingly
+	ctx.Logger().Info("handle common outbound tx handler")
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("panic error", "error", err)
+		}
+	}()
 	voter, err := h.keeper.GetObservedTxInVoter(ctx, inTxID)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get observed tx voter")
