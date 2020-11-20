@@ -179,13 +179,13 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 	return txscript.PayToAddrScript(addr)
 }
 
-func (c *Client) isMigration(tx stypes.TxOutItem) bool {
+func (c *Client) isInternal(tx stypes.TxOutItem) bool {
 	m, err := thorchain.ParseMemo(tx.Memo)
 	if err != nil {
 		c.logger.Error().Err(err).Msgf("fail to parse memo: %s", tx.Memo)
 		return false
 	}
-	return m.IsType(thorchain.TxMigrate)
+	return m.IsInternal()
 }
 
 // estimateTxSize will create a temporary MsgTx, and use it to estimate the final tx size
@@ -320,7 +320,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 			gap := gasAmtSats - maxGasCoin.Amount.Uint64()
 			c.logger.Info().Msgf("max gas: %s, need to spend on gas: %s , gap: %d will be deduct from payment to customer", tx.MaxGas, gasCoin, gap)
 			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
-		} else if c.isMigration(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
+		} else if c.isInternal(tx) && gasAmtSats < maxGasCoin.Amount.Uint64() {
 			// migration is an internal transaction used by THORChain itself to migrate fund from a retiring vault to next active vault
 			// if the migration tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			// which will be send to next vault , this is quite important ,because if we don't do that , it might have dust get left

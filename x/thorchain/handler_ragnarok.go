@@ -95,9 +95,22 @@ func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, ms
 				asset := tx.Chain.GetGasAsset()
 				intendToSpend := tx.Coin.Amount.Add(tx.MaxGas.ToCoins().GetCoin(asset).Amount)
 				actualSpend := msg.Tx.Tx.Coins.GetCoin(asset).Amount.Add(msg.Tx.Tx.Gas.ToCoins().GetCoin(asset).Amount)
+				diffGas := common.SafeSub(tx.MaxGas.ToCoins().GetCoin(asset).Amount, msg.Tx.Tx.Gas.ToCoins().GetCoin(asset).Amount)
 				if intendToSpend.Equal(actualSpend) {
 					ctx.Logger().Info(fmt.Sprintf("intend to spend: %s, actual spend: %s are the same , override match coin", intendToSpend, actualSpend))
 					matchCoin = true
+				}
+				if diffGas.GT(cosmos.ZeroUint()) {
+					// Add the gas we didn't spend back to pool
+					pool, err := h.keeper.GetPool(ctx, asset)
+					if err != nil {
+						ctx.Logger().Error("fail to get pool", "error", err, "asset", asset)
+					} else {
+						pool.BalanceAsset = pool.BalanceAsset.Add(diffGas)
+						if err := h.keeper.SetPool(ctx, pool); err != nil {
+							ctx.Logger().Error("fail to save pool", "error", err)
+						}
+					}
 				}
 			}
 

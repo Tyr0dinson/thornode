@@ -100,6 +100,17 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, version semver.Versi
 					ctx.Logger().Info(fmt.Sprintf("intend to spend: %s, actual spend: %s are the same , override match coin, gas difference: %s ", intendToSpend, actualSpend, diffGas))
 					matchCoin = true
 				}
+				if diffGas.GT(cosmos.ZeroUint()) {
+					pool, err := h.keeper.GetPool(ctx, asset)
+					if err != nil {
+						ctx.Logger().Error("fail to get pool", "error", err, "asset", asset)
+					} else {
+						pool.BalanceAsset = pool.BalanceAsset.Add(diffGas)
+						if err := h.keeper.SetPool(ctx, pool); err != nil {
+							ctx.Logger().Error("fail to save pool", "error", err)
+						}
+					}
+				}
 			}
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
