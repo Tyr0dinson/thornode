@@ -104,11 +104,6 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 
 // Handle a message to observe outbound tx
 func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	defer func() {
-		if err := recover(); err != nil {
-			ctx.Logger().Error("something panic", "error", err)
-		}
-	}()
 	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -127,9 +122,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 			if err != nil {
 				ctx.Logger().Error("fail to get keysing metric", "error", err)
 			} else {
-				for _, addr := range tx.Signers {
-					keysignMetric.AddNodeTssTime(addr, tx.KeysignMs)
-				}
+				keysignMetric.AddNodeTssTime(msg.Signer, tx.KeysignMs)
 				h.keeper.SetTssKeysignMetric(ctx, keysignMetric)
 			}
 		}

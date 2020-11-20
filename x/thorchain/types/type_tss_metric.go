@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"sort"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -66,12 +65,9 @@ func (m *TssKeysignMetric) AddNodeTssTime(addr cosmos.AccAddress, keygenTime int
 }
 
 func getMedianTime(nodeTssTimes []NodeTssTime) int64 {
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Println(err)
-			fmt.Print(nodeTssTimes)
-		}
-	}()
+	if len(nodeTssTimes) == 0 {
+		return 0
+	}
 	sort.SliceStable(nodeTssTimes, func(i, j int) bool {
 		return nodeTssTimes[i].TssTime < nodeTssTimes[j].TssTime
 	})
