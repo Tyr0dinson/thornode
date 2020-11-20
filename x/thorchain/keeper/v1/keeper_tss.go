@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -36,14 +38,18 @@ func (k KVStore) SetTssKeygenMetric(ctx cosmos.Context, metric *TssKeygenMetric)
 
 // GetTssKeysignMetric get tss keygen metric from key value store
 func (k KVStore) GetTssKeysignMetric(ctx cosmos.Context, txID common.TxID) (*TssKeysignMetric, error) {
-	record := TssKeysignMetric{}
+	record := TssKeysignMetric{
+		TxID: txID,
+	}
 	_, err := k.get(ctx, k.GetKey(ctx, prefixTssKeysignMetric, txID.String()), &record)
+	ctx.Logger().Info("get keysign metric", "metric", fmt.Sprintf("%+v", record))
 	return &record, err
 }
 
 // SetTssKeysignMetric save TssKeygenMetric to key value store
 func (k KVStore) SetTssKeysignMetric(ctx cosmos.Context, metric *TssKeysignMetric) {
 	// save the tss keysign metric against tx id
+	ctx.Logger().Info("set keysign metric", "metric", fmt.Sprintf("%s,%+v ", metric.TxID, metric.NodeTssTimes))
 	k.set(ctx, k.GetKey(ctx, prefixTssKeysignMetric, metric.TxID.String()), metric)
 	// save the latest keysign metric , it override previous
 	k.set(ctx, k.GetKey(ctx, prefixTssKeysignMetricLatest, "keysign"), metric)
