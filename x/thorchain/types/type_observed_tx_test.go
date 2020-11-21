@@ -273,7 +273,71 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	voter.Tx = voter.GetTx(activeNodes)
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
+func (TypeObservedTxSuite) TestAddOutTx(c *C) {
+	activeNodes := NodeAccounts{
+		GetRandomNodeAccount(Active),
+		GetRandomNodeAccount(Active),
+		GetRandomNodeAccount(Active),
+		GetRandomNodeAccount(Active),
+	}
+	tx1 := GetRandomTx()
+	tx1.Memo = "whatever"
+	voter := NewObservedTxVoter(tx1.ID, nil)
+	observePoolAddr := GetRandomPubKey()
 
+	observedTx := NewObservedTx(tx1, 1024, observePoolAddr, true)
+	voter.Add(observedTx, activeNodes[0].NodeAddress)
+	voter.Add(observedTx, activeNodes[1].NodeAddress)
+	voter.Add(observedTx, activeNodes[2].NodeAddress)
+	c.Assert(voter.HasFinalised(activeNodes), Equals, true)
+	finalisedTx := voter.GetFinalisedTx(activeNodes)
+	c.Assert(finalisedTx.IsEmpty(), Equals, false)
+	c.Assert(voter.FinalisedTx.IsEmpty(), Equals, false)
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(100010000)),
+		},
+		common.Gas{
+			{Asset: common.BTCAsset, Amount: cosmos.NewUint(27500)},
+		},
+		"",
+	)
+	addr, err := observePoolAddr.GetAddress(common.BNBChain)
+	c.Assert(err, IsNil)
+	tx.FromAddress = addr
+
+	toi := TxOutItem{
+		Chain:       tx.Chain,
+		ToAddress:   tx.ToAddress,
+		VaultPubKey: observePoolAddr,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		Memo:        "",
+		GasRate:     1,
+		MaxGas: common.Gas{
+			{Asset: common.BTCAsset, Amount: cosmos.NewUint(37500)},
+		},
+	}
+	voter.Actions = append(voter.Actions, toi)
+	c.Assert(voter.AddOutTx(tx), Equals, true)
+	// add it again should return true, but without any real action
+	c.Assert(voter.AddOutTx(tx), Equals, true)
+	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
+	if !voter.Tx.IsEmpty() {
+		c.Assert(voter.Tx.Status, Equals, Done)
+		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
+	}
+	if !voter.FinalisedTx.IsEmpty() {
+		c.Assert(voter.FinalisedTx.Status, Equals, Done)
+		c.Assert(voter.FinalisedTx.OutHashes[0], Equals, tx.ID)
+	}
+	c.Assert(voter.IsDone(), Equals, true)
+	voter.Tx = voter.GetTx(activeNodes)
+	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
+}
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	coins1 := common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -329,6 +393,11 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 		{
 			tx:    NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr1, true),
+			equal: false,
+		},
+		{
+			tx:    NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, false),
 			equal: false,
 		},
 	}

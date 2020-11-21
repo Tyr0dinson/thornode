@@ -335,14 +335,6 @@ func (tx ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
 	return tx.hasConsensus(nodeAccounts, tx.FinalisedTxs)
 }
 
-// CanUpdateVault is to check whether can credit the fund in the tx to vault
-func (tx ObservedTxVoter) CanUpdateVault(accounts NodeAccounts) bool {
-	if len(tx.Txs) > 0 && tx.HasConsensus(accounts) {
-		return true
-	}
-	return tx.HasFinalised(accounts)
-}
-
 // GetTx return the tx that has super majority
 func (tx *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
 	if !tx.Tx.IsEmpty() {
