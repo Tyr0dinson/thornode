@@ -40,6 +40,7 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	obTx2 := NewObservedTx(tx2, 0, observePoolAddr)
 
 	c.Check(len(obTx1.String()) > 0, Equals, true)
+
 	voter.Add(obTx1, acc1)
 	c.Assert(voter.Txs, HasLen, 1)
 
@@ -59,6 +60,31 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	c.Assert(voter.Txs, HasLen, 2)
 	c.Assert(voter.Txs[0].Signers, HasLen, 2)
 	c.Assert(voter.Txs[1].Signers, HasLen, 2)
+
+	obTx1Finalised := NewObservedTx(tx1, 0, observePoolAddr)
+	obTx1Finalised.Finalised = true
+	obTx2Finalised := NewObservedTx(tx2, 0, observePoolAddr)
+	obTx2Finalised.Finalised = true
+
+	voter.Add(obTx1Finalised, acc1)
+	c.Assert(voter.FinalisedTxs, HasLen, 1)
+
+	voter.Add(obTx1Finalised, acc1) // check THORNode don't duplicate the same signer
+	c.Assert(voter.FinalisedTxs, HasLen, 1)
+	c.Assert(voter.FinalisedTxs[0].Signers, HasLen, 1)
+
+	voter.Add(obTx1Finalised, acc2) // append a signature
+	c.Assert(voter.FinalisedTxs, HasLen, 1)
+	c.Assert(voter.FinalisedTxs[0].Signers, HasLen, 2)
+
+	voter.Add(obTx2Finalised, acc1) // same validator seeing a different version of tx
+	c.Assert(voter.FinalisedTxs, HasLen, 2)
+	c.Assert(voter.FinalisedTxs[0].Signers, HasLen, 2)
+
+	voter.Add(obTx2Finalised, acc3) // second version
+	c.Assert(voter.FinalisedTxs, HasLen, 2)
+	c.Assert(voter.FinalisedTxs[0].Signers, HasLen, 2)
+	c.Assert(voter.FinalisedTxs[1].Signers, HasLen, 2)
 
 	trusts3 := NodeAccounts{
 		NodeAccount{
@@ -109,11 +135,21 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 
 	tx := voter.GetTx(trusts3)
 	c.Check(tx.Tx.Memo, Equals, "hello")
+	txFinalised := voter.GetFinalisedTx(trusts3)
+	c.Check(txFinalised.Tx.Memo, Equals, "hello")
 	voter.Tx = ObservedTx{} // reset the final observed tx
 	tx = voter.GetTx(trusts4)
 	c.Check(tx.IsEmpty(), Equals, true)
 	c.Check(voter.HasConsensus(trusts3), Equals, true)
 	c.Check(voter.HasConsensus(trusts4), Equals, false)
+	c.Check(voter.Key().Equals(txID), Equals, true)
+	c.Check(voter.String() == txID.String(), Equals, true)
+
+	voter.FinalisedTx = ObservedTx{}
+	txFinalised = voter.GetFinalisedTx(trusts4)
+	c.Check(txFinalised.IsEmpty(), Equals, true)
+	c.Check(voter.HasFinalised(trusts3), Equals, true)
+	c.Check(voter.HasFinalised(trusts4), Equals, false)
 	c.Check(voter.Key().Equals(txID), Equals, true)
 	c.Check(voter.String() == txID.String(), Equals, true)
 
@@ -199,6 +235,17 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	consensusTx := voter.GetTx(activeNodes)
 	c.Assert(consensusTx.IsEmpty(), Equals, false)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
+
+	observedTx = NewObservedTx(tx1, 1024, observePoolAddr)
+	observedTx.Finalised = true
+	voter.Add(observedTx, activeNodes[0].NodeAddress)
+	voter.Add(observedTx, activeNodes[1].NodeAddress)
+	voter.Add(observedTx, activeNodes[2].NodeAddress)
+	c.Assert(voter.HasFinalised(activeNodes), Equals, true)
+	finalisedTx := voter.GetFinalisedTx(activeNodes)
+	c.Assert(finalisedTx.IsEmpty(), Equals, false)
+	c.Assert(voter.FinalisedTx.IsEmpty(), Equals, false)
+
 	tx := GetRandomTx()
 	addr, err := observePoolAddr.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -218,6 +265,10 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	c.Assert(voter.Tx.Status, Equals, Done)
 	c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
+
+	c.Assert(voter.FinalisedTx.Status, Equals, Done)
+	c.Assert(voter.FinalisedTx.OutHashes[0], Equals, tx.ID)
+
 	c.Assert(voter.IsDone(), Equals, true)
 	voter.Tx = voter.GetTx(activeNodes)
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)

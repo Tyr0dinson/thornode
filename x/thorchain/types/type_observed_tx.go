@@ -44,10 +44,6 @@ type ObservedTx struct {
 	// Finalised == true , means the tx had been finalised , can be processed immediately
 	// Chains that have instant finality will have Finalised == true
 	Finalised bool `json:"finalised"`
-
-	// ConfirmationRequired represent number of confirmation required before this tx can be processed
-	// 0 means this tx doesn't need confirmation counting
-	ConfirmationRequired uint64 `json:"confirmation_required"`
 }
 
 // ObservedTxs a list of ObservedTx
@@ -96,9 +92,7 @@ func (tx ObservedTx) Equals(tx2 ObservedTx) bool {
 	if tx.Finalised != tx2.Finalised {
 		return false
 	}
-	if tx.ConfirmationRequired != tx2.ConfirmationRequired {
-		return false
-	}
+
 	return true
 }
 
@@ -356,6 +350,7 @@ func (tx *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
 	tx.Tx = tx.getConsensusTx(nodeAccounts, tx.Txs)
 	return tx.Tx
 }
+
 func (tx *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, txs ObservedTxs) ObservedTx {
 	for _, txIn := range txs {
 		var count int
