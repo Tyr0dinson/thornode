@@ -97,7 +97,7 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 			}
 		}
 	}
-	if !ok && voter.HasConsensus(nas) {
+	if !ok && voter.HasConsensus(nas) && !tx.Finalised {
 		if voter.Height == 0 {
 			ok = true
 			voter.Height = common.BlockHeight(ctx)
@@ -219,6 +219,15 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			// do not process outbound handlers here, or internal handlers
 			continue
 		}
+
+		if err := h.keeper.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+
+		// add addresses to observing addresses. This is used to detect
+		// active/inactive observing node accounts
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.Signers)
+
 		if !voter.HasFinalised(activeNodeAccounts) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
@@ -232,14 +241,6 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			}
 			continue
 		}
-
-		if err := h.keeper.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
-			ctx.Logger().Error("fail to set last chain height", "error", err)
-		}
-
-		// add addresses to observing addresses. This is used to detect
-		// active/inactive observing node accounts
-		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.Signers)
 
 		// check if we've halted trading
 		_, isSwap := m.(MsgSwap)
