@@ -150,13 +150,19 @@ func (tx *ObservedTx) IsDone(numOuts int) bool {
 
 // ObservedTxVoter tracks who voted for an observed tx
 // only tx reach super majority will be processed by THORChain
+// as THORChain start to support PoW like BTC , tx need to do confirmation counting , a tx need to meet confirmation
+// counting requirement before it can be processed
 type ObservedTxVoter struct {
-	TxID    common.TxID `json:"tx_id"`
-	Tx      ObservedTx  `json:"tx"` // final consensus transaction
-	Height  int64       `json:"height"`
-	Txs     ObservedTxs `json:"in_tx"`   // copies of tx in by various observers.
-	Actions []TxOutItem `json:"actions"` // outbound txs set to be sent
-	OutTxs  common.Txs  `json:"out_txs"` // observed outbound transactions
+	TxID            common.TxID `json:"tx_id"`            // Tx Hash
+	Tx              ObservedTx  `json:"tx"`               // final consensus transaction
+	Height          int64       `json:"height"`           // Block height
+	Txs             ObservedTxs `json:"in_tx"`            // copies of tx in by various observers.
+	Actions         []TxOutItem `json:"actions"`          // outbound txs set to be sent
+	OutTxs          common.Txs  `json:"out_txs"`          // observed outbound transactions
+	FinalisedTx     ObservedTx  `json:"finalised_tx"`     // finalised tx that reach consensus
+	FinalisedHeight int64       `json:"finalised_height"` // block height the finalised Tx get consensus
+	FinalisedTxs    ObservedTxs `json:"finalised_txs"`    // copies of tx, which has finalise = true by various observers
+	UpdatedVault    bool        `json:"updated_vault"`    // has the fund in this tx been credit to vault
 }
 
 // ObservedTxVoters a list of observed tx voter
@@ -164,10 +170,17 @@ type ObservedTxVoters []ObservedTxVoter
 
 // NewObservedTxVoter create a new instance of ObservedTxVoter
 func NewObservedTxVoter(txID common.TxID, txs []ObservedTx) ObservedTxVoter {
-	return ObservedTxVoter{
+	observedTxVoter := ObservedTxVoter{
 		TxID: txID,
-		Txs:  txs,
 	}
+	for _, item := range txs {
+		if item.Finalised {
+			observedTxVoter.FinalisedTxs = append(observedTxVoter.FinalisedTxs, item)
+			continue
+		}
+		observedTxVoter.Txs = append(observedTxVoter.Txs, item)
+	}
+	return observedTxVoter
 }
 
 // Valid check whether the tx is valid , if it is not , then an error will be returned
@@ -182,7 +195,12 @@ func (tx ObservedTxVoter) Valid() error {
 			return err
 		}
 	}
-
+	// check all other finalised txs
+	for _, ftx := range tx.FinalisedTxs {
+		if err := ftx.Valid(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -240,8 +258,15 @@ func (tx *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 	for i := range tx.Txs {
 		tx.Txs[i].SetDone(in.ID, len(tx.Actions))
 	}
+	for i := range tx.FinalisedTxs {
+		tx.FinalisedTxs[i].SetDone(in.ID, len(tx.Actions))
+	}
 	if !tx.Tx.IsEmpty() {
 		tx.Tx.SetDone(in.ID, len(tx.Actions))
+	}
+
+	if !tx.FinalisedTx.IsEmpty() {
+		tx.FinalisedTx.SetDone(in.ID, len(tx.Actions))
 	}
 	return true
 }
@@ -256,8 +281,14 @@ func (tx *ObservedTxVoter) IsDone() bool {
 // already sign , they will not add twice , it simply return false
 func (tx *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) bool {
 	// check if this signer has already signed, no take backs allowed
+	var txs ObservedTxs
+	if observedTx.Finalised {
+		txs = tx.FinalisedTxs
+	} else {
+		txs = tx.Txs
+	}
 	votedIdx := -1
-	for idx, transaction := range tx.Txs {
+	for idx, transaction := range txs {
 		if !transaction.Equals(observedTx) {
 			continue
 		}
@@ -271,17 +302,25 @@ func (tx *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) 
 
 	}
 	if votedIdx != -1 {
-		return tx.Txs[votedIdx].Sign(signer)
+		return txs[votedIdx].Sign(signer)
 	}
 
 	observedTx.Signers = []cosmos.AccAddress{signer}
-	tx.Txs = append(tx.Txs, observedTx)
+	if observedTx.Finalised {
+		tx.FinalisedTxs = append(tx.FinalisedTxs, observedTx)
+	} else {
+		tx.Txs = append(tx.Txs, observedTx)
+	}
 	return true
 }
 
-// HasConsensus is to check whether any of the tx in this ObservedTxVoter reach consensus
+// HasConsensus is to check whether the tx with finalise = false in this ObservedTxVoter reach consensus
 func (tx ObservedTxVoter) HasConsensus(nodeAccounts NodeAccounts) bool {
-	for _, txIn := range tx.Txs {
+	return tx.hasConsensus(nodeAccounts, tx.Txs)
+}
+
+func (tx ObservedTxVoter) hasConsensus(nodeAccounts NodeAccounts, txs ObservedTxs) bool {
+	for _, txIn := range txs {
 		var count int
 		for _, signer := range txIn.Signers {
 			if nodeAccounts.IsNodeKeys(signer) {
@@ -296,23 +335,47 @@ func (tx ObservedTxVoter) HasConsensus(nodeAccounts NodeAccounts) bool {
 	return false
 }
 
+// HasFinalised is to check whether the tx with finalise = true  reach super majority
+func (tx ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
+	return tx.hasConsensus(nodeAccounts, tx.FinalisedTxs)
+}
+
+// CanUpdateVault is to check whether can credit the fund in the tx to vault
+func (tx ObservedTxVoter) CanUpdateVault(accounts NodeAccounts) bool {
+	if len(tx.Txs) > 0 && tx.HasConsensus(accounts) {
+		return true
+	}
+	return tx.HasFinalised(accounts)
+}
+
 // GetTx return the tx that has super majority
 func (tx *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
 	if !tx.Tx.IsEmpty() {
 		return tx.Tx
 	}
-	for _, txIn := range tx.Txs {
+	tx.Tx = tx.getConsensusTx(nodeAccounts, tx.Txs)
+	return tx.Tx
+}
+func (tx *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, txs ObservedTxs) ObservedTx {
+	for _, txIn := range txs {
 		var count int
 		for _, signer := range txIn.Signers {
-			if nodeAccounts.IsNodeKeys(signer) {
+			if accounts.IsNodeKeys(signer) {
 				count++
 			}
 		}
-		if HasSuperMajority(count, len(nodeAccounts)) {
-			tx.Tx = txIn
+		if HasSuperMajority(count, len(accounts)) {
 			return txIn
 		}
 	}
-
 	return ObservedTx{}
+}
+
+// GetFinalisedTx return the ObservedTx that reach consensus
+func (tx *ObservedTxVoter) GetFinalisedTx(nodeAccounts NodeAccounts) ObservedTx {
+	if !tx.FinalisedTx.IsEmpty() {
+		return tx.FinalisedTx
+	}
+	tx.FinalisedTx = tx.getConsensusTx(nodeAccounts, tx.FinalisedTxs)
+	return tx.FinalisedTx
 }
