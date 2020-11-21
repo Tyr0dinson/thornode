@@ -201,7 +201,6 @@ func (k *TestObservedTxInHandleKeeper) SetTxOut(ctx cosmos.Context, blockOut *Tx
 
 func (s *HandlerObservedTxInSuite) TestHandle(c *C) {
 	s.testHandleWithVersion(c, constants.SWVersion)
-	s.testHandleWithVersion(c, semver.MustParse("0.13.0"))
 }
 
 func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C, ver semver.Version) {

@@ -50,12 +50,13 @@ type ObservedTx struct {
 type ObservedTxs []ObservedTx
 
 // NewObservedTx create a new instance of ObservedTx
-func NewObservedTx(tx common.Tx, height int64, pk common.PubKey) ObservedTx {
+func NewObservedTx(tx common.Tx, height int64, pk common.PubKey, finalised bool) ObservedTx {
 	return ObservedTx{
 		Tx:             tx,
 		Status:         Incomplete,
 		BlockHeight:    height,
 		ObservedPubKey: pk,
+		Finalised:      finalised,
 	}
 }
 
