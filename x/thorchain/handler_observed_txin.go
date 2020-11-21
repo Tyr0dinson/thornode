@@ -219,7 +219,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			// do not process outbound handlers here, or internal handlers
 			continue
 		}
-		if !voter.HasFinalised(NodeAccounts{}) {
+		if !voter.HasFinalised(activeNodeAccounts) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}

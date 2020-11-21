@@ -36,8 +36,8 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	observePoolAddr := GetRandomPubKey()
 	voter := NewObservedTxVoter(txID, nil)
 
-	obTx1 := NewObservedTx(tx1, 0, observePoolAddr)
-	obTx2 := NewObservedTx(tx2, 0, observePoolAddr)
+	obTx1 := NewObservedTx(tx1, 0, observePoolAddr, false)
+	obTx2 := NewObservedTx(tx2, 0, observePoolAddr, false)
 
 	c.Check(len(obTx1.String()) > 0, Equals, true)
 
@@ -61,9 +61,9 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	c.Assert(voter.Txs[0].Signers, HasLen, 2)
 	c.Assert(voter.Txs[1].Signers, HasLen, 2)
 
-	obTx1Finalised := NewObservedTx(tx1, 0, observePoolAddr)
+	obTx1Finalised := NewObservedTx(tx1, 0, observePoolAddr, true)
 	obTx1Finalised.Finalised = true
-	obTx2Finalised := NewObservedTx(tx2, 0, observePoolAddr)
+	obTx2Finalised := NewObservedTx(tx2, 0, observePoolAddr, true)
 	obTx2Finalised.Finalised = true
 
 	voter.Add(obTx1Finalised, acc1)
@@ -211,7 +211,7 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 			Gas:         BNBGasFeeSingleton,
 			Memo:        item.memo,
 		}
-		txIn := NewObservedTx(tx, item.blockHeight, item.observePoolAddr)
+		txIn := NewObservedTx(tx, item.blockHeight, item.observePoolAddr, true)
 		c.Assert(txIn.Valid(), NotNil)
 	}
 }
@@ -227,7 +227,7 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	tx1.Memo = "whatever"
 	voter := NewObservedTxVoter(tx1.ID, nil)
 	observePoolAddr := GetRandomPubKey()
-	observedTx := NewObservedTx(tx1, 1024, observePoolAddr)
+	observedTx := NewObservedTx(tx1, 1024, observePoolAddr, false)
 	voter.Add(observedTx, activeNodes[0].NodeAddress)
 	voter.Add(observedTx, activeNodes[1].NodeAddress)
 	voter.Add(observedTx, activeNodes[2].NodeAddress)
@@ -236,7 +236,7 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	c.Assert(consensusTx.IsEmpty(), Equals, false)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
 
-	observedTx = NewObservedTx(tx1, 1024, observePoolAddr)
+	observedTx = NewObservedTx(tx1, 1024, observePoolAddr, false)
 	observedTx.Finalised = true
 	voter.Add(observedTx, activeNodes[0].NodeAddress)
 	voter.Add(observedTx, activeNodes[1].NodeAddress)
@@ -302,33 +302,33 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 		equal bool
 	}{
 		{
-			tx:    NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo1", Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
+			tx:    NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo1", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			equal: false,
 		},
 		{
-			tx:    NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{FromAddress: bnb1, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
+			tx:    NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{FromAddress: bnb1, ToAddress: GetRandomBNBAddress(), Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			equal: false,
 		},
 		{
-			tx:    NewObservedTx(common.Tx{Coins: coins2, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
+			tx:    NewObservedTx(common.Tx{Coins: coins2, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			equal: false,
 		},
 		{
-			tx:    NewObservedTx(common.Tx{Coins: coins3, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
+			tx:    NewObservedTx(common.Tx{Coins: coins3, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			equal: false,
 		},
 		{
-			tx:    NewObservedTx(common.Tx{Coins: coins4, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
+			tx:    NewObservedTx(common.Tx{Coins: coins4, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
 			equal: false,
 		},
 		{
-			tx:    NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr),
-			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr1),
+			tx:    NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr, true),
+			tx1:   NewObservedTx(common.Tx{Coins: coins1, Memo: "memo", FromAddress: bnb, ToAddress: GetRandomBNBAddress(), Gas: BNBGasFeeSingleton}, 0, observePoolAddr1, true),
 			equal: false,
 		},
 	}
@@ -339,21 +339,21 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 
 func (TypeObservedTxSuite) TestObservedTxVote(c *C) {
 	tx := GetRandomTx()
-	voter := NewObservedTxVoter("", []ObservedTx{NewObservedTx(tx, 1, GetRandomPubKey())})
+	voter := NewObservedTxVoter("", []ObservedTx{NewObservedTx(tx, 1, GetRandomPubKey(), true)})
 	c.Check(voter.Valid(), NotNil)
 
-	voter1 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{NewObservedTx(tx, 0, "")})
+	voter1 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{NewObservedTx(tx, 0, "", true)})
 	c.Check(voter1.Valid(), NotNil)
 
-	voter2 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{NewObservedTx(tx, 1024, GetRandomPubKey())})
+	voter2 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{NewObservedTx(tx, 1024, GetRandomPubKey(), true)})
 	c.Check(voter2.Valid(), IsNil)
 
-	observedTx := NewObservedTx(GetRandomTx(), 1024, GetRandomPubKey())
+	observedTx := NewObservedTx(GetRandomTx(), 1024, GetRandomPubKey(), true)
 	addr := GetRandomBech32Addr()
 	c.Check(observedTx.Sign(addr), Equals, true)
 	c.Check(observedTx.Sign(addr), Equals, false)
 
-	observedTx1 := NewObservedTx(observedTx.Tx, 1024, GetRandomPubKey())
+	observedTx1 := NewObservedTx(observedTx.Tx, 1024, GetRandomPubKey(), true)
 	c.Assert(observedTx.Equals(observedTx1), Equals, false)
 	txID := GetRandomTxHash()
 	observedTx1.SetDone(txID, 2)

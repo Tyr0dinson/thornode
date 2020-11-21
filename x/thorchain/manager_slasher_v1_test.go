@@ -222,7 +222,7 @@ func (s *SlashingV1Suite) TestObservingSlashing(c *C) {
 	txVoter := NewObservedTxVoter(txHash, []ObservedTx{
 		observedTx,
 	})
-	txVoter.Height = 1024
+	txVoter.FinalisedHeight = 1024
 	txVoter.Add(observedTx, nas[0].NodeAddress)
 	k.SetObservedTxInVoter(ctx, txVoter)
 

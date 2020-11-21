@@ -22,7 +22,7 @@ func (MsgMigrateSuite) TestMsgMigrateSuite(c *C) {
 		common.Coins{common.NewCoin(common.BNBAsset, cosmos.OneUint())},
 		BNBGasFeeSingleton,
 		"migrate:10",
-	), 12, GetRandomPubKey())
+	), 12, GetRandomPubKey(), true)
 	m := NewMsgMigrate(tx, 10, acc1)
 	EnsureMsgBasicCorrect(m, c)
 	c.Check(m.Type(), Equals, "migrate")
@@ -67,7 +67,7 @@ func (MsgMigrateSuite) TestMsgMigrateSuite(c *C) {
 			common.Coins{common.NewCoin(common.BNBAsset, cosmos.OneUint())},
 			BNBGasFeeSingleton,
 			"",
-		), 12, GetRandomPubKey())
+		), 12, GetRandomPubKey(), true)
 		m := NewMsgMigrate(tx, item.blockHeight, item.signer)
 		err := m.ValidateBasic()
 		c.Assert(err, NotNil, Commentf("%s", err.Error()))

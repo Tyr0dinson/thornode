@@ -56,7 +56,7 @@ func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
 	// happy path
 	ver := constants.SWVersion
 	pk := GetRandomPubKey()
-	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk)}
+	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk, true)}
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
 	msg := NewMsgObservedTxIn(txs, activeNodeAccount.NodeAddress)
@@ -100,7 +100,7 @@ func (s *HandlerObservedTxInSuite) TestFailure(c *C) {
 	}
 	mgr := NewDummyMgr()
 
-	tx := NewObservedTx(GetRandomTx(), 12, GetRandomPubKey())
+	tx := NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), true)
 	ver := constants.SWVersion
 	constAccessor := constants.GetConstantValues(ver)
 	err := refundTx(ctx, tx, mgr, keeper, constAccessor, CodeInvalidMemo, "Invalid memo", "")
@@ -210,7 +210,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C, ver semver.Versio
 
 	tx := GetRandomTx()
 	tx.Memo = "SWAP:BTC.BTC:" + GetRandomBTCAddress().String()
-	obTx := NewObservedTx(tx, 12, GetRandomPubKey())
+	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), true)
 	txs := ObservedTxs{obTx}
 	pk := GetRandomPubKey()
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
@@ -286,7 +286,7 @@ func (s *HandlerObservedTxInSuite) testMigrateMemoWithVersion(c *C, ver semver.V
 		FromAddress: addr,
 		ToAddress:   newVaultAddr,
 		Gas:         BNBGasFeeSingleton,
-	}, 13, vault.PubKey)
+	}, 13, vault.PubKey, true)
 
 	txs := ObservedTxs{tx}
 	keeper := &TestObservedTxInHandleKeeper{
@@ -371,7 +371,7 @@ func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestH
 	addr, err := pk.GetAddress(tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
 	tx.ToAddress = addr
-	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk)
+	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk, true)
 	txs := ObservedTxs{obTx}
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
@@ -411,7 +411,7 @@ func (HandlerObservedTxInSuite) TestObservedTxHandler_validations(c *C) {
 			name: "message fail validation should return an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *ObservedTxInHandlerTestHelper) cosmos.Msg {
 				return NewMsgObservedTxIn(ObservedTxs{
-					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey()),
+					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey(), true),
 				}, GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ObservedTxInHandlerTestHelper, name string) {

@@ -81,11 +81,11 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 		// when the signer already sign it
 		return voter, ok
 	}
-	if voter.HasConsensus(nas) {
-		if voter.Height == 0 {
+	if voter.HasFinalised(nas) {
+		if voter.FinalisedHeight == 0 {
 			ok = true
-			voter.Height = common.BlockHeight(ctx)
-			voter.Tx = voter.GetTx(nas)
+			voter.FinalisedHeight = common.BlockHeight(ctx)
+			voter.FinalisedTx = voter.GetFinalisedTx(nas)
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.Signers...)
 
@@ -137,7 +137,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 		// check whether the tx has consensus
 		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer, version, constAccessor)
 		if !ok {
-			if voter.Height == common.BlockHeight(ctx) {
+			if voter.FinalisedHeight == common.BlockHeight(ctx) {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
 				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
@@ -183,7 +183,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 			continue
 		}
 
-		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+		txOut := voter.GetFinalisedTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
 		m, err := processOneTxIn(ctx, h.keeper, txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {

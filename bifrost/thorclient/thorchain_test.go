@@ -128,6 +128,7 @@ func (s *ThorchainSuite) TestSign(c *C) {
 		},
 		1,
 		pk,
+		true,
 	)
 
 	signedMsg, err := s.bridge.GetObservationsStdTx(stypes.ObservedTxs{tx})

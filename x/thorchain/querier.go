@@ -611,12 +611,12 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, kee
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
 	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
+	if len(voter.Txs) == 0 && len(voter.FinalisedTxs) == 0 {
 		voter, err = keeper.GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
+		if len(voter.Txs) == 0 && len(voter.FinalisedTxs) == 0 {
 			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 		}
 	}
@@ -643,12 +643,12 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper ke
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
-	if len(voter.Txs) == 0 {
+	if len(voter.Txs) == 0 && len(voter.FinalisedTxs) == 0 {
 		voter, err = keeper.GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
+		if len(voter.Txs) == 0 && len(voter.FinalisedTxs) == 0 {
 			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 		}
 	}
@@ -665,7 +665,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper ke
 		ObservedTx     `json:"observed_tx"`
 		KeysignMetrics types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}{
-		ObservedTx:     voter.GetTx(nodeAccounts),
+		ObservedTx:     voter.GetFinalisedTx(nodeAccounts),
 		KeysignMetrics: *keysignMetric,
 	}
 

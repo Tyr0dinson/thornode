@@ -125,21 +125,32 @@ func (s *SlasherV1) slashNotObserving(ctx cosmos.Context, txHash common.TxID, co
 	if err != nil {
 		return fmt.Errorf("fail to get observe txin voter (%s): %w", txHash.String(), err)
 	}
-	if len(voter.Txs) == 0 {
+
+	if len(voter.Txs) == 0 && len(voter.FinalisedTxs) == 0 {
 		return nil
 	}
+
 	nodes, err := s.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to get list of active accounts: %w", err)
 	}
+	if len(voter.Txs) > 0 {
+		s.checkSignerAndSlash(ctx, nodes, voter.Height, voter.Txs[0].Signers, constAccessor)
+	}
+	if len(voter.FinalisedTxs) > 0 {
+		s.checkSignerAndSlash(ctx, nodes, voter.FinalisedHeight, voter.FinalisedTxs[0].Signers, constAccessor)
+	}
+	return nil
+}
 
+func (s *SlasherV1) checkSignerAndSlash(ctx cosmos.Context, nodes NodeAccounts, blockHeight int64, signers []cosmos.AccAddress, constAccessor constants.ConstantValues) {
 	for _, na := range nodes {
 		// the node is active after the tx finalised
-		if na.ActiveBlockHeight > voter.Height {
+		if na.ActiveBlockHeight > blockHeight {
 			continue
 		}
 		found := false
-		for _, addr := range voter.Txs[0].Signers {
+		for _, addr := range signers {
 			if na.NodeAddress.Equals(addr) {
 				found = true
 				break
@@ -153,7 +164,6 @@ func (s *SlasherV1) slashNotObserving(ctx cosmos.Context, txHash common.TxID, co
 			}
 		}
 	}
-	return nil
 }
 
 // LackSigning slash account that fail to sign tx

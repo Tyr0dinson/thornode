@@ -434,7 +434,7 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 		txs[i] = stypes.NewObservedTx(
 			common.NewTx(txID, sender, to, item.Coins, item.Gas, item.Memo),
 			item.BlockHeight,
-			item.ObservedVaultPubKey)
+			item.ObservedVaultPubKey, true)
 		txs[i].KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
 	}
 	return txs, nil
