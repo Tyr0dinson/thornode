@@ -158,6 +158,7 @@ type ObservedTxVoter struct {
 	FinalisedHeight int64       `json:"finalised_height"` // block height the finalised Tx get consensus
 	FinalisedTxs    ObservedTxs `json:"finalised_txs"`    // copies of tx, which has finalise = true by various observers
 	UpdatedVault    bool        `json:"updated_vault"`    // has the fund in this tx been credit to vault
+	Reverted        bool        `json:"reverted"`         // reverted using Errata
 }
 
 // ObservedTxVoters a list of observed tx voter
@@ -263,6 +264,7 @@ func (tx *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 	if !tx.FinalisedTx.IsEmpty() {
 		tx.FinalisedTx.SetDone(in.ID, len(tx.Actions))
 	}
+
 	return true
 }
 
@@ -366,4 +368,20 @@ func (tx *ObservedTxVoter) GetFinalisedTx(nodeAccounts NodeAccounts) ObservedTx 
 	}
 	tx.FinalisedTx = tx.getConsensusTx(nodeAccounts, tx.FinalisedTxs)
 	return tx.FinalisedTx
+}
+
+func (tx *ObservedTxVoter) SetReverted() {
+	for _, item := range tx.Txs {
+		item.Status = Reverted
+	}
+	for _, item := range tx.FinalisedTxs {
+		item.Status = Reverted
+	}
+	tx.Reverted = true
+	if !tx.Tx.IsEmpty() {
+		tx.Tx.Status = Reverted
+	}
+	if tx.FinalisedTx.IsEmpty() {
+		tx.FinalisedTx.Status = Reverted
+	}
 }

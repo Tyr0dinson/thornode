@@ -165,6 +165,12 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 		}
 
 		ctx.Logger().Info("handleMsgObservedTxIn request", "Tx:", tx.String())
+
+		if voter.Reverted {
+			ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
+			continue
+		}
+
 		var txIn ObservedTx
 		if voter.HasFinalised(activeNodeAccounts) {
 			voter.FinalisedTx.Tx.Memo = tx.Tx.Memo

@@ -104,7 +104,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 	keeper := &TestErrataTxKeeper{
 		na: na,
 		observedTx: ObservedTxVoter{
-			Tx: ObservedTx{
+			FinalisedTx: ObservedTx{
 				Tx: common.Tx{
 					ID:          txID,
 					Chain:       common.BNBChain,
@@ -113,6 +113,19 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 						common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
 					},
 					Memo: fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()),
+				},
+			},
+			FinalisedTxs: ObservedTxs{
+				ObservedTx{
+					Tx: common.Tx{
+						ID:          txID,
+						Chain:       common.BNBChain,
+						FromAddress: addr,
+						Coins: common.Coins{
+							common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
+						},
+						Memo: fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()),
+					},
 				},
 			},
 		},
@@ -347,8 +360,11 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				helper.SetNodeAccount(ctx, nodeAccount)
 				observedTx := GetRandomObservedTx()
 				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
+					TxID:        observedTx.Tx.ID,
+					FinalisedTx: observedTx,
+					FinalisedTxs: ObservedTxs{
+						observedTx,
+					},
 					Height: observedTx.BlockHeight,
 				}
 				helper.Keeper.SetObservedTxInVoter(ctx, voter)
@@ -369,8 +385,11 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "withdraw"
 				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
+					TxID:        observedTx.Tx.ID,
+					FinalisedTx: observedTx,
+					FinalisedTxs: ObservedTxs{
+						observedTx,
+					},
 					Height: observedTx.BlockHeight,
 				}
 				helper.Keeper.SetObservedTxInVoter(ctx, voter)
@@ -392,8 +411,11 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				observedTx.Tx.Memo = "swap:BNB"
 				helper.failGetPool = true
 				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
+					TxID:        observedTx.Tx.ID,
+					FinalisedTx: observedTx,
+					FinalisedTxs: ObservedTxs{
+						observedTx,
+					},
 					Height: observedTx.BlockHeight,
 				}
 				helper.Keeper.SetObservedTxInVoter(ctx, voter)
@@ -428,8 +450,11 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.Status = PoolAvailable
 				helper.Keeper.SetPool(ctx, pool)
 				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
+					TxID:        observedTx.Tx.ID,
+					FinalisedTx: observedTx,
+					FinalisedTxs: ObservedTxs{
+						observedTx,
+					},
 					Height: observedTx.BlockHeight,
 				}
 				helper.Keeper.SetObservedTxInVoter(ctx, voter)
@@ -457,8 +482,11 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.Status = PoolAvailable
 				helper.Keeper.SetPool(ctx, pool)
 				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
+					TxID:        observedTx.Tx.ID,
+					FinalisedTx: observedTx,
+					FinalisedTxs: ObservedTxs{
+						observedTx,
+					},
 					Height: observedTx.BlockHeight,
 				}
 				helper.Keeper.SetObservedTxInVoter(ctx, voter)

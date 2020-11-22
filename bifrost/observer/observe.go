@@ -149,6 +149,7 @@ func (o *Observer) sendDeck() {
 				}
 			}
 		} else {
+			// here all the tx either don't need confirmation counting or it already have enough
 			result := o.chunkifyAndSendToThorchain(deck, chainClient, true)
 			if len(result.TxArray) > 0 {
 				newTxIn.TxArray = append(newTxIn.TxArray, result.TxArray...)
