@@ -273,6 +273,7 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	voter.Tx = voter.GetTx(activeNodes)
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
+
 func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	activeNodes := NodeAccounts{
 		GetRandomNodeAccount(Active),
@@ -338,6 +339,7 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	voter.Tx = voter.GetTx(activeNodes)
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
+
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	coins1 := common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
