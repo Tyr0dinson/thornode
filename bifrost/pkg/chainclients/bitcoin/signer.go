@@ -314,7 +314,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 		} else if gasAmtSats < maxGasCoin.Amount.Uint64() {
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
-			c.logger.Info().Msgf("migration tx , max gas is: %s, however only: %d is required, gap: %d goes to next vault", tx.MaxGas, gasAmtSats, gap)
+			c.logger.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to customer", tx.MaxGas, gasAmtSats, gap)
 			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
 		}
 	}
@@ -330,10 +330,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	// balance to ourselves
 	// add output to pay the balance back ourselves
 	balance := int64(total) - redeemTxOut.Value - int64(gasAmt)
+	c.logger.Info().Msgf("total: %d, to customer: %d, gas: %d", int64(total), redeemTxOut.Value, int64(gasAmt))
 	if balance < 0 {
-		return nil, errors.New("not enough balance to pay customer")
+		return nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
 	if balance > 0 {
+		c.logger.Info().Msgf("send %d back to self", balance)
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
