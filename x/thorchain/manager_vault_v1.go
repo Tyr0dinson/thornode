@@ -186,7 +186,7 @@ func (vm *VaultMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor co
 					}
 					amt = common.SafeSub(
 						amt,
-						gas.Amount.MulUint64(uint64(vault.CoinLengthByChain(coin.Asset.Chain))),
+						gas.Amount.MulUint64(uint64(vault.CoinLengthByChain(coin.Asset.Chain, true))),
 					)
 				}
 
