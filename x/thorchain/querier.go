@@ -653,20 +653,20 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper ke
 		}
 	}
 
-	nodeAccounts, err := keeper.ListActiveNodeAccounts(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get node accounts: %w", err)
-	}
 	keysignMetric, err := keeper.GetTssKeysignMetric(ctx, hash)
 	if err != nil {
 		ctx.Logger().Error("fatil to get keysign metrics", "error", err)
 	}
+
 	result := struct {
 		ObservedTx     `json:"observed_tx"`
 		KeysignMetrics types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}{
-		ObservedTx:     voter.GetFinalisedTx(nodeAccounts),
+		ObservedTx:     voter.FinalisedTx,
 		KeysignMetrics: *keysignMetric,
+	}
+	if voter.FinalisedTx.IsEmpty() {
+		result.ObservedTx = voter.Tx
 	}
 
 	res, err := codec.MarshalJSONIndent(keeper.Cdc(), result)

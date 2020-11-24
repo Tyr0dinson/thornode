@@ -261,7 +261,10 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	voter, err := s.k.GetObservedTxInVoter(s.ctx, tx.ID)
 	c.Assert(err, IsNil)
 	voter.Add(NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, true), nodeAccount.NodeAddress)
+	voter.HasFinalised(NodeAccounts{nodeAccount})
+	voter.FinalisedTx = voter.GetFinalisedTx(NodeAccounts{nodeAccount})
 	s.k.SetObservedTxInVoter(s.ctx, voter)
+
 	result, err = s.querier(s.ctx, []string{query.QueryTx.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
 	var newTx struct {
