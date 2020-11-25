@@ -60,6 +60,7 @@ type TxOutStore interface {
 	ClearOutboundItems(ctx cosmos.Context)
 	GetOutboundItems(ctx cosmos.Context) ([]*TxOutItem, error)
 	TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (bool, error)
+	PrelightTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (*TxOutItem, error)
 	UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) error
 	GetOutboundItemByToAddress(_ cosmos.Context, _ common.Address) []TxOutItem
 }

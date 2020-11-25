@@ -41,6 +41,10 @@ func (tos *TxOutStoreDummy) GetOutboundItemByToAddress(_ cosmos.Context, to comm
 	return items
 }
 
+func (tos *TxOutStoreDummy) PrelightTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (*TxOutItem, error) {
+	return toi, nil
+}
+
 // AddTxOutItem add an item to internal structure
 func (tos *TxOutStoreDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (bool, error) {
 	if !toi.Chain.Equals(common.THORChain) {
@@ -94,6 +98,10 @@ func (tos *TxOutStoreFailDummy) GetOutboundItemByToAddress(_ cosmos.Context, to 
 		}
 	}
 	return items
+}
+
+func (tos *TxOutStoreFailDummy) PrelightTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (*TxOutItem, error) {
+	return toi, nil
 }
 
 // AddTxOutItem add an item to internal structure

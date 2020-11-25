@@ -100,17 +100,6 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
-	withdrawEvt := NewEventWithdraw(
-		msg.Asset,
-		units,
-		int64(msg.BasisPoints.Uint64()),
-		cosmos.ZeroDec(),
-		msg.Tx,
-		assetAmount,
-		runeAmt)
-	if err := h.mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
-		return nil, multierror.Append(errFailSaveEvent, err)
-	}
 
 	memo := ""
 	if msg.Tx.ID.Equals(common.BlankTxID) {
@@ -181,18 +170,28 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 		Coin:      common.NewCoin(common.RuneAsset(), runeAmt),
 		Memo:      memo,
 	}
-	// there is much much less chance thorchain doesn't have enough RUNE
-	okRune, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
+	toi, err = h.mgr.TxOutStore().PrelightTxOutItem(ctx, h.mgr, toi)
 	if err != nil {
 		// emitted asset doesn't enough to cover fee, continue
 		if !errors.Is(err, ErrNotEnoughToPayFee) {
 			return nil, multierror.Append(errFailAddOutboundTx, err)
 		}
-		okRune = true
 	}
 
-	if !okRune {
-		return nil, errFailAddOutboundTx
+	withdrawEvt := NewEventWithdraw(
+		msg.Asset,
+		units,
+		int64(msg.BasisPoints.Uint64()),
+		cosmos.ZeroDec(),
+		msg.Tx,
+		assetAmount,
+		runeAmt)
+	if err := h.mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
+		return nil, multierror.Append(errFailSaveEvent, err)
+	}
+
+	if err := h.mgr.TxOutStore().UnSafeAddTxOutItem(ctx, h.mgr, toi); err != nil {
+		return nil, err
 	}
 
 	// Get rune (if any) and donate it to the reserve

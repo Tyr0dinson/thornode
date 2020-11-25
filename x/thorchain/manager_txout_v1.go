@@ -60,6 +60,18 @@ func (tos *TxOutStorageV1) ClearOutboundItems(ctx cosmos.Context) {
 	_ = tos.keeper.ClearTxOut(ctx, common.BlockHeight(ctx))
 }
 
+// PrelightTxOutItem processes a TxOutItem but does not add it to the txout store
+func (tos *TxOutStorageV1) PrelightTxOutItem(ctx cosmos.Context, mgr Manager, toi *TxOutItem) (*TxOutItem, error) {
+	success, err := tos.prepareTxOutItem(ctx, toi)
+	if err != nil {
+		return toi, fmt.Errorf("fail to prepare outbound tx: %w", err)
+	}
+	if !success {
+		return toi, errFailAddOutboundTx
+	}
+	return toi, nil
+}
+
 // TryAddTxOutItem add an outbound tx to block
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error

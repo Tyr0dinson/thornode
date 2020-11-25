@@ -112,14 +112,7 @@ func swap(ctx cosmos.Context,
 			return cosmos.ZeroUint(), swapEvents, errSwapFail
 		}
 	}
-	for _, evt := range swapEvents {
-		if err := mgr.EventMgr().EmitSwapEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit swap event", "error", err)
-		}
-		if err := keeper.AddToLiquidityFees(ctx, evt.Pool, evt.LiquidityFeeInRune); err != nil {
-			return assetAmount, swapEvents, fmt.Errorf("fail to add to liquidity fees: %w", err)
-		}
-	}
+
 	toi := &TxOutItem{
 		Chain:     target.Chain,
 		InHash:    tx.ID,
@@ -127,7 +120,7 @@ func swap(ctx cosmos.Context,
 		Coin:      common.NewCoin(target, assetAmount),
 	}
 
-	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
+	toi, err := mgr.TxOutStore().PrelightTxOutItem(ctx, mgr, toi)
 	if err != nil {
 		// when the emit asset is not enough to pay for tx fee, consider it as a success
 		if !errors.Is(err, ErrNotEnoughToPayFee) {
@@ -141,13 +134,19 @@ func swap(ctx cosmos.Context,
 
 			return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
 		}
-		ok = true
-	}
-	if !ok {
-		return assetAmount, swapEvents, errFailAddOutboundTx
 	}
 
-	return assetAmount, swapEvents, nil
+	for _, evt := range swapEvents {
+		if err := mgr.EventMgr().EmitSwapEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit swap event", "error", err)
+		}
+		if err := keeper.AddToLiquidityFees(ctx, evt.Pool, evt.LiquidityFeeInRune); err != nil {
+			return assetAmount, swapEvents, fmt.Errorf("fail to add to liquidity fees: %w", err)
+		}
+	}
+
+	err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi)
+	return assetAmount, swapEvents, err
 }
 
 func swapOne(ctx cosmos.Context,
