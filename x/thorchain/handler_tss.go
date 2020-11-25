@@ -82,6 +82,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg MsgTssPool, version semver.Ve
 }
 
 func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	fmt.Printf("<<<<<<< TSS Keygen Start: %s\n", msg.Signer)
+	defer fmt.Println("<<<<<<< TSS Keygen end")
 	ctx.Logger().Info(fmt.Sprintf("current version: %s", version.String()))
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())
@@ -171,6 +173,7 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 					return nil, fmt.Errorf("fail to get node from it's pub key: %w", err)
 				}
 				if na.Status == NodeActive {
+					fmt.Printf(">>>>> Slash %s: %d: keygen fail\n", na.NodeAddress, slashPoints)
 					if err := h.keeper.IncNodeAccountSlashPoints(ctx, na.NodeAddress, slashPoints); err != nil {
 						ctx.Logger().Error("fail to inc slash points", "error", err)
 					}

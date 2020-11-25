@@ -70,6 +70,8 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut, v
 }
 
 func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress, version semver.Version, constAccessor constants.ConstantValues) (ObservedTxVoter, bool) {
+	fmt.Printf("<<<<<<< TxOut Start: %s %s\n", tx.Tx.ID, signer)
+	defer fmt.Println("<<<<<<< TxOut end")
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
 	ok := false

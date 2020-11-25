@@ -72,6 +72,8 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn, ver
 }
 
 func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress, version semver.Version, constAccessor constants.ConstantValues) (ObservedTxVoter, bool) {
+	fmt.Printf("<<<<<<< TxIn Start: %s %s\n", tx.Tx.ID, signer)
+	defer fmt.Println("<<<<<<< TxIn end")
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
 	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, signer)
