@@ -161,7 +161,7 @@ func (vm *VaultMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor co
 					// determine which active asgard vault to send funds to. Select
 					// based on which has the most security
 					signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-					target := vm.k.GetMostSecure(ctx, active, signingTransactionPeriod)
+					target = vm.k.GetMostSecure(ctx, active, signingTransactionPeriod)
 					if target.PubKey.Equals(vault.PubKey) {
 						continue
 					}
