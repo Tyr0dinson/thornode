@@ -37,6 +37,7 @@ func NewConstantValue010() *ConstantVals {
 			MinSwapsPerBlock:              10,                 // process all swaps if queue is less than this number
 			MaxSwapsPerBlock:              100,                // max swaps to process per block
 			MinSlashPointsForBadValidator: 100,                // The minimum slash point
+			StagedPoolCost:                100_00000000,       // charge pool 100 RUNE every pool cycle
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

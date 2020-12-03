@@ -18,11 +18,9 @@ func init() {
 		JailTimeKeygen:        10,
 		JailTimeKeysign:       10,
 		AsgardSize:            6,
+		PoolCycle:             60,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,
-	}
-	stringOverrides = map[ConstantName]string{
-		DefaultPoolStatus: "Available",
 	}
 }
