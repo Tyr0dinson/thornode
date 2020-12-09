@@ -736,7 +736,8 @@ func (vm *validatorMgrV1) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manag
 					if err != nil {
 						return fmt.Errorf("fail to get ragnarok pending: %w", err)
 					}
-					vm.k.SetRagnarokPending(ctx, pending+2) // two outbound txs
+					// RUNE is native , so Ragnarok pending will only increase 1
+					vm.k.SetRagnarokPending(ctx, pending+1)
 					if count >= maxWithdrawsPerBlock {
 						break
 					}
@@ -858,7 +859,8 @@ func (vm *validatorMgrV1) recallYggFunds(ctx cosmos.Context, mgr Manager, constA
 			return fmt.Errorf("fail to request yggdrasil fund back: %w", err)
 		}
 	}
-	return fmt.Errorf("some yggdrasil vaults (%d) still have funds", len(vaults))
+	ctx.Logger().Info("some yggdrasil vaults (%d) still have funds", len(vaults))
+	return nil
 }
 
 // setupValidatorNodes it is one off it only get called when genesis

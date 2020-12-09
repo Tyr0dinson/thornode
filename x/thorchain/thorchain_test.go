@@ -350,7 +350,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 		c.Assert(err, IsNil)
 		bonders[idx].Bond = na.Bond
 	}
-	// make sure we have enough yggdrasil returns
+	// make sure all yggdrasil vault get recalled
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, bonderCount)
