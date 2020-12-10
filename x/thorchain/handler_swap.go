@@ -68,7 +68,8 @@ func (h SwapHandler) handleV1(ctx cosmos.Context, msg MsgSwap, version semver.Ve
 		msg.TargetAsset,
 		msg.Destination,
 		msg.TradeTarget,
-		cosmos.NewUint(uint64(transactionFee)), h.mgr)
+		transactionFee,
+		h.mgr)
 	if swapErr != nil {
 		return nil, swapErr
 	}

@@ -122,7 +122,7 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 					common.NewCoin(msg.Asset.Chain.GetGasAsset(), gasAsset),
 				}
 			}
-			toi.GasRate = h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.Chain)
+			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.Chain).Uint64())
 		}
 
 		okAsset, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
@@ -150,7 +150,7 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	// do it here, on the rune side.
 	if pool.Status != PoolAvailable {
 		transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Asset.Chain)
-		runeAmt = common.SafeSub(runeAmt, cosmos.NewUint(uint64(transactionFee)))
+		runeAmt = common.SafeSub(runeAmt, transactionFee)
 	}
 
 	if !runeAmt.IsZero() {

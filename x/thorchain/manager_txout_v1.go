@@ -117,7 +117,7 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 				// the error is already logged within kvstore
 				return nil, fmt.Errorf("fail to get pool: %w", err)
 			}
-			feeInAsset := pool.RuneValueInAsset(cosmos.NewUint(uint64(transactionFee)))
+			feeInAsset := pool.RuneValueInAsset(transactionFee)
 			maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 			if err != nil {
 				ctx.Logger().Error("fail to get max gas asset", "error", err)
@@ -234,14 +234,14 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 			}
 
 			// max gas amount is the transaction fee divided by two, in asset amount
-			maxAmt := pool.RuneValueInAsset(cosmos.NewUint(uint64(transactionFee / 2)))
+			maxAmt := pool.RuneValueInAsset(transactionFee.QuoUint64(2))
 			outputs[i].MaxGas = common.Gas{
 				common.NewCoin(gasAsset, maxAmt),
 			}
 			if outputs[i].MaxGas.IsEmpty() {
 				return nil, fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
-			outputs[i].GasRate = tos.gasManager.GetGasRate(ctx, outputs[i].Chain)
+			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
 		}
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
@@ -249,10 +249,10 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 		if err == nil && !memo.IsType(TxYggdrasilFund) && !memo.IsType(TxYggdrasilReturn) && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) {
 			var runeFee cosmos.Uint
 			if outputs[i].Coin.Asset.IsRune() {
-				if outputs[i].Coin.Amount.LTE(cosmos.NewUint(uint64(transactionFee))) {
+				if outputs[i].Coin.Amount.LTE(transactionFee) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
 				} else {
-					runeFee = cosmos.NewUint(uint64(transactionFee)) // Fee is the prescribed fee
+					runeFee = transactionFee // Fee is the prescribed fee
 				}
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
@@ -279,12 +279,12 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 				// circumstance, we rely on what is calling this function
 				// (prepareTxOutItem()) to double withhold from the rune side
 				if pool.Status == PoolAvailable {
-					assetFee := pool.RuneValueInAsset(cosmos.NewUint(uint64(transactionFee))) // Get fee in Asset value
+					assetFee := pool.RuneValueInAsset(transactionFee) // Get fee in Asset value
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
 						runeFee = pool.AssetValueInRune(assetFee)
 					} else {
-						runeFee = cosmos.NewUint(uint64(transactionFee))
+						runeFee = transactionFee
 					}
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee

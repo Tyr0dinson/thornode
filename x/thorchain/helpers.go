@@ -98,7 +98,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, keeper keeper.Keep
 	return nil
 }
 
-func getFee(input, output common.Coins, transactionFee int64) common.Fee {
+func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 	var fee common.Fee
 	assetTxCount := 0
 	for _, out := range output {
@@ -124,7 +124,7 @@ func getFee(input, output common.Coins, transactionFee int64) common.Fee {
 			}
 		}
 	}
-	fee.PoolDeduct = cosmos.NewUint(uint64(transactionFee) * uint64(assetTxCount))
+	fee.PoolDeduct = transactionFee.MulUint64(uint64(assetTxCount))
 	return fee
 }
 

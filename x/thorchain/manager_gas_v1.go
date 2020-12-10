@@ -59,8 +59,8 @@ func (gm *GasMgrV1) GetGas() common.Gas {
 
 // GetFee retrieve the network fee information from kv store, and calculate the dynamic fee customer should pay
 // the return value is the amount of fee in RUNE
-func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) int64 {
-	transactionFee := gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)
+func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+	transactionFee := cosmos.NewUint(uint64(gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)))
 	if chain.Equals(common.THORChain) {
 		return transactionFee
 	}
@@ -86,12 +86,12 @@ func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) int64 {
 		return transactionFee
 	}
 
-	return int64(pool.AssetValueInRune(cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate * 3)).Uint64())
+	return cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate * 3)
 }
 
 // GetGasRate return the gas rate
-func (gm *GasMgrV1) GetGasRate(ctx cosmos.Context, chain common.Chain) int64 {
-	transactionFee := gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)
+func (gm *GasMgrV1) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+	transactionFee := cosmos.NewUint(uint64(gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)))
 	if chain.Equals(common.THORChain) {
 		return transactionFee
 	}
@@ -104,7 +104,7 @@ func (gm *GasMgrV1) GetGasRate(ctx cosmos.Context, chain common.Chain) int64 {
 		ctx.Logger().Error("network fee is invalid", "error", err, "chain", chain)
 		return transactionFee
 	}
-	return int64(networkFee.TransactionFeeRate) * 3 / 2
+	return cosmos.NewUint(networkFee.TransactionFeeRate * 3 / 2)
 }
 
 // GetMaxGas will calculate the maximum gas fee a tx can use
@@ -112,7 +112,6 @@ func (gm *GasMgrV1) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Co
 	gasAsset := chain.GetGasAsset()
 	var amount cosmos.Uint
 
-	// if there is not gas asset pool which is rare
 	nf, err := gm.keeper.GetNetworkFee(ctx, chain)
 	if err != nil {
 		return common.NoCoin, fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
@@ -120,7 +119,7 @@ func (gm *GasMgrV1) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Co
 	if chain.IsBNB() {
 		amount = cosmos.NewUint(nf.TransactionSize * nf.TransactionFeeRate)
 	} else {
-		amount = cosmos.NewUint(nf.TransactionSize * nf.TransactionFeeRate).MulUint64(3).QuoUint64(2)
+		amount = cosmos.NewUint(nf.TransactionSize * nf.TransactionFeeRate * 3 / 2)
 	}
 
 	return common.NewCoin(gasAsset, amount), nil

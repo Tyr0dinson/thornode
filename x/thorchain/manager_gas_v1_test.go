@@ -51,13 +51,13 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 	constAccessor := constants.NewConstantValue010()
 	gasMgr := NewGasMgrV1(constAccessor, k)
 	fee := gasMgr.GetFee(ctx, common.BNBChain)
-	defaultTxFee := constAccessor.GetInt64Value(constants.OutboundTransactionFee)
+	defaultTxFee := uint64(constAccessor.GetInt64Value(constants.OutboundTransactionFee))
 	// when there is no network fee available, it should just get from the constants
-	c.Assert(fee, Equals, defaultTxFee)
+	c.Assert(fee.Uint64(), Equals, defaultTxFee)
 	networkFee := NewNetworkFee(common.BNBChain, 1, bnbSingleTxFee.Uint64())
 	c.Assert(k.SaveNetworkFee(ctx, common.BNBChain, networkFee), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BNBChain)
-	c.Assert(fee, Equals, defaultTxFee)
+	c.Assert(fee.Uint64(), Equals, defaultTxFee)
 	c.Assert(k.SetPool(ctx, Pool{
 		BalanceRune:  cosmos.NewUint(100 * common.One),
 		BalanceAsset: cosmos.NewUint(100 * common.One),
@@ -65,13 +65,13 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BNBChain)
-	c.Assert(fee, Equals, int64(bnbSingleTxFee.Uint64()*3))
+	c.Assert(fee.Uint64(), Equals, bnbSingleTxFee.Uint64()*3)
 
 	// BTC chain
 	networkFee = NewNetworkFee(common.BTCChain, 70, 50)
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, networkFee), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain)
-	c.Assert(fee, Equals, defaultTxFee)
+	c.Assert(fee.Uint64(), Equals, defaultTxFee)
 	c.Assert(k.SetPool(ctx, Pool{
 		BalanceRune:  cosmos.NewUint(100 * common.One),
 		BalanceAsset: cosmos.NewUint(100 * common.One),
@@ -79,7 +79,7 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain)
-	c.Assert(fee, Equals, int64(70*50*3))
+	c.Assert(fee.Uint64(), Equals, uint64(70*50*3))
 }
 
 type gasManagerTestHelper struct {
