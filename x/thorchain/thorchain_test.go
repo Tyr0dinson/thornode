@@ -291,10 +291,20 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	lp3asset := GetRandomBNBAddress()
 	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3asset, GetRandomTxHash(), consts)
 	c.Assert(err, IsNil)
-	lp4 := GetRandomTHORAddress()
+
+	lp4 := GetRandomTHORAddress() // liquidity provider 4 , BTC
 	lp4Asset := GetRandomBTCAddress()
 	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), lp4, lp4Asset, GetRandomTxHash(), consts)
 	c.Assert(err, IsNil)
+
+	lp5 := GetRandomTHORAddress() // Rune only
+	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), lp5, common.NoAddress, GetRandomTxHash(), consts)
+	c.Assert(err, IsNil)
+	lp6Asset := GetRandomBTCAddress() // BTC only
+
+	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), common.NoAddress, lp6Asset, GetRandomTxHash(), consts)
+	c.Assert(err, IsNil)
+
 	asgard.AddFunds(common.Coins{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(101*common.One)),
 	})
