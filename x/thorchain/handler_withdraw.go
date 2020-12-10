@@ -69,7 +69,8 @@ func (h WithdrawLiquidityHandler) validateV1(ctx cosmos.Context, msg MsgWithdraw
 		return multierror.Append(errInvalidPoolStatus, err)
 	}
 
-	if pool.Status != PoolAvailable && !msg.WithdrawalAsset.IsEmpty() {
+	// when ragnarok kicks off,  all pool will ne set PoolStaged , the tx's hash will be common.BlankTxID
+	if pool.Status != PoolAvailable && !msg.WithdrawalAsset.IsEmpty() && !msg.Tx.ID.Equals(common.BlankTxID) {
 		return fmt.Errorf("cannot specify a withdrawal asset while the pool is not available")
 	}
 
