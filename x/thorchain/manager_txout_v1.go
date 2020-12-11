@@ -310,6 +310,7 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 		// when it is ragnarok , the network doesn't charge fee , however if the output asset is gas asset,
 		// then the amount of max gas need to be taken away from the customer , otherwise the vault will be insolvent and doesn't
 		// have enough to fulfill outbound
+		// Also the MaxGas has not put back to pool ,so there is no need to subside pool when ragnarok is in progress
 		if memo.IsType(TxRagnarok) && outputs[i].Coin.Asset.IsGasAsset() {
 			gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
 			outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)

@@ -73,6 +73,10 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, version semver.Version, tx Ob
 }
 
 func (h RagnarokHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgRagnarok, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	// for ragnarok on thorchain ,
+	if msg.Tx.Tx.Chain.Equals(common.THORChain) {
+		return &cosmos.Result{}, nil
+	}
 	shouldSlash := true
 	signingTransPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	for height := msg.BlockHeight; height <= common.BlockHeight(ctx); height += signingTransPeriod {
