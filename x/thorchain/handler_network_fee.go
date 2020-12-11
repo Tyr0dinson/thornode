@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -66,8 +64,6 @@ func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee, version
 
 // handleV1 process MsgNetworkFee
 func (h NetworkFeeHandler) handleV1(ctx cosmos.Context, msg MsgNetworkFee, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	fmt.Printf("<<<<<<< Network Start: %s\n", msg.Signer)
-	defer fmt.Println("<<<<<<< Network end")
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")

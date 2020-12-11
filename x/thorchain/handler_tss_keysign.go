@@ -82,8 +82,6 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail, ver
 }
 
 func (h TssKeysignHandler) handleV1(ctx cosmos.Context, msg MsgTssKeysignFail, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	fmt.Printf("<<<<<<< TSS Keysign Start: %s %s\n", msg.ID, msg.Signer)
-	defer fmt.Println("<<<<<<< TSS Keysign end")
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -123,7 +121,6 @@ func (h TssKeysignHandler) handleV1(ctx cosmos.Context, msg MsgTssKeysignFail, v
 		if err != nil {
 			return nil, ErrInternal(err, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
 		}
-		fmt.Printf(">>>>> Slash %s: %d: keysign fail\n", na.NodeAddress, slashPoints)
 		if err := h.keeper.IncNodeAccountSlashPoints(ctx, na.NodeAddress, slashPoints); err != nil {
 			ctx.Logger().Error("fail to inc slash points", "error", err)
 		}
