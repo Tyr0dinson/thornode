@@ -103,8 +103,8 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 
 	var outputs []TxOutItem
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	transactionFeeRune := tos.gasManager.GetFeeInRune(ctx, toi.Chain)
-	transactionFeeAsset := tos.gasManager.GetFeeInAsset(ctx, toi.Chain)
+	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
+	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
 
 	if toi.Chain.Equals(common.THORChain) {
 		outputs = append(outputs, toi)
@@ -269,14 +269,8 @@ func (tos *TxOutStorageV1) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) (
 				// (prepareTxOutItem()) to double withhold from the rune side
 				if pool.Status == PoolAvailable {
 					assetFee := transactionFeeAsset
-					// if asset is non-gas asset, calculate transaction fee in
-					// this non-gas asset
-					if !pool.Asset.Equals(outputs[i].Chain.GetGasAsset()) {
-						assetFee = pool.RuneValueInAsset(transactionFeeRune)
-					}
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
-						runeFee = pool.AssetValueInRune(assetFee)
 					}
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
