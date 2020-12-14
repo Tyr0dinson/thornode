@@ -60,7 +60,7 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap, version semver.Vers
 }
 
 func (h SwapHandler) handleV1(ctx cosmos.Context, msg MsgSwap, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.TargetAsset.Chain)
+	transactionFee := h.mgr.GasMgr().GetFeeInRune(ctx, msg.TargetAsset.Chain)
 	_, _, swapErr := swap(
 		ctx,
 		h.keeper,

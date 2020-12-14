@@ -149,7 +149,7 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	// above from being deducted a fee/gas from the transaction. So we have to
 	// do it here, on the rune side.
 	if pool.Status != PoolAvailable {
-		transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Asset.Chain)
+		transactionFee := h.mgr.GasMgr().GetFeeInRune(ctx, msg.Asset.Chain)
 		runeAmt = common.SafeSub(runeAmt, transactionFee)
 	}
 

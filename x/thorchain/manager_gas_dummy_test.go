@@ -21,7 +21,11 @@ func (m *DummyGasManager) SubGas(gas common.Gas)                               {
 func (m *DummyGasManager) AddGas(gas common.Gas)                               {}
 func (m *DummyGasManager) GetGas() common.Gas                                  { return nil }
 func (m *DummyGasManager) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {}
-func (m *DummyGasManager) GetFee(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+func (m *DummyGasManager) GetFeeInAsset(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
+func (m *DummyGasManager) GetFeeInRune(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 

@@ -59,7 +59,7 @@ func (gm *GasMgrV1) GetGas() common.Gas {
 
 // GetFee retrieve the network fee information from kv store, and calculate the dynamic fee customer should pay
 // the return value is the amount of fee in RUNE
-func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+func (gm *GasMgrV1) GetFeeInAsset(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	transactionFee := cosmos.NewUint(uint64(gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)))
 	if chain.Equals(common.THORChain) {
 		return transactionFee
@@ -77,6 +77,11 @@ func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	// THORNode is going to charge 3 times the fee it takes to send out the tx
 	// 1.5 * fee will goes to vault
 	// 1.5 * fee will become the max gas used to send out the tx
+	return cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate * 3)
+}
+
+func (gm *GasMgrV1) GetFeeInRune(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+	transactionFee := cosmos.NewUint(uint64(gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)))
 	pool, err := gm.keeper.GetPool(ctx, chain.GetGasAsset())
 	if err != nil {
 		ctx.Logger().Error("fail to get pool for %s: %w", chain.GetGasAsset(), err)
@@ -85,8 +90,7 @@ func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	if pool.BalanceAsset.Equal(cosmos.ZeroUint()) || pool.BalanceRune.Equal(cosmos.ZeroUint()) {
 		return transactionFee
 	}
-
-	return cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate * 3)
+	return pool.AssetValueInRune(gm.GetFeeInAsset(ctx, chain))
 }
 
 // GetGasRate return the gas rate
