@@ -301,23 +301,29 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		panic(err)
 	}
 
+	ctx.Logger().Info("adding mimir addresses...")
 	for _, admin := range ADMINS {
+		ctx.Logger().Info("adding mimir address", "address", admin)
 		addr, err := cosmos.AccAddressFromBech32(admin)
 		if err != nil {
-			panic(err)
+			ctx.Logger().Error("fail to get mimir address", "err", err)
+			continue
 		}
 		// give mimir gas
 		coinsToMint, err := cosmos.ParseCoins("1000thor")
 		if err != nil {
-			panic(err)
+			ctx.Logger().Error("fail to parse mimir coins", "err", err)
+			continue
 		}
 		// mint some gas asset
 		err = keeper.Supply().MintCoins(ctx, ModuleName, coinsToMint)
 		if err != nil {
-			panic(err)
+			ctx.Logger().Error("fail to get supplier for mimir", "err", err)
+			continue
 		}
 		if err := keeper.Supply().SendCoinsFromModuleToAccount(ctx, ModuleName, addr, coinsToMint); err != nil {
-			panic(err)
+			ctx.Logger().Error("fail to get mint coins for mimir", "err", err)
+			continue
 		}
 	}
 
