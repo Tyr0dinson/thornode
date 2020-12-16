@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -66,7 +64,6 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 		Asset:        common.BNBAsset,
 		Status:       PoolAvailable,
 	}), IsNil)
-	fmt.Println("FOOOOOOOOOO")
 	fee = gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	c.Assert(fee.Uint64(), Equals, bnbSingleTxFee.Uint64()*3, Commentf("%d vs %d", fee.Uint64(), bnbSingleTxFee.Uint64()*3))
 
