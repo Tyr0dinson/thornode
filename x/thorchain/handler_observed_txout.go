@@ -140,6 +140,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 				// update the observing addresses
 				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
 			}
+			ctx.Logger().Info("OUT preflight", "tx", tx.Tx.ID, "signer", msg.GetSigners()[0])
 			continue
 		}
 		tx.Tx.Memo = fetchMemo(ctx, constAccessor, h.keeper, tx.Tx)

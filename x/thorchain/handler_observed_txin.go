@@ -148,6 +148,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 				// update the observing addresses
 				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
 			}
+			ctx.Logger().Info("IN preflight", "tx", tx.Tx.ID, "signer", msg.GetSigners()[0])
 			continue
 		}
 
