@@ -63,7 +63,11 @@ func (k *TestRefundBondKeeper) SetPool(_ cosmos.Context, p Pool) error {
 
 func (k *TestRefundBondKeeper) DeleteVault(_ cosmos.Context, key common.PubKey) error {
 	if k.ygg.PubKey.Equals(key) {
+<<<<<<< HEAD
 		k.ygg = NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}, []ChainContract{})
+=======
+		k.ygg = NewVault(1, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings())
+>>>>>>> 299d6368... update go mod to cosmos-sdk stargate
 	}
 	return nil
 }
@@ -173,13 +177,21 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 	c.Assert(refundBond(ctx, tx, cosmos.ZeroUint(), &na, keeper1, mgr), NotNil)
 
 	// if the vault is not a yggdrasil pool , it should return an error
+<<<<<<< HEAD
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pk, common.Chains{common.BNBChain}, []ChainContract{})
+=======
+	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pk, common.Chains{common.BNBChain}.Strings())
+>>>>>>> 299d6368... update go mod to cosmos-sdk stargate
 	ygg.Coins = common.Coins{}
 	keeper1.ygg = ygg
 	c.Assert(refundBond(ctx, tx, cosmos.ZeroUint(), &na, keeper1, mgr), NotNil)
 
 	// fail to get pool should fail
+<<<<<<< HEAD
 	ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}, []ChainContract{})
+=======
+	ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings())
+>>>>>>> 299d6368... update go mod to cosmos-sdk stargate
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(27*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(27*common.One)),
@@ -207,7 +219,11 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 	mgr := NewDummyMgr()
 	pk := GetRandomPubKey()
 	na.PubKeySet.Secp256k1 = pk
+<<<<<<< HEAD
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}, []ChainContract{})
+=======
+	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings())
+>>>>>>> 299d6368... update go mod to cosmos-sdk stargate
 
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(3946*common.One)),
@@ -428,7 +444,11 @@ func newAddGasFeeTestHelper(c *C) addGasFeeTestHelper {
 
 	na := GetRandomNodeAccount(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+<<<<<<< HEAD
 	yggVault := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, common.Chains{common.BNBChain}, []ChainContract{})
+=======
+	yggVault := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings())
+>>>>>>> 299d6368... update go mod to cosmos-sdk stargate
 	c.Assert(k.SetVault(ctx, yggVault), IsNil)
 	version := constants.SWVersion
 	constAccessor := constants.GetConstantValues(version)
@@ -474,10 +494,10 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 						},
 						Memo: "",
 					},
-					Status:         types.Done,
+					Status:         types.Status_done,
 					OutHashes:      nil,
 					BlockHeight:    common.BlockHeight(helper.ctx),
-					Signers:        []cosmos.AccAddress{helper.na.NodeAddress},
+					Signers:        []string{helper.na.NodeAddress.String()},
 					ObservedPubKey: helper.na.PubKeySet.Secp256k1,
 				}
 				return tx
@@ -509,10 +529,10 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 						},
 						Memo: "",
 					},
-					Status:         types.Done,
+					Status:         types.Status_done,
 					OutHashes:      nil,
 					BlockHeight:    common.BlockHeight(helper.ctx),
-					Signers:        []cosmos.AccAddress{helper.na.NodeAddress},
+					Signers:        []string{helper.na.NodeAddress.String()},
 					ObservedPubKey: helper.na.PubKeySet.Secp256k1,
 				}
 				return tx
