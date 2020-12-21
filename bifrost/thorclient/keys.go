@@ -8,7 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 
-	ckeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/tendermint/tendermint/crypto"
 )
@@ -23,11 +23,11 @@ type Keys struct {
 	signerName string
 	password   string // TODO this is a bad way , need to fix it
 	signerInfo ckeys.Info
-	kb         ckeys.Keybase
+	kb         ckeys.Keyring
 }
 
 // NewKeysWithKeybase create a new instance of Keys
-func NewKeysWithKeybase(kb ckeys.Keybase, signerInfo ckeys.Info, password string) *Keys {
+func NewKeysWithKeybase(kb ckeys.Keyring, signerInfo ckeys.Info, password string) *Keys {
 	return &Keys{
 		signerName: signerInfo.GetName(),
 		password:   password,
@@ -37,7 +37,7 @@ func NewKeysWithKeybase(kb ckeys.Keybase, signerInfo ckeys.Info, password string
 }
 
 // NewKeys create a new instance of keys
-func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keybase, ckeys.Info, error) {
+func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, ckeys.Info, error) {
 	if len(signerName) == 0 {
 		return nil, nil, fmt.Errorf("signer name is empty")
 	}
@@ -67,7 +67,7 @@ func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyb
 }
 
 // getKeybase will create an instance of Keybase
-func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keybase, error) {
+func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 	cliDir := thorchainHome
 	if len(thorchainHome) == 0 {
 		usr, err := user.Current()
@@ -91,6 +91,6 @@ func (k *Keys) GetPrivateKey() (crypto.PrivKey, error) {
 }
 
 // GetKeybase return the keybase
-func (k *Keys) GetKeybase() ckeys.Keybase {
+func (k *Keys) GetKeybase() ckeys.Keyring {
 	return k.kb
 }

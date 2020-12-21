@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/client/input"
-	ckeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/hashicorp/go-multierror"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -531,7 +531,7 @@ func AddGasFees(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, gasMana
 
 // KeybaseStore to store keys
 type KeybaseStore struct {
-	Keybase      ckeys.Keybase
+	Keybase      ckeys.Keyring
 	SignerName   string
 	SignerPasswd string
 }
