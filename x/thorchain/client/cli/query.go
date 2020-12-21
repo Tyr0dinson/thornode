@@ -2,7 +2,6 @@ package cli
 
 import (
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/context"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/spf13/cobra"
@@ -43,7 +42,7 @@ func GetCmdGetVersion(queryRoute string, cdc *codec.Codec) *cobra.Command {
 		Short: "Gets the thorchain version and build information",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cliCtx := context.NewCLIContext().WithCodec(cdc)
+			cliCtx := client.GetClientContextFromCmd(cmd)
 			cliCtx.OutputFormat = "json"
 
 			out := ver{

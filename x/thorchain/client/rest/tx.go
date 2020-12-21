@@ -3,7 +3,7 @@ package rest
 import (
 	"net/http"
 
-	"github.com/cosmos/cosmos-sdk/client/context"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/types/rest"
 	"github.com/cosmos/cosmos-sdk/x/auth/client/utils"
 	"gitlab.com/thorchain/tss/go-tss/blame"
@@ -19,7 +19,7 @@ type deposit struct {
 	Memo    string       `json:"memo"`
 }
 
-func newDepositHandler(cliCtx context.CLIContext) http.HandlerFunc {
+func newDepositHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req deposit
 
@@ -57,7 +57,7 @@ type newErrataTx struct {
 	Chain   common.Chain `json:"chain"`
 }
 
-func newErrataTxHandler(cliCtx context.CLIContext) http.HandlerFunc {
+func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req newErrataTx
 
@@ -98,7 +98,7 @@ type newTssPool struct {
 	KeygenTime   int64            `json:"keygen_time"`
 }
 
-func newTssPoolHandler(cliCtx context.CLIContext) http.HandlerFunc {
+func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req newTssPool
 
@@ -133,7 +133,7 @@ type txHashReq struct {
 	Txs     types.ObservedTxs `json:"txs"`
 }
 
-func postTxsHandler(cliCtx context.CLIContext) http.HandlerFunc {
+func postTxsHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req txHashReq
 
