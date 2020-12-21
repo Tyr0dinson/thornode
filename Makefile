@@ -1,6 +1,7 @@
 include Makefile.cicd
 .PHONY: build test tools export healthcheck
 
+module = gitlab.com/thorchain/thornode
 GOBIN?=${GOPATH}/bin
 NOW=$(shell date +'%Y-%m-%d_%T')
 COMMIT:=$(shell git log -1 --format='%H')
@@ -31,7 +32,10 @@ MIDGARD_API?=localhost:8080
 
 all: lint install
 
-build:
+protob:
+	@bash scripts/protocgen.bash
+
+build: protob
 	go build ${BUILD_FLAGS} ${BINARIES}
 
 install: go.sum

@@ -1,0 +1,12 @@
+syntax = "proto3";
+package v1;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+message MsgBan {
+  string id = 1;
+  bytes signer = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common/cosmos.AccAddress"];
+  bytes node_address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common/cosmos.AccAddress"];
+}

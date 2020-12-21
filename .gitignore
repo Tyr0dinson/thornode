@@ -74,3 +74,6 @@ preparam.data
 **/btc_observer/*
 
 .vscode/
+
+# ignore protobuf compiled files
+*.pb.go
