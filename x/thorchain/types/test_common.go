@@ -7,7 +7,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 	"github.com/tendermint/tendermint/crypto"
 	tmtypes "github.com/tendermint/tendermint/types"
 
@@ -140,7 +139,6 @@ func MakeTestCodec() *codec.Codec {
 	bank.RegisterCodec(cdc)
 	auth.RegisterCodec(cdc)
 	RegisterCodec(cdc)
-	supply.RegisterCodec(cdc)
 	cosmos.RegisterCodec(cdc)
 	codec.RegisterCrypto(cdc)
 	return cdc

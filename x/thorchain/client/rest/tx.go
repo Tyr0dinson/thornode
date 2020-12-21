@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/types/rest"
-	"github.com/cosmos/cosmos-sdk/x/auth/client/utils"
 	"gitlab.com/thorchain/tss/go-tss/blame"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -47,7 +47,7 @@ func newDepositHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		utils.WriteGenerateStdTxResponse(w, cliCtx, baseReq, []cosmos.Msg{msg})
+		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -83,7 +83,7 @@ func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		utils.WriteGenerateStdTxResponse(w, cliCtx, baseReq, []cosmos.Msg{msg})
+		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -124,7 +124,7 @@ func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		utils.WriteGenerateStdTxResponse(w, cliCtx, baseReq, []cosmos.Msg{msg})
+		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -199,6 +199,6 @@ func postTxsHandler(cliCtx client.Context) http.HandlerFunc {
 			msgs = append(msgs, msg)
 		}
 
-		utils.WriteGenerateStdTxResponse(w, cliCtx, baseReq, msgs)
+		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }

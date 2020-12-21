@@ -5,7 +5,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -15,7 +14,6 @@ import (
 
 type Keeper interface {
 	Cdc() *codec.Codec
-	Supply() supply.Keeper
 	CoinKeeper() bank.Keeper
 	AccountKeeper() auth.AccountKeeper
 	Version() int64
@@ -245,6 +243,6 @@ type KeeperChainContract interface {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bank.Keeper, supplyKeeper supply.Keeper, ak auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) Keeper {
-	return kv1.NewKVStore(coinKeeper, supplyKeeper, ak, storeKey, cdc)
+func NewKVStore(coinKeeper bank.Keeper, ak auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) Keeper {
+	return kv1.NewKVStore(coinKeeper, ak, storeKey, cdc)
 }

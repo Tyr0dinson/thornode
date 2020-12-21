@@ -17,7 +17,7 @@ var (
 	OneUint                 = sdk.OneUint
 	NewCoin                 = sdk.NewCoin
 	NewCoins                = sdk.NewCoins
-	ParseCoins              = sdk.ParseCoins
+	ParseCoins              = sdk.ParseCoinsNormalized
 	NewDecWithPrec          = sdk.NewDecWithPrec
 	NewDecFromBigInt        = sdk.NewDecFromBigInt
 	NewIntFromBigInt        = sdk.NewIntFromBigInt
@@ -29,7 +29,7 @@ var (
 	NewDecFromStr           = sdk.NewDecFromStr
 	GetConfig               = sdk.GetConfig
 	NewEvent                = sdk.NewEvent
-	RegisterCodec           = sdk.RegisterCodec
+	RegisterCodec           = sdk.RegisterLegacyAminoCodec
 	NewEventManager         = sdk.NewEventManager
 	EventTypeMessage        = sdk.EventTypeMessage
 	AttributeKeyModule      = sdk.AttributeKeyModule

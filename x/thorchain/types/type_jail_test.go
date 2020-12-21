@@ -6,7 +6,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/store"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/params"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
@@ -32,7 +31,6 @@ func (s JailSuite) TestIsJailed(c *C) {
 	keyAcc := cosmos.NewKVStoreKey(auth.StoreKey)
 	keyParams := cosmos.NewKVStoreKey(params.StoreKey)
 	tkeyParams := cosmos.NewTransientStoreKey(params.TStoreKey)
-	keySupply := cosmos.NewKVStoreKey(supply.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)

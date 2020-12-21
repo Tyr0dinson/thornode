@@ -7,7 +7,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -72,7 +71,6 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
 	coinKeeper    bank.Keeper
-	supplyKeeper  supply.Keeper
 	accountKeeper auth.AccountKeeper
 	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
 	cdc           *codec.Codec    // The wire codec for binary encoding/decoding.
@@ -80,10 +78,9 @@ type KVStore struct {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bank.Keeper, supplyKeeper supply.Keeper, accountKeeper auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) KVStore {
+func NewKVStore(coinKeeper bank.Keeper, accountKeeper auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
-		supplyKeeper:  supplyKeeper,
 		accountKeeper: accountKeeper,
 		storeKey:      storeKey,
 		cdc:           cdc,
@@ -94,11 +91,6 @@ func NewKVStore(coinKeeper bank.Keeper, supplyKeeper supply.Keeper, accountKeepe
 // Cdc return the amino codec
 func (k KVStore) Cdc() *codec.Codec {
 	return k.cdc
-}
-
-// Supply return the keeper from supply handler
-func (k KVStore) Supply() supply.Keeper {
-	return k.supplyKeeper
 }
 
 // CoinKeeper return the keeper from bank handler

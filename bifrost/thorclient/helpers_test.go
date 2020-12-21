@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
+	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
-	hd "github.com/cosmos/cosmos-sdk/crypto/keys/hd"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 

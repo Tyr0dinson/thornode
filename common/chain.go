@@ -6,7 +6,6 @@ import (
 
 	btypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/cosmos/cosmos-sdk/crypto/keys"
 	"github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -16,10 +15,12 @@ var (
 	ETHChain   = Chain("ETH")
 	BTCChain   = Chain("BTC")
 	THORChain  = Chain("THOR")
+
+	SigningAlgoSecp256k1 = SigninAlgo("secp256k1")
+	SigningAlgoEd25519   = SigninAlgo("ed25519")
 )
 
-// NoSigningAlgo empty signing algorithm
-const NoSigningAlgo = keys.SigningAlgo("")
+type SigninAlgo string
 
 // Chain is an alias of string , represent a block chain
 type Chain string
@@ -74,12 +75,13 @@ func (c Chain) IsBNB() bool {
 }
 
 // GetSigningAlgo get the signing algorithm for the given chain
-func (c Chain) GetSigningAlgo() keys.SigningAlgo {
+func (c Chain) GetSigningAlgo() SigninAlgo {
 	switch c {
 	case BNBChain, ETHChain, BTCChain, THORChain:
-		return keys.Secp256k1
+		return SigningAlgoSecp256k1
+	default:
+		return SigningAlgoSecp256k1
 	}
-	return keys.Secp256k1
 }
 
 // GetGasAsset chain's base asset

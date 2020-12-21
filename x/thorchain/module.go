@@ -11,7 +11,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -77,13 +76,12 @@ type AppModule struct {
 	AppModuleBasic
 	keeper       keeper.Keeper
 	coinKeeper   bank.Keeper
-	supplyKeeper supply.Keeper
 	mgr          *Mgrs
 	keybaseStore KeybaseStore
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, bankKeeper bank.Keeper, supplyKeeper supply.Keeper) AppModule {
+func NewAppModule(k keeper.Keeper, bankKeeper bank.Keeper) AppModule {
 	kb, err := getKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
 	if err != nil {
 		panic(err)
@@ -92,7 +90,6 @@ func NewAppModule(k keeper.Keeper, bankKeeper bank.Keeper, supplyKeeper supply.K
 		AppModuleBasic: AppModuleBasic{},
 		keeper:         k,
 		coinKeeper:     bankKeeper,
-		supplyKeeper:   supplyKeeper,
 		mgr:            NewManagers(k),
 		keybaseStore:   kb,
 	}

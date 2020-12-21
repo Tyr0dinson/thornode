@@ -39,7 +39,7 @@ require (
 	github.com/tendermint/tendermint v0.34.0
 	github.com/tendermint/tm-db v0.6.3
 	github.com/zondax/ledger-go v0.11.0 // indirect
-	gitlab.com/thorchain/tss/go-tss v1.2.7
+	gitlab.com/thorchain/tss/go-tss v1.2.8-0.20201221193519-396f3b61ae42
 	gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b
 	golang.org/dl v0.0.0-20201217181409-aeefed14b4e2 // indirect
 	golang.org/x/tools v0.0.0-20200731060945-b5fad4ed8dd6 // indirect
@@ -52,4 +52,5 @@ replace (
 	github.com/binance-chain/go-sdk => gitlab.com/thorchain/binance-sdk v1.2.2
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.0.0-20201118045712-70b2cb4bf916
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1
+	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 )

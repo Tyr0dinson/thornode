@@ -9,9 +9,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/store"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/cosmos-sdk/x/params"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
@@ -61,7 +61,6 @@ func makeTestCodec() *codec.Codec {
 	bank.RegisterCodec(cdc)
 	auth.RegisterCodec(cdc)
 	RegisterCodec(cdc)
-	supply.RegisterCodec(cdc)
 	cosmos.RegisterCodec(cdc)
 	codec.RegisterCrypto(cdc)
 	return cdc
@@ -78,7 +77,6 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	keyAcc := cosmos.NewKVStoreKey(auth.StoreKey)
 	keyParams := cosmos.NewKVStoreKey(params.StoreKey)
 	tkeyParams := cosmos.NewTransientStoreKey(params.TStoreKey)
-	keySupply := cosmos.NewKVStoreKey(supply.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)
@@ -102,19 +100,18 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	maccPerms := map[string][]string{
 		auth.FeeCollectorName: nil,
 		holder:                nil,
-		supply.Minter:         {supply.Minter},
-		supply.Burner:         {supply.Burner},
-		multiPerm:             {supply.Minter, supply.Burner, supply.Staking},
+		authtypes.Minter:      {authtypes.Minter},
+		authtypes.Burner:      {authtypes.Burner},
+		multiPerm:             {authtypes.Minter, authtypes.Burner, authtypes.Staking},
 		randomPerm:            {"random"},
-		ModuleName:            {supply.Minter, supply.Burner},
+		ModuleName:            {authtypes.Minter, authtypes.Burner},
 		ReserveName:           {},
 		AsgardName:            {},
-		BondName:              {supply.Staking},
+		BondName:              {authtypes.Staking},
 	}
-	supplyKeeper := supply.NewKeeper(cdc, keySupply, ak, bk, maccPerms)
 	totalSupply := cosmos.NewCoins(cosmos.NewCoin("bep", cosmos.NewInt(1000*common.One)))
 	supplyKeeper.SetSupply(ctx, supply.NewSupply(totalSupply))
-	k := kv1.NewKVStore(bk, supplyKeeper, ak, keyThorchain, cdc)
+	k := kv1.NewKVStore(cbc, bk, ak, keyThorchain, cdc)
 
 	FundModule(c, ctx, k, AsgardName, common.One)
 

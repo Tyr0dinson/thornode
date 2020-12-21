@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/cosmos/cosmos-sdk/x/genutil"
-	"github.com/cosmos/cosmos-sdk/x/supply"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
 	tmos "github.com/tendermint/tendermint/libs/os"
@@ -17,6 +16,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/cosmos-sdk/x/params"
 	"github.com/cosmos/cosmos-sdk/x/staking"
@@ -40,16 +40,15 @@ var (
 		auth.AppModuleBasic{},
 		bank.AppModuleBasic{},
 		params.AppModuleBasic{},
-		supply.AppModuleBasic{},
 		thorchain.AppModule{},
 	)
 
 	// account permissions
 	maccPerms = map[string][]string{
 		auth.FeeCollectorName: nil,
-		thorchain.ModuleName:  {supply.Minter, supply.Burner},
+		thorchain.ModuleName:  {authtypes.Minter, authtypes.Burner},
 		thorchain.ReserveName: {},
-		thorchain.BondName:    {supply.Staking},
+		thorchain.BondName:    {authtypes.Staking},
 		thorchain.AsgardName:  {},
 	}
 )
@@ -72,7 +71,6 @@ type thorChainApp struct {
 	// Keepers
 	accountKeeper   auth.AccountKeeper
 	bankKeeper      bank.Keeper
-	supplyKeeper    supply.Keeper
 	paramsKeeper    params.Keeper
 	thorchainKeeper keeper.Keeper
 
@@ -87,7 +85,7 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 
 	// BaseApp handles interactions with Tendermint through the ABCI protocol
 	bApp := bam.NewBaseApp(appPoolData, logger, db, auth.DefaultTxDecoder(cdc), baseAppOptions...)
-	keys := sdk.NewKVStoreKeys(bam.MainStoreKey, auth.StoreKey, supply.StoreKey, thorchain.StoreKey, params.StoreKey)
+	keys := sdk.NewKVStoreKeys(bam.MainStoreKey, auth.StoreKey, thorchain.StoreKey, params.StoreKey)
 	tkeys := sdk.NewTransientStoreKeys(staking.TStoreKey, params.TStoreKey)
 
 	// Here you initialize your application with the store keys it requires
@@ -120,17 +118,9 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 		app.ModuleAccountAddrs(),
 	)
 
-	app.supplyKeeper = supply.NewKeeper(
-		app.cdc,
-		keys[supply.StoreKey],
-		app.accountKeeper,
-		app.bankKeeper,
-		maccPerms)
-
 	// thorchain keeper holds thorchain data/kvstore
 	app.thorchainKeeper = keeper.NewKVStore(
 		app.bankKeeper,
-		app.supplyKeeper,
 		app.accountKeeper,
 		keys[thorchain.StoreKey],
 		app.cdc,
@@ -139,8 +129,7 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 	app.mm = module.NewManager(
 		auth.NewAppModule(app.accountKeeper),
 		bank.NewAppModule(app.bankKeeper, app.accountKeeper),
-		supply.NewAppModule(app.supplyKeeper, app.accountKeeper),
-		thorchain.NewAppModule(app.thorchainKeeper, app.bankKeeper, app.supplyKeeper),
+		thorchain.NewAppModule(app.thorchainKeeper, app.bankKeeper),
 	)
 
 	app.mm.SetOrderBeginBlockers(thorchain.ModuleName)
@@ -150,7 +139,6 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 	app.mm.SetOrderInitGenesis(
 		auth.ModuleName,
 		bank.ModuleName,
-		supply.ModuleName,
 		thorchain.ModuleName,
 	)
 
@@ -166,7 +154,6 @@ func NewThorchainApp(logger log.Logger, db dbm.DB, baseAppOptions ...func(*bam.B
 	app.SetAnteHandler(
 		auth.NewAnteHandler(
 			app.accountKeeper,
-			app.supplyKeeper,
 			auth.DefaultSigVerificationGasConsumer,
 		),
 	)
@@ -216,7 +203,7 @@ func (app *thorChainApp) LoadHeight(height int64) error {
 func (app *thorChainApp) ModuleAccountAddrs() map[string]bool {
 	modAccAddrs := make(map[string]bool)
 	for acc := range maccPerms {
-		modAccAddrs[supply.NewModuleAddress(acc).String()] = true
+		modAccAddrs[authtypes.NewModuleAddress(acc).String()] = true
 	}
 
 	return modAccAddrs
