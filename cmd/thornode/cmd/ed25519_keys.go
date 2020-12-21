@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"bufio"
@@ -14,14 +14,15 @@ import (
 	"github.com/99designs/keyring"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/input"
-	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tendermint/tendermint/crypto/ed25519"
+
+	"gitlab.com/thorchain/thornode/app"
 )
 
 const (
@@ -32,7 +33,7 @@ const (
 	FullPath                        = BIP44Prefix + PartialPath
 )
 
-func GetEd25519Keys(codec *codec.Codec) *cobra.Command {
+func GetEd25519Keys() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ed25519",
 		Short: "Generate an ed25519 keys",
@@ -51,8 +52,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), viper.GetString(flags.FlagHome), password))
+	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), app.DefaultNodeHome(appName), password))
 	if err != nil {
 		return fmt.Errorf("fail to open key store: %w", err)
 	}
@@ -77,10 +77,12 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("fail to parse private key")
 	}
-
-	var pkey ed25519.PubKeyEd25519
-	copy(pkey[:], pk.Serialize())
-	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, pkey)
+	pkey := ed25519.PubKey(pk.Serialize())
+	tmp, err := codec.FromTmPubKeyInterface(pkey)
+	if err != nil {
+		return fmt.Errorf("fail to get ED25519 key : %w", err)
+	}
+	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, tmp)
 	if err != nil {
 		return fmt.Errorf("fail generate bech32 account pub key")
 	}
@@ -95,7 +97,7 @@ func generateNewKey(buf *bufio.Reader) (*keyring.Item, error) {
 	}
 	data, err := mnemonicToEddKey(mnemonic, "")
 	if err != nil {
-		return nil, fmt.Errorf("fail to generate ed25519 keys")
+		return nil, fmt.Errorf("fail to generate ed25519 keys: %w", err)
 	}
 	item := &keyring.Item{
 		Key:                         DefaultEd25519KeyName,

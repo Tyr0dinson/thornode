@@ -2,16 +2,18 @@ package types
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
+	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-var ModuleCdc = codec.New()
+var (
+	amino     = codec.NewLegacyAmino()
+	ModuleCdc = codec.NewAminoCodec(amino)
+)
 
-func init() {
-	RegisterCodec(ModuleCdc)
-}
-
-// RegisterCodec registers concrete types on the Amino codec
-func RegisterCodec(cdc *codec.Codec) {
+// RegisterCodec register the msg types for amino
+func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(MsgSwap{}, "thorchain/Swap", nil)
 	cdc.RegisterConcrete(MsgTssPool{}, "thorchain/TssPool", nil)
 	cdc.RegisterConcrete(MsgTssKeysignFail{}, "thorchain/TssKeysignFail", nil)
@@ -40,4 +42,36 @@ func RegisterCodec(cdc *codec.Codec) {
 	cdc.RegisterConcrete(MsgRagnarok{}, "thorchain/MsgRagnarok", nil)
 	cdc.RegisterConcrete(MsgRefundTx{}, "thorchain/MsgRefundTx", nil)
 	cdc.RegisterConcrete(MsgSend{}, "thorchain/MsgSend", nil)
+}
+
+// RegisterInterfaces register the types
+func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSwap{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgTssPool{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgTssKeysignFail{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgAddLiquidity{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgWithdrawLiquidity{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgObservedTxIn{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgObservedTxOut{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgDonate{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgBond{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgUnBond{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgLeave{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgNoOp{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgOutboundTx{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSetVersion{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSetNodeKeys{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSetIPAddress{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgYggdrasil{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgReserveContributor{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgErrataTx{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgBan{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSwitch{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgMimir{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgDeposit{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgNetworkFee{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgMigrate{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgRagnarok{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgRefundTx{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSend{})
 }

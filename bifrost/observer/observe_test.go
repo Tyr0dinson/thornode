@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
-	ctypes "github.com/binance-chain/go-sdk/common/types"
-	txType "github.com/binance-chain/go-sdk/types/tx"
-	"github.com/cosmos/cosmos-sdk/client/keys"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
+	txType "gitlab.com/thorchain/binance-sdk/types/tx"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -28,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
@@ -136,18 +138,15 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(os.Setenv("NET", "testnet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		c.Logf("requestUri:%s", req.RequestURI)
-		if strings.HasPrefix(req.RequestURI, "/txs") {
-			_, err := rw.Write([]byte(`{"height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}]}`))
-			c.Assert(err, IsNil)
-		} else if strings.HasPrefix(req.RequestURI, "/errata") {
-			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
+		fmt.Printf("requestUri:%s\n", req.RequestURI)
+		if strings.HasPrefix(req.RequestURI, "/errata") {
+			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "E7FDA9DE4D0AD37D823813CB5BC0D6E69AB0D41BB666B65B965D12D24A3AE83C", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock/BNB") {
 			_, err := rw.Write([]byte(`[{ "chain": "BNB", "lastobservedin": "0", "lastsignedout": "0", "thorchain": "0" }]`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock") {
-			_, err := rw.Write([]byte(`[{ "chain": "ThorChain", "lastobservedin": "0", "lastsignedout": "0", "thorchain": "0" }]`))
+			_, err := rw.Write([]byte(`[{ "chain": "THORChain", "lastobservedin": "0", "lastsignedout": "0", "thorchain": "0" }]`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/auth/accounts/") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "0", "result": { "value": { "account_number": "0", "sequence": "0" } } } |`))
@@ -165,7 +164,11 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
   "tthorpub1addwnpepqwhnus6xs4208d4ynm05lv493amz3fexfjfx4vptntedd7k0ajlcunlfxxs"
 ]`))
 			c.Assert(err, IsNil)
+		} else if strings.HasPrefix(req.RequestURI, "/") {
+			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": 0, "result": { "height": "1", "hash": "E7FDA9DE4D0AD37D823813CB5BC0D6E69AB0D41BB666B65B965D12D24A3AE83C", "logs": [{"success": "true", "log": ""}] } }`))
+			c.Assert(err, IsNil)
 		} else {
+			c.Errorf("invalid server query: %s", req.RequestURI)
 		}
 	}))
 
@@ -179,17 +182,20 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
-	kb := keys.NewInMemoryKeyBase()
-	info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
+	kb := cKeys.NewInMemory()
+	_, _, err = kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+
 	c.Assert(s.thorKeys, NotNil)
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(s.bridge, NotNil)
 	c.Assert(err, IsNil)
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-	pk, err := common.NewPubKeyFromCrypto(priv.PubKey())
+	tmp, err := codec.ToTmPubKeyInterface(priv.PubKey())
+	c.Assert(err, IsNil)
+	pk, err := common.NewPubKeyFromCrypto(tmp)
 	c.Assert(err, IsNil)
 	txOut := getTxOutFromJSONInput(`{ "height": "0", "tx_array": [ { "vault_pubkey":"", "seq_no":"0","to": "tbnb186nvjtqk4kkea3f8a30xh4vqtkrlu2rm9xgly3", "memo": "migrate", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk

@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	abci "github.com/tendermint/tendermint/abci/types"
-	tmtypes "github.com/tendermint/tendermint/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -280,10 +279,7 @@ func (vm *validatorMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccesso
 			ctx.Logger().Error("fail to parse consensus public key", "key", na.ValidatorConsPubKey, "error", err)
 			continue
 		}
-		validators = append(validators, abci.ValidatorUpdate{
-			PubKey: tmtypes.TM2PB.PubKey(pk),
-			Power:  100,
-		})
+		validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 	}
 	for _, na := range removedNodes {
 		status := NodeStandby
@@ -315,10 +311,7 @@ func (vm *validatorMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccesso
 			ctx.Logger().Error("fail to parse consensus public key", "key", na.ValidatorConsPubKey, "error", err)
 			continue
 		}
-		validators = append(validators, abci.ValidatorUpdate{
-			PubKey: tmtypes.TM2PB.PubKey(pk),
-			Power:  0,
-		})
+		validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 	}
 
 	// reset all nodes in ready status back to standby status
@@ -352,7 +345,7 @@ func (vm *validatorMgrV1) getChangedNodes(ctx cosmos.Context, activeNodes NodeAc
 	}
 	var membership common.PubKeys
 	for _, vault := range activeVaults {
-		membership = append(membership, vault.Membership...)
+		membership = append(membership, vault.GetMembership()...)
 	}
 
 	// find active node accounts that are no longer active
@@ -801,7 +794,7 @@ func (vm *validatorMgrV1) RequestYggReturn(ctx cosmos.Context, node NodeAccount,
 	}
 
 	for _, v := range append(active, retiring...) {
-		chains = append(chains, v.Chains...)
+		chains = append(chains, v.GetChains()...)
 	}
 	chains = chains.Distinct()
 
@@ -1094,7 +1087,7 @@ func (vm *validatorMgrV1) findLowerVersionActor(ctx cosmos.Context) (NodeAccount
 		return NodeAccount{}, err
 	}
 	for _, na := range activeNodes {
-		if na.Version.LT(minimumVersion) {
+		if na.GetVersion().LT(minimumVersion) {
 			return na, nil
 		}
 	}
@@ -1157,7 +1150,7 @@ func (vm *validatorMgrV1) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeA
 
 	minVersion := vm.k.GetMinJoinVersion(ctx)
 	// Check version number is still supported
-	if na.Version.LT(minVersion) {
+	if na.GetVersion().LT(minVersion) {
 		return NodeStandby, fmt.Errorf("node account does not meet min version requirement: %s vs %s", na.Version, minVersion)
 	}
 
