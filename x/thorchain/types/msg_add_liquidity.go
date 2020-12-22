@@ -5,16 +5,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgAddLiquidity defines a AddLiquidity message
-type MsgAddLiquidity struct {
-	Tx           common.Tx         `json:"tx"`
-	Asset        common.Asset      `json:"asset"`         // ticker means the asset
-	AssetAmount  cosmos.Uint       `json:"asset_amt"`     // the amount of asset add
-	RuneAmount   cosmos.Uint       `json:"rune"`          // the amount of rune add
-	RuneAddress  common.Address    `json:"rune_address"`  // liqudity provider rune address
-	AssetAddress common.Address    `json:"asset_address"` // liqudity provider asset address
-	Signer       cosmos.AccAddress `json:"signer"`
-}
+var _ cosmos.Msg = &MsgAddLiquidity{}
 
 // NewMsgAddLiquidity is a constructor function for MsgAddLiquidity
 func NewMsgAddLiquidity(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, runeAddr, assetAddr common.Address, signer cosmos.AccAddress) MsgAddLiquidity {
@@ -71,7 +62,7 @@ func (msg MsgAddLiquidity) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgAddLiquidity) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

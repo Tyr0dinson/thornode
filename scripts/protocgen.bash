@@ -6,6 +6,9 @@
 
 set -eo pipefail
 
+# delete existing protobuf generated files
+find . -name "*.pb.go" -delete
+
 proto_dirs=$(find ./proto -path -prune -o -name '*.proto' -print0 | xargs -0 -n1 dirname | sort | uniq)
 for dir in $proto_dirs; do
   protoc \

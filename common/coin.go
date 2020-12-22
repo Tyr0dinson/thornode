@@ -9,12 +9,8 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-type Coin struct {
-	Asset  Asset       `json:"asset"`
-	Amount cosmos.Uint `json:"amount"`
-}
-
 var NoCoin = Coin{
+	Asset:  EmptyAsset,
 	Amount: cosmos.ZeroUint(),
 }
 
