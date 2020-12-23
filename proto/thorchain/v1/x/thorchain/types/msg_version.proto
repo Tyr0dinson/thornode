@@ -6,6 +6,6 @@ option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 import "gogoproto/gogo.proto";
 
 message MsgSetVersion {
-  string version = 1;
+  bytes version = 1 [(gogoproto.casttype) = "github.com/blang/semver.Version"];
   bytes signer = 2  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

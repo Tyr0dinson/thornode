@@ -43,7 +43,7 @@ func (msg MsgObservedTxOut) ValidateBasic() error {
 		if len(tx.OutHashes) > 0 {
 			return cosmos.ErrUnknownRequest("out hashes must be empty")
 		}
-		if tx.Status != ObservedTx_incomplete {
+		if tx.Status != Status_incomplete {
 			return cosmos.ErrUnknownRequest("status must be incomplete")
 		}
 	}

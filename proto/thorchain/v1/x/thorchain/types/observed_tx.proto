@@ -17,7 +17,7 @@ enum Status {
 message ObservedTx {
   common.Tx tx = 1 [(gogoproto.nullable) = false];
   Status status = 2;
-  repeated string out_hashes = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.TxID"];
+  repeated string out_hashes = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.TxIDs"];
   int64 block_height = 4;
   repeated bytes signers = 5 [(gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   bytes observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
