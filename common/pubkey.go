@@ -32,12 +32,6 @@ var EmptyPubKey PubKey
 // EmptyPubKeySet
 var EmptyPubKeySet PubKeySet
 
-// PubKeySet contains two pub keys , secp256k1 and ed25519
-type PubKeySet struct {
-	Secp256k1 PubKey `json:"secp256k1"`
-	Ed25519   PubKey `json:"ed25519"`
-}
-
 // NewPubKey create a new instance of PubKey
 // key is bech32 encoded string
 func NewPubKey(key string) (PubKey, error) {

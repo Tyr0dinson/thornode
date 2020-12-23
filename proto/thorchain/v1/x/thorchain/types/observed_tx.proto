@@ -2,17 +2,20 @@ syntax = "proto3";
 package types;
 
 option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all)         = false;
 
 import "thorchain/v1/common/common.proto";
 import "gogoproto/gogo.proto";
+  
+enum Status {
+  incomplete = 0;
+  done = 1;
+  reverted = 2;
+}
 
 message ObservedTx {
   common.Tx tx = 1 [(gogoproto.nullable) = false];
-  enum Status {
-    incomplete = 0;
-    done = 1;
-    reverted = 2;
-  }
   Status status = 2;
   repeated string out_hashes = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.TxID"];
   int64 block_height = 4;

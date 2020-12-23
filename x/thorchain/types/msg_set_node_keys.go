@@ -5,13 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgSetNodeKeys defines a MsgSetNodeKeys message
-type MsgSetNodeKeys struct {
-	PubKeySetSet        common.PubKeySet  `json:"pub_key_set"`
-	ValidatorConsPubKey string            `json:"validator_cons_pub_key"`
-	Signer              cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgSetNodeKeys is a constructor function for NewMsgAddNodeKeys
 func NewMsgSetNodeKeys(nodePubKeySet common.PubKeySet, validatorConsPubKey string, signer cosmos.AccAddress) MsgSetNodeKeys {
 	return MsgSetNodeKeys{
@@ -43,7 +36,7 @@ func (msg MsgSetNodeKeys) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgSetNodeKeys) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

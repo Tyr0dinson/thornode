@@ -309,7 +309,7 @@ func (tx *ObservedTxVoter) SetReverted() {
 	tx.setStatus(Reverted)
 }
 
-func (tx *ObservedTxVoter) setStatus(toStatus status) {
+func (tx *ObservedTxVoter) setStatus(toStatus Status) {
 	for _, item := range tx.Txs {
 		item.Status = toStatus
 	}

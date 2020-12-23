@@ -13,17 +13,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgTssKeysignFail means TSS keysign failed
-type MsgTssKeysignFail struct {
-	ID     string            `json:"id"`
-	Height int64             `json:"height"`
-	Blame  blame.Blame       `json:"blame"`
-	Memo   string            `json:"memo"`
-	Coins  common.Coins      `json:"coins"`
-	Signer cosmos.AccAddress `json:"signer"`
-	PubKey common.PubKey     `json:"pub_key"`
-}
-
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
 func NewMsgTssKeysignFail(height int64, blame blame.Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) MsgTssKeysignFail {
 	return MsgTssKeysignFail{
@@ -98,7 +87,7 @@ func (msg MsgTssKeysignFail) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgTssKeysignFail) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

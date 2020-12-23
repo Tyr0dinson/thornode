@@ -53,31 +53,6 @@ func (k KeygenBlock) Contains(keygen Keygen) bool {
 	return false
 }
 
-// KeygenType are two types of key Asgard Yggdrasil;
-type KeygenType byte
-
-const (
-	// UnknownKeygen unknown
-	UnknownKeygen KeygenType = iota
-	// AsgardKeygen asgard
-	AsgardKeygen
-	// YggdrasilKeygen yggdrasil
-	YggdrasilKeygen
-)
-
-// String implement fmt.Stringer
-func (kt KeygenType) String() string {
-	switch kt {
-	case UnknownKeygen:
-		return "unknown"
-	case AsgardKeygen:
-		return "asgard"
-	case YggdrasilKeygen:
-		return "yggdrasil"
-	}
-	return ""
-}
-
 // GetKeygenTypeFromString parse the given string as KeygenType
 func GetKeygenTypeFromString(t string) KeygenType {
 	switch {

@@ -5,13 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgOutboundTx defines a MsgOutboundTx message
-type MsgOutboundTx struct {
-	Tx     ObservedTx        `json:"tx"`
-	InTxID common.TxID       `json:"tx_id"`
-	Signer cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgOutboundTx is a constructor function for MsgOutboundTx
 func NewMsgOutboundTx(tx ObservedTx, txID common.TxID, signer cosmos.AccAddress) MsgOutboundTx {
 	return MsgOutboundTx{
@@ -43,7 +36,7 @@ func (msg MsgOutboundTx) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgOutboundTx) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

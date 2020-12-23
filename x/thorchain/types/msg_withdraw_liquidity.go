@@ -8,16 +8,6 @@ import (
 // MaxWithdrawBasisPoints basis points for withdrawals
 const MaxWithdrawBasisPoints = 10_000
 
-// MsgWithdrawLiquidity is used to withdraw
-type MsgWithdrawLiquidity struct {
-	Tx              common.Tx         `json:"tx"`
-	WithdrawAddress common.Address    `json:"withdraw_address"` //
-	BasisPoints     cosmos.Uint       `json:"basis_points"`     // withdraw basis points
-	Asset           common.Asset      `json:"asset"`            // asset asset asset
-	WithdrawalAsset common.Asset      `json:"withdrawal_asset"` // asset to be withdrawn
-	Signer          cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgWithdrawLiquidity is a constructor function for MsgWithdrawLiquidity
 func NewMsgWithdrawLiquidity(tx common.Tx, withdrawAddress common.Address, withdrawBasisPoints cosmos.Uint, asset, withdrawalAsset common.Asset, signer cosmos.AccAddress) MsgWithdrawLiquidity {
 	return MsgWithdrawLiquidity{
@@ -64,7 +54,7 @@ func (msg MsgWithdrawLiquidity) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgWithdrawLiquidity) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

@@ -5,13 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgReserveContributor defines a MsgReserveContributor message
-type MsgReserveContributor struct {
-	Tx          common.Tx          `json:"tx"`
-	Contributor ReserveContributor `json:"contributor"`
-	Signer      cosmos.AccAddress  `json:"signer"`
-}
-
 // NewMsgReserveContributor is a constructor function for MsgReserveContributor
 func NewMsgReserveContributor(tx common.Tx, contrib ReserveContributor, signer cosmos.AccAddress) MsgReserveContributor {
 	return MsgReserveContributor{
@@ -43,7 +36,7 @@ func (msg MsgReserveContributor) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgReserveContributor) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

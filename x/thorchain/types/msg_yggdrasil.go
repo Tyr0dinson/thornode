@@ -5,16 +5,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgYggdrasil defines a MsgYggdrasil message
-type MsgYggdrasil struct {
-	Tx          common.Tx         `json:"tx"`
-	PubKey      common.PubKey     `json:"pub_key"`
-	AddFunds    bool              `json:"add_funds"`
-	Coins       common.Coins      `json:"coins"`
-	BlockHeight int64             `json:"block_height"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgYggdrasil is a constructor function for MsgYggdrasil
 func NewMsgYggdrasil(tx common.Tx, pk common.PubKey, blockHeight int64, addFunds bool, coins common.Coins, signer cosmos.AccAddress) MsgYggdrasil {
 	return MsgYggdrasil{
@@ -58,7 +48,7 @@ func (msg MsgYggdrasil) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgYggdrasil) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

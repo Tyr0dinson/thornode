@@ -5,13 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgSwitch defines a MsgSwitch message
-type MsgSwitch struct {
-	Tx          common.Tx         `json:"tx"`
-	Destination common.Address    `json:"destination"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgSwitch is a constructor function for NewMsgSwitch
 func NewMsgSwitch(tx common.Tx, addr common.Address, signer cosmos.AccAddress) MsgSwitch {
 	return MsgSwitch{
@@ -50,7 +43,7 @@ func (msg MsgSwitch) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgSwitch) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

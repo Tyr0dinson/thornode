@@ -5,17 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgSwap defines a MsgSwap message
-type MsgSwap struct {
-	Tx                   common.Tx         `json:"tx"`           // request tx
-	TargetAsset          common.Asset      `json:"target_asset"` // target asset
-	Destination          common.Address    `json:"destination"`  // destination , used for swap and send , the destination address THORNode send it to
-	TradeTarget          cosmos.Uint       `json:"trade_target"`
-	AffiliateAddress     common.Address    `json:"affiliate_address"`
-	AffiliateBasisPoints cosmos.Uint       `json:"affiliate_basis_points"`
-	Signer               cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgSwap is a constructor function for MsgSwap
 func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, tradeTarget cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, signer cosmos.AccAddress) MsgSwap {
 	return MsgSwap{
@@ -74,7 +63,7 @@ func (msg MsgSwap) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgSwap) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

@@ -7,7 +7,7 @@ import "thorchain/v1/x/thorchain/types/observed_tx.proto";
 import "gogoproto/gogo.proto";
 
 message MsgRagnarok {
-  ObservedTx observed_tx = 1 [(gogoproto.nullable) = false];
+  ObservedTx tx = 1 [(gogoproto.nullable) = false];
   int64 block_height = 2;
   bytes signer = 3  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

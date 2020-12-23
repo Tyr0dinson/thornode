@@ -4,12 +4,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-type MsgSend struct {
-	FromAddress cosmos.AccAddress `json:"from_address"`
-	ToAddress   cosmos.AccAddress `json:"to_address"`
-	Amount      cosmos.Coins      `json:"amount"`
-}
-
 // NewMsgSend - construct a msg to send coins from one account to another.
 func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSend {
 	return &MsgSend{FromAddress: fromAddr, ToAddress: toAddr, Amount: amount}

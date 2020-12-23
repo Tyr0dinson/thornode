@@ -6,14 +6,8 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgSetVersion defines a MsgSetVersion message
-type MsgSetVersion struct {
-	Version semver.Version    `json:"version"`
-	Signer  cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgSetVersion is a constructor function for NewMsgSetVersion
-func NewMsgSetVersion(version semver.Version, signer cosmos.AccAddress) MsgSetVersion {
+func NewMsgSetVersion(version string, signer cosmos.AccAddress) MsgSetVersion {
 	return MsgSetVersion{
 		Version: version,
 		Signer:  signer,
@@ -31,7 +25,7 @@ func (msg MsgSetVersion) ValidateBasic() error {
 	if msg.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(msg.Signer.String())
 	}
-	if err := msg.Version.Validate(); err != nil {
+	if _, err := semver.Make(msg.Version); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	return nil
@@ -39,7 +33,7 @@ func (msg MsgSetVersion) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgSetVersion) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

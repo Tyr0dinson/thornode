@@ -134,7 +134,7 @@ func SetupConfigForTest() {
 
 // nolint: deadcode unused
 // create a codec used only for testing
-func MakeTestCodec() *codec.Codec {
+func MakeTestCodec() *codec.LegacyAmino {
 	cdc := codec.New()
 	bank.RegisterCodec(cdc)
 	auth.RegisterCodec(cdc)

@@ -5,15 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgUnBond when a user would like to remove some bond
-type MsgUnBond struct {
-	TxIn        common.Tx         `json:"tx_in"`
-	NodeAddress cosmos.AccAddress `json:"node_address"`
-	Amount      cosmos.Uint       `json:"amount"`
-	BondAddress common.Address    `json:"bond_address"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgUnBond create new MsgUnBond message
 func NewMsgUnBond(txin common.Tx, nodeAddr cosmos.AccAddress, amount cosmos.Uint, bondAddress common.Address, signer cosmos.AccAddress) MsgUnBond {
 	return MsgUnBond{
@@ -53,7 +44,7 @@ func (msg MsgUnBond) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgUnBond) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

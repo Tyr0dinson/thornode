@@ -7,27 +7,12 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgTssPool defines a MsgTssPool message
-type MsgTssPool struct {
-	ID         string            `json:"id"`
-	PoolPubKey common.PubKey     `json:"pool_pub_key"`
-	KeygenType KeygenType        `json:"keygen_type"`
-	PubKeys    common.PubKeys    `json:"pubkeys"`
-	Height     int64             `json:"height"`
-	Blame      blame.Blame       `json:"blame"`
-	Chains     common.Chains     `json:"chains"`
-	Signer     cosmos.AccAddress `json:"signer"`
-	KeygenTime int64             `json:"keygen_time"` // keygen time in ms
-}
-
 // NewMsgTssPool is a constructor function for MsgTssPool
-func NewMsgTssPool(pks common.PubKeys, poolpk common.PubKey, KeygenType KeygenType, height int64, bl blame.Blame, chains common.Chains, signer cosmos.AccAddress, keygenTime int64) MsgTssPool {
+func NewMsgTssPool(pks common.PubKeys, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains common.Chains, signer cosmos.AccAddress, keygenTime int64) MsgTssPool {
 	return MsgTssPool{
 		ID:         getTssID(pks, poolpk, height, bl),
 		PubKeys:    pks,
@@ -42,7 +27,7 @@ func NewMsgTssPool(pks common.PubKeys, poolpk common.PubKey, KeygenType KeygenTy
 }
 
 // getTssID
-func getTssID(members common.PubKeys, poolPk common.PubKey, height int64, bl blame.Blame) string {
+func getTssID(members common.PubKeys, poolPk common.PubKey, height int64, bl Blame) string {
 	// ensure input pubkeys list is deterministically sorted
 	sort.SliceStable(members, func(i, j int) bool {
 		return members[i].String() < members[j].String()
@@ -120,7 +105,7 @@ func (msg MsgTssPool) IsSuccess() bool {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgTssPool) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

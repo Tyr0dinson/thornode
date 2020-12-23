@@ -7,12 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// ReserveContributor track contributor
-type ReserveContributor struct {
-	Address common.Address `json:"address"`
-	Amount  cosmos.Uint    `json:"amount"`
-}
-
 // ReserveContributors a list of reserve contributors
 type ReserveContributors []ReserveContributor
 
