@@ -4,13 +4,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgMimir defines a message to set mimir
-type MsgMimir struct {
-	Key    string            `json:"key"`
-	Value  int64             `json:"value"`
-	Signer cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgMimir is a constructor function for MsgMimir
 func NewMsgMimir(key string, value int64, signer cosmos.AccAddress) MsgMimir {
 	return MsgMimir{
@@ -39,7 +32,7 @@ func (msg MsgMimir) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgMimir) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

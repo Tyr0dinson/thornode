@@ -7,13 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgDeposit defines a MsgDeposit message
-type MsgDeposit struct {
-	Coins  common.Coins      `json:"coins"`
-	Memo   string            `json:"memo"`
-	Signer cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgDeposit is a constructor function for NewMsgDeposit
 func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) MsgDeposit {
 	return MsgDeposit{
@@ -51,7 +44,7 @@ func (msg MsgDeposit) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgDeposit) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

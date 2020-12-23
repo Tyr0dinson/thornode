@@ -8,42 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-type status string
-
-const (
-	Incomplete status = "incomplete"
-	Done       status = "done"
-	Reverted   status = "reverted"
-)
-
-// ObservedTx is design to track if THORNode have processed a specific tx
-type ObservedTx struct {
-	// Tx observed tx information
-	Tx common.Tx `json:"tx"`
-
-	// Status of this TX
-	Status status `json:"status"`
-
-	// OutHashes completed chain tx hash. This is a slice to track if we've "double spent" an input
-	OutHashes common.TxIDs `json:"out_hashes"`
-
-	// BlockHeight which block height this tx was observed
-	BlockHeight int64 `json:"block_height"`
-
-	// Signers  node account address saw this tx
-	Signers []cosmos.AccAddress `json:"signers"`
-
-	// ObservedPubKey the vault public key that observed this tx
-	ObservedPubKey common.PubKey `json:"observed_pub_key"`
-
-	// KeysingMs this field will only have value for outbound tx, indicate how many milliseconds THORChain TSS spent to send it out
-	KeysignMs int64 `json:"keysign_ms"` // this field is optional
-
-	// FinaliseHeight indicate when this tx will be finalised
-	// When FinaliseHeight == BlockHeight means the ObserveTx is final
-	FinaliseHeight int64 `json:"finalise_height"`
-}
-
 // ObservedTxs a list of ObservedTx
 type ObservedTxs []ObservedTx
 

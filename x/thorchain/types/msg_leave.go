@@ -5,13 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgLeave when an operator don't want to be a validator anymore
-type MsgLeave struct {
-	Tx          common.Tx         `json:"tx"`
-	NodeAddress cosmos.AccAddress `json:"node_address"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgLeave create a new instance of MsgLeave
 func NewMsgLeave(tx common.Tx, addr, signer cosmos.AccAddress) MsgLeave {
 	return MsgLeave{
@@ -46,7 +39,7 @@ func (msg MsgLeave) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgLeave) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

@@ -4,12 +4,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgObservedTxIn defines a MsgObservedTxIn message
-type MsgObservedTxIn struct {
-	Txs    ObservedTxs       `json:"txs"`
-	Signer cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgObservedTxIn is a constructor function for MsgObservedTxIn
 func NewMsgObservedTxIn(txs ObservedTxs, signer cosmos.AccAddress) MsgObservedTxIn {
 	return MsgObservedTxIn{
@@ -49,7 +43,7 @@ func (msg MsgObservedTxIn) ValidateBasic() error {
 		if len(tx.OutHashes) > 0 {
 			return cosmos.ErrUnknownRequest("out hashes must be empty")
 		}
-		if tx.Status != Incomplete {
+		if tx.Status != ObservedTx_incomplete {
 			return cosmos.ErrUnknownRequest("status must be incomplete")
 		}
 	}
@@ -59,7 +53,7 @@ func (msg MsgObservedTxIn) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgObservedTxIn) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

@@ -5,13 +5,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgErrataTx defines a MsgErrataTx message
-type MsgErrataTx struct {
-	TxID   common.TxID       `json:"txid"`
-	Chain  common.Chain      `json:"chain"`
-	Signer cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgErrataTx is a constructor function for NewMsgErrataTx
 func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddress) MsgErrataTx {
 	return MsgErrataTx{
@@ -43,7 +36,7 @@ func (msg MsgErrataTx) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgErrataTx) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

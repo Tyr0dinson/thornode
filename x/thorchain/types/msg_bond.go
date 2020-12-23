@@ -5,15 +5,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgBond when a user would like to become a validator, and run a full set, they need send an `apply:bepaddress` with a bond to our pool address
-type MsgBond struct {
-	TxIn        common.Tx         `json:"tx_in"`
-	NodeAddress cosmos.AccAddress `json:"node_address"`
-	Bond        cosmos.Uint       `json:"bond"`
-	BondAddress common.Address    `json:"bond_address"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgBond create new MsgBond message
 func NewMsgBond(txin common.Tx, nodeAddr cosmos.AccAddress, bond cosmos.Uint, bondAddress common.Address, signer cosmos.AccAddress) MsgBond {
 	return MsgBond{
@@ -62,7 +53,7 @@ func (msg MsgBond) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgBond) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

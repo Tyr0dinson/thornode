@@ -7,15 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgDonate defines a donate message
-type MsgDonate struct {
-	Asset       common.Asset      `json:"asset"`     // asset of the asset
-	AssetAmount cosmos.Uint       `json:"asset_amt"` // the amount of asset
-	RuneAmount  cosmos.Uint       `json:"rune_amt"`  // the amount of rune
-	Tx          common.Tx         `json:"tx"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgDonate is a constructor function for MsgDonate
 func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signer cosmos.AccAddress) MsgDonate {
 	return MsgDonate{
@@ -52,7 +43,7 @@ func (msg MsgDonate) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgDonate) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

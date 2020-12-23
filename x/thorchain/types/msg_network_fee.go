@@ -5,15 +5,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgNetworkFee is message bifrost will be used to send chain related network fee to THORNode
-type MsgNetworkFee struct {
-	BlockHeight        int64             `json:"block_height"`
-	Chain              common.Chain      `json:"chain"`
-	TransactionSize    uint64            `json:"transaction_size"`
-	TransactionFeeRate uint64            `json:"transaction_fee_rate"`
-	Signer             cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgNetworkFee create a new instance of MsgNetworkFee
 func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, transactionFeeRate uint64, signer cosmos.AccAddress) MsgNetworkFee {
 	return MsgNetworkFee{
@@ -53,7 +44,7 @@ func (msg MsgNetworkFee) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgNetworkFee) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

@@ -4,12 +4,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgNoOp defines a no op message
-type MsgNoOp struct {
-	ObservedTx ObservedTx        `json:"observed_tx"`
-	Signer     cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgNoOp is a constructor function for MsgNoOp
 func NewMsgNoOp(ObservedTx ObservedTx, signer cosmos.AccAddress) MsgNoOp {
 	return MsgNoOp{
@@ -37,7 +31,7 @@ func (msg MsgNoOp) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgNoOp) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

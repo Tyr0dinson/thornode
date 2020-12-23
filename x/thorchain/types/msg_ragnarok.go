@@ -4,13 +4,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgRagnarok defines a MsgRagnarok message
-type MsgRagnarok struct {
-	Tx          ObservedTx        `json:"tx"`
-	BlockHeight int64             `json:"block_height"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgRagnarok is a constructor function for MsgRagnarok
 func NewMsgRagnarok(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) MsgRagnarok {
 	return MsgRagnarok{
@@ -42,7 +35,7 @@ func (msg MsgRagnarok) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgRagnarok) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

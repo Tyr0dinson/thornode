@@ -6,12 +6,6 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgSetIPAddress defines a MsgSetIPAddress message
-type MsgSetIPAddress struct {
-	IPAddress string            `json:"ip_address"`
-	Signer    cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgSetIPAddress is a constructor function for NewMsgSetIPAddress
 func NewMsgSetIPAddress(ip string, signer cosmos.AccAddress) MsgSetIPAddress {
 	return MsgSetIPAddress{
@@ -39,7 +33,7 @@ func (msg MsgSetIPAddress) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgSetIPAddress) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required

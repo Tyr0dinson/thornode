@@ -4,13 +4,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// MsgMigrate defines a MsgMigrate message
-type MsgMigrate struct {
-	Tx          ObservedTx        `json:"tx"`
-	BlockHeight int64             `json:"block_height"`
-	Signer      cosmos.AccAddress `json:"signer"`
-}
-
 // NewMsgMigrate is a constructor function for MsgMigrate
 func NewMsgMigrate(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) MsgMigrate {
 	return MsgMigrate{
@@ -42,7 +35,7 @@ func (msg MsgMigrate) ValidateBasic() error {
 
 // GetSignBytes encodes the message for signing
 func (msg MsgMigrate) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(msg))
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
 }
 
 // GetSigners defines whose signature is required
