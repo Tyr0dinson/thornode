@@ -19,7 +19,7 @@ func (MsgMimirSuite) TestMsgMimir(c *C) {
 	m := NewMsgMimir("key", 12, addr)
 	c.Check(m.ValidateBasic(), IsNil)
 	c.Check(m.Type(), Equals, "set_mimir_attr")
-	EnsureMsgBasicCorrect(m, c)
+	EnsureMsgBasicCorrect(&m, c)
 	mEmpty := NewMsgMimir("", 0, cosmos.AccAddress{})
 	c.Assert(mEmpty.ValidateBasic(), NotNil)
 	msg1 := NewMsgMimir("ddd", 1, cosmos.AccAddress{})

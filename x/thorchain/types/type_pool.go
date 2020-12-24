@@ -131,8 +131,8 @@ func (ps Pool) EnsureValidPoolStatus(msg cosmos.Msg) error {
 	case Available:
 		return nil
 	case Staged:
-		switch msg.(type) {
-		case MsgSwap:
+		switch msg.Type() {
+		case "swap":
 			return errors.New("pool is in staged status, can't swap")
 		default:
 			return nil

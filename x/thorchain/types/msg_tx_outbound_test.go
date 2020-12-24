@@ -25,7 +25,7 @@ func (MsgOutboundTxSuite) TestMsgOutboundTx(c *C) {
 		"",
 	), 12, GetRandomPubKey(), 12)
 	m := NewMsgOutboundTx(tx, inTxID, acc1)
-	EnsureMsgBasicCorrect(m, c)
+	EnsureMsgBasicCorrect(&m, c)
 	c.Check(m.Type(), Equals, "set_tx_outbound")
 
 	inputs := []struct {

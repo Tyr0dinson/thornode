@@ -14,17 +14,17 @@ func (MsgNoopSuite) TestMsgNoop(c *C) {
 	c.Check(addr.Empty(), Equals, false)
 	tx := ObservedTx{
 		Tx:             GetRandomTx(),
-		Status:         Done,
+		Status:         Status_done,
 		OutHashes:      nil,
 		BlockHeight:    1,
-		Signers:        []cosmos.AccAddress{addr},
+		Signers:        []string{addr.String()},
 		ObservedPubKey: GetRandomPubKey(),
 		FinaliseHeight: 1,
 	}
 	m := NewMsgNoOp(tx, addr)
 	c.Check(m.ValidateBasic(), IsNil)
 	c.Check(m.Type(), Equals, "set_noop")
-	EnsureMsgBasicCorrect(m, c)
+	EnsureMsgBasicCorrect(&m, c)
 	mEmpty := NewMsgNoOp(tx, cosmos.AccAddress{})
 	c.Assert(mEmpty.ValidateBasic(), NotNil)
 }

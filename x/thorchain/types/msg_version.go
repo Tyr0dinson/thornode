@@ -31,6 +31,10 @@ func (msg MsgSetVersion) ValidateBasic() error {
 	return nil
 }
 
+func (msg MsgSetVersion) GetVersion() (semver.Version, error) {
+	return semver.Make(msg.Version)
+}
+
 // GetSignBytes encodes the message for signing
 func (msg MsgSetVersion) GetSignBytes() []byte {
 	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))

@@ -63,7 +63,7 @@ test:
 	@go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
 test-watch: clear
-	@gow -c test ${TEST_BUILD_FLAGS} -mod=readonly ${TEST_DIR}
+	@gow -c test -mod=readonly ${TEST_DIR}
 
 format:
 	@gofumpt -w .

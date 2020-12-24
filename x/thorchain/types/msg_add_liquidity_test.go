@@ -29,7 +29,7 @@ func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 		"",
 	)
 	m := NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(100000000), cosmos.NewUint(100000000), runeAddress, assetAddress, addr)
-	EnsureMsgBasicCorrect(m, c)
+	EnsureMsgBasicCorrect(&m, c)
 	c.Check(m.Type(), Equals, "add_liquidity")
 
 	inputs := []struct {

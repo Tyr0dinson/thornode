@@ -15,7 +15,7 @@ type ObservedTxs []ObservedTx
 func NewObservedTx(tx common.Tx, height int64, pk common.PubKey, finalisedHeight int64) ObservedTx {
 	return ObservedTx{
 		Tx:             tx,
-		Status:         Incomplete,
+		Status:         Status_incomplete,
 		BlockHeight:    height,
 		ObservedPubKey: pk,
 		FinaliseHeight: finalisedHeight,
@@ -70,6 +70,30 @@ func (tx ObservedTx) IsFinal() bool {
 	return tx.FinaliseHeight == tx.BlockHeight
 }
 
+func (tx ObservedTx) GetOutHashes() (common.TxIDs, error) {
+	txIDs := make(common.TxIDs, len(tx.OutHashes))
+	for i, o := range tx.OutHashes {
+		var err error
+		txIDs[i], err = common.NewTxID(o)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return txIDs, nil
+}
+
+func (tx ObservedTx) GetSigners() ([]cosmos.AccAddress, error) {
+	addrs := make([]cosmos.AccAddress, len(tx.Signers))
+	for i, a := range tx.Signers {
+		var err error
+		addrs[i], err = cosmos.AccAddressFromBech32(a)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return addrs, nil
+}
+
 // String implement fmt.Stringer
 func (tx ObservedTx) String() string {
 	return tx.Tx.String()
@@ -77,7 +101,11 @@ func (tx ObservedTx) String() string {
 
 // HasSigned - check if given address has signed
 func (tx ObservedTx) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range tx.Signers {
+	signers, err := tx.GetSigners()
+	if err != nil {
+		return true
+	}
+	for _, sign := range signers {
 		if sign.Equals(signer) {
 			return true
 		}
@@ -91,20 +119,21 @@ func (tx *ObservedTx) Sign(signer cosmos.AccAddress) bool {
 	if tx.HasSigned(signer) {
 		return false
 	}
-	tx.Signers = append(tx.Signers, signer)
+	tx.Signers = append(tx.Signers, signer.String())
 	return true
 }
 
 // SetDone check the ObservedTx status, update it's status to done if the outbound tx had been processed
 func (tx *ObservedTx) SetDone(hash common.TxID, numOuts int) {
-	for _, done := range tx.OutHashes {
+	hashes, _ := tx.GetOutHashes()
+	for _, done := range hashes {
 		if done.Equals(hash) {
 			return
 		}
 	}
-	tx.OutHashes = append(tx.OutHashes, hash)
+	tx.OutHashes = append(tx.OutHashes, hash.String())
 	if tx.IsDone(numOuts) {
-		tx.Status = Done
+		tx.Status = Status_done
 	}
 }
 
@@ -238,7 +267,8 @@ func (tx *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) 
 		}
 		votedIdx = idx
 		// check whether the signer is already in the list
-		for _, siggy := range transaction.Signers {
+		signers, _ := transaction.GetSigners()
+		for _, siggy := range signers {
 			if siggy.Equals(signer) {
 				return false
 			}
@@ -248,7 +278,7 @@ func (tx *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) 
 	if votedIdx != -1 {
 		return tx.Txs[votedIdx].Sign(signer)
 	}
-	observedTx.Signers = []cosmos.AccAddress{signer}
+	observedTx.Signers = []string{signer.String()}
 	tx.Txs = append(tx.Txs, observedTx)
 	return true
 }
@@ -292,7 +322,8 @@ func (tx *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obs
 		if txIn.IsFinal() != final {
 			continue
 		}
-		for _, signer := range txIn.Signers {
+		signers, _ := txIn.GetSigners()
+		for _, signer := range signers {
 			if accounts.IsNodeKeys(signer) {
 				count++
 			}
@@ -306,7 +337,7 @@ func (tx *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obs
 
 // SetReverted set all the tx status to `Reverted` , only when a relevant errata tx had been processed
 func (tx *ObservedTxVoter) SetReverted() {
-	tx.setStatus(Reverted)
+	tx.setStatus(Status_reverted)
 }
 
 func (tx *ObservedTxVoter) setStatus(toStatus Status) {
@@ -324,5 +355,5 @@ func (tx *ObservedTxVoter) setStatus(toStatus Status) {
 // usually the status will be set to done once the outbound tx get observed and processed
 // there are some situation , it doesn't have outbound , those will need to set manually
 func (tx *ObservedTxVoter) SetDone() {
-	tx.setStatus(Done)
+	tx.setStatus(Status_done)
 }

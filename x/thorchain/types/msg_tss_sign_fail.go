@@ -7,14 +7,12 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
-func NewMsgTssKeysignFail(height int64, blame blame.Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) MsgTssKeysignFail {
+func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) MsgTssKeysignFail {
 	return MsgTssKeysignFail{
 		ID:     getMsgTssKeysignFailID(blame.BlameNodes, height, memo, coins, pubKey),
 		Height: height,
@@ -30,7 +28,7 @@ func NewMsgTssKeysignFail(height int64, blame blame.Blame, memo string, coins co
 // keysign failure , as well as the block height of the txout item to generate
 // a hash, given that , if the same party keep failing the same txout item ,
 // then we will only slash it once.
-func getMsgTssKeysignFailID(members []blame.Node, height int64, memo string, coins common.Coins, pubKey common.PubKey) string {
+func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins common.Coins, pubKey common.PubKey) string {
 	// ensure input pubkeys list is deterministically sorted
 	sort.SliceStable(members, func(i, j int) bool {
 		return members[i].Pubkey < members[j].Pubkey

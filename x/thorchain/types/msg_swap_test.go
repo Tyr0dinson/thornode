@@ -30,7 +30,7 @@ func (MsgSwapSuite) TestMsgSwap(c *C) {
 	)
 
 	m := NewMsgSwap(tx, common.BNBAsset, bnbAddress, cosmos.NewUint(200000000), common.NoAddress, cosmos.ZeroUint(), addr)
-	EnsureMsgBasicCorrect(m, c)
+	EnsureMsgBasicCorrect(&m, c)
 	c.Check(m.Type(), Equals, "swap")
 
 	inputs := []struct {

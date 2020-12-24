@@ -14,7 +14,7 @@ var _ = Suite(&MsgNetworkFeeSuite{})
 func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 	msg := NewMsgNetworkFee(1024, common.BNBChain, 1, 37500, GetRandomBech32Addr())
 	c.Assert(msg.Type(), Equals, "set_network_fee")
-	EnsureMsgBasicCorrect(msg, c)
+	EnsureMsgBasicCorrect(&msg, c)
 
 	testCases := []struct {
 		blockHeight        int64
@@ -87,7 +87,7 @@ func (MsgNetworkFeeSuite) TestMsgNetworkFee(c *C) {
 		if tc.expectErr {
 			c.Assert(err, NotNil, Commentf("name:%s", tc.name))
 		} else {
-			EnsureMsgBasicCorrect(msg, c)
+			EnsureMsgBasicCorrect(&msg, c)
 		}
 
 	}

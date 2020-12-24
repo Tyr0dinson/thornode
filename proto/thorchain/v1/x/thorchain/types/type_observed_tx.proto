@@ -4,6 +4,7 @@ package types;
 option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 option (gogoproto.goproto_stringer_all) = false;
 option (gogoproto.stringer_all)         = false;
+option (gogoproto.goproto_getters_all) = false;
 
 import "thorchain/v1/common/common.proto";
 import "gogoproto/gogo.proto";
@@ -17,10 +18,10 @@ enum Status {
 message ObservedTx {
   common.Tx tx = 1 [(gogoproto.nullable) = false];
   Status status = 2;
-  repeated string out_hashes = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.TxIDs"];
+  repeated string out_hashes = 3;
   int64 block_height = 4;
-  repeated bytes signers = 5 [(gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  bytes observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
+  repeated string signers = 5;
+  string observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   int64 keysign_ms = 7;
   int64 finalise_height = 8;
 }

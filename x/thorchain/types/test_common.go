@@ -2,13 +2,15 @@
 package types
 
 import (
+	"math/rand"
+	"time"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/cosmos/cosmos-sdk/x/bank"
+	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/tendermint/tendermint/crypto"
-	tmtypes "github.com/tendermint/tendermint/types"
 
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
@@ -18,8 +20,11 @@ import (
 
 // GetRandomNodeAccount create a random generated node account , used for test purpose
 func GetRandomNodeAccount(status NodeStatus) NodeAccount {
-	v, _ := tmtypes.RandValidator(true, 100)
-	k, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, v.PubKey)
+	s := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(s)
+	accts := simtypes.RandomAccounts(r, 1)
+
+	k, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, accts[0].PubKey)
 	pubKeys := common.PubKeySet{
 		Secp256k1: GetRandomPubKey(),
 		Ed25519:   GetRandomPubKey(),
@@ -62,8 +67,9 @@ func GetRandomBech32Addr() cosmos.AccAddress {
 }
 
 func GetRandomBech32ConsensusPubKey() string {
-	_, pubKey, _ := atypes.KeyTestPubAddr()
-	result, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, pubKey)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	accts := simtypes.RandomAccounts(r, 1)
+	result, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, accts[0].PubKey)
 	if err != nil {
 		panic(err)
 	}
@@ -113,8 +119,9 @@ func GetRandomVault() Vault {
 }
 
 func GetRandomPubKey() common.PubKey {
-	_, pubKey, _ := atypes.KeyTestPubAddr()
-	bech32PubKey, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	accts := simtypes.RandomAccounts(r, 1)
+	bech32PubKey, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, accts[0].PubKey)
 	pk, _ := common.NewPubKey(bech32PubKey)
 	return pk
 }
@@ -135,11 +142,11 @@ func SetupConfigForTest() {
 // nolint: deadcode unused
 // create a codec used only for testing
 func MakeTestCodec() *codec.LegacyAmino {
-	cdc := codec.New()
-	bank.RegisterCodec(cdc)
-	auth.RegisterCodec(cdc)
+	cdc := codec.NewLegacyAmino()
+	banktypes.RegisterLegacyAminoCodec(cdc)
+	authtypes.RegisterLegacyAminoCodec(cdc)
 	RegisterCodec(cdc)
 	cosmos.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
+	// codec.RegisterCrypto(cdc)
 	return cdc
 }

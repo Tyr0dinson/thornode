@@ -57,11 +57,11 @@ func (k KeygenBlock) Contains(keygen Keygen) bool {
 func GetKeygenTypeFromString(t string) KeygenType {
 	switch {
 	case strings.EqualFold(t, "asgard"):
-		return AsgardKeygen
+		return KeygenType_AsgardKeygen
 	case strings.EqualFold(t, "yggdrasil"):
-		return YggdrasilKeygen
+		return KeygenType_YggdrasilKeygen
 	}
-	return UnknownKeygen
+	return KeygenType_UnknownKeygen
 }
 
 // MarshalJSON marshal keygen type to JSON in string form
@@ -127,7 +127,7 @@ func (k Keygen) IsEmpty() bool {
 
 // Valid is to check whether the keygen members are valid
 func (k Keygen) Valid() error {
-	if k.Type == UnknownKeygen {
+	if k.Type == KeygenType_UnknownKeygen {
 		return errors.New("unknown keygen")
 	}
 	return k.Members.Valid()

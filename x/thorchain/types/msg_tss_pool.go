@@ -12,7 +12,7 @@ import (
 )
 
 // NewMsgTssPool is a constructor function for MsgTssPool
-func NewMsgTssPool(pks common.PubKeys, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains common.Chains, signer cosmos.AccAddress, keygenTime int64) MsgTssPool {
+func NewMsgTssPool(pks []string, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) MsgTssPool {
 	return MsgTssPool{
 		ID:         getTssID(pks, poolpk, height, bl),
 		PubKeys:    pks,
@@ -27,10 +27,10 @@ func NewMsgTssPool(pks common.PubKeys, poolpk common.PubKey, KeygenType KeygenTy
 }
 
 // getTssID
-func getTssID(members common.PubKeys, poolPk common.PubKey, height int64, bl Blame) string {
+func getTssID(members []string, poolPk common.PubKey, height int64, bl Blame) string {
 	// ensure input pubkeys list is deterministically sorted
 	sort.SliceStable(members, func(i, j int) bool {
-		return members[i].String() < members[j].String()
+		return members[i] < members[j]
 	})
 
 	pubkeys := make([]string, len(bl.BlameNodes))
@@ -43,7 +43,7 @@ func getTssID(members common.PubKeys, poolPk common.PubKey, height int64, bl Bla
 
 	sb := strings.Builder{}
 	for _, item := range members {
-		sb.WriteString("m:" + item.String())
+		sb.WriteString("m:" + item)
 	}
 	for _, item := range pubkeys {
 		sb.WriteString("p:" + item)
@@ -74,7 +74,11 @@ func (msg MsgTssPool) ValidateBasic() error {
 	if len(msg.PubKeys) > 100 {
 		return cosmos.ErrUnknownRequest("Must have no more then 100 pub keys")
 	}
-	for _, pk := range msg.PubKeys {
+	pks, err := msg.GetPubKeys()
+	if err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	for _, pk := range pks {
 		if pk.IsEmpty() {
 			return cosmos.ErrUnknownRequest("Pubkey cannot be empty")
 		}
@@ -89,10 +93,14 @@ func (msg MsgTssPool) ValidateBasic() error {
 	if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	if !msg.Chains.Has(common.RuneAsset().Chain) {
+	chains, err := msg.GetChains()
+	if err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if !chains.Has(common.RuneAsset().Chain) {
 		return cosmos.ErrUnknownRequest("must support rune asset chain")
 	}
-	if len(msg.Chains) != len(msg.Chains.Distinct()) {
+	if len(chains) != len(chains.Distinct()) {
 		return cosmos.ErrUnknownRequest("cannot have duplicate chains")
 	}
 	return nil
@@ -101,6 +109,30 @@ func (msg MsgTssPool) ValidateBasic() error {
 // IsSuccess when blame is empty , then treat it as success
 func (msg MsgTssPool) IsSuccess() bool {
 	return msg.Blame.IsEmpty()
+}
+
+func (msg MsgTssPool) GetChains() (common.Chains, error) {
+	chains := make(common.Chains, len(msg.Chains))
+	for i, c := range msg.Chains {
+		var err error
+		chains[i], err = common.NewChain(c)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return chains, nil
+}
+
+func (msg MsgTssPool) GetPubKeys() (common.PubKeys, error) {
+	pubkeys := make(common.PubKeys, len(msg.PubKeys))
+	for i, pk := range msg.PubKeys {
+		var err error
+		pubkeys[i], err = common.NewPubKey(pk)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return pubkeys, nil
 }
 
 // GetSignBytes encodes the message for signing
