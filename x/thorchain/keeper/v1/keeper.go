@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/bank"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -70,15 +70,15 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
-	coinKeeper    bank.Keeper
-	accountKeeper auth.AccountKeeper
-	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
-	cdc           *codec.Codec    // The wire codec for binary encoding/decoding.
+	coinKeeper    bankkeeper.Keeper
+	accountKeeper authkeeper.AccountKeeper
+	storeKey      cosmos.StoreKey    // Unexposed key to access store from cosmos.Context
+	cdc           *codec.LegacyAmino // The wire codec for binary encoding/decoding.
 	version       int64
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bank.Keeper, accountKeeper auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) KVStore {
+func NewKVStore(coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.LegacyAmino) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
@@ -89,17 +89,17 @@ func NewKVStore(coinKeeper bank.Keeper, accountKeeper auth.AccountKeeper, storeK
 }
 
 // Cdc return the amino codec
-func (k KVStore) Cdc() *codec.Codec {
+func (k KVStore) Cdc() *codec.LegacyAmino {
 	return k.cdc
 }
 
 // CoinKeeper return the keeper from bank handler
-func (k KVStore) CoinKeeper() bank.Keeper {
+func (k KVStore) CoinKeeper() bankkeeper.Keeper {
 	return k.coinKeeper
 }
 
 // AccountKeeper return the keeper from auth handler
-func (k KVStore) AccountKeeper() auth.AccountKeeper {
+func (k KVStore) AccountKeeper() authkeeper.AccountKeeper {
 	return k.accountKeeper
 }
 
@@ -181,10 +181,9 @@ func (k KVStore) SetStoreVersion(ctx cosmos.Context, value int64) {
 
 // GetRuneBalanceOfModule get the RUNE balance
 func (k KVStore) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
-	addr := k.supplyKeeper.GetModuleAddress(moduleName)
-	coins := k.coinKeeper.GetCoins(ctx, addr)
-	amt := coins.AmountOf(common.RuneNative.Native())
-	return cosmos.NewUintFromBigInt(amt.BigInt())
+	addr := k.accountKeeper.GetModuleAddress(moduleName)
+	coin := k.coinKeeper.GetBalance(ctx, addr, common.RuneNative.Native())
+	return cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 }
 
 // SendFromModuleToModule transfer asset from one module to another
@@ -192,7 +191,7 @@ func (k KVStore) SendFromModuleToModule(ctx cosmos.Context, from, to string, coi
 	coins := cosmos.NewCoins(
 		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
 	)
-	return k.Supply().SendCoinsFromModuleToModule(ctx, from, to, coins)
+	return k.coinKeeper.SendCoinsFromModuleToModule(ctx, from, to, coins)
 }
 
 // SendFromAccountToModule transfer fund from one account to a module
@@ -200,7 +199,7 @@ func (k KVStore) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddr
 	coins := cosmos.NewCoins(
 		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
 	)
-	return k.Supply().SendCoinsFromAccountToModule(ctx, from, to, coins)
+	return k.coinKeeper.SendCoinsFromAccountToModule(ctx, from, to, coins)
 }
 
 // SendFromModuleToAccount transfer fund from module to an account
@@ -208,17 +207,16 @@ func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cos
 	coins := cosmos.NewCoins(
 		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
 	)
-	return k.Supply().SendCoinsFromModuleToAccount(ctx, from, to, coins)
+	return k.coinKeeper.SendCoinsFromModuleToAccount(ctx, from, to, coins)
 }
 
 func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
-	supplier := k.Supply()
 	coinToBurn, err := coin.Native()
 	if err != nil {
 		return fmt.Errorf("fail to parse coins: %w", err)
 	}
 	coinsToBurn := cosmos.Coins{coinToBurn}
-	err = supplier.BurnCoins(ctx, module, coinsToBurn)
+	err = k.coinKeeper.BurnCoins(ctx, module, coinsToBurn)
 	if err != nil {
 		return fmt.Errorf("fail to burn assets: %w", err)
 	}
@@ -227,13 +225,12 @@ func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.C
 }
 
 func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coin) error {
-	supplier := k.Supply()
 	coinToMint, err := coin.Native()
 	if err != nil {
 		return fmt.Errorf("fail to parse coins: %w", err)
 	}
 	coinsToMint := cosmos.Coins{coinToMint}
-	err = supplier.MintCoins(ctx, module, coinsToMint)
+	err = k.coinKeeper.MintCoins(ctx, module, coinsToMint)
 	if err != nil {
 		return fmt.Errorf("fail to burn assets: %w", err)
 	}

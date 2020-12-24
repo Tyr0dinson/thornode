@@ -13,7 +13,7 @@ import (
 )
 
 type Keeper interface {
-	Cdc() *codec.Codec
+	Cdc() *codec.LegacyAmino
 	CoinKeeper() bank.Keeper
 	AccountKeeper() auth.AccountKeeper
 	Version() int64
@@ -243,6 +243,6 @@ type KeeperChainContract interface {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bank.Keeper, ak auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.Codec) Keeper {
+func NewKVStore(coinKeeper bank.Keeper, ak auth.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.LegacyAmino) Keeper {
 	return kv1.NewKVStore(coinKeeper, ak, storeKey, cdc)
 }

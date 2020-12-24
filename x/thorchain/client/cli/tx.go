@@ -17,36 +17,35 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-func GetTxCmd(storeKey string, cdc *codec.Codec) *cobra.Command {
-	thorchainTxCmd := &cobra.Command{
+func GetTxCmd(storeKey string, cdc *codec.LegacyAmino) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:                        types.ModuleName,
-		Short:                      "thorchain transaction subcommands",
+		Short:                      "THORChain transaction subcommands",
 		DisableFlagParsing:         true,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,
 	}
 
-	thorchainTxCmd.AddCommand(flags.PostCommands(
-		GetCmdSetNodeKeys(cdc),
-		GetCmdSetVersion(cdc),
-		GetCmdSetIPAddress(cdc),
-		GetCmdBan(cdc),
-		GetCmdMimir(cdc),
-		GetCmdDeposit(cdc),
-		GetCmdSend(cdc),
-	)...)
+	cmd.AddCommand(GetCmdSetNodeKeys())
+	cmd.AddCommand(GetCmdSetNodeKeys())
+	cmd.AddCommand(GetCmdSetVersion())
+	cmd.AddCommand(GetCmdSetIPAddress())
+	cmd.AddCommand(GetCmdBan())
+	cmd.AddCommand(GetCmdMimir())
+	cmd.AddCommand(GetCmdDeposit())
+	cmd.AddCommand(GetCmdSend())
 
 	return thorchainTxCmd
 }
 
 // GetCmdDeposit command to send a native transaction
-func GetCmdDeposit(cdc *codec.Codec) *cobra.Command {
-	return &cobra.Command{
+func GetCmdDeposit(cdc *codec.LegacyAmino) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "deposit [amount] [coin] [memo]",
 		Short: "sends a deposit transaction",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cliCtx, err := client.ReadTxCommandFlags(client.GetClientContextFromCmd(cmd), cmd.Flags())
+			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -67,13 +66,17 @@ func GetCmdDeposit(cdc *codec.Codec) *cobra.Command {
 			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}
-			return tx.GenerateOrBroadcastTxCLI(cliCtx, cmd.Flags(), msg)
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
+
+	flags.AddTxFlagsToCmd(cmd)
+
+	return cmd
 }
 
 // GetCmdSend command to send funds
-func GetCmdSend(cdc *codec.Codec) *cobra.Command {
+func GetCmdSend(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "send [to_address] [coins]",
 		Short: "sends funds",
@@ -104,7 +107,7 @@ func GetCmdSend(cdc *codec.Codec) *cobra.Command {
 }
 
 // GetCmdMimir command to change a mimir attribute
-func GetCmdMimir(cdc *codec.Codec) *cobra.Command {
+func GetCmdMimir(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "mimir [key] [value]",
 		Short: "updates a mimir attribute (admin only)",
@@ -130,7 +133,7 @@ func GetCmdMimir(cdc *codec.Codec) *cobra.Command {
 }
 
 // GetCmdBan command to ban a node accounts
-func GetCmdBan(cdc *codec.Codec) *cobra.Command {
+func GetCmdBan(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ban [node address]",
 		Short: "votes to ban a node address (caution: costs 0.1% of minimum bond)",
@@ -156,7 +159,7 @@ func GetCmdBan(cdc *codec.Codec) *cobra.Command {
 }
 
 // GetCmdSetIPAddress command to set a node accounts IP Address
-func GetCmdSetIPAddress(cdc *codec.Codec) *cobra.Command {
+func GetCmdSetIPAddress(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set-ip-address [ip address]",
 		Short: "update registered ip address",
@@ -177,7 +180,7 @@ func GetCmdSetIPAddress(cdc *codec.Codec) *cobra.Command {
 }
 
 // GetCmdSetVersion command to set an admin config
-func GetCmdSetVersion(cdc *codec.Codec) *cobra.Command {
+func GetCmdSetVersion(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set-version",
 		Short: "update registered version",
@@ -198,7 +201,7 @@ func GetCmdSetVersion(cdc *codec.Codec) *cobra.Command {
 }
 
 // GetCmdSetNodeKeys command to add a node keys
-func GetCmdSetNodeKeys(cdc *codec.Codec) *cobra.Command {
+func GetCmdSetNodeKeys(cdc *codec.LegacyAmino) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set-node-keys  [secp256k1] [ed25519] [validator_consensus_pub_key]",
 		Short: "set node keys, the account use to sign this tx has to be whitelist first",

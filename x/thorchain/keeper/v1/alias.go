@@ -23,7 +23,7 @@ const (
 	NodeUnknown = types.Unknown
 
 	// Bond type
-	AsgardKeygen = types.AsgardKeygen
+	AsgardKeygen = types.KeygenType_AsgardKeygen
 )
 
 var (

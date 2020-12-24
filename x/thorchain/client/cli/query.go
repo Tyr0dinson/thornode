@@ -20,37 +20,41 @@ func (v ver) String() string {
 	return v.Version
 }
 
-func GetQueryCmd(storeKey string, cdc *codec.Codec) *cobra.Command {
-	thorchainQueryCmd := &cobra.Command{
+func GetQueryCmd(storeKey string, cdc *codec.LegacyAmino) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:                        types.ModuleName,
-		Short:                      "Querying commands for the thorchain module",
+		Short:                      "Querying commands for the THORChain module",
 		DisableFlagParsing:         true,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,
 	}
 
-	thorchainQueryCmd.AddCommand(flags.GetCommands(
-		GetCmdGetVersion(storeKey, cdc),
-	)...)
-	return thorchainQueryCmd
+	cmd.AddCommand(GetCmdGetVersion())
+	return cmd
 }
 
 // GetCmdGetVersion queries current version
-func GetCmdGetVersion(queryRoute string, cdc *codec.Codec) *cobra.Command {
-	return &cobra.Command{
+func GetCmdGetVersion() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Gets the thorchain version and build information",
-		Args:  cobra.ExactArgs(0),
+		Short: "Gets the THORChain version and build information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cliCtx := client.GetClientContextFromCmd(cmd)
-			cliCtx.OutputFormat = "json"
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			clientCtx.OutputFormat = "json"
 
 			out := ver{
 				Version:   constants.SWVersion.String(),
 				GitCommit: constants.GitCommit,
 				BuildTime: constants.BuildTime,
 			}
-			return cliCtx.PrintOutput(out)
+			return clientCtx.PrintObjectLegacy(out)
 		},
 	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
 }

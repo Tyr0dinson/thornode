@@ -40,7 +40,7 @@ const (
 	// Bond type
 	BondPaid     = types.BondPaid
 	BondReturned = types.BondReturned
-	AsgardKeygen = types.AsgardKeygen
+	AsgardKeygen = types.KeygenType_AsgardKeygen
 
 	// Memos
 	TxSwap            = mem.TxSwap

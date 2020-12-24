@@ -13,7 +13,7 @@ func (k KVStore) GetLiquidityProviderIterator(ctx cosmos.Context, asset common.A
 }
 
 func (k KVStore) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
-	supplier := k.Supply().GetSupply(ctx)
+	supplier := k.coinKeeper.GetSupply(ctx)
 	nativeDenom := asset.Native()
 	for _, coin := range supplier.GetTotal() {
 		if coin.Denom == nativeDenom {

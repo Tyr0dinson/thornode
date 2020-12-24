@@ -4,8 +4,8 @@ import (
 	. "gopkg.in/check.v1"
 
 	"github.com/cosmos/cosmos-sdk/store"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/params"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
@@ -28,9 +28,9 @@ func (s JailSuite) TestIsJailed(c *C) {
 	addr := GetRandomBech32Addr()
 	jail := NewJail(addr)
 
-	keyAcc := cosmos.NewKVStoreKey(auth.StoreKey)
-	keyParams := cosmos.NewKVStoreKey(params.StoreKey)
-	tkeyParams := cosmos.NewTransientStoreKey(params.TStoreKey)
+	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
+	keyParams := cosmos.NewKVStoreKey(paramstypes.StoreKey)
+	tkeyParams := cosmos.NewTransientStoreKey(paramstypes.TStoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)
