@@ -135,6 +135,7 @@ var (
 	SetupConfigForTest             = types.SetupConfigForTest
 	HasSimpleMajority              = types.HasSimpleMajority
 	NewTssKeysignMetric            = types.NewTssKeysignMetric
+	DefaultGenesis                 = types.DefaultGenesis
 
 	// Memo
 	ParseMemo          = mem.ParseMemo

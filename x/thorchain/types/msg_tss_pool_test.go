@@ -23,7 +23,7 @@ func (s *MsgTssPoolSuite) TestMsgTssPool(c *C) {
 	msg := NewMsgTssPool(pks, pk, KeygenType_AsgardKeygen, 1, Blame{}, []string{common.RuneAsset().Chain.String()}, addr, keygenTime)
 	c.Check(msg.Type(), Equals, "set_tss_pool")
 	c.Assert(msg.ValidateBasic(), IsNil)
-	EnsureMsgBasicCorrect(&msg, c)
+	EnsureMsgBasicCorrect(msg, c)
 
 	chains := []string{common.RuneAsset().Chain.String()}
 	c.Check(NewMsgTssPool(pks, pk, KeygenType_AsgardKeygen, 1, Blame{}, chains, nil, keygenTime).ValidateBasic(), NotNil)

@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgOutboundTx is a constructor function for MsgOutboundTx
-func NewMsgOutboundTx(tx ObservedTx, txID common.TxID, signer cosmos.AccAddress) MsgOutboundTx {
-	return MsgOutboundTx{
+func NewMsgOutboundTx(tx ObservedTx, txID common.TxID, signer cosmos.AccAddress) *MsgOutboundTx {
+	return &MsgOutboundTx{
 		Tx:     tx,
 		InTxID: txID,
 		Signer: signer,

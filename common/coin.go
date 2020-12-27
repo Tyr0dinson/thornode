@@ -24,6 +24,14 @@ func NewCoin(asset Asset, amount cosmos.Uint) Coin {
 	}
 }
 
+func NewCoins(coins ...Coin) Coins {
+	result := make(Coins, len(coins))
+	for i, c := range coins {
+		result[i] = c
+	}
+	return result
+}
+
 func (c Coin) Equals(cc Coin) bool {
 	if !c.Asset.Equals(cc.Asset) {
 		return false

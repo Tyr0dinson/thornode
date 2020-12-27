@@ -8,8 +8,8 @@ import (
 )
 
 // NewMsgDonate is a constructor function for MsgDonate
-func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signer cosmos.AccAddress) MsgDonate {
-	return MsgDonate{
+func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signer cosmos.AccAddress) *MsgDonate {
+	return &MsgDonate{
 		Asset:       asset,
 		AssetAmount: amount,
 		RuneAmount:  r,

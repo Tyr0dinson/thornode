@@ -5,8 +5,8 @@ import (
 )
 
 // NewMsgNoOp is a constructor function for MsgNoOp
-func NewMsgNoOp(ObservedTx ObservedTx, signer cosmos.AccAddress) MsgNoOp {
-	return MsgNoOp{
+func NewMsgNoOp(ObservedTx ObservedTx, signer cosmos.AccAddress) *MsgNoOp {
+	return &MsgNoOp{
 		ObservedTx: ObservedTx,
 		Signer:     signer,
 	}

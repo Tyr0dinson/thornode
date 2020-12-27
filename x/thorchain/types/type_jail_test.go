@@ -6,8 +6,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/store"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -35,14 +35,13 @@ func (s JailSuite) TestIsJailed(c *C) {
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keySupply, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyParams, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(cosmos.NewKVStoreKey("thorchain"), cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(tkeyParams, cosmos.StoreTypeTransient, db)
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
-	ctx := cosmos.NewContext(ms, abci.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
+	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(100)
 
 	c.Check(jail.IsJailed(ctx), Equals, false)

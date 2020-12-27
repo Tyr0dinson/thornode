@@ -7,8 +7,8 @@ import (
 )
 
 // NewMsgSetVersion is a constructor function for NewMsgSetVersion
-func NewMsgSetVersion(version string, signer cosmos.AccAddress) MsgSetVersion {
-	return MsgSetVersion{
+func NewMsgSetVersion(version string, signer cosmos.AccAddress) *MsgSetVersion {
+	return &MsgSetVersion{
 		Version: version,
 		Signer:  signer,
 	}

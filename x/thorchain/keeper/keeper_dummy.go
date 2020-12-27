@@ -6,8 +6,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/bank"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"github.com/tendermint/tendermint/libs/log"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -20,9 +20,9 @@ var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
-func (k KVStoreDummy) Cdc() *codec.Codec                 { return types.MakeTestCodec() }
-func (k KVStoreDummy) CoinKeeper() bank.Keeper           { return bank.BaseKeeper{} }
-func (k KVStoreDummy) AccountKeeper() auth.AccountKeeper { return auth.AccountKeeper{} }
+func (k KVStoreDummy) Cdc() *codec.LegacyAmino                 { return types.MakeTestCodec() }
+func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
+func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }
 func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
 	return ctx.Logger().With("module", fmt.Sprintf("x/%s", ModuleName))
 }
@@ -43,6 +43,10 @@ func (k KVStoreDummy) SendFromModuleToModule(ctx cosmos.Context, from, to string
 	return kaboom
 }
 
+func (k KVStoreDummy) SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coin) error {
 	return kaboom
 }
@@ -57,6 +61,26 @@ func (k KVStoreDummy) MintToModule(ctx cosmos.Context, module string, coin commo
 
 func (k KVStoreDummy) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
 	return kaboom
+}
+
+func (k KVStoreDummy) MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetModuleAddress(module string) (common.Address, error) {
+	return "", kaboom
+}
+
+func (k KVStoreDummy) GetModuleAccAddress(module string) cosmos.AccAddress {
+	return nil
+}
+
+func (k KVStoreDummy) GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins {
+	return nil
+}
+
+func (k KVStoreDummy) HasCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) bool {
+	return false
 }
 
 func (k KVStoreDummy) SetLastSignedHeight(_ cosmos.Context, _ int64) error { return kaboom }
@@ -405,8 +429,9 @@ func (iter *DummyIterator) Value() []byte {
 	return iter.values[iter.placeholder]
 }
 
-func (iter *DummyIterator) Close() {
+func (iter *DummyIterator) Close() error {
 	iter.placeholder = 0
+	return nil
 }
 
 func (iter *DummyIterator) Error() error {

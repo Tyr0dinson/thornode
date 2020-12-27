@@ -12,8 +12,8 @@ import (
 )
 
 // NewMsgTssPool is a constructor function for MsgTssPool
-func NewMsgTssPool(pks []string, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) MsgTssPool {
-	return MsgTssPool{
+func NewMsgTssPool(pks []string, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) *MsgTssPool {
+	return &MsgTssPool{
 		ID:         getTssID(pks, poolpk, height, bl),
 		PubKeys:    pks,
 		PoolPubKey: poolpk,
@@ -74,9 +74,9 @@ func (msg MsgTssPool) ValidateBasic() error {
 	if len(msg.PubKeys) > 100 {
 		return cosmos.ErrUnknownRequest("Must have no more then 100 pub keys")
 	}
-	pks, err := msg.GetPubKeys()
-	if err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+	pks := msg.GetPubKeys()
+	if len(msg.PubKeys) != len(pks) {
+		return cosmos.ErrUnknownRequest("One or more pubkeys were not valid")
 	}
 	for _, pk := range pks {
 		if pk.IsEmpty() {
@@ -93,9 +93,9 @@ func (msg MsgTssPool) ValidateBasic() error {
 	if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	chains, err := msg.GetChains()
-	if err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+	chains := msg.GetChains()
+	if len(chains) != len(msg.Chains) {
+		return cosmos.ErrUnknownRequest("One or more chains were not valid")
 	}
 	if !chains.Has(common.RuneAsset().Chain) {
 		return cosmos.ErrUnknownRequest("must support rune asset chain")
@@ -111,28 +111,28 @@ func (msg MsgTssPool) IsSuccess() bool {
 	return msg.Blame.IsEmpty()
 }
 
-func (msg MsgTssPool) GetChains() (common.Chains, error) {
-	chains := make(common.Chains, len(msg.Chains))
-	for i, c := range msg.Chains {
-		var err error
-		chains[i], err = common.NewChain(c)
+func (msg MsgTssPool) GetChains() common.Chains {
+	chains := make(common.Chains, 0)
+	for _, c := range msg.Chains {
+		chain, err := common.NewChain(c)
 		if err != nil {
-			return nil, err
+			continue
 		}
+		chains = append(chains, chain)
 	}
-	return chains, nil
+	return chains
 }
 
-func (msg MsgTssPool) GetPubKeys() (common.PubKeys, error) {
-	pubkeys := make(common.PubKeys, len(msg.PubKeys))
-	for i, pk := range msg.PubKeys {
-		var err error
-		pubkeys[i], err = common.NewPubKey(pk)
+func (msg MsgTssPool) GetPubKeys() common.PubKeys {
+	pubkeys := make(common.PubKeys, 0)
+	for _, pk := range msg.PubKeys {
+		pk, err := common.NewPubKey(pk)
 		if err != nil {
-			return nil, err
+			continue
 		}
+		pubkeys = append(pubkeys, pk)
 	}
-	return pubkeys, nil
+	return pubkeys
 }
 
 // GetSignBytes encodes the message for signing

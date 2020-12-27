@@ -12,8 +12,8 @@ import (
 )
 
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
-func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) MsgTssKeysignFail {
-	return MsgTssKeysignFail{
+func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.Coins, signer cosmos.AccAddress, pubKey common.PubKey) *MsgTssKeysignFail {
+	return &MsgTssKeysignFail{
 		ID:     getMsgTssKeysignFailID(blame.BlameNodes, height, memo, coins, pubKey),
 		Height: height,
 		Blame:  blame,

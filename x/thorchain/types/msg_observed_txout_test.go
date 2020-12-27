@@ -23,7 +23,7 @@ func (s *MsgObservedTxOutSuite) TestMsgObservedTxOut(c *C) {
 	acc := GetRandomBech32Addr()
 
 	m := NewMsgObservedTxOut(ObservedTxs{tx}, acc)
-	EnsureMsgBasicCorrect(&m, c)
+	EnsureMsgBasicCorrect(m, c)
 	c.Check(m.Type(), Equals, "set_observed_txout")
 
 	m1 := NewMsgObservedTxOut(nil, acc)

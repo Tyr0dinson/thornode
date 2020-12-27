@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgNetworkFee create a new instance of MsgNetworkFee
-func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, transactionFeeRate uint64, signer cosmos.AccAddress) MsgNetworkFee {
-	return MsgNetworkFee{
+func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, transactionFeeRate uint64, signer cosmos.AccAddress) *MsgNetworkFee {
+	return &MsgNetworkFee{
 		BlockHeight:        blockHeight,
 		Chain:              chain,
 		TransactionSize:    transactionSize,

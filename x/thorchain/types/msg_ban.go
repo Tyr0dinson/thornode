@@ -7,8 +7,8 @@ import (
 var _ cosmos.Msg = &MsgBan{}
 
 // NewMsgBan is a constructor function for NewMsgBan
-func NewMsgBan(addr, signer cosmos.AccAddress) MsgBan {
-	return MsgBan{
+func NewMsgBan(addr, signer cosmos.AccAddress) *MsgBan {
+	return &MsgBan{
 		NodeAddress: addr,
 		Signer:      signer,
 	}

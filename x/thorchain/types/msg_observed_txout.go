@@ -5,8 +5,8 @@ import (
 )
 
 // NewMsgObservedTxOut is a constructor function for MsgObservedTxOut
-func NewMsgObservedTxOut(txs ObservedTxs, signer cosmos.AccAddress) MsgObservedTxOut {
-	return MsgObservedTxOut{
+func NewMsgObservedTxOut(txs ObservedTxs, signer cosmos.AccAddress) *MsgObservedTxOut {
+	return &MsgObservedTxOut{
 		Txs:    txs,
 		Signer: signer,
 	}

@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgSwitch is a constructor function for NewMsgSwitch
-func NewMsgSwitch(tx common.Tx, addr common.Address, signer cosmos.AccAddress) MsgSwitch {
-	return MsgSwitch{
+func NewMsgSwitch(tx common.Tx, addr common.Address, signer cosmos.AccAddress) *MsgSwitch {
+	return &MsgSwitch{
 		Tx:          tx,
 		Destination: addr,
 		Signer:      signer,

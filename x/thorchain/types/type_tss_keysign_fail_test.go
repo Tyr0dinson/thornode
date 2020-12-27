@@ -3,8 +3,6 @@ package types
 import (
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -14,12 +12,12 @@ type TypeTssKeysignFailTestSuite struct{}
 var _ = Suite(&TypeTssKeysignFailTestSuite{})
 
 func (s *TypeTssKeysignFailTestSuite) TestVoter(c *C) {
-	nodes := []blame.Node{
+	nodes := []Node{
 		{Pubkey: GetRandomPubKey().String()},
 		{Pubkey: GetRandomPubKey().String()},
 		{Pubkey: GetRandomPubKey().String()},
 	}
-	b := blame.Blame{BlameNodes: nodes, FailReason: "fail to keysign"}
+	b := Blame{BlameNodes: nodes, FailReason: "fail to keysign"}
 	m := NewMsgTssKeysignFail(1, b, "hello", common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(100))}, GetRandomBech32Addr(), GetRandomPubKey())
 	tss := NewTssKeysignFailVoter(m.ID, 1)
 	c.Check(tss.Empty(), Equals, false)

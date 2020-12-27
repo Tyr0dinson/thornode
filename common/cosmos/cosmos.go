@@ -3,6 +3,7 @@ package cosmos
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/hashicorp/go-multierror"
 )
 
@@ -66,6 +67,7 @@ type (
 	StoreKey   = sdk.StoreKey
 	Querier    = sdk.Querier
 	TxResponse = sdk.TxResponse
+	Account    = authtypes.AccountI
 )
 
 func ErrUnknownRequest(msg string) error {

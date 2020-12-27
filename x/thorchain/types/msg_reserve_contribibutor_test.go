@@ -23,7 +23,7 @@ func (s *MsgReserveContributorSuite) TestMsgReserveContributor(c *C) {
 	msg := NewMsgReserveContributor(GetRandomTx(), res, signer)
 	c.Check(msg.Contributor.IsEmpty(), Equals, false)
 	c.Check(msg.Signer.Equals(signer), Equals, true)
-	EnsureMsgBasicCorrect(&msg, c)
+	EnsureMsgBasicCorrect(msg, c)
 	c.Assert(msg.Type(), Equals, "set_reserve_contributor")
 
 	tx1 := GetRandomTx()

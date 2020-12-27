@@ -311,9 +311,8 @@ func isSignedByActiveNodeAccounts(ctx cosmos.Context, keeper keeper.Keeper, sign
 	if len(signers) == 0 {
 		return false
 	}
-	supplier := keeper.Supply()
 	for _, signer := range signers {
-		if signer.Equals(supplier.GetModuleAddress(AsgardName)) {
+		if signer.Equals(keeper.GetModuleAccAddress(AsgardName)) {
 			continue
 		}
 		nodeAccount, err := keeper.GetNodeAccount(ctx, signer)
@@ -561,7 +560,7 @@ func getKeybase(thorchainHome string) (KeybaseStore, error) {
 		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
 	}
 
-	kb, err := ckeys.NewKeyring(cosmos.KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
+	kb, err := ckeys.New(cosmos.KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
 	return KeybaseStore{
 		SignerName:   username,
 		SignerPasswd: password,

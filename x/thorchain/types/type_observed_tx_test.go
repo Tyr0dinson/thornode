@@ -260,7 +260,7 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	// add it again should return true, but without any real action
 	c.Assert(voter.AddOutTx(tx), Equals, true)
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
-	c.Assert(voter.Tx.Status, Equals, Done)
+	c.Assert(voter.Tx.Status, Equals, Status_done)
 	c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
 
 	c.Assert(voter.IsDone(), Equals, true)
@@ -322,7 +322,7 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.AddOutTx(tx), Equals, true)
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	if !voter.Tx.IsEmpty() {
-		c.Assert(voter.Tx.Status, Equals, Done)
+		c.Assert(voter.Tx.Status, Equals, Status_done)
 		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
 	}
 

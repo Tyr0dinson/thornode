@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgErrataTx is a constructor function for NewMsgErrataTx
-func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddress) MsgErrataTx {
-	return MsgErrataTx{
+func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddress) *MsgErrataTx {
+	return &MsgErrataTx{
 		TxID:   txID,
 		Chain:  chain,
 		Signer: signer,

@@ -93,16 +93,6 @@ func (k KVStore) Cdc() *codec.LegacyAmino {
 	return k.cdc
 }
 
-// CoinKeeper return the keeper from bank handler
-func (k KVStore) CoinKeeper() bankkeeper.Keeper {
-	return k.coinKeeper
-}
-
-// AccountKeeper return the keeper from auth handler
-func (k KVStore) AccountKeeper() authkeeper.AccountKeeper {
-	return k.accountKeeper
-}
-
 // Version return the current version
 func (k KVStore) Version() int64 {
 	return k.version
@@ -187,27 +177,34 @@ func (k KVStore) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) c
 }
 
 // SendFromModuleToModule transfer asset from one module to another
-func (k KVStore) SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coin) error {
-	coins := cosmos.NewCoins(
-		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
-	)
-	return k.coinKeeper.SendCoinsFromModuleToModule(ctx, from, to, coins)
+func (k KVStore) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
+	cosmosCoins := make(cosmos.Coins, len(coins))
+	for i, c := range coins {
+		cosmosCoins[i] = cosmos.NewCoin(c.Asset.Native(), cosmos.NewIntFromBigInt(c.Amount.BigInt()))
+	}
+	return k.coinKeeper.SendCoinsFromModuleToModule(ctx, from, to, cosmosCoins)
+}
+
+func (k KVStore) SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error {
+	return k.coinKeeper.SendCoins(ctx, from, to, coins)
 }
 
 // SendFromAccountToModule transfer fund from one account to a module
-func (k KVStore) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coin) error {
-	coins := cosmos.NewCoins(
-		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
-	)
-	return k.coinKeeper.SendCoinsFromAccountToModule(ctx, from, to, coins)
+func (k KVStore) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coins common.Coins) error {
+	cosmosCoins := make(cosmos.Coins, len(coins))
+	for i, c := range coins {
+		cosmosCoins[i] = cosmos.NewCoin(c.Asset.Native(), cosmos.NewIntFromBigInt(c.Amount.BigInt()))
+	}
+	return k.coinKeeper.SendCoinsFromAccountToModule(ctx, from, to, cosmosCoins)
 }
 
 // SendFromModuleToAccount transfer fund from module to an account
-func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coin) error {
-	coins := cosmos.NewCoins(
-		cosmos.NewCoin(coin.Asset.Native(), cosmos.NewIntFromBigInt(coin.Amount.BigInt())),
-	)
-	return k.coinKeeper.SendCoinsFromModuleToAccount(ctx, from, to, coins)
+func (k KVStore) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coins common.Coins) error {
+	cosmosCoins := make(cosmos.Coins, len(coins))
+	for i, c := range coins {
+		cosmosCoins[i] = cosmos.NewCoin(c.Asset.Native(), cosmos.NewIntFromBigInt(c.Amount.BigInt()))
+	}
+	return k.coinKeeper.SendCoinsFromModuleToAccount(ctx, from, to, cosmosCoins)
 }
 
 func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error {
@@ -236,4 +233,33 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 	}
 
 	return nil
+}
+
+func (k KVStore) MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error {
+	// Mint coins into the reserve
+	if err := k.MintToModule(ctx, ModuleName, coin); err != nil {
+		return err
+	}
+	return k.SendFromModuleToModule(ctx, ModuleName, ReserveName, common.NewCoins(coin))
+}
+
+func (k KVStore) GetModuleAddress(module string) (common.Address, error) {
+	return common.NewAddress(k.accountKeeper.GetModuleAddress(module).String())
+}
+
+func (k KVStore) GetModuleAccAddress(module string) cosmos.AccAddress {
+	return k.accountKeeper.GetModuleAddress(module)
+}
+
+func (k KVStore) GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins {
+	return k.coinKeeper.GetAllBalances(ctx, addr)
+}
+
+func (k KVStore) HasCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) bool {
+	balance := k.coinKeeper.GetAllBalances(ctx, addr)
+	return balance.IsAllGTE(coins)
+}
+
+func (k KVStore) GetAccount(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Account {
+	return k.accountKeeper.GetAccount(ctx, addr)
 }

@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgReserveContributor is a constructor function for MsgReserveContributor
-func NewMsgReserveContributor(tx common.Tx, contrib ReserveContributor, signer cosmos.AccAddress) MsgReserveContributor {
-	return MsgReserveContributor{
+func NewMsgReserveContributor(tx common.Tx, contrib ReserveContributor, signer cosmos.AccAddress) *MsgReserveContributor {
+	return &MsgReserveContributor{
 		Tx:          tx,
 		Contributor: contrib,
 		Signer:      signer,

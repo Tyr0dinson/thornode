@@ -26,7 +26,7 @@ func (MsgLeaveSuite) TestMsgLeave(c *C) {
 	tx.ID = txID
 	tx.FromAddress = senderBNBAddr
 	msgLeave := NewMsgLeave(tx, nodeAddr, nodeAddr)
-	EnsureMsgBasicCorrect(&msgLeave, c)
+	EnsureMsgBasicCorrect(msgLeave, c)
 	c.Assert(msgLeave.ValidateBasic(), IsNil)
 	c.Assert(msgLeave.Type(), Equals, "leave")
 

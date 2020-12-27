@@ -5,8 +5,8 @@ import (
 )
 
 // NewMsgMimir is a constructor function for MsgMimir
-func NewMsgMimir(key string, value int64, signer cosmos.AccAddress) MsgMimir {
-	return MsgMimir{
+func NewMsgMimir(key string, value int64, signer cosmos.AccAddress) *MsgMimir {
+	return &MsgMimir{
 		Key:    key,
 		Value:  value,
 		Signer: signer,

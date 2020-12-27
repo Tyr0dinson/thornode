@@ -8,8 +8,8 @@ import (
 )
 
 // NewMsgDeposit is a constructor function for NewMsgDeposit
-func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) MsgDeposit {
-	return MsgDeposit{
+func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) *MsgDeposit {
+	return &MsgDeposit{
 		Coins:  coins,
 		Memo:   memo,
 		Signer: signer,

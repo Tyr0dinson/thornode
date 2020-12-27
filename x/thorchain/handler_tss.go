@@ -27,16 +27,16 @@ func NewTssHandler(keeper keeper.Keeper, mgr Manager) TssHandler {
 
 // Run is the main entry for TssHandler
 func (h TssHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	msg, ok := m.(MsgTssPool)
+	msg, ok := m.(*MsgTssPool)
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	err := h.validate(ctx, msg, version)
+	err := h.validate(ctx, *msg, version)
 	if err != nil {
 		ctx.Logger().Error("msg_tss_pool failed validation", "error", err)
 		return nil, err
 	}
-	result, err := h.handle(ctx, msg, version, constAccessor)
+	result, err := h.handle(ctx, *msg, version, constAccessor)
 	if err != nil {
 		ctx.Logger().Error("failed to process MsgTssPool", "error", err)
 		return nil, err
@@ -108,12 +108,12 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 	// have anything in it either, thus override it with msg.PubKeys as well
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
-		voter.PubKeys = msg.PubKeys
+		voter.PubKeys = msg.GetPubKeys()
 	}
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
 	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, msg.Signer)
-	if !voter.Sign(msg.Signer, msg.Chains) {
+	if !voter.Sign(msg.Signer, msg.GetChains()) {
 		ctx.Logger().Info("signer already signed MsgTssPool", "signer", msg.Signer.String(), "txid", msg.ID)
 		return &cosmos.Result{}, nil
 
@@ -201,7 +201,7 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 					ctx.Logger().Info("fail keygen , slash bond", "address", na.NodeAddress, "amount", slashBond.String())
 					na.Bond = common.SafeSub(na.Bond, slashBond)
 					coin := common.NewCoin(common.RuneNative, slashBond)
-					if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, coin); err != nil {
+					if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
 						return nil, fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
 					}
 				}

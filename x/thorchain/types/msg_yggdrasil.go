@@ -5,9 +5,11 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+var _ cosmos.Msg = &MsgYggdrasil{}
+
 // NewMsgYggdrasil is a constructor function for MsgYggdrasil
-func NewMsgYggdrasil(tx common.Tx, pk common.PubKey, blockHeight int64, addFunds bool, coins common.Coins, signer cosmos.AccAddress) MsgYggdrasil {
-	return MsgYggdrasil{
+func NewMsgYggdrasil(tx common.Tx, pk common.PubKey, blockHeight int64, addFunds bool, coins common.Coins, signer cosmos.AccAddress) *MsgYggdrasil {
+	return &MsgYggdrasil{
 		Tx:          tx,
 		PubKey:      pk,
 		AddFunds:    addFunds,

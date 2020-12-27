@@ -23,7 +23,7 @@ func (s *MsgYggdrasilSuite) TestMsgYggdrasil(c *C) {
 	}
 	signer := GetRandomBech32Addr()
 	msg := NewMsgYggdrasil(tx, pk, 12, true, coins, signer)
-	EnsureMsgBasicCorrect(&msg, c)
+	EnsureMsgBasicCorrect(msg, c)
 	c.Check(msg.PubKey.Equals(pk), Equals, true)
 	c.Check(msg.AddFunds, Equals, true)
 	c.Check(msg.Coins, HasLen, len(coins))

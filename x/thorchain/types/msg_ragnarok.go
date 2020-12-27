@@ -5,8 +5,8 @@ import (
 )
 
 // NewMsgRagnarok is a constructor function for MsgRagnarok
-func NewMsgRagnarok(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) MsgRagnarok {
-	return MsgRagnarok{
+func NewMsgRagnarok(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) *MsgRagnarok {
+	return &MsgRagnarok{
 		Tx:          tx,
 		BlockHeight: blockHeight,
 		Signer:      signer,

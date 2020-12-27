@@ -7,8 +7,8 @@ import (
 )
 
 // NewMsgSetIPAddress is a constructor function for NewMsgSetIPAddress
-func NewMsgSetIPAddress(ip string, signer cosmos.AccAddress) MsgSetIPAddress {
-	return MsgSetIPAddress{
+func NewMsgSetIPAddress(ip string, signer cosmos.AccAddress) *MsgSetIPAddress {
+	return &MsgSetIPAddress{
 		IPAddress: ip,
 		Signer:    signer,
 	}

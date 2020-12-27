@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgBond create new MsgBond message
-func NewMsgBond(txin common.Tx, nodeAddr cosmos.AccAddress, bond cosmos.Uint, bondAddress common.Address, signer cosmos.AccAddress) MsgBond {
-	return MsgBond{
+func NewMsgBond(txin common.Tx, nodeAddr cosmos.AccAddress, bond cosmos.Uint, bondAddress common.Address, signer cosmos.AccAddress) *MsgBond {
+	return &MsgBond{
 		TxIn:        txin,
 		NodeAddress: nodeAddr,
 		Bond:        bond,

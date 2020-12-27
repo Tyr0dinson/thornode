@@ -7,7 +7,7 @@ import (
 )
 
 func (n *Node) String() string {
-	return fmt.Sprintf("%+v", n)
+	return fmt.Sprintf("Node: %s", n.Pubkey)
 }
 
 // IsEmpty check whether it is empty

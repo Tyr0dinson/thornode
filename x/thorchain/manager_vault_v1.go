@@ -609,7 +609,7 @@ func (vm *VaultMgrV1) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 	}
 	totalReserve = common.SafeSub(totalReserve, totalRewards)
 	coin := common.NewCoin(common.RuneNative, bondReward)
-	if err := vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, coin); err != nil {
+	if err := vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
 		ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
 		return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
 	}
@@ -661,7 +661,7 @@ func (vm *VaultMgrV1) UpdateNetwork(ctx cosmos.Context, constAccessor constants.
 			}
 			poolDeficit := vm.calcPoolDeficit(lpDeficit, totalLiquidityFees, poolFees)
 			coin := common.NewCoin(common.RuneNative, poolDeficit)
-			if err := vm.k.SendFromModuleToModule(ctx, AsgardName, BondName, coin); err != nil {
+			if err := vm.k.SendFromModuleToModule(ctx, AsgardName, BondName, common.NewCoins(coin)); err != nil {
 				ctx.Logger().Error("fail to transfer funds from asgard to bond", "error", err)
 				return fmt.Errorf("fail to transfer funds from asgard to bond: %w", err)
 			}
@@ -732,7 +732,7 @@ func (vm *VaultMgrV1) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Ui
 			return fmt.Errorf("fail to set pool: %w", err)
 		}
 		coin := common.NewCoin(common.RuneNative, reward)
-		if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, coin); err != nil {
+		if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
 		}
 	}

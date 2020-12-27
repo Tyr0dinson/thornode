@@ -5,8 +5,8 @@ import (
 )
 
 // NewMsgMigrate is a constructor function for MsgMigrate
-func NewMsgMigrate(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) MsgMigrate {
-	return MsgMigrate{
+func NewMsgMigrate(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) *MsgMigrate {
+	return &MsgMigrate{
 		Tx:          tx,
 		BlockHeight: blockHeight,
 		Signer:      signer,

@@ -6,7 +6,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/types/rest"
-	"gitlab.com/thorchain/tss/go-tss/blame"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -23,7 +22,7 @@ func newDepositHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req deposit
 
-		if !rest.ReadRESTReq(w, r, cliCtx.Codec, &req) {
+		if !rest.ReadRESTReq(w, r, cliCtx.LegacyAmino, &req) {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, "failed to parse request")
 			return
 		}
@@ -61,7 +60,7 @@ func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req newErrataTx
 
-		if !rest.ReadRESTReq(w, r, cliCtx.Codec, &req) {
+		if !rest.ReadRESTReq(w, r, cliCtx.LegacyAmino, &req) {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, "failed to parse request")
 			return
 		}
@@ -89,12 +88,12 @@ func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 
 type newTssPool struct {
 	BaseReq      rest.BaseReq     `json:"base_req"`
-	InputPubKeys common.PubKeys   `json:"input_pubkeys"`
+	InputPubKeys []string         `json:"input_pubkeys"`
 	KeygenType   types.KeygenType `json:"keygen_type"`
 	Height       int64            `json:"height"`
-	Blame        blame.Blame      `json:"blame"`
+	Blame        types.Blame      `json:"blame"`
 	PoolPubKey   common.PubKey    `json:"pool_pub_key"`
-	Chains       common.Chains    `json:"chains"`
+	Chains       []string         `json:"chains"`
 	KeygenTime   int64            `json:"keygen_time"`
 }
 
@@ -102,7 +101,7 @@ func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req newTssPool
 
-		if !rest.ReadRESTReq(w, r, cliCtx.Codec, &req) {
+		if !rest.ReadRESTReq(w, r, cliCtx.LegacyAmino, &req) {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, "failed to parse request")
 			return
 		}
@@ -137,7 +136,7 @@ func postTxsHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req txHashReq
 
-		if !rest.ReadRESTReq(w, r, cliCtx.Codec, &req) {
+		if !rest.ReadRESTReq(w, r, cliCtx.LegacyAmino, &req) {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, "failed to parse request")
 			return
 		}
@@ -199,6 +198,6 @@ func postTxsHandler(cliCtx client.Context) http.HandlerFunc {
 			msgs = append(msgs, msg)
 		}
 
-		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
+		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msgs...)
 	}
 }

@@ -37,33 +37,25 @@ func (s *HandlerSuite) SetUpSuite(*C) {
 }
 
 func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
-	coin, err := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One)).Native()
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
-	err = k.Supply().MintCoins(ctx, ModuleName, cosmos.NewCoins(coin))
-	c.Assert(err, IsNil)
-	err = k.Supply().SendCoinsFromModuleToModule(ctx, ModuleName, name, cosmos.NewCoins(coin))
+	err = k.SendFromModuleToModule(ctx, ModuleName, name, common.NewCoins(coin))
 	c.Assert(err, IsNil)
 }
 
 func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress, amt uint64) {
-	coin, err := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One)).Native()
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
-	err = k.Supply().MintCoins(ctx, ModuleName, cosmos.NewCoins(coin))
-	c.Assert(err, IsNil)
-	err = k.Supply().SendCoinsFromModuleToAccount(ctx, ModuleName, addr, cosmos.NewCoins(coin))
+	err = k.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin))
 	c.Assert(err, IsNil)
 }
 
 // nolint: deadcode unused
 // create a codec used only for testing
-func makeTestCodec() *codec.Codec {
-	cdc := codec.New()
-	bank.RegisterCodec(cdc)
-	auth.RegisterCodec(cdc)
-	RegisterCodec(cdc)
-	cosmos.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
-	return cdc
+func makeTestCodec() *codec.LegacyAmino {
+	return types.MakeTestCodec()
 }
 
 var (

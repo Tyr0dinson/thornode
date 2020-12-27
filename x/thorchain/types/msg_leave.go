@@ -6,8 +6,8 @@ import (
 )
 
 // NewMsgLeave create a new instance of MsgLeave
-func NewMsgLeave(tx common.Tx, addr, signer cosmos.AccAddress) MsgLeave {
-	return MsgLeave{
+func NewMsgLeave(tx common.Tx, addr, signer cosmos.AccAddress) *MsgLeave {
+	return &MsgLeave{
 		Tx:          tx,
 		NodeAddress: addr,
 		Signer:      signer,

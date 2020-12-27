@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	abci "github.com/tendermint/tendermint/abci/types"
-	tmtypes "github.com/tendermint/tendermint/types"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -176,10 +174,7 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 				ctx.Logger().Error("fail to parse consensus public key", "key", nodeAccount.ValidatorConsPubKey, "error", err)
 				panic(err)
 			}
-			validators = append(validators, abci.ValidatorUpdate{
-				PubKey: tmtypes.TM2PB.PubKey(pk),
-				Power:  100,
-			})
+			validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 		}
 
 		if err := keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
@@ -289,15 +284,11 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	// Mint coins into the reserve
-	coin, err := common.NewCoin(common.RuneNative, cosmos.NewUint(data.Reserve)).Native()
-	if err != nil {
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(data.Reserve))
+	if err := keeper.MintToModule(ctx, ModuleName, coin); err != nil {
 		panic(err)
 	}
-	coins := cosmos.NewCoins(coin)
-	if err := keeper.Supply().MintCoins(ctx, ModuleName, coins); err != nil {
-		panic(err)
-	}
-	if err := keeper.Supply().SendCoinsFromModuleToModule(ctx, ModuleName, ReserveName, coins); err != nil {
+	if err := keeper.SendFromModuleToModule(ctx, ModuleName, ReserveName, common.NewCoins(coin)); err != nil {
 		panic(err)
 	}
 
@@ -306,24 +297,24 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err != nil {
 			panic(err)
 		}
-		// give mimir gas
-		coinsToMint, err := cosmos.ParseCoins("1000thor")
-		if err != nil {
-			panic(err)
-		}
+		mimir, _ := common.NewAsset("THOR.MIMIR")
+		coin := common.NewCoin(mimir, cosmos.NewUint(1000*common.One))
 		// mint some gas asset
-		err = keeper.Supply().MintCoins(ctx, ModuleName, coinsToMint)
+		err = keeper.MintToModule(ctx, ModuleName, coin)
 		if err != nil {
 			panic(err)
 		}
-		if err := keeper.Supply().SendCoinsFromModuleToAccount(ctx, ModuleName, addr, coinsToMint); err != nil {
+		if err := keeper.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin)); err != nil {
 			panic(err)
 		}
 	}
 
-	ctx.Logger().Info("Reserve Module", "address", keeper.Supply().GetModuleAddress(ReserveName).String())
-	ctx.Logger().Info("Bond    Module", "address", keeper.Supply().GetModuleAddress(BondName).String())
-	ctx.Logger().Info("Asgard  Module", "address", keeper.Supply().GetModuleAddress(AsgardName).String())
+	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
+	ctx.Logger().Info("Reserve Module", "address", reserveAddr.String())
+	bondAddr, _ := keeper.GetModuleAddress(BondName)
+	ctx.Logger().Info("Bond    Module", "address", bondAddr.String())
+	asgardAddr, _ := keeper.GetModuleAddress(AsgardName)
+	ctx.Logger().Info("Asgard  Module", "address", asgardAddr.String())
 
 	return validators
 }

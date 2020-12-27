@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	abci "github.com/tendermint/tendermint/abci/types"
-	tmtypes "github.com/tendermint/tendermint/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -280,10 +279,7 @@ func (vm *validatorMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccesso
 			ctx.Logger().Error("fail to parse consensus public key", "key", na.ValidatorConsPubKey, "error", err)
 			continue
 		}
-		validators = append(validators, abci.ValidatorUpdate{
-			PubKey: tmtypes.TM2PB.PubKey(pk),
-			Power:  100,
-		})
+		validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 	}
 	for _, na := range removedNodes {
 		status := NodeStandby
@@ -315,10 +311,7 @@ func (vm *validatorMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccesso
 			ctx.Logger().Error("fail to parse consensus public key", "key", na.ValidatorConsPubKey, "error", err)
 			continue
 		}
-		validators = append(validators, abci.ValidatorUpdate{
-			PubKey: tmtypes.TM2PB.PubKey(pk),
-			Power:  0,
-		})
+		validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 	}
 
 	// reset all nodes in ready status back to standby status

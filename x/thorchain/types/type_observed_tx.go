@@ -70,28 +70,28 @@ func (tx ObservedTx) IsFinal() bool {
 	return tx.FinaliseHeight == tx.BlockHeight
 }
 
-func (tx ObservedTx) GetOutHashes() (common.TxIDs, error) {
-	txIDs := make(common.TxIDs, len(tx.OutHashes))
-	for i, o := range tx.OutHashes {
-		var err error
-		txIDs[i], err = common.NewTxID(o)
+func (tx ObservedTx) GetOutHashes() common.TxIDs {
+	txIDs := make(common.TxIDs, 0)
+	for _, o := range tx.OutHashes {
+		txID, err := common.NewTxID(o)
 		if err != nil {
-			return nil, err
+			continue
 		}
+		txIDs = append(txIDs, txID)
 	}
-	return txIDs, nil
+	return txIDs
 }
 
-func (tx ObservedTx) GetSigners() ([]cosmos.AccAddress, error) {
-	addrs := make([]cosmos.AccAddress, len(tx.Signers))
-	for i, a := range tx.Signers {
-		var err error
-		addrs[i], err = cosmos.AccAddressFromBech32(a)
+func (tx ObservedTx) GetSigners() []cosmos.AccAddress {
+	addrs := make([]cosmos.AccAddress, 0)
+	for _, a := range tx.Signers {
+		addr, err := cosmos.AccAddressFromBech32(a)
 		if err != nil {
-			return nil, err
+			continue
 		}
+		addrs = append(addrs, addr)
 	}
-	return addrs, nil
+	return addrs
 }
 
 // String implement fmt.Stringer
@@ -101,11 +101,7 @@ func (tx ObservedTx) String() string {
 
 // HasSigned - check if given address has signed
 func (tx ObservedTx) HasSigned(signer cosmos.AccAddress) bool {
-	signers, err := tx.GetSigners()
-	if err != nil {
-		return true
-	}
-	for _, sign := range signers {
+	for _, sign := range tx.GetSigners() {
 		if sign.Equals(signer) {
 			return true
 		}
@@ -125,8 +121,7 @@ func (tx *ObservedTx) Sign(signer cosmos.AccAddress) bool {
 
 // SetDone check the ObservedTx status, update it's status to done if the outbound tx had been processed
 func (tx *ObservedTx) SetDone(hash common.TxID, numOuts int) {
-	hashes, _ := tx.GetOutHashes()
-	for _, done := range hashes {
+	for _, done := range tx.GetOutHashes() {
 		if done.Equals(hash) {
 			return
 		}
@@ -267,8 +262,7 @@ func (tx *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) 
 		}
 		votedIdx = idx
 		// check whether the signer is already in the list
-		signers, _ := transaction.GetSigners()
-		for _, siggy := range signers {
+		for _, siggy := range transaction.GetSigners() {
 			if siggy.Equals(signer) {
 				return false
 			}
@@ -322,8 +316,7 @@ func (tx *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obs
 		if txIn.IsFinal() != final {
 			continue
 		}
-		signers, _ := txIn.GetSigners()
-		for _, signer := range signers {
+		for _, signer := range txIn.GetSigners() {
 			if accounts.IsNodeKeys(signer) {
 				count++
 			}

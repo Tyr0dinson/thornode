@@ -364,8 +364,6 @@ func (tos *TxOutStorageV1) addToBlockOut(ctx cosmos.Context, mgr Manager, toi Tx
 }
 
 func (tos *TxOutStorageV1) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	supplier := tos.keeper.Supply()
-
 	addr, err := cosmos.AccAddressFromBech32(toi.ToAddress.String())
 	if err != nil {
 		return err
@@ -383,12 +381,12 @@ func (tos *TxOutStorageV1) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOu
 	}
 
 	// send funds from module
-	sdkErr := tos.keeper.SendFromModuleToAccount(ctx, toi.ModuleName, addr, toi.Coin)
+	sdkErr := tos.keeper.SendFromModuleToAccount(ctx, toi.ModuleName, addr, common.NewCoins(toi.Coin))
 	if sdkErr != nil {
 		return errors.New(sdkErr.Error())
 	}
 
-	from, err := common.NewAddress(supplier.GetModuleAddress(toi.ModuleName).String())
+	from, err := tos.keeper.GetModuleAddress(toi.ModuleName)
 	if err != nil {
 		ctx.Logger().Error("fail to get from address", "err", err)
 		return err
@@ -417,7 +415,7 @@ func (tos *TxOutStorageV1) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOu
 		Tx:             tx,
 		FinaliseHeight: common.BlockHeight(ctx),
 	}
-	m, err := processOneTxIn(ctx, tos.keeper, observedTx, supplier.GetModuleAddress(AsgardName))
+	m, err := processOneTxIn(ctx, tos.keeper, observedTx, tos.keeper.GetModuleAccAddress(AsgardName))
 	if err != nil {
 		ctx.Logger().Error("fail to process txOut", "error", err, "tx", tx.String())
 		return err
