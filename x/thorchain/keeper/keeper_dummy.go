@@ -39,7 +39,7 @@ func (k KVStoreDummy) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName stri
 	return cosmos.ZeroUint()
 }
 
-func (k KVStoreDummy) SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coin) error {
+func (k KVStoreDummy) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
 	return kaboom
 }
 
@@ -47,11 +47,11 @@ func (k KVStoreDummy) SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, 
 	return kaboom
 }
 
-func (k KVStoreDummy) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coin) error {
+func (k KVStoreDummy) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coins common.Coins) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coin) error {
+func (k KVStoreDummy) SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coins common.Coins) error {
 	return kaboom
 }
 
@@ -72,6 +72,10 @@ func (k KVStoreDummy) GetModuleAddress(module string) (common.Address, error) {
 }
 
 func (k KVStoreDummy) GetModuleAccAddress(module string) cosmos.AccAddress {
+	return nil
+}
+
+func (k KVStoreDummy) GetAccount(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Account {
 	return nil
 }
 

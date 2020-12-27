@@ -260,7 +260,7 @@ func swapOne(ctx cosmos.Context,
 		// we're doing a virtual swap
 		if source.IsSyntheticAsset() {
 			// our source is a pegged asset, burn it all
-			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, tx.Coins[0]); err != nil {
+			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, tx.Coins); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
 			}
 			if err := keeper.BurnFromModule(ctx, ModuleName, tx.Coins[0]); err != nil {
@@ -271,7 +271,7 @@ func swapOne(ctx cosmos.Context,
 			if err := keeper.MintToModule(ctx, ModuleName, toMint); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to mint coins during swap: %w", err)
 			}
-			if err := keeper.SendFromModuleToModule(ctx, ModuleName, AsgardName, toMint); err != nil {
+			if err := keeper.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(toMint)); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
 			}
 		} else {
@@ -279,7 +279,7 @@ func swapOne(ctx cosmos.Context,
 			// liquidity fee
 			toBurn := tx.Coins[0]
 			toBurn.Amount = common.SafeSub(toBurn.Amount, liquidityFee)
-			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, toBurn); err != nil {
+			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(toBurn)); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
 			}
 			if err := keeper.BurnFromModule(ctx, ModuleName, toBurn); err != nil {

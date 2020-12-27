@@ -96,24 +96,21 @@ func queryRagnarok(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 }
 
 func queryBalanceModule(ctx cosmos.Context, path []string, keeper keeper.Keeper) ([]byte, error) {
-	supplier := keeper.Supply()
 	moduleName := path[0]
 	if len(moduleName) == 0 {
 		moduleName = AsgardName
 	}
 
-	mod := supplier.GetModuleAccount(ctx, moduleName)
-	if mod == nil {
-		return nil, fmt.Errorf("fail to get module account:%s", moduleName)
-	}
+	modAddr := keeper.GetModuleAccAddress(moduleName)
+	bal := keeper.GetBalance(ctx, modAddr)
 	balance := struct {
 		Name    string            `json:"name"`
 		Address cosmos.AccAddress `json:"address"`
 		Coins   types2.Coins      `json:"coins"`
 	}{
 		Name:    moduleName,
-		Address: mod.GetAddress(),
-		Coins:   mod.GetCoins(),
+		Address: modAddr,
+		Coins:   bal,
 	}
 	res, err := codec.MarshalJSONIndent(keeper.Cdc(), balance)
 	if err != nil {
@@ -749,7 +746,7 @@ func queryKeygen(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.R
 		ctx.Logger().Error("fail to marshal keygen block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keygen block to json: %w", err)
 	}
-	sig, _, err := kbs.Keybase.Sign(kbs.SignerName, kbs.SignerPasswd, buf)
+	sig, _, err := kbs.Keybase.Sign("", buf)
 	if err != nil {
 		ctx.Logger().Error("fail to sign keygen", "error", err)
 		return nil, fmt.Errorf("fail to sign keygen: %w", err)
@@ -815,7 +812,7 @@ func queryKeysign(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.
 		ctx.Logger().Error("fail to marshal keysign block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keysign block to json: %w", err)
 	}
-	sig, _, err := kbs.Keybase.Sign(kbs.SignerName, kbs.SignerPasswd, buf)
+	sig, _, err := kbs.Keybase.Sign("", buf)
 	if err != nil {
 		ctx.Logger().Error("fail to sign keysign", "error", err)
 		return nil, fmt.Errorf("fail to sign keysign: %w", err)
