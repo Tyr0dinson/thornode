@@ -6,13 +6,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// BanVoter is a structure to record ban request and it's voters
-type BanVoter struct {
-	NodeAddress cosmos.AccAddress   `json:"node_address"`
-	BlockHeight int64               `json:"block_height"`
-	Signers     []cosmos.AccAddress `json:"signers"` // address of node account who saw this tx and voted for it
-}
-
 // NewBanVoter create a new instance of BanVoter
 func NewBanVoter(addr cosmos.AccAddress) BanVoter {
 	return BanVoter{NodeAddress: addr}
@@ -40,7 +33,7 @@ func (b BanVoter) String() string {
 
 // HasSigned - check if given address has signed
 func (b BanVoter) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range b.Signers {
+	for _, sign := range b.GetSigners() {
 		if sign.Equals(signer) {
 			return true
 		}
@@ -51,14 +44,26 @@ func (b BanVoter) HasSigned(signer cosmos.AccAddress) bool {
 // Sign add the given signer to the signer list
 func (b *BanVoter) Sign(signer cosmos.AccAddress) {
 	if !b.HasSigned(signer) {
-		b.Signers = append(b.Signers, signer)
+		b.Signers = append(b.Signers, signer.String())
 	}
+}
+
+func (b *BanVoter) GetSigners() []cosmos.AccAddress {
+	signers := make([]cosmos.AccAddress, 0)
+	for _, str := range b.Signers {
+		signer, err := cosmos.AccAddressFromBech32(str)
+		if err != nil {
+			continue
+		}
+		signers = append(signers, signer)
+	}
+	return signers
 }
 
 // HasConsensus return true if there are majority accounts sign off the BanVoter
 func (b BanVoter) HasConsensus(nodeAccounts NodeAccounts) bool {
 	var count int
-	for _, signer := range b.Signers {
+	for _, signer := range b.GetSigners() {
 		if nodeAccounts.IsNodeKeys(signer) {
 			count++
 		}

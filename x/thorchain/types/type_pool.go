@@ -10,36 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// PoolStatus is an indication of what the pool state is
-type PoolStatus int
-
-// |    State    | Swap | Add   | Withdraw  | Refunding |
-// | ----------- | ---- | ----- | --------- | --------- |
-// | `staged`    | no   | yes   | yes       | Refund Invalid Add/Remove Liquidity && all Swaps |
-// | `available` | yes  | yes   | yes       | Refund Invalid Tx |
-// | `suspended` | no   | no    | no        | Refund all |
-const (
-	Available PoolStatus = iota
-	Staged
-	Suspended
-)
-
-var poolStatusStr = map[string]PoolStatus{
-	"Available": Available,
-	"Staged":    Staged,
-	"Suspended": Suspended,
-}
-
-// String implement stringer
-func (ps PoolStatus) String() string {
-	for key, item := range poolStatusStr {
-		if item == ps {
-			return key
-		}
-	}
-	return ""
-}
-
 // Valid is to check whether the pool status is valid or not
 func (ps PoolStatus) Valid() error {
 	if ps.String() == "" {
@@ -65,12 +35,10 @@ func (ps *PoolStatus) UnmarshalJSON(b []byte) error {
 
 // GetPoolStatus from string
 func GetPoolStatus(ps string) PoolStatus {
-	for key, item := range poolStatusStr {
-		if strings.EqualFold(key, ps) {
-			return item
-		}
+	if val, ok := PoolStatus_value[ps]; ok {
+		return PoolStatus(val)
 	}
-	return Suspended
+	return PoolStatus_Suspended
 }
 
 // Pool is a struct that contains all the metadata of a pooldata
@@ -92,7 +60,7 @@ func NewPool() Pool {
 		BalanceRune:  cosmos.ZeroUint(),
 		BalanceAsset: cosmos.ZeroUint(),
 		PoolUnits:    cosmos.ZeroUint(),
-		Status:       Available,
+		Status:       PoolStatus_Available,
 	}
 }
 
@@ -106,7 +74,7 @@ func (ps Pool) Valid() error {
 
 // IsAvailable check whether the pool is in Available status
 func (ps Pool) IsAvailable() bool {
-	return ps.Status == Available
+	return ps.Status == PoolStatus_Available
 }
 
 // Empty will return true when the asset is empty
@@ -128,16 +96,16 @@ func (ps Pool) String() string {
 // EnsureValidPoolStatus make sure the pool is in a valid status otherwise it return an error
 func (ps Pool) EnsureValidPoolStatus(msg cosmos.Msg) error {
 	switch ps.Status {
-	case Available:
+	case PoolStatus_Available:
 		return nil
-	case Staged:
+	case PoolStatus_Staged:
 		switch msg.Type() {
 		case "swap":
 			return errors.New("pool is in staged status, can't swap")
 		default:
 			return nil
 		}
-	case Suspended:
+	case PoolStatus_Suspended:
 		return errors.New("pool suspended")
 	default:
 		return fmt.Errorf("unknown pool status,%s", ps.Status)

@@ -29,15 +29,6 @@ const (
 	SlashPointEventType       = `slash_points`
 )
 
-// PoolMod pool modifications
-type PoolMod struct {
-	Asset    common.Asset `json:"asset"`
-	RuneAmt  cosmos.Uint  `json:"rune_amt"`
-	RuneAdd  bool         `json:"rune_add"`
-	AssetAmt cosmos.Uint  `json:"asset_amt"`
-	AssetAdd bool         `json:"asset_add"`
-}
-
 // PoolMods a list of pool modifications
 type PoolMods []PoolMod
 
@@ -50,18 +41,6 @@ func NewPoolMod(asset common.Asset, runeAmt cosmos.Uint, runeAdd bool, assetAmt 
 		AssetAmt: assetAmt,
 		AssetAdd: assetAdd,
 	}
-}
-
-// EventSwap event for swap action
-type EventSwap struct {
-	Pool               common.Asset `json:"pool"`
-	PriceTarget        cosmos.Uint  `json:"price_target"`
-	TradeSlip          cosmos.Uint  `json:"trade_slip"`
-	LiquidityFee       cosmos.Uint  `json:"liquidity_fee"`
-	LiquidityFeeInRune cosmos.Uint  `json:"liquidity_fee_in_rune"`
-	InTx               common.Tx    `json:"in_tx"` // this is the Tx that cause the swap to happen, if it is a double swap , then the txid will be blank
-	OutTxs             common.Tx    `json:"out_txs"`
-	EmitAsset          common.Coin  `json:"emit_asset"`
 }
 
 // NewEventSwap create a new swap event
@@ -94,18 +73,6 @@ func (e EventSwap) Events() (cosmos.Events, error) {
 	)
 	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
-}
-
-// EventAddLiquidity event
-type EventAddLiquidity struct {
-	Pool          common.Asset   `json:"pool"`
-	ProviderUnits cosmos.Uint    `json:"liquidity_provider_units"`
-	RuneAddress   common.Address `json:"rune_address"`
-	RuneAmount    cosmos.Uint    `json:"rune_amount"`
-	AssetAmount   cosmos.Uint    `json:"asset_amount"`
-	RuneTxID      common.TxID    `json:"rune_tx_id"`
-	AssetTxID     common.TxID    `json:"asset_tx_id"`
-	AssetAddress  common.Address `json:"asset_address"`
 }
 
 // NewEventAddLiquidity create a new add liquidity event
@@ -156,17 +123,6 @@ func (e EventAddLiquidity) Events() (cosmos.Events, error) {
 	}, nil
 }
 
-// EventWithdraw represent withdraw
-type EventWithdraw struct {
-	Pool          common.Asset `json:"pool"`
-	ProviderUnits cosmos.Uint  `json:"liquidity_provider_units"`
-	BasisPoints   int64        `json:"basis_points"` // 1 ==> 10,0000
-	Asymmetry     cosmos.Dec   `json:"asymmetry"`    // -1.0 <==> 1.0
-	InTx          common.Tx    `json:"in_tx"`
-	EmitAsset     cosmos.Uint  `json:"emit_asset"`
-	EmitRune      cosmos.Uint  `json:"emit_rune"`
-}
-
 // NewEventWithdraw create a new withdraw event
 func NewEventWithdraw(pool common.Asset, su cosmos.Uint, basisPts int64, asym cosmos.Dec, inTx common.Tx, emitAsset, emitRune cosmos.Uint) EventWithdraw {
 	return EventWithdraw{
@@ -198,12 +154,6 @@ func (e EventWithdraw) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// EventAdd represent add operation
-type EventDonate struct {
-	Pool common.Asset `json:"pool"`
-	InTx common.Tx    `json:"in_tx"`
-}
-
 // NewEventDonate create a new donate event
 func NewEventDonate(pool common.Asset, inTx common.Tx) EventDonate {
 	return EventDonate{
@@ -223,12 +173,6 @@ func (e EventDonate) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("pool", e.Pool.String()))
 	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
-}
-
-// EventPool represent pool change event
-type EventPool struct {
-	Pool   common.Asset `json:"pool"`
-	Status PoolStatus   `json:"status"`
 }
 
 // NewEventPool create a new pool change event
@@ -253,18 +197,6 @@ func (e EventPool) Events() (cosmos.Events, error) {
 	}, nil
 }
 
-// PoolAmt pool asset amount
-type PoolAmt struct {
-	Asset  common.Asset `json:"asset"`
-	Amount int64        `json:"amount"`
-}
-
-// EventRewards reward event
-type EventRewards struct {
-	BondReward  cosmos.Uint `json:"bond_reward"`
-	PoolRewards []PoolAmt   `json:"pool_rewards"`
-}
-
 // NewEventRewards create a new reward event
 func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt) EventRewards {
 	return EventRewards{
@@ -286,14 +218,6 @@ func (e EventRewards) Events() (cosmos.Events, error) {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
 	}
 	return cosmos.Events{evt}, nil
-}
-
-// EventRefund represent a refund activity , and contains the reason why it get refund
-type EventRefund struct {
-	Code   uint32     `json:"code"`
-	Reason string     `json:"reason"`
-	InTx   common.Tx  `json:"in_tx"`
-	Fee    common.Fee `json:"fee"`
 }
 
 // NewEventRefund create a new EventRefund
@@ -321,20 +245,6 @@ func (e EventRefund) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-type BondType string
-
-const (
-	BondPaid     BondType = `bond_paid`
-	BondReturned BondType = `bond_returned`
-)
-
-// EventBond bond paid or returned event
-type EventBond struct {
-	Amount   cosmos.Uint `json:"amount"`
-	BondType BondType    `json:"bond_type"`
-	TxIn     common.Tx   `json:"tx_in"`
-}
-
 // NewEventBond create a new Bond Events
 func NewEventBond(amount cosmos.Uint, bondType BondType, txIn common.Tx) EventBond {
 	return EventBond{
@@ -356,20 +266,6 @@ func (e EventBond) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("bound_type", string(e.BondType)))
 	evt = evt.AppendAttributes(e.TxIn.ToAttributes()...)
 	return cosmos.Events{evt}, nil
-}
-
-type GasType string
-
-type GasPool struct {
-	Asset    common.Asset `json:"asset"`
-	AssetAmt cosmos.Uint  `json:"asset_amt"`
-	RuneAmt  cosmos.Uint  `json:"rune_amt"`
-	Count    int64        `json:"transaction_count"`
-}
-
-// EventGas represent the events happened in thorchain related to Gas
-type EventGas struct {
-	Pools []GasPool `json:"pools"`
 }
 
 // NewEventGas create a new EventGas instance
@@ -410,12 +306,6 @@ func (e *EventGas) Events() (cosmos.Events, error) {
 	return events, nil
 }
 
-// EventReserve Reserve event type
-type EventReserve struct {
-	ReserveContributor ReserveContributor `json:"reserve_contributor"`
-	InTx               common.Tx          `json:"in_tx"`
-}
-
 // NewEventReserve create a new instance of EventReserve
 func NewEventReserve(contributor ReserveContributor, inTx common.Tx) EventReserve {
 	return EventReserve{
@@ -439,12 +329,6 @@ func (e EventReserve) Events() (cosmos.Events, error) {
 	}, nil
 }
 
-// EventSlash represent a change in pool balance which caused by slash a node account
-type EventSlash struct {
-	Pool        common.Asset `json:"pool"`
-	SlashAmount []PoolAmt    `json:"slash_amount"`
-}
-
 func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) EventSlash {
 	return EventSlash{
 		Pool:        pool,
@@ -464,12 +348,6 @@ func (e EventSlash) Events() (cosmos.Events, error) {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
 	}
 	return cosmos.Events{evt}, nil
-}
-
-// EventErrata represent a change in pool balance which caused by an errata transaction
-type EventErrata struct {
-	TxID  common.TxID `json:"tx_id"`
-	Pools PoolMods    `json:"pools"`
 }
 
 func NewEventErrata(txID common.TxID, pools PoolMods) EventErrata {
@@ -500,12 +378,6 @@ func (e EventErrata) Events() (cosmos.Events, error) {
 	return events, nil
 }
 
-// EventFee represent fee
-type EventFee struct {
-	TxID common.TxID
-	Fee  common.Fee
-}
-
 // NewEventFee create a new EventFee
 func NewEventFee(txID common.TxID, fee common.Fee) EventFee {
 	return EventFee{
@@ -526,12 +398,6 @@ func (e EventFee) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("coins", e.Fee.Coins.String()),
 		cosmos.NewAttribute("pool_deduct", e.Fee.PoolDeduct.String()))
 	return cosmos.Events{evt}, nil
-}
-
-// EventOutbound represent an outbound message from thornode
-type EventOutbound struct {
-	InTxID common.TxID // the inbound tx hash which triggered this outbound , it could be empty, because there are migration etc
-	Tx     common.Tx
 }
 
 // NewEventOutbound create a new instance of EventOutbound
@@ -555,12 +421,6 @@ func (e EventOutbound) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// EventTssKeygenMetric is an event to represent the time it takes to do Keygen
-type EventTssKeygenMetric struct {
-	PubKey           common.PubKey
-	MedianDurationMs int64
-}
-
 // NewEventTssKeygenMetric create a new EventTssMetric
 func NewEventTssKeygenMetric(pubkey common.PubKey, medianDurationMS int64) EventTssKeygenMetric {
 	return EventTssKeygenMetric{
@@ -582,12 +442,6 @@ func (e EventTssKeygenMetric) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// EventTssKeysignMetric is an event to represent the time it takes to do keysign
-type EventTssKeysignMetric struct {
-	TxID             common.TxID
-	MedianDurationMs int64
-}
-
 // NewEventTssKeysignMetric create a new EventTssMetric
 func NewEventTssKeysignMetric(txID common.TxID, medianDurationMS int64) EventTssKeysignMetric {
 	return EventTssKeysignMetric{
@@ -607,13 +461,6 @@ func (e EventTssKeysignMetric) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("txid", e.TxID.String()),
 		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(e.MedianDurationMs, 10)))
 	return cosmos.Events{evt}, nil
-}
-
-// EventSlashPoint is an event to represent node account accumulate slash points
-type EventSlashPoint struct {
-	NodeAddress cosmos.AccAddress `json:"node_address"`
-	SlashPoints int64             `json:"slash_points"`
-	Reason      string            `json:"reason"`
 }
 
 // NewEventSlashPoint create a new slash point event

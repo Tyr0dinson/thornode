@@ -33,3 +33,8 @@ message Tx {
     repeated Coin gas = 6 [(gogoproto.castrepeated) = "Gas", (gogoproto.nullable) = false];
     string memo = 7;
 }
+
+message Fee {
+    repeated Coin coins = 1 [(gogoproto.castrepeated) = "Coins", (gogoproto.nullable) = false];
+    string pool_deduct = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+}

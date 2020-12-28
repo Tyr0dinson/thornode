@@ -7,15 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// ErrataTxVoter is structure to hold information Errata request and it's voters
-// In THORChain a request need to get 2/3 majority to sign off before it can be processed
-type ErrataTxVoter struct {
-	TxID        common.TxID         `json:"tx_id"`
-	Chain       common.Chain        `json:"chain"`
-	BlockHeight int64               `json:"block_height"`
-	Signers     []cosmos.AccAddress `json:"signers"`
-}
-
 // NewErrataTxVoter create a new instance of ErrataTxVoter
 func NewErrataTxVoter(txID common.TxID, chain common.Chain) ErrataTxVoter {
 	return ErrataTxVoter{
@@ -24,9 +15,21 @@ func NewErrataTxVoter(txID common.TxID, chain common.Chain) ErrataTxVoter {
 	}
 }
 
+func (errata *ErrataTxVoter) GetSigners() []cosmos.AccAddress {
+	signers := make([]cosmos.AccAddress, 0)
+	for _, str := range errata.Signers {
+		signer, err := cosmos.AccAddressFromBech32(str)
+		if err != nil {
+			continue
+		}
+		signers = append(signers, signer)
+	}
+	return signers
+}
+
 // HasSigned - check if given address has signed
 func (errata *ErrataTxVoter) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range errata.Signers {
+	for _, sign := range errata.GetSigners() {
 		if sign.Equals(signer) {
 			return true
 		}
@@ -40,14 +43,14 @@ func (errata *ErrataTxVoter) Sign(signer cosmos.AccAddress) bool {
 	if errata.HasSigned(signer) {
 		return false
 	}
-	errata.Signers = append(errata.Signers, signer)
+	errata.Signers = append(errata.Signers, signer.String())
 	return true
 }
 
 // HasConsensus determine if this errata has enough signers
 func (errata *ErrataTxVoter) HasConsensus(nas NodeAccounts) bool {
 	var count int
-	for _, signer := range errata.Signers {
+	for _, signer := range errata.GetSigners() {
 		if nas.IsNodeKeys(signer) {
 			count++
 		}

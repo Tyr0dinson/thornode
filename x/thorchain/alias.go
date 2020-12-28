@@ -15,9 +15,9 @@ const (
 	DefaultCodespace = types.DefaultCodespace
 
 	// pool status
-	PoolAvailable = types.Available
-	PoolStaged    = types.Staged
-	PoolSuspended = types.Suspended
+	PoolAvailable = types.PoolStatus_Available
+	PoolStaged    = types.PoolStatus_Staged
+	PoolSuspended = types.PoolStatus_Suspended
 
 	// Admin config keys
 	MaxWithdrawBasisPoints = types.MaxWithdrawBasisPoints
@@ -38,8 +38,8 @@ const (
 	NodeUnknown     = types.Unknown
 
 	// Bond type
-	BondPaid     = types.BondPaid
-	BondReturned = types.BondReturned
+	BondPaid     = types.BondType_bond_paid
+	BondReturned = types.BondType_bond_returned
 	AsgardKeygen = types.KeygenType_AsgardKeygen
 
 	// Memos

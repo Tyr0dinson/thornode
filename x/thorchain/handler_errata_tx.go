@@ -102,7 +102,7 @@ func (h ErrataTxHandler) handleV1(ctx cosmos.Context, msg MsgErrataTx, version s
 	voter.BlockHeight = common.BlockHeight(ctx)
 	h.keeper.SetErrataTxVoter(ctx, voter)
 	// decrease the slash points
-	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Signers...)
+	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.GetSigners()...)
 	observedVoter, err := h.keeper.GetObservedTxInVoter(ctx, msg.TxID)
 	if err != nil {
 		return nil, err

@@ -31,16 +31,16 @@ func (s *HandlerDepositSuite) TestValidate(c *C) {
 	msg := NewMsgDeposit(coins, fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()), addr)
 
 	handler := NewDepositHandler(k, NewDummyMgr())
-	err := handler.validate(ctx, msg, constants.SWVersion)
+	err := handler.validate(ctx, *msg, constants.SWVersion)
 	c.Assert(err, IsNil)
 
 	// invalid version
-	err = handler.validate(ctx, msg, semver.Version{})
+	err = handler.validate(ctx, *msg, semver.Version{})
 	c.Assert(err, Equals, errInvalidVersion)
 
 	// invalid msg
-	msg = MsgDeposit{}
-	err = handler.validate(ctx, msg, constants.SWVersion)
+	msg = &MsgDeposit{}
+	err = handler.validate(ctx, *msg, constants.SWVersion)
 	c.Assert(err, NotNil)
 }
 

@@ -6,13 +6,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 )
 
-// ChainContract is a structure define to represent the contract used by different chain
-// At the moment for ETH , it need to have a smart contract address
-type ChainContract struct {
-	Chain    common.Chain   `json:"chain"`
-	Contract common.Address `json:"address"`
-}
-
 // NewChainContract create a new instance of ChainContract
 func NewChainContract(chain common.Chain, contract common.Address) ChainContract {
 	return ChainContract{

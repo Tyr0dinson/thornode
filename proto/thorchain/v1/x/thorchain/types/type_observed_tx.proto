@@ -8,7 +8,7 @@ option (gogoproto.goproto_getters_all) = false;
 
 import "thorchain/v1/common/common.proto";
 import "gogoproto/gogo.proto";
-  
+
 enum Status {
   incomplete = 0;
   done = 1;
