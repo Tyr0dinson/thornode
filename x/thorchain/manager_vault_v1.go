@@ -248,9 +248,9 @@ func (vm *VaultMgrV1) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
 		return nil
 	}
-	var members common.PubKeys
+	var members []string
 	for i := range nas {
-		members = append(members, nas[i].PubKeySet.Secp256k1)
+		members = append(members, nas[i].PubKeySet.Secp256k1.String())
 	}
 	keygen, err := NewKeygen(common.BlockHeight(ctx), members, AsgardKeygen)
 	if err != nil {
@@ -272,7 +272,7 @@ func (vm *VaultMgrV1) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error 
 		return fmt.Errorf("fail to get active vaults: %w", err)
 	}
 	for _, vault := range active {
-		if vault.MembershipEquals(members) {
+		if vault.MembershipEquals(keygen.GetMembers()) {
 			ctx.Logger().Info("skip keygen due to vault already existing")
 			return nil
 		}

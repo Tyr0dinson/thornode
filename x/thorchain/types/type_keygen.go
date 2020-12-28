@@ -13,14 +13,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 )
 
-// KeygenBlock represent the TSS Keygen in a block
-// THORChain can potentially trigger multiple TSS Keygen in one block
-// for example multiple Asgard, also when Yggdrasil start to use TSS as well
-type KeygenBlock struct {
-	Height  int64    `json:"height,string"`
-	Keygens []Keygen `json:"keygens"`
-}
-
 // NewKeygenBlock create a new KeygenBlock
 func NewKeygenBlock(height int64) KeygenBlock {
 	return KeygenBlock{
@@ -79,18 +71,11 @@ func (kt *KeygenType) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Keygen one keygen
-type Keygen struct {
-	ID      common.TxID    `json:"id"`
-	Type    KeygenType     `json:"type"`
-	Members common.PubKeys `json:"members"`
-}
-
 // NewKeygen create a new instance of Keygen
-func NewKeygen(height int64, members common.PubKeys, keygenType KeygenType) (Keygen, error) {
+func NewKeygen(height int64, members []string, keygenType KeygenType) (Keygen, error) {
 	// sort the members
 	sort.SliceStable(members, func(i, j int) bool {
-		return members[i].String() < members[j].String()
+		return members[i] < members[j]
 	})
 	id, err := getKeygenID(height, members, keygenType)
 	if err != nil {
@@ -104,12 +89,12 @@ func NewKeygen(height int64, members common.PubKeys, keygenType KeygenType) (Key
 }
 
 // getKeygenID will create ID based on the pub keys
-func getKeygenID(height int64, members common.PubKeys, keygenType KeygenType) (common.TxID, error) {
+func getKeygenID(height int64, members []string, keygenType KeygenType) (common.TxID, error) {
 	sb := strings.Builder{}
 	sb.WriteString(strconv.FormatInt(height, 10))
 	sb.WriteString(keygenType.String())
 	for _, m := range members {
-		sb.WriteString(m.String())
+		sb.WriteString(m)
 	}
 	h := sha256.New()
 	_, err := h.Write([]byte(sb.String()))
@@ -118,6 +103,18 @@ func getKeygenID(height int64, members common.PubKeys, keygenType KeygenType) (c
 	}
 
 	return common.TxID(hex.EncodeToString(h.Sum(nil))), nil
+}
+
+func (k Keygen) GetMembers() common.PubKeys {
+	pubkeys := make(common.PubKeys, 0)
+	for _, pk := range k.Members {
+		pk, err := common.NewPubKey(pk)
+		if err != nil {
+			continue
+		}
+		pubkeys = append(pubkeys, pk)
+	}
+	return pubkeys
 }
 
 // IsEmpty check whether there are any keys in the keygen
@@ -130,7 +127,7 @@ func (k Keygen) Valid() error {
 	if k.Type == KeygenType_UnknownKeygen {
 		return errors.New("unknown keygen")
 	}
-	return k.Members.Valid()
+	return k.GetMembers().Valid()
 }
 
 // String implement of fmt.Stringer

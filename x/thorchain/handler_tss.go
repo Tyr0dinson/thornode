@@ -62,7 +62,7 @@ func (h TssHandler) validateV1(ctx cosmos.Context, msg MsgTssPool) error {
 	}
 
 	for _, keygen := range keygenBlock.Keygens {
-		for _, member := range keygen.Members {
+		for _, member := range keygen.GetMembers() {
 			addr, err := member.GetThorAddress()
 			if err == nil && addr.Equals(msg.Signer) {
 				return nil

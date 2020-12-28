@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 
 	. "gopkg.in/check.v1"
-
-	"gitlab.com/thorchain/thornode/common"
 )
 
 type KeygenSuite struct{}
@@ -38,9 +36,9 @@ func (s *KeygenSuite) TestKengenType(c *C) {
 }
 
 func (s *KeygenSuite) TestKeygen(c *C) {
-	var members common.PubKeys
+	var members []string
 	for i := 0; i < 4; i++ {
-		members = append(members, GetRandomPubKey())
+		members = append(members, GetRandomPubKey().String())
 	}
 	keygen, err := NewKeygen(1, members, KeygenType_AsgardKeygen)
 	c.Assert(err, IsNil)
@@ -50,9 +48,9 @@ func (s *KeygenSuite) TestKeygen(c *C) {
 }
 
 func (s *KeygenSuite) TestGetKeygenID(c *C) {
-	var members common.PubKeys
+	var members []string
 	for i := 0; i < 4; i++ {
-		members = append(members, GetRandomPubKey())
+		members = append(members, GetRandomPubKey().String())
 	}
 	txID, err := getKeygenID(1, members, KeygenType_AsgardKeygen)
 	c.Assert(err, IsNil)
@@ -75,9 +73,9 @@ func (s *KeygenSuite) TestGetKeygenID(c *C) {
 func (s *KeygenSuite) TestNewKeygenBlock(c *C) {
 	kb := NewKeygenBlock(1)
 	c.Check(kb.IsEmpty(), Equals, false)
-	var members common.PubKeys
+	var members []string
 	for i := 0; i < 4; i++ {
-		members = append(members, GetRandomPubKey())
+		members = append(members, GetRandomPubKey().String())
 	}
 	keygen, err := NewKeygen(1, members, KeygenType_AsgardKeygen)
 	c.Check(err, IsNil)
