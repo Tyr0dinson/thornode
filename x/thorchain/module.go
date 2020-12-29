@@ -1,19 +1,19 @@
 package thorchain
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
+	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/cosmos/cosmos-sdk/x/capability/types"
 	"github.com/gorilla/mux"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 	abci "github.com/tendermint/tendermint/abci/types"
 
@@ -43,6 +43,15 @@ func (AppModuleBasic) RegisterCodec(cdc *codec.LegacyAmino) {
 	RegisterCodec(cdc)
 }
 
+func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
+	RegisterCodec(cdc)
+}
+
+// RegisterInterfaces registers the module's interface types
+func (a AppModuleBasic) RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
+	RegisterInterfaces(reg)
+}
+
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONMarshaler) json.RawMessage {
 	return cdc.MustMarshalJSON(DefaultGenesis())
 }
@@ -58,7 +67,7 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONMarshaler, config client.TxE
 }
 
 // Register rest routes
-func (AppModuleBasic) RegisterRESTRoutes(ctx client.CLIContext, rtr *mux.Router) {
+func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
 	rest.RegisterRoutes(ctx, rtr, StoreKey)
 	sdkRest.RegisterTxRoutes(ctx, rtr)
 	sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
@@ -66,7 +75,8 @@ func (AppModuleBasic) RegisterRESTRoutes(ctx client.CLIContext, rtr *mux.Router)
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the mint module.
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	// TODO
+	// types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
 }
 
 // Get the root query command of this module
@@ -108,8 +118,8 @@ func (AppModule) Name() string {
 
 func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 
-func (am AppModule) Route() string {
-	return RouterKey
+func (am AppModule) Route() cosmos.Route {
+	return cosmos.NewRoute(RouterKey, NewExternalHandler(am.keeper, am.mgr))
 }
 
 func (am AppModule) NewHandler() sdk.Handler {
@@ -125,6 +135,13 @@ func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sd
 	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) ([]byte, error) {
 		return nil, nil
 	}
+}
+
+// RegisterServices registers module services.
+func (am AppModule) RegisterServices(cfg module.Configurator) {
+	// TODO
+	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
+	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
 }
 
 func (am AppModule) NewQuerierHandler() sdk.Querier {
@@ -230,12 +247,12 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 }
 
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONMarshaler, data json.RawMessage) []abci.ValidatorUpdate {
-	var genState types.GenesisState
+	var genState GenesisState
 	ModuleCdc.MustUnmarshalJSON(data, &genState)
 	return InitGenesis(ctx, am.keeper, genState)
 }
 
 func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONMarshaler) json.RawMessage {
 	gs := ExportGenesis(ctx, am.keeper)
-	return cdc.MustMarshalJSON(gs)
+	return cdc.MustMarshalJSON(&gs)
 }

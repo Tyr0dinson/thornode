@@ -21,6 +21,7 @@ require (
 	github.com/google/go-cmp v0.5.1 // indirect
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0
+	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/hashicorp/go-retryablehttp v0.6.4
 	github.com/ipfs/go-log v1.0.4

@@ -104,6 +104,7 @@ var (
 	GetThreshold                   = types.GetThreshold
 	ModuleCdc                      = types.ModuleCdc
 	RegisterCodec                  = types.RegisterCodec
+	RegisterInterfaces             = types.RegisterInterfaces
 	NewNodeAccount                 = types.NewNodeAccount
 	NewVault                       = types.NewVault
 	NewReserveContributor          = types.NewReserveContributor

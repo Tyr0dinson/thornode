@@ -9,6 +9,7 @@ import (
 
 var (
 	KeyringServiceName      = sdk.KeyringServiceName
+	NewRoute                = sdk.NewRoute
 	NewUint                 = sdk.NewUint
 	ParseUint               = sdk.ParseUint
 	NewInt                  = sdk.NewInt
@@ -52,6 +53,7 @@ var (
 
 type (
 	Context    = sdk.Context
+	Route      = sdk.Route
 	Uint       = sdk.Uint
 	Coin       = sdk.Coin
 	Coins      = sdk.Coins

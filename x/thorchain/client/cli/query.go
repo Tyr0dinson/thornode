@@ -3,7 +3,6 @@ package cli
 import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/spf13/cobra"
 
 	"gitlab.com/thorchain/thornode/constants"
@@ -20,7 +19,7 @@ func (v ver) String() string {
 	return v.Version
 }
 
-func GetQueryCmd(storeKey string, cdc *codec.LegacyAmino) *cobra.Command {
+func GetQueryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                        types.ModuleName,
 		Short:                      "Querying commands for the THORChain module",
