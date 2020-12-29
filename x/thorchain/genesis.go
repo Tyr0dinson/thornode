@@ -10,32 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-// GenesisState strcture that used to store the data THORNode put in genesis
-type GenesisState struct {
-	Pools                []Pool                    `json:"pools"`
-	LiquidityProviders   LiquidityProviders        `json:"liquidity_providers"`
-	ObservedTxInVoters   ObservedTxVoters          `json:"observed_tx_in_voters"`
-	ObservedTxOutVoters  ObservedTxVoters          `json:"observed_tx_out_voters"`
-	TxOuts               []TxOut                   `json:"txouts"`
-	NodeAccounts         NodeAccounts              `json:"node_accounts"`
-	Vaults               Vaults                    `json:"vaults"`
-	Reserve              uint64                    `json:"reserve"`
-	BanVoters            []BanVoter                `json:"ban_voters"`
-	LastSignedHeight     int64                     `json:"last_signed_height"`
-	LastChainHeights     map[string]int64          `json:"last_chain_heights"`
-	ReserveContributors  ReserveContributors       `json:"reserve_contributors"`
-	Network              Network                   `json:"network"`
-	TssVoters            []TssVoter                `json:"tss_voters"`
-	TssKeysignFailVoters []TssKeysignFailVoter     `json:"tss_keysign_fail_voters"`
-	KeygenBlocks         []KeygenBlock             `json:"keygen_blocks"`
-	AllTxMarkers         map[string]TxMarkers      `json:"all_tx_markers"`
-	ErrataTxVoters       []ErrataTxVoter           `json:"errata_tx_voters"`
-	MsgSwaps             []MsgSwap                 `json:"msg_swaps"`
-	NetworkFees          []NetworkFee              `json:"network_fees"`
-	NetworkFeeVoters     []ObservedNetworkFeeVoter `json:"network_fee_voters"`
-	ChainContracts       []ChainContract           `json:"chain_contracts"`
-}
-
 // NewGenesisState create a new instance of GenesisState
 func NewGenesisState() GenesisState {
 	return GenesisState{}
@@ -144,7 +118,6 @@ func DefaultGenesisState() GenesisState {
 		TssVoters:            make([]TssVoter, 0),
 		TssKeysignFailVoters: make([]TssKeysignFailVoter, 0),
 		KeygenBlocks:         make([]KeygenBlock, 0),
-		AllTxMarkers:         make(map[string]TxMarkers),
 		ErrataTxVoters:       make([]ErrataTxVoter, 0),
 		MsgSwaps:             make([]MsgSwap, 0),
 		NetworkFees:          make([]NetworkFee, 0),
@@ -252,11 +225,6 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetKeygenBlock(ctx, item)
 	}
 
-	for hash, item := range data.AllTxMarkers {
-		if err := keeper.SetTxMarkers(ctx, hash, item); err != nil {
-			panic(err)
-		}
-	}
 	for _, item := range data.ErrataTxVoters {
 		if item.Empty() {
 			continue
@@ -449,11 +417,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		keygenBlocks = append(keygenBlocks, kb)
 	}
 
-	allTxMarkers, err := k.GetAllTxMarkers(ctx)
-	if err != nil {
-		panic(err)
-	}
-
 	errataVoters := make([]ErrataTxVoter, 0)
 	iterErrata := k.GetErrataTxVoterIterator(ctx)
 	defer iterErrata.Close()
@@ -514,7 +477,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		TssVoters:            tssVoters,
 		TssKeysignFailVoters: tssKeySignFailVoters,
 		KeygenBlocks:         keygenBlocks,
-		AllTxMarkers:         allTxMarkers,
 		ErrataTxVoters:       errataVoters,
 		MsgSwaps:             swapMsgs,
 		NetworkFees:          networkFees,

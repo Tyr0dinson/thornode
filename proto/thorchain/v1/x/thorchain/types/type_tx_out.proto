@@ -21,3 +21,9 @@ message TxOutItem {
   string out_hash = 9 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID"];
   string module_name = 10 [json_name="-", (gogoproto.jsontag) = "-"];
 }
+
+message TxOut {
+  option (gogoproto.stringer) = true;
+  int64 height = 1;
+  repeated TxOutItem tx_array = 2 [(gogoproto.nullable) = false];
+}

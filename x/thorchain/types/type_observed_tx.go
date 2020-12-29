@@ -144,6 +144,7 @@ func (tx *ObservedTx) IsDone(numOuts int) bool {
 // only tx reach super majority will be processed by THORChain
 // as THORChain start to support PoW like BTC , tx need to do confirmation counting , a tx need to meet confirmation
 // counting requirement before it can be processed
+/*
 type ObservedTxVoter struct {
 	TxID            common.TxID `json:"tx_id"`            // Tx Hash
 	Tx              ObservedTx  `json:"tx"`               // final consensus transaction
@@ -155,6 +156,7 @@ type ObservedTxVoter struct {
 	UpdatedVault    bool        `json:"updated_vault"`    // has the fund in this tx been credit to vault
 	Reverted        bool        `json:"reverted"`         // reverted using Errata
 }
+*/
 
 // ObservedTxVoters a list of observed tx voter
 type ObservedTxVoters []ObservedTxVoter

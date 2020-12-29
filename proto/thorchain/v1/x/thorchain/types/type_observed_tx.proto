@@ -7,6 +7,7 @@ option (gogoproto.stringer_all)         = false;
 option (gogoproto.goproto_getters_all) = false;
 
 import "thorchain/v1/common/common.proto";
+import "thorchain/v1/x/thorchain/types/type_tx_out.proto";
 import "gogoproto/gogo.proto";
 
 enum Status {
@@ -24,4 +25,16 @@ message ObservedTx {
   string observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   int64 keysign_ms = 7;
   int64 finalise_height = 8;
+}
+
+message ObservedTxVoter {
+  string tx_id = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
+  ObservedTx tx = 2 [(gogoproto.nullable) = false];
+  int64 height = 3;
+  repeated ObservedTx txs = 4 [(gogoproto.castrepeated) = "ObservedTxs", (gogoproto.nullable) = false];
+  repeated TxOutItem actions = 5 [(gogoproto.nullable) = false];
+  repeated common.Tx out_txs = 6 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Txs", (gogoproto.nullable) = false];
+  int64 finalised_height = 7;
+  bool updated_vault = 8;
+  bool reverted = 9;
 }

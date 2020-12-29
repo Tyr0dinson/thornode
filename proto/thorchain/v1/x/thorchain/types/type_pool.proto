@@ -6,6 +6,7 @@ option (gogoproto.goproto_stringer_all) = false;
 option (gogoproto.stringer_all)         = false;
 option (gogoproto.goproto_getters_all) = false;
 
+import "thorchain/v1/common/common.proto";
 import "gogoproto/gogo.proto";
 
 // |    State    | Swap | Add   | Withdraw  | Refunding |
@@ -17,4 +18,12 @@ enum PoolStatus {
   Available = 0;
   Staged = 1;
   Suspended = 2;
+}
+
+message Pool {
+  string balance_rune = 1 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  string balance_asset = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  common.Asset asset = 3 [(gogoproto.nullable) = false];
+  string pool_units = 4 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  PoolStatus status = 5;
 }

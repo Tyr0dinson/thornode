@@ -41,16 +41,6 @@ func GetPoolStatus(ps string) PoolStatus {
 	return PoolStatus_Suspended
 }
 
-// Pool is a struct that contains all the metadata of a pooldata
-// This is the structure THORNode will saved to the key value store
-type Pool struct {
-	BalanceRune  cosmos.Uint  `json:"balance_rune"`  // how many RUNE in the pool
-	BalanceAsset cosmos.Uint  `json:"balance_asset"` // how many asset in the pool
-	Asset        common.Asset `json:"asset"`         // what's the asset's asset
-	PoolUnits    cosmos.Uint  `json:"pool_units"`    // total units of the pool
-	Status       PoolStatus   `json:"status"`        // status
-}
-
 // Pools represent a list of pools
 type Pools []Pool
 
