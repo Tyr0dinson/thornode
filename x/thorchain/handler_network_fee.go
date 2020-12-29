@@ -98,7 +98,7 @@ func (h NetworkFeeHandler) handleV1(ctx cosmos.Context, msg MsgNetworkFee, versi
 	voter.BlockHeight = common.BlockHeight(ctx)
 	h.keeper.SetObservedNetworkFeeVoter(ctx, voter)
 	// decrease the slash points
-	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Signers...)
+	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.GetSigners()...)
 	ctx.Logger().Info("update network fee", "chain", msg.Chain.String(), "transaction-size", msg.TransactionSize, "fee-rate", msg.TransactionFeeRate)
 	if err := h.keeper.SaveNetworkFee(ctx, msg.Chain, NetworkFee{
 		Chain:              msg.Chain,

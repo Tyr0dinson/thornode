@@ -104,7 +104,7 @@ func (h LeaveHandler) handleV1(ctx cosmos.Context, msg MsgLeave, version semver.
 		}
 		isMemberOfRetiringVault := false
 		for _, v := range vaults {
-			if v.Membership.Contains(nodeAcc.PubKeySet.Secp256k1) {
+			if v.GetMembership().Contains(nodeAcc.PubKeySet.Secp256k1) {
 				isMemberOfRetiringVault = true
 				ctx.Logger().Info("node account is still part of the retiring vault,can't return bond yet")
 				break

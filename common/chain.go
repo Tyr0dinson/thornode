@@ -162,3 +162,11 @@ func (chains Chains) Distinct() Chains {
 	}
 	return newChains
 }
+
+func (chains Chains) Strings() []string {
+	strings := make([]string, len(chains))
+	for i, c := range chains {
+		strings[i] = c.String()
+	}
+	return strings
+}

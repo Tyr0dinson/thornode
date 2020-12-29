@@ -91,8 +91,8 @@ func (h VersionHandler) handleV1(ctx cosmos.Context, msg MsgSetVersion, constAcc
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
 
-	if nodeAccount.Version.LT(version) {
-		nodeAccount.Version = version
+	if nodeAccount.GetVersion().LT(version) {
+		nodeAccount.Version = version.String()
 	}
 
 	cost := cosmos.NewUint(uint64(constAccessor.GetInt64Value(constants.CliTxCost)))

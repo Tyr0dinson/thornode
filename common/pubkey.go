@@ -188,6 +188,14 @@ func (pks PubKeys) String() string {
 	return strings.Join(strs, ", ")
 }
 
+func (pks PubKeys) Strings() []string {
+	strings := make([]string, len(pks))
+	for i, pk := range pks {
+		strings[i] = pk.String()
+	}
+	return strings
+}
+
 // ConvertAndEncode converts from a base64 encoded byte string to hex or base32 encoded byte string and then to bech32
 func ConvertAndEncode(hrp string, data []byte) (string, error) {
 	converted, err := bech32.ConvertBits(data, 8, 5, true)

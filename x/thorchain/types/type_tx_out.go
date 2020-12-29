@@ -8,20 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 )
 
-// TxOutItem represent a tx need to be sent out
-type TxOutItem struct {
-	Chain       common.Chain   `json:"chain"`
-	ToAddress   common.Address `json:"to"`
-	VaultPubKey common.PubKey  `json:"vault_pubkey"`
-	Coin        common.Coin    `json:"coin"`
-	Memo        string         `json:"memo"`
-	MaxGas      common.Gas     `json:"max_gas"`
-	GasRate     int64          `json:"gas_rate"`
-	InHash      common.TxID    `json:"in_hash"`
-	OutHash     common.TxID    `json:"out_hash"`
-	ModuleName  string         `json:"-"` // used to pass which cosmos module to remove native funds from
-}
-
 // Valid check whether TxOutItem hold valid information
 func (toi TxOutItem) Valid() error {
 	if toi.Chain.IsEmpty() {

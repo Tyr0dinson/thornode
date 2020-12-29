@@ -56,8 +56,8 @@ func (vm *VaultMgrV1) processGenesisSetup(ctx cosmos.Context) error {
 			common.THORChain,
 			common.BTCChain,
 			common.BNBChain,
-		})
-		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}
+		}.Strings())
+		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
@@ -291,7 +291,7 @@ func (vm *VaultMgrV1) RotateVault(ctx cosmos.Context, vault Vault) error {
 
 	// find vaults the new vault conflicts with, mark them as inactive
 	for _, asgard := range active {
-		for _, member := range asgard.Membership {
+		for _, member := range asgard.GetMembership() {
 			if vault.Contains(member) {
 				asgard.UpdateStatus(RetiringVault, common.BlockHeight(ctx))
 				if err := vm.k.SetVault(ctx, asgard); err != nil {
@@ -307,7 +307,7 @@ func (vm *VaultMgrV1) RotateVault(ctx cosmos.Context, vault Vault) error {
 	}
 
 	// Update Node account membership
-	for _, member := range vault.Membership {
+	for _, member := range vault.GetMembership() {
 		na, err := vm.k.GetNodeAccountByPubKey(ctx, member)
 		if err != nil {
 			return err
@@ -388,14 +388,14 @@ func (vm *VaultMgrV1) findChainsToRetire(ctx cosmos.Context) (common.Chains, err
 	// collect all chains for active vaults
 	activeChains := make(common.Chains, 0)
 	for _, v := range active {
-		activeChains = append(activeChains, v.Chains...)
+		activeChains = append(activeChains, v.GetChains()...)
 	}
 	activeChains = activeChains.Distinct()
 
 	// collect all chains for retiring vaults
 	retiringChains := make(common.Chains, 0)
 	for _, v := range retiring {
-		retiringChains = append(retiringChains, v.Chains...)
+		retiringChains = append(retiringChains, v.GetChains()...)
 	}
 	retiringChains = retiringChains.Distinct()
 

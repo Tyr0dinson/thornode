@@ -72,22 +72,22 @@ func (k KVStore) GetMinJoinVersion(ctx cosmos.Context) semver.Version {
 		return semver.Version{}
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
-		return nodes[i].Version.LT(nodes[j].Version)
+		return nodes[i].GetVersion().LT(nodes[j].GetVersion())
 	})
 	for _, na := range nodes {
-		v, ok := vCount[na.Version.String()]
+		v, ok := vCount[na.Version]
 		if ok {
 			v.count = v.count + 1
-			vCount[na.Version.String()] = v
+			vCount[na.Version] = v
 		} else {
-			vCount[na.Version.String()] = tmpVersionInfo{
-				version: na.Version,
+			vCount[na.Version] = tmpVersionInfo{
+				version: na.GetVersion(),
 				count:   1,
 			}
 		}
 		// assume all versions are backward compatible
 		for k, v := range vCount {
-			if v.version.LT(na.Version) {
+			if v.version.LT(na.GetVersion()) {
 				v.count = v.count + 1
 				vCount[k] = v
 			}
@@ -122,22 +122,22 @@ func (k KVStore) GetMinJoinVersionV1(ctx cosmos.Context) semver.Version {
 		return semver.Version{}
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
-		return nodes[i].Version.LT(nodes[j].Version)
+		return nodes[i].GetVersion().LT(nodes[j].GetVersion())
 	})
 	for _, na := range nodes {
-		v, ok := vCount[na.Version.String()]
+		v, ok := vCount[na.Version]
 		if ok {
 			v.count = v.count + 1
-			vCount[na.Version.String()] = v
+			vCount[na.Version] = v
 		} else {
-			vCount[na.Version.String()] = tmpVersionInfo{
-				version: na.Version,
+			vCount[na.Version] = tmpVersionInfo{
+				version: na.GetVersion(),
 				count:   1,
 			}
 		}
 		// assume all versions are backward compatible
 		for k, v := range vCount {
-			if v.version.LT(na.Version) {
+			if v.version.LT(na.GetVersion()) {
 				v.count = v.count + 1
 				vCount[k] = v
 			}
@@ -167,10 +167,10 @@ func (k KVStore) GetLowestActiveVersion(ctx cosmos.Context) semver.Version {
 		return constants.SWVersion
 	}
 	if len(nodes) > 0 {
-		version := nodes[0].Version
+		version := nodes[0].GetVersion()
 		for _, na := range nodes {
-			if na.Version.LT(version) {
-				version = na.Version
+			if na.GetVersion().LT(version) {
+				version = na.GetVersion()
 			}
 		}
 		return version

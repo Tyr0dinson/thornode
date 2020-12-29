@@ -14,41 +14,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// NodeStatus Represent the Node status
-type NodeStatus uint8
-
-// As soon as user paid a certain amount of asset(defined later)
-// their node address will be whitelisted
-// once THORNode discover their observer had send tx in , then their status will be standby
-// once THORNode rotate them in , then they will be active
-const (
-	Unknown NodeStatus = iota
-	WhiteListed
-	Standby
-	Ready
-	Active
-	Disabled
-)
-
-var nodeStatusStr = map[string]NodeStatus{
-	"unknown":     Unknown,
-	"whitelisted": WhiteListed,
-	"standby":     Standby,
-	"ready":       Ready,
-	"active":      Active,
-	"disabled":    Disabled,
-}
-
-// String implement stringer
-func (ps NodeStatus) String() string {
-	for key, item := range nodeStatusStr {
-		if item == ps {
-			return key
-		}
-	}
-	return ""
-}
-
 // Valid check whether the node status is valid or not
 func (ps NodeStatus) Valid() error {
 	if ps.String() == "" {
@@ -74,31 +39,10 @@ func (ps *NodeStatus) UnmarshalJSON(b []byte) error {
 
 // GetNodeStatus from string
 func GetNodeStatus(ps string) NodeStatus {
-	for key, item := range nodeStatusStr {
-		if strings.EqualFold(key, ps) {
-			return item
-		}
+	if val, ok := NodeStatus_value[ps]; ok {
+		return NodeStatus(val)
 	}
-
-	return Unknown
-}
-
-// NodeAccount everything about node account
-type NodeAccount struct {
-	NodeAddress         cosmos.AccAddress `json:"node_address"` // Thor address which is an operator address
-	Status              NodeStatus        `json:"status"`
-	PubKeySet           common.PubKeySet  `json:"pub_key_set"`
-	ValidatorConsPubKey string            `json:"validator_cons_pub_key"`
-	Bond                cosmos.Uint       `json:"bond"`
-	ActiveBlockHeight   int64             `json:"active_block_height"` // The block height when this node account became active status
-	BondAddress         common.Address    `json:"bond_address"`        // BNB Address to send bond from. It also indicates the operator address to whilelist and associate.
-	StatusSince         int64             `json:"status_since"`
-	SignerMembership    common.PubKeys    `json:"signer_membership"`
-	RequestedToLeave    bool              `json:"requested_to_leave"`
-	ForcedToLeave       bool              `json:"forced_to_leave"`
-	LeaveHeight         int64             `json:"leave_height"`
-	IPAddress           string            `json:"ip_address"`
-	Version             semver.Version    `json:"version"`
+	return NodeStatus_Unknown
 }
 
 // NewNodeAccount create new instance of NodeAccount
@@ -116,7 +60,7 @@ func NewNodeAccount(nodeAddress cosmos.AccAddress, status NodeStatus, nodePubKey
 
 // IsEmpty decide whether NodeAccount is empty
 func (n NodeAccount) IsEmpty() bool {
-	return n.NodeAddress.Empty() || n.Status == Unknown
+	return n.NodeAddress.Empty() || n.Status == NodeStatus_Unknown
 }
 
 // Valid check whether NodeAccount has all necessary values
@@ -127,11 +71,28 @@ func (n NodeAccount) Valid() error {
 	if n.BondAddress.IsEmpty() {
 		return errors.New("bond address is empty")
 	}
-	if n.Status == Unknown {
+	if n.Status == NodeStatus_Unknown {
 		return errors.New("node status cannot be unknown")
 	}
 
 	return nil
+}
+
+func (n NodeAccount) GetSignerMembership() common.PubKeys {
+	pubkeys := make(common.PubKeys, 0)
+	for _, pk := range n.SignerMembership {
+		pk, err := common.NewPubKey(pk)
+		if err != nil {
+			continue
+		}
+		pubkeys = append(pubkeys, pk)
+	}
+	return pubkeys
+}
+
+func (n NodeAccount) GetVersion() semver.Version {
+	version, _ := semver.Make(n.Version)
+	return version
 }
 
 // UpdateStatus change the status of node account, in the mean time update StatusSince field
@@ -150,7 +111,7 @@ func (n NodeAccount) Equals(n1 NodeAccount) bool {
 		n.ValidatorConsPubKey == n1.ValidatorConsPubKey &&
 		n.BondAddress.Equals(n1.BondAddress) &&
 		n.Bond.Equal(n1.Bond) &&
-		n.Version.Equals(n1.Version) {
+		n.GetVersion().Equals(n1.GetVersion()) {
 		return true
 	}
 	return false
@@ -164,7 +125,7 @@ func (n NodeAccount) String() string {
 	sb.WriteString("node pubkeys:" + n.PubKeySet.String() + "\n")
 	sb.WriteString("validator consensus pub key:" + n.ValidatorConsPubKey + "\n")
 	sb.WriteString("bond:" + n.Bond.String() + "\n")
-	sb.WriteString("version:" + n.Version.String() + "\n")
+	sb.WriteString("version:" + n.Version + "\n")
 	sb.WriteString("bond address:" + n.BondAddress.String() + "\n")
 	sb.WriteString("requested to leave:" + strconv.FormatBool(n.RequestedToLeave) + "\n")
 	return sb.String()
@@ -191,12 +152,12 @@ func (n *NodeAccount) TryAddSignerPubKey(key common.PubKey) {
 	if key.IsEmpty() {
 		return
 	}
-	for _, item := range n.SignerMembership {
+	for _, item := range n.GetSignerMembership() {
 		if item.Equals(key) {
 			return
 		}
 	}
-	n.SignerMembership = append(n.SignerMembership, key)
+	n.SignerMembership = append(n.SignerMembership, key.String())
 }
 
 // TryRemoveSignerPubKey remove the given pubkey from signer membership
@@ -205,7 +166,7 @@ func (n *NodeAccount) TryRemoveSignerPubKey(key common.PubKey) {
 		return
 	}
 	idxToDelete := -1
-	for idx, item := range n.SignerMembership {
+	for idx, item := range n.GetSignerMembership() {
 		if item.Equals(key) {
 			idxToDelete = idx
 		}
@@ -226,7 +187,7 @@ func (nas NodeAccounts) IsEmpty() bool {
 // IsNodeKeys validate whether the given account address belongs to an currently active validator
 func (nas NodeAccounts) IsNodeKeys(addr cosmos.AccAddress) bool {
 	for _, na := range nas {
-		if na.Status == Active && addr.Equals(na.NodeAddress) {
+		if na.Status == NodeStatus_Active && addr.Equals(na.NodeAddress) {
 			return true
 		}
 	}

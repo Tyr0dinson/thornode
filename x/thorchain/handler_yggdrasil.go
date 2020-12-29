@@ -175,7 +175,7 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil, version
 	if err != nil && !errors.Is(err, kvTypes.ErrVaultNotFound) {
 		return nil, fmt.Errorf("fail to get yggdrasil: %w", err)
 	}
-	if len(vault.Type) == 0 {
+	if vault.IsType(UnknownVault) {
 		vault.Status = ActiveVault
 		vault.Type = YggdrasilVault
 	}

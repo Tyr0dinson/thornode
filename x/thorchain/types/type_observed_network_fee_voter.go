@@ -7,14 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// ObservedNetworkFeeVoter is used to book keep who voted for the network fee message, whether it has majority consensus or not
-type ObservedNetworkFeeVoter struct {
-	BlockHeight       int64               `json:"block_height"`        // the THORNode block height which the voter reach consensus
-	ReportBlockHeight int64               `json:"report_block_height"` // Block height related to the chain
-	Chain             common.Chain        `json:"chain"`
-	Signers           []cosmos.AccAddress `json:"signers"`
-}
-
 // NewObservedNetworkFeeVoter create a new instance of ObservedNetworkFeeVoter
 func NewObservedNetworkFeeVoter(reportBlockHeight int64, chain common.Chain) ObservedNetworkFeeVoter {
 	return ObservedNetworkFeeVoter{
@@ -23,9 +15,21 @@ func NewObservedNetworkFeeVoter(reportBlockHeight int64, chain common.Chain) Obs
 	}
 }
 
+func (f *ObservedNetworkFeeVoter) GetSigners() []cosmos.AccAddress {
+	addrs := make([]cosmos.AccAddress, 0)
+	for _, a := range f.Signers {
+		addr, err := cosmos.AccAddressFromBech32(a)
+		if err != nil {
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	return addrs
+}
+
 // HasSigned - check if given address has signed
 func (f *ObservedNetworkFeeVoter) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range f.Signers {
+	for _, sign := range f.GetSigners() {
 		if sign.Equals(signer) {
 			return true
 		}
@@ -38,14 +42,14 @@ func (f *ObservedNetworkFeeVoter) Sign(signer cosmos.AccAddress) bool {
 	if f.HasSigned(signer) {
 		return false
 	}
-	f.Signers = append(f.Signers, signer)
+	f.Signers = append(f.Signers, signer.String())
 	return true
 }
 
 // HasConsensus Determine if this errata has enough signers
 func (f *ObservedNetworkFeeVoter) HasConsensus(nas NodeAccounts) bool {
 	var count int
-	for _, signer := range f.Signers {
+	for _, signer := range f.GetSigners() {
 		if nas.IsNodeKeys(signer) {
 			count++
 		}

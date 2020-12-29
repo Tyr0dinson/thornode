@@ -10,48 +10,11 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-// VaultType there are two different types of Vault in thorchain
-type VaultType string
-
-// different type of vaults
-const (
-	UnknownVault   VaultType = "unknown"
-	AsgardVault    VaultType = "asgard"
-	YggdrasilVault VaultType = "yggdrasil"
-)
-
-// VaultStatus status of vault
-type VaultStatus string
-
-const (
-	// ActiveVault means the vault is currently actively in use
-	ActiveVault VaultStatus = "active"
-	// RetiringVault means the vault is in the process of retiring
-	RetiringVault VaultStatus = "retiring"
-	// InactiveVault means the vault is not active anymore
-	InactiveVault VaultStatus = "inactive"
-)
-
-// Vault usually represent the account THORNode is using
-type Vault struct {
-	BlockHeight           int64          `json:"block_height"`
-	PubKey                common.PubKey  `json:"pub_key"`
-	Coins                 common.Coins   `json:"coins"`
-	Type                  VaultType      `json:"type"`
-	Status                VaultStatus    `json:"status"`
-	StatusSince           int64          `json:"status_since"`
-	Membership            common.PubKeys `json:"membership"`
-	Chains                common.Chains  `json:"chains"`
-	InboundTxCount        int64          `json:"inbound_tx_count"`
-	OutboundTxCount       int64          `json:"outbound_tx_count"`
-	PendingTxBlockHeights []int64        `json:"pending_tx_heights"`
-}
-
 // Vaults a list of vault
 type Vaults []Vault
 
 // NewVault create a new instance of vault
-func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKey, chains common.Chains) Vault {
+func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKey, chains []string) Vault {
 	return Vault{
 		BlockHeight: height,
 		StatusSince: height,
@@ -63,6 +26,30 @@ func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKe
 	}
 }
 
+func (v Vault) GetChains() common.Chains {
+	chains := make(common.Chains, 0)
+	for _, c := range v.Chains {
+		chain, err := common.NewChain(c)
+		if err != nil {
+			continue
+		}
+		chains = append(chains, chain)
+	}
+	return chains
+}
+
+func (v Vault) GetMembership() common.PubKeys {
+	pubkeys := make(common.PubKeys, 0)
+	for _, pk := range v.Membership {
+		pk, err := common.NewPubKey(pk)
+		if err != nil {
+			continue
+		}
+		pubkeys = append(pubkeys, pk)
+	}
+	return pubkeys
+}
+
 // IsType determine whether the vault is given type
 func (v Vault) IsType(vtype VaultType) bool {
 	return v.Type == vtype
@@ -70,12 +57,12 @@ func (v Vault) IsType(vtype VaultType) bool {
 
 // IsAsgard check whether the vault is Asgard vault, it returns true when it is an asgard vault
 func (v Vault) IsAsgard() bool {
-	return v.IsType(AsgardVault)
+	return v.IsType(VaultType_AsgardVault)
 }
 
 // IsYggdrasil return true when the vault is YggdrasilVault
 func (v Vault) IsYggdrasil() bool {
-	return v.IsType(YggdrasilVault)
+	return v.IsType(VaultType_YggdrasilVault)
 }
 
 // IsEmpty returns true when the vault pubkey is empty
@@ -85,7 +72,7 @@ func (v Vault) IsEmpty() bool {
 
 // Contains check whether the given pubkey is party of the originally node who create this vault
 func (v Vault) Contains(pubkey common.PubKey) bool {
-	return v.Membership.Contains(pubkey)
+	return v.GetMembership().Contains(pubkey)
 }
 
 func (v Vault) MembershipEquals(pks common.PubKeys) bool {
@@ -178,7 +165,7 @@ func (v Vault) GetCoin(asset common.Asset) common.Coin {
 // GetMembers return members who's address exist in the given list
 func (v Vault) GetMembers(activeObservers []cosmos.AccAddress) (common.PubKeys, error) {
 	signers := common.PubKeys{}
-	for _, k := range v.Membership {
+	for _, k := range v.GetMembership() {
 		addr, err := k.GetThorAddress()
 		if err != nil {
 			return common.PubKeys{}, fmt.Errorf("fail to get thor address: %w", err)
@@ -207,8 +194,8 @@ func (v *Vault) addFund(coin common.Coin) {
 		}
 	}
 
-	if !v.Chains.Has(coin.Asset.Chain) {
-		v.Chains = append(v.Chains, coin.Asset.Chain)
+	if !v.GetChains().Has(coin.Asset.Chain) {
+		v.Chains = append(v.Chains, coin.Asset.Chain.String())
 	}
 
 	v.Coins = append(v.Coins, coin)

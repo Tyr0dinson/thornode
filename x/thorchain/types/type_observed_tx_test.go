@@ -87,19 +87,19 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	trusts3 := NodeAccounts{
 		NodeAccount{
 			NodeAddress:         acc1,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet1,
 			ValidatorConsPubKey: accConsPub1,
 		},
 		NodeAccount{
 			NodeAddress:         acc2,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet2,
 			ValidatorConsPubKey: accConsPub2,
 		},
 		NodeAccount{
 			NodeAddress:         acc3,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet3,
 			ValidatorConsPubKey: accConsPub3,
 		},
@@ -107,25 +107,25 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	trusts4 := NodeAccounts{
 		NodeAccount{
 			NodeAddress:         acc1,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet1,
 			ValidatorConsPubKey: accConsPub1,
 		},
 		NodeAccount{
 			NodeAddress:         acc2,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet2,
 			ValidatorConsPubKey: accConsPub2,
 		},
 		NodeAccount{
 			NodeAddress:         acc3,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet3,
 			ValidatorConsPubKey: accConsPub3,
 		},
 		NodeAccount{
 			NodeAddress:         acc4,
-			Status:              Active,
+			Status:              NodeStatus_Active,
 			PubKeySet:           accPubKeySet4,
 			ValidatorConsPubKey: accConsPub4,
 		},
@@ -216,10 +216,10 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 
 func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	activeNodes := NodeAccounts{
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
 	}
 	tx1 := GetRandomTx()
 	tx1.Memo = "whatever"
@@ -270,10 +270,10 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 
 func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	activeNodes := NodeAccounts{
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
-		GetRandomNodeAccount(Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
+		GetRandomNodeAccount(NodeStatus_Active),
 	}
 	tx1 := GetRandomTx()
 	tx1.Memo = "whatever"

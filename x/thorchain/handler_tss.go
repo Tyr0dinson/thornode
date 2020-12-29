@@ -108,12 +108,12 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 	// have anything in it either, thus override it with msg.PubKeys as well
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
-		voter.PubKeys = msg.GetPubKeys()
+		voter.PubKeys = msg.PubKeys
 	}
 	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
 	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, msg.Signer)
-	if !voter.Sign(msg.Signer, msg.GetChains()) {
+	if !voter.Sign(msg.Signer, msg.Chains) {
 		ctx.Logger().Info("signer already signed MsgTssPool", "signer", msg.Signer.String(), "txid", msg.ID)
 		return &cosmos.Result{}, nil
 
@@ -128,13 +128,13 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 	if voter.BlockHeight == 0 {
 		voter.BlockHeight = common.BlockHeight(ctx)
 		h.keeper.SetTssVoter(ctx, voter)
-		h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Signers...)
+		h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.GetSigners()...)
 		if msg.IsSuccess() {
 			vaultType := YggdrasilVault
 			if msg.KeygenType == AsgardKeygen {
 				vaultType = AsgardVault
 			}
-			vault := NewVault(common.BlockHeight(ctx), ActiveVault, vaultType, voter.PoolPubKey, voter.ConsensusChains())
+			vault := NewVault(common.BlockHeight(ctx), ActiveVault, vaultType, voter.PoolPubKey, voter.ConsensusChains().Strings())
 			vault.Membership = voter.PubKeys
 
 			if err := h.keeper.SetVault(ctx, vault); err != nil {

@@ -187,7 +187,7 @@ func queryAsgardVaults(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error)
 
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	var result []QueryChainAddress
-	allChains := append(vault.Chains, common.THORChain)
+	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
 		addr, err := vault.PubKey.GetAddress(c)
 		if err != nil {
@@ -359,7 +359,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	// select vault that is most secure
 	vault := keeper.GetMostSecure(ctx, active, signingTransactionPeriod)
 
-	chains := vault.Chains
+	chains := vault.GetChains()
 
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}
@@ -734,7 +734,7 @@ func queryKeygen(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.R
 		// only return those keygen contains the request pub key
 		newKeygenBlock := NewKeygenBlock(keygenBlock.Height)
 		for _, keygen := range keygenBlock.Keygens {
-			if keygen.Members.Contains(pk) {
+			if keygen.GetMembers().Contains(pk) {
 				newKeygenBlock.Keygens = append(newKeygenBlock.Keygens, keygen)
 			}
 		}
@@ -886,7 +886,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			return nil, fmt.Errorf("fail to get active asgard: %w", err)
 		}
 		for _, vault := range asgards {
-			chains = vault.Chains.Distinct()
+			chains = vault.GetChains().Distinct()
 			break
 		}
 	}

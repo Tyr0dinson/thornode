@@ -32,8 +32,8 @@ func GetRandomNodeAccount(status NodeStatus) NodeAccount {
 	addr, _ := pubKeys.Secp256k1.GetThorAddress()
 	bondAddr := common.Address(addr.String())
 	na := NewNodeAccount(addr, status, pubKeys, k, cosmos.NewUint(100*common.One), bondAddr, 1)
-	na.Version = constants.SWVersion
-	if na.Status == Active {
+	na.Version = constants.SWVersion.String()
+	if na.Status == NodeStatus_Active {
 		na.ActiveBlockHeight = 10
 		na.Bond = cosmos.NewUint(1000 * common.One)
 	}
@@ -115,7 +115,7 @@ func GetRandomPubKeySet() common.PubKeySet {
 }
 
 func GetRandomVault() Vault {
-	return NewVault(32, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain})
+	return NewVault(32, VaultStatus_ActiveVault, VaultType_AsgardVault, GetRandomPubKey(), []string{common.BNBChain.String()})
 }
 
 func GetRandomPubKey() common.PubKey {

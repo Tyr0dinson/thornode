@@ -96,7 +96,7 @@ func (ymgr YggMgrV1) Fund(ctx cosmos.Context, mgr Manager, constAccessor constan
 			return fmt.Errorf("fail to get yggdrasil: %w", err)
 		}
 		ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, nil)
-		ygg.Membership = append(ygg.Membership, na.PubKeySet.Secp256k1)
+		ygg.Membership = append(ygg.Membership, na.PubKeySet.Secp256k1.String())
 
 		if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
 			return fmt.Errorf("fail to create yggdrasil pool: %w", err)

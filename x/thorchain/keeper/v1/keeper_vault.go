@@ -51,7 +51,7 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 	for i, vault := range vaults {
 		// get total bond
 		totalBond := cosmos.ZeroUint()
-		for _, pk := range vault.Membership {
+		for _, pk := range vault.GetMembership() {
 			na, err := k.GetNodeAccountByPubKey(ctx, pk)
 			if err != nil {
 				ctx.Logger().Error("failed to get node account by pubkey", "error", err)

@@ -105,7 +105,7 @@ func (h TssKeysignHandler) handleV1(ctx cosmos.Context, msg MsgTssKeysignFail, v
 	}
 	ctx.Logger().Info("has tss keysign consensus!!")
 
-	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Signers...)
+	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.GetSigners()...)
 	voter.Signers = nil
 	h.keeper.SetTssKeysignFailVoter(ctx, voter)
 

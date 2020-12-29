@@ -33,7 +33,7 @@ func (s *TypeTssKeysignFailTestSuite) TestVoter(c *C) {
 
 	c.Check(tss.HasConsensus(nil), Equals, false)
 	nas := NodeAccounts{
-		NodeAccount{NodeAddress: addr, Status: Active},
+		NodeAccount{NodeAddress: addr, Status: NodeStatus_Active},
 	}
 	c.Check(tss.HasConsensus(nas), Equals, true)
 }

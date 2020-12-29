@@ -23,19 +23,20 @@ const (
 	MaxWithdrawBasisPoints = types.MaxWithdrawBasisPoints
 
 	// Vaults
-	AsgardVault    = types.AsgardVault
-	YggdrasilVault = types.YggdrasilVault
-	ActiveVault    = types.ActiveVault
-	InactiveVault  = types.InactiveVault
-	RetiringVault  = types.RetiringVault
+	AsgardVault    = types.VaultType_AsgardVault
+	YggdrasilVault = types.VaultType_YggdrasilVault
+	UnknownVault   = types.VaultType_UnknownVault
+	ActiveVault    = types.VaultStatus_ActiveVault
+	InactiveVault  = types.VaultStatus_InactiveVault
+	RetiringVault  = types.VaultStatus_RetiringVault
 
 	// Node status
-	NodeActive      = types.Active
-	NodeWhiteListed = types.WhiteListed
-	NodeDisabled    = types.Disabled
-	NodeReady       = types.Ready
-	NodeStandby     = types.Standby
-	NodeUnknown     = types.Unknown
+	NodeActive      = types.NodeStatus_Active
+	NodeWhiteListed = types.NodeStatus_Whitelisted
+	NodeDisabled    = types.NodeStatus_Disabled
+	NodeReady       = types.NodeStatus_Ready
+	NodeStandby     = types.NodeStatus_Standby
+	NodeUnknown     = types.NodeStatus_Unknown
 
 	// Bond type
 	BondPaid     = types.BondType_bond_paid

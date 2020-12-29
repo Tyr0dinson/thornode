@@ -2,12 +2,6 @@ package types
 
 import "fmt"
 
-// TxMarker is a structure to store tx memo
-type TxMarker struct {
-	Height int64  `json:"height"`
-	Memo   string `json:"memo"`
-}
-
 // TxMarkers a list of TxMarker
 type TxMarkers []TxMarker
 
