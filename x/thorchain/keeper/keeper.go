@@ -21,7 +21,6 @@ type Keeper interface {
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
 	SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coins) error
 	SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coins) error
-	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
 	SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coins) error
 	MintToModule(ctx cosmos.Context, module string, coin common.Coin) error
 	BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error
@@ -31,6 +30,10 @@ type Keeper interface {
 	GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins
 	HasCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) bool
 	GetAccount(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Account
+
+	// passthrough funcs
+	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
+	AddCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) error
 
 	// Keeper Interfaces
 	KeeperPool

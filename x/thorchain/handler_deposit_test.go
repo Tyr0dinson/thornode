@@ -46,7 +46,6 @@ func (s *HandlerDepositSuite) TestValidate(c *C) {
 
 func (s *HandlerDepositSuite) TestHandle(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	banker := k.CoinKeeper()
 	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
 		constants.OutboundTransactionFee: 1000_000,
 	}, map[constants.ConstantName]bool{}, map[constants.ConstantName]string{})
@@ -64,7 +63,7 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 
 	funds, err := common.NewCoin(common.RuneNative, cosmos.NewUint(300*common.One)).Native()
 	c.Assert(err, IsNil)
-	_, err = banker.AddCoins(ctx, addr, cosmos.NewCoins(funds))
+	err = k.AddCoins(ctx, addr, cosmos.NewCoins(funds))
 	c.Assert(err, IsNil)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
@@ -74,7 +73,7 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	msg := NewMsgDeposit(coins, "ADD:BNB.BNB", addr)
 
-	_, err = handler.handle(ctx, msg, constants.SWVersion, constAccessor)
+	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, IsNil)
 	// ensure observe tx had been saved
 	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
@@ -83,7 +82,7 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 	voter, err := k.GetObservedTxInVoter(ctx, txID)
 	c.Assert(err, IsNil)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
-	c.Assert(voter.Tx.Status, Equals, types.Done)
+	c.Assert(voter.Tx.Status, Equals, types.Status_done)
 }
 
 type HandlerDepositTestHelper struct {
@@ -143,7 +142,7 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 			name: "invalid memo should refund",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg {
 				FundAccount(c, ctx, helper.Keeper, acctAddr, 100)
-				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.THORChain})
+				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.THORChain}.Strings())
 				c.Check(helper.Keeper.SetVault(ctx, vault), IsNil)
 				return NewMsgDeposit(common.Coins{
 					common.NewCoin(common.RuneNative, cosmos.NewUint(2*common.One)),
@@ -152,11 +151,10 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerDepositTestHelper, name string) {
 				c.Check(err, IsNil, Commentf(name))
 				c.Check(result, NotNil, Commentf(name))
-				banker := helper.Keeper.CoinKeeper()
 				coins := common.NewCoin(common.RuneNative, cosmos.NewUint(98*common.One))
 				coin, err := coins.Native()
 				c.Check(err, IsNil)
-				hasCoin := banker.HasCoins(ctx, acctAddr, cosmos.NewCoins().Add(coin))
+				hasCoin := helper.Keeper.HasCoins(ctx, acctAddr, cosmos.NewCoins().Add(coin))
 				c.Check(hasCoin, Equals, true)
 			},
 		},
