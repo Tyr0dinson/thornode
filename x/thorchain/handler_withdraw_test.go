@@ -218,7 +218,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	testCases := []struct {
 		name           string
-		msg            MsgWithdrawLiquidity
+		msg            *MsgWithdrawLiquidity
 		expectedResult error
 	}{
 		{

@@ -42,7 +42,7 @@ func (s *QuerierSuite) SetUpTest(c *C) {
 
 	params := *hd.NewFundraiserParams(0, 118, 0)
 	hdPath := params.String()
-	_, err := kb.CreateAccount(username, "industry segment educate height inject hover bargain offer employ select speak outer video tornado story slow chief object junk vapor venue large shove behave", password, password, hdPath, ckeys.Secp256k1)
+	_, err := kb.NewAccount(username, "industry segment educate height inject hover bargain offer employ select speak outer video tornado story slow chief object junk vapor venue large shove behave", password, hdPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.kb = KeybaseStore{
 		SignerName:   username,
@@ -93,7 +93,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
-	asgard := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain})
+	asgard := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings())
 	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
 
 	poolBNB := NewPool()

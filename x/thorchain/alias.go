@@ -238,6 +238,8 @@ type (
 	Jail                           = types.Jail
 	RagnarokWithdrawPosition       = types.RagnarokWithdrawPosition
 	ChainContract                  = types.ChainContract
+	Blame                          = types.Blame
+	Node                           = types.Node
 
 	// Memo
 	SwapMemo              = mem.SwapMemo
