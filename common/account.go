@@ -1,7 +1,7 @@
 package common
 
 import (
-	"github.com/binance-chain/go-sdk/common/types"
+	"gitlab.com/thorchain/binance-sdk/common/types"
 )
 
 type AccountCoin struct {

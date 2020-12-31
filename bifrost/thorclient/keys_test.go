@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
@@ -36,7 +36,7 @@ func (*KeysSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	buf.WriteString(signerPasswordForTest)
 	buf.WriteByte('\n')
-	kb, err := cKeys.NewKeyring(sdk.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
+	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
 	c.Assert(err, IsNil)
 	info, _, err := kb.CreateMnemonic(signerNameForTest, cKeys.English, signerPasswordForTest, cKeys.Secp256k1)
 	c.Logf("name:%s", info.GetName())

@@ -5,7 +5,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
@@ -28,12 +28,13 @@ func SetupThorchainForTest(c *C) (config.ClientConfiguration, cKeys.Info, cKeys.
 		ChainHomeFolder: "",
 	}
 	kb := keys.NewInMemoryKeyBase()
+	kb := ckeys.NewInMemory()
 
 	params := *hd.NewFundraiserParams(0, sdk.CoinType, 0)
 	hdPath := params.String()
 
 	// create a consistent user
-	info, err := kb.CreateAccount(cfg.SignerName, "industry segment educate height inject hover bargain offer employ select speak outer video tornado story slow chief object junk vapor venue large shove behave", cfg.SignerPasswd, cfg.SignerPasswd, hdPath, cKeys.Secp256k1)
+	info, err := kb.NewAccount(cfg.SignerName, "industry segment educate height inject hover bargain offer employ select speak outer video tornado story slow chief object junk vapor venue large shove behave", cfg.SignerPasswd, hdPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
 
 	return cfg, info, kb

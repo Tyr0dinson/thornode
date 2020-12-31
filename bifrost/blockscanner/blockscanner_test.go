@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/client/keys"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -15,25 +13,10 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/x/thorchain"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var m *metrics.Metrics
-
-func SetupThorchainForTest(c *C) (config.ClientConfiguration, cKeys.Info, cKeys.Keybase) {
-	thorchain.SetupConfigForTest()
-	cfg := config.ClientConfiguration{
-		ChainID:         "thorchain",
-		ChainHost:       "localhost",
-		SignerName:      "bob",
-		SignerPasswd:    "password",
-		ChainHomeFolder: ".",
-	}
-	kb := keys.NewInMemoryKeyBase()
-	info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
-	c.Assert(err, IsNil)
-	return cfg, info, kb
-}
 
 type BlockScannerTestSuite struct {
 	m      *metrics.Metrics
@@ -54,7 +37,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	})
 	c.Assert(m, NotNil)
 	c.Assert(err, IsNil)
-	cfg, info, kb := SetupThorchainForTest(c)
+	cfg, info, kb := cosmos.SetupThorchainForTest(c)
 	s.cfg = cfg
 
 	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd))

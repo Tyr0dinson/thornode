@@ -4,9 +4,9 @@ import (
 	"errors"
 	"strings"
 
-	btypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/types"
+	btypes "gitlab.com/thorchain/binance-sdk/common/types"
 )
 
 var (

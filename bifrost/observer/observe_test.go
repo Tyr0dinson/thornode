@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	ctypes "github.com/binance-chain/go-sdk/common/types"
-	txType "github.com/binance-chain/go-sdk/types/tx"
-	"github.com/cosmos/cosmos-sdk/client/keys"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
+	txType "gitlab.com/thorchain/binance-sdk/types/tx"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -179,8 +179,8 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
-	kb := keys.NewInMemoryKeyBase()
-	info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
+	kb := ckeys.NewInMemory()
+	info, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
 	c.Assert(s.thorKeys, NotNil)

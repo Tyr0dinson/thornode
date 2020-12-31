@@ -7,11 +7,11 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	ctypes "github.com/binance-chain/go-sdk/common/types"
-	"github.com/binance-chain/go-sdk/keys"
-	"github.com/binance-chain/go-sdk/types/tx"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
+	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
+	"gitlab.com/thorchain/binance-sdk/keys"
+	"gitlab.com/thorchain/binance-sdk/types/tx"
 
 	"gitlab.com/thorchain/thornode/common"
 )

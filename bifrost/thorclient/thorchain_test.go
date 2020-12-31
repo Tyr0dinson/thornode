@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/client/keys"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
+	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -139,8 +139,8 @@ func (s *ThorchainSuite) TestSign(c *C) {
 
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 	testFunc := func(cfg config.ClientConfiguration, errChecker, sbChecker Checker) {
-		kb := keys.NewInMemoryKeyBase()
-		info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
+		kb := ckeys.NewInMemory()
+		info, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
 		c.Assert(err, IsNil)
 		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, info, cfg.SignerPasswd))
 		c.Assert(err, errChecker)

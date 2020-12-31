@@ -1,9 +1,9 @@
 package common
 
 import (
-	btypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	btypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 )
 
