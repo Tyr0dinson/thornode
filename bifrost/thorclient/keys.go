@@ -8,9 +8,10 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/tendermint/tendermint/crypto"
 )
 
 const (
@@ -22,16 +23,14 @@ const (
 type Keys struct {
 	signerName string
 	password   string // TODO this is a bad way , need to fix it
-	signerInfo ckeys.Info
 	kb         ckeys.Keyring
 }
 
 // NewKeysWithKeybase create a new instance of Keys
-func NewKeysWithKeybase(kb ckeys.Keyring, signerInfo ckeys.Info, password string) *Keys {
+func NewKeysWithKeybase(kb ckeys.Keyring, name, password string) *Keys {
 	return &Keys{
-		signerName: signerInfo.GetName(),
+		signerName: name,
 		password:   password,
-		signerInfo: signerInfo,
 		kb:         kb,
 	}
 }
@@ -59,7 +58,7 @@ func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyr
 		os.Stdin = oldStdIn
 	}()
 	os.Stdin = nil
-	si, err := kb.Get(signerName)
+	si, err := kb.Key(signerName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get signer info(%s): %w", signerName, err)
 	}
@@ -77,17 +76,27 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
 	}
 
-	return ckeys.NewKeyring(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader)
+	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader)
 }
 
 // GetSignerInfo return signer info
 func (k *Keys) GetSignerInfo() ckeys.Info {
-	return k.signerInfo
+	info, err := k.kb.Key(k.signerName)
+	if err != nil {
+		panic(err)
+	}
+	return info
 }
 
 // GetPrivateKey return the private key
-func (k *Keys) GetPrivateKey() (crypto.PrivKey, error) {
-	return k.kb.ExportPrivateKeyObject(k.signerName, k.password)
+func (k *Keys) GetPrivateKey() (cryptotypes.PrivKey, error) {
+	// return k.kb.ExportPrivateKeyObject(k.signerName)
+	privKeyArmor, err := k.kb.ExportPubKeyArmor(k.signerName)
+	if err != nil {
+		return nil, err
+	}
+
+	return legacy.PrivKeyFromBytes([]byte(privKeyArmor))
 }
 
 // GetKeybase return the keybase

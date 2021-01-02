@@ -19,7 +19,7 @@ import (
 )
 
 // NewQuerier is the module level router for state queries
-func NewQuerier(keeper keeper.Keeper, kbs KeybaseStore) cosmos.Querier {
+func NewQuerier(keeper keeper.Keeper, kbs cosmos.KeybaseStore) cosmos.Querier {
 	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) (res []byte, err error) {
 		switch path[0] {
 		case q.QueryPool.Key:
@@ -704,7 +704,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper ke
 	return res, nil
 }
 
-func queryKeygen(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("block height not provided")
 	}
@@ -765,7 +765,7 @@ func queryKeygen(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.R
 	return res, nil
 }
 
-func queryKeysign(ctx cosmos.Context, kbs KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("block height not provided")
 	}

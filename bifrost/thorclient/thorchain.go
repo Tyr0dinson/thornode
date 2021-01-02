@@ -13,13 +13,16 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/tss/go-tss/blame"
+	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -52,7 +55,7 @@ const (
 // ThorchainBridge will be used to send tx to thorchain
 type ThorchainBridge struct {
 	logger        zerolog.Logger
-	cdc           *codec.Codec
+	cdc           *codec.LegacyAmino
 	cfg           config.ClientConfiguration
 	keys          *Keys
 	errCounter    *prometheus.CounterVec
@@ -92,22 +95,38 @@ func NewThorchainBridge(cfg config.ClientConfiguration, m *metrics.Metrics, k *K
 }
 
 // MakeCodec creates codec
-func MakeCodec() *codec.Codec {
-	cdc := codec.New()
+func MakeCodec() *codec.LegacyAmino {
+	cdc := codec.NewLegacyAmino()
+	banktypes.RegisterLegacyAminoCodec(cdc)
+	authtypes.RegisterLegacyAminoCodec(cdc)
 	cosmos.RegisterCodec(cdc)
-	stypes.RegisterCodec(cdc)
-	codec.RegisterCrypto(cdc)
 	return cdc
 }
 
-func makeStdTx(msgs []cosmos.Msg) *authtypes.StdTx {
-	stdTx := authtypes.NewStdTx(
+func makeStdTx(msgs []cosmos.Msg) *legacytx.StdTx {
+	stdTx := legacytx.NewStdTx(
 		msgs,
-		authtypes.NewStdFee(5000000000000000, nil), // fee
+		legacytx.NewStdFee(5000000000000000, nil), // fee
 		nil, // signatures
 		"",  // memo
 	)
 	return &stdTx
+}
+
+func (b *ThorchainBridge) GetContext() client.Context {
+	ctx := client.Context{}
+	ctx = ctx.WithKeyring(b.keys.GetKeybase())
+	ctx = ctx.WithChainID("thorchain")
+	ctx = ctx.WithHomeDir(b.cfg.ChainHomeFolder)
+	ctx = ctx.WithFromName(b.cfg.SignerName)
+	ctx = ctx.WithFromAddress(b.keys.GetSignerInfo().GetAddress())
+	ctx = ctx.WithBroadcastMode("async")
+	client, err := rpchttp.New(b.cfg.ChainHost, "/websocket")
+	if err != nil {
+		panic(err)
+	}
+	ctx = ctx.WithClient(client)
+	return ctx
 }
 
 func (b *ThorchainBridge) getWithPath(path string) ([]byte, int, error) {
@@ -195,35 +214,35 @@ func (b *ThorchainBridge) GetConfig() config.ClientConfiguration {
 }
 
 // PostKeysignFailure generate and  post a keysign fail tx to thorchan
-func (b *ThorchainBridge) PostKeysignFailure(blame blame.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+func (b *ThorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	start := time.Now()
 	defer func() {
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
 	msg := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, b.keys.GetSignerInfo().GetAddress(), pubkey)
-	stdTx := authtypes.NewStdTx(
+	stdTx := legacytx.NewStdTx(
 		[]cosmos.Msg{msg},
-		authtypes.NewStdFee(100000000, nil), // fee
-		nil,                                 // signatures
-		"",                                  // memo
+		legacytx.NewStdFee(100000000, nil), // fee
+		nil,                                // signatures
+		"",                                 // memo
 	)
 	return b.Broadcast(stdTx, types.TxSync)
 }
 
 // GetErrataStdTx get errata tx from params
-func (b *ThorchainBridge) GetErrataStdTx(txID common.TxID, chain common.Chain) (*authtypes.StdTx, error) {
+func (b *ThorchainBridge) GetErrataStdTx(txID common.TxID, chain common.Chain) (*legacytx.StdTx, error) {
 	msg := stypes.NewMsgErrataTx(txID, chain, b.keys.GetSignerInfo().GetAddress())
 	return makeStdTx([]cosmos.Msg{msg}), nil
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, blame blame.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (*authtypes.StdTx, error) {
-	msg := stypes.NewMsgTssPool(inputPks, poolPubKey, keygenType, height, blame, chains, b.keys.GetSignerInfo().GetAddress(), keygenTime)
+func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (*legacytx.StdTx, error) {
+	msg := stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
 	return makeStdTx([]cosmos.Msg{msg}), nil
 }
 
 // GetObservationsStdTx get observations tx from txIns
-func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) (*authtypes.StdTx, error) {
+func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) (*legacytx.StdTx, error) {
 	if len(txIns) == 0 {
 		b.errCounter.WithLabelValues("nothing_to_sign", "").Inc()
 		return nil, errors.New("nothing to be signed")
@@ -286,7 +305,7 @@ func (b *ThorchainBridge) EnsureNodeWhitelisted() error {
 	if err != nil {
 		return fmt.Errorf("failed to get node status: %w", err)
 	}
-	if status == stypes.Disabled || status == stypes.Unknown {
+	if status == stypes.NodeStatus_Disabled || status == stypes.NodeStatus_Unknown {
 		return fmt.Errorf("node account status %s , will not be able to forward transaction to thorchain", status)
 	}
 	return nil
@@ -296,11 +315,11 @@ func (b *ThorchainBridge) EnsureNodeWhitelisted() error {
 func (b *ThorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
 	bepAddr := b.keys.GetSignerInfo().GetAddress().String()
 	if len(bepAddr) == 0 {
-		return stypes.Unknown, errors.New("bep address is empty")
+		return stypes.NodeStatus_Unknown, errors.New("bep address is empty")
 	}
 	na, err := b.GetNodeAccount(bepAddr)
 	if err != nil {
-		return stypes.Unknown, fmt.Errorf("failed to get node status: %w", err)
+		return stypes.NodeStatus_Unknown, fmt.Errorf("failed to get node status: %w", err)
 	}
 	return na.Status, nil
 }
@@ -405,7 +424,7 @@ func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, trans
 		return common.BlankTxID, fmt.Errorf("failed to get node status: %w", err)
 	}
 
-	if nodeStatus != stypes.Active {
+	if nodeStatus != stypes.NodeStatus_Active {
 		return common.BlankTxID, nil
 	}
 	start := time.Now()
@@ -413,11 +432,11 @@ func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, trans
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
 	msg := stypes.NewMsgNetworkFee(height, chain, transactionSize, transactionRate, b.keys.GetSignerInfo().GetAddress())
-	stdTx := authtypes.NewStdTx(
+	stdTx := legacytx.NewStdTx(
 		[]cosmos.Msg{msg},
-		authtypes.NewStdFee(10000000000, nil), // fee
-		nil,                                   // signatures
-		"",                                    // memo
+		legacytx.NewStdFee(10000000000, nil), // fee
+		nil,                                  // signatures
+		"",                                   // memo
 	)
 	return b.Broadcast(stdTx, types.TxSync)
 }

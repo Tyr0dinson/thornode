@@ -24,7 +24,7 @@ ldflags = -X gitlab.com/thorchain/thornode/constants.Version=$(VERSION) \
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -a
 TEST_BUILD_FLAGS :=  -tags mocknet -a
 
-BINARIES=./cmd/thorcli ./cmd/thord ./cmd/bifrost ./tools/generate
+BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
 
 # variables default for healthcheck against full stack in docker
 CHAIN_API?=localhost:1317

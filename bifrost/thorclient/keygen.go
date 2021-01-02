@@ -37,12 +37,12 @@ func (b *ThorchainBridge) GetKeygenBlock(blockHeight int64, pk string) (types.Ke
 		return types.KeygenBlock{}, fmt.Errorf("fail to marshal keygen block to json: %w", err)
 	}
 
-	pubKey := b.keys.signerInfo.GetPubKey()
+	pubKey := b.keys.GetSignerInfo().GetPubKey()
 	s, err := base64.StdEncoding.DecodeString(query.Signature)
 	if err != nil {
 		return types.KeygenBlock{}, errors.New("invalid keygen signature: cannot decode signature")
 	}
-	if !pubKey.VerifyBytes(buf, s) {
+	if !pubKey.VerifySignature(buf, s) {
 		return types.KeygenBlock{}, errors.New("invalid keygen signature: bad signature")
 	}
 

@@ -94,12 +94,12 @@ type AppModule struct {
 	keeper       keeper.Keeper
 	coinKeeper   bankkeeper.Keeper
 	mgr          *Mgrs
-	keybaseStore KeybaseStore
+	keybaseStore cosmos.KeybaseStore
 }
 
 // NewAppModule creates a new AppModule Object
 func NewAppModule(k keeper.Keeper, bankKeeper bankkeeper.Keeper) AppModule {
-	kb, err := getKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
+	kb, err := cosmos.GetKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
 	if err != nil {
 		panic(err)
 	}
