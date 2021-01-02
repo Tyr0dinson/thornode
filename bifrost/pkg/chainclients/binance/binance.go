@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/codec"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -38,7 +39,7 @@ import (
 type Binance struct {
 	logger          zerolog.Logger
 	cfg             config.ChainConfiguration
-	cdc             *codec.Codec
+	cdc             *codec.LegacyAmino
 	chainID         string
 	isTestNet       bool
 	client          *http.Client
@@ -63,7 +64,11 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
-	pk, err := common.NewPubKeyFromCrypto(priv.PubKey())
+	temp, err := cryptocodec.ToTmPubKeyInterface(priv.PubKey())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get tm pub key: %w", err)
+	}
+	pk, err := common.NewPubKeyFromCrypto(temp)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pub key: %w", err)
 	}

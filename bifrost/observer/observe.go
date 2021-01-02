@@ -404,7 +404,7 @@ func (o *Observer) signAndSendToThorchain(txIn types.TxIn) error {
 	if err != nil {
 		return fmt.Errorf("failed to get node status: %w", err)
 	}
-	if nodeStatus != stypes.Active {
+	if nodeStatus != stypes.NodeStatus_Active {
 		return nil
 	}
 	txs, err := o.getThorchainTxIns(txIn)

@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/tss/go-tss/blame"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
@@ -78,7 +77,7 @@ func NewSigner(cfg config.SignerConfiguration,
 		time.Sleep(constants.ThorchainBlockTime)
 		fmt.Println("Waiting for node account to be registered...")
 	}
-	for _, item := range na.SignerMembership {
+	for _, item := range na.GetSignerMembership() {
 		pubkeyMgr.AddPubKey(item, true)
 	}
 	if na.PubKeySet.Secp256k1.IsEmpty() {
@@ -254,11 +253,11 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 			for _, keygenReq := range keygenBlock.Keygens {
 				// Add pubkeys to pubkey manager for monitoring...
 				// each member might become a yggdrasil pool
-				for _, pk := range keygenReq.Members {
+				for _, pk := range keygenReq.GetMembers() {
 					s.pubkeyMgr.AddPubKey(pk, false)
 				}
 				keygenStart := time.Now()
-				pubKey, blame, err := s.tssKeygen.GenerateNewKey(keygenReq.Members)
+				pubKey, blame, err := s.tssKeygen.GenerateNewKey(keygenReq.GetMembers())
 				if !blame.IsEmpty() {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)
 					s.logger.Error().Err(err).Msg("Blame")
@@ -272,7 +271,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 					s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
 				}
 
-				if err := s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.Members, keygenReq.Type, keygenTime); err != nil {
+				if err := s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime); err != nil {
 					s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 					s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 				}
@@ -281,7 +280,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 	}
 }
 
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame blame.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64) error {
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
 		common.THORChain,

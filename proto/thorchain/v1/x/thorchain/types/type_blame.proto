@@ -10,7 +10,7 @@ import "gogoproto/gogo.proto";
 
 message Node {
   string pubkey = 1;
-  bytes blame_date = 2;
+  bytes blame_data = 2;
   bytes blame_signature = 3;
 }
 

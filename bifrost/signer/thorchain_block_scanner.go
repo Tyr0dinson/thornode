@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -33,7 +32,6 @@ type ThorchainBlockScan struct {
 	m              *metrics.Metrics
 	errCounter     *prometheus.CounterVec
 	pubkeyMgr      pubkeymanager.PubKeyValidator
-	cdc            *codec.Codec
 }
 
 // NewThorchainBlockScan create a new instance of thorchain block scanner
@@ -55,7 +53,6 @@ func NewThorchainBlockScan(cfg config.BlockScannerConfiguration, scanStorage blo
 		thorchain:      thorchain,
 		errCounter:     m.GetCounterVec(metrics.ThorchainBlockScannerError),
 		pubkeyMgr:      pubkeyMgr,
-		cdc:            codec.New(),
 	}, nil
 }
 

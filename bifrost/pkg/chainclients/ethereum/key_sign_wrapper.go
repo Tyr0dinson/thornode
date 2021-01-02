@@ -2,15 +2,13 @@ package ethereum
 
 import (
 	"crypto/ecdsa"
-	"errors"
 	"fmt"
 	"math/big"
 
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ecrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/rs/zerolog"
-	"github.com/tendermint/tendermint/crypto"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
@@ -22,12 +20,8 @@ var (
 	eipSigner = etypes.NewEIP155Signer(big.NewInt(1))
 )
 
-func getETHPrivateKey(key crypto.PrivKey) (*ecdsa.PrivateKey, error) {
-	privKey, ok := key.(secp256k1.PrivKeySecp256k1)
-	if !ok {
-		return nil, errors.New("invalid private key type")
-	}
-	return ecrypto.ToECDSA(privKey[:])
+func getETHPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
+	return ecrypto.ToECDSA(key.Bytes())
 }
 
 // KeySignWrapper is a wrap of private key and also tss instance
@@ -91,7 +85,7 @@ func (w *KeySignWrapper) multiSig(tx *etypes.Transaction, poolPubKey string) ([]
 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
 	}
 
-	if pk.VerifyBytes(hash[:], sig) {
+	if pk.VerifySignature(hash[:], sig) {
 		w.logger.Info().Msg("we can successfully verify the bytes")
 	} else {
 		w.logger.Error().Msg("Oops! we cannot verify the bytes")

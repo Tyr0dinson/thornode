@@ -42,7 +42,7 @@ type PK struct {
 
 // PubKeyManager it manages a list of pubkeys
 type PubKeyManager struct {
-	cdc             *codec.Codec
+	cdc             *codec.LegacyAmino
 	thorchainBridge *thorclient.ThorchainBridge
 	pubkeys         []PK
 	rwMutex         *sync.RWMutex
@@ -198,7 +198,7 @@ func (pkm *PubKeyManager) FetchPubKeys() {
 	}
 
 	for _, vault := range vaults {
-		if vault.Membership.Contains(pkm.GetNodePubKey()) {
+		if vault.GetMembership().Contains(pkm.GetNodePubKey()) {
 			pkm.AddPubKey(vault.PubKey, true)
 			pubkeys = append(pubkeys, vault.PubKey)
 		}
