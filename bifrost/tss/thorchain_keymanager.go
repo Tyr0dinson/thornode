@@ -1,15 +1,13 @@
 package tss
 
 import (
-	"github.com/binance-chain/go-sdk/keys"
-	"github.com/binance-chain/go-sdk/types/tx"
-
-	"gitlab.com/thorchain/thornode/common"
+	"github.com/tendermint/tendermint/crypto"
+	bcommon "gitlab.com/thorchain/thornode/bifrost/common"
 )
 
 // ThorchainKeyManager it is a composite of binance chain keymanager
 type ThorchainKeyManager interface {
-	keys.KeyManager
-	SignWithPool(msg tx.StdSignMsg, poolPubKey common.PubKey) ([]byte, error)
+	Sign(bcommon.StdSignMsg) ([]byte, error)
+	GetPrivKey() crypto.PrivKey
 	RemoteSign(msg []byte, poolPubKey string) ([]byte, error)
 }

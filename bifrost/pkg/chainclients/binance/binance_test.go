@@ -274,7 +274,7 @@ func (s *BinancechainSuite) TestSignTx(c *C) {
 	}, nil, b, s.m)
 	c.Assert(err2, IsNil)
 	c.Assert(b2, NotNil)
-	pk, err := common.NewPubKeyFromCrypto(b2.localKeyManager.GetPrivKey().PubKey())
+	pk, err := common.NewPubKeyFromCrypto(b2.privKey.PubKey())
 	c.Assert(err, IsNil)
 	txOut := getTxOutFromJsonInput(`{ "height": "1718", "hash": "", "tx_array": [ { "vault_pubkey":"tthorpub1addwnpepq2jgpsw2lalzuk7sgtmyakj7l6890f5cfpwjyfp8k4y4t7cw2vk8v2ch5uz","seq_no":"0","to": "tbnb1hzwfk6t3sqjfuzlr0ur9lj920gs37gg92gtay9", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk

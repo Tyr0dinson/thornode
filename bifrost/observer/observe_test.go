@@ -14,13 +14,12 @@ import (
 	"testing"
 	"time"
 
-	ctypes "github.com/binance-chain/go-sdk/common/types"
-	txType "github.com/binance-chain/go-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	. "gopkg.in/check.v1"
 
+	bcommon "gitlab.com/thorchain/thornode/bifrost/common"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
@@ -132,7 +131,6 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 
 	ns := strconv.Itoa(time.Now().Nanosecond())
 	types2.SetupConfigForTest()
-	ctypes.Network = ctypes.TestNetwork
 	c.Assert(os.Setenv("NET", "testnet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -202,10 +200,10 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(r, NotNil)
 	buf, err := hex.DecodeString(string(r))
 	c.Assert(err, IsNil)
-	var t txType.StdTx
-	err = txType.Cdc.UnmarshalBinaryLengthPrefixed(buf, &t)
+	var t bcommon.StdTx
+	err = bcommon.Cdc.UnmarshalBinaryLengthPrefixed(buf, &t)
 	c.Assert(err, IsNil)
-	bin, _ := txType.Cdc.MarshalBinaryLengthPrefixed(t)
+	bin, _ := bcommon.Cdc.MarshalBinaryLengthPrefixed(t)
 	encodedTx := base64.StdEncoding.EncodeToString(bin)
 	jsonData := `{ "jsonrpc": "2.0", "id": "", "result": { "txs": [ { "hash": "10C4E872A5DC842BE72AC8DE9C6A13F97DF6D345336F01B87EBA998F5A3BC36D", "height": "1", "tx": "` + encodedTx + `" } ], "total_count": "1" } }`
 

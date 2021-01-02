@@ -11,19 +11,15 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/binance-chain/go-sdk/common/types"
-	ctypes "github.com/binance-chain/go-sdk/common/types"
-	"github.com/binance-chain/go-sdk/keys"
-	ttypes "github.com/binance-chain/go-sdk/types"
-	"github.com/binance-chain/go-sdk/types/msg"
-	btx "github.com/binance-chain/go-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/tendermint/tendermint/crypto"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
+	bcommon "gitlab.com/thorchain/thornode/bifrost/common"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -43,8 +39,8 @@ type Binance struct {
 	isTestNet       bool
 	client          *http.Client
 	accts           *BinanceMetaDataStore
-	tssKeyManager   keys.KeyManager
-	localKeyManager *keyManager
+	tssKeyManager   *tss.KeySign
+	privKey         crypto.PrivKey
 	thorchainBridge *thorclient.ThorchainBridge
 	storage         *blockscanner.BlockScannerStorage
 	blockScanner    *blockscanner.BlockScanner
@@ -63,17 +59,13 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
-	pk, err := common.NewPubKeyFromCrypto(priv.PubKey())
+	// validate we can get the pubkey from the private key
+	_, err = common.NewPubKeyFromCrypto(priv.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pub key: %w", err)
 	}
 	if thorchainBridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
-	}
-	localKm := &keyManager{
-		privKey: priv,
-		addr:    ctypes.AccAddress(priv.PubKey().Address()),
-		pubkey:  pk,
 	}
 
 	b := &Binance{
@@ -83,7 +75,7 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 		accts:           NewBinanceMetaDataStore(),
 		client:          &http.Client{},
 		tssKeyManager:   tssKm,
-		localKeyManager: localKm,
+		privKey:         priv,
 		thorchainBridge: thorchainBridge,
 	}
 
@@ -177,12 +169,6 @@ func (b *Binance) checkIsTestNet() error {
 	b.chainID = status.Result.NodeInfo.Network
 	b.isTestNet = b.chainID == "Binance-Chain-Ganges"
 
-	if b.isTestNet {
-		types.Network = types.TestNetwork
-	} else {
-		types.Network = types.ProdNetwork
-	}
-
 	return nil
 }
 
@@ -194,43 +180,43 @@ func (b *Binance) GetHeight() (int64, error) {
 	return b.bnbScanner.GetHeight()
 }
 
-func (b *Binance) input(addr types.AccAddress, coins types.Coins) msg.Input {
-	return msg.Input{
+func (b *Binance) input(addr cosmos.AccAddress, coins cosmos.Coins) bcommon.Input {
+	return bcommon.Input{
 		Address: addr,
 		Coins:   coins,
 	}
 }
 
-func (b *Binance) output(addr types.AccAddress, coins types.Coins) msg.Output {
-	return msg.Output{
+func (b *Binance) output(addr cosmos.AccAddress, coins cosmos.Coins) bcommon.Output {
+	return bcommon.Output{
 		Address: addr,
 		Coins:   coins,
 	}
 }
 
-func (b *Binance) msgToSend(in []msg.Input, out []msg.Output) msg.SendMsg {
-	return msg.SendMsg{Inputs: in, Outputs: out}
+func (b *Binance) msgToSend(in []bcommon.Input, out []bcommon.Output) bcommon.SendMsg {
+	return bcommon.SendMsg{Inputs: in, Outputs: out}
 }
 
-func (b *Binance) createMsg(from types.AccAddress, fromCoins types.Coins, transfers []msg.Transfer) msg.SendMsg {
+func (b *Binance) createMsg(from cosmos.AccAddress, fromCoins cosmos.Coins, transfers []bcommon.Transfer) bcommon.SendMsg {
 	input := b.input(from, fromCoins)
-	output := make([]msg.Output, 0, len(transfers))
+	output := make([]bcommon.Output, 0, len(transfers))
 	for _, t := range transfers {
 		t.Coins = t.Coins.Sort()
 		output = append(output, b.output(t.ToAddr, t.Coins))
 	}
-	return b.msgToSend([]msg.Input{input}, output)
+	return b.msgToSend([]bcommon.Input{input}, output)
 }
 
-func (b *Binance) parseTx(fromAddr string, transfers []msg.Transfer) msg.SendMsg {
-	addr, err := types.AccAddressFromBech32(fromAddr)
+func (b *Binance) parseTx(fromAddr string, transfers []bcommon.Transfer) bcommon.SendMsg {
+	addr, err := cosmos.GetFromBech32(fromAddr, common.BNBChain.AddressPrefix(common.GetCurrentChainNetwork()))
 	if err != nil {
 		b.logger.Error().Str("address", fromAddr).Err(err).Msg("fail to parse address")
 	}
-	fromCoins := types.Coins{}
+	fromCoins := cosmos.Coins{}
 	for _, t := range transfers {
 		t.Coins = t.Coins.Sort()
-		fromCoins = fromCoins.Plus(t.Coins)
+		fromCoins = fromCoins.Add(t.Coins...)
 	}
 	return b.createMsg(addr, fromCoins, transfers)
 }
@@ -256,9 +242,9 @@ func (b *Binance) getGasFee(count uint64) common.Gas {
 
 // SignTx sign the the given TxArrayItem
 func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, error) {
-	var payload []msg.Transfer
+	var payload []bcommon.Transfer
 
-	toAddr, err := types.AccAddressFromBech32(tx.ToAddress.String())
+	toAddr, err := cosmos.GetFromBech32(tx.ToAddress.String(), common.BNBChain.AddressPrefix(common.GetCurrentChainNetwork()))
 	if err != nil {
 		return nil, fmt.Errorf("fail to parse account address(%s) :%w", tx.ToAddress.String(), err)
 	}
@@ -270,7 +256,7 @@ func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, er
 		gas := b.getGasFee(uint64(len(tx.Coins)))
 		gasCoin = gas.ToCoins()
 	}
-	var coins types.Coins
+	var coins cosmos.Coins
 	for _, coin := range tx.Coins {
 		// deduct gas coin
 		for _, gc := range gasCoin {
@@ -279,13 +265,13 @@ func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, er
 			}
 		}
 
-		coins = append(coins, types.Coin{
+		coins = append(coins, cosmos.Coin{
 			Denom:  coin.Asset.Symbol.String(),
-			Amount: int64(coin.Amount.Uint64()),
+			Amount: cosmos.NewInt(int64(coin.Amount.Uint64())),
 		})
 	}
 
-	payload = append(payload, msg.Transfer{
+	payload = append(payload, bcommon.Transfer{
 		ToAddr: toAddr,
 		Coins:  coins,
 	})
@@ -319,11 +305,11 @@ func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, er
 		b.accts.Set(tx.VaultPubKey, meta)
 	}
 	b.logger.Info().Int64("account_number", meta.AccountNumber).Int64("sequence_number", meta.SeqNumber).Int64("block height", meta.BlockHeight).Msg("account info")
-	signMsg := btx.StdSignMsg{
+	signMsg := bcommon.StdSignMsg{
 		ChainID:       b.chainID,
 		Memo:          tx.Memo,
-		Msgs:          []msg.Msg{sendMsg},
-		Source:        btx.Source,
+		Msgs:          []bcommon.Msg{sendMsg},
+		Source:        int64(0),
 		Sequence:      meta.SeqNumber,
 		AccountNumber: meta.AccountNumber,
 	}
@@ -342,16 +328,30 @@ func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, er
 	return hexTx, nil
 }
 
-func (b *Binance) sign(signMsg btx.StdSignMsg, poolPubKey common.PubKey) ([]byte, error) {
-	if b.localKeyManager.Pubkey().Equals(poolPubKey) {
-		return b.localKeyManager.Sign(signMsg)
+func (b *Binance) sign(signMsg bcommon.StdSignMsg, poolPubKey common.PubKey) ([]byte, error) {
+	pk, err := common.NewPubKeyFromCrypto(b.privKey.PubKey())
+	if err != nil {
+		return nil, err
 	}
-	k := b.tssKeyManager.(tss.ThorchainKeyManager)
-	return k.SignWithPool(signMsg, poolPubKey)
+	if pk.Equals(poolPubKey) {
+		sigBytes, err := b.privKey.Sign(signMsg.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		sig := bcommon.StdSignature{
+			AccountNumber: signMsg.AccountNumber,
+			Sequence:      signMsg.Sequence,
+			PubKey:        b.privKey.PubKey(),
+			Signature:     sigBytes,
+		}
+		newTx := bcommon.NewStdTx(signMsg.Msgs, []bcommon.StdSignature{sig}, signMsg.Memo, signMsg.Source, signMsg.Data)
+		return bcommon.Cdc.MarshalBinaryLengthPrefixed(&newTx)
+	}
+	return b.tssKeyManager.SignWithPool(signMsg, poolPubKey)
 }
 
 // signMsg is design to sign a given message until it success or the same message had been send out by other signer
-func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common.PubKey, thorchainHeight int64, txOutItem stypes.TxOutItem) ([]byte, error) {
+func (b *Binance) signMsg(signMsg bcommon.StdSignMsg, from string, poolPubKey common.PubKey, thorchainHeight int64, txOutItem stypes.TxOutItem) ([]byte, error) {
 	rawBytes, err := b.sign(signMsg, poolPubKey)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
@@ -375,13 +375,7 @@ func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common
 }
 
 func (b *Binance) GetAccount(pkey common.PubKey) (common.Account, error) {
-	addr := b.GetAddress(pkey)
-	address, err := types.AccAddressFromBech32(addr)
-	if err != nil {
-		b.logger.Error().Err(err).Msgf("fail to get parse address: %s", addr)
-		return common.Account{}, err
-	}
-	return b.GetAccountByAddress(address.String())
+	return b.GetAccountByAddress(b.GetAddress(pkey))
 }
 
 func (b *Binance) GetAccountByAddress(address string) (common.Account, error) {
@@ -433,13 +427,21 @@ func (b *Binance) GetAccountByAddress(address string) (common.Account, error) {
 		return common.Account{}, err
 	}
 
-	cdc := ttypes.NewCodec()
-	var acc types.AppAccount
-	err = cdc.UnmarshalBinaryBare(data, &acc)
+	var acc bcommon.AppAccount
+	err = bcommon.Cdc.UnmarshalBinaryBare(data, &acc)
 	if err != nil {
 		return common.Account{}, err
 	}
-	account := common.NewAccount(acc.BaseAccount.Sequence, acc.BaseAccount.AccountNumber, common.GetCoins(acc.BaseAccount.Coins), acc.Flags > 0)
+	coins := make(common.AccountCoins, len(acc.BaseAccount.Coins))
+	for i, c := range acc.BaseAccount.Coins {
+		coins[i] = common.NewAccountCoin(c.Denom, c.Amount)
+	}
+	account := common.NewAccount(
+		acc.BaseAccount.Sequence,
+		acc.BaseAccount.AccountNumber,
+		coins,
+		acc.Flags > 0,
+	)
 	return account, nil
 }
 

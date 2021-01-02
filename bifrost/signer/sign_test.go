@@ -240,7 +240,7 @@ func (s *SignSuite) TestHandleYggReturn_Success_FeeSingleton(c *C) {
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
 					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
+						common.NewAccountCoin("bnb", 1000000),
 					},
 				},
 			},
@@ -263,8 +263,8 @@ func (s *SignSuite) TestHandleYggReturn_Success_FeeMulti(c *C) {
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
 					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
-						common.AccountCoin{Denom: "RUNE", Amount: 1000000},
+						common.NewAccountCoin("bnb", 1000000),
+						common.NewAccountCoin("rune", 1000000),
 					},
 				},
 			},
@@ -287,7 +287,7 @@ func (s *SignSuite) TestHandleYggReturn_Success_NotEnough(c *C) {
 			common.BNBChain: &MockChainClient{
 				account: common.Account{
 					Coins: common.AccountCoins{
-						common.AccountCoin{Denom: common.BNBChain.String(), Amount: 0},
+						common.NewAccountCoin("bnb", 0),
 					},
 				},
 			},
@@ -323,8 +323,8 @@ func (s *SignSuite) TestProcess(c *C) {
 		common.BNBChain: &MockChainClient{
 			account: common.Account{
 				Coins: common.AccountCoins{
-					common.AccountCoin{Denom: common.BNBChain.String(), Amount: 1000000},
-					common.AccountCoin{Denom: "RUNE", Amount: 1000000},
+					common.NewAccountCoin("bnb", 1000000),
+					common.NewAccountCoin("rune", 1000000),
 				},
 			},
 		},

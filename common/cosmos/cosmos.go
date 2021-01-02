@@ -17,6 +17,7 @@ var (
 	OneUint                 = sdk.OneUint
 	NewCoin                 = sdk.NewCoin
 	NewCoins                = sdk.NewCoins
+	NewInt64Coin            = sdk.NewInt64Coin
 	ParseCoins              = sdk.ParseCoins
 	NewDecWithPrec          = sdk.NewDecWithPrec
 	NewDecFromBigInt        = sdk.NewDecFromBigInt

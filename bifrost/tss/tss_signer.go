@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
+	bcommon "gitlab.com/thorchain/thornode/bifrost/common"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -66,8 +67,8 @@ func (s *KeySign) ExportAsKeyStore(password string) (*keys.EncryptedKeyJSON, err
 	return nil, nil
 }
 
-func (s *KeySign) makeSignature(msg tx.StdSignMsg, poolPubKey string) (sig tx.StdSignature, err error) {
-	var stdSignature tx.StdSignature
+func (s *KeySign) makeSignature(msg bcommon.StdSignMsg, poolPubKey string) (sig bcommon.StdSignature, err error) {
+	var stdSignature bcommon.StdSignature
 	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, poolPubKey)
 	if err != nil {
 		return stdSignature, fmt.Errorf("fail to get pub key: %w", err)
@@ -87,7 +88,7 @@ func (s *KeySign) makeSignature(msg tx.StdSignMsg, poolPubKey string) (sig tx.St
 		s.logger.Error().Msg("Oops! we cannot verify the bytes")
 	}
 
-	return tx.StdSignature{
+	return bcommon.StdSignature{
 		AccountNumber: msg.AccountNumber,
 		Sequence:      msg.Sequence,
 		PubKey:        pk,
@@ -95,11 +96,11 @@ func (s *KeySign) makeSignature(msg tx.StdSignMsg, poolPubKey string) (sig tx.St
 	}, nil
 }
 
-func (s *KeySign) Sign(msg tx.StdSignMsg) ([]byte, error) {
+func (s *KeySign) Sign(msg bcommon.StdSignMsg) ([]byte, error) {
 	return nil, nil
 }
 
-func (s *KeySign) SignWithPool(msg tx.StdSignMsg, poolPubKey common.PubKey) ([]byte, error) {
+func (s *KeySign) SignWithPool(msg bcommon.StdSignMsg, poolPubKey common.PubKey) ([]byte, error) {
 	sig, err := s.makeSignature(msg, poolPubKey.String())
 	if err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func (s *KeySign) SignWithPool(msg tx.StdSignMsg, poolPubKey common.PubKey) ([]b
 	if len(sig.Signature) == 0 {
 		return nil, errors.New("fail to make signature")
 	}
-	newTx := tx.NewStdTx(msg.Msgs, []tx.StdSignature{sig}, msg.Memo, msg.Source, msg.Data)
+	newTx := bcommon.NewStdTx(msg.Msgs, []bcommon.StdSignature{sig}, msg.Memo, msg.Source, msg.Data)
 	bz, err := tx.Cdc.MarshalBinaryLengthPrefixed(&newTx)
 	if err != nil {
 		return nil, err

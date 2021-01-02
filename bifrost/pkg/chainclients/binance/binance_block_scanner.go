@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/binance-chain/go-sdk/common/types"
-	bmsg "github.com/binance-chain/go-sdk/types/msg"
-	"github.com/binance-chain/go-sdk/types/tx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -24,6 +22,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	bltypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
+	bcommon "gitlab.com/thorchain/thornode/bifrost/common"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	btypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/binance/types"
@@ -378,7 +377,7 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (b *BinanceBlockScanner) getCoinsForTxIn(outputs []bmsg.Output, receiver string) (common.Coins, error) {
+func (b *BinanceBlockScanner) getCoinsForTxIn(outputs []bcommon.Output, receiver string) (common.Coins, error) {
 	cc := common.Coins{}
 	for _, output := range outputs {
 		if receiver != output.Address.String() {
@@ -395,7 +394,7 @@ func (b *BinanceBlockScanner) getCoinsForTxIn(outputs []bmsg.Output, receiver st
 			if asset.Symbol.IsMiniToken() {
 				continue
 			}
-			amt := cosmos.NewUint(uint64(c.Amount))
+			amt := cosmos.NewUint(c.Amount.Uint64())
 			cc = append(cc, common.NewCoin(asset, amt))
 		}
 	}
@@ -411,8 +410,8 @@ func (b *BinanceBlockScanner) fromTxToTxIn(hash, encodedTx string, blockHeight i
 		b.errCounter.WithLabelValues("fail_decode_tx", hash).Inc()
 		return nil, fmt.Errorf("fail to decode tx: %w", err)
 	}
-	var t tx.StdTx
-	if err := tx.Cdc.UnmarshalBinaryLengthPrefixed(buf, &t); err != nil {
+	var t bcommon.StdTx
+	if err := bcommon.Cdc.UnmarshalBinaryLengthPrefixed(buf, &t); err != nil {
 		b.errCounter.WithLabelValues("fail_unmarshal_tx", hash).Inc()
 		// not returning an error here because it may cause binance to get
 		// stuck if someone has issued a mini token.
@@ -422,7 +421,7 @@ func (b *BinanceBlockScanner) fromTxToTxIn(hash, encodedTx string, blockHeight i
 }
 
 // fromStdTx - process a stdTx
-func (b *BinanceBlockScanner) fromStdTx(hash string, stdTx tx.StdTx, blockHeight int64) ([]stypes.TxInItem, error) {
+func (b *BinanceBlockScanner) fromStdTx(hash string, stdTx bcommon.StdTx, blockHeight int64) ([]stypes.TxInItem, error) {
 	var err error
 	var txs []stypes.TxInItem
 
@@ -430,7 +429,7 @@ func (b *BinanceBlockScanner) fromStdTx(hash string, stdTx tx.StdTx, blockHeight
 	// single stdTx, which THORNode are not yet accounting for.
 	for _, msg := range stdTx.Msgs {
 		switch sendMsg := msg.(type) {
-		case bmsg.SendMsg:
+		case bcommon.SendMsg:
 			txInItem := stypes.TxInItem{
 				Tx:          hash,
 				BlockHeight: blockHeight,

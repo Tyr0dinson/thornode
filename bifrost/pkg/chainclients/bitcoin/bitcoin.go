@@ -206,10 +206,7 @@ func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
 		return acct, fmt.Errorf("fail to convert total amount: %w", err)
 	}
 	return common.NewAccount(0, 0, common.AccountCoins{
-		common.AccountCoin{
-			Amount: uint64(totalAmt),
-			Denom:  common.BTCAsset.String(),
-		},
+		common.NewAccountCoin(common.BTCAsset.String(), int64(totalAmt)),
 	}, false), nil
 }
 

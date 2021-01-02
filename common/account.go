@@ -1,12 +1,8 @@
 package common
 
-import (
-	"github.com/binance-chain/go-sdk/common/types"
-)
-
 type AccountCoin struct {
-	Amount uint64
-	Denom  string
+	Denom  string `json:"denom"`
+	Amount int64  `json:"amount"`
 }
 
 type AccountCoins []AccountCoin
@@ -18,13 +14,11 @@ type Account struct {
 	HasMemoFlag   bool
 }
 
-// GetCoins transforms from binance coins
-func GetCoins(accCoins []types.Coin) AccountCoins {
-	coins := make(AccountCoins, 0)
-	for _, coin := range accCoins {
-		coins = append(coins, AccountCoin{Amount: uint64(coin.Amount), Denom: coin.Denom})
+func NewAccountCoin(denom string, amt int64) AccountCoin {
+	return AccountCoin{
+		Denom:  denom,
+		Amount: amt,
 	}
-	return coins
 }
 
 // NewAccount

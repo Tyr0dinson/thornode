@@ -438,7 +438,7 @@ func (s *Signer) handleYggReturn(height int64, tx types.TxOutItem) (types.TxOutI
 			return tx, err
 		}
 		if coin.Amount > 0 {
-			amount := cosmos.NewUint(coin.Amount)
+			amount := cosmos.NewUint(uint64(coin.Amount))
 			tx.Coins = append(tx.Coins, common.NewCoin(asset, amount))
 		}
 	}

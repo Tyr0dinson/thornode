@@ -9,22 +9,16 @@ import (
 
 	ctypes "github.com/binance-chain/go-sdk/common/types"
 	"github.com/binance-chain/go-sdk/keys"
-	"github.com/binance-chain/go-sdk/types/tx"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 
-	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/bifrost/common"
 )
 
 type keyManager struct {
 	privKey  crypto.PrivKey
 	addr     ctypes.AccAddress
-	pubkey   common.PubKey
 	mnemonic string
-}
-
-func (m *keyManager) Pubkey() common.PubKey {
-	return m.pubkey
 }
 
 func (m *keyManager) ExportAsMnemonic() (string, error) {
@@ -47,13 +41,13 @@ func (m *keyManager) ExportAsKeyStore(password string) (*keys.EncryptedKeyJSON, 
 	return nil, nil
 }
 
-func (m *keyManager) Sign(msg tx.StdSignMsg) ([]byte, error) {
+func (m *keyManager) Sign(msg common.StdSignMsg) ([]byte, error) {
 	sig, err := m.makeSignature(msg)
 	if err != nil {
 		return nil, err
 	}
-	newTx := tx.NewStdTx(msg.Msgs, []tx.StdSignature{sig}, msg.Memo, msg.Source, msg.Data)
-	bz, err := tx.Cdc.MarshalBinaryLengthPrefixed(&newTx)
+	newTx := common.NewStdTx(msg.Msgs, []common.StdSignature{sig}, msg.Memo, msg.Source, msg.Data)
+	bz, err := common.Cdc.MarshalBinaryLengthPrefixed(&newTx)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +62,7 @@ func (m *keyManager) GetAddr() ctypes.AccAddress {
 	return m.addr
 }
 
-func (m *keyManager) makeSignature(msg tx.StdSignMsg) (sig tx.StdSignature, err error) {
+func (m *keyManager) makeSignature(msg common.StdSignMsg) (sig common.StdSignature, err error) {
 	if err != nil {
 		return
 	}
@@ -76,7 +70,7 @@ func (m *keyManager) makeSignature(msg tx.StdSignMsg) (sig tx.StdSignature, err 
 	if err != nil {
 		return
 	}
-	return tx.StdSignature{
+	return common.StdSignature{
 		AccountNumber: msg.AccountNumber,
 		Sequence:      msg.Sequence,
 		PubKey:        m.privKey.PubKey(),
