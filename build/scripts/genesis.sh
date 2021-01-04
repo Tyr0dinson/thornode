@@ -8,7 +8,7 @@ set -o pipefail
 SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
 NODES="${NODES:=1}"
-SEED="${SEED:=thor-daemon}" # the hostname of the master node
+SEED="${SEED:=thornode}" # the hostname of the master node
 CONTRACT="${CONTRACT}"
 ETH_HOST="${ETH_HOST:=http://ethereum-localnet:8545}"
 # config the keyring to use file backend
