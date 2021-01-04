@@ -81,7 +81,7 @@ import (
 var (
 	// DefaultNodeHome default home directories for the application daemon
 	DefaultNodeHome = func(appName string) string {
-		return os.ExpandEnv("$HOME/thorchaind")
+		return os.ExpandEnv("$HOME/.thornode")
 	}
 
 	// ModuleBasics defines the module BasicManager is in charge of setting up basic,

@@ -3,7 +3,7 @@ module gitlab.com/thorchain/thornode
 go 1.14
 
 require (
-	github.com/99designs/keyring v1.1.6 // indirect
+	github.com/99designs/keyring v1.1.6
 	github.com/binance-chain/go-sdk v1.2.2 // indirect
 	github.com/binance-chain/ledger-cosmos-go v0.9.9 // indirect
 	github.com/binance-chain/tss-lib v1.3.2
@@ -13,8 +13,8 @@ require (
 	github.com/btcsuite/goleveldb v1.0.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cosmos/cosmos-sdk v0.40.0-rc5
-	github.com/cosmos/go-bip39 v1.0.0 // indirect
-	github.com/decred/dcrd/dcrec/edwards v1.0.0 // indirect
+	github.com/cosmos/go-bip39 v1.0.0
+	github.com/decred/dcrd/dcrec/edwards v1.0.0
 	github.com/didip/tollbooth v4.0.2+incompatible
 	github.com/ethereum/go-ethereum v1.9.12
 	github.com/gogo/protobuf v1.3.1
@@ -55,5 +55,5 @@ replace (
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.0.0-20201118045712-70b2cb4bf916
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1
-    github.com/zondax/ledger-go => github.com/binance-chain/ledger-go v0.9.1
+	github.com/zondax/ledger-go => github.com/binance-chain/ledger-go v0.9.1
 )

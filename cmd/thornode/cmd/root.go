@@ -94,6 +94,7 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		AddGenesisAccountCmd(app.DefaultNodeHome(appName)),
 		tmcli.NewCompletionCmd(rootCmd, true),
 		debug.Cmd(),
+		GetEd25519Keys(),
 	)
 
 	server.AddCommands(rootCmd, app.DefaultNodeHome(appName), newApp, createSimappAndExport, addModuleInitFlags)
