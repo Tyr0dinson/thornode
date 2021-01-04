@@ -91,4 +91,9 @@ type (
 	TssKeygenMetric          = types.TssKeygenMetric
 	TssKeysignMetric         = types.TssKeysignMetric
 	ChainContract            = types.ChainContract
+
+	ProtoInt64        = types.ProtoInt64
+	ProtoUint64       = types.ProtoUint64
+	ProtoAccAddresses = types.ProtoAccAddresses
+	ProtoStrings      = types.ProtoStrings
 )

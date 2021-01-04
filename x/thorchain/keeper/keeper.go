@@ -13,7 +13,7 @@ import (
 )
 
 type Keeper interface {
-	Cdc() *codec.LegacyAmino
+	Cdc() codec.BinaryMarshaler
 	Version() int64
 	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
@@ -251,6 +251,6 @@ type KeeperChainContract interface {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(coinKeeper bankkeeper.Keeper, ak authkeeper.AccountKeeper, storeKey cosmos.StoreKey, cdc *codec.LegacyAmino) Keeper {
-	return kv1.NewKVStore(coinKeeper, ak, storeKey, cdc)
+func NewKeeper(cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) Keeper {
+	return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey)
 }

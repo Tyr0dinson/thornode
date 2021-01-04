@@ -132,9 +132,7 @@ func (am AppModule) QuerierRoute() string {
 
 // LegacyQuerierHandler returns the capability module's Querier.
 func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) ([]byte, error) {
-		return nil, nil
-	}
+	return NewQuerier(legacyQuerierCdc, am.keeper, am.keybaseStore)
 }
 
 // RegisterServices registers module services.
@@ -145,7 +143,10 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 }
 
 func (am AppModule) NewQuerierHandler() sdk.Querier {
-	return NewQuerier(am.keeper, am.keybaseStore)
+	// TODO
+	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) ([]byte, error) {
+		return nil, nil
+	}
 }
 
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {

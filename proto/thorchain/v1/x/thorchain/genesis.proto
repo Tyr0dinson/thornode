@@ -9,7 +9,6 @@ import "thorchain/v1/x/thorchain/types/type_network_fee.proto";
 import "thorchain/v1/x/thorchain/types/type_observed_network_fee.proto";
 import "thorchain/v1/x/thorchain/types/type_errata_tx_voter.proto";
 import "thorchain/v1/x/thorchain/types/msg_swap.proto";
-import "thorchain/v1/x/thorchain/types/type_tx_marker.proto";
 import "thorchain/v1/x/thorchain/types/type_tss.proto";
 import "thorchain/v1/x/thorchain/types/type_tss_keysign.proto";
 import "thorchain/v1/x/thorchain/types/type_keygen.proto";

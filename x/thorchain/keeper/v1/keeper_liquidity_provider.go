@@ -1,10 +1,35 @@
 package keeperv1
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 )
+
+func (k KVStore) setLiquidityProvider(ctx cosmos.Context, key string, record LiquidityProvider) {
+	store := ctx.KVStore(k.storeKey)
+	buf := k.cdc.MustMarshalBinaryBare(&record)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
+}
+
+func (k KVStore) getLiquidityProvider(ctx cosmos.Context, key string, record *LiquidityProvider) (bool, error) {
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	bz := store.Get([]byte(key))
+	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return true, nil
+}
 
 // GetLiquidityProviderIterator iterate liquidity providers
 func (k KVStore) GetLiquidityProviderIterator(ctx cosmos.Context, asset common.Asset) cosmos.Iterator {
@@ -37,7 +62,7 @@ func (k KVStore) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, ad
 		record.RuneAddress = common.NoAddress
 	}
 
-	_, err := k.get(ctx, k.GetKey(ctx, prefixLiquidityProvider, record.Key()), &record)
+	_, err := k.getLiquidityProvider(ctx, k.GetKey(ctx, prefixLiquidityProvider, record.Key()), &record)
 	if err != nil {
 		return record, err
 	}
@@ -47,7 +72,7 @@ func (k KVStore) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, ad
 
 // SetLiquidityProvider save the liquidity provider to kv store
 func (k KVStore) SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider) {
-	k.set(ctx, k.GetKey(ctx, prefixLiquidityProvider, lp.Key()), lp)
+	k.setLiquidityProvider(ctx, k.GetKey(ctx, prefixLiquidityProvider, lp.Key()), lp)
 }
 
 // RemoveLiquidityProvider remove the liquidity provider to kv store
