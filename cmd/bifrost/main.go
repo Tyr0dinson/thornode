@@ -18,6 +18,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
+	"github.com/tendermint/tendermint/crypto"
+
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
@@ -84,12 +86,12 @@ func main() {
 	if len(cfg.Thorchain.SignerPasswd) == 0 {
 		log.Fatal().Msg("signer password is empty")
 	}
-	kb, si, err := thorclient.GetKeyringKeybase(cfg.Thorchain.ChainHomeFolder, cfg.Thorchain.SignerName, cfg.Thorchain.SignerPasswd)
+	kb, _, err := thorclient.GetKeyringKeybase(cfg.Thorchain.ChainHomeFolder, cfg.Thorchain.SignerName, cfg.Thorchain.SignerPasswd)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to get keyring keybase")
 	}
 
-	k := thorclient.NewKeysWithKeybase(kb, si, cfg.Thorchain.SignerPasswd)
+	k := thorclient.NewKeysWithKeybase(kb, cfg.Thorchain.SignerName, cfg.Thorchain.SignerPasswd)
 	// thorchain bridge
 	thorchainBridge, err := thorclient.NewThorchainBridge(cfg.Thorchain, m, k)
 	if err != nil {
@@ -119,9 +121,9 @@ func main() {
 	tssIns, err := tss.NewTss(
 		bootstrapPeers,
 		cfg.TSS.P2PPort,
-		priKey,
+		priKey.(crypto.PrivKey),
 		cfg.TSS.Rendezvous,
-		app.DefaultCLIHome,
+		app.DefaultNodeHome(""),
 		common.TssConfig{
 			EnableMonitor:   true,
 			KeyGenTimeout:   240 * time.Second, // must be shorter than cosntants.JailTimeKeygen
