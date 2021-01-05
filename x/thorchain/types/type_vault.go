@@ -26,7 +26,7 @@ func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKe
 	}
 }
 
-func (m *Vault) GetChains() common.Chains {
+func (m Vault) GetChains() common.Chains {
 	chains := make(common.Chains, 0)
 	for _, c := range m.Chains {
 		chain, err := common.NewChain(c)
@@ -38,7 +38,7 @@ func (m *Vault) GetChains() common.Chains {
 	return chains
 }
 
-func (m *Vault) GetMembership() common.PubKeys {
+func (m Vault) GetMembership() common.PubKeys {
 	pubkeys := make(common.PubKeys, 0)
 	for _, pk := range m.Membership {
 		pk, err := common.NewPubKey(pk)
@@ -51,31 +51,31 @@ func (m *Vault) GetMembership() common.PubKeys {
 }
 
 // IsType determine whether the vault is given type
-func (m *Vault) IsType(vtype VaultType) bool {
+func (m Vault) IsType(vtype VaultType) bool {
 	return m.Type == vtype
 }
 
 // IsAsgard check whether the vault is Asgard vault, it returns true when it is an asgard vault
-func (m *Vault) IsAsgard() bool {
+func (m Vault) IsAsgard() bool {
 	return m.IsType(VaultType_AsgardVault)
 }
 
 // IsYggdrasil return true when the vault is YggdrasilVault
-func (m *Vault) IsYggdrasil() bool {
+func (m Vault) IsYggdrasil() bool {
 	return m.IsType(VaultType_YggdrasilVault)
 }
 
 // IsEmpty returns true when the vault pubkey is empty
-func (m *Vault) IsEmpty() bool {
+func (m Vault) IsEmpty() bool {
 	return m.PubKey.IsEmpty()
 }
 
 // Contains check whether the given pubkey is party of the originally node who create this vault
-func (m *Vault) Contains(pubkey common.PubKey) bool {
+func (m Vault) Contains(pubkey common.PubKey) bool {
 	return m.GetMembership().Contains(pubkey)
 }
 
-func (m *Vault) MembershipEquals(pks common.PubKeys) bool {
+func (m Vault) MembershipEquals(pks common.PubKeys) bool {
 	if len(m.Membership) != len(pks) {
 		return false
 	}
@@ -94,7 +94,7 @@ func (m *Vault) UpdateStatus(s VaultStatus, height int64) {
 }
 
 // Valid check whether Vault has all necessary values
-func (m *Vault) Valid() error {
+func (m Vault) Valid() error {
 	if m.PubKey.IsEmpty() {
 		return errors.New("pubkey cannot be empty")
 	}
@@ -102,7 +102,7 @@ func (m *Vault) Valid() error {
 }
 
 // HasFunds check whether the vault pool has fund
-func (m *Vault) HasFunds() bool {
+func (m Vault) HasFunds() bool {
 	for _, coin := range m.Coins {
 		if !coin.Asset.IsRune() { // non-native rune is omitted from the calculation
 			if !coin.Amount.IsZero() {
@@ -114,7 +114,7 @@ func (m *Vault) HasFunds() bool {
 }
 
 // HasFundsForChain check whether the vault pool has funds for a specific chain
-func (m *Vault) HasFundsForChain(chain common.Chain) bool {
+func (m Vault) HasFundsForChain(chain common.Chain) bool {
 	for _, coin := range m.Coins {
 		if coin.Asset.Chain.Equals(chain) && !coin.Amount.IsZero() {
 			return true
@@ -124,7 +124,7 @@ func (m *Vault) HasFundsForChain(chain common.Chain) bool {
 }
 
 // CoinLength - counts the number of coins this vault has
-func (m *Vault) CoinLength() (count int) {
+func (m Vault) CoinLength() (count int) {
 	for _, coin := range m.Coins {
 		if !coin.Amount.IsZero() {
 			count++
@@ -134,7 +134,7 @@ func (m *Vault) CoinLength() (count int) {
 }
 
 // CoinLengthByChain - count the number of coins this vault has for the given chain
-func (m *Vault) CoinLengthByChain(c common.Chain) int {
+func (m Vault) CoinLengthByChain(c common.Chain) int {
 	total := 0
 	for _, coin := range m.Coins {
 		if coin.Asset.IsRune() {
@@ -148,12 +148,12 @@ func (m *Vault) CoinLengthByChain(c common.Chain) int {
 }
 
 // HasAsset Check if this vault has a particular asset
-func (m *Vault) HasAsset(asset common.Asset) bool {
+func (m Vault) HasAsset(asset common.Asset) bool {
 	return !m.GetCoin(asset).Amount.IsZero()
 }
 
 // GetCoin return coin type of given asset
-func (m *Vault) GetCoin(asset common.Asset) common.Coin {
+func (m Vault) GetCoin(asset common.Asset) common.Coin {
 	for _, coin := range m.Coins {
 		if coin.Asset.Equals(asset) {
 			return coin
@@ -163,7 +163,7 @@ func (m *Vault) GetCoin(asset common.Asset) common.Coin {
 }
 
 // GetMembers return members who's address exist in the given list
-func (m *Vault) GetMembers(activeObservers []cosmos.AccAddress) (common.PubKeys, error) {
+func (m Vault) GetMembers(activeObservers []cosmos.AccAddress) (common.PubKeys, error) {
 	signers := common.PubKeys{}
 	for _, k := range m.GetMembership() {
 		addr, err := k.GetThorAddress()
