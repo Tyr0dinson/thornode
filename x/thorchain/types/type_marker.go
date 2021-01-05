@@ -14,7 +14,7 @@ func NewTxMarker(height int64, memo string) TxMarker {
 }
 
 // IsEmpty check whether TxMarker is empty
-func (m TxMarker) IsEmpty() bool {
+func (m *TxMarker) IsEmpty() bool {
 	if m.Height == 0 {
 		return true
 	}
@@ -25,7 +25,7 @@ func (m TxMarker) IsEmpty() bool {
 }
 
 // String implement of fmt.Stringer
-func (m TxMarker) String() string {
+func (m *TxMarker) String() string {
 	return fmt.Sprintf("Height: %d | Memo: %s", m.Height, m.Memo)
 }
 

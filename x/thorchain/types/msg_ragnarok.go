@@ -14,31 +14,31 @@ func NewMsgRagnarok(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) 
 }
 
 // Route should return the name of the module
-func (msg MsgRagnarok) Route() string { return RouterKey }
+func (m *MsgRagnarok) Route() string { return RouterKey }
 
 // Type should return the action
-func (msg MsgRagnarok) Type() string { return "ragnarok" }
+func (m *MsgRagnarok) Type() string { return "ragnarok" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgRagnarok) ValidateBasic() error {
-	if msg.Signer.Empty() {
-		return cosmos.ErrInvalidAddress(msg.Signer.String())
+func (m *MsgRagnarok) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if msg.BlockHeight <= 0 {
+	if m.BlockHeight <= 0 {
 		return cosmos.ErrUnknownRequest("invalid block height")
 	}
-	if err := msg.Tx.Valid(); err != nil {
+	if err := m.Tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	return nil
 }
 
 // GetSignBytes encodes the message for signing
-func (msg MsgRagnarok) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
+func (m *MsgRagnarok) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (msg MsgRagnarok) GetSigners() []cosmos.AccAddress {
-	return []cosmos.AccAddress{msg.Signer}
+func (m *MsgRagnarok) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
 }

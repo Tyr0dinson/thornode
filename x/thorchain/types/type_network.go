@@ -14,6 +14,6 @@ func NewNetwork() Network {
 }
 
 // CalcNodeRewards calculate node rewards
-func (v Network) CalcNodeRewards(nodeUnits cosmos.Uint) cosmos.Uint {
-	return common.GetShare(nodeUnits, v.TotalBondUnits, v.BondRewardRune)
+func (m *Network) CalcNodeRewards(nodeUnits cosmos.Uint) cosmos.Uint {
+	return common.GetShare(nodeUnits, m.TotalBondUnits, m.BondRewardRune)
 }

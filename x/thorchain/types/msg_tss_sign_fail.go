@@ -48,47 +48,47 @@ func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins com
 }
 
 // Route should return the route key of the module
-func (msg MsgTssKeysignFail) Route() string { return RouterKey }
+func (m *MsgTssKeysignFail) Route() string { return RouterKey }
 
 // Type should return the action
-func (msg MsgTssKeysignFail) Type() string { return "set_tss_keysign_fail" }
+func (m *MsgTssKeysignFail) Type() string { return "set_tss_keysign_fail" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgTssKeysignFail) ValidateBasic() error {
-	if msg.Signer.Empty() {
-		return cosmos.ErrInvalidAddress(msg.Signer.String())
+func (m *MsgTssKeysignFail) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if len(msg.ID) == 0 {
+	if len(m.ID) == 0 {
 		return cosmos.ErrUnknownRequest("ID cannot be blank")
 	}
-	if len(msg.Coins) == 0 {
+	if len(m.Coins) == 0 {
 		return cosmos.ErrUnknownRequest("no coins")
 	}
-	if err := msg.Coins.Valid(); err != nil {
+	if err := m.Coins.Valid(); err != nil {
 		return cosmos.ErrInvalidCoins(err.Error())
 	}
-	if msg.Blame.IsEmpty() {
+	if m.Blame.IsEmpty() {
 		return cosmos.ErrUnknownRequest("tss blame is empty")
 	}
-	if msg.Height <= 0 {
+	if m.Height <= 0 {
 		return cosmos.ErrUnknownRequest("block height cannot be equal to less than zero")
 	}
-	if len([]byte(msg.Memo)) > 150 {
-		err := fmt.Errorf("memo must not exceed 150 bytes: %d", len([]byte(msg.Memo)))
+	if len([]byte(m.Memo)) > 150 {
+		err := fmt.Errorf("memo must not exceed 150 bytes: %d", len([]byte(m.Memo)))
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	if msg.PubKey.IsEmpty() {
+	if m.PubKey.IsEmpty() {
 		return cosmos.ErrUnknownRequest("vault pubkey cannot be empty")
 	}
 	return nil
 }
 
 // GetSignBytes encodes the message for signing
-func (msg MsgTssKeysignFail) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
+func (m *MsgTssKeysignFail) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (msg MsgTssKeysignFail) GetSigners() []cosmos.AccAddress {
-	return []cosmos.AccAddress{msg.Signer}
+func (m *MsgTssKeysignFail) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
 }

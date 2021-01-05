@@ -1,24 +1,24 @@
 package types
 
 import (
-	fmt "fmt"
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-func (n *Node) String() string {
-	return fmt.Sprintf("Node: %s", n.Pubkey)
+func (m *Node) String() string {
+	return fmt.Sprintf("Node: %s", m.Pubkey)
 }
 
 // IsEmpty check whether it is empty
-func (b *Blame) IsEmpty() bool {
-	return len(b.FailReason) == 0
+func (m *Blame) IsEmpty() bool {
+	return len(m.FailReason) == 0
 }
 
 // String implement fmt.Stringer
-func (b Blame) String() string {
+func (m *Blame) String() string {
 	sb := strings.Builder{}
-	sb.WriteString("reason:" + b.FailReason + " is_unicast:" + strconv.FormatBool(b.IsUnicast) + "\n")
-	sb.WriteString(fmt.Sprintf("nodes:%+v\n", b.BlameNodes))
+	sb.WriteString("reason:" + m.FailReason + " is_unicast:" + strconv.FormatBool(m.IsUnicast) + "\n")
+	sb.WriteString(fmt.Sprintf("nodes:%+v\n", m.BlameNodes))
 	return sb.String()
 }

@@ -57,21 +57,21 @@ func NewEventSwap(pool common.Asset, priceTarget, fee, tradeSlip, liquidityFeeIn
 }
 
 // Type return a string that represent the type, it should not duplicated with other event
-func (e EventSwap) Type() string {
+func (m *EventSwap) Type() string {
 	return SwapEventType
 }
 
 // Events convert EventSwap to key value pairs used in cosmos
-func (e EventSwap) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pool", e.Pool.String()),
-		cosmos.NewAttribute("price_target", e.PriceTarget.String()),
-		cosmos.NewAttribute("trade_slip", e.TradeSlip.String()),
-		cosmos.NewAttribute("liquidity_fee", e.LiquidityFee.String()),
-		cosmos.NewAttribute("liquidity_fee_in_rune", e.LiquidityFeeInRune.String()),
-		cosmos.NewAttribute("emit_asset", e.EmitAsset.String()),
+func (m *EventSwap) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()),
+		cosmos.NewAttribute("price_target", m.PriceTarget.String()),
+		cosmos.NewAttribute("trade_slip", m.TradeSlip.String()),
+		cosmos.NewAttribute("liquidity_fee", m.LiquidityFee.String()),
+		cosmos.NewAttribute("liquidity_fee_in_rune", m.LiquidityFeeInRune.String()),
+		cosmos.NewAttribute("emit_asset", m.EmitAsset.String()),
 	)
-	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
+	evt = evt.AppendAttributes(m.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -97,26 +97,26 @@ func NewEventAddLiquidity(pool common.Asset,
 }
 
 // Type return the event type
-func (e EventAddLiquidity) Type() string {
+func (m *EventAddLiquidity) Type() string {
 	return AddLiquidityEventType
 }
 
 // Events return cosmos.Events which is cosmos.Attribute(key value pairs)
-func (e EventAddLiquidity) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pool", e.Pool.String()),
-		cosmos.NewAttribute("liquidity_provider_units", e.ProviderUnits.String()),
-		cosmos.NewAttribute("rune_address", e.RuneAddress.String()),
-		cosmos.NewAttribute("rune_amount", e.RuneAmount.String()),
-		cosmos.NewAttribute("asset_amount", e.AssetAmount.String()),
-		cosmos.NewAttribute("asset_address", e.AssetAddress.String()),
+func (m *EventAddLiquidity) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()),
+		cosmos.NewAttribute("liquidity_provider_units", m.ProviderUnits.String()),
+		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
+		cosmos.NewAttribute("rune_amount", m.RuneAmount.String()),
+		cosmos.NewAttribute("asset_amount", m.AssetAmount.String()),
+		cosmos.NewAttribute("asset_address", m.AssetAddress.String()),
 	)
-	if !e.RuneTxID.Equals(e.AssetTxID) && !e.RuneTxID.IsEmpty() {
-		evt = evt.AppendAttributes(cosmos.NewAttribute(fmt.Sprintf("%s_txid", common.RuneAsset().Chain), e.RuneTxID.String()))
+	if !m.RuneTxID.Equals(m.AssetTxID) && !m.RuneTxID.IsEmpty() {
+		evt = evt.AppendAttributes(cosmos.NewAttribute(fmt.Sprintf("%s_txid", common.RuneAsset().Chain), m.RuneTxID.String()))
 	}
 
-	if !e.AssetTxID.IsEmpty() {
-		evt = evt.AppendAttributes(cosmos.NewAttribute(fmt.Sprintf("%s_txid", e.Pool.Chain), e.AssetTxID.String()))
+	if !m.AssetTxID.IsEmpty() {
+		evt = evt.AppendAttributes(cosmos.NewAttribute(fmt.Sprintf("%s_txid", m.Pool.Chain), m.AssetTxID.String()))
 	}
 	return cosmos.Events{
 		evt,
@@ -137,20 +137,20 @@ func NewEventWithdraw(pool common.Asset, su cosmos.Uint, basisPts int64, asym co
 }
 
 // Type return the withdraw event type
-func (e EventWithdraw) Type() string {
+func (m *EventWithdraw) Type() string {
 	return WithdrawEventType
 }
 
 // Events return the cosmos event
-func (e EventWithdraw) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pool", e.Pool.String()),
-		cosmos.NewAttribute("liquidity_provider_units", e.ProviderUnits.String()),
-		cosmos.NewAttribute("basis_points", strconv.FormatInt(e.BasisPoints, 10)),
-		cosmos.NewAttribute("asymmetry", e.Asymmetry.String()),
-		cosmos.NewAttribute("emit_asset", e.EmitAsset.String()),
-		cosmos.NewAttribute("emit_rune", e.EmitRune.String()))
-	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
+func (m *EventWithdraw) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()),
+		cosmos.NewAttribute("liquidity_provider_units", m.ProviderUnits.String()),
+		cosmos.NewAttribute("basis_points", strconv.FormatInt(m.BasisPoints, 10)),
+		cosmos.NewAttribute("asymmetry", m.Asymmetry.String()),
+		cosmos.NewAttribute("emit_asset", m.EmitAsset.String()),
+		cosmos.NewAttribute("emit_rune", m.EmitRune.String()))
+	evt = evt.AppendAttributes(m.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -163,15 +163,15 @@ func NewEventDonate(pool common.Asset, inTx common.Tx) EventDonate {
 }
 
 // Type return donate event type
-func (e EventDonate) Type() string {
+func (m *EventDonate) Type() string {
 	return DonateEventType
 }
 
 // Events get all events
-func (e EventDonate) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pool", e.Pool.String()))
-	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
+func (m *EventDonate) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()))
+	evt = evt.AppendAttributes(m.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -184,16 +184,16 @@ func NewEventPool(pool common.Asset, status PoolStatus) EventPool {
 }
 
 // Type return pool event type
-func (e EventPool) Type() string {
+func (m *EventPool) Type() string {
 	return PoolEventType
 }
 
 // Events provide an instance of cosmos.Events
-func (e EventPool) Events() (cosmos.Events, error) {
+func (m *EventPool) Events() (cosmos.Events, error) {
 	return cosmos.Events{
-		cosmos.NewEvent(e.Type(),
-			cosmos.NewAttribute("pool", e.Pool.String()),
-			cosmos.NewAttribute("pool_status", e.Status.String())),
+		cosmos.NewEvent(m.Type(),
+			cosmos.NewAttribute("pool", m.Pool.String()),
+			cosmos.NewAttribute("pool_status", m.Status.String())),
 	}, nil
 }
 
@@ -206,15 +206,16 @@ func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt) EventRewards
 }
 
 // Type return reward event type
-func (e EventRewards) Type() string {
+func (m *EventRewards) Type() string {
 	return RewardEventType
 }
 
-func (e EventRewards) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("bond_reward", e.BondReward.String()),
+// Events return a standard cosmos event
+func (m *EventRewards) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("bond_reward", m.BondReward.String()),
 	)
-	for _, item := range e.PoolRewards {
+	for _, item := range m.PoolRewards {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
 	}
 	return cosmos.Events{evt}, nil
@@ -231,17 +232,17 @@ func NewEventRefund(code uint32, reason string, inTx common.Tx, fee common.Fee) 
 }
 
 // Type return reward event type
-func (e EventRefund) Type() string {
+func (m *EventRefund) Type() string {
 	return RefundEventType
 }
 
 // Events return events
-func (e EventRefund) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("code", strconv.FormatUint(uint64(e.Code), 10)),
-		cosmos.NewAttribute("reason", e.Reason),
+func (m *EventRefund) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("code", strconv.FormatUint(uint64(m.Code), 10)),
+		cosmos.NewAttribute("reason", m.Reason),
 	)
-	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
+	evt = evt.AppendAttributes(m.InTx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -255,16 +256,16 @@ func NewEventBond(amount cosmos.Uint, bondType BondType, txIn common.Tx) EventBo
 }
 
 // Type return bond event Type
-func (e EventBond) Type() string {
+func (m *EventBond) Type() string {
 	return BondEventType
 }
 
 // Events return all the event attributes
-func (e EventBond) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("amount", e.Amount.String()),
-		cosmos.NewAttribute("bound_type", string(e.BondType)))
-	evt = evt.AppendAttributes(e.TxIn.ToAttributes()...)
+func (m *EventBond) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+		cosmos.NewAttribute("bound_type", string(m.BondType)))
+	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -277,26 +278,27 @@ func NewEventGas() *EventGas {
 
 // UpsertGasPool update the Gas Pools hold by EventGas instance
 // if the given gasPool already exist, then it merge the gasPool with internal one , otherwise add it to the list
-func (e *EventGas) UpsertGasPool(pool GasPool) {
-	for i, p := range e.Pools {
+func (m *EventGas) UpsertGasPool(pool GasPool) {
+	for i, p := range m.Pools {
 		if p.Asset == pool.Asset {
-			e.Pools[i].RuneAmt = p.RuneAmt.Add(pool.RuneAmt)
-			e.Pools[i].AssetAmt = p.AssetAmt.Add(pool.AssetAmt)
+			m.Pools[i].RuneAmt = p.RuneAmt.Add(pool.RuneAmt)
+			m.Pools[i].AssetAmt = p.AssetAmt.Add(pool.AssetAmt)
 			return
 		}
 	}
-	e.Pools = append(e.Pools, pool)
+	m.Pools = append(m.Pools, pool)
 }
 
 // Type return event type
-func (e *EventGas) Type() string {
+func (m *EventGas) Type() string {
 	return GasEventType
 }
 
-func (e *EventGas) Events() (cosmos.Events, error) {
-	events := make(cosmos.Events, 0, len(e.Pools))
-	for _, item := range e.Pools {
-		evt := cosmos.NewEvent(e.Type(),
+// Events return a standard cosmos events
+func (m *EventGas) Events() (cosmos.Events, error) {
+	events := make(cosmos.Events, 0, len(m.Pools))
+	for _, item := range m.Pools {
+		evt := cosmos.NewEvent(m.Type(),
 			cosmos.NewAttribute("asset", item.Asset.String()),
 			cosmos.NewAttribute("asset_amt", item.AssetAmt.String()),
 			cosmos.NewAttribute("rune_amt", item.RuneAmt.String()),
@@ -314,21 +316,24 @@ func NewEventReserve(contributor ReserveContributor, inTx common.Tx) EventReserv
 	}
 }
 
-func (e EventReserve) Type() string {
+// Type return the event Type
+func (m *EventReserve) Type() string {
 	return ReserveEventType
 }
 
-func (e EventReserve) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("contributor_address", e.ReserveContributor.Address.String()),
-		cosmos.NewAttribute("amount", e.ReserveContributor.Amount.String()),
+// Events return standard cosmos event
+func (m *EventReserve) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("contributor_address", m.ReserveContributor.Address.String()),
+		cosmos.NewAttribute("amount", m.ReserveContributor.Amount.String()),
 	)
-	evt = evt.AppendAttributes(e.InTx.ToAttributes()...)
+	evt = evt.AppendAttributes(m.InTx.ToAttributes()...)
 	return cosmos.Events{
 		evt,
 	}, nil
 }
 
+// NewEventSlash create a new slash event
 func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) EventSlash {
 	return EventSlash{
 		Pool:        pool,
@@ -337,19 +342,21 @@ func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) EventSlash {
 }
 
 // Type return slash event type
-func (e EventSlash) Type() string {
+func (m *EventSlash) Type() string {
 	return SlashEventType
 }
 
-func (e EventSlash) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pool", e.Pool.String()))
-	for _, item := range e.SlashAmount {
+// Events return a standard cosmos events
+func (m *EventSlash) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pool", m.Pool.String()))
+	for _, item := range m.SlashAmount {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
 	}
 	return cosmos.Events{evt}, nil
 }
 
+// NewEventErrata create a new errata event
 func NewEventErrata(txID common.TxID, pools PoolMods) EventErrata {
 	return EventErrata{
 		TxID:  txID,
@@ -358,16 +365,16 @@ func NewEventErrata(txID common.TxID, pools PoolMods) EventErrata {
 }
 
 // Type return slash event type
-func (e EventErrata) Type() string {
+func (m *EventErrata) Type() string {
 	return ErrataEventType
 }
 
 // Events return a cosmos.Events type
-func (e EventErrata) Events() (cosmos.Events, error) {
-	events := make(cosmos.Events, 0, len(e.Pools))
-	for _, item := range e.Pools {
-		evt := cosmos.NewEvent(e.Type(),
-			cosmos.NewAttribute("in_tx_id", e.TxID.String()),
+func (m *EventErrata) Events() (cosmos.Events, error) {
+	events := make(cosmos.Events, 0, len(m.Pools))
+	for _, item := range m.Pools {
+		evt := cosmos.NewEvent(m.Type(),
+			cosmos.NewAttribute("in_tx_id", m.TxID.String()),
 			cosmos.NewAttribute("asset", item.Asset.String()),
 			cosmos.NewAttribute("rune_amt", item.RuneAmt.String()),
 			cosmos.NewAttribute("rune_add", strconv.FormatBool(item.RuneAdd)),
@@ -387,16 +394,16 @@ func NewEventFee(txID common.TxID, fee common.Fee) EventFee {
 }
 
 // Type get a string represent the event type
-func (e EventFee) Type() string {
+func (m *EventFee) Type() string {
 	return FeeEventType
 }
 
 // Events return events of cosmos.Event type
-func (e EventFee) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("tx_id", e.TxID.String()),
-		cosmos.NewAttribute("coins", e.Fee.Coins.String()),
-		cosmos.NewAttribute("pool_deduct", e.Fee.PoolDeduct.String()))
+func (m *EventFee) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("coins", m.Fee.Coins.String()),
+		cosmos.NewAttribute("pool_deduct", m.Fee.PoolDeduct.String()))
 	return cosmos.Events{evt}, nil
 }
 
@@ -409,15 +416,15 @@ func NewEventOutbound(inTxID common.TxID, tx common.Tx) EventOutbound {
 }
 
 // Type return a string which represent the type of this event
-func (e EventOutbound) Type() string {
+func (m *EventOutbound) Type() string {
 	return OutboundEventType
 }
 
 // Events return sdk events
-func (e EventOutbound) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("in_tx_id", e.InTxID.String()))
-	evt = evt.AppendAttributes(e.Tx.ToAttributes()...)
+func (m *EventOutbound) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("in_tx_id", m.InTxID.String()))
+	evt = evt.AppendAttributes(m.Tx.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
 
@@ -430,15 +437,15 @@ func NewEventTssKeygenMetric(pubkey common.PubKey, medianDurationMS int64) Event
 }
 
 // Type  return a string which represent the type of this event
-func (e EventTssKeygenMetric) Type() string {
+func (m *EventTssKeygenMetric) Type() string {
 	return TSSKeygenMetricEventType
 }
 
 // Events return cosmos sdk events
-func (e EventTssKeygenMetric) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("pubkey", e.PubKey.String()),
-		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(e.MedianDurationMs, 10)))
+func (m *EventTssKeygenMetric) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("pubkey", m.PubKey.String()),
+		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(m.MedianDurationMs, 10)))
 	return cosmos.Events{evt}, nil
 }
 
@@ -451,15 +458,15 @@ func NewEventTssKeysignMetric(txID common.TxID, medianDurationMS int64) EventTss
 }
 
 // Type  return a string which represent the type of this event
-func (e EventTssKeysignMetric) Type() string {
+func (m *EventTssKeysignMetric) Type() string {
 	return TSSKeysignMetricEventType
 }
 
 // Events return cosmos sdk events
-func (e EventTssKeysignMetric) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("txid", e.TxID.String()),
-		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(e.MedianDurationMs, 10)))
+func (m *EventTssKeysignMetric) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("txid", m.TxID.String()),
+		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(m.MedianDurationMs, 10)))
 	return cosmos.Events{evt}, nil
 }
 
@@ -473,15 +480,15 @@ func NewEventSlashPoint(addr cosmos.AccAddress, slashPoints int64, reason string
 }
 
 // Type return a string which represent the type of this event
-func (e EventSlashPoint) Type() string {
+func (m *EventSlashPoint) Type() string {
 	return SlashPointEventType
 }
 
 // Events return cosmos sdk events
-func (e EventSlashPoint) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(e.Type(),
-		cosmos.NewAttribute("node_address", e.NodeAddress.String()),
-		cosmos.NewAttribute("slash_points", strconv.FormatInt(e.SlashPoints, 10)),
-		cosmos.NewAttribute("reason", e.Reason))
+func (m *EventSlashPoint) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("slash_points", strconv.FormatInt(m.SlashPoints, 10)),
+		cosmos.NewAttribute("reason", m.Reason))
 	return cosmos.Events{evt}, nil
 }
