@@ -22,7 +22,6 @@ func NewKeygenBlock(height int64) KeygenBlock {
 
 // IsEmpty determinate whether KeygenBlock is empty
 func (m *KeygenBlock) IsEmpty() bool {
-
 	return len(m.Keygens) == 0 && m.Height <= 0
 }
 

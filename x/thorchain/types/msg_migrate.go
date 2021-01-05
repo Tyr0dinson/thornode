@@ -14,13 +14,13 @@ func NewMsgMigrate(tx ObservedTx, blockHeight int64, signer cosmos.AccAddress) *
 }
 
 // Route should return the name of the module
-func (m *MsgMigrate) Route() string { return RouterKey }
+func (m MsgMigrate) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgMigrate) Type() string { return "migrate" }
+func (m MsgMigrate) Type() string { return "migrate" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgMigrate) ValidateBasic() error {
+func (m MsgMigrate) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -34,11 +34,11 @@ func (m *MsgMigrate) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgMigrate) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgMigrate) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgMigrate) GetSigners() []cosmos.AccAddress {
+func (m MsgMigrate) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

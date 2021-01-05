@@ -15,13 +15,13 @@ func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddre
 }
 
 // Route should return the name of the module
-func (m *MsgErrataTx) Route() string { return RouterKey }
+func (m MsgErrataTx) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgErrataTx) Type() string { return "errata_tx" }
+func (m MsgErrataTx) Type() string { return "errata_tx" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgErrataTx) ValidateBasic() error {
+func (m MsgErrataTx) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -35,11 +35,11 @@ func (m *MsgErrataTx) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgErrataTx) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgErrataTx) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgErrataTx) GetSigners() []cosmos.AccAddress {
+func (m MsgErrataTx) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

@@ -17,13 +17,13 @@ func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) *M
 }
 
 // Route should return the route key of the module
-func (m *MsgDeposit) Route() string { return RouterKey }
+func (m MsgDeposit) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgDeposit) Type() string { return "deposit" }
+func (m MsgDeposit) Type() string { return "deposit" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgDeposit) ValidateBasic() error {
+func (m MsgDeposit) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -43,11 +43,11 @@ func (m *MsgDeposit) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgDeposit) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgDeposit) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgDeposit) GetSigners() []cosmos.AccAddress {
+func (m MsgDeposit) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

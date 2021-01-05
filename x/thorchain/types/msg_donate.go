@@ -19,13 +19,13 @@ func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signe
 }
 
 // Route should return the route key of the module
-func (m *MsgDonate) Route() string { return RouterKey }
+func (m MsgDonate) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgDonate) Type() string { return "donate" }
+func (m MsgDonate) Type() string { return "donate" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgDonate) ValidateBasic() error {
+func (m MsgDonate) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -42,11 +42,11 @@ func (m *MsgDonate) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgDonate) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgDonate) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgDonate) GetSigners() []cosmos.AccAddress {
+func (m MsgDonate) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

@@ -21,13 +21,13 @@ func NewMsgAddLiquidity(tx common.Tx, asset common.Asset, r, amount cosmos.Uint,
 }
 
 // Route should return the route key of the module
-func (m *MsgAddLiquidity) Route() string { return RouterKey }
+func (m MsgAddLiquidity) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgAddLiquidity) Type() string { return "add_liquidity" }
+func (m MsgAddLiquidity) Type() string { return "add_liquidity" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgAddLiquidity) ValidateBasic() error {
+func (m MsgAddLiquidity) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -61,11 +61,11 @@ func (m *MsgAddLiquidity) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgAddLiquidity) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgAddLiquidity) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgAddLiquidity) GetSigners() []cosmos.AccAddress {
+func (m MsgAddLiquidity) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

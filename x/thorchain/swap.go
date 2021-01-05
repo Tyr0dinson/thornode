@@ -50,8 +50,8 @@ func swap(ctx cosmos.Context,
 	target common.Asset,
 	destination common.Address,
 	tradeTarget cosmos.Uint,
-	transactionFee cosmos.Uint, mgr Manager) (cosmos.Uint, []EventSwap, error) {
-	var swapEvents []EventSwap
+	transactionFee cosmos.Uint, mgr Manager) (cosmos.Uint, []*EventSwap, error) {
+	var swapEvents []*EventSwap
 
 	// determine if target is layer1 vs synthetic asset
 	if !target.IsRune() && !destination.IsChain(target.Chain) {
@@ -78,7 +78,7 @@ func swap(ctx cosmos.Context,
 	isDoubleSwap := !source.IsRune() && !target.IsRune()
 	if isDoubleSwap {
 		var swapErr error
-		var swapEvt EventSwap
+		var swapEvt *EventSwap
 		var amt cosmos.Uint
 		// Here we use a tradeTarget of 0 because the target is for the next swap asset in a double swap
 		amt, poolBefore, sourcePool, swapEvt, swapErr := swapOne(ctx, keeper, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), transactionFee)
@@ -170,7 +170,7 @@ func swapOne(ctx cosmos.Context,
 	target common.Asset,
 	destination common.Address,
 	tradeTarget cosmos.Uint,
-	transactionFee cosmos.Uint) (amt cosmos.Uint, poolBefore, poolResult Pool, evt EventSwap, swapErr error) {
+	transactionFee cosmos.Uint) (amt cosmos.Uint, poolBefore, poolResult Pool, evt *EventSwap, swapErr error) {
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
 

@@ -15,13 +15,13 @@ func NewMsgSetNodeKeys(nodePubKeySet common.PubKeySet, validatorConsPubKey strin
 }
 
 // Route should return the router key of the module
-func (m *MsgSetNodeKeys) Route() string { return RouterKey }
+func (m MsgSetNodeKeys) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgSetNodeKeys) Type() string { return "set_node_keys" }
+func (m MsgSetNodeKeys) Type() string { return "set_node_keys" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgSetNodeKeys) ValidateBasic() error {
+func (m MsgSetNodeKeys) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -35,11 +35,11 @@ func (m *MsgSetNodeKeys) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgSetNodeKeys) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgSetNodeKeys) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgSetNodeKeys) GetSigners() []cosmos.AccAddress {
+func (m MsgSetNodeKeys) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

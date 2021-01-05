@@ -55,13 +55,13 @@ func getTssID(members []string, poolPk common.PubKey, height int64, bl Blame) st
 }
 
 // Route should return the route key of the module
-func (m *MsgTssPool) Route() string { return RouterKey }
+func (m MsgTssPool) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgTssPool) Type() string { return "set_tss_pool" }
+func (m MsgTssPool) Type() string { return "set_tss_pool" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgTssPool) ValidateBasic() error {
+func (m MsgTssPool) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -107,11 +107,11 @@ func (m *MsgTssPool) ValidateBasic() error {
 }
 
 // IsSuccess when blame is empty , then treat it as success
-func (m *MsgTssPool) IsSuccess() bool {
+func (m MsgTssPool) IsSuccess() bool {
 	return m.Blame.IsEmpty()
 }
 
-func (m *MsgTssPool) GetChains() common.Chains {
+func (m MsgTssPool) GetChains() common.Chains {
 	chains := make(common.Chains, 0)
 	for _, c := range m.Chains {
 		chain, err := common.NewChain(c)
@@ -123,7 +123,7 @@ func (m *MsgTssPool) GetChains() common.Chains {
 	return chains
 }
 
-func (m *MsgTssPool) GetPubKeys() common.PubKeys {
+func (m MsgTssPool) GetPubKeys() common.PubKeys {
 	pubkeys := make(common.PubKeys, 0)
 	for _, pk := range m.PubKeys {
 		pk, err := common.NewPubKey(pk)
@@ -136,11 +136,11 @@ func (m *MsgTssPool) GetPubKeys() common.PubKeys {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgTssPool) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgTssPool) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgTssPool) GetSigners() []cosmos.AccAddress {
+func (m MsgTssPool) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

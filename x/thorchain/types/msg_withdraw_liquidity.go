@@ -21,13 +21,13 @@ func NewMsgWithdrawLiquidity(tx common.Tx, withdrawAddress common.Address, withd
 }
 
 // Route should return the route key of the module
-func (m *MsgWithdrawLiquidity) Route() string { return RouterKey }
+func (m MsgWithdrawLiquidity) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgWithdrawLiquidity) Type() string { return "withdraw" }
+func (m MsgWithdrawLiquidity) Type() string { return "withdraw" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgWithdrawLiquidity) ValidateBasic() error {
+func (m MsgWithdrawLiquidity) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -53,11 +53,11 @@ func (m *MsgWithdrawLiquidity) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgWithdrawLiquidity) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgWithdrawLiquidity) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgWithdrawLiquidity) GetSigners() []cosmos.AccAddress {
+func (m MsgWithdrawLiquidity) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

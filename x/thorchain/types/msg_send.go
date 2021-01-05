@@ -10,13 +10,13 @@ func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSen
 }
 
 // Route Implements Msg.
-func (m *MsgSend) Route() string { return RouterKey }
+func (m MsgSend) Route() string { return RouterKey }
 
 // Type Implements Msg.
-func (m *MsgSend) Type() string { return "send" }
+func (m MsgSend) Type() string { return "send" }
 
 // ValidateBasic Implements Msg.
-func (m *MsgSend) ValidateBasic() error {
+func (m MsgSend) ValidateBasic() error {
 	if err := cosmos.VerifyAddressFormat(m.FromAddress); err != nil {
 		return cosmos.ErrInvalidAddress(m.FromAddress.String())
 	}
@@ -37,11 +37,11 @@ func (m *MsgSend) ValidateBasic() error {
 }
 
 // GetSignBytes Implements Msg.
-func (m *MsgSend) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgSend) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners Implements Msg.
-func (m *MsgSend) GetSigners() []cosmos.AccAddress {
+func (m MsgSend) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.FromAddress}
 }

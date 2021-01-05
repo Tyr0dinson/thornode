@@ -21,13 +21,13 @@ func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, t
 }
 
 // Route should return the route key of the module
-func (m *MsgSwap) Route() string { return RouterKey }
+func (m MsgSwap) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgSwap) Type() string { return "swap" }
+func (m MsgSwap) Type() string { return "swap" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgSwap) ValidateBasic() error {
+func (m MsgSwap) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -64,11 +64,11 @@ func (m *MsgSwap) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgSwap) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgSwap) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgSwap) GetSigners() []cosmos.AccAddress {
+func (m MsgSwap) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

@@ -15,13 +15,13 @@ func NewMsgLeave(tx common.Tx, addr, signer cosmos.AccAddress) *MsgLeave {
 }
 
 // Route should return the router key of the module
-func (m *MsgLeave) Route() string { return RouterKey }
+func (m MsgLeave) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgLeave) Type() string { return "leave" }
+func (m MsgLeave) Type() string { return "leave" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgLeave) ValidateBasic() error {
+func (m MsgLeave) ValidateBasic() error {
 	if m.Tx.FromAddress.IsEmpty() {
 		return cosmos.ErrInvalidAddress("from address cannot be empty")
 	}
@@ -38,11 +38,11 @@ func (m *MsgLeave) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgLeave) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgLeave) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgLeave) GetSigners() []cosmos.AccAddress {
+func (m MsgLeave) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

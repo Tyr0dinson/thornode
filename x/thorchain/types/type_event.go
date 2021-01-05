@@ -44,8 +44,8 @@ func NewPoolMod(asset common.Asset, runeAmt cosmos.Uint, runeAdd bool, assetAmt 
 }
 
 // NewEventSwap create a new swap event
-func NewEventSwap(pool common.Asset, priceTarget, fee, tradeSlip, liquidityFeeInRune cosmos.Uint, inTx common.Tx, emitAsset common.Coin) EventSwap {
-	return EventSwap{
+func NewEventSwap(pool common.Asset, priceTarget, fee, tradeSlip, liquidityFeeInRune cosmos.Uint, inTx common.Tx, emitAsset common.Coin) *EventSwap {
+	return &EventSwap{
 		Pool:               pool,
 		PriceTarget:        priceTarget,
 		TradeSlip:          tradeSlip,
@@ -83,8 +83,8 @@ func NewEventAddLiquidity(pool common.Asset,
 	assetAmount cosmos.Uint,
 	runeTxID,
 	assetTxID common.TxID,
-	assetAddress common.Address) EventAddLiquidity {
-	return EventAddLiquidity{
+	assetAddress common.Address) *EventAddLiquidity {
+	return &EventAddLiquidity{
 		Pool:          pool,
 		ProviderUnits: su,
 		RuneAddress:   runeAddress,
@@ -124,8 +124,8 @@ func (m *EventAddLiquidity) Events() (cosmos.Events, error) {
 }
 
 // NewEventWithdraw create a new withdraw event
-func NewEventWithdraw(pool common.Asset, su cosmos.Uint, basisPts int64, asym cosmos.Dec, inTx common.Tx, emitAsset, emitRune cosmos.Uint) EventWithdraw {
-	return EventWithdraw{
+func NewEventWithdraw(pool common.Asset, su cosmos.Uint, basisPts int64, asym cosmos.Dec, inTx common.Tx, emitAsset, emitRune cosmos.Uint) *EventWithdraw {
+	return &EventWithdraw{
 		Pool:          pool,
 		ProviderUnits: su,
 		BasisPoints:   basisPts,
@@ -155,8 +155,8 @@ func (m *EventWithdraw) Events() (cosmos.Events, error) {
 }
 
 // NewEventDonate create a new donate event
-func NewEventDonate(pool common.Asset, inTx common.Tx) EventDonate {
-	return EventDonate{
+func NewEventDonate(pool common.Asset, inTx common.Tx) *EventDonate {
+	return &EventDonate{
 		Pool: pool,
 		InTx: inTx,
 	}
@@ -176,8 +176,8 @@ func (m *EventDonate) Events() (cosmos.Events, error) {
 }
 
 // NewEventPool create a new pool change event
-func NewEventPool(pool common.Asset, status PoolStatus) EventPool {
-	return EventPool{
+func NewEventPool(pool common.Asset, status PoolStatus) *EventPool {
+	return &EventPool{
 		Pool:   pool,
 		Status: status,
 	}
@@ -198,8 +198,8 @@ func (m *EventPool) Events() (cosmos.Events, error) {
 }
 
 // NewEventRewards create a new reward event
-func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt) EventRewards {
-	return EventRewards{
+func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt) *EventRewards {
+	return &EventRewards{
 		BondReward:  bondReward,
 		PoolRewards: poolRewards,
 	}
@@ -222,8 +222,8 @@ func (m *EventRewards) Events() (cosmos.Events, error) {
 }
 
 // NewEventRefund create a new EventRefund
-func NewEventRefund(code uint32, reason string, inTx common.Tx, fee common.Fee) EventRefund {
-	return EventRefund{
+func NewEventRefund(code uint32, reason string, inTx common.Tx, fee common.Fee) *EventRefund {
+	return &EventRefund{
 		Code:   code,
 		Reason: reason,
 		InTx:   inTx,
@@ -247,8 +247,8 @@ func (m *EventRefund) Events() (cosmos.Events, error) {
 }
 
 // NewEventBond create a new Bond Events
-func NewEventBond(amount cosmos.Uint, bondType BondType, txIn common.Tx) EventBond {
-	return EventBond{
+func NewEventBond(amount cosmos.Uint, bondType BondType, txIn common.Tx) *EventBond {
+	return &EventBond{
 		Amount:   amount,
 		BondType: bondType,
 		TxIn:     txIn,
@@ -309,8 +309,8 @@ func (m *EventGas) Events() (cosmos.Events, error) {
 }
 
 // NewEventReserve create a new instance of EventReserve
-func NewEventReserve(contributor ReserveContributor, inTx common.Tx) EventReserve {
-	return EventReserve{
+func NewEventReserve(contributor ReserveContributor, inTx common.Tx) *EventReserve {
+	return &EventReserve{
 		ReserveContributor: contributor,
 		InTx:               inTx,
 	}
@@ -334,8 +334,8 @@ func (m *EventReserve) Events() (cosmos.Events, error) {
 }
 
 // NewEventSlash create a new slash event
-func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) EventSlash {
-	return EventSlash{
+func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) *EventSlash {
+	return &EventSlash{
 		Pool:        pool,
 		SlashAmount: slashAmount,
 	}
@@ -357,8 +357,8 @@ func (m *EventSlash) Events() (cosmos.Events, error) {
 }
 
 // NewEventErrata create a new errata event
-func NewEventErrata(txID common.TxID, pools PoolMods) EventErrata {
-	return EventErrata{
+func NewEventErrata(txID common.TxID, pools PoolMods) *EventErrata {
+	return &EventErrata{
 		TxID:  txID,
 		Pools: pools,
 	}
@@ -386,8 +386,8 @@ func (m *EventErrata) Events() (cosmos.Events, error) {
 }
 
 // NewEventFee create a new EventFee
-func NewEventFee(txID common.TxID, fee common.Fee) EventFee {
-	return EventFee{
+func NewEventFee(txID common.TxID, fee common.Fee) *EventFee {
+	return &EventFee{
 		TxID: txID,
 		Fee:  fee,
 	}
@@ -408,8 +408,8 @@ func (m *EventFee) Events() (cosmos.Events, error) {
 }
 
 // NewEventOutbound create a new instance of EventOutbound
-func NewEventOutbound(inTxID common.TxID, tx common.Tx) EventOutbound {
-	return EventOutbound{
+func NewEventOutbound(inTxID common.TxID, tx common.Tx) *EventOutbound {
+	return &EventOutbound{
 		InTxID: inTxID,
 		Tx:     tx,
 	}
@@ -429,8 +429,8 @@ func (m *EventOutbound) Events() (cosmos.Events, error) {
 }
 
 // NewEventTssKeygenMetric create a new EventTssMetric
-func NewEventTssKeygenMetric(pubkey common.PubKey, medianDurationMS int64) EventTssKeygenMetric {
-	return EventTssKeygenMetric{
+func NewEventTssKeygenMetric(pubkey common.PubKey, medianDurationMS int64) *EventTssKeygenMetric {
+	return &EventTssKeygenMetric{
 		PubKey:           pubkey,
 		MedianDurationMs: medianDurationMS,
 	}
@@ -450,8 +450,8 @@ func (m *EventTssKeygenMetric) Events() (cosmos.Events, error) {
 }
 
 // NewEventTssKeysignMetric create a new EventTssMetric
-func NewEventTssKeysignMetric(txID common.TxID, medianDurationMS int64) EventTssKeysignMetric {
-	return EventTssKeysignMetric{
+func NewEventTssKeysignMetric(txID common.TxID, medianDurationMS int64) *EventTssKeysignMetric {
+	return &EventTssKeysignMetric{
 		TxID:             txID,
 		MedianDurationMs: medianDurationMS,
 	}
@@ -471,8 +471,8 @@ func (m *EventTssKeysignMetric) Events() (cosmos.Events, error) {
 }
 
 // NewEventSlashPoint create a new slash point event
-func NewEventSlashPoint(addr cosmos.AccAddress, slashPoints int64, reason string) EventSlashPoint {
-	return EventSlashPoint{
+func NewEventSlashPoint(addr cosmos.AccAddress, slashPoints int64, reason string) *EventSlashPoint {
+	return &EventSlashPoint{
 		NodeAddress: addr,
 		SlashPoints: slashPoints,
 		Reason:      reason,

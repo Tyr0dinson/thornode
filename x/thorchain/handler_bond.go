@@ -130,7 +130,7 @@ func (h BondHandler) handleV1(ctx cosmos.Context, msg MsgBond, version semver.Ve
 	}
 
 	if err := h.keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
-		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount))
+		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
 	}
 	return nil
 }

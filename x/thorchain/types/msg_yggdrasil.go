@@ -20,13 +20,13 @@ func NewMsgYggdrasil(tx common.Tx, pk common.PubKey, blockHeight int64, addFunds
 }
 
 // Route should return the route key of the module
-func (m *MsgYggdrasil) Route() string { return RouterKey }
+func (m MsgYggdrasil) Route() string { return RouterKey }
 
 // Type should return the action
-func (m *MsgYggdrasil) Type() string { return "set_yggdrasil" }
+func (m MsgYggdrasil) Type() string { return "set_yggdrasil" }
 
 // ValidateBasic runs stateless checks on the message
-func (m *MsgYggdrasil) ValidateBasic() error {
+func (m MsgYggdrasil) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -49,11 +49,11 @@ func (m *MsgYggdrasil) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m *MsgYggdrasil) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+func (m MsgYggdrasil) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (m *MsgYggdrasil) GetSigners() []cosmos.AccAddress {
+func (m MsgYggdrasil) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }
