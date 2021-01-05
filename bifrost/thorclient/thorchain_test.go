@@ -10,6 +10,7 @@ import (
 	"github.com/blang/semver"
 	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -34,7 +35,7 @@ var _ = Suite(&ThorchainSuite{})
 func (s *ThorchainSuite) SetUpSuite(c *C) {
 	cfg2 := cosmos.GetConfig()
 	cfg2.SetBech32PrefixForAccount(cmd.Bech32PrefixAccAddr, cmd.Bech32PrefixAccPub)
-	cfg, info, kb := SetupThorchainForTest(c)
+	cfg, _, kb := SetupThorchainForTest(c)
 	s.cfg = cfg
 	s.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch {
@@ -71,7 +72,7 @@ func (s *ThorchainSuite) SetUpSuite(c *C) {
 	s.cfg.ChainRPC = s.server.Listener.Addr().String()
 
 	var err error
-	s.bridge, err = NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, info, cfg.SignerPasswd))
+	s.bridge, err = NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 	s.bridge.httpClient.RetryMax = 1 // fail fast
 	c.Assert(err, IsNil)
 	c.Assert(s.bridge, NotNil)
@@ -140,9 +141,9 @@ func (s *ThorchainSuite) TestSign(c *C) {
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 	testFunc := func(cfg config.ClientConfiguration, errChecker, sbChecker Checker) {
 		kb := ckeys.NewInMemory()
-		info, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
+		_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
 		c.Assert(err, IsNil)
-		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, info, cfg.SignerPasswd))
+		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 		c.Assert(err, errChecker)
 		c.Assert(sb, sbChecker)
 	}

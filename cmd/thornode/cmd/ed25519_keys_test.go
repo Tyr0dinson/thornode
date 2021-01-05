@@ -3,6 +3,7 @@ package cmd
 import (
 	"testing"
 
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/tendermint/tendermint/crypto/ed25519"
@@ -30,9 +31,11 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	_, pk, err := edwards.PrivKeyFromScalar(edwards.Edwards(), result)
 	c.Assert(err, IsNil)
 
-	var pkey ed25519.PubKeyEd25519
+	var pkey ed25519.PubKey
 	copy(pkey[:], pk.Serialize())
-	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, pkey)
+	tmp, err := codec.FromTmPubKeyInterface(pkey)
+	c.Assert(err, IsNil)
+	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, tmp)
 	c.Assert(err, IsNil)
 	c.Assert(pubKey, Equals, "tthorpub1zcjduepqkh2q3agpupf9w3kqpgqfe0n3crtn8jljzds777x4x9tw9tngmk6s4vfcz5")
 

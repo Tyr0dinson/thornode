@@ -2,7 +2,7 @@ package common
 
 import (
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	btypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 )
@@ -29,7 +29,7 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(uniq, HasLen, 2)
 
 	algo := bnbChain.GetSigningAlgo()
-	c.Assert(algo, Equals, keyring.Secp256k1)
+	c.Assert(algo, Equals, hd.Secp256k1)
 
 	c.Assert(BNBChain.GetGasAsset(), Equals, BNBAsset)
 	c.Assert(BTCChain.GetGasAsset(), Equals, BTCAsset)

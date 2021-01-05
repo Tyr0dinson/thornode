@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -179,17 +180,19 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
-	kb := ckeys.NewInMemory()
-	info, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
+	kb := cKeys.NewInMemory()
+	_, _, err = kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerPasswd, cfg.SignerPasswd)
 	c.Assert(s.thorKeys, NotNil)
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(s.bridge, NotNil)
 	c.Assert(err, IsNil)
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-	pk, err := common.NewPubKeyFromCrypto(priv.PubKey())
+	tmp, err := codec.ToTmPubKeyInterface(priv.PubKey())
+	c.Assert(err, IsNil)
+	pk, err := common.NewPubKeyFromCrypto(tmp)
 	c.Assert(err, IsNil)
 	txOut := getTxOutFromJSONInput(`{ "height": "0", "tx_array": [ { "vault_pubkey":"", "seq_no":"0","to": "tbnb186nvjtqk4kkea3f8a30xh4vqtkrlu2rm9xgly3", "memo": "migrate", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk

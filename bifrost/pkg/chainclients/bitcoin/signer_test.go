@@ -18,9 +18,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
 	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
@@ -70,10 +70,10 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 		ChainHomeFolder: thordir,
 	}
 
-	kb := ckeys.NewInMemory()
-	info, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
+	kb := cKeys.NewInMemory()
+	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	thorKeys := thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
+	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 
 	s.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if req.RequestURI == "/thorchain/vaults/tthorpub1addwnpepqwm9wsafv26hzqurtjvuuj3xk4j3jyc9yj2uastnmuuqjney9ep3clzt622/signers" {
@@ -145,7 +145,7 @@ func (s *BitcoinSignerSuite) TestGetBTCPrivateKey(c *C) {
 	c.Assert(buf, NotNil)
 	prikeyByte, err := hex.DecodeString(string(buf))
 	c.Assert(err, IsNil)
-	pk := secp256k1.GenPrivKeySecp256k1(prikeyByte)
+	pk := secp256k1.GenPrivKeyFromSecret(prikeyByte)
 	btcPrivateKey, err := getBTCPrivateKey(pk)
 	c.Assert(err, IsNil)
 	c.Assert(btcPrivateKey, NotNil)
