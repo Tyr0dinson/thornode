@@ -91,7 +91,7 @@ func (k *Keys) GetSignerInfo() ckeys.Info {
 // GetPrivateKey return the private key
 func (k *Keys) GetPrivateKey() (cryptotypes.PrivKey, error) {
 	// return k.kb.ExportPrivateKeyObject(k.signerName)
-	privKeyArmor, err := k.kb.ExportPubKeyArmor(k.signerName)
+	privKeyArmor, err := k.kb.ExportPrivKeyArmor(k.signerName, k.password)
 	if err != nil {
 		return nil, err
 	}
