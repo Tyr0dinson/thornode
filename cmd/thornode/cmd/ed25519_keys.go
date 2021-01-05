@@ -21,6 +21,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/tendermint/tendermint/crypto/ed25519"
+
+	"gitlab.com/thorchain/thornode/app"
 )
 
 const (
@@ -50,8 +52,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), viper.GetString(flags.FlagHome), password))
+	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), app.DefaultNodeHome(appName), password))
 	if err != nil {
 		return fmt.Errorf("fail to open key store: %w", err)
 	}
@@ -76,9 +77,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("fail to parse private key")
 	}
-
-	var pkey ed25519.PubKey
-	copy(pkey[:], pk.Serialize())
+	pkey := ed25519.PubKey(pk.Serialize())
 	tmp, err := codec.FromTmPubKeyInterface(pkey)
 	if err != nil {
 		return fmt.Errorf("fail to get ED25519 key : %w", err)
@@ -98,7 +97,7 @@ func generateNewKey(buf *bufio.Reader) (*keyring.Item, error) {
 	}
 	data, err := mnemonicToEddKey(mnemonic, "")
 	if err != nil {
-		return nil, fmt.Errorf("fail to generate ed25519 keys")
+		return nil, fmt.Errorf("fail to generate ed25519 keys: %w", err)
 	}
 	item := &keyring.Item{
 		Key:                         DefaultEd25519KeyName,
