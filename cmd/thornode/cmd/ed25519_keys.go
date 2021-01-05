@@ -79,7 +79,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 
 	var pkey ed25519.PubKey
 	copy(pkey[:], pk.Serialize())
-	tmp, err := codec.FromTmProtoPublicKey(pkey)
+	tmp, err := codec.FromTmPubKeyInterface(pkey)
 	if err != nil {
 		return fmt.Errorf("fail to get ED25519 key : %w", err)
 	}
