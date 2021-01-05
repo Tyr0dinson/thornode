@@ -39,7 +39,6 @@ const (
 	prefixVaultAsgardIndex       kvTypes.DbPrefix = "vault_asgard_index/"
 	prefixNetwork                kvTypes.DbPrefix = "network/"
 	prefixObservingAddresses     kvTypes.DbPrefix = "observing_addresses/"
-	prefixReserves               kvTypes.DbPrefix = "reserves/"
 	prefixTss                    kvTypes.DbPrefix = "tss/"
 	prefixTssKeysignFailure      kvTypes.DbPrefix = "tssKeysignFailure/"
 	prefixKeygen                 kvTypes.DbPrefix = "keygen/"
@@ -167,7 +166,7 @@ func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, 
 	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
-	record = &value.Value
+	*record = value.GetValue()
 	return true, nil
 }
 
@@ -193,7 +192,7 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
-	record = &value.Value
+	*record = value.GetValue()
 	return true, nil
 }
 
@@ -214,18 +213,18 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 		return false, nil
 	}
 
-	value := ProtoAccAddresses{*record}
+	var value ProtoAccAddresses
 	bz := store.Get([]byte(key))
 	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
-	record = &value.Value
+	*record = value.Value
 	return true, nil
 }
 
 func (k KVStore) setStrings(ctx cosmos.Context, key string, record []string) {
 	store := ctx.KVStore(k.storeKey)
-	value := ProtoStrings{record}
+	value := ProtoStrings{Value: record}
 	buf := k.cdc.MustMarshalBinaryBare(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
@@ -240,12 +239,12 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 		return false, nil
 	}
 
-	value := ProtoStrings{*record}
+	var value ProtoStrings
 	bz := store.Get([]byte(key))
 	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
-	record = &value.Value
+	*record = value.Value
 	return true, nil
 }
 
