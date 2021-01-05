@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -33,11 +33,11 @@ func (s *BroadcastSuite) SetUpSuite(c *C) {
 		}
 	}))
 
-	cfg, info, kb := SetupThorchainForTest(c)
+	cfg, _, kb := SetupThorchainForTest(c)
 	s.cfg = cfg
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
 	var err error
-	s.bridge, err = NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, info, cfg.SignerPasswd))
+	s.bridge, err = NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 	s.bridge.httpClient.RetryMax = 1
 	c.Assert(err, IsNil)
 	c.Assert(s.bridge, NotNil)

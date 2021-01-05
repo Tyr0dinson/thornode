@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -13,7 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
 var m *metrics.Metrics
@@ -37,10 +39,21 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	})
 	c.Assert(m, NotNil)
 	c.Assert(err, IsNil)
-	cfg, info, kb := cosmos.SetupThorchainForTest(c)
+	thorchain.SetupConfigForTest()
+	cfg := config.ClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       "localhost",
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: ".",
+	}
+	kb := ckeys.NewInMemory()
+	_, _, err = kb.NewMnemonic(cfg.SignerName, ckeys.English, cfg.SignerPasswd, hd.Secp256k1)
+	c.Assert(err, IsNil)
+
 	s.cfg = cfg
 
-	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd))
+	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 	c.Assert(err, IsNil)
 }
 

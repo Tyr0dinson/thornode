@@ -3,7 +3,6 @@ package thorclient
 import (
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/client/keys"
 	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -17,7 +16,7 @@ import (
 
 var m *metrics.Metrics
 
-func SetupThorchainForTest(c *C) (config.ClientConfiguration, cKeys.Info, cKeys.Keybase) {
+func SetupThorchainForTest(c *C) (config.ClientConfiguration, cKeys.Info, cKeys.Keyring) {
 	thorchain.SetupConfigForTest()
 	cfg := config.ClientConfiguration{
 		ChainID:         "thorchain",
@@ -27,8 +26,7 @@ func SetupThorchainForTest(c *C) (config.ClientConfiguration, cKeys.Info, cKeys.
 		SignerPasswd:    "password",
 		ChainHomeFolder: "",
 	}
-	kb := keys.NewInMemoryKeyBase()
-	kb := ckeys.NewInMemory()
+	kb := cKeys.NewInMemory()
 
 	params := *hd.NewFundraiserParams(0, sdk.CoinType, 0)
 	hdPath := params.String()

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
 
@@ -45,10 +46,9 @@ func (*KeyGenTestSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
 	c.Assert(err, IsNil)
-	info, _, err := kb.CreateMnemonic(signerNameForTest, cKeys.English, signerPasswordForTest, cKeys.Secp256k1)
+	info, _, err := kb.NewMnemonic(signerNameForTest, cKeys.English, signerPasswordForTest, hd.Secp256k1)
 	c.Logf("name:%s", info.GetName())
 	c.Assert(err, IsNil)
-	kb.CloseDB()
 	return thorcliDir
 }
 
@@ -63,9 +63,9 @@ func (kts *KeyGenTestSuite) TestNewTssKenGen(c *C) {
 		err := os.RemoveAll(folder)
 		c.Assert(err, IsNil)
 	}()
-	kb, info, err := thorclient.GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
+	kb, _, err := thorclient.GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
 	c.Assert(err, IsNil)
-	k := thorclient.NewKeysWithKeybase(kb, info, signerPasswordForTest)
+	k := thorclient.NewKeysWithKeybase(kb, signerNameForTest, signerPasswordForTest)
 	c.Assert(k, NotNil)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)

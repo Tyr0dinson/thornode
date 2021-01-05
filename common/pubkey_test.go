@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
@@ -136,7 +137,7 @@ func (s *PubKeyTestSuite) SetUpSuite(c *C) {
 
 // TestPubKey implementation
 func (s *PubKeyTestSuite) TestPubKey(c *C) {
-	_, pubKey, _ := atypes.KeyTestPubAddr()
+	_, pubKey, _ := testdata.KeyTestPubAddr()
 	spk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
 	c.Assert(err, IsNil)
 	pk, err := NewPubKey(spk)
@@ -157,7 +158,7 @@ func (s *PubKeyTestSuite) TestPubKey(c *C) {
 }
 
 func (s *PubKeyTestSuite) TestPubKeySet(c *C) {
-	_, pubKey, _ := atypes.KeyTestPubAddr()
+	_, pubKey, _ := testdata.KeyTestPubAddr()
 	spk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
 	c.Assert(err, IsNil)
 	pk, err := NewPubKey(spk)
@@ -185,16 +186,18 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 		privB, _ := hex.DecodeString(d.priv)
 		pubB, _ := hex.DecodeString(d.pub)
 
-		var priv secp256k1.PrivKeySecp256k1
+		var priv secp256k1.PrivKey
 		copy(priv[:], privB)
 
 		pubKey := priv.PubKey()
-		pubT, _ := pubKey.(secp256k1.PubKeySecp256k1)
+		pubT, _ := pubKey.(secp256k1.PubKey)
 		pub := pubT[:]
 
 		c.Assert(hex.EncodeToString(pub), Equals, hex.EncodeToString(pubB))
 
-		pubBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
+		tmp, err := codec.FromTmPubKeyInterface(pubKey)
+		c.Assert(err, IsNil)
+		pubBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, tmp)
 		c.Assert(err, IsNil)
 
 		pk, err := NewPubKey(pubBech32)
