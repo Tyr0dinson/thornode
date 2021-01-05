@@ -21,11 +21,11 @@ echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME --keyring-backend file
 if [ $? -gt 0 ]; then
   if [ "$SIGNER_SEED_PHRASE" != "" ]; then
     printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys add $SIGNER_NAME --recover --keyring-backend file
-    NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$SIGNER_SEED_PHRASE\n" | thornode ed25519)
+    NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$SIGNER_SEED_PHRASE\n" | thornode ed25519 --keyring-backend file)
   else
-     RESULT=$(printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys add $SIGNER_NAME --keyring-backend file --output json 2>&1 >/dev/null)
+     RESULT=$(printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys add $SIGNER_NAME --keyring-backend file --output json 2>&1)
      MNEMONIC=$(echo $RESULT | jq -r '.mnemonic')
-     NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$MNEMONIC\n" | thornode ed25519)
+     NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$MNEMONIC\n" | thornode ed25519 --keyring-backend file)
   fi
 fi
 
@@ -57,7 +57,6 @@ if [ "$SEED" = "$(hostname)" ]; then
       ADDRS="$ADDRS,$(cat $f | awk '{print $1}')"
     done
     init_chain $(echo "$ADDRS" | sed -e 's/^,*//')
-    ls -alstr /root 
 
     if [ ! -z ${VAULT_PUBKEY+x} ]; then
       PUBKEYS=""
@@ -112,7 +111,7 @@ if [ "$SEED" = "$(hostname)" ]; then
     [ ! -z $EXTERNAL_IP ] && external_address $EXTERNAL_IP $NET
 
     cat ~/.thornode/config/genesis.json
-    thornode validate-genesis
+    thornode validate-genesis --trace
   fi
 fi
 

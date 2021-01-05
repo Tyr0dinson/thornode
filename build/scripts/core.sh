@@ -16,7 +16,7 @@ add_node_account () {
     NODE_PUB_KEY_ED25519=$6
     IP_ADDRESS=$7
     MEMBERSHIP=$8
-    jq --arg IP_ADDRESS $IP_ADDRESS --arg VERSION $VERSION --arg BOND_ADDRESS "$BOND_ADDRESS" --arg VALIDATOR "$VALIDATOR" --arg NODE_ADDRESS "$NODE_ADDRESS" --arg NODE_PUB_KEY "$NODE_PUB_KEY" --arg NODE_PUB_KEY_ED25519 "$NODE_PUB_KEY_ED25519" '.app_state.thorchain.node_accounts += [{"node_address": $NODE_ADDRESS, "version": $VERSION, "ip_address": $IP_ADDRESS, "status":"active", "active_block_height": "0", "bond_address":$BOND_ADDRESS, "signer_membership": [], "validator_cons_pub_key":$VALIDATOR, "pub_key_set":{"secp256k1":$NODE_PUB_KEY,"ed25519":$NODE_PUB_KEY_ED25519}}]' <~/.thornode/config/genesis.json >/tmp/genesis.json
+    jq --arg IP_ADDRESS $IP_ADDRESS --arg VERSION $VERSION --arg BOND_ADDRESS "$BOND_ADDRESS" --arg VALIDATOR "$VALIDATOR" --arg NODE_ADDRESS "$NODE_ADDRESS" --arg NODE_PUB_KEY "$NODE_PUB_KEY" --arg NODE_PUB_KEY_ED25519 "$NODE_PUB_KEY_ED25519" '.app_state.thorchain.node_accounts += [{"node_address": $NODE_ADDRESS, "version": $VERSION, "ip_address": $IP_ADDRESS, "status": "Active", "active_block_height": "0", "bond_address":$BOND_ADDRESS, "signer_membership": [], "validator_cons_pub_key":$VALIDATOR, "pub_key_set":{"secp256k1":$NODE_PUB_KEY,"ed25519":$NODE_PUB_KEY_ED25519}}]' <~/.thornode/config/genesis.json >/tmp/genesis.json
     mv /tmp/genesis.json ~/.thornode/config/genesis.json
     if [ ! -z "$MEMBERSHIP" ]; then
         jq --arg MEMBERSHIP "$MEMBERSHIP" '.app_state.thorchain.node_accounts[-1].signer_membership += [$MEMBERSHIP]' ~/.thornode/config/genesis.json > /tmp/genesis.json
@@ -51,25 +51,27 @@ reserve () {
 
 
 disable_bank_send () {
-    jq '.app_state.bank.send_enabled = false' <~/.thornode/config/genesis.json >/tmp/genesis.json
+    jq '.app_state.bank.params.default_send_enabled = false' <~/.thornode/config/genesis.json >/tmp/genesis.json
+    mv /tmp/genesis.json ~/.thornode/config/genesis.json
+
+    jq '.app_state.transfer.params.send_enabled = false' <~/.thornode/config/genesis.json >/tmp/genesis.json
     mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 
 add_account () {
     jq --arg ADDRESS $1 --arg ASSET $2 --arg AMOUNT $3 '.app_state.auth.accounts += [{
-        "type": "cosmos-sdk/Account",
-        "value": {
-          "address": $ADDRESS,
-          "coins": [
-            {
-              "denom": $ASSET,
-              "amount": $AMOUNT
-            }
-          ],
-          "public_key": null,
-          "account_number": "0",
-          "sequence": "0"
-        }
+        "@type": "/cosmos.auth.v1beta1.BaseAccount",
+        "address": $ADDRESS,
+        "pub_key": null,
+        "account_number": "0",
+        "sequence": "0"
+    }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
+        # "coins": [ { "denom": $ASSET, "amount": $AMOUNT } ],
+    mv /tmp/genesis.json ~/.thornode/config/genesis.json
+    
+    jq --arg ADDRESS $1 --arg ASSET $2 --arg AMOUNT $3 '.app_state.bank.balances += [{
+        "address": $ADDRESS,
+        "coins": [ { "denom": $ASSET, "amount": $AMOUNT } ],
     }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
     mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
@@ -188,7 +190,7 @@ fetch_genesis () {
         sleep 3
     done
     curl -s $1:$PORT_RPC/genesis | jq .result.genesis > ~/.thornode/config/genesis.json
-    thornode validate-genesis
+    thornode validate-genesis --trace
     cat ~/.thornode/config/genesis.json
 }
 

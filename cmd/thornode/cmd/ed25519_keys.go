@@ -14,12 +14,13 @@ import (
 	"github.com/99designs/keyring"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/input"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/tendermint/tendermint/crypto/ed25519"
 )
 
 const (
@@ -76,9 +77,13 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("fail to parse private key")
 	}
 
-	var pkey cryptotypes.PubKey
-	copy(pkey.Bytes(), pk.Serialize())
-	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, pkey)
+	var pkey ed25519.PubKey
+	copy(pkey[:], pk.Serialize())
+	tmp, err := codec.FromTmProtoPublicKey(pkey)
+	if err != nil {
+		return fmt.Errorf("fail to get ED25519 key : %w", err)
+	}
+	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, tmp)
 	if err != nil {
 		return fmt.Errorf("fail generate bech32 account pub key")
 	}
