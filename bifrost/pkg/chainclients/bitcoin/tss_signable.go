@@ -57,7 +57,7 @@ func (ts *TssSignable) GetPubKey() *btcec.PublicKey {
 	}
 	secpPubKey, err := codec.ToTmPubKeyInterface(cpk)
 	if err != nil {
-		ts.logger.Error().Msgf("it is not a secp256 k1 public key", "pubkey", ts.poolPubKey.String(), "err", err)
+		ts.logger.Error().Msgf("it is not a secp256 k1 public key (%s): %s", ts.poolPubKey.String(), err)
 		return nil
 	}
 	newPubkey, err := btcec.ParsePubKey(secpPubKey.Bytes(), btcec.S256())

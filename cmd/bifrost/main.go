@@ -121,7 +121,7 @@ func main() {
 	tssIns, err := tss.NewTss(
 		bootstrapPeers,
 		cfg.TSS.P2PPort,
-		priKey.(crypto.PrivKey),
+		crypto.PrivKey(priKey),
 		cfg.TSS.Rendezvous,
 		app.DefaultNodeHome(""),
 		common.TssConfig{

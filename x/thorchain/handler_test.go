@@ -96,7 +96,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, nil)
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 
-	k := keeper.NewKVStore(bk, ak, keyThorchain, legacyCodec)
+	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
 
 	FundModule(c, ctx, k, AsgardName, common.One)
 
