@@ -37,9 +37,9 @@ func (x *NodeStatus) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// getNodeStatus from string
+// GetNodeStatus from string
 func getNodeStatus(ps string) NodeStatus {
-	if val, ok := NodeStatus_value[ps]; ok {
+	if val, ok := NodeStatus_value[strings.Title(strings.ToLower(ps))]; ok {
 		return NodeStatus(val)
 	}
 	return NodeStatus_Unknown
