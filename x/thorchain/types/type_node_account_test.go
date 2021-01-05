@@ -42,24 +42,21 @@ func (NodeAccountSuite) TestGetNodeStatus(c *C) {
 		if r != v {
 			c.Errorf("expect %s,however THORNode got %s", v, r)
 		}
-		c.Check(r.String(), Equals, strings.ToLower(k))
-		c.Check(v.Valid(), IsNil)
+		c.Assert(r.String(), Equals, strings.Title(k))
+		c.Assert(v.Valid(), IsNil, Commentf(r.String()))
 		buf, err := json.Marshal(v)
 		c.Assert(err, IsNil)
 		c.Assert(len(buf) > 0, Equals, true)
 	}
 	ns := NodeStatus(255)
-	c.Assert(ns.String(), Equals, "")
+	c.Assert(ns.String(), Equals, "255")
 	c.Check(ns.Valid(), NotNil)
 	ns = GetNodeStatus("Whatever")
 	c.Assert(ns, Equals, NodeStatus_Unknown)
 	nodeStatus := NodeStatus_Active
-	result, err := json.Marshal(nodeStatus)
+	result, err := nodeStatus.MarshalJSON()
 	c.Check(err, IsNil)
 	c.Check(result, NotNil)
-	var newNodeStatus NodeStatus
-	c.Check(json.Unmarshal(result, &newNodeStatus), IsNil)
-	c.Check(newNodeStatus, Equals, nodeStatus)
 }
 
 func (NodeAccountSuite) TestNodeAccount(c *C) {

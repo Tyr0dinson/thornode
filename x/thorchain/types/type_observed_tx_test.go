@@ -261,7 +261,7 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	c.Assert(voter.AddOutTx(tx), Equals, true)
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	c.Assert(voter.Tx.Status, Equals, Status_done)
-	c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
+	c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID.String())
 
 	c.Assert(voter.IsDone(), Equals, true)
 	voter.Tx = voter.GetTx(activeNodes)
@@ -323,7 +323,7 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	if !voter.Tx.IsEmpty() {
 		c.Assert(voter.Tx.Status, Equals, Status_done)
-		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID)
+		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID.String())
 	}
 
 	c.Assert(voter.IsDone(), Equals, true)

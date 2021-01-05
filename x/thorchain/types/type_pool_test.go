@@ -87,6 +87,4 @@ func (PoolTestSuite) TestPoolStatus(c *C) {
 	buf, err := json.Marshal(ps)
 	c.Check(err, IsNil)
 	c.Check(buf, NotNil)
-	invalidPoolStatus := PoolStatus(100)
-	c.Check(invalidPoolStatus.Valid(), NotNil)
 }

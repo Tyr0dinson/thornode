@@ -16,7 +16,7 @@ import (
 
 // Valid check whether the node status is valid or not
 func (ps NodeStatus) Valid() error {
-	if ps.String() == "" {
+	if _, ok := NodeStatus_value[strings.Title(ps.String())]; !ok {
 		return fmt.Errorf("invalid node status")
 	}
 	return nil
@@ -39,7 +39,7 @@ func (ps *NodeStatus) UnmarshalJSON(b []byte) error {
 
 // GetNodeStatus from string
 func GetNodeStatus(ps string) NodeStatus {
-	if val, ok := NodeStatus_value[ps]; ok {
+	if val, ok := NodeStatus_value[strings.Title(ps)]; ok {
 		return NodeStatus(val)
 	}
 	return NodeStatus_Unknown
