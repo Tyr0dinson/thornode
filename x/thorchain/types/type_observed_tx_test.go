@@ -139,6 +139,7 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	tx = voter.GetTx(trusts4)
 	c.Check(tx.IsEmpty(), Equals, true)
 	c.Assert(voter.HasConsensus(trusts3), Equals, true)
+	voter.Tx = ObservedTx{} // reset the final observed tx
 	c.Check(voter.HasConsensus(trusts4), Equals, false)
 	c.Check(voter.Key().Equals(txID), Equals, true)
 	c.Check(voter.String() == txID.String(), Equals, true)
@@ -147,6 +148,7 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	txFinalised = voter.GetTx(trusts4)
 	c.Check(txFinalised.IsEmpty(), Equals, true)
 	c.Check(voter.HasFinalised(trusts3), Equals, true)
+	voter.Tx = ObservedTx{}
 	c.Check(voter.HasFinalised(trusts4), Equals, false)
 	c.Check(voter.Key().Equals(txID), Equals, true)
 	c.Check(voter.String() == txID.String(), Equals, true)
@@ -323,7 +325,11 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	if !voter.Tx.IsEmpty() {
 		c.Assert(voter.Tx.Status, Equals, Status_done)
+<<<<<<< HEAD
 		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID.String())
+=======
+		c.Assert(common.TxID(voter.Tx.OutHashes[0]), Equals, tx.ID)
+>>>>>>> origin/lint-fix
 	}
 
 	c.Assert(voter.IsDone(), Equals, true)

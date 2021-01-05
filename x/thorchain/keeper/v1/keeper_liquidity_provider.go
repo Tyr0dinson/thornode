@@ -33,7 +33,7 @@ func (k KVStore) getLiquidityProvider(ctx cosmos.Context, key string, record *Li
 
 // GetLiquidityProviderIterator iterate liquidity providers
 func (k KVStore) GetLiquidityProviderIterator(ctx cosmos.Context, asset common.Asset) cosmos.Iterator {
-	key := k.GetKey(ctx, prefixLiquidityProvider, LiquidityProvider{Asset: asset}.Key())
+	key := k.GetKey(ctx, prefixLiquidityProvider, (&LiquidityProvider{Asset: asset}).Key())
 	return k.getIterator(ctx, types.DbPrefix(key))
 }
 

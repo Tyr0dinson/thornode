@@ -71,7 +71,7 @@ func (PoolTestSuite) TestPool(c *C) {
 
 func (PoolTestSuite) TestPoolStatus(c *C) {
 	inputs := []string{
-		"available", "staged", "suspended", "whatever",
+		"Available", "Staged", "Suspended", "whatever",
 	}
 	for _, item := range inputs {
 		ps := GetPoolStatus(item)

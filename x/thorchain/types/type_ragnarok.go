@@ -1,5 +1,6 @@
 package types
 
-func (r RagnarokWithdrawPosition) IsEmpty() bool {
-	return r.Number < 0 || r.Pool.IsEmpty()
+// IsEmpty whether the position is empty
+func (m RagnarokWithdrawPosition) IsEmpty() bool {
+	return m.Number < 0 || m.Pool.IsEmpty()
 }

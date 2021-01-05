@@ -3,61 +3,16 @@ package types
 import (
 	"encoding/json"
 	"sort"
-	"strings"
 
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 type NodeAccountSuite struct{}
 
 var _ = Suite(&NodeAccountSuite{})
-
-func (NodeAccountSuite) TestGetNodeStatus(c *C) {
-	input := map[string]NodeStatus{
-		"unknown":     NodeStatus_Unknown,
-		"Unknown":     NodeStatus_Unknown,
-		"uNknown":     NodeStatus_Unknown,
-		"WhiteListed": NodeStatus_Whitelisted,
-		"WHITELISTED": NodeStatus_Whitelisted,
-		"whitelisted": NodeStatus_Whitelisted,
-		"Standby":     NodeStatus_Standby,
-		"standby":     NodeStatus_Standby,
-		"StanDby":     NodeStatus_Standby,
-		"active":      NodeStatus_Active,
-		"Active":      NodeStatus_Active,
-		"aCtive":      NodeStatus_Active,
-		"ACTIVE":      NodeStatus_Active,
-		"disabled":    NodeStatus_Disabled,
-		"Disabled":    NodeStatus_Disabled,
-		"disabLed":    NodeStatus_Disabled,
-		"ready":       NodeStatus_Ready,
-		"Ready":       NodeStatus_Ready,
-		"rEady":       NodeStatus_Ready,
-	}
-	for k, v := range input {
-		r := GetNodeStatus(k)
-		if r != v {
-			c.Errorf("expect %s,however THORNode got %s", v, r)
-		}
-		c.Assert(r.String(), Equals, strings.Title(k))
-		c.Assert(v.Valid(), IsNil, Commentf(r.String()))
-		buf, err := json.Marshal(v)
-		c.Assert(err, IsNil)
-		c.Assert(len(buf) > 0, Equals, true)
-	}
-	ns := NodeStatus(255)
-	c.Assert(ns.String(), Equals, "255")
-	c.Check(ns.Valid(), NotNil)
-	ns = GetNodeStatus("Whatever")
-	c.Assert(ns, Equals, NodeStatus_Unknown)
-	nodeStatus := NodeStatus_Active
-	result, err := nodeStatus.MarshalJSON()
-	c.Check(err, IsNil)
-	c.Check(result, NotNil)
-}
 
 func (NodeAccountSuite) TestNodeAccount(c *C) {
 	addr := GetRandomBech32Addr()
@@ -71,6 +26,9 @@ func (NodeAccountSuite) TestNodeAccount(c *C) {
 	}
 
 	na := NewNodeAccount(nodeAddress, NodeStatus_Active, pubKeys, bepConsPubKey, cosmos.NewUint(common.One), bondAddr, 1)
+	result, err := json.MarshalIndent(na, "", "	")
+	c.Assert(err, IsNil)
+	c.Log(string(result))
 	c.Assert(na.IsEmpty(), Equals, false)
 	c.Assert(na.Valid(), IsNil)
 	c.Assert(na.Bond.Uint64(), Equals, uint64(common.One))

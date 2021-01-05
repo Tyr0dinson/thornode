@@ -15,14 +15,15 @@ func NewNetworkFee(chain common.Chain, transactionSize, transactionFeeRate uint6
 	}
 }
 
-func (f NetworkFee) Valid() error {
-	if f.Chain.IsEmpty() {
+// Valid - check whether NetworkFee struct represent valid information
+func (m *NetworkFee) Valid() error {
+	if m.Chain.IsEmpty() {
 		return errors.New("chain can't be empty")
 	}
-	if f.TransactionSize <= 0 {
+	if m.TransactionSize <= 0 {
 		return errors.New("transaction size can't be negative")
 	}
-	if f.TransactionFeeRate <= 0 {
+	if m.TransactionFeeRate <= 0 {
 		return errors.New("transaction fee rate can't be zero")
 	}
 	return nil

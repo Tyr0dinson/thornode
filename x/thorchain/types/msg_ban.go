@@ -1,7 +1,7 @@
 package types
 
 import (
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var _ cosmos.Msg = &MsgBan{}
@@ -15,27 +15,28 @@ func NewMsgBan(addr, signer cosmos.AccAddress) *MsgBan {
 }
 
 // Route should return the name of the module
-func (msg MsgBan) Route() string { return RouterKey }
+func (m MsgBan) Route() string { return RouterKey }
 
 // Type should return the action
-func (msg MsgBan) Type() string { return "ban" }
+func (m MsgBan) Type() string { return "ban" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgBan) ValidateBasic() error {
-	if msg.Signer.Empty() {
-		return cosmos.ErrInvalidAddress(msg.Signer.String())
+func (m MsgBan) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if msg.NodeAddress.Empty() {
-		return cosmos.ErrInvalidAddress(msg.NodeAddress.String())
+	if m.NodeAddress.Empty() {
+		return cosmos.ErrInvalidAddress(m.NodeAddress.String())
 	}
 	return nil
 }
 
 // GetSignBytes encodes the message for signing
-func (msg MsgBan) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
+func (m MsgBan) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
-func (msg MsgBan) GetSigners() []cosmos.AccAddress {
-	return []cosmos.AccAddress{msg.Signer}
+// GetSigners return all the signer who signed this message
+func (m MsgBan) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
 }

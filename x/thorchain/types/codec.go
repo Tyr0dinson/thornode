@@ -3,8 +3,8 @@ package types
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	// this line is used by starport scaffolding # 1
 )
 
 var (
@@ -12,11 +12,13 @@ var (
 	ModuleCdc = codec.NewAminoCodec(amino)
 )
 
+// RegisterCodec register the msg types for amino
 func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(MsgBan{}, "thorchain/MsgBan", nil)
 	cdc.RegisterConcrete(MsgAddLiquidity{}, "thorchain/MsgAddLiquidity", nil)
 }
 
+// RegisterInterfaces register the types
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgBan{})
 	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgAddLiquidity{})

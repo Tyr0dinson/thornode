@@ -13,6 +13,6 @@ func NewJail(addr cosmos.AccAddress) Jail {
 }
 
 // IsJailed on a given height , check whether a node is jailed or not
-func (j Jail) IsJailed(ctx cosmos.Context) bool {
-	return j.ReleaseHeight > common.BlockHeight(ctx)
+func (m *Jail) IsJailed(ctx cosmos.Context) bool {
+	return m.ReleaseHeight > common.BlockHeight(ctx)
 }

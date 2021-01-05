@@ -21,51 +21,51 @@ func NewMsgAddLiquidity(tx common.Tx, asset common.Asset, r, amount cosmos.Uint,
 }
 
 // Route should return the route key of the module
-func (msg MsgAddLiquidity) Route() string { return RouterKey }
+func (m MsgAddLiquidity) Route() string { return RouterKey }
 
 // Type should return the action
-func (msg MsgAddLiquidity) Type() string { return "add_liquidity" }
+func (m MsgAddLiquidity) Type() string { return "add_liquidity" }
 
 // ValidateBasic runs stateless checks on the message
-func (msg MsgAddLiquidity) ValidateBasic() error {
-	if msg.Signer.Empty() {
-		return cosmos.ErrInvalidAddress(msg.Signer.String())
+func (m MsgAddLiquidity) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if msg.Asset.IsEmpty() {
+	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("add liquidity asset cannot be empty")
 	}
-	if err := msg.Tx.Valid(); err != nil {
+	if err := m.Tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	if msg.Asset.IsEmpty() {
+	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("unable to determine the intended pool for this add liquidity")
 	}
 	// There is no dedicate pool for RUNE ,because every pool will have RUNE , that's by design
-	if msg.Asset.IsRune() {
+	if m.Asset.IsRune() {
 		return cosmos.ErrUnknownRequest("invalid pool asset")
 	}
 	// test scenario we get two coins, but none are rune, invalid liquidity provider
-	if len(msg.Tx.Coins) == 2 && (msg.AssetAmount.IsZero() || msg.RuneAmount.IsZero()) {
+	if len(m.Tx.Coins) == 2 && (m.AssetAmount.IsZero() || m.RuneAmount.IsZero()) {
 		return cosmos.ErrUnknownRequest("did not find both coins")
 	}
-	if len(msg.Tx.Coins) > 2 {
+	if len(m.Tx.Coins) > 2 {
 		return cosmos.ErrUnknownRequest("not expecting more than two coins in adding liquidity")
 	}
-	if msg.RuneAmount.IsZero() && msg.AssetAmount.IsZero() {
+	if m.RuneAmount.IsZero() && m.AssetAmount.IsZero() {
 		return cosmos.ErrUnknownRequest("rune and asset amounts cannot both be empty")
 	}
-	if msg.RuneAddress.IsEmpty() && msg.AssetAddress.IsEmpty() {
+	if m.RuneAddress.IsEmpty() && m.AssetAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("rune address and asset address cannot be empty")
 	}
 	return nil
 }
 
 // GetSignBytes encodes the message for signing
-func (msg MsgAddLiquidity) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&msg))
+func (m MsgAddLiquidity) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
 }
 
 // GetSigners defines whose signature is required
-func (msg MsgAddLiquidity) GetSigners() []cosmos.AccAddress {
-	return []cosmos.AccAddress{msg.Signer}
+func (m MsgAddLiquidity) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
 }

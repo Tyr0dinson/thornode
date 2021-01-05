@@ -11,23 +11,7 @@ type KeygenSuite struct{}
 var _ = Suite(&KeygenSuite{})
 
 func (s *KeygenSuite) TestKengenType(c *C) {
-	input := map[KeygenType]string{
-		KeygenType_UnknownKeygen:   "unknown",
-		KeygenType_AsgardKeygen:    "asgard",
-		KeygenType_YggdrasilKeygen: "yggdrasil",
-		KeygenType(100):            "",
-	}
-	for k, v := range input {
-		c.Assert(k.String(), Equals, v)
-	}
-	asgardType := GetKeygenTypeFromString("Asgard")
-	c.Assert(asgardType, Equals, KeygenType_AsgardKeygen)
-	yggdrasilType := GetKeygenTypeFromString("Yggdrasil")
-	c.Assert(yggdrasilType, Equals, KeygenType_YggdrasilKeygen)
-
-	unknownType := GetKeygenTypeFromString("whatever")
-	c.Assert(unknownType, Equals, KeygenType_UnknownKeygen)
-
+	asgardType := KeygenType_AsgardKeygen
 	buf, err := json.Marshal(asgardType)
 	c.Check(err, IsNil)
 	var kt KeygenType
