@@ -20,6 +20,7 @@ import (
 var (
 	KeyringServiceName      = sdk.KeyringServiceName
 	NewRoute                = sdk.NewRoute
+	NewKVStoreKeys          = sdk.NewKVStoreKeys
 	NewUint                 = sdk.NewUint
 	ParseUint               = sdk.ParseUint
 	NewInt                  = sdk.NewInt
