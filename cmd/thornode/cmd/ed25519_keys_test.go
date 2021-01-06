@@ -30,9 +30,7 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	// now we test the ed25519 key can sign and verify
 	_, pk, err := edwards.PrivKeyFromScalar(edwards.Edwards(), result)
 	c.Assert(err, IsNil)
-
-	var pkey ed25519.PubKey
-	copy(pkey[:], pk.Serialize())
+	pkey := ed25519.PubKey(pk.Serialize())
 	tmp, err := codec.FromTmPubKeyInterface(pkey)
 	c.Assert(err, IsNil)
 	pubKey, err := sdk.Bech32ifyPubKey(sdk.Bech32PubKeyTypeAccPub, tmp)
