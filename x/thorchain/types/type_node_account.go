@@ -16,7 +16,7 @@ import (
 
 // Valid check whether the node status is valid or not
 func (ps NodeStatus) Valid() error {
-	if _, ok := NodeStatus_value[x.String()]; !ok {
+	if _, ok := NodeStatus_value[ps.String()]; !ok {
 		return fmt.Errorf("invalid node status")
 	}
 	return nil
