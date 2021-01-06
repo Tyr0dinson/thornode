@@ -16,6 +16,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 )
@@ -46,9 +47,9 @@ func (*KeyGenTestSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
 	c.Assert(err, IsNil)
-	info, _, err := kb.NewMnemonic(signerNameForTest, cKeys.English, signerPasswordForTest, hd.Secp256k1)
-	c.Logf("name:%s", info.GetName())
+	info, _, err := kb.NewMnemonic(signerNameForTest, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
+	c.Logf("name:%s", info.GetName())
 	return thorcliDir
 }
 

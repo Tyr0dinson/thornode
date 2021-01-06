@@ -279,7 +279,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		bs, err := NewBinanceBlockScanner(getConfigForTest("127.0.0.1"), blockscanner.NewMockScannerStorage(), true, s.bridge, s.m)
 		c.Assert(err, IsNil)
 		c.Assert(bs, NotNil)
-		c.Log(input)
+		// c.Log(input)
 		for _, item := range query.Result.Txs {
 			c.Logf("hash:%s", item.Hash)
 			txInItem, err := bs.fromTxToTxIn(item.Hash, item.Tx, 2)

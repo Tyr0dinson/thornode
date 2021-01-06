@@ -121,7 +121,11 @@ func (b *ThorchainBridge) GetContext() client.Context {
 	ctx = ctx.WithFromName(b.cfg.SignerName)
 	ctx = ctx.WithFromAddress(b.keys.GetSignerInfo().GetAddress())
 	ctx = ctx.WithBroadcastMode("async")
-	client, err := rpchttp.New(b.cfg.ChainHost, "/websocket")
+	remote := b.cfg.ChainHost
+	if !strings.HasSuffix(b.cfg.ChainHost, "http") {
+		remote = fmt.Sprintf("http://%s", remote)
+	}
+	client, err := rpchttp.New(remote, "/websocket")
 	if err != nil {
 		panic(err)
 	}

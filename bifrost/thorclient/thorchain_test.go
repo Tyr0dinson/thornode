@@ -141,7 +141,7 @@ func (s *ThorchainSuite) TestSign(c *C) {
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 	testFunc := func(cfg config.ClientConfiguration, errChecker, sbChecker Checker) {
 		kb := ckeys.NewInMemory()
-		_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, hd.Secp256k1)
+		_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
 		c.Assert(err, IsNil)
 		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 		c.Assert(err, errChecker)
