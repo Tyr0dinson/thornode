@@ -56,8 +56,10 @@ func (s *HandlerMimirSuite) TestHandle(c *C) {
 	c.Check(err, NotNil)
 	c.Check(result, IsNil)
 
-	err = handler.handle(ctx, *msg, constants.SWVersion)
-	c.Check(err, NotNil)
+	result, err = handler.Run(ctx, msg, constants.SWVersion, constants.GetConstantValues(constants.SWVersion))
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+
 	addr, err := cosmos.AccAddressFromBech32(ADMINS[0])
 	c.Check(err, IsNil)
 	msg1 := NewMsgMimir("hello", 1, addr)

@@ -94,11 +94,19 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
-	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{})
+	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
+		ModuleName:  {authtypes.Minter, authtypes.Burner},
+		AsgardName:  {},
+		BondName:    {},
+		ReserveName: {},
+	})
+
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
-
+	bk.SetSupply(ctx, banktypes.NewSupply(cosmos.Coins{
+		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
+	}))
 	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
-
+	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 
 	return ctx, k

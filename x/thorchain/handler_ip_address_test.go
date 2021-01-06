@@ -178,6 +178,9 @@ func (s *HandlerIPAddressSuite) TestHandlerSetIPAddress_validation(c *C) {
 			name: "all good - happy path",
 			messageProvider: func(ctx cosmos.Context, helper *HandlerIPAddressTestHelper) cosmos.Msg {
 				nodeAccount := GetRandomNodeAccount(NodeWhiteListed)
+				helper.SendFromModuleToAccount(ctx, ModuleName, nodeAccount.NodeAddress, common.Coins{
+					common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000*common.One)),
+				})
 				helper.Keeper.SetNodeAccount(ctx, nodeAccount)
 				return NewMsgSetIPAddress("192.168.0.1", nodeAccount.NodeAddress)
 			},
