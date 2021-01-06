@@ -325,11 +325,8 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.AddOutTx(GetRandomTx()), Equals, false)
 	if !voter.Tx.IsEmpty() {
 		c.Assert(voter.Tx.Status, Equals, Status_done)
-<<<<<<< HEAD
 		c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID.String())
-=======
 		c.Assert(common.TxID(voter.Tx.OutHashes[0]), Equals, tx.ID)
->>>>>>> origin/lint-fix
 	}
 
 	c.Assert(voter.IsDone(), Equals, true)
