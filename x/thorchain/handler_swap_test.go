@@ -189,7 +189,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	result, err = handler.Run(ctx, msgSwapFromTxIn, semver.Version{}, constAccessor)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
-	c.Check(errors.Is(err, errBadVersion), Equals, true)
+	c.Check(errors.Is(err, errInvalidVersion), Equals, true, Commentf("%+v", err))
 	msgSwap := NewMsgSwap(GetRandomTx(), common.EmptyAsset, GetRandomBNBAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), GetRandomBech32Addr())
 	result, err = handler.Run(ctx, msgSwap, ver, constAccessor)
 	c.Assert(err, NotNil)

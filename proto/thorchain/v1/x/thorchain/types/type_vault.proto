@@ -14,9 +14,9 @@ enum VaultType {
 }
 
 enum VaultStatus {
-  ActiveVault = 0;
-  RetiringVault = 1;
-  InactiveVault = 2;
+  InactiveVault = 0;
+  ActiveVault = 1;
+  RetiringVault = 2;
 }
 
 message Vault {

@@ -192,6 +192,7 @@ func (s *HandlerIPAddressSuite) TestHandlerSetIPAddress_validation(c *C) {
 	}
 	for _, tc := range testCases {
 		ctx, k := setupKeeperForTest(c)
+		c.Logf("Name: %s", tc.name)
 		helper := NewHandlerIPAddressTestHelper(k)
 		mgr := NewManagers(helper)
 		mgr.BeginBlock(ctx)

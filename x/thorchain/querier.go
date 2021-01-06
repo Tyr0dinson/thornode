@@ -746,7 +746,7 @@ func queryKeygen(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseS
 		ctx.Logger().Error("fail to marshal keygen block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keygen block to json: %w", err)
 	}
-	sig, _, err := kbs.Keybase.Sign("", buf)
+	sig, _, err := kbs.Keybase.Sign("thorchain", buf)
 	if err != nil {
 		ctx.Logger().Error("fail to sign keygen", "error", err)
 		return nil, fmt.Errorf("fail to sign keygen: %w", err)
@@ -812,7 +812,7 @@ func queryKeysign(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.Keybase
 		ctx.Logger().Error("fail to marshal keysign block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keysign block to json: %w", err)
 	}
-	sig, _, err := kbs.Keybase.Sign("", buf)
+	sig, _, err := kbs.Keybase.Sign("thorchain", buf)
 	if err != nil {
 		ctx.Logger().Error("fail to sign keysign", "error", err)
 		return nil, fmt.Errorf("fail to sign keysign: %w", err)
@@ -949,10 +949,10 @@ func queryMimirValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string,
 	iter := keeper.GetMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
-		var value int64
-		if err := cdc.UnmarshalBinaryBare(iter.Value(), &value); err != nil {
-			ctx.Logger().Error("fail to unmarshal mimir attribute", "error", err)
-			return nil, fmt.Errorf("fail to unmarshal mimir attribute:  %w", err)
+		value, err := keeper.GetMimir(ctx, string(iter.Key()))
+		if err != nil {
+			ctx.Logger().Error("fail to unmarshal mimir value", "error", err)
+			return nil, fmt.Errorf("fail to unmarshal mimir value: %w", err)
 		}
 		values[string(iter.Key())] = value
 	}

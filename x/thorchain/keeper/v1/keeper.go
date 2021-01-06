@@ -323,7 +323,7 @@ func (k KVStore) MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, 
 	if err := k.MintToModule(ctx, ModuleName, coin); err != nil {
 		return err
 	}
-	return k.SendFromModuleToModule(ctx, ModuleName, ReserveName, common.NewCoins(coin))
+	return k.SendFromModuleToAccount(ctx, ModuleName, to, common.NewCoins(coin))
 }
 
 func (k KVStore) GetModuleAddress(module string) (common.Address, error) {

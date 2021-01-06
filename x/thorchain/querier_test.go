@@ -11,6 +11,7 @@ import (
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	types2 "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -39,12 +40,10 @@ func (k *TestQuerierKeeper) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error) 
 
 func (s *QuerierSuite) SetUpTest(c *C) {
 	kb := ckeys.NewInMemory()
-	username := "test_user"
+	username := "thorchain"
 	password := "password"
 
-	params := *hd.NewFundraiserParams(0, 118, 0)
-	hdPath := params.String()
-	_, err := kb.NewAccount(username, "industry segment educate height inject hover bargain offer employ select speak outer video tornado story slow chief object junk vapor venue large shove behave", password, hdPath, hd.Secp256k1)
+	_, _, err := kb.NewMnemonic(username, ckeys.English, cmd.THORChainHDPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.kb = cosmos.KeybaseStore{
 		SignerName:   username,
@@ -351,8 +350,8 @@ func (s *QuerierSuite) TestQueryKeyGen(c *C) {
 		query.QueryKeygensPubkey.Key,
 		strconv.FormatInt(s.ctx.BlockHeight(), 10),
 	}, req)
-	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
 
 	result, err = s.querier(s.ctx, []string{
 		query.QueryKeygensPubkey.Key,
@@ -420,8 +419,8 @@ func (s *QuerierSuite) TestQueryMimir(c *C) {
 	result, err := s.querier(s.ctx, []string{
 		query.QueryMimirValues.Key,
 	}, abci.RequestQuery{})
-	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
 	var m map[string]int64
 	c.Assert(s.cdc.UnmarshalJSON(result, &m), IsNil)
 }
@@ -515,8 +514,8 @@ func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 		query.QueryKeysignArrayPubkey.Key,
 		strconv.FormatInt(s.ctx.BlockHeight(), 10),
 	}, abci.RequestQuery{})
-	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
 	var r QueryKeysign
 	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
 }

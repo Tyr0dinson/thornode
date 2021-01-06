@@ -201,8 +201,10 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool, version semver.
 					ctx.Logger().Info("fail keygen , slash bond", "address", na.NodeAddress, "amount", slashBond.String())
 					na.Bond = common.SafeSub(na.Bond, slashBond)
 					coin := common.NewCoin(common.RuneNative, slashBond)
-					if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
-						return nil, fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
+					if !coin.Amount.IsZero() {
+						if err := h.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
+							return nil, fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
+						}
 					}
 				}
 				if err := h.keeper.SetNodeAccount(ctx, na); err != nil {

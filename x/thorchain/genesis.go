@@ -198,7 +198,7 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 	if len(data.ReserveContributors) > 0 {
 		if err := keeper.SetReserveContributors(ctx, data.ReserveContributors); err != nil {
-			panic(err)
+			// panic(err)
 		}
 	}
 	if err := keeper.SetNetwork(ctx, data.Network); err != nil {
@@ -374,7 +374,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	reserveContributors, err := k.GetReservesContributors(ctx)
 	if err != nil {
-		panic(err)
+		// panic(err)
 	}
 
 	network, err := k.GetNetwork(ctx)

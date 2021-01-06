@@ -22,7 +22,7 @@ ldflags = -X gitlab.com/thorchain/thornode/constants.Version=$(VERSION) \
 		  -X github.com/cosmos/cosmos-sdk/version.BuildTags=$(TAG)
 
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -a
-TEST_BUILD_FLAGS :=  -tags mocknet -a
+TEST_BUILD_FLAGS :=  -tags mocknet
 
 BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
 
@@ -63,7 +63,7 @@ test:
 	@go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
 test-watch: clear
-	@gow -c test ${TEST_DIR}
+	@gow -c test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
 format:
 	@gofumpt -w .

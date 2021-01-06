@@ -565,11 +565,12 @@ func (s *HandlerSuite) TestExternalHandler(c *C) {
 	na := GetRandomNodeAccount(NodeActive)
 	k.SetNodeAccount(ctx, na)
 	result, err = handler(ctx, NewMsgSetVersion("0.1.0", na.NodeAddress))
-	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
 }
 
 func (s *HandlerSuite) TestFetchMemo(c *C) {
+	c.Skip("TODO: delete tx marker test")
 	w := getHandlerTestWrapper(c, 1, true, true)
 	tx := GetRandomTx()
 	tx.Memo = ""

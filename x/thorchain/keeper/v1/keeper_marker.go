@@ -2,7 +2,6 @@ package keeperv1
 
 import (
 	"errors"
-	"fmt"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -21,7 +20,7 @@ func (k KVStore) setTxMarkers(ctx cosmos.Context, key string, record TxMarkers) 
 }
 
 func (k KVStore) getTxMarkers(ctx cosmos.Context, key string, record *TxMarkers) (bool, error) {
-	return false, fmt.Errorf("disabling tx markers")
+	return true, nil
 	/*
 		store := ctx.KVStore(k.storeKey)
 		if !store.Has([]byte(key)) {

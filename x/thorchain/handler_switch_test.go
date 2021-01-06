@@ -72,7 +72,7 @@ func (s *HandlerSwitchSuite) TestGettingNativeTokens(c *C) {
 	c.Assert(err, IsNil)
 	addr, err := cosmos.AccAddressFromBech32(destination.String())
 	c.Assert(err, IsNil)
-	c.Check(k.HasCoins(ctx, addr, cosmos.NewCoins(coin)), Equals, true)
+	c.Check(k.HasCoins(ctx, addr, cosmos.NewCoins(coin)), Equals, true, Commentf("%s", k.GetBalance(ctx, addr)))
 
 	// check that we can add more an account
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
