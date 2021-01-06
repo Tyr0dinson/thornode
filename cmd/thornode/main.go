@@ -3,15 +3,24 @@ package main
 import (
 	"os"
 
+	"github.com/cosmos/cosmos-sdk/types"
+
 	prefix "gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/cmd/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 func main() {
-	cosmosSDKConfg := cosmos.GetConfig()
-	cosmosSDKConfg.SetBech32PrefixForAccount(prefix.Bech32PrefixAccAddr, prefix.Bech32PrefixAccPub)
-	cosmosSDKConfg.Seal()
+	config := cosmos.GetConfig()
+	config.SetBech32PrefixForAccount(prefix.Bech32PrefixAccAddr, prefix.Bech32PrefixAccPub)
+	config.SetBech32PrefixForValidator(prefix.Bech32PrefixValAddr, prefix.Bech32PrefixValPub)
+	config.SetBech32PrefixForConsensusNode(prefix.Bech32PrefixConsAddr, prefix.Bech32PrefixConsPub)
+	config.SetCoinType(prefix.THORChainCoinType)
+	config.SetFullFundraiserPath(prefix.THORChainHDPath)
+	config.Seal()
+	types.SetCoinDenomRegex(func() string {
+		return prefix.DenomRegex
+	})
 
 	rootCmd, _ := cmd.NewRootCmd()
 	if err := cmd.Execute(rootCmd); err != nil {
