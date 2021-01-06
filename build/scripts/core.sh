@@ -181,7 +181,7 @@ deploy_eth_contract () {
 }
 
 set_eth_contract () {
-  jq --arg CONTRACT $1 '.app_state.thorchain.chain_contracts = [{"chain": "ETH", "address": $CONTRACT}]' ~/.thornode/config/genesis.json > /tmp/genesis.json
+  jq --arg CONTRACT $1 '.app_state.thorchain.chain_contracts = [{"chain": "ETH", "contract": $CONTRACT}]' ~/.thornode/config/genesis.json > /tmp/genesis.json
     mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 

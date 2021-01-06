@@ -78,7 +78,7 @@ if [ "$SEED" = "$(hostname)" ]; then
     done
 
     # add gases
-    add_gas_config "BNB.BNB" 37500 30000
+    # add_gas_config "BNB.BNB" 37500 30000
 
     # disable default bank transfer, and opt to use our own custom one
     disable_bank_send
