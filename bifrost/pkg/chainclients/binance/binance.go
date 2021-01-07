@@ -84,7 +84,7 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 	b := &Binance{
 		logger:          log.With().Str("module", "binance").Logger(),
 		cfg:             cfg,
-		cdc:             thorclient.MakeCodec(),
+		cdc:             thorclient.MakeLegacyCodec(),
 		accts:           NewBinanceMetaDataStore(),
 		client:          &http.Client{},
 		tssKeyManager:   tssKm,

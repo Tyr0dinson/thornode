@@ -56,7 +56,7 @@ type PubKeyManager struct {
 // NewPubKeyManager create a new instance of PubKeyManager
 func NewPubKeyManager(bridge *thorclient.ThorchainBridge, m *metrics.Metrics) (*PubKeyManager, error) {
 	return &PubKeyManager{
-		cdc:             thorclient.MakeCodec(),
+		cdc:             thorclient.MakeLegacyCodec(),
 		logger:          log.With().Str("module", "thorchain_bridge").Logger(),
 		thorchainBridge: bridge,
 		errCounter:      m.GetCounterVec(metrics.PubKeyManagerError),

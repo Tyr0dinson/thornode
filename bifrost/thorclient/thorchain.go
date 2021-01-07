@@ -15,7 +15,11 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/std"
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/hashicorp/go-retryablehttp"
@@ -84,7 +88,7 @@ func NewThorchainBridge(cfg config.ClientConfiguration, m *metrics.Metrics, k *K
 
 	return &ThorchainBridge{
 		logger:        logger,
-		cdc:           MakeCodec(),
+		cdc:           MakeLegacyCodec(),
 		cfg:           cfg,
 		keys:          k,
 		errCounter:    m.GetCounterVec(metrics.ThorchainClientError),
@@ -94,8 +98,15 @@ func NewThorchainBridge(cfg config.ClientConfiguration, m *metrics.Metrics, k *K
 	}, nil
 }
 
-// MakeCodec creates codec
-func MakeCodec() *codec.LegacyAmino {
+func MakeCodec() codec.ProtoCodecMarshaler {
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	std.RegisterInterfaces(interfaceRegistry)
+	stypes.RegisterInterfaces(interfaceRegistry)
+	return codec.NewProtoCodec(interfaceRegistry)
+}
+
+// MakeLegacyCodec creates codec
+func MakeLegacyCodec() *codec.LegacyAmino {
 	cdc := codec.NewLegacyAmino()
 	banktypes.RegisterLegacyAminoCodec(cdc)
 	authtypes.RegisterLegacyAminoCodec(cdc)
@@ -121,6 +132,9 @@ func (b *ThorchainBridge) GetContext() client.Context {
 	ctx = ctx.WithFromName(b.cfg.SignerName)
 	ctx = ctx.WithFromAddress(b.keys.GetSignerInfo().GetAddress())
 	ctx = ctx.WithBroadcastMode("async")
+
+	txConfig := tx.NewTxConfig(MakeCodec(), []signing.SignMode{signing.SignMode_SIGN_MODE_DIRECT})
+	ctx = ctx.WithTxConfig(txConfig)
 	remote := b.cfg.ChainHost
 	if !strings.HasSuffix(b.cfg.ChainHost, "http") {
 		remote = fmt.Sprintf("http://%s", remote)
