@@ -64,7 +64,7 @@ services:
       - "../../scripts:/docker/scripts"
       - ${HOME}/.thornode/standalone/.thornode:/root/.thornode
       - ${HOME}/.thornode/standalone/.bond:/root/.bond
-    command: ["thornode", "start"]
+    command: ["thornode", "start","--log_level","info"]
     logging:
       driver: "json-file"
       options:
