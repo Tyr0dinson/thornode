@@ -68,7 +68,7 @@ func (ks *KeysSuite) TestNewKeys(c *C) {
 	priKey, err := ki.GetPrivateKey()
 	c.Assert(err, IsNil)
 	c.Assert(priKey, NotNil)
-	c.Assert(priKey.Bytes(), HasLen, 37)
+	c.Assert(priKey.Bytes(), HasLen, 32)
 	kb := ki.GetKeybase()
 	c.Assert(kb, NotNil)
 }
