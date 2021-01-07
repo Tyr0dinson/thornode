@@ -252,12 +252,14 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	// Mint coins into the reserve
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(data.Reserve))
-	if err := keeper.MintToModule(ctx, ModuleName, coin); err != nil {
-		panic(err)
-	}
-	if err := keeper.SendFromModuleToModule(ctx, ModuleName, ReserveName, common.NewCoins(coin)); err != nil {
-		panic(err)
+	if data.Reserve > 0 {
+		coin := common.NewCoin(common.RuneNative, cosmos.NewUint(data.Reserve))
+		if err := keeper.MintToModule(ctx, ModuleName, coin); err != nil {
+			panic(err)
+		}
+		if err := keeper.SendFromModuleToModule(ctx, ModuleName, ReserveName, common.NewCoins(coin)); err != nil {
+			panic(err)
+		}
 	}
 
 	for _, admin := range ADMINS {

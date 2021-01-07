@@ -37,6 +37,7 @@ import (
 	ibctransferkeeper "github.com/cosmos/cosmos-sdk/x/ibc/applications/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/cosmos-sdk/x/ibc/applications/transfer/types"
 	ibc "github.com/cosmos/cosmos-sdk/x/ibc/core"
+	ibccoreclienttypes "github.com/cosmos/cosmos-sdk/x/ibc/core/02-client/types"
 	porttypes "github.com/cosmos/cosmos-sdk/x/ibc/core/05-port/types"
 	ibchost "github.com/cosmos/cosmos-sdk/x/ibc/core/24-host"
 	ibckeeper "github.com/cosmos/cosmos-sdk/x/ibc/core/keeper"
@@ -88,6 +89,10 @@ var (
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
+		thorchain.ModuleName:           {authtypes.Minter, authtypes.Burner},
+		thorchain.AsgardName:           {},
+		thorchain.BondName:             {},
+		thorchain.ReserveName:          {},
 	}
 
 	// module accounts that are allowed to receive tokens
@@ -131,7 +136,7 @@ type App struct {
 	mm *module.Manager
 }
 
-// New returns a reference to an initialized Gaia.
+// New returns a reference to an initialized thornode application.
 // NewSimApp returns a reference to an initialized SimApp.
 func New(
 	appName string, logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool, skipUpgradeHeights map[int64]bool,
@@ -248,9 +253,6 @@ func New(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.mm.SetOrderBeginBlockers(
 		thorchain.ModuleName,
-		upgradetypes.ModuleName,
-		minttypes.ModuleName,
-		ibchost.ModuleName,
 	)
 
 	app.mm.SetOrderEndBlockers(thorchain.ModuleName)
@@ -320,7 +322,8 @@ func (app *App) Name() string { return app.BaseApp.Name() }
 
 // BeginBlocker application updates every begin block
 func (app *App) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
-	return app.mm.BeginBlock(ctx, req)
+	res := app.mm.BeginBlock(ctx, req)
+	return res
 }
 
 // EndBlocker application updates every end block
@@ -441,7 +444,9 @@ func initParamsKeeper(appCodec codec.BinaryMarshaler, legacyAmino *codec.LegacyA
 	paramsKeeper.Subspace(banktypes.ModuleName)
 	paramsKeeper.Subspace(stakingtypes.ModuleName)
 	paramsKeeper.Subspace(minttypes.ModuleName)
-	paramsKeeper.Subspace(ibctransfertypes.ModuleName)
+	pkt := ibctransfertypes.ParamKeyTable().RegisterParamSet(&ibccoreclienttypes.Params{})
+	paramsKeeper.Subspace(ibctransfertypes.ModuleName).
+		WithKeyTable(pkt)
 
 	return paramsKeeper
 }

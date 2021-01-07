@@ -5,6 +5,9 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/types"
 
+	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
+
+	"gitlab.com/thorchain/thornode/app"
 	prefix "gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/cmd/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -23,7 +26,7 @@ func main() {
 	})
 
 	rootCmd, _ := cmd.NewRootCmd()
-	if err := cmd.Execute(rootCmd); err != nil {
+	if err := svrcmd.Execute(rootCmd, app.DefaultNodeHome("")); err != nil {
 		os.Exit(1)
 	}
 }

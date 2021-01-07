@@ -150,7 +150,7 @@ func (am AppModule) NewQuerierHandler() sdk.Querier {
 }
 
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
-	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
+	ctx.Logger().Info("Begin Block", "height", req.Header.Height)
 	version := am.keeper.GetLowestActiveVersion(ctx)
 
 	// Does a kvstore migration
@@ -179,7 +179,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 }
 
 func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.ValidatorUpdate {
-	ctx.Logger().Debug("End Block", "height", req.Height)
+	ctx.Logger().Info("End Block", "height", req.Height)
 
 	version := am.keeper.GetLowestActiveVersion(ctx)
 	constantValues := constants.GetConstantValues(version)

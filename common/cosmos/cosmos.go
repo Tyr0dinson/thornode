@@ -138,7 +138,6 @@ func SignerCreds() (string, string) {
 // GetKeybase will create an instance of Keybase
 func GetKeybase(thorchainHome string) (KeybaseStore, error) {
 	username, password := SignerCreds()
-
 	buf := bytes.NewBufferString(password)
 	// the library used by keyring is using ReadLine , which expect a new line
 	buf.WriteByte('\n')
@@ -152,7 +151,7 @@ func GetKeybase(thorchainHome string) (KeybaseStore, error) {
 		cliDir = filepath.Join(usr.HomeDir, ".thornode")
 	}
 
-	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
+	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendOS, cliDir, buf)
 	return KeybaseStore{
 		SignerName:   username,
 		SignerPasswd: password,
