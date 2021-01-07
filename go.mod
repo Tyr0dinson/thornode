@@ -37,7 +37,7 @@ require (
 	github.com/tendermint/go-amino v0.16.0
 	github.com/tendermint/tendermint v0.34.0
 	github.com/tendermint/tm-db v0.6.3
-	gitlab.com/thorchain/binance-sdk v1.2.3-0.20210102180356-7b2f8924ed23
+	gitlab.com/thorchain/binance-sdk v1.2.3-0.20210107014608-b4fbc9dde698
 	gitlab.com/thorchain/tss/go-tss v1.2.8-0.20210102180906-1dbf1355dba6
 	gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b
 	golang.org/x/tools v0.0.0-20200731060945-b5fad4ed8dd6 // indirect

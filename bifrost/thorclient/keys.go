@@ -8,7 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/cosmos/cosmos-sdk/codec/legacy"
+	"github.com/cosmos/cosmos-sdk/crypto"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -35,7 +35,7 @@ func NewKeysWithKeybase(kb ckeys.Keyring, name, password string) *Keys {
 	}
 }
 
-// NewKeys create a new instance of keys
+// GetKeyringKeybase return keyring and key info
 func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, ckeys.Info, error) {
 	if len(signerName) == 0 {
 		return nil, nil, fmt.Errorf("signer name is empty")
@@ -95,8 +95,11 @@ func (k *Keys) GetPrivateKey() (cryptotypes.PrivKey, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return legacy.PrivKeyFromBytes([]byte(privKeyArmor))
+	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unarmor private key: %w", err)
+	}
+	return priKey, nil
 }
 
 // GetKeybase return the keybase

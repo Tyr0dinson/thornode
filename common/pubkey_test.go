@@ -185,10 +185,7 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 	for _, d := range s.keyData {
 		privB, _ := hex.DecodeString(d.priv)
 		pubB, _ := hex.DecodeString(d.pub)
-
-		var priv secp256k1.PrivKey
-		copy(priv[:], privB)
-
+		priv := secp256k1.PrivKey(privB)
 		pubKey := priv.PubKey()
 		pubT, _ := pubKey.(secp256k1.PubKey)
 		pub := pubT[:]

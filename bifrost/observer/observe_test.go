@@ -185,6 +185,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	_, _, err = kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+
 	c.Assert(s.thorKeys, NotNil)
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(s.bridge, NotNil)

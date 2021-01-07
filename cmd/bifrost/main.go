@@ -18,12 +18,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
-	"github.com/tendermint/tendermint/crypto"
 
 	"gitlab.com/thorchain/tss/go-tss/common"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
-	app "gitlab.com/thorchain/thornode/app"
+	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/observer"
@@ -32,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/signer"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/cmd"
+	tcommon "gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -114,14 +114,16 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to get private key")
 	}
+
 	bootstrapPeers, err := cfg.TSS.GetBootstrapPeers()
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
 	}
+	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
 	tssIns, err := tss.NewTss(
 		bootstrapPeers,
 		cfg.TSS.P2PPort,
-		priKey.(crypto.PrivKey),
+		tmPrivateKey,
 		cfg.TSS.Rendezvous,
 		app.DefaultNodeHome(""),
 		common.TssConfig{
