@@ -151,7 +151,7 @@ func GetKeybase(thorchainHome string) (KeybaseStore, error) {
 		cliDir = filepath.Join(usr.HomeDir, ".thornode")
 	}
 
-	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendOS, cliDir, buf)
+	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
 	return KeybaseStore{
 		SignerName:   username,
 		SignerPasswd: password,

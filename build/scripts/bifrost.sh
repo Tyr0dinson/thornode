@@ -18,16 +18,13 @@ START_BLOCK_HEIGHT="${START_BLOCK_HEIGHT:=1}"
 
 $(dirname "$0")/wait-for-thorchain-api.sh $CHAIN_API
 
-# config the keyring to use file backend
-thorcli config keyring-backend file
-
 # create thorchain user, if it doesn't already
-echo $SIGNER_PASSWD | thorcli keys show $SIGNER_NAME
+echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME --keyring-backend file
 if [ $? -gt 0 ]; then
   if [ "$SIGNER_SEED_PHRASE" != "" ]; then
-    printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli keys add $SIGNER_NAME --recover
+    printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME --recover
   else
-    printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thorcli keys add $SIGNER_NAME
+    printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME
   fi
 fi
 

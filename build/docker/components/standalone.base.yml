@@ -25,8 +25,7 @@ services:
       /docker/scripts/bifrost.sh
     volumes:
       - "../../scripts:/docker/scripts"
-      - ${HOME}/.thornode/standalone/.thord:/root/.thord
-      - ${HOME}/.thornode/standalone/.thorcli:/root/.thorcli
+      - ${HOME}/.thornode/standalone/.thornode:/root/.thornode
       - ${HOME}/.thornode/standalone/.bifrost/data:/var/data/bifrost
       - ${HOME}/.thornode/standalone/.bifrost/etc:/etc/bifrost
     command: ["bifrost", "-c", "/etc/bifrost/config.json"]
@@ -53,6 +52,7 @@ services:
       SIGNER_PASSWD: ${SIGNER_PASSWD:-}
       SIGNER_SEED_PHRASE: ${SIGNER_SEED_PHRASE:-}
       CONTRACT: ${CONTRACT:-}
+      THORNODE_API_ENABLE: "true"
     ports:
       - "26657:26657"
       - "26656:26656"
@@ -64,7 +64,7 @@ services:
       - "../../scripts:/docker/scripts"
       - ${HOME}/.thornode/standalone/.thornode:/root/.thornode
       - ${HOME}/.thornode/standalone/.bond:/root/.bond
-    command: ["thornode", "start","--log_level","info"]
+    command: ["thornode", "start","--log_level","info","--rpc.laddr", "tcp://0.0.0.0:26657"]
     logging:
       driver: "json-file"
       options:

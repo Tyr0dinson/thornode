@@ -11,27 +11,27 @@ NODES="${NODES:=1}"
 SEED="${SEED:=thornode}" # the hostname of the master node
 CONTRACT="${CONTRACT}"
 ETH_HOST="${ETH_HOST:=http://ethereum-localnet:8545}"
-
+THORNODE_API_ENABLED=true
 # find or generate our BNB address
 gen_bnb_address
 ADDRESS=$(cat ~/.bond/address.txt)
 
 # create thorchain user, if it doesn't already
-echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME
+echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME --keyring-backend file
 if [ $? -gt 0 ]; then
   if [ "$SIGNER_SEED_PHRASE" != "" ]; then
-    printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys add $SIGNER_NAME --recover
+    printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME --recover
     NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$SIGNER_SEED_PHRASE\n" | thornode ed25519 )
   else
-     RESULT=$(printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys add $SIGNER_NAME --output json 2>&1)
+     RESULT=$(printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME --output json 2>&1)
      MNEMONIC=$(echo $RESULT | jq -r '.mnemonic')
      NODE_PUB_KEY_ED25519=$(printf "$SIGNER_PASSWD\n$MNEMONIC\n" | thornode ed25519)
   fi
 fi
 
 VALIDATOR=$(thornode tendermint show-validator)
-NODE_ADDRESS=$(echo $SIGNER_PASSWD | thornode keys show thorchain -a)
-NODE_PUB_KEY=$(echo $SIGNER_PASSWD | thornode keys show thorchain -p)
+NODE_ADDRESS=$(echo $SIGNER_PASSWD | thornode keys show thorchain -a --keyring-backend file)
+NODE_PUB_KEY=$(echo $SIGNER_PASSWD | thornode keys show thorchain -p --keyring-backend file)
 VERSION=$(fetch_version)
 
 mkdir -p /tmp/shared

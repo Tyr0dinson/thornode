@@ -16,7 +16,7 @@ import (
 
 const (
 	// folder name for thorchain thorcli
-	thorchainCliFolderName = `.thorcli`
+	thorchainCliFolderName = `.thornode`
 )
 
 // Keys manages all the keys used by thorchain
