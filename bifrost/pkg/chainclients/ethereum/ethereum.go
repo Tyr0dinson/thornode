@@ -336,29 +336,17 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund:
-		if IsETH(tokenAddr) {
-			data, err = c.vaultABI.Pack("transferETH", dest, tx.Memo)
-			if err != nil {
-				return nil, fmt.Errorf("fail to create data to call smart contract(transferETH): %w", err)
-			}
-		} else {
-			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
-			if err != nil {
-				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
-			}
+		data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
+		if err != nil {
+			return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 		}
+
 	case mem.TxMigrate, mem.TxYggdrasilFund:
-		if IsETH(tokenAddr) {
-			data, err = c.vaultABI.Pack("transferETH", dest, tx.Memo)
-			if err != nil {
-				return nil, fmt.Errorf("fail to create data to call smart contract(transferETH): %w", err)
-			}
-		} else {
-			data, err = c.vaultABI.Pack("transferAllowance", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
-			if err != nil {
-				return nil, fmt.Errorf("fail to create data to call smart contract(transferAllowance): %w", err)
-			}
+		data, err = c.vaultABI.Pack("transferAllowance", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
+		if err != nil {
+			return nil, fmt.Errorf("fail to create data to call smart contract(transferAllowance): %w", err)
 		}
+
 	case mem.TxYggdrasilReturn:
 		var coins []RouterCoin
 		for _, item := range tx.Coins {
