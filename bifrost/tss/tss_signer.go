@@ -247,5 +247,5 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey, msgToSign string) (string, string
 	}
 
 	// Blame need to be passed back to thorchain , so as thorchain can use the information to slash relevant node account
-	return "", "", "", NewKeysignError(keySignResp.Blame)
+	return "", "", "", NewKeysignError(blame)
 }

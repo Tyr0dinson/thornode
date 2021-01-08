@@ -221,7 +221,7 @@ func (vm *VaultMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor co
 							return fmt.Errorf("fail to get pool for asset %s, err:%w", coin.Asset, err)
 						}
 						runeAmt := p.AssetValueInRune(coin.Amount)
-						if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoin(common.RuneAsset(), runeAmt)); err != nil {
+						if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
 							return fmt.Errorf("fail to transfer RUNE from reserve to asgard,err:%w", err)
 						}
 						p.BalanceRune = p.BalanceRune.Add(runeAmt)

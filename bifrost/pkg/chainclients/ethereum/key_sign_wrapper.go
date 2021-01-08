@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ecrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/tendermint/tendermint/crypto"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
@@ -23,12 +23,8 @@ var (
 	eipSigner = etypes.NewEIP155Signer(big.NewInt(1))
 )
 
-func getETHPrivateKey(key crypto.PrivKey) (*ecdsa.PrivateKey, error) {
-	privKey, ok := key.(secp256k1.PrivKeySecp256k1)
-	if !ok {
-		return nil, errors.New("invalid private key type")
-	}
-	return ecrypto.ToECDSA(privKey[:])
+func getETHPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
+	return ecrypto.ToECDSA(key.Bytes())
 }
 
 // keySignWrapper is a wrap of private key and also tss instance
@@ -106,11 +102,11 @@ func (w *keySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string) ([]b
 	if err != nil || sig == nil {
 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
 	}
-	secpPubKey, ok := pk.(secp256k1.PubKeySecp256k1)
-	if !ok {
-		return nil, fmt.Errorf("fail to cast pubkey to secp256k1 pubkey")
+	secpPubKey, err := codec.ToTmPubKeyInterface(pk)
+	if err != nil {
+		return nil, err
 	}
-	if ecrypto.VerifySignature(secpPubKey[:], hash[:], sig) {
+	if ecrypto.VerifySignature(secpPubKey.Bytes(), hash[:], sig) {
 		w.logger.Info().Msg("we can successfully verify the bytes")
 	} else {
 		w.logger.Error().Msg("Oops! we cannot verify the bytes")
