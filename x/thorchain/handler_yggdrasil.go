@@ -225,10 +225,14 @@ func (h YggdrasilHandler) handleYggdrasilReturnV1(ctx cosmos.Context, msg MsgYgg
 			return nil, ErrInternal(err, "unable to get asgard vaults")
 		}
 		vaults := Vaults{}
+		var contracts []ChainContract
 		for _, v := range asgardVaults {
 			// make sure vaults have both active asgard vault , and also retiring asgard vault
 			if v.Status == ActiveVault || v.Status == RetiringVault {
 				vaults = append(vaults, v)
+			}
+			if v.Status == ActiveVault {
+				contracts = v.Contracts
 			}
 		}
 
@@ -242,6 +246,19 @@ func (h YggdrasilHandler) handleYggdrasilReturnV1(ctx cosmos.Context, msg MsgYgg
 			// not sending to asgard , slash the node account
 			if err := h.slash(ctx, version, msg.PubKey, msg.Tx.Coins); err != nil {
 				return nil, ErrInternal(err, "fail to slash account for sending fund to a none asgard vault using yggdrasil-")
+			}
+		}
+
+		// when yggdrasil return fund , check all the chains that support contract
+		// once all the fund had been returned, then update the chain's contract to match asgard contract address
+		// thus new yggdrasil will be fund with new contract
+		for _, contract := range contracts {
+			if vault.HasFundsForChain(contract.Chain) {
+				continue
+			}
+			vault.UpdateContract(contract)
+			if err := h.keeper.SetVault(ctx, vault); err != nil {
+				return nil, fmt.Errorf("fail to save vault: %w", err)
 			}
 		}
 

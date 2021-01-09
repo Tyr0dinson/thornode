@@ -378,11 +378,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
-		cc, err := keeper.GetChainContract(ctx, chain)
-		if err != nil {
-			ctx.Logger().Error("fail to get chain contract", "error", err)
-			return nil, fmt.Errorf("fail to get chain contract: %w", err)
-		}
+		cc := vault.GetContract(chain)
 
 		addr := address{
 			Chain:    chain,
