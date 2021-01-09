@@ -254,10 +254,19 @@ func getTokenAddressFromAsset(asset common.Asset) string {
 	return allParts[len(allParts)-1]
 }
 
-func (c *Client) getSmartContractAddr() common.Address {
-	addresses := c.pubkeyMgr.GetContracts(common.ETHChain)
-	if len(addresses) > 0 {
-		return addresses[len(addresses)-1]
+func (c *Client) getSmartContractAddr(pubkey common.PubKey) common.Address {
+	return c.pubkeyMgr.GetContract(common.ETHChain, pubkey)
+}
+
+func (c *Client) getSmartContractByAddress(addr common.Address) common.Address {
+	for _, pk := range c.pubkeyMgr.GetPubKeys() {
+		ethAddr, err := pk.GetAddress(common.ETHChain)
+		if err != nil {
+			return common.NoAddress
+		}
+		if ethAddr.Equals(addr) {
+			return c.pubkeyMgr.GetContract(common.ETHChain, pk)
+		}
 	}
 	return common.NoAddress
 }
@@ -308,7 +317,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		return nil, fmt.Errorf("inbound memo should not be used for outbound tx")
 	}
 
-	contractAddr := c.getSmartContractAddr()
+	contractAddr := c.getSmartContractAddr(tx.VaultPubKey)
 	if contractAddr.IsEmpty() {
 		return nil, fmt.Errorf("can't sign tx , fail to get smart contract address")
 	}
@@ -347,12 +356,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 			}
 		} else {
-			data, err = c.vaultABI.Pack("transferAllowance", ecommon.HexToAddress(contractAddr.String()), dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
+			newSmartContractAddr := c.getSmartContractByAddress(tx.ToAddress)
+			if newSmartContractAddr.IsEmpty() {
+				return nil, fmt.Errorf("fail to get new smart contract address")
+			}
+			data, err = c.vaultABI.Pack("transferAllowance", ecommon.HexToAddress(newSmartContractAddr.String()), dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 			if err != nil {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferAllowance): %w", err)
 			}
 		}
 	case mem.TxYggdrasilReturn:
+		newSmartContractAddr := c.getSmartContractByAddress(tx.ToAddress)
+		if newSmartContractAddr.IsEmpty() {
+			return nil, fmt.Errorf("fail to get new smart contract address")
+		}
 		var coins []RouterCoin
 		for _, item := range tx.Coins {
 			assetAddr := getTokenAddressFromAsset(item.Asset)
@@ -366,7 +383,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				Amount: assetAmt,
 			})
 		}
-		data, err = c.vaultABI.Pack("returnVaultAssets", ecommon.HexToAddress(contractAddr.String()), dest, coins, tx.Memo)
+		data, err = c.vaultABI.Pack("returnVaultAssets", ecommon.HexToAddress(newSmartContractAddr.String()), dest, coins, tx.Memo)
 		if err != nil {
 			return nil, fmt.Errorf("fail to create data to call smart contract(transferVaultAssets): %w", err)
 		}
@@ -459,12 +476,15 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if IsETH(token) {
 		return c.client.BalanceAt(ctx, ecommon.HexToAddress(addr), nil)
 	}
-	contractAddr := c.getSmartContractAddr()
+	contractAddresses := c.pubkeyMgr.GetContracts(common.ETHChain)
+	if len(contractAddresses) == 0 {
+		return nil, fmt.Errorf("fail to get contract address")
+	}
 	input, err := c.vaultABI.Pack("vaultAllowance", ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create vaultAllowance data to call smart contract")
 	}
-	toAddr := ecommon.HexToAddress(contractAddr.String())
+	toAddr := ecommon.HexToAddress(contractAddresses[0].String())
 	res, err := c.client.CallContract(ctx, ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
 		To:   &toAddr,

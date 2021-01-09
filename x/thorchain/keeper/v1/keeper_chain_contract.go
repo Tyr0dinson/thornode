@@ -24,11 +24,14 @@ func (k KVStore) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // GetChainContracts return a list of chain contracts , which match the requested chains
 func (k KVStore) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
-	contracts := make([]ChainContract, len(chains))
+	contracts := make([]ChainContract, 0, len(chains))
 	for _, item := range chains {
 		cc, err := k.GetChainContract(ctx, item)
 		if err != nil {
 			ctx.Logger().Error("fail to get chain contract", "err", err, "chain", item.String())
+			continue
+		}
+		if cc.IsEmpty() {
 			continue
 		}
 		contracts = append(contracts, cc)
