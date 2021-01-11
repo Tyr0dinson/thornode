@@ -113,6 +113,8 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 					httpTestHandler(c, rw, "../../../../test/fixtures/bch/tx-5b08.json")
 				} else if r.Params[0] == "54ef2f4679fb90af42e8d963a5d85645d0fd86e5fe8ea4e69dbf2d444cb26528" {
 					httpTestHandler(c, rw, "../../../../test/fixtures/bch/tx-54ef.json")
+				} else if r.Params[0] == "007fa238c10babc6b92a963dc31fe12d7fdb7d1273c816e954882ca86f55bc5d" {
+					httpTestHandler(c, rw, "../../../../test/fixtures/bch/xx.json")
 				} else {
 					httpTestHandler(c, rw, "../../../../test/fixtures/bch/tx.json")
 				}
@@ -752,4 +754,122 @@ func (s *BitcoinCashSuite) TestConfirmationCountReady(c *C) {
 		MemPool:              false,
 		ConfirmationRequired: 5,
 	}), Equals, false)
+}
+
+func (s *BitcoinCashSuite) TestExtractTxs(c *C) {
+	input := `{
+	"hash": "3a41e608b22facb5dc77eef71446e9fb22ed6a3673cf6779b9a43b76961029a8",
+	"confirmations": 3,
+	"strippedsize": 0,
+	"size": 428,
+	"height": 116,
+	"version": 536870912,
+	"versionHex": "20000000",
+	"merkleroot": "eba49e154421005b0132b2506296c672cbdfe28e03bcbcec68e8cb02d0fa6d3d",
+	"tx": [
+		{
+			"hex": "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0f01740101082f454233322e302f0100ffffffff015b3c062a010000001976a91493ce48570b55c42c2af816aeaba06cfee1224fae88ac00000000",
+			"txid": "f981f59058b66497f15f189db1700d73468a9786b2dd008623aed589d7089054",
+			"hash": "f981f59058b66497f15f189db1700d73468a9786b2dd008623aed589d7089054",
+			"size": 100,
+			"version": 2,
+			"locktime": 0,
+			"vin": [
+				{
+					"coinbase": "01740101082f454233322e302f0100",
+					"sequence": 4294967295
+				}
+			],
+			"vout": [
+				{
+					"value": 50.00019035,
+					"n": 0,
+					"scriptPubKey": {
+						"asm": "OP_DUP OP_HASH160 93ce48570b55c42c2af816aeaba06cfee1224fae OP_EQUALVERIFY OP_CHECKSIG",
+						"hex": "76a91493ce48570b55c42c2af816aeaba06cfee1224fae88ac",
+						"reqSigs": 1,
+						"type": "pubkeyhash",
+						"addresses": [
+							"bchreg:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cwqq36m3u"
+						]
+					}
+				}
+			]
+		},
+		{
+			"hex": "01000000015dbc556fa82c8854e916c873127ddb7f2de11fc33d962ab9c6ab0bc138a27f00010000006a47304402202ee1b2c6001d9323d92086613c284ec95ec6752098d1eec7a3dc426068dda7c2022007d81010c30ce4d80e68610fb27b1af6e4d2e83d661dc03687a792a84993a24c412103fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803bffffffff03a5959304000000001976a914c51bdea86ff3981fe9d915c827ed6f614313035288ac00f82401000000001976a91467095d235019b53fa2275045c5fa33b289141af088ac00000000000000000d6a0b4d4947524154453a33333300000000",
+			"txid": "46aed6b33935a8d7792045d1a230f1a81db5b5c98b615e4a599cda78398d72c1",
+			"hash": "46aed6b33935a8d7792045d1a230f1a81db5b5c98b615e4a599cda78398d72c1",
+			"size": 247,
+			"version": 1,
+			"locktime": 0,
+			"vin": [
+				{
+					"txid": "007fa238c10babc6b92a963dc31fe12d7fdb7d1273c816e954882ca86f55bc5d",
+					"vout": 1,
+					"scriptSig": {
+						"asm": "304402202ee1b2c6001d9323d92086613c284ec95ec6752098d1eec7a3dc426068dda7c2022007d81010c30ce4d80e68610fb27b1af6e4d2e83d661dc03687a792a84993a24c[ALL|FORKID] 03fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803b",
+						"hex": "47304402202ee1b2c6001d9323d92086613c284ec95ec6752098d1eec7a3dc426068dda7c2022007d81010c30ce4d80e68610fb27b1af6e4d2e83d661dc03687a792a84993a24c412103fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803b"
+					},
+					"sequence": 4294967295
+				}
+			],
+			"vout": [
+				{
+					"value": 0.76780965,
+					"n": 0,
+					"scriptPubKey": {
+						"asm": "OP_DUP OP_HASH160 c51bdea86ff3981fe9d915c827ed6f6143130352 OP_EQUALVERIFY OP_CHECKSIG",
+						"hex": "76a914c51bdea86ff3981fe9d915c827ed6f614313035288ac",
+						"reqSigs": 1,
+						"type": "pubkeyhash",
+						"addresses": [
+							"bchreg:qrz3hh4gdlees8lfmy2usflddas5xycr2gj762fqua"
+						]
+					}
+				},
+				{
+					"value": 0.192,
+					"n": 1,
+					"scriptPubKey": {
+						"asm": "OP_DUP OP_HASH160 67095d235019b53fa2275045c5fa33b289141af0 OP_EQUALVERIFY OP_CHECKSIG",
+						"hex": "76a91467095d235019b53fa2275045c5fa33b289141af088ac",
+						"reqSigs": 1,
+						"type": "pubkeyhash",
+						"addresses": [
+							"bchreg:qpnsjhfr2qvm20azyagyt306xwegj9q67qy4vm626n"
+						]
+					}
+				},
+				{
+					"value": 0,
+					"n": 2,
+					"scriptPubKey": {
+						"asm": "OP_RETURN 4d4947524154453a333333",
+						"hex": "6a0b4d4947524154453a333333",
+						"type": "nulldata"
+					}
+				}
+			]
+		}
+	],
+	"time": 1610342130,
+	"nonce": 0,
+	"bits": "207fffff",
+	"difficulty": 4.656542373906925e-10,
+	"previousblockhash": "6fc4037857a0196c194e2b4f8e8cf4f243ec653b55e63a77d4c6442cc55f0a0c",
+	"nextblockhash": "2ed9728aa6bb00a6b534332847a5da344b28a49430c65c9cdc4e0827f470479d"
+}`
+	var result btcjson.GetBlockVerboseTxResult
+	if err := json.Unmarshal([]byte(input), &result); err != nil {
+		panic(err)
+	}
+	blockMeta := BlockMeta{
+		PreviousHash:         "",
+		Height:               0,
+		BlockHash:            "",
+		SelfTransactions:     nil,
+		CustomerTransactions: nil,
+	}
+	s.client.extractTxs(&result, &blockMeta)
 }

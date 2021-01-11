@@ -1,0 +1,62 @@
+{
+  "result": {
+    "hex": "01000000018ed8bc2c560993a6db68cd2d845badcb944749ca95978d74b47129a5a1e17326010000006a473044022052b97471315300d7014c8bcbb81d06728d379cbcf9d848aaea6ea517e33134d1022019e80ec8e99059853c23b396d543180aa73b7f08170a4b4bff06c0e01b68c1c4412103fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803bffffffff036dec9408000000001976a914c51bdea86ff3981fe9d915c827ed6f614313035288ac00d8b805000000001976a91467095d235019b53fa2275045c5fa33b289141af088ac00000000000000000d6a0b4d4947524154453a32373300000000",
+    "txid": "007fa238c10babc6b92a963dc31fe12d7fdb7d1273c816e954882ca86f55bc5d",
+    "hash": "007fa238c10babc6b92a963dc31fe12d7fdb7d1273c816e954882ca86f55bc5d",
+    "size": 247,
+    "version": 1,
+    "locktime": 0,
+    "vin": [
+      {
+        "txid": "2673e1a1a52971b4748d9795ca494794cbad5b842dcd68dba69309562cbcd88e",
+        "vout": 1,
+        "scriptSig": {
+          "asm": "3044022052b97471315300d7014c8bcbb81d06728d379cbcf9d848aaea6ea517e33134d1022019e80ec8e99059853c23b396d543180aa73b7f08170a4b4bff06c0e01b68c1c4[ALL|FORKID] 03fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803b",
+          "hex": "473044022052b97471315300d7014c8bcbb81d06728d379cbcf9d848aaea6ea517e33134d1022019e80ec8e99059853c23b396d543180aa73b7f08170a4b4bff06c0e01b68c1c4412103fef75df0775c8a2f653f75105e3ee16814de46d9f06e1d5e9d2f2b8016c0803b"
+        },
+        "sequence": 4294967295
+      }
+    ],
+    "vout": [
+      {
+        "value": 1.43977581,
+        "n": 0,
+        "scriptPubKey": {
+          "asm": "OP_DUP OP_HASH160 c51bdea86ff3981fe9d915c827ed6f6143130352 OP_EQUALVERIFY OP_CHECKSIG",
+          "hex": "76a914c51bdea86ff3981fe9d915c827ed6f614313035288ac",
+          "reqSigs": 1,
+          "type": "pubkeyhash",
+          "addresses": [
+            "bchreg:qrz3hh4gdlees8lfmy2usflddas5xycr2gj762fqua"
+          ]
+        }
+      },
+      {
+        "value": 0.96,
+        "n": 1,
+        "scriptPubKey": {
+          "asm": "OP_DUP OP_HASH160 67095d235019b53fa2275045c5fa33b289141af0 OP_EQUALVERIFY OP_CHECKSIG",
+          "hex": "76a91467095d235019b53fa2275045c5fa33b289141af088ac",
+          "reqSigs": 1,
+          "type": "pubkeyhash",
+          "addresses": [
+            "bchreg:qpnsjhfr2qvm20azyagyt306xwegj9q67qy4vm626n"
+          ]
+        }
+      },
+      {
+        "value": 0,
+        "n": 2,
+        "scriptPubKey": {
+          "asm": "OP_RETURN 4d4947524154453a323733",
+          "hex": "6a0b4d4947524154453a323733",
+          "type": "nulldata"
+        }
+      }
+    ],
+    "blockhash": "7d3fcf1e8b0d6770dbc954afe15f8c9c988377d74405e055af95ab6df262ad79",
+    "confirmations": 11,
+    "time": 1610341890,
+    "blocktime": 1610341890
+  }
+}

@@ -564,7 +564,7 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64) (types.TxInItem, error) {
 	if c.ignoreTx(tx) {
-		c.logger.Debug().Msgf("ignore tx (%s) at height %d, not correct format", tx.Txid, height)
+		c.logger.Info().Msgf("ignore tx (%s) at height %d, not correct format", tx.Txid, height)
 		return types.TxInItem{}, nil
 	}
 
