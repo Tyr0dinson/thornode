@@ -420,8 +420,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		// adjust the gas price to reflect that , so not breach the MaxGas restriction
 		// This might cause the tx to delay
 		if totalGas.Cmp(gasOut) == 1 {
-			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
-			c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
+			if memo.GetType() == mem.TxYggdrasilReturn {
+				// yggdrasil return fund
+				gap := totalGas.Sub(totalGas, gasOut)
+				c.logger.Info().Msgf("yggdrasil return fund , gass need: %s", gap.String())
+				ethValue = ethValue.Sub(ethValue, gap)
+			} else {
+				gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
+				c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
+			}
 		} else {
 			extra := gasOut.Sub(gasOut, totalGas)
 			if extra.Uint64() > 0 {
