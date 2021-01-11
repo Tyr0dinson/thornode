@@ -18,11 +18,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-var (
-	vByte     = byte(35)
-	eipSigner = etypes.NewEIP155Signer(big.NewInt(1))
-)
-
 func getETHPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
 	return ecrypto.ToECDSA(key.Bytes())
 }

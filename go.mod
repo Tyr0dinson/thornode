@@ -23,7 +23,7 @@ require (
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gcash/bchd v0.17.1
 	github.com/gcash/bchutil v0.0.0-20201025062739-fc759989ee3e
-	github.com/gogo/protobuf v1.3.1
+	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-cmp v0.5.4 // indirect
 	github.com/google/uuid v1.1.4 // indirect
 	github.com/gorilla/mux v1.8.0
@@ -59,8 +59,6 @@ require (
 	gitlab.com/thorchain/txscript v0.0.0-20200413023754-8aaf3443d92b
 	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/tools v0.0.0-20210101214203-2dba1e4ea05c // indirect
-	golang.org/x/tools/gopls v0.5.5 // indirect
-	google.golang.org/genproto v0.0.0-20210106152847-07624b53cd92 // indirect
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.6 // indirect
