@@ -138,7 +138,6 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 	case BCHChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
-			fmt.Printf("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&:(:")
 			return NoAddress, err
 		}
 		var net *bchchaincfg.Params
