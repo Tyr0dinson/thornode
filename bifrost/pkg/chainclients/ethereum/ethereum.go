@@ -403,7 +403,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Msgf("estimated gas unit: %d", estimatedGas)
 
-	// compare the gas rate prescribed by THORChain against the price it can get from the chai
+	// compare the gas rate prescribed by THORChain against the price it can get from the chain
 	// ensure signer always pay enough higher gas price
 	gasRate := big.NewInt(tx.GasRate)
 	if gasRate.Cmp(c.GetGasPrice()) < 0 {
@@ -441,7 +441,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		// ERC20 tokens , if the total gas is more than the max gas , then let's calculate a gas rate
 		// adjust the gas price to reflect that , so not breach the MaxGas restriction
 		// This might cause the tx to delay
-		if totalGas.Cmp(gasOut) == 1 {
+		if totalGas.Cmp(gasOut) == 1 || memo.GetType() == mem.TxMigrate {
 			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
@@ -487,7 +487,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if len(contractAddresses) == 0 {
 		return nil, fmt.Errorf("fail to get contract address")
 	}
-	input, err := c.vaultABI.Pack("vaultAllowance", ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
+	input, err := c.vaultABI.Pack("vaultAllowance", ecommon.HexToAddress(addr), ecommon.HexToAddress(token))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create vaultAllowance data to call smart contract")
 	}
