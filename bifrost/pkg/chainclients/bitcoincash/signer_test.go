@@ -258,7 +258,7 @@ func (s *BitcoinSignerCashSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 		Coins: common.Coins{
 			common.NewCoin(common.BCHAsset, cosmos.NewUint(10)),
 		},
-		Memo:    "hello from thorchain",
+		Memo:    "YGGDRASIL-:101",
 		GasRate: 25,
 		InHash:  "",
 		OutHash: "",
