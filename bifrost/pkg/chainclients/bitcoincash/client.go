@@ -545,7 +545,7 @@ func (c *Client) sendNetworkFee(height int64) error {
 		return nil
 	}
 	feeRate := uint64(result.AverageFeeRate * common.One)
-	if EstimateAverageTxSize*uint64(result.AverageFeeRate) < c.minRelayFeeSats {
+	if EstimateAverageTxSize*feeRate < c.minRelayFeeSats {
 		feeRate = c.minRelayFeeSats / EstimateAverageTxSize
 		if feeRate*EstimateAverageTxSize < c.minRelayFeeSats {
 			feeRate++

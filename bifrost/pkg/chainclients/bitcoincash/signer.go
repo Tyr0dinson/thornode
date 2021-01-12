@@ -109,14 +109,9 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64) ([]btcjson.
 		return utxos[i].TxID < utxos[j].TxID
 	})
 
-	target := 0.0
 	for _, item := range utxos {
 		if isYggdrasil || item.Confirmations >= MinUTXOConfirmation || c.isSelfTransaction(item.TxID) {
 			result = append(result, item)
-			if item.Amount+target >= total {
-				break
-			}
-			target += item.Amount
 		}
 	}
 	return result, nil
