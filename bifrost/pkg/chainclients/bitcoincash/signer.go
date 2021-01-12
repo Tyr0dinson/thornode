@@ -299,8 +299,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 		c.logger.Info().Msgf("gas amount: %d is larger than maximum fee: %d , diff: %d", gasAmtSats, uint64(maxFeeSats), diffSats)
 		gasAmtSats = uint64(maxFeeSats)
 	} else if gasAmtSats < c.minRelayFeeSats {
-		diffStats := c.minRelayFeeSats - gasAmtSats
-		c.logger.Info().Msgf("gas amount: %d is less than min relay fee: %d, diff remove from customer: %d", gasAmtSats, c.minRelayFeeSats, diffStats)
+		c.logger.Info().Msgf("gas amount: %d is less than min relay fee: %d,use min relay fee instead", gasAmtSats, c.minRelayFeeSats)
 		gasAmtSats = c.minRelayFeeSats
 	}
 
@@ -339,10 +338,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	// balance to ourselves
 	// add output to pay the balance back ourselves
 	balance := int64(total) - redeemTxOut.Value - int64(gasAmt)
+
 	c.logger.Info().Msgf("total: %d, to customer: %d, gas: %d", int64(total), redeemTxOut.Value, int64(gasAmt))
 	if balance < 0 {
 		return nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
+
+	// if the balance is dust , then just donate it to miners
 	if balance > 0 {
 		c.logger.Info().Msgf("send %d back to self", balance)
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
