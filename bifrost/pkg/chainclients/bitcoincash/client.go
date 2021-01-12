@@ -545,7 +545,6 @@ func (c *Client) sendNetworkFee(height int64) error {
 		return nil
 	}
 	feeRate := uint64(result.AverageFeeRate * common.One)
-	c.logger.Info().Msgf("current bitcoin cash fee rate: %d", feeRate)
 	if EstimateAverageTxSize*feeRate < c.minRelayFeeSats {
 		feeRate = c.minRelayFeeSats / EstimateAverageTxSize
 		if feeRate*EstimateAverageTxSize < c.minRelayFeeSats {
