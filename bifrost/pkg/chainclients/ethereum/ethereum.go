@@ -403,12 +403,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
 	// outbound tx always send to smart contract address
-	estimatedETHValue := ethValue
-	if memo.GetType() == mem.TxYggdrasilReturn {
-		// when yggdrasil return , obviously it can't transfer everything back to asgard, it need to left some
-		// ETH to pay for gas, if we don't do it here , then the estimate gas will fail with insufficient fund
-		needGas := gasRate.Mul(gasRate, big.NewInt(MaxContractGas))
-		estimatedETHValue = estimatedETHValue.Sub(ethValue, needGas)
+	estimatedETHValue := big.NewInt(0)
+	if ethValue.Uint64() > 0 {
+		// when the ETH value is none zero , here override it with a fix value for estimate gas purpose
+		// when ETH value is none zero , if we send the real value for estimate gas , some times it will fail , for many reasons, a few I saw during test
+		// 1. insufficient fund
+		// 2. gas required exceeds allowance
+		// as long as we pass in an ETH value , which we almost guarantee it will not exceed the ETH balance , so we can avoid the above two errors
+		estimatedETHValue = estimatedETHValue.SetInt64(21000)
 	}
 	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
 	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
