@@ -17,13 +17,13 @@ func NewMsgUnBond(txin common.Tx, nodeAddr cosmos.AccAddress, amount cosmos.Uint
 }
 
 // Route should return the router key of the module
-func (m MsgUnBond) Route() string { return RouterKey }
+func (m *MsgUnBond) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgUnBond) Type() string { return "unbond" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgUnBond) ValidateBasic() error {
+func (m *MsgUnBond) ValidateBasic() error {
 	if m.NodeAddress.Empty() {
 		return cosmos.ErrInvalidAddress("node address cannot be empty")
 	}
@@ -43,11 +43,11 @@ func (m MsgUnBond) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgUnBond) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgUnBond) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgUnBond) GetSigners() []cosmos.AccAddress {
+func (m *MsgUnBond) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

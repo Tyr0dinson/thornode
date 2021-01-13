@@ -15,13 +15,13 @@ func NewMsgReserveContributor(tx common.Tx, contrib ReserveContributor, signer c
 }
 
 // Route return the route key of module
-func (m MsgReserveContributor) Route() string { return RouterKey }
+func (m *MsgReserveContributor) Route() string { return RouterKey }
 
 // Type return a unique action
 func (m MsgReserveContributor) Type() string { return "set_reserve_contributor" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgReserveContributor) ValidateBasic() error {
+func (m *MsgReserveContributor) ValidateBasic() error {
 	if err := m.Tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
@@ -35,11 +35,11 @@ func (m MsgReserveContributor) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgReserveContributor) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgReserveContributor) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgReserveContributor) GetSigners() []cosmos.AccAddress {
+func (m *MsgReserveContributor) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

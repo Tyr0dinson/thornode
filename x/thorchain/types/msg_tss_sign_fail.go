@@ -48,13 +48,13 @@ func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins com
 }
 
 // Route should return the route key of the module
-func (m MsgTssKeysignFail) Route() string { return RouterKey }
+func (m *MsgTssKeysignFail) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgTssKeysignFail) Type() string { return "set_tss_keysign_fail" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgTssKeysignFail) ValidateBasic() error {
+func (m *MsgTssKeysignFail) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -84,11 +84,11 @@ func (m MsgTssKeysignFail) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgTssKeysignFail) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgTssKeysignFail) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgTssKeysignFail) GetSigners() []cosmos.AccAddress {
+func (m *MsgTssKeysignFail) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

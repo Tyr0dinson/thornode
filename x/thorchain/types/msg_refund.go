@@ -15,13 +15,13 @@ func NewMsgRefundTx(tx ObservedTx, txID common.TxID, signer cosmos.AccAddress) *
 }
 
 // Route should return the route key of the module
-func (m MsgRefundTx) Route() string { return RouterKey }
+func (m *MsgRefundTx) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgRefundTx) Type() string { return "set_tx_refund" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgRefundTx) ValidateBasic() error {
+func (m *MsgRefundTx) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -35,11 +35,11 @@ func (m MsgRefundTx) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgRefundTx) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgRefundTx) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgRefundTx) GetSigners() []cosmos.AccAddress {
+func (m *MsgRefundTx) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

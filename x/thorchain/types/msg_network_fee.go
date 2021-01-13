@@ -17,13 +17,13 @@ func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, tr
 }
 
 // Route should return the Route of the module
-func (m MsgNetworkFee) Route() string { return RouterKey }
+func (m *MsgNetworkFee) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgNetworkFee) Type() string { return "set_network_fee" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgNetworkFee) ValidateBasic() error {
+func (m *MsgNetworkFee) ValidateBasic() error {
 	if m.BlockHeight < 0 {
 		return cosmos.ErrUnknownRequest("block height can't be negative")
 	}
@@ -43,11 +43,11 @@ func (m MsgNetworkFee) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgNetworkFee) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgNetworkFee) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgNetworkFee) GetSigners() []cosmos.AccAddress {
+func (m *MsgNetworkFee) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

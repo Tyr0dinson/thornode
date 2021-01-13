@@ -13,13 +13,13 @@ func NewMsgObservedTxOut(txs ObservedTxs, signer cosmos.AccAddress) *MsgObserved
 }
 
 // Route should return the route key of the module
-func (m MsgObservedTxOut) Route() string { return RouterKey }
+func (m *MsgObservedTxOut) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgObservedTxOut) Type() string { return "set_observed_txout" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgObservedTxOut) ValidateBasic() error {
+func (m *MsgObservedTxOut) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -51,11 +51,11 @@ func (m MsgObservedTxOut) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgObservedTxOut) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgObservedTxOut) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgObservedTxOut) GetSigners() []cosmos.AccAddress {
+func (m *MsgObservedTxOut) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

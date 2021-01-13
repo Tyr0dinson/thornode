@@ -15,13 +15,13 @@ func NewMsgBan(addr, signer cosmos.AccAddress) *MsgBan {
 }
 
 // Route should return the name of the module
-func (m MsgBan) Route() string { return RouterKey }
+func (m *MsgBan) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgBan) Type() string { return "ban" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgBan) ValidateBasic() error {
+func (m *MsgBan) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -32,11 +32,11 @@ func (m MsgBan) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgBan) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgBan) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners return all the signer who signed this message
-func (m MsgBan) GetSigners() []cosmos.AccAddress {
+func (m *MsgBan) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

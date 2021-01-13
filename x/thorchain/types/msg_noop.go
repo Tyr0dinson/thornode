@@ -13,13 +13,13 @@ func NewMsgNoOp(ObservedTx ObservedTx, signer cosmos.AccAddress) *MsgNoOp {
 }
 
 // Route should return the pooldata of the module
-func (m MsgNoOp) Route() string { return RouterKey }
+func (m *MsgNoOp) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgNoOp) Type() string { return "set_noop" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgNoOp) ValidateBasic() error {
+func (m *MsgNoOp) ValidateBasic() error {
 	if err := m.ObservedTx.Valid(); err != nil {
 		return cosmos.ErrInvalidCoins(err.Error())
 	}
@@ -30,11 +30,11 @@ func (m MsgNoOp) ValidateBasic() error {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgNoOp) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgNoOp) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgNoOp) GetSigners() []cosmos.AccAddress {
+func (m *MsgNoOp) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

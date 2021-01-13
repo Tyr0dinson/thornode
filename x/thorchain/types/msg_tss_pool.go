@@ -55,13 +55,13 @@ func getTssID(members []string, poolPk common.PubKey, height int64, bl Blame) st
 }
 
 // Route should return the route key of the module
-func (m MsgTssPool) Route() string { return RouterKey }
+func (m *MsgTssPool) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgTssPool) Type() string { return "set_tss_pool" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgTssPool) ValidateBasic() error {
+func (m *MsgTssPool) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -136,11 +136,11 @@ func (m MsgTssPool) GetPubKeys() common.PubKeys {
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgTssPool) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgTssPool) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
-func (m MsgTssPool) GetSigners() []cosmos.AccAddress {
+func (m *MsgTssPool) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }

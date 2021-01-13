@@ -15,13 +15,13 @@ func NewMsgSetVersion(version string, signer cosmos.AccAddress) *MsgSetVersion {
 }
 
 // Route should return the route key of the module
-func (m MsgSetVersion) Route() string { return RouterKey }
+func (m *MsgSetVersion) Route() string { return RouterKey }
 
 // Type should return the action
 func (m MsgSetVersion) Type() string { return "set_version" }
 
 // ValidateBasic runs stateless checks on the message
-func (m MsgSetVersion) ValidateBasic() error {
+func (m *MsgSetVersion) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
@@ -32,13 +32,13 @@ func (m MsgSetVersion) ValidateBasic() error {
 }
 
 // GetVersion return the semantic version
-func (m MsgSetVersion) GetVersion() (semver.Version, error) {
+func (m *MsgSetVersion) GetVersion() (semver.Version, error) {
 	return semver.Make(m.Version)
 }
 
 // GetSignBytes encodes the message for signing
-func (m MsgSetVersion) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+func (m *MsgSetVersion) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required
