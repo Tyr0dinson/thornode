@@ -18,6 +18,7 @@ require (
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gcash/bchd v0.17.1
 	github.com/gcash/bchutil v0.0.0-20201025062739-fc759989ee3e
+	github.com/gogo/protobuf v1.3.1
 	github.com/google/go-cmp v0.5.4 // indirect
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-multierror v1.1.0

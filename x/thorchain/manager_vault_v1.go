@@ -493,6 +493,7 @@ func (vm *VaultMgrV1) RecallChainFunds(ctx cosmos.Context, chain common.Chain, m
 				VaultPubKey: ygg.PubKey,
 				Coin:        common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
 				Memo:        NewYggdrasilReturn(common.BlockHeight(ctx)).String(),
+				GasRate:     int64(mgr.GasMgr().GetGasRate(ctx, chain).Uint64()),
 			}
 			// yggdrasil- will not set coin field here, when signer see a
 			// TxOutItem that has memo "yggdrasil-" it will query the chain

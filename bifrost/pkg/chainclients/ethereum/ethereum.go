@@ -395,14 +395,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
-	// outbound tx always send to smart contract address
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, MaxContractGas, big.NewInt(tx.GasRate), data)
-	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
-	if err != nil {
-		return nil, fmt.Errorf("fail to estimate gas: %w", err)
-	}
-	c.logger.Info().Msgf("estimated gas unit: %d", estimatedGas)
-
 	// compare the gas rate prescribed by THORChain against the price it can get from the chain
 	// ensure signer always pay enough higher gas price
 	gasRate := big.NewInt(tx.GasRate)
@@ -410,6 +402,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		gasRate = c.GetGasPrice()
 	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
+	// outbound tx always send to smart contract address
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, MaxContractGas, gasRate, data)
+	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to estimate gas: %w", err)
+	}
+	c.logger.Info().Msgf("estimated gas unit: %d", estimatedGas)
+
 	gasOut := big.NewInt(0)
 	for _, coin := range tx.MaxGas {
 		gasOut.Add(gasOut, coin.Amount.BigInt())

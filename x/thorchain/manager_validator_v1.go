@@ -882,6 +882,9 @@ func (vm *validatorMgrV1) RequestYggReturn(ctx cosmos.Context, node NodeAccount,
 				VaultPubKey: ygg.PubKey,
 				Coin:        common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
 				Memo:        NewYggdrasilReturn(common.BlockHeight(ctx)).String(),
+				GasRate:     int64(mgr.GasMgr().GetGasRate(ctx, chain).Uint64()),
+				// DO NOT specify MaxGas , for yggdrasil return , should allow node to spend more on gas , for example ETH, return multiple
+				// ERC20 token / ETH at the same time cost a lot gas
 			}
 
 			// yggdrasil- will not set coin field here, when signer see a TxOutItem that has memo "yggdrasil-" it will query the chain
