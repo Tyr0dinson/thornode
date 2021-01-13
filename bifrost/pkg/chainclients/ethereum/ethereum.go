@@ -403,7 +403,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
 	// outbound tx always send to smart contract address
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, MaxContractGas, gasRate, data)
+	estimatedETHValue := ethValue
+	if memo.GetType() == mem.TxYggdrasilReturn {
+		// when yggdrasil return , obviously it can't transfer everything back to asgard, it need to left some
+		// ETH to pay for gas, if we don't do it here , then the estimate gas will fail with insufficient fund
+		needGas := gasRate.Mul(gasRate, big.NewInt(MaxContractGas))
+		estimatedETHValue = estimatedETHValue.Sub(ethValue, needGas)
+	}
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
 	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to estimate gas: %w", err)
