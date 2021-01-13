@@ -229,9 +229,9 @@ func (c *Client) estimateGas(from string, tx *etypes.Transaction) (uint64, error
 		From:     ecommon.HexToAddress(from),
 		To:       tx.To(),
 		GasPrice: tx.GasPrice(),
-		Gas:      tx.Gas(),
-		Value:    tx.Value(),
-		Data:     tx.Data(),
+		// Gas:      tx.Gas(),
+		Value: tx.Value(),
+		Data:  tx.Data(),
 	})
 }
 
@@ -440,8 +440,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 			extra := gasOut.Sub(gasOut, totalGas)
 			if extra.Uint64() > 0 {
 				ethValue = ethValue.Add(ethValue, extra)
+				c.logger.Info().Msgf("%s extra ETH.ETH pay to customer,customer get paid: %s", extra, ethValue)
 			}
-			c.logger.Info().Msgf("%s extra ETH.ETH pay to customer,customer get paid: %s", extra, ethValue)
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	} else {
@@ -451,6 +451,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		if totalGas.Cmp(gasOut) == 1 || memo.GetType() == mem.TxMigrate {
 			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 		}
+
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
 
