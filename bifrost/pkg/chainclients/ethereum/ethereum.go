@@ -532,9 +532,11 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 		return nil, fmt.Errorf("fail to get all the tokens: %w", err)
 	}
 	coins := common.Coins{}
+
 	for _, token := range tokens {
 		balance, err := c.GetBalance(addr, token.Address)
 		if err != nil {
+			c.logger.Err(err).Msgf("fail to get balance for token:%s", token.Address)
 			continue
 		}
 		asset := common.ETHAsset

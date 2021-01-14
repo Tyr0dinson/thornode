@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -34,7 +35,7 @@ func (s *EthereumTokenMetaTestSuite) TestTokenMeta(c *C) {
 	c.Assert(TokenMeta.SaveTokenMeta("TKN", "0xa7d9ddbe1f17865597fbd27ec712455208b6b76d", 18), IsNil)
 
 	key := TokenMeta.getTokenMetaKey("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
-	c.Assert(key, Equals, fmt.Sprintf(prefixTokenMeta+"%s", "0xa7d9ddbe1f17865597fbd27ec712455208b6b76d"))
+	c.Assert(key, Equals, fmt.Sprintf(prefixTokenMeta+"%s", strings.ToUpper("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")))
 
 	tm, err := TokenMeta.GetTokenMeta("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
 	c.Assert(err, IsNil)
