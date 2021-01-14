@@ -254,7 +254,28 @@ func (h YggdrasilHandler) handleYggdrasilReturnV1(ctx cosmos.Context, msg MsgYgg
 		// thus new yggdrasil will be fund with new contract
 		for _, contract := range contracts {
 			if vault.HasFundsForChain(contract.Chain) {
-				continue
+				var noneZeroCoins common.Coins
+				for _, c := range vault.Coins {
+					if !c.Asset.Chain.Equals(contract.Chain) {
+						continue
+					}
+					if c.Amount.IsZero() {
+						continue
+					}
+					noneZeroCoins = append(noneZeroCoins, c)
+				}
+				// there are more than 1 coins that are not zero , that means yggdrasil vault doesn't send everything back yet
+				if len(noneZeroCoins) > 1 {
+					continue
+				}
+				// None zero coin is not gas coin,for example on ETH , the coin has outstanding balance is not ETH
+				if !noneZeroCoins[0].Asset.Equals(contract.Chain.GetGasAsset()) {
+					continue
+				}
+				// if the logic reach here , which means there might only have gas coin left with some balance in it
+				// which is ok, because gas asset is not going to be hold by the smart contract , it will be hold by vault itself
+				// thus the network can go ahead and update the vault's contract
+				ctx.Logger().Info("only gas token left in the vault, continue to update contract", "gas token", contract.Chain.GetGasAsset().String(), "amount", noneZeroCoins[0].Amount.String())
 			}
 			vault.UpdateContract(contract)
 			if err := h.keeper.SetVault(ctx, vault); err != nil {
