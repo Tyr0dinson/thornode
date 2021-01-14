@@ -56,5 +56,4 @@ func (s *EthereumTokenMetaTestSuite) TestTokenMeta(c *C) {
 	tokens, err = tokenMeta.GetTokens()
 	c.Assert(err, IsNil)
 	c.Assert(tokens, HasLen, 2)
-
 }

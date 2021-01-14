@@ -532,7 +532,6 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 		return nil, fmt.Errorf("fail to get all the tokens: %w", err)
 	}
 	coins := common.Coins{}
-
 	for _, token := range tokens {
 		balance, err := c.GetBalance(addr, token.Address)
 		if err != nil {
@@ -548,7 +547,8 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 		}
 		coins = append(coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(balance)))
 	}
-	return coins, nil
+
+	return coins.Distinct(), nil
 }
 
 // GetAccount gets account by address in eth client
