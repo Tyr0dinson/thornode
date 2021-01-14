@@ -57,7 +57,7 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		// migrate to 18
 		ethChainContract := ChainContract{
 			Chain:    common.ETHChain,
-			Contract: "",
+			Contract: "0x472f6699755E308C7B6255AeB16885cD90F86fbD",
 		}
 		smgr.keeper.SetChainContract(ctx, ethChainContract)
 		ctx.Logger().Info("successfully upgrade the contract address", "address", ethChainContract.Contract)
