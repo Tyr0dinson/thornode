@@ -295,6 +295,7 @@ func (c *Client) convertSigningAmount(amt *big.Int, token string) *big.Int {
 
 // SignTx sign the the given TxArrayItem
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
+	c.logger.Info().Msgf("signing tx: %+v", tx)
 	if !tx.Chain.Equals(common.ETHChain) {
 		return nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)
 	}
