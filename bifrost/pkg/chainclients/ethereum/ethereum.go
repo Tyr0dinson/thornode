@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -229,9 +230,9 @@ func (c *Client) estimateGas(from string, tx *etypes.Transaction) (uint64, error
 		From:     ecommon.HexToAddress(from),
 		To:       tx.To(),
 		GasPrice: tx.GasPrice(),
-		Gas:      tx.Gas(),
-		Value:    tx.Value(),
-		Data:     tx.Data(),
+		// Gas:      tx.Gas(),
+		Value: tx.Value(),
+		Data:  tx.Data(),
 	})
 }
 
@@ -294,6 +295,7 @@ func (c *Client) convertSigningAmount(amt *big.Int, token string) *big.Int {
 
 // SignTx sign the the given TxArrayItem
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
+	c.logger.Info().Msgf("signing tx: %+v", tx)
 	if !tx.Chain.Equals(common.ETHChain) {
 		return nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)
 	}
@@ -383,10 +385,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				Amount: assetAmt,
 			})
 		}
+		c.logger.Info().Str("new_contract_address", newSmartContractAddr.String()).
+			Str("dest", dest.String()).
+			Str("memo", tx.Memo).Msgf("coins: %+v", coins)
 		data, err = c.vaultABI.Pack("returnVaultAssets", ecommon.HexToAddress(newSmartContractAddr.String()), dest, coins, tx.Memo)
 		if err != nil {
 			return nil, fmt.Errorf("fail to create data to call smart contract(transferVaultAssets): %w", err)
 		}
+		c.logger.Info().Msgf("data:%s", hex.EncodeToString(data))
 	}
 
 	nonce, err := c.GetNonce(fromAddr.String())
@@ -395,21 +401,30 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	}
 	c.logger.Info().Uint64("nonce", nonce).Msg("account info")
 
-	// outbound tx always send to smart contract address
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, MaxContractGas, big.NewInt(tx.GasRate), data)
-	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
-	if err != nil {
-		return nil, fmt.Errorf("fail to estimate gas: %w", err)
-	}
-	c.logger.Info().Msgf("estimated gas unit: %d", estimatedGas)
-
-	// compare the gas rate prescribed by THORChain against the price it can get from the chai
+	// compare the gas rate prescribed by THORChain against the price it can get from the chain
 	// ensure signer always pay enough higher gas price
 	gasRate := big.NewInt(tx.GasRate)
 	if gasRate.Cmp(c.GetGasPrice()) < 0 {
 		gasRate = c.GetGasPrice()
 	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
+	// outbound tx always send to smart contract address
+	estimatedETHValue := big.NewInt(0)
+	if ethValue.Uint64() > 0 {
+		// when the ETH value is none zero , here override it with a fix value for estimate gas purpose
+		// when ETH value is none zero , if we send the real value for estimate gas , some times it will fail , for many reasons, a few I saw during test
+		// 1. insufficient fund
+		// 2. gas required exceeds allowance
+		// as long as we pass in an ETH value , which we almost guarantee it will not exceed the ETH balance , so we can avoid the above two errors
+		estimatedETHValue = estimatedETHValue.SetInt64(21000)
+	}
+	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
+	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to estimate gas: %w", err)
+	}
+	c.logger.Info().Msgf("estimated gas unit: %d", estimatedGas)
+
 	gasOut := big.NewInt(0)
 	for _, coin := range tx.MaxGas {
 		gasOut.Add(gasOut, coin.Amount.BigInt())
@@ -420,23 +435,31 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		// adjust the gas price to reflect that , so not breach the MaxGas restriction
 		// This might cause the tx to delay
 		if totalGas.Cmp(gasOut) == 1 {
-			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
-			c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
+			if memo.GetType() == mem.TxYggdrasilReturn {
+				// yggdrasil return fund
+				gap := totalGas.Sub(totalGas, gasOut)
+				c.logger.Info().Msgf("yggdrasil return fund , gass need: %s", gap.String())
+				ethValue = ethValue.Sub(ethValue, gap)
+			} else {
+				gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
+				c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
+			}
 		} else {
 			extra := gasOut.Sub(gasOut, totalGas)
 			if extra.Uint64() > 0 {
 				ethValue = ethValue.Add(ethValue, extra)
+				c.logger.Info().Msgf("%s extra ETH.ETH pay to customer,customer get paid: %s", extra, ethValue)
 			}
-			c.logger.Info().Msgf("%s extra ETH.ETH pay to customer,customer get paid: %s", extra, ethValue)
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	} else {
 		// ERC20 tokens , if the total gas is more than the max gas , then let's calculate a gas rate
 		// adjust the gas price to reflect that , so not breach the MaxGas restriction
 		// This might cause the tx to delay
-		if totalGas.Cmp(gasOut) == 1 {
+		if totalGas.Cmp(gasOut) == 1 || memo.GetType() == mem.TxMigrate {
 			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 		}
+
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
 
@@ -480,7 +503,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if len(contractAddresses) == 0 {
 		return nil, fmt.Errorf("fail to get contract address")
 	}
-	input, err := c.vaultABI.Pack("vaultAllowance", ecommon.HexToAddress(token), ecommon.HexToAddress(addr))
+	input, err := c.vaultABI.Pack("vaultAllowance", ecommon.HexToAddress(addr), ecommon.HexToAddress(token))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create vaultAllowance data to call smart contract")
 	}
@@ -509,9 +532,11 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 		return nil, fmt.Errorf("fail to get all the tokens: %w", err)
 	}
 	coins := common.Coins{}
+
 	for _, token := range tokens {
 		balance, err := c.GetBalance(addr, token.Address)
 		if err != nil {
+			c.logger.Err(err).Msgf("fail to get balance for token:%s", token.Address)
 			continue
 		}
 		asset := common.ETHAsset

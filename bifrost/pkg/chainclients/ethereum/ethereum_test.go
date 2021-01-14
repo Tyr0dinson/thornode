@@ -169,7 +169,7 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 				c.Assert(err, IsNil)
 			}
 			if rpcRequest.Method == "eth_call" {
-				if string(rpcRequest.Params) == `[{"data":"0x03b6a6730000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf4830000000000000000000000009f4aab49a9cd8fc54dcb3701846f608a6f2c44da","from":"0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44"},"latest"]` {
+				if string(rpcRequest.Params) == `[{"data":"0x03b6a6730000000000000000000000009f4aab49a9cd8fc54dcb3701846f608a6f2c44da0000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf483","from":"0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44"},"latest"]` {
 					_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x0000000000000000000000000000000000000000000000000000000000000012"}`))
 					c.Assert(err, IsNil)
 				} else if string(rpcRequest.Params) == `[{"data":"0x95d89b41","from":"0x0000000000000000000000000000000000000000","to":"0x3b7fa4dd21c6f9ba3ca375217ead7cab9d6bf483"},"latest"]` {

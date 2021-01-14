@@ -428,6 +428,7 @@ func (s *Signer) handleYggReturn(height int64, tx types.TxOutItem) (types.TxOutI
 	if err != nil {
 		return tx, fmt.Errorf("fail to get chain account info: %w", err)
 	}
+	s.logger.Info().Msgf("account: %+v", acct)
 	tx.Coins = make(common.Coins, 0)
 	for _, coin := range acct.Coins {
 		asset, err := common.NewAsset(coin.Asset.String())

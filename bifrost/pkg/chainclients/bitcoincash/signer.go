@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
 const (
@@ -108,14 +109,9 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64) ([]btcjson.
 		return utxos[i].TxID < utxos[j].TxID
 	})
 
-	target := 0.0
 	for _, item := range utxos {
 		if isYggdrasil || item.Confirmations >= MinUTXOConfirmation || c.isSelfTransaction(item.TxID) {
 			result = append(result, item)
-			if item.Amount+target >= total {
-				break
-			}
-			target += item.Amount
 		}
 	}
 	return result, nil
@@ -298,8 +294,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 		c.logger.Info().Msgf("gas amount: %d is larger than maximum fee: %d , diff: %d", gasAmtSats, uint64(maxFeeSats), diffSats)
 		gasAmtSats = uint64(maxFeeSats)
 	} else if gasAmtSats < c.minRelayFeeSats {
-		diffStats := c.minRelayFeeSats - gasAmtSats
-		c.logger.Info().Msgf("gas amount: %d is less than min relay fee: %d, diff remove from customer: %d", gasAmtSats, c.minRelayFeeSats, diffStats)
+		c.logger.Info().Msgf("gas amount: %d is less than min relay fee: %d,use min relay fee instead", gasAmtSats, c.minRelayFeeSats)
 		gasAmtSats = c.minRelayFeeSats
 	}
 
@@ -307,14 +302,23 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	if !tx.MaxGas.IsEmpty() {
 		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.BCHAsset)
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
-			gap := gasAmtSats - maxGasCoin.Amount.Uint64()
-			c.logger.Info().Msgf("max gas: %s, need to spend on gas: %s , gap: %d will be deduct from payment to customer", tx.MaxGas, gasCoin, gap)
-			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
+			c.logger.Info().Msgf("max gas: %s, however estimated gas need %d", tx.MaxGas, gasAmtSats)
+			gasAmtSats = maxGasCoin.Amount.Uint64()
 		} else if gasAmtSats < maxGasCoin.Amount.Uint64() {
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
 			c.logger.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to customer", tx.MaxGas, gasAmtSats, gap)
 			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
+		}
+	} else {
+		memo, err := mem.ParseMemo(tx.Memo)
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse memo: %w", err)
+		}
+		if memo.GetType() == mem.TxYggdrasilReturn {
+			gap := gasAmtSats
+			c.logger.Info().Msgf("yggdrasil return asset , need gas: %d", gap)
+			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
 		}
 	}
 	gasAmt := bchutil.Amount(gasAmtSats)
@@ -329,10 +333,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 	// balance to ourselves
 	// add output to pay the balance back ourselves
 	balance := int64(total) - redeemTxOut.Value - int64(gasAmt)
+
 	c.logger.Info().Msgf("total: %d, to customer: %d, gas: %d", int64(total), redeemTxOut.Value, int64(gasAmt))
 	if balance < 0 {
 		return nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
+
+	// if the balance is dust , then just donate it to miners
 	if balance > 0 {
 		c.logger.Info().Msgf("send %d back to self", balance)
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))

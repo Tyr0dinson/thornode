@@ -544,8 +544,15 @@ func (c *Client) sendNetworkFee(height int64) error {
 	if result.AverageFeeRate == 0 {
 		return nil
 	}
+	feeRate := uint64(result.AverageFeeRate * common.One)
+	if EstimateAverageTxSize*feeRate < c.minRelayFeeSats {
+		feeRate = c.minRelayFeeSats / EstimateAverageTxSize
+		if feeRate*EstimateAverageTxSize < c.minRelayFeeSats {
+			feeRate++
+		}
+	}
 
-	txid, err := c.bridge.PostNetworkFee(height, common.BCHChain, uint64(EstimateAverageTxSize), uint64(result.AverageFeeRate*common.One))
+	txid, err := c.bridge.PostNetworkFee(height, common.BCHChain, uint64(EstimateAverageTxSize), feeRate)
 	if err != nil {
 		return fmt.Errorf("fail to post network fee to thornode: %w", err)
 	}
@@ -625,14 +632,6 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult, blockMeta *B
 	for _, tx := range block.Tx {
 		// mempool transaction get committed to block , thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
-		h, err := chainhash.NewHashFromStr(tx.Hash)
-		if err != nil {
-			return types.TxIn{}, fmt.Errorf("fail to parse transaction hash(%s):%w", tx.Hash, err)
-		}
-		// if it is an outbound tx , than we already observed it from mempool ,so ignore it
-		if blockMeta.TransactionHashExist(h.String()) {
-			continue
-		}
 		txInItem, err := c.getTxIn(&tx, block.Height)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get TxInItem")

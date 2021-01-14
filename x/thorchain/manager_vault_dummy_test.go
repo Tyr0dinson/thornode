@@ -33,6 +33,6 @@ func (vm *VaultMgrDummy) UpdateNetwork(ctx cosmos.Context, constAccessor constan
 	return nil
 }
 
-func (vm *VaultMgrDummy) RecallChainFunds(ctx cosmos.Context, chain common.Chain, mgr Manager) error {
+func (vm *VaultMgrDummy) RecallChainFunds(ctx cosmos.Context, chain common.Chain, mgr Manager, excludeNodeKeys common.PubKeys) error {
 	return nil
 }

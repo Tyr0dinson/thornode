@@ -668,7 +668,8 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction) (*stypes.T
 			}
 		}
 	}
-	e.logger.Info().Msgf("tx: %s, gas price: %s, gas used: %d", txInItem.Tx, tx.GasPrice().String(), receipt.GasUsed)
+
+	e.logger.Info().Msgf("tx: %s, gas price: %s, gas used: %d,receipt status:%d", txInItem.Tx, tx.GasPrice().String(), receipt.GasUsed, receipt.Status)
 	txInItem.Gas = common.MakeETHGas(tx.GasPrice(), receipt.GasUsed)
 	return txInItem, nil
 }
@@ -693,7 +694,6 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 		} else {
 			txInItem.Memo = string(memo)
 		}
-
 	}
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, cosmos.NewUintFromBigInt(tx.Value())))
 	txInItem.Gas = common.MakeETHGas(tx.GasPrice(), tx.Gas())
