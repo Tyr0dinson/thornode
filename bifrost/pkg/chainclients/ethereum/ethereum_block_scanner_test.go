@@ -2,7 +2,6 @@ package ethereum
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -147,7 +146,6 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 				Method  string          `json:"method"`
 				Params  json.RawMessage `json:"params"`
 			}
-			fmt.Println(string(body))
 			var rpcRequest RPCRequest
 			err = json.Unmarshal(body, &rpcRequest)
 			if err != nil {

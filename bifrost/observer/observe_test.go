@@ -138,7 +138,6 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(os.Setenv("NET", "testnet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		fmt.Printf("requestUri:%s\n", req.RequestURI)
 		if strings.HasPrefix(req.RequestURI, "/errata") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "E7FDA9DE4D0AD37D823813CB5BC0D6E69AB0D41BB666B65B965D12D24A3AE83C", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
 			c.Assert(err, IsNil)
