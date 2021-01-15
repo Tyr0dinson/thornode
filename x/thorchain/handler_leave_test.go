@@ -439,7 +439,7 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				retiringVault.Membership = common.PubKeys{
 					nodeAccount.PubKeySet.Secp256k1,
 					GetRandomPubKey(),
-				}
+				}.Strings()
 				helper.Keeper.SetVault(ctx, retiringVault)
 				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
 			},

@@ -144,7 +144,7 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
-	asgard := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings())
+	asgard := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings(), nil)
 	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
 
 	poolBNB := NewPool()

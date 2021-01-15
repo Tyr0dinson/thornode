@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/client/keys"
+	cKeys "github.com/cosmos/cosmos-sdk/crypto/keys"
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
@@ -20,7 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
-	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
@@ -189,10 +188,10 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
-	kb := cKeys.NewInMemory()
-	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
+	kb := keys.NewInMemoryKeyBase()
+	info, _, err := kb.CreateMnemonic(cfg.SignerName, cKeys.English, cfg.SignerPasswd, cKeys.Secp256k1)
 	c.Assert(err, IsNil)
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, info, cfg.SignerPasswd)
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(err, IsNil)
 }
@@ -307,12 +306,12 @@ func (s *EthereumSuite) TestClient(c *C) {
 	}`))
 	c.Assert(err, IsNil)
 	input := []byte(`{
-    "height": 1,
+    "height": "1",
     "tx_array": [
         {
-            "vault_pub_key": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
+            "vault_pubkey": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
             "chain": "ETH",
-            "to_address": "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",
+            "to": "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",
             "coin": {
                 "asset": "ETH.ETH",
                 "amount": "194765912"
