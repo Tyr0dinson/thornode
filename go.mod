@@ -41,6 +41,7 @@ require (
 	github.com/prometheus/client_golang v1.8.0
 	github.com/pseudomuto/protoc-gen-doc v1.3.2 // indirect
 	github.com/rakyll/statik v0.1.7
+	github.com/regen-network/cosmos-proto v0.3.1 // indirect
 	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/rs/zerolog v1.20.0
 	github.com/spf13/cast v1.3.1
