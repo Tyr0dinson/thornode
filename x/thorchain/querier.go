@@ -270,7 +270,7 @@ func queryVaultsPubkeys(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keepe
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
-		if err := cdc.UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
+		if err := keeper.Cdc().UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
