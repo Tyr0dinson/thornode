@@ -17,7 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/hashicorp/go-retryablehttp"
@@ -115,16 +115,7 @@ func MakeLegacyCodec() *codec.LegacyAmino {
 	return cdc
 }
 
-func makeStdTx(msgs []cosmos.Msg) *legacytx.StdTx {
-	stdTx := legacytx.NewStdTx(
-		msgs,
-		legacytx.NewStdFee(5000000000000000, nil), // fee
-		nil, // signatures
-		"",  // memo
-	)
-	return &stdTx
-}
-
+// GetContext return a valid context with all relevant values set
 func (b *ThorchainBridge) GetContext() client.Context {
 	ctx := client.Context{}
 	ctx = ctx.WithKeyring(b.keys.GetKeybase())
@@ -141,10 +132,11 @@ func (b *ThorchainBridge) GetContext() client.Context {
 	ctx = ctx.WithLegacyAmino(encodingConfig.Amino)
 	ctx = ctx.WithAccountRetriever(authtypes.AccountRetriever{})
 
-	remote := b.cfg.ChainHost
+	remote := b.cfg.ChainRPC
 	if !strings.HasSuffix(b.cfg.ChainHost, "http") {
-		remote = fmt.Sprintf("http://%s", remote)
+		remote = fmt.Sprintf("tcp://%s", remote)
 	}
+	ctx = ctx.WithNodeURI(remote)
 	client, err := rpchttp.New(remote, "/websocket")
 	if err != nil {
 		panic(err)
@@ -244,29 +236,27 @@ func (b *ThorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
 	msg := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, b.keys.GetSignerInfo().GetAddress(), pubkey)
-	stdTx := legacytx.NewStdTx(
-		[]cosmos.Msg{msg},
-		legacytx.NewStdFee(100000000, nil), // fee
-		nil,                                // signatures
-		"",                                 // memo
-	)
-	return b.Broadcast(stdTx, types.TxSync)
+	// stdTx := legacytx.NewStdTx(
+	// 	[]cosmos.Msg{msg},
+	// 	legacytx.NewStdFee(100000000, nil), // fee
+	// 	nil,                                // signatures
+	// 	"",                                 // memo
+	// )
+	return b.Broadcast(msg)
 }
 
 // GetErrataStdTx get errata tx from params
-func (b *ThorchainBridge) GetErrataStdTx(txID common.TxID, chain common.Chain) (*legacytx.StdTx, error) {
-	msg := stypes.NewMsgErrataTx(txID, chain, b.keys.GetSignerInfo().GetAddress())
-	return makeStdTx([]cosmos.Msg{msg}), nil
+func (b *ThorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg {
+	return stypes.NewMsgErrataTx(txID, chain, b.keys.GetSignerInfo().GetAddress())
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (*legacytx.StdTx, error) {
-	msg := stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
-	return makeStdTx([]cosmos.Msg{msg}), nil
+func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) sdk.Msg {
+	return stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
 }
 
 // GetObservationsStdTx get observations tx from txIns
-func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) (*legacytx.StdTx, error) {
+func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) ([]cosmos.Msg, error) {
 	if len(txIns) == 0 {
 		b.errCounter.WithLabelValues("nothing_to_sign", "").Inc()
 		return nil, errors.New("nothing to be signed")
@@ -302,7 +292,7 @@ func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) (*legac
 		msgs = append(msgs, stypes.NewMsgObservedTxOut(outbound, b.keys.GetSignerInfo().GetAddress()))
 	}
 
-	return makeStdTx(msgs), nil
+	return msgs, nil
 }
 
 // EnsureNodeWhitelistedWithTimeout check node is whitelisted with timeout retry
@@ -456,13 +446,13 @@ func (b *ThorchainBridge) PostNetworkFee(height int64, chain common.Chain, trans
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
 	msg := stypes.NewMsgNetworkFee(height, chain, transactionSize, transactionRate, b.keys.GetSignerInfo().GetAddress())
-	stdTx := legacytx.NewStdTx(
-		[]cosmos.Msg{msg},
-		legacytx.NewStdFee(10000000000, nil), // fee
-		nil,                                  // signatures
-		"",                                   // memo
-	)
-	return b.Broadcast(stdTx, types.TxSync)
+	// stdTx := legacytx.NewStdTx(
+	// 	[]cosmos.Msg{msg},
+	// 	legacytx.NewStdFee(10000000000, nil), // fee
+	// 	nil,                                  // signatures
+	// 	"",                                   // memo
+	// )
+	return b.Broadcast(msg)
 }
 
 // GetConstants from thornode

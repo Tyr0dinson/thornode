@@ -1,30 +1,27 @@
 package thorclient
 
 import (
-	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
 
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 	flag "github.com/spf13/pflag"
 
+	stypes "github.com/cosmos/cosmos-sdk/types"
+
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 )
 
 // Broadcast Broadcasts tx to thorchain
-func (b *ThorchainBridge) Broadcast(stdTx authtypes.StdTx, mode types.TxMode) (common.TxID, error) {
+func (b *ThorchainBridge) Broadcast(msgs ...stypes.Msg) (common.TxID, error) {
 	b.broadcastLock.Lock()
 	defer b.broadcastLock.Unlock()
 
 	noTxID := common.TxID("")
-	if !mode.IsValid() {
-		return noTxID, errors.New(fmt.Sprintf("transaction Mode (%s) is invalid", mode))
-	}
+
 	start := time.Now()
 	defer func() {
 		b.m.GetHistograms(metrics.SendToThorchainDuration).Observe(time.Since(start).Seconds())
@@ -55,19 +52,18 @@ func (b *ThorchainBridge) Broadcast(stdTx authtypes.StdTx, mode types.TxMode) (c
 	factory = factory.WithAccountNumber(b.accountNumber)
 	factory = factory.WithSequence(b.seqNumber)
 	factory = factory.WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
-	factory = factory.WithMemo(stdTx.GetMemo())
 
-	builder, err := clienttx.BuildUnsignedTx(factory, stdTx.GetMsgs()...)
+	builder, err := clienttx.BuildUnsignedTx(factory, msgs...)
 	if err != nil {
 		return noTxID, err
 	}
-
+	builder.SetGasLimit(100000000)
 	err = clienttx.Sign(factory, ctx.GetFromName(), builder, true)
 	if err != nil {
 		return noTxID, err
 	}
 
-	txBytes, err := ctx.TxConfig.TxJSONEncoder()(builder.GetTx())
+	txBytes, err := ctx.TxConfig.TxEncoder()(builder.GetTx())
 	if err != nil {
 		return noTxID, err
 	}
@@ -75,7 +71,7 @@ func (b *ThorchainBridge) Broadcast(stdTx authtypes.StdTx, mode types.TxMode) (c
 	// broadcast to a Tendermint node
 	commit, err := ctx.BroadcastTx(txBytes)
 	if err != nil {
-		return noTxID, err
+		return noTxID, fmt.Errorf("fail to broadcast tx: %w", err)
 	}
 
 	b.m.GetCounter(metrics.TxToThorchainSigned).Inc()

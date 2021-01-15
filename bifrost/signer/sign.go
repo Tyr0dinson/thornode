@@ -291,13 +291,10 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 		}
 	}
 
-	stdTx, err := s.thorchainBridge.GetKeygenStdTx(poolPk, blame, input, keygenType, chains, height, keygenTime)
+	keygenMsg := s.thorchainBridge.GetKeygenStdTx(poolPk, blame, input, keygenType, chains, height, keygenTime)
 	strHeight := strconv.FormatInt(height, 10)
-	if err != nil {
-		s.errCounter.WithLabelValues("fail_to_sign", strHeight).Inc()
-		return fmt.Errorf("fail to sign the tx: %w", err)
-	}
-	txID, err := s.thorchainBridge.Broadcast(*stdTx, types.TxSync)
+
+	txID, err := s.thorchainBridge.Broadcast(keygenMsg)
 	if err != nil {
 		s.errCounter.WithLabelValues("fail_to_send_to_thorchain", strHeight).Inc()
 		return fmt.Errorf("fail to send the tx to thorchain: %w", err)
