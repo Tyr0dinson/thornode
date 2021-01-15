@@ -1,6 +1,6 @@
 {
     "keygen_block": {
-        "height": "1718",
+        "height": 1718,
         "keygens": [
             {
                 "id": "FEDA8BEDB84117C3EF6BEDA1A2639C11D73724AD0E85268E86CADEA13089E400",
@@ -12,5 +12,5 @@
             }
         ]
     },
-    "signature": "haYX7X7P+is1vQe+tS2kVJkjuWwD9qpN4uQDltsQ29gRyKQJ7LEpeVX4zV+Ah5eyJkvHZwvBUo9VINqNImKQmQ=="
+    "signature": "Jn7IXzc5Vzf9EjJ67Bw4KnPIg1vwlIJ4fYo5209NNKo0KOdq47V8iUclcsHRYXuVDnc1Ph3FUWPKfXqfeRgJag=="
 }

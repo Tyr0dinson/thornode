@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"encoding/json"
 	"strconv"
 
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -517,7 +518,7 @@ func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	var r QueryKeysign
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryNetwork(c *C) {

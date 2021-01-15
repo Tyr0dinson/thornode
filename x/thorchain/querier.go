@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -741,7 +742,7 @@ func queryKeygen(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseS
 		keygenBlock = newKeygenBlock
 	}
 
-	buf, err := cdc.MarshalBinaryBare(keygenBlock)
+	buf, err := json.Marshal(keygenBlock)
 	if err != nil {
 		ctx.Logger().Error("fail to marshal keygen block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keygen block to json: %w", err)
@@ -757,7 +758,7 @@ func queryKeygen(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseS
 		Signature:   base64.StdEncoding.EncodeToString(sig),
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, query)
+	res, err := json.MarshalIndent(query, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal keygen block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keygen block to json: %w", err)
@@ -807,7 +808,7 @@ func queryKeysign(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.Keybase
 		txs = newTxs
 	}
 
-	buf, err := cdc.MarshalBinaryBare(txs)
+	buf, err := json.Marshal(txs)
 	if err != nil {
 		ctx.Logger().Error("fail to marshal keysign block to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal keysign block to json: %w", err)
@@ -822,7 +823,7 @@ func queryKeysign(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.Keybase
 		Signature: base64.StdEncoding.EncodeToString(sig),
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, query)
+	res, err := json.MarshalIndent(query, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)

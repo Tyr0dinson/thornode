@@ -27,14 +27,13 @@ import (
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	"gitlab.com/thorchain/thornode/app"
+	"gitlab.com/thorchain/thornode/bifrost/config"
+	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
-
-	"gitlab.com/thorchain/thornode/bifrost/config"
-	"gitlab.com/thorchain/thornode/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 )
 
 // Endpoint urls
@@ -112,6 +111,7 @@ func MakeLegacyCodec() *codec.LegacyAmino {
 	banktypes.RegisterLegacyAminoCodec(cdc)
 	authtypes.RegisterLegacyAminoCodec(cdc)
 	cosmos.RegisterCodec(cdc)
+	stypes.RegisterCodec(cdc)
 	return cdc
 }
 
@@ -236,12 +236,6 @@ func (b *ThorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
 	msg := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, b.keys.GetSignerInfo().GetAddress(), pubkey)
-	// stdTx := legacytx.NewStdTx(
-	// 	[]cosmos.Msg{msg},
-	// 	legacytx.NewStdFee(100000000, nil), // fee
-	// 	nil,                                // signatures
-	// 	"",                                 // memo
-	// )
 	return b.Broadcast(msg)
 }
 
