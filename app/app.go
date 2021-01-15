@@ -293,7 +293,10 @@ func New(
 	app.SetAnteHandler(
 		ante.NewAnteHandler(
 			app.AccountKeeper, app.BankKeeper, ante.DefaultSigVerificationGasConsumer,
-			encodingConfig.TxConfig.SignModeHandler(),
+			signModeHandlerWrapper{
+				origin: encodingConfig.TxConfig.SignModeHandler(),
+			},
+			//encodingConfig.TxConfig.SignModeHandler(),
 		),
 	)
 	app.SetEndBlocker(app.EndBlocker)

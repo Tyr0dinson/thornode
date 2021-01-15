@@ -111,7 +111,7 @@ func MakeLegacyCodec() *codec.LegacyAmino {
 	banktypes.RegisterLegacyAminoCodec(cdc)
 	authtypes.RegisterLegacyAminoCodec(cdc)
 	cosmos.RegisterCodec(cdc)
-	stypes.RegisterCodec(cdc)
+
 	return cdc
 }
 

@@ -73,7 +73,7 @@ lint-pre: protob
 	@test -z "$(shell gofumpt -l cmd x bifrost common constants tools)" # cause error
 	@go mod verify
 
-lint: lint-pre
+lint:
 	@golangci-lint run --skip-files ".*\\.pb\\.go$$"
 
 lint-verbose: lint-pre
