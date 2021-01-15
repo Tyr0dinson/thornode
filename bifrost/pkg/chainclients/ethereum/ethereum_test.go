@@ -312,9 +312,9 @@ func (s *EthereumSuite) TestClient(c *C) {
     "height": 1,
     "tx_array": [
         {
-            "vault_pubkey": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
+            "vault_pub_key": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
             "chain": "ETH",
-            "to": "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",
+            "to_address": "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",
             "coin": {
                 "asset": "ETH.ETH",
                 "amount": "194765912"
