@@ -142,10 +142,10 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "E7FDA9DE4D0AD37D823813CB5BC0D6E69AB0D41BB666B65B965D12D24A3AE83C", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock/BNB") {
-			_, err := rw.Write([]byte(`[{ "chain": "BNB", "lastobservedin": "0", "lastsignedout": "0", "thorchain": "0" }]`))
+			_, err := rw.Write([]byte(`[{ "chain": "BNB", "lastobservedin": 0, "lastsignedout": 0, "thorchain": 0 }]`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock") {
-			_, err := rw.Write([]byte(`[{ "chain": "THORChain", "lastobservedin": "0", "lastsignedout": "0", "thorchain": "0" }]`))
+			_, err := rw.Write([]byte(`[{ "chain": "THORChain", "lastobservedin": 0, "lastsignedout": 0, "thorchain": 0 }]`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/auth/accounts/") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "0", "result": { "value": { "account_number": "0", "sequence": "0" } } } |`))

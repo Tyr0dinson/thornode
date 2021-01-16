@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	types2 "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/tendermint/tendermint/abci/types"
 
@@ -20,65 +19,65 @@ import (
 )
 
 // NewQuerier is the module level router for state queries
-func NewQuerier(cdc *codec.LegacyAmino, keeper keeper.Keeper, kbs cosmos.KeybaseStore) cosmos.Querier {
+func NewQuerier(keeper keeper.Keeper, kbs cosmos.KeybaseStore) cosmos.Querier {
 	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) (res []byte, err error) {
 		switch path[0] {
 		case q.QueryPool.Key:
-			return queryPool(cdc, ctx, path[1:], req, keeper)
+			return queryPool(ctx, path[1:], req, keeper)
 		case q.QueryPools.Key:
-			return queryPools(cdc, ctx, req, keeper)
+			return queryPools(ctx, req, keeper)
 		case q.QueryLiquidityProviders.Key:
-			return queryLiquidityProviders(cdc, ctx, path[1:], req, keeper)
+			return queryLiquidityProviders(ctx, path[1:], req, keeper)
 		case q.QueryTxVoter.Key:
-			return queryTxVoters(cdc, ctx, path[1:], req, keeper)
+			return queryTxVoters(ctx, path[1:], req, keeper)
 		case q.QueryTx.Key:
-			return queryTx(cdc, ctx, path[1:], req, keeper)
+			return queryTx(ctx, path[1:], req, keeper)
 		case q.QueryKeysignArray.Key:
-			return queryKeysign(cdc, ctx, kbs, path[1:], req, keeper)
+			return queryKeysign(ctx, kbs, path[1:], req, keeper)
 		case q.QueryKeysignArrayPubkey.Key:
-			return queryKeysign(cdc, ctx, kbs, path[1:], req, keeper)
+			return queryKeysign(ctx, kbs, path[1:], req, keeper)
 		case q.QueryKeygensPubkey.Key:
-			return queryKeygen(cdc, ctx, kbs, path[1:], req, keeper)
+			return queryKeygen(ctx, kbs, path[1:], req, keeper)
 		case q.QueryQueue.Key:
-			return queryQueue(cdc, ctx, path[1:], req, keeper)
+			return queryQueue(ctx, path[1:], req, keeper)
 		case q.QueryHeights.Key:
-			return queryLastBlockHeights(cdc, ctx, path[1:], req, keeper)
+			return queryLastBlockHeights(ctx, path[1:], req, keeper)
 		case q.QueryChainHeights.Key:
-			return queryLastBlockHeights(cdc, ctx, path[1:], req, keeper)
+			return queryLastBlockHeights(ctx, path[1:], req, keeper)
 		case q.QueryNode.Key:
-			return queryNode(cdc, ctx, path[1:], req, keeper)
+			return queryNode(ctx, path[1:], req, keeper)
 		case q.QueryNodes.Key:
-			return queryNodes(cdc, ctx, path[1:], req, keeper)
+			return queryNodes(ctx, path[1:], req, keeper)
 		case q.QueryInboundAddresses.Key:
-			return queryInboundAddresses(cdc, ctx, path[1:], req, keeper)
+			return queryInboundAddresses(ctx, path[1:], req, keeper)
 		case q.QueryNetwork.Key:
-			return queryNetwork(cdc, ctx, keeper)
+			return queryNetwork(ctx, keeper)
 		case q.QueryBalanceModule.Key:
-			return queryBalanceModule(cdc, ctx, path[1:], keeper)
+			return queryBalanceModule(ctx, path[1:], keeper)
 		case q.QueryVaultsAsgard.Key:
-			return queryAsgardVaults(cdc, ctx, keeper)
+			return queryAsgardVaults(ctx, keeper)
 		case q.QueryVaultsYggdrasil.Key:
-			return queryYggdrasilVaults(cdc, ctx, keeper)
+			return queryYggdrasilVaults(ctx, keeper)
 		case q.QueryVault.Key:
-			return queryVault(cdc, ctx, path[1:], keeper)
+			return queryVault(ctx, path[1:], keeper)
 		case q.QueryVaultPubkeys.Key:
-			return queryVaultsPubkeys(cdc, ctx, keeper)
+			return queryVaultsPubkeys(ctx, keeper)
 		case q.QueryConstantValues.Key:
-			return queryConstantValues(cdc, ctx, path[1:], req, keeper)
+			return queryConstantValues(ctx, path[1:], req, keeper)
 		case q.QueryVersion.Key:
-			return queryVersion(cdc, ctx, path[1:], req, keeper)
+			return queryVersion(ctx, path[1:], req, keeper)
 		case q.QueryMimirValues.Key:
-			return queryMimirValues(cdc, ctx, path[1:], req, keeper)
+			return queryMimirValues(ctx, path[1:], req, keeper)
 		case q.QueryBan.Key:
-			return queryBan(cdc, ctx, path[1:], req, keeper)
+			return queryBan(ctx, path[1:], req, keeper)
 		case q.QueryRagnarok.Key:
-			return queryRagnarok(cdc, ctx, keeper)
+			return queryRagnarok(ctx, keeper)
 		case q.QueryPendingOutbound.Key:
-			return queryPendingOutbound(cdc, ctx, keeper)
+			return queryPendingOutbound(ctx, keeper)
 		case q.QueryTssKeygenMetrics.Key:
-			return queryTssKeygenMetric(cdc, ctx, path[1:], req, keeper)
+			return queryTssKeygenMetric(ctx, path[1:], req, keeper)
 		case q.QueryTssMetrics.Key:
-			return queryTssMetric(cdc, ctx, path[1:], req, keeper)
+			return queryTssMetric(ctx, path[1:], req, keeper)
 		default:
 			return nil, cosmos.ErrUnknownRequest(
 				fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
@@ -87,16 +86,16 @@ func NewQuerier(cdc *codec.LegacyAmino, keeper keeper.Keeper, kbs cosmos.Keybase
 	}
 }
 
-func queryRagnarok(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryRagnarok(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	ragnarokInProgress := keeper.RagnarokInProgress(ctx)
-	res, err := codec.MarshalJSONIndent(cdc, ragnarokInProgress)
+	res, err := json.MarshalIndent(ragnarokInProgress, "", "	")
 	if err != nil {
 		return nil, ErrInternal(err, "fail to marshal response to json")
 	}
 	return res, nil
 }
 
-func queryBalanceModule(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, keeper keeper.Keeper) ([]byte, error) {
+func queryBalanceModule(ctx cosmos.Context, path []string, keeper keeper.Keeper) ([]byte, error) {
 	moduleName := path[0]
 	if len(moduleName) == 0 {
 		moduleName = AsgardName
@@ -113,14 +112,14 @@ func queryBalanceModule(cdc *codec.LegacyAmino, ctx cosmos.Context, path []strin
 		Address: modAddr,
 		Coins:   bal,
 	}
-	res, err := codec.MarshalJSONIndent(cdc, balance)
+	res, err := json.MarshalIndent(balance, "", "	")
 	if err != nil {
 		return nil, ErrInternal(err, "fail to marshal response to json")
 	}
 	return res, nil
 }
 
-func queryVault(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, keeper keeper.Keeper) ([]byte, error) {
+func queryVault(ctx cosmos.Context, path []string, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) < 2 {
 		return nil, errors.New("not enough parameters")
 	}
@@ -136,7 +135,7 @@ func queryVault(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, keepe
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var v Vault
-		if err := cdc.UnmarshalBinaryBare(iter.Value(), &v); err != nil {
+		if err := keeper.Cdc().UnmarshalBinaryBare(iter.Value(), &v); err != nil {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			continue
 		}
@@ -146,8 +145,7 @@ func queryVault(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, keepe
 			continue
 		}
 		if vaultAddr.Equals(addr) {
-
-			res, err := codec.MarshalJSONIndent(cdc, v)
+			res, err := json.MarshalIndent(v, "", "	")
 			if err != nil {
 				ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
 				return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -158,7 +156,7 @@ func queryVault(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, keepe
 	return nil, errors.New("vault not found")
 }
 
-func queryAsgardVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryAsgardVaults(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	vaults, err := keeper.GetAsgardVaults(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
@@ -177,7 +175,7 @@ func queryAsgardVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, vaultsWithFunds)
+	res, err := json.MarshalIndent(vaultsWithFunds, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -186,7 +184,7 @@ func queryAsgardVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper
 	return res, nil
 }
 
-func getVaultChainAddress(cdc *codec.LegacyAmino, ctx cosmos.Context, vault Vault) []QueryChainAddress {
+func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	var result []QueryChainAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
@@ -204,13 +202,13 @@ func getVaultChainAddress(cdc *codec.LegacyAmino, ctx cosmos.Context, vault Vaul
 	return result
 }
 
-func queryYggdrasilVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryYggdrasilVaults(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	vaults := make(Vaults, 0)
 	iter := keeper.GetVaultIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
-		if err := cdc.UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
+		if err := keeper.Cdc().UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
 			ctx.Logger().Error("fail to unmarshal yggdrasil", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal yggdrasil: %w", err)
 		}
@@ -249,11 +247,11 @@ func queryYggdrasilVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper kee
 			Status:     na.Status,
 			Bond:       na.Bond,
 			TotalValue: totalValue,
-			Addresses:  getVaultChainAddress(cdc, ctx, vault),
+			Addresses:  getVaultChainAddress(ctx, vault),
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, respVaults)
+	res, err := json.MarshalIndent(respVaults, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -262,7 +260,7 @@ func queryYggdrasilVaults(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper kee
 	return res, nil
 }
 
-func queryVaultsPubkeys(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryVaultsPubkeys(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	var resp QueryVaultsPubKeys
 	resp.Asgard = make([]QueryVaultPubKeyContract, 0)
 	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0)
@@ -295,7 +293,7 @@ func queryVaultsPubkeys(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keepe
 			}
 		}
 	}
-	res, err := codec.MarshalJSONIndent(cdc, resp)
+	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal pubkeys response to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -303,7 +301,7 @@ func queryVaultsPubkeys(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keepe
 	return res, nil
 }
 
-func queryNetwork(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryNetwork(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	data, err := keeper.GetNetwork(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
@@ -320,7 +318,7 @@ func queryNetwork(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keep
 		TotalReserve:   keeper.GetRuneBalanceOfModule(ctx, ReserveName),
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal network data to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -328,7 +326,7 @@ func queryNetwork(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keep
 	return res, nil
 }
 
-func queryInboundAddresses(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	haltTrading, err := keeper.GetMimir(ctx, "HaltTrading")
 	if err != nil {
 		ctx.Logger().Error("fail to get HaltTrading mimir", "error", err)
@@ -392,7 +390,7 @@ func queryInboundAddresses(cdc *codec.LegacyAmino, ctx cosmos.Context, path []st
 		resp.Current = append(resp.Current, addr)
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, resp)
+	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal current pool address to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal current pool address to json: %w", err)
@@ -403,7 +401,7 @@ func queryInboundAddresses(cdc *codec.LegacyAmino, ctx cosmos.Context, path []st
 
 // queryNode return the Node information related to the request node address
 // /thorchain/node/{nodeaddress}
-func queryNode(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("node address not provided")
 	}
@@ -453,13 +451,13 @@ func queryNode(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req ab
 			Height: h,
 		})
 	}
-	preflightCheckResult, err := getNodePreflightResult(cdc, ctx, keeper, nodeAcc)
+	preflightCheckResult, err := getNodePreflightResult(ctx, keeper, nodeAcc)
 	if err != nil {
 		ctx.Logger().Error("fail to get node preflight result", "error", err)
 	} else {
 		result.PreflightStatus = preflightCheckResult
 	}
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal node account to json: %w", err)
 	}
@@ -467,7 +465,7 @@ func queryNode(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req ab
 	return res, nil
 }
 
-func getNodePreflightResult(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
+func getNodePreflightResult(ctx cosmos.Context, keeper keeper.Keeper, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
 	mgr := NewManagers(keeper)
 	if err := mgr.BeginBlock(ctx); err != nil {
 		return QueryNodeAccountPreflightCheck{}, fmt.Errorf("fail to build manager: %w", err)
@@ -492,7 +490,7 @@ func getNodePreflightResult(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper k
 
 // queryNodes return all the nodes that has bond
 // /thorchain/nodes
-func queryNodes(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	nodeAccounts, err := keeper.ListNodeAccountsWithBond(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
@@ -533,7 +531,7 @@ func queryNodes(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 				Height: h,
 			})
 		}
-		preflightCheckResult, err := getNodePreflightResult(cdc, ctx, keeper, na)
+		preflightCheckResult, err := getNodePreflightResult(ctx, keeper, na)
 		if err != nil {
 			ctx.Logger().Error("fail to get node preflight result", "error", err)
 		} else {
@@ -541,7 +539,7 @@ func queryNodes(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal observers to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal observers to json: %w", err)
@@ -551,7 +549,7 @@ func queryNodes(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 }
 
 // queryLiquidityProviders
-func queryLiquidityProviders(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("asset not provided")
 	}
@@ -565,10 +563,10 @@ func queryLiquidityProviders(cdc *codec.LegacyAmino, ctx cosmos.Context, path []
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var lp LiquidityProvider
-		cdc.MustUnmarshalBinaryBare(iterator.Value(), &lp)
+		keeper.Cdc().MustUnmarshalBinaryBare(iterator.Value(), &lp)
 		lps = append(lps, lp)
 	}
-	res, err := codec.MarshalJSONIndent(cdc, lps)
+	res, err := json.MarshalIndent(lps, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal liquidity providers to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal liquidity providers to json: %w", err)
@@ -577,7 +575,7 @@ func queryLiquidityProviders(cdc *codec.LegacyAmino, ctx cosmos.Context, path []
 }
 
 // nolint: unparam
-func queryPool(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("asset not provided")
 	}
@@ -596,19 +594,19 @@ func queryPool(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req ab
 		return nil, fmt.Errorf("pool: %s doesn't exist", path[0])
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, pool)
+	res, err := json.MarshalIndent(pool, "", "	")
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal result to JSON: %w", err)
 	}
 	return res, nil
 }
 
-func queryPools(cdc *codec.LegacyAmino, ctx cosmos.Context, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryPools(ctx cosmos.Context, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	pools := Pools{}
 	iterator := keeper.GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
-		if err := cdc.UnmarshalBinaryBare(iterator.Value(), &pool); err != nil {
+		if err := keeper.Cdc().UnmarshalBinaryBare(iterator.Value(), &pool); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
 		}
 		// ignore pool if no liquidity provider units
@@ -617,14 +615,14 @@ func queryPools(cdc *codec.LegacyAmino, ctx cosmos.Context, req abci.RequestQuer
 		}
 		pools = append(pools, pool)
 	}
-	res, err := codec.MarshalJSONIndent(cdc, pools)
+	res, err := json.MarshalIndent(pools, "", "	")
 	if err != nil {
 		return nil, fmt.Errorf("could not marshal pools result to json: %w", err)
 	}
 	return res, nil
 }
 
-func queryTxVoters(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("tx id not provided")
 	}
@@ -649,7 +647,7 @@ func queryTxVoters(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, re
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, voter)
+	res, err := json.MarshalIndent(voter, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)
@@ -657,7 +655,7 @@ func queryTxVoters(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, re
 	return res, nil
 }
 
-func queryTx(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("tx id not provided")
 	}
@@ -696,7 +694,7 @@ func queryTx(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci
 		KeysignMetrics: *keysignMetric,
 	}
 	result.ObservedTx = voter.GetTx(nodeAccounts)
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)
@@ -704,7 +702,7 @@ func queryTx(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci
 	return res, nil
 }
 
-func queryKeygen(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("block height not provided")
 	}
@@ -765,7 +763,7 @@ func queryKeygen(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseS
 	return res, nil
 }
 
-func queryKeysign(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("block height not provided")
 	}
@@ -831,7 +829,7 @@ func queryKeysign(cdc *codec.LegacyAmino, ctx cosmos.Context, kbs cosmos.Keybase
 }
 
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
-func queryQueue(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	version := keeper.GetLowestActiveVersion(ctx)
 	constAccessor := constants.GetConstantValues(version)
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
@@ -842,7 +840,7 @@ func queryQueue(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var msg MsgSwap
-		if err := cdc.UnmarshalBinaryBare(iterator.Value(), &msg); err != nil {
+		if err := keeper.Cdc().UnmarshalBinaryBare(iterator.Value(), &msg); err != nil {
 			continue
 		}
 		query.Swap++
@@ -861,7 +859,7 @@ func queryQueue(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, query)
+	res, err := json.MarshalIndent(query, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal out queue to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal out queue to json: %w", err)
@@ -869,7 +867,7 @@ func queryQueue(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req a
 	return res, nil
 }
 
-func queryLastBlockHeights(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	var chains common.Chains
 	if len(path) > 0 && len(path[0]) > 0 {
 		var err error
@@ -911,7 +909,7 @@ func queryLastBlockHeights(cdc *codec.LegacyAmino, ctx cosmos.Context, path []st
 		})
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal query response to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
@@ -919,10 +917,10 @@ func queryLastBlockHeights(cdc *codec.LegacyAmino, ctx cosmos.Context, path []st
 	return res, nil
 }
 
-func queryConstantValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	ver := keeper.GetLowestActiveVersion(ctx)
 	constAccessor := constants.GetConstantValues(ver)
-	res, err := codec.MarshalJSONIndent(cdc, constAccessor)
+	res, err := json.MarshalIndent(constAccessor, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal constant values to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal constant values to json: %w", err)
@@ -930,12 +928,12 @@ func queryConstantValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []stri
 	return res, nil
 }
 
-func queryVersion(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	ver := QueryVersion{
 		Current: keeper.GetLowestActiveVersion(ctx),
 		Next:    keeper.GetMinJoinVersion(ctx),
 	}
-	res, err := codec.MarshalJSONIndent(cdc, ver)
+	res, err := json.MarshalIndent(ver, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal version to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal version to json: %w", err)
@@ -943,7 +941,7 @@ func queryVersion(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req
 	return res, nil
 }
 
-func queryMimirValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	values := make(map[string]int64, 0)
 	iter := keeper.GetMimirIterator(ctx)
 	defer iter.Close()
@@ -955,7 +953,7 @@ func queryMimirValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string,
 		}
 		values[string(iter.Key())] = value
 	}
-	res, err := codec.MarshalJSONIndent(cdc, values)
+	res, err := json.MarshalIndent(values, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
@@ -963,7 +961,7 @@ func queryMimirValues(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string,
 	return res, nil
 }
 
-func queryBan(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryBan(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("node address not available")
 	}
@@ -979,7 +977,7 @@ func queryBan(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abc
 		return nil, fmt.Errorf("fail to get ban voter: %w", err)
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, ban)
+	res, err := json.MarshalIndent(ban, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal ban voter to json", "error", err)
 		return nil, fmt.Errorf("fail to ban voter to json: %w", err)
@@ -987,7 +985,7 @@ func queryBan(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abc
 	return res, nil
 }
 
-func queryPendingOutbound(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
+func queryPendingOutbound(ctx cosmos.Context, keeper keeper.Keeper) ([]byte, error) {
 	version := keeper.GetLowestActiveVersion(ctx)
 	constAccessor := constants.GetConstantValues(version)
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
@@ -1006,7 +1004,7 @@ func queryPendingOutbound(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper kee
 		}
 	}
 
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal pending outbound tx to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal pending outbound tx to json: %w", err)
@@ -1014,7 +1012,7 @@ func queryPendingOutbound(cdc *codec.LegacyAmino, ctx cosmos.Context, keeper kee
 	return res, nil
 }
 
-func queryTssKeygenMetric(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	var pubKeys common.PubKeys
 	if len(path) > 0 {
 		pkey, err := common.NewPubKey(path[0])
@@ -1031,14 +1029,14 @@ func queryTssKeygenMetric(cdc *codec.LegacyAmino, ctx cosmos.Context, path []str
 		}
 		result = append(result, m)
 	}
-	res, err := codec.MarshalJSONIndent(cdc, result)
+	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal keygen metrics to json: %w", err)
 	}
 	return res, nil
 }
 
-func queryTssMetric(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
 	var pubKeys common.PubKeys
 	// get all active asgard
 	vaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -1070,5 +1068,5 @@ func queryTssMetric(cdc *codec.LegacyAmino, ctx cosmos.Context, path []string, r
 		KeygenMetrics: keygenMetrics,
 		KeysignMetric: keysignMetric,
 	}
-	return codec.MarshalJSONIndent(cdc, m)
+	return json.MarshalIndent(m, "", "	")
 }

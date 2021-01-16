@@ -59,7 +59,6 @@ const (
 // ThorchainBridge will be used to send tx to THORChain
 type ThorchainBridge struct {
 	logger        zerolog.Logger
-	cdc           *codec.LegacyAmino
 	cfg           config.ClientConfiguration
 	keys          *Keys
 	errCounter    *prometheus.CounterVec
@@ -88,7 +87,6 @@ func NewThorchainBridge(cfg config.ClientConfiguration, m *metrics.Metrics, k *K
 
 	return &ThorchainBridge{
 		logger:        logger,
-		cdc:           MakeLegacyCodec(),
 		cfg:           cfg,
 		keys:          k,
 		errCounter:    m.GetCounterVec(metrics.ThorchainClientError),
@@ -216,7 +214,7 @@ func (b *ThorchainBridge) getAccountNumberAndSequenceNumber() (uint64, uint64, e
 	}
 
 	var resp types.AccountResp
-	if err := b.cdc.UnmarshalJSON(body, &resp); err != nil {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		return 0, 0, fmt.Errorf("failed to unmarshal account resp: %w", err)
 	}
 	acc := resp.Result.Value
@@ -340,7 +338,7 @@ func (b *ThorchainBridge) GetKeysignParty(vaultPubKey common.PubKey) (common.Pub
 		return common.PubKeys{}, fmt.Errorf("fail to get key sign party from thorchain: %w", err)
 	}
 	var keys common.PubKeys
-	if err := b.cdc.UnmarshalJSON(result, &keys); err != nil {
+	if err := json.Unmarshal(result, &keys); err != nil {
 		return common.PubKeys{}, fmt.Errorf("fail to unmarshal result to pubkeys:%w", err)
 	}
 	return keys, nil
@@ -400,7 +398,7 @@ func (b *ThorchainBridge) GetAsgards() (stypes.Vaults, error) {
 		return nil, fmt.Errorf("unexpected status code %d", s)
 	}
 	var vaults stypes.Vaults
-	if err := b.cdc.UnmarshalJSON(buf, &vaults); err != nil {
+	if err := json.Unmarshal(buf, &vaults); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal asgard vaults from json: %w", err)
 	}
 	return vaults, nil
@@ -416,7 +414,7 @@ func (b *ThorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 		return nil, fmt.Errorf("unexpected status code %d", s)
 	}
 	var result stypes.QueryVaultsPubKeys
-	if err := b.cdc.UnmarshalJSON(buf, &result); err != nil {
+	if err := json.Unmarshal(buf, &result); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal pubkeys: %w", err)
 	}
 	var addressPairs []PubKeyContractAddressPair
@@ -552,7 +550,7 @@ func (b *ThorchainBridge) GetContractAddress() ([]PubKeyContractAddressPair, err
 	var resp struct {
 		Current []address `json:"current"`
 	}
-	if err := b.cdc.UnmarshalJSON(buf, &resp); err != nil {
+	if err := json.Unmarshal(buf, &resp); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal response: %w", err)
 	}
 	var result []PubKeyContractAddressPair
@@ -587,7 +585,7 @@ func (b *ThorchainBridge) GetPools() (stypes.Pools, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", s)
 	}
 	var pools stypes.Pools
-	if err := b.cdc.UnmarshalJSON(buf, &pools); err != nil {
+	if err := json.Unmarshal(buf, &pools); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal pools from json: %w", err)
 	}
 	return pools, nil

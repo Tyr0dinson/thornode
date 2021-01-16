@@ -132,7 +132,7 @@ func (am AppModule) QuerierRoute() string {
 
 // LegacyQuerierHandler returns the capability module's Querier.
 func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return NewQuerier(legacyQuerierCdc, am.keeper, am.keybaseStore)
+	return NewQuerier(am.keeper, am.keybaseStore)
 }
 
 // RegisterServices registers module services.

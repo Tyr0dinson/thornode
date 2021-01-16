@@ -7,7 +7,6 @@ import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	. "gopkg.in/check.v1"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	types2 "github.com/cosmos/cosmos-sdk/types"
@@ -25,7 +24,6 @@ type QuerierSuite struct {
 	k       keeper.Keeper
 	querier cosmos.Querier
 	ctx     cosmos.Context
-	cdc     *codec.LegacyAmino
 }
 
 var _ = Suite(&QuerierSuite{})
@@ -54,8 +52,7 @@ func (s *QuerierSuite) SetUpTest(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	s.k = k
 	s.ctx = ctx
-	s.cdc = makeTestCodec()
-	s.querier = NewQuerier(s.cdc, k, s.kb)
+	s.querier = NewQuerier(k, s.kb)
 }
 
 func (s *QuerierSuite) TestQueryKeysign(c *C) {
@@ -77,7 +74,7 @@ func (s *QuerierSuite) TestQueryKeysign(c *C) {
 		txOut: txOut,
 	}
 
-	querier := NewQuerier(s.cdc, keeper, s.kb)
+	querier := NewQuerier(keeper, s.kb)
 
 	path := []string{
 		"keysign",
@@ -92,7 +89,7 @@ func (s *QuerierSuite) TestQueryKeysign(c *C) {
 func (s *QuerierSuite) TestQueryPool(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(s.cdc, keeper, s.kb)
+	querier := NewQuerier(keeper, s.kb)
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
@@ -117,7 +114,8 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	c.Assert(err, IsNil)
 
 	var out Pools
-	err = s.cdc.UnmarshalJSON(res, &out)
+
+	err = json.Unmarshal(res, &out)
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 1)
 
@@ -128,7 +126,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 
-	err = s.cdc.UnmarshalJSON(res, &out)
+	err = json.Unmarshal(res, &out)
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 2)
 
@@ -140,7 +138,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 func (s *QuerierSuite) TestVaultss(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(s.cdc, keeper, s.kb)
+	querier := NewQuerier(keeper, s.kb)
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
@@ -165,7 +163,7 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 	c.Assert(err, IsNil)
 
 	var out Pools
-	err = s.cdc.UnmarshalJSON(res, &out)
+	err = json.Unmarshal(res, &out)
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 1)
 
@@ -176,7 +174,7 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 
-	err = s.cdc.UnmarshalJSON(res, &out)
+	err = json.Unmarshal(res, &out)
 	c.Assert(err, IsNil)
 	c.Assert(len(out), Equals, 2)
 
@@ -188,7 +186,7 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(s.cdc, keeper, s.kb)
+	querier := NewQuerier(keeper, s.kb)
 	path := []string{"nodes"}
 
 	signer := GetRandomBech32Addr()
@@ -202,7 +200,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	c.Assert(err, IsNil)
 
 	var out types.NodeAccounts
-	err1 := s.cdc.UnmarshalJSON(res, &out)
+	err1 := json.Unmarshal(res, &out)
 	c.Assert(err1, IsNil)
 	c.Assert(len(out), Equals, 1)
 
@@ -216,7 +214,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 
-	err1 = s.cdc.UnmarshalJSON(res, &out)
+	err1 = json.Unmarshal(res, &out)
 	c.Assert(err1, IsNil)
 	c.Assert(len(out), Equals, 2)
 
@@ -226,7 +224,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 
-	err1 = s.cdc.UnmarshalJSON(res, &out)
+	err1 = json.Unmarshal(res, &out)
 	c.Assert(err1, IsNil)
 	c.Assert(len(out), Equals, 1)
 }
@@ -243,7 +241,7 @@ func (s *QuerierSuite) TestQuerierRagnarokInProgress(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var ragnarok bool
-	c.Assert(s.cdc.UnmarshalJSON(result, &ragnarok), IsNil)
+	c.Assert(json.Unmarshal(result, &ragnarok), IsNil)
 	c.Assert(ragnarok, Equals, false)
 }
 
@@ -269,7 +267,7 @@ func (s *QuerierSuite) TestQueryLiquidityProviders(c *C) {
 	result, err = s.querier(s.ctx, []string{query.QueryLiquidityProviders.Key, "BNB.BNB"}, req)
 	c.Assert(err, IsNil)
 	var lps LiquidityProviders
-	c.Assert(s.cdc.UnmarshalJSON(result, &lps), IsNil)
+	c.Assert(json.Unmarshal(result, &lps), IsNil)
 	c.Assert(lps, HasLen, 1)
 }
 
@@ -291,7 +289,7 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	var voter ObservedTxVoter
-	c.Assert(s.cdc.UnmarshalJSON(result, &voter), IsNil)
+	c.Assert(json.Unmarshal(result, &voter), IsNil)
 	c.Assert(voter.Valid(), IsNil)
 }
 
@@ -319,7 +317,7 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 		ObservedTx    `json:"observed_tx"`
 		KeygenMetrics types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}
-	c.Assert(s.cdc.UnmarshalJSON(result, &newTx), IsNil)
+	c.Assert(json.Unmarshal(result, &newTx), IsNil)
 	c.Assert(newTx.Valid(), IsNil)
 }
 
@@ -371,7 +369,7 @@ func (s *QuerierSuite) TestQueryQueue(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var q QueryQueue
-	c.Assert(s.cdc.UnmarshalJSON(result, &q), IsNil)
+	c.Assert(json.Unmarshal(result, &q), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryHeights(c *C) {
@@ -388,7 +386,7 @@ func (s *QuerierSuite) TestQueryHeights(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var q []QueryResLastBlockHeights
-	c.Assert(s.cdc.UnmarshalJSON(result, &q), IsNil)
+	c.Assert(json.Unmarshal(result, &q), IsNil)
 
 	result, err = s.querier(s.ctx, []string{
 		query.QueryHeights.Key,
@@ -396,7 +394,7 @@ func (s *QuerierSuite) TestQueryHeights(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	c.Assert(s.cdc.UnmarshalJSON(result, &q), IsNil)
+	c.Assert(json.Unmarshal(result, &q), IsNil)
 
 	result, err = s.querier(s.ctx, []string{
 		query.QueryChainHeights.Key,
@@ -404,7 +402,7 @@ func (s *QuerierSuite) TestQueryHeights(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	c.Assert(s.cdc.UnmarshalJSON(result, &q), IsNil)
+	c.Assert(json.Unmarshal(result, &q), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryConstantValues(c *C) {
@@ -423,7 +421,7 @@ func (s *QuerierSuite) TestQueryMimir(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	var m map[string]int64
-	c.Assert(s.cdc.UnmarshalJSON(result, &m), IsNil)
+	c.Assert(json.Unmarshal(result, &m), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryBan(c *C) {
@@ -471,7 +469,7 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var r QueryNodeAccount
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
@@ -492,7 +490,7 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 			Halted  bool           `json:"halted"`
 		} `json:"current"`
 	}
-	c.Assert(s.cdc.UnmarshalJSON(result, &resp), IsNil)
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
@@ -528,7 +526,7 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var r Network
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
@@ -539,7 +537,7 @@ func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var r Vaults
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryYggdrasilVault(c *C) {
@@ -555,7 +553,7 @@ func (s *QuerierSuite) TestQueryYggdrasilVault(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var r []QueryYggdrasilVaults
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
@@ -583,7 +581,7 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	var r types.QueryVaultsPubKeys
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
@@ -599,7 +597,7 @@ func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
 		Address cosmos.AccAddress `json:"address"`
 		Coins   types2.Coins      `json:"coins"`
 	}
-	c.Assert(s.cdc.UnmarshalJSON(result, &r), IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 
 func (s *QuerierSuite) TestQueryVault(c *C) {
@@ -645,7 +643,7 @@ func (s *QuerierSuite) TestQueryVault(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	var returnVault Vault
-	c.Assert(s.cdc.UnmarshalJSON(result, &returnVault), IsNil)
+	c.Assert(json.Unmarshal(result, &returnVault), IsNil)
 	c.Assert(vault.PubKey.Equals(returnVault.PubKey), Equals, true)
 	c.Assert(vault.Type, Equals, returnVault.Type)
 	c.Assert(vault.Status, Equals, returnVault.Status)
