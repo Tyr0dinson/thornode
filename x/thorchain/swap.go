@@ -266,25 +266,6 @@ func swapOne(ctx cosmos.Context,
 			if err := keeper.BurnFromModule(ctx, ModuleName, tx.Coins[0]); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to burn coins during swap: %w", err)
 			}
-			// mint rune to asgard module and so we can add it to the pool
-			toMint := common.NewCoin(common.RuneAsset(), liquidityFee.Add(emitAssets))
-			if err := keeper.MintToModule(ctx, ModuleName, toMint); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to mint coins during swap: %w", err)
-			}
-			if err := keeper.SendFromModuleToModule(ctx, ModuleName, AsgardName, toMint); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
-			}
-		} else {
-			// our source is assumed to be rune, burn it all except the
-			// liquidity fee
-			toBurn := tx.Coins[0]
-			toBurn.Amount = common.SafeSub(toBurn.Amount, liquidityFee)
-			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, toBurn); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
-			}
-			if err := keeper.BurnFromModule(ctx, ModuleName, toBurn); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to burn coins during swap: %w", err)
-			}
 		}
 		// add rune to the layer1 pool
 		pool.BalanceRune = pool.BalanceRune.Add(liquidityFee)

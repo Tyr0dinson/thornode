@@ -24,7 +24,7 @@ var (
 	RuneB1AAsset = Asset{Chain: BNBChain, Symbol: "RUNE-B1A", Ticker: "RUNE"} // mainnet
 	// RuneNative RUNE on thorchain
 	RuneNative      = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE"}
-	SyntheticPrefix = "s"
+	SyntheticPrefix = "tc"
 )
 
 // Asset represent an asset in THORChain it is in BNB.BNB format
