@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -91,7 +92,7 @@ func (s *ObserverSuite) NewMockBinanceInstance(c *C, jsonData string) {
 		} else if req.RequestURI == "/abci_info" {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "response": { "data": "BNBChain", "last_block_height": "0", "last_block_app_hash": "pwx4TJjXu3yaF6dNfLQ9F4nwAhjIqmzE8fNa+RXwAzQ=" } } }`))
 			c.Assert(err, IsNil)
-		} else if req.RequestURI == "/block" {
+		} else if strings.HasPrefix(req.RequestURI, "/block") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "block": { "header": { "height": "1" } } } }`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/tx_search") {
@@ -140,6 +141,11 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.RequestURI, "/errata") {
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "E7FDA9DE4D0AD37D823813CB5BC0D6E69AB0D41BB666B65B965D12D24A3AE83C", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
+			c.Assert(err, IsNil)
+		} else if strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint) {
+			buf, err := ioutil.ReadFile("../../test/fixtures/endpoints/mimir/mimir.json")
+			c.Assert(err, IsNil)
+			_, err = rw.Write(buf)
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock/BNB") {
 			_, err := rw.Write([]byte(`[{ "chain": "BNB", "lastobservedin": 0, "lastsignedout": 0, "thorchain": 0 }]`))

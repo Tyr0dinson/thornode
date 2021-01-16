@@ -140,6 +140,8 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 		} else if req.RequestURI == "/txs" {
 			_, err := rw.Write([]byte(`{"height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}]}`))
 			c.Assert(err, IsNil)
+		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		}
 	}))
 	cfg.ChainHost = s.server.Listener.Addr().String()

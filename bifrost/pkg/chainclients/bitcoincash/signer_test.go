@@ -95,6 +95,8 @@ func (s *BitcoinSignerCashSuite) SetUpTest(c *C) {
 				c.Assert(req.Body.Close(), IsNil)
 			}()
 			switch r.Method {
+			case "getnetworkinfo":
+				httpTestHandler(c, rw, "../../../../test/fixtures/btc/getnetworkinfo.json")
 			case "getbestblockhash":
 				httpTestHandler(c, rw, "../../../../test/fixtures/btc/getbestblockhash.json")
 			case "getblock":

@@ -101,6 +101,8 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 			json.NewDecoder(req.Body).Decode(&r)
 
 			switch {
+			case r.Method == "getnetworkinfo":
+				httpTestHandler(c, rw, "../../../../test/fixtures/btc/getnetworkinfo.json")
 			case r.Method == "getblockhash":
 				httpTestHandler(c, rw, "../../../../test/fixtures/bch/blockhash.json")
 			case r.Method == "getblock":
@@ -138,6 +140,8 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 		} else if req.RequestURI == "/txs" {
 			_, err := rw.Write([]byte(`{"height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}]}`))
 			c.Assert(err, IsNil)
+		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		}
 	}))
 	cfg.ChainHost = s.server.Listener.Addr().String()

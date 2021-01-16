@@ -1,9 +1,11 @@
 package blockscanner
 
 import (
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -19,12 +21,15 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
+func TestPackage(t *testing.T) { TestingT(t) }
+
 var m *metrics.Metrics
 
 type BlockScannerTestSuite struct {
 	m      *metrics.Metrics
 	bridge *thorclient.ThorchainBridge
 	cfg    config.ClientConfiguration
+	keys   *thorclient.Keys
 }
 
 var _ = Suite(&BlockScannerTestSuite{})
@@ -53,8 +58,8 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.cfg = cfg
-
-	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
+	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 }
 
@@ -91,8 +96,12 @@ const (
 
 func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c.Logf("================>:%s", r.RequestURI)
 		switch {
+		case r.RequestURI == thorclient.MimirEndpoint:
+			buf, err := ioutil.ReadFile("../../test/fixtures/endpoints/mimir/mimir.json")
+			c.Assert(err, IsNil)
+			_, err = w.Write(buf)
+			c.Assert(err, IsNil)
 		case strings.HasPrefix(r.RequestURI, "/block"): // trying to get block
 			if _, err := w.Write([]byte(blockResult)); err != nil {
 				c.Error(err)
@@ -100,8 +109,17 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 		}
 	})
 	mss := NewMockScannerStorage()
-	server := httptest.NewTLSServer(h)
+	server := httptest.NewServer(h)
 	defer server.Close()
+	bridge, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       server.Listener.Addr().String(),
+		ChainRPC:        server.Listener.Addr().String(),
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: ".",
+	}, s.m, s.keys)
+	c.Assert(err, IsNil)
 	cbs, err := NewBlockScanner(config.BlockScannerConfiguration{
 		RPCHost:                    server.URL,
 		StartBlockHeight:           1, // avoids querying thorchain for block height
@@ -113,13 +131,13 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.BNBChain,
-	}, mss, m, s.bridge, DummyFetcher{})
+	}, mss, m, bridge, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
 	var counter int
 	go func() {
 		for item := range cbs.GetMessages() {
-			c.Logf("block height:%d", item)
+			_ = item
 			counter++
 		}
 	}()
@@ -134,6 +152,11 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
 		switch {
+		case r.RequestURI == thorclient.MimirEndpoint:
+			buf, err := ioutil.ReadFile("../../test/fixtures/endpoints/mimir/mimir.json")
+			c.Assert(err, IsNil)
+			_, err = w.Write(buf)
+			c.Assert(err, IsNil)
 		case strings.HasPrefix(r.RequestURI, "/block"): // trying to get block
 			if _, err := w.Write([]byte(blockBadResult)); err != nil {
 				c.Error(err)
@@ -143,6 +166,14 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 	mss := NewMockScannerStorage()
 	server := httptest.NewTLSServer(h)
 	defer server.Close()
+	bridge, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       server.Listener.Addr().String(),
+		ChainRPC:        server.Listener.Addr().String(),
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: ".",
+	}, s.m, s.keys)
 	cbs, err := NewBlockScanner(config.BlockScannerConfiguration{
 		RPCHost:                    server.URL,
 		StartBlockHeight:           1, // avoids querying thorchain for block height
@@ -154,15 +185,12 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
 		ChainID:                    common.BNBChain,
-	}, mss, m, s.bridge, DummyFetcher{})
+	}, mss, m, bridge, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
 	cbs.Start(make(chan types.TxIn))
 	time.Sleep(time.Second * 1)
 	cbs.Stop()
-	// metric, err := m.GetCounterVec(metrics.BlockScannerError).GetMetricWithLabelValues("fail_unmarshal_block", s.URL+"/block")
-	// c.Assert(err, IsNil)
-	// c.Check(int(testutil.ToFloat64(metric)), Equals, 1)
 }
 
 func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
@@ -172,8 +200,8 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
 		HttpRequestTimeout:         time.Second,
-		HttpRequestReadTimeout:     time.Second * 30,
-		HttpRequestWriteTimeout:    time.Second * 30,
+		HttpRequestReadTimeout:     time.Second,
+		HttpRequestWriteTimeout:    time.Second,
 		MaxHttpRequestRetry:        3,
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
