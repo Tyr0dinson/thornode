@@ -26,7 +26,7 @@ var (
 	RuneB1AAsset = Asset{Chain: BNBChain, Symbol: "RUNE-B1A", Ticker: "RUNE"} // mainnet
 	// RuneNative RUNE on thorchain
 	RuneNative      = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE"}
-	RuneERC20Asset  = Asset{Chain: ETHChain, Symbol: "0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE"}
+	RuneERC20Asset  = Asset{Chain: ETHChain, Symbol: "RUNE-0xda709d320Ed44434A015BEd202ee0236D01C2870", Ticker: "RUNE"}
 	SyntheticPrefix = "thor"
 )
 
