@@ -21,6 +21,7 @@ stages:
 
 unit_tests_bep2:
   stage: test
+  cache: {}
   tags:
     - thorchain
   except:
@@ -33,6 +34,7 @@ unit_tests_bep2:
 
 unit_tests_native:
   stage: test
+  cache: {}
   tags:
     - thorchain
   except:
