@@ -7,8 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-type ManagerStoreV17TestSuite struct {
-}
+type ManagerStoreV17TestSuite struct{}
 
 var _ = Suite(&ManagerStoreV17TestSuite{})
 

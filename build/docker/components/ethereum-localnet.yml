@@ -7,12 +7,8 @@ services:
     image: registry.gitlab.com/thorchain/ethereum-mock
     ports:
       - "8545:8545"
+      - "30301:30301"
       - "30303:30303"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.02'
-          memory: 30M
     volumes:
       - "../../scripts:/docker/scripts"
     entrypoint: "/docker/scripts/ethereum-mock.sh"
