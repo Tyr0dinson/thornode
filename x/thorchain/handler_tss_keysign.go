@@ -46,12 +46,35 @@ func (h TssKeysignHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.
 
 func (h TssKeysignHandler) validate(ctx cosmos.Context, msg MsgTssKeysignFail, version semver.Version) error {
 	if version.GTE(semver.MustParse("0.1.0")) {
+		return h.validateV18(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
 func (h TssKeysignHandler) validateV1(ctx cosmos.Context, msg MsgTssKeysignFail) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+
+	if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
+		return cosmos.ErrUnauthorized("not authorized")
+	}
+
+	active, err := h.keeper.ListActiveNodeAccounts(ctx)
+	if err != nil {
+		return wrapError(ctx, err, "fail to get list of active node accounts")
+	}
+
+	if !HasSimpleMajority(len(active)-len(msg.Blame.BlameNodes), len(active)) {
+		ctx.Logger().Error("blame cast too wide", "blame", len(msg.Blame.BlameNodes))
+		return fmt.Errorf("blame cast too wide: %d/%d", len(msg.Blame.BlameNodes), len(active))
+	}
+
+	return nil
+}
+func (h TssKeysignHandler) validateV18(ctx cosmos.Context, msg MsgTssKeysignFail) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
