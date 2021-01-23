@@ -107,6 +107,7 @@ func (h TssKeysignHandler) validateV18(ctx cosmos.Context, msg MsgTssKeysignFail
 		if !shouldAccept {
 			return cosmos.ErrUnauthorized("not authorized")
 		}
+		ctx.Logger().Info("keysign failure message from retiring vault member, should accept")
 	}
 
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
