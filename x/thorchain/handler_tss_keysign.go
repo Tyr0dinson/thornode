@@ -45,7 +45,7 @@ func (h TssKeysignHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.
 }
 
 func (h TssKeysignHandler) validate(ctx cosmos.Context, msg MsgTssKeysignFail, version semver.Version) error {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.18.0")) {
 		return h.validateV18(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
@@ -74,13 +74,39 @@ func (h TssKeysignHandler) validateV1(ctx cosmos.Context, msg MsgTssKeysignFail)
 
 	return nil
 }
+
 func (h TssKeysignHandler) validateV18(ctx cosmos.Context, msg MsgTssKeysignFail) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 
 	if !isSignedByActiveNodeAccounts(ctx, h.keeper, msg.GetSigners()) {
-		return cosmos.ErrUnauthorized("not authorized")
+		shouldAccept := false
+		vaults, err := h.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
+		if err != nil {
+			return ErrInternal(err, "fail to get retiring vaults")
+		}
+		if len(vaults) > 0 {
+			for _, signer := range msg.GetSigners() {
+				nodeAccount, err := h.keeper.GetNodeAccount(ctx, signer)
+				if err != nil {
+					return ErrInternal(err, "fail to get node account")
+				}
+
+				for _, v := range vaults {
+					if v.Membership.Contains(nodeAccount.PubKeySet.Secp256k1) {
+						shouldAccept = true
+						break
+					}
+				}
+				if shouldAccept {
+					break
+				}
+			}
+		}
+		if !shouldAccept {
+			return cosmos.ErrUnauthorized("not authorized")
+		}
 	}
 
 	active, err := h.keeper.ListActiveNodeAccounts(ctx)
