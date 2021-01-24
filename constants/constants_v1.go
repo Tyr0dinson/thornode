@@ -33,7 +33,6 @@ func NewConstantValue010() *ConstantVals {
 			JailTimeKeygen:                  720 * 6,            // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
 			JailTimeKeysign:                 60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
 			CliTxCost:                       1_00000000,         // amount of bonded rune to move to the reserve when using a cli command
-			MinSlashPointsForBadValidator:   100,                // The minimum slash point
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondStakeRatio: true,
