@@ -150,3 +150,23 @@ func (h UnBondHandler) handleV12(ctx cosmos.Context, msg MsgUnBond, version semv
 
 	return nil
 }
+func (h UnBondHandler) handleV18(ctx cosmos.Context, msg MsgUnBond, version semver.Version, constAccessor constants.ConstantValues) error {
+	na, err := h.keeper.GetNodeAccount(ctx, msg.NodeAddress)
+	if err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
+	}
+
+	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.keeper, h.mgr); err != nil {
+		return ErrInternal(err, "fail to unbond")
+	}
+
+	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
+	if !coin.IsEmpty() {
+		na.Bond = na.Bond.Add(coin.Amount)
+		if err := h.keeper.SetNodeAccount(ctx, na); err != nil {
+			return ErrInternal(err, "fail to save node account to key value store")
+		}
+	}
+
+	return nil
+}
