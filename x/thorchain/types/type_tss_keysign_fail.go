@@ -61,6 +61,21 @@ func (tss *TssKeysignFailVoter) HasConsensusV13(nas NodeAccounts) bool {
 	return HasSimpleMajorityV13(count, len(nas))
 }
 
+// HasConsensusV18 determine if this tss pool has enough signers
+// this method introduced at version 0.18.0 as a replacement for HasConsensus
+func (tss *TssKeysignFailVoter) HasConsensusV18(nas NodeAccounts) bool {
+	var count int
+	for _, signer := range tss.Signers {
+		for _, item := range nas {
+			if signer.Equals(item.NodeAddress) {
+				count++
+				break
+			}
+		}
+	}
+	return HasSimpleMajorityV13(count, len(nas))
+}
+
 // Empty to check whether this Voter is empty or not
 func (tss *TssKeysignFailVoter) Empty() bool {
 	return len(tss.ID) == 0 || tss.Height == 0

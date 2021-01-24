@@ -272,6 +272,9 @@ func (h TssKeysignHandler) handleV18(ctx cosmos.Context, msg MsgTssKeysignFail, 
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get vault")
 	}
+	if vault.IsEmpty() {
+		return &cosmos.Result{}, nil
+	}
 	var vaultMemberNodes NodeAccounts
 	for _, item := range vault.Membership {
 		addr, err := item.GetThorAddress()
@@ -285,7 +288,7 @@ func (h TssKeysignHandler) handleV18(ctx cosmos.Context, msg MsgTssKeysignFail, 
 		vaultMemberNodes = append(vaultMemberNodes, na)
 	}
 	// doesn't have consensus yet
-	if !voter.HasConsensusV13(vaultMemberNodes) {
+	if !voter.HasConsensusV18(vaultMemberNodes) {
 		ctx.Logger().Info("not having consensus yet, return")
 		return &cosmos.Result{}, nil
 	}
