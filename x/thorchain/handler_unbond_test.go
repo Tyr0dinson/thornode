@@ -174,6 +174,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 }
+
 func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 	// happy path
@@ -216,6 +217,7 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	_, err := handler.Run(ctx, msg, ver, constAccessor)
 	c.Assert(err, NotNil)
 }
+
 func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
