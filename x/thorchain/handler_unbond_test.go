@@ -153,7 +153,6 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	c.Assert(result, IsNil)
 
 	// simulate vault is not yggdrasil
-
 	k.vault = Vault{
 		Type:   AsgardVault,
 		PubKey: standbyNodeAccount.PubKeySet.Secp256k1,
@@ -174,6 +173,49 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	result, err = handler.Run(ctx, NewMsgMimir("whatever", 1, GetRandomBech32Addr()), ver, constAccessor)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
+	ctx, k1 := setupKeeperForTest(c)
+	// happy path
+	activeNodeAccount := GetRandomNodeAccount(NodeActive)
+	standbyNodeAccount := GetRandomNodeAccount(NodeStandby)
+	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
+	vault := NewVault(12, ActiveVault, YggdrasilVault, standbyNodeAccount.PubKeySet.Secp256k1, nil)
+	c.Assert(k1.SetVault(ctx, vault), IsNil)
+	vault = NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(k1.SetVault(ctx, vault), IsNil)
+	retiringVault := NewVault(12, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{
+		common.BNBChain, common.BTCChain, common.ETHChain,
+	})
+	retiringVault.Membership = common.PubKeys{
+		activeNodeAccount.PubKeySet.Secp256k1,
+		standbyNodeAccount.PubKeySet.Secp256k1,
+	}
+	retiringVault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(k1.SetVault(ctx, retiringVault), IsNil)
+	handler := NewUnBondHandler(k1, NewDummyMgr())
+	ver := semver.MustParse("0.18.0")
+	constAccessor := constants.GetConstantValues(ver)
+	txIn := common.NewTx(
+		GetRandomTxHash(),
+		standbyNodeAccount.BondAddress,
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(1))),
+		},
+		BNBGasFeeSingleton,
+		"unbond me please",
+	)
+	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(5*common.One)), standbyNodeAccount.BondAddress, activeNodeAccount.NodeAddress)
+	_, err := handler.Run(ctx, msg, ver, constAccessor)
+	c.Assert(err, NotNil)
 }
 
 func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
