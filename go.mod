@@ -21,8 +21,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/hashicorp/go-retryablehttp v0.6.4
 	github.com/ipfs/go-log v1.0.4
-	github.com/ipfs/go-todocounter v0.0.2 // indirect
-	github.com/libp2p/go-libp2p-routing v0.1.0 // indirect
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
