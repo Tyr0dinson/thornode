@@ -117,6 +117,39 @@ func newTssKeysignHandlerTestHelper(c *C, ver semver.Version) tssKeysignFailHand
 	}
 }
 
+func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_messages(c *C) {
+	ver := semver.MustParse("0.18.0")
+	helper := newTssKeysignHandlerTestHelper(c, ver)
+	handler := NewTssKeysignHandler(helper.keeper, NewDummyMgr())
+	vault := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{
+		common.BNBChain,
+	})
+	accounts := NodeAccounts{}
+	for i := 0; i < 8; i++ {
+		na := GetRandomNodeAccount(NodeActive)
+		_ = helper.keeper.SetNodeAccount(helper.ctx, na)
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1)
+		accounts = append(accounts, na)
+	}
+	naStandby := GetRandomNodeAccount(NodeStandby)
+	_ = helper.keeper.SetNodeAccount(helper.ctx, naStandby)
+	vault.Membership = append(vault.Membership, naStandby.PubKeySet.Secp256k1)
+	c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
+	for idx, item := range accounts {
+		if idx >= 4 {
+			break
+		}
+		msg := NewMsgTssKeysignFail(common.BlockHeight(helper.ctx), helper.blame, "hello", common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(100))}, item.NodeAddress, vault.PubKey)
+		result, err := handler.Run(helper.ctx, msg, ver, constants.GetConstantValues(ver))
+		c.Assert(result, NotNil)
+		c.Assert(err, IsNil)
+	}
+	msg := NewMsgTssKeysignFail(common.BlockHeight(helper.ctx), helper.blame, "hello", common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(100))}, naStandby.NodeAddress, vault.PubKey)
+	result, err := handler.Run(helper.ctx, msg, ver, constants.GetConstantValues(ver))
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+}
+
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 	h.testTssKeysignFailHandlerWithVersion(c, constants.SWVersion)
 	h.testTssKeysignFailHandlerWithVersion(c, semver.MustParse("0.13.0"))

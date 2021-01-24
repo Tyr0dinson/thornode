@@ -100,6 +100,22 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		if err := smgr.calibrateVaultToPool(ctx); err != nil {
 			ctx.Logger().Error("fail to calibrate pool asset balance from vault", "error", err)
 		}
+	case 18:
+		addr, err := cosmos.AccAddressFromBech32("thor1xh2wgwvews5wnsqjd00spj2tq39uuged7fnx33")
+		if err != nil {
+			ctx.Logger().Error("fail to parse address", "error", err)
+			break
+		}
+
+		na, err := smgr.keeper.GetNodeAccount(ctx, addr)
+		if err != nil {
+			ctx.Logger().Error("fail to get node account", "error", err)
+			break
+		}
+		na.UpdateStatus(NodeDisabled, ctx.BlockHeight())
+		if err := smgr.keeper.SetNodeAccount(ctx, na); err != nil {
+			ctx.Logger().Error("fail to save node account", "error", err)
+		}
 	}
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil

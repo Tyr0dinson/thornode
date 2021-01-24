@@ -93,8 +93,12 @@ func (h UnBondHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Vers
 		ctx.Logger().Error("msg unbond fail validation", "error", err)
 		return nil, err
 	}
-
-	if version.GTE(semver.MustParse("0.12.0")) {
+	if version.GTE(semver.MustParse("0.18.0")) {
+		if err := h.handleV18(ctx, msg, version, constAccessor); err != nil {
+			ctx.Logger().Error("fail to process msg unbond", "error", err)
+			return nil, err
+		}
+	} else if version.GTE(semver.MustParse("0.12.0")) {
 		if err := h.handleV12(ctx, msg, version, constAccessor); err != nil {
 			ctx.Logger().Error("fail to process msg unbond", "error", err)
 			return nil, err
@@ -140,6 +144,42 @@ func (h UnBondHandler) handleV12(ctx cosmos.Context, msg MsgUnBond, version semv
 		return ErrInternal(err, "fail to unbond")
 	}
 
+	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
+	if !coin.IsEmpty() {
+		na.Bond = na.Bond.Add(coin.Amount)
+		if err := h.keeper.SetNodeAccount(ctx, na); err != nil {
+			return ErrInternal(err, "fail to save node account to key value store")
+		}
+	}
+
+	return nil
+}
+
+func (h UnBondHandler) handleV18(ctx cosmos.Context, msg MsgUnBond, version semver.Version, constAccessor constants.ConstantValues) error {
+	na, err := h.keeper.GetNodeAccount(ctx, msg.NodeAddress)
+	if err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
+	}
+
+	vaults, err := h.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return ErrInternal(err, "fail to get retiring vault")
+	}
+	isMemberOfRetiringVault := false
+	for _, v := range vaults {
+		if v.Membership.Contains(na.PubKeySet.Secp256k1) {
+			isMemberOfRetiringVault = true
+			ctx.Logger().Info("node account is still part of the retiring vault,can't return bond yet")
+			break
+		}
+	}
+	if isMemberOfRetiringVault {
+		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
+	}
+
+	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.keeper, h.mgr); err != nil {
+		return ErrInternal(err, "fail to unbond")
+	}
 	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
 	if !coin.IsEmpty() {
 		na.Bond = na.Bond.Add(coin.Amount)
