@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -54,4 +55,29 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
+}
+
+// updateVaultV17 this is a specific change target for multichain test
+// Due to a bug related to BTC confirmation counting , the vault migration left some BTC behind, refer to the following link for more detail
+// http://34.209.210.60:1317/thorchain/vault/BTC/tb1qcawdece9vufus5vuw9zzd7hm7wp320kvjt3vsq
+// the root cause is because internal tx has not been excude from confirmation counting , which has been fixed in develop branch
+// a while ago.  This method will set the vault to retiring again, so the left over BTC will be migrated to the vault
+// as soon as multichain testnet get upgrade to 0.17.0 , it will
+func (smgr *StoreMgr) updateVaultV17(ctx cosmos.Context) {
+	// this is only for testnet-multichain
+	pubKey, err := common.NewPubKey("tthorpub1addwnpepqgdpgwuqnm00xpm7jnu7veqqm0ykf0qpdk93y79ykraneqng34r8qepgfnx")
+	if err != nil {
+		ctx.Logger().Error("fail to parse pubkey", "error", err)
+		return
+	}
+
+	vault, err := smgr.keeper.GetVault(ctx, pubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault", "error", err)
+		return
+	}
+	vault.Status = RetiringVault
+	if err := smgr.keeper.SetVault(ctx, vault); err != nil {
+		ctx.Logger().Error("fail to save vault", "error", err)
+	}
 }
