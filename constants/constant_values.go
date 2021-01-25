@@ -45,6 +45,8 @@ const (
 	JailTimeKeygen
 	JailTimeKeysign
 	CliTxCost
+	MinSlashPointsForBadValidator
+	BadValidatorRedline
 )
 
 var nameToString = map[ConstantName]string{
@@ -83,6 +85,8 @@ var nameToString = map[ConstantName]string{
 	JailTimeKeygen:                  "JailTimeKeygen",
 	JailTimeKeysign:                 "JailTimeKeysign",
 	CliTxCost:                       "CliTxCost",
+	MinSlashPointsForBadValidator:   "MinSlashPointsForBadValidator",
+	BadValidatorRedline:             "BadValidatorRedline",
 }
 
 // String implement fmt.stringer
