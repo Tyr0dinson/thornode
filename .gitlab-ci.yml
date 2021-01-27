@@ -141,7 +141,7 @@ release:
   stage: release
   tags:
     - thorchain
-  image: registry.gitlab.com/thorchain/release-tool:latest
+  image: registry.gitlab.com/thorchain/misc/release-tool:latest
   only:
     - master
   except:
