@@ -245,6 +245,7 @@ type (
 	ChainContract                  = types.ChainContract
 	Blame                          = types.Blame
 	Node                           = types.Node
+	Composite                      = types.Composite
 
 	// Memo
 	SwapMemo              = mem.SwapMemo

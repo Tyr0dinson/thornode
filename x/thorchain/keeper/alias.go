@@ -36,6 +36,7 @@ type (
 
 	PoolStatus               = types.PoolStatus
 	Pool                     = types.Pool
+	Composite                = types.Composite
 	Pools                    = types.Pools
 	LiquidityProvider        = types.LiquidityProvider
 	ObservedTxVoter          = types.ObservedTxVoter

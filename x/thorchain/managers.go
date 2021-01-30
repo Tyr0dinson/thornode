@@ -32,6 +32,7 @@ type Manager interface {
 	SwapQ() SwapQueue
 	Slasher() Slasher
 	YggManager() YggManager
+	CompositeManager() CompositeManager
 }
 
 // GasManager define all the methods required to manage gas
@@ -112,6 +113,10 @@ type YggManager interface {
 	Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error
 }
 
+type CompositeManager interface {
+	FindAvailableName(ctx cosmos.Context, assets []common.Asset) string
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
 	CurrentVersion semver.Version
@@ -124,6 +129,7 @@ type Mgrs struct {
 	swapQ          SwapQueue
 	slasher        Slasher
 	yggManager     YggManager
+	compMgr        CompositeManager
 	Keeper         keeper.Keeper
 }
 
@@ -178,12 +184,17 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 
 	mgr.slasher, err = GetSlasher(mgr.Keeper, v)
 	if err != nil {
-		return fmt.Errorf("fail to create swap queue: %w", err)
+		return fmt.Errorf("fail to create slasher manager: %w", err)
 	}
 
 	mgr.yggManager, err = GetYggManager(mgr.Keeper, v)
 	if err != nil {
-		return fmt.Errorf("fail to create swap queue: %w", err)
+		return fmt.Errorf("fail to create yggdrasil manager: %w", err)
+	}
+
+	mgr.compMgr, err = GetCompositeManager(mgr.Keeper, v)
+	if err != nil {
+		return fmt.Errorf("fail to create composite manager: %w", err)
 	}
 	return nil
 }
@@ -214,6 +225,9 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 
 // YggManager return an implementation of YggManager
 func (mgr *Mgrs) YggManager() YggManager { return mgr.yggManager }
+
+// CompositeManager return an implementation of CompositeManager
+func (mgr *Mgrs) CompositeManager() CompositeManager { return mgr.compMgr }
 
 // GetGasManager return GasManager
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
@@ -294,6 +308,14 @@ func GetYggManager(keeper keeper.Keeper, version semver.Version) (YggManager, er
 		return NewYggMgrV21(keeper), nil
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return NewYggMgrV1(keeper), nil
+	}
+	return nil, errInvalidVersion
+}
+
+// GetCompositeManager return an implementation of CompositeManager
+func GetCompositeManager(keeper keeper.Keeper, version semver.Version) (CompositeManager, error) {
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return NewCompMgrV1(keeper), nil
 	}
 	return nil, errInvalidVersion
 }

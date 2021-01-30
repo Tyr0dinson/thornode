@@ -378,14 +378,17 @@ func (k KVStoreDummy) SetChainContract(ctx cosmos.Context, cc ChainContract) {}
 func (k KVStoreDummy) GetChainContract(ctx cosmos.Context, chain common.Chain) (ChainContract, error) {
 	return ChainContract{}, kaboom
 }
-
-func (k KVStoreDummy) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterator {
-	return nil
-}
-
+func (k KVStoreDummy) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
 	return nil
 }
+
+func (k KVStoreDummy) CompositeExists(ctx cosmos.Context, name string) bool  { return false }
+func (k KVStoreDummy) GetCompositeIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetComposite(_ cosmos.Context, name string) (Composite, error) {
+	return Composite{}, kaboom
+}
+func (k KVStoreDummy) SetComposite(_ cosmos.Context, _ Composite) error { return kaboom }
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
