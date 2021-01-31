@@ -41,6 +41,10 @@ const (
 	NodeStandby     = types.NodeStatus_Standby
 	NodeUnknown     = types.NodeStatus_Unknown
 
+	// Composite Types
+	DynamicComposite = types.CompositeType_Dynamic
+	StaticComposite  = types.CompositeType_Static
+
 	// Bond type
 	BondPaid     = types.BondType_bond_paid
 	BondReturned = types.BondType_bond_returned

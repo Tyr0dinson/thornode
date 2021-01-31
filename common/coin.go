@@ -165,6 +165,16 @@ func (cs Coins) String() string {
 	return strings.Join(coins, ", ")
 }
 
+// Get list of assets from coins list
+func (cs Coins) Assets() []Asset {
+	coins := cs.Distinct()
+	assets := make([]Asset, len(coins))
+	for i := range coins {
+		assets[i] = coins[i].Asset
+	}
+	return assets
+}
+
 // Contains check whether the given coin is in the list
 func (cs Coins) Contains(c Coin) bool {
 	for _, item := range cs {

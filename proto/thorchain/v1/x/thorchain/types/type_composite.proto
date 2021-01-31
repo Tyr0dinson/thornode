@@ -12,7 +12,8 @@ enum CompositeType {
 }
 
 message Composite {
-  string name = 1;
-  CompositeType type = 2;
-  repeated common.Coin holdings = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
+  string id = 1;
+  string name = 2;
+  CompositeType type = 3;
+  repeated common.Coin holdings = 4 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
 }
