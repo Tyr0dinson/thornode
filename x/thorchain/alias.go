@@ -12,6 +12,7 @@ const (
 	ReserveName      = types.ReserveName
 	AsgardName       = types.AsgardName
 	BondName         = types.BondName
+	CompositeName    = types.CompositeName
 	RouterKey        = types.RouterKey
 	StoreKey         = types.StoreKey
 	DefaultCodespace = types.DefaultCodespace

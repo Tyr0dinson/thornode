@@ -269,11 +269,13 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
-	ctx.Logger().Info("Reserve Module", "address", reserveAddr.String())
+	ctx.Logger().Info("Reserve		Module", "address", reserveAddr.String())
 	bondAddr, _ := keeper.GetModuleAddress(BondName)
-	ctx.Logger().Info("Bond    Module", "address", bondAddr.String())
+	ctx.Logger().Info("Bond			Module", "address", bondAddr.String())
 	asgardAddr, _ := keeper.GetModuleAddress(AsgardName)
-	ctx.Logger().Info("Asgard  Module", "address", asgardAddr.String())
+	ctx.Logger().Info("Asgard		Module", "address", asgardAddr.String())
+	compositeAddr, _ := keeper.GetModuleAddress(CompositeName)
+	ctx.Logger().Info("Composite	Module", "address", compositeAddr.String())
 
 	return validators
 }

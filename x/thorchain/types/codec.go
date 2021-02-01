@@ -46,6 +46,8 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgRagnarok{}, "thorchain/MsgRagnarok", nil)
 	cdc.RegisterConcrete(&MsgRefundTx{}, "thorchain/MsgRefundTx", nil)
 	cdc.RegisterConcrete(&MsgSend{}, "thorchain/MsgSend", nil)
+	cdc.RegisterConcrete(&MsgMintComposite{}, "thorchain/MsgMintComposite", nil)
+	cdc.RegisterConcrete(&MsgBurnComposite{}, "thorchain/MsgBurnComposite", nil)
 }
 
 // RegisterInterfaces register the types
@@ -78,4 +80,6 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgRagnarok{})
 	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgRefundTx{})
 	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgSend{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgMintComposite{})
+	registry.RegisterImplementations((*cosmos.Msg)(nil), &MsgBurnComposite{})
 }

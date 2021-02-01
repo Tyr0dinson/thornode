@@ -66,6 +66,25 @@ func (cmgr CompMgrV1) Maintain(ctx cosmos.Context, comp *Composite) error {
 	return cmgr.keeper.SetComposite(ctx, *comp)
 }
 
+func (cmgr CompMgrV1) GetRuneValue(ctx cosmos.Context, comp *Composite) (cosmos.Uint, error) {
+	// sum total holdings value, in rune
+	totalRuneValue := cosmos.ZeroUint()
+	for _, coin := range comp.Holdings {
+		if coin.Asset.IsRune() {
+			totalRuneValue = totalRuneValue.Add(coin.Amount)
+			continue
+		}
+
+		pool, err := cmgr.keeper.GetPool(ctx, coin.Asset)
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+
+		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+	}
+	return totalRuneValue, nil
+}
+
 func (cmgr CompMgrV1) Rebalance(ctx cosmos.Context, targetAssets []common.Asset, comp *Composite) error {
 	// sum total pool'ed rune for target assets
 	totalRunePoolDepth := cosmos.ZeroUint()
@@ -80,14 +99,9 @@ func (cmgr CompMgrV1) Rebalance(ctx cosmos.Context, targetAssets []common.Asset,
 	}
 
 	// sum total holdings value, in rune
-	totalRuneValue := cosmos.ZeroUint()
-	for _, coin := range comp.Holdings {
-		pool, err := cmgr.keeper.GetPool(ctx, coin.Asset)
-		if err != nil {
-			return err
-		}
-
-		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+	totalRuneValue, err := cmgr.GetRuneValue(ctx, comp)
+	if err != nil {
+		return err
 	}
 
 	newHoldings := make(common.Coins, len(targetAssets))

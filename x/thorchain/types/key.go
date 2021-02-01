@@ -11,6 +11,8 @@ const (
 	AsgardName = "asgard"
 	// BondName the name of account used to store bond
 	BondName = "bond"
+	// CompositeName is the name of the account user to store synthetic assets held by composite assets
+	CompositeName = "composite"
 
 	// StoreKey to be used when creating the KVStore
 	StoreKey = ModuleName

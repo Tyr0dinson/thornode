@@ -95,6 +95,7 @@ var (
 		thorchain.AsgardName:           {},
 		thorchain.BondName:             {},
 		thorchain.ReserveName:          {},
+		thorchain.CompositeName:        {authtypes.Minter, authtypes.Burner},
 	}
 
 	// module accounts that are allowed to receive tokens

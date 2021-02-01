@@ -29,6 +29,7 @@ var (
 	RuneERC20Asset        = Asset{Chain: ETHChain, Symbol: "RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE"}
 	RuneERC20TestnetAsset = Asset{Chain: ETHChain, Symbol: "RUNE-0xd601c6A3a36721320573885A8d8420746dA3d7A0", Ticker: "RUNE"}
 	SyntheticPrefix       = "thor"
+	CompositePrefix       = "c3"
 )
 
 // NewAsset parse the given input into Asset object
@@ -103,12 +104,23 @@ func (a Asset) GetSyntheticAsset() Asset {
 	}
 }
 
-// Check if asset is a pegged asset
+// Check if asset is a synthetic asset
 func (a Asset) IsSyntheticAsset() bool {
 	if !a.isNativeUtilityAsset() {
 		return false
 	}
 	if !strings.HasPrefix(strings.ToLower(a.Symbol.String()), SyntheticPrefix) {
+		return false
+	}
+	return true
+}
+
+// Check if asset is a composite asset
+func (a Asset) IsCompositeAsset() bool {
+	if !a.isNativeUtilityAsset() {
+		return false
+	}
+	if !strings.HasPrefix(strings.ToLower(a.Symbol.String()), CompositePrefix) {
 		return false
 	}
 	return true
