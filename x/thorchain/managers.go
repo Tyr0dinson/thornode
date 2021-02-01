@@ -115,6 +115,8 @@ type YggManager interface {
 
 type CompositeManager interface {
 	FindAvailableName(ctx cosmos.Context, assets []common.Asset) string
+	Maintain(ctx cosmos.Context, comp *Composite) error
+	GetRuneValue(ctx cosmos.Context, comp *Composite) (cosmos.Uint, error)
 }
 
 // Mgrs is an implementation of Manager interface

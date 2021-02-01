@@ -29,7 +29,7 @@ var (
 	RuneERC20Asset        = Asset{Chain: ETHChain, Symbol: "RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE"}
 	RuneERC20TestnetAsset = Asset{Chain: ETHChain, Symbol: "RUNE-0xd601c6A3a36721320573885A8d8420746dA3d7A0", Ticker: "RUNE"}
 	SyntheticPrefix       = "thor"
-	CompositePrefix       = "c3"
+	CompositePrefix       = "idx"
 )
 
 // NewAsset parse the given input into Asset object
@@ -61,6 +61,10 @@ func NewAsset(input string) (Asset, error) {
 	}
 
 	return asset, nil
+}
+
+func NewCompositeAsset(input string) (Asset, error) {
+	return NewAsset(fmt.Sprintf("THOR.%s-%s", CompositePrefix, input))
 }
 
 // Equals determinate whether two assets are equivalent

@@ -1,8 +1,11 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -60,7 +63,70 @@ func (h MintCompositeHandler) handle(ctx cosmos.Context, msg MsgMintComposite, v
 }
 
 func (h MintCompositeHandler) handleV1(ctx cosmos.Context, msg MsgMintComposite, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	// TODO
+	// check account has appropriate funds
+	transactionFee := h.mgr.GasMgr().GetFee(ctx, common.THORChain, common.RuneAsset())
+	gas := common.NewCoin(common.RuneNative, transactionFee)
+	gasFee, err := gas.Native()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get gas fee: %w", err)
+	}
+
+	coin, err := msg.Coin.Native()
+	if err != nil {
+		return nil, ErrInternal(err, "coins are native to THORChain")
+	}
+
+	totalCoins := cosmos.NewCoins(gasFee).Add(coin)
+	if !h.keeper.HasCoins(ctx, msg.GetSigners()[0], totalCoins) {
+		return nil, cosmos.ErrInsufficientCoins(err, "insufficient funds")
+	}
+
+	// send gas to reserve
+	err = h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.NewCoins(gas))
+	if err != nil {
+		return nil, fmt.Errorf("unable to send gas to reserve: %w", err)
+	}
+
+	comp, err := h.keeper.GetComposite(ctx, msg.CompositeId)
+	if err != nil {
+		return nil, err
+	}
+	if comp.IsEmpty() {
+		return nil, fmt.Errorf("composite id %s is not found", msg.CompositeId)
+	}
+
+	totalCompSupply := h.keeper.GetTotalSupply(ctx, comp.Asset())
+	totalRuneValue, err := h.mgr.CompositeManager().GetRuneValue(ctx, &comp)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := h.keeper.GetPool(ctx, msg.Coin.Asset)
+	if err != nil {
+		return nil, err
+	}
+	depositValue := pool.RuneValueInAsset(msg.Coin.Amount)
+	compToMint := common.GetShare(depositValue, totalRuneValue, totalCompSupply)
+
+	found := false // the composite holding must already hold this synthetic asset
+	for i, coin := range comp.Holdings {
+		if coin.Asset.Equals(msg.Coin.Asset) {
+			comp.Holdings[i].Amount = comp.Holdings[i].Amount.Add(msg.Coin.Amount)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("asset %s is not a current held by composite asset %s", msg.Coin.Asset, comp.Id)
+	}
+
+	if err := h.keeper.MintAndSendToAccount(ctx, msg.Signer, common.NewCoin(comp.Asset(), compToMint)); err != nil {
+		return nil, ErrInternal(err, "fail to mint native rune coins")
+	}
+
+	if err := h.keeper.SetComposite(ctx, comp); err != nil {
+		return nil, err
+	}
+
 	return &cosmos.Result{}, nil
 }
 
