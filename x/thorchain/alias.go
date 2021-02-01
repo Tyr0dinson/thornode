@@ -161,6 +161,8 @@ var (
 
 type (
 	MsgSend                        = types.MsgSend
+	MsgMintComposite               = types.MsgMintComposite
+	MsgBurnComposite               = types.MsgBurnComposite
 	MsgDeposit                     = types.MsgDeposit
 	MsgSwitch                      = types.MsgSwitch
 	MsgBond                        = types.MsgBond

@@ -18,7 +18,7 @@ func (MsgCompositeSuite) TestMsgMintCompositeSuite(c *C) {
 	acc1 := GetRandomBech32Addr()
 	c.Assert(acc1.Empty(), Equals, false)
 
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(12*common.One))
+	coin := common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(12*common.One))
 	id := "hello"
 	msg := NewMsgMintComposite(coin, id, acc1)
 	c.Assert(msg.Route(), Equals, RouterKey)

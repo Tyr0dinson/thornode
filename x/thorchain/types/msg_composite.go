@@ -25,8 +25,8 @@ func (m *MsgMintComposite) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if !m.Coin.Asset.IsRune() {
-		return cosmos.ErrUnknownRequest("can only deposit rune to mint composite")
+	if !m.Coin.Asset.IsSyntheticAsset() {
+		return cosmos.ErrUnknownRequest("can only deposit synthetic assets to composite")
 	}
 	if len(m.CompositeId) == 0 {
 		return cosmos.ErrUnknownRequest("composite id cannot be empty")
