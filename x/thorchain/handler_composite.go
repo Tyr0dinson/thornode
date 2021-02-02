@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/blang/semver"
 
@@ -106,6 +107,9 @@ func (h MintCompositeHandler) handleV1(ctx cosmos.Context, msg MsgMintComposite,
 	}
 	depositValue := pool.RuneValueInAsset(msg.Coin.Amount)
 	compToMint := common.GetShare(depositValue, totalRuneValue, totalCompSupply)
+	if totalCompSupply.IsZero() {
+		compToMint = depositValue
+	}
 
 	found := false // the composite holding must already hold this synthetic asset
 	for i, coin := range comp.Holdings {
@@ -182,6 +186,64 @@ func (h BurnCompositeHandler) handle(ctx cosmos.Context, msg MsgBurnComposite, v
 }
 
 func (h BurnCompositeHandler) handleV1(ctx cosmos.Context, msg MsgBurnComposite, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	// TODO
+	// check account has appropriate funds
+	transactionFee := h.mgr.GasMgr().GetFee(ctx, common.THORChain, common.RuneAsset())
+	gas := common.NewCoin(common.RuneNative, transactionFee)
+	gasFee, err := gas.Native()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get gas fee: %w", err)
+	}
+
+	coin, err := msg.Coin.Native()
+	if err != nil {
+		return nil, ErrInternal(err, "coins are native to THORChain")
+	}
+
+	totalCoins := cosmos.NewCoins(gasFee).Add(coin)
+	if !h.keeper.HasCoins(ctx, msg.GetSigners()[0], totalCoins) {
+		return nil, cosmos.ErrInsufficientCoins(err, "insufficient funds")
+	}
+
+	// send gas to reserve
+	err = h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.NewCoins(gas))
+	if err != nil {
+		return nil, fmt.Errorf("unable to send gas to reserve: %w", err)
+	}
+
+	id := msg.Coin.Asset.GetCompsiteId()
+	comp, err := h.keeper.GetComposite(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	totalRuneValue, err := h.mgr.CompositeManager().GetRuneValue(ctx, &comp)
+	if err != nil {
+		return nil, err
+	}
+	totalCompSupply := h.keeper.GetTotalSupply(ctx, comp.Asset())
+	burnRuneValue := common.GetShare(msg.Coin.Amount, totalCompSupply, totalRuneValue)
+
+	pools := make([]Pool, len(comp.Holdings))
+	for i, coin := range comp.Holdings {
+		pools[i], err = h.keeper.GetPool(ctx, coin.Asset)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// sort by rune balance
+	sort.Slice(pools[:], func(i, j int) bool {
+		return pools[i].BalanceRune.GT(pools[j].BalanceRune)
+	})
+
+	// iterate over synth assets in composite to send user. Start with deepest pool first
+	toSend := make(common.Coins, 0)
+	for _, pool := range {
+		holding := comp.Holdings.GetCoin(pool.Asset.GetSyntheticAsset())
+		holdingValueInRune := pool.GetAssetValueInRune(holding.Amount)
+		if holdingValueInRune.GT(burnRuneValue) {
+		}
+		toSend = toSend.Add(holding)
+	}
+
 	return &cosmos.Result{}, nil
 }

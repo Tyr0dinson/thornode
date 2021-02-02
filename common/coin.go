@@ -185,6 +185,17 @@ func (cs Coins) Contains(c Coin) bool {
 	return false
 }
 
+// Add more coins
+func (cs Coins) Add(coin Coin) Coins {
+	for i, item := range cs {
+		if coin.Asset.Equals(item.Asset) {
+			cs[i].Amount = cs[i].Amount.Add(coin.Amount)
+			return cs
+		}
+	}
+	return append(cs, coin)
+}
+
 // GetCoin gets a specific coin by asset. Assumes there is only one of this coin in the
 // list.
 func (cs Coins) GetCoin(asset Asset) Coin {

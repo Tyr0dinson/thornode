@@ -130,6 +130,13 @@ func (a Asset) IsCompositeAsset() bool {
 	return true
 }
 
+func (a Asset) GetCompsiteId() string {
+	if len(a.Symbol.String()) < len(CompositePrefix)+1 {
+		return ""
+	}
+	return a.Symbol.String()[len(CompositePrefix)+1:]
+}
+
 // Native return native asset, only relevant on THORChain
 func (a Asset) Native() string {
 	if !a.Chain.Equals(THORChain) {
