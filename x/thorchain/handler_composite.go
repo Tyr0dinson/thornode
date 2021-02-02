@@ -237,12 +237,27 @@ func (h BurnCompositeHandler) handleV1(ctx cosmos.Context, msg MsgBurnComposite,
 
 	// iterate over synth assets in composite to send user. Start with deepest pool first
 	toSend := make(common.Coins, 0)
-	for _, pool := range {
+	for _, pool := range pools {
 		holding := comp.Holdings.GetCoin(pool.Asset.GetSyntheticAsset())
-		holdingValueInRune := pool.GetAssetValueInRune(holding.Amount)
+		holdingValueInRune := pool.AssetValueInRune(holding.Amount)
 		if holdingValueInRune.GT(burnRuneValue) {
+			amt := common.GetShare(burnRuneValue, holdingValueInRune, holding.Amount)
+			toSend = toSend.Add(common.NewCoin(pool.Asset.GetSyntheticAsset(), amt))
+			burnRuneValue = common.SafeSub(burnRuneValue, pool.AssetValueInRune(amt))
+			break
 		}
 		toSend = toSend.Add(holding)
+		burnRuneValue = common.SafeSub(burnRuneValue, holdingValueInRune)
+	}
+
+	if err := h.keeper.SendFromAccountToModule(ctx, msg.Signer, ModuleName, common.NewCoins(msg.Coin)); err != nil {
+		return nil, err
+	}
+	if err := h.keeper.BurnFromModule(ctx, ModuleName, msg.Coin); err != nil {
+		return nil, err
+	}
+	if err := h.keeper.SendFromModuleToAccount(ctx, CompositeName, msg.Signer, toSend); err != nil {
+		return nil, err
 	}
 
 	return &cosmos.Result{}, nil
