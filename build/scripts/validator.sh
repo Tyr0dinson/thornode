@@ -67,7 +67,7 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
 
         sleep 30 # wait for thorchain to register the new node account
 
-        printf "$SIGNER_PASSWD\n" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS"  --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes --gas auto
+        printf "$SIGNER_PASSWD\n" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS"  --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes
 
         # send bond
 
@@ -77,7 +77,7 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
         VALIDATOR=$(thornode tendermint show-validator)
 
         # set node keys
-        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-node-keys $NODE_PUB_KEY $NODE_PUB_KEY_ED25519 $VALIDATOR --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes --gas auto; do
+        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-node-keys $NODE_PUB_KEY $NODE_PUB_KEY_ED25519 $VALIDATOR --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes; do
           sleep 5
         done
 
@@ -85,13 +85,13 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
         sleep 10 # wait for thorchain to commit a block
 
         NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
-        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-ip-address $NODE_IP_ADDRESS --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain  --yes --gas auto; do
+        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-ip-address $NODE_IP_ADDRESS --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain  --yes; do
           sleep 5
         done
 
         sleep 10 # wait for thorchain to commit a block
         # set node version
-        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-version --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain  --yes --gas auto; do
+        until printf "$SIGNER_PASSWD\n" | thornode tx thorchain set-version --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain  --yes; do
           sleep 5
         done
 
