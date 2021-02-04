@@ -353,6 +353,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	dest := ecommon.HexToAddress(tx.ToAddress.String())
 	var data []byte
 
+	hasRouterUpdated := false
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund:
 		data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
@@ -380,6 +381,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		if newSmartContractAddr.IsEmpty() {
 			return nil, fmt.Errorf("fail to get new smart contract address")
 		}
+		hasRouterUpdated = !newSmartContractAddr.Equals(contractAddr)
+
 		var coins []RouterCoin
 		for _, item := range tx.Coins {
 			assetAddr := getTokenAddressFromAsset(item.Asset)
@@ -443,6 +446,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		// This might cause the tx to delay
 		if totalGas.Cmp(gasOut) == 1 {
 			if memo.GetType() == mem.TxYggdrasilReturn {
+				if hasRouterUpdated {
+					// when we are doing smart contract upgrade , we inflate the estimate gas by multiple the number of coins
+					estimatedGas = estimatedGas * uint64(len(tx.Coins))
+					totalGas = big.NewInt(int64(estimatedGas) * gasRate.Int64())
+				}
 				// yggdrasil return fund
 				gap := totalGas.Sub(totalGas, gasOut)
 				c.logger.Info().Msgf("yggdrasil return fund , gas need: %s", gap.String())
