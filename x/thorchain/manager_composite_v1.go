@@ -151,7 +151,6 @@ func (cmgr CompMgrV1) findDynamicAssetsForUSDStableCoin(ctx cosmos.Context, comp
 	}
 
 	return cmgr.findSimilarValuedAssets(ctx, sourceAssets, 500)
-
 }
 
 func (cmgr CompMgrV1) findSimilarValuedAssets(ctx cosmos.Context, sourceAssets []common.Asset, basisPts int) ([]common.Asset, error) {

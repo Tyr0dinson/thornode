@@ -1,173 +1,146 @@
 package thorchain
 
 import (
-	"errors"
-	"fmt"
-
-	"github.com/blang/semver"
-	se "github.com/cosmos/cosmos-sdk/types/errors"
-	tmtypes "github.com/tendermint/tendermint/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 type HandlerCompositeSuite struct{}
 
 var _ = Suite(&HandlerCompositeSuite{})
 
-func (s *HandlerCompositeSuite) TestValidate(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	addr := GetRandomBech32Addr()
-
-	coins := common.Coins{
-		common.NewCoin(common.RuneNative, cosmos.NewUint(200*common.One)),
-	}
-	msg := NewMsgDeposit(coins, fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()), addr)
-
-	handler := NewDepositHandler(k, NewDummyMgr())
-	err := handler.validate(ctx, *msg, constants.SWVersion)
-	c.Assert(err, IsNil)
-
-	// invalid version
-	err = handler.validate(ctx, *msg, semver.Version{})
-	c.Assert(err, Equals, errInvalidVersion)
-
-	// invalid msg
-	msg = &MsgDeposit{}
-	err = handler.validate(ctx, *msg, constants.SWVersion)
-	c.Assert(err, NotNil)
-}
-
-func (s *HandlerCompositeSuite) TestHandle(c *C) {
+func (s *HandlerCompositeSuite) TestMintHandle(c *C) {
+	var err error
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
 		constants.OutboundTransactionFee: 1000_000,
 	}, map[constants.ConstantName]bool{}, map[constants.ConstantName]string{})
-	activeNode := GetRandomNodeAccount(NodeActive)
-	k.SetNodeAccount(ctx, activeNode)
-	dummyMgr := NewDummyMgr()
-	dummyMgr.gasMgr = NewGasMgrV1(constAccessor, k)
-	handler := NewDepositHandler(k, dummyMgr)
 
-	addr := GetRandomBech32Addr()
-
-	coins := common.Coins{
-		common.NewCoin(common.RuneNative, cosmos.NewUint(200*common.One)),
-	}
-
-	funds, err := common.NewCoin(common.RuneNative, cosmos.NewUint(300*common.One)).Native()
-	c.Assert(err, IsNil)
-	err = k.AddCoins(ctx, addr, cosmos.NewCoins(funds))
-	c.Assert(err, IsNil)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.Status = PoolAvailable
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-	msg := NewMsgDeposit(coins, "ADD:BNB.BNB", addr)
+	pool.BalanceRune = cosmos.NewUint(99321097137189)
+	pool.BalanceAsset = cosmos.NewUint(7067913299069)
+	k.SetPool(ctx, pool)
+	btcbAsset, _ := common.NewAsset("BNB.BTCB-1DE")
+	pool.Asset = btcbAsset
+	pool.BalanceRune = cosmos.NewUint(266945012751528)
+	pool.BalanceAsset = cosmos.NewUint(27894503029)
+	k.SetPool(ctx, pool)
+	usdtAsset, _ := common.NewAsset("BNB.USDT-6D8")
+	pool.Asset = usdtAsset
+	pool.BalanceRune = cosmos.NewUint(44922569882915)
+	pool.BalanceAsset = cosmos.NewUint(172284758807476)
+	k.SetPool(ctx, pool)
 
+	comp := Composite{
+		Id:   "idx-test",
+		Name: "test",
+		Type: DynamicComposite,
+		Holdings: common.NewCoins(
+			common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(400*common.One)),
+			common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(300*common.One)),
+			common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One)),
+		),
+	}
+	c.Assert(k.SetComposite(ctx, comp), IsNil)
+
+	dummyMgr := NewDummyMgr()
+	dummyMgr.gasMgr = NewGasMgrV1(constAccessor, k)
+	handler := NewMintCompositeHandler(k, dummyMgr)
+
+	// create account and mint assets
+	addr := GetRandomBech32Addr()
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(common.RuneAsset(), cosmos.NewUint(200*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+
+	// happy path
+	coin := common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(200*common.One))
+	msg := NewMsgMintComposite(coin, comp.Id, addr)
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, IsNil)
-	// ensure observe tx had been saved
-	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
-	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
+
+	// mising comp
+	msg = NewMsgMintComposite(coin, "idx-not-found", addr)
+	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
+	c.Assert(err, NotNil)
+
+	// wrong synthetic in the holdings
+	coin = common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(200*common.One))
+	msg = NewMsgMintComposite(coin, comp.Id, addr)
+	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
+	c.Assert(err, NotNil)
+
+	// composite doesn't hold this synthetic
+	coin = common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(200*common.One))
+	msg = NewMsgMintComposite(coin, comp.Id, addr)
+	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
+	c.Assert(err, NotNil)
+}
+
+func (s *HandlerCompositeSuite) TestBurnHandle(c *C) {
+	var err error
+	ctx, k := setupKeeperForTest(c)
+	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
+		constants.OutboundTransactionFee: 1000_000,
+	}, map[constants.ConstantName]bool{}, map[constants.ConstantName]string{})
+
+	pool := NewPool()
+	pool.Asset = common.BNBAsset
+	pool.BalanceRune = cosmos.NewUint(99321097137189)
+	pool.BalanceAsset = cosmos.NewUint(7067913299069)
+	k.SetPool(ctx, pool)
+	btcbAsset, _ := common.NewAsset("BNB.BTCB-1DE")
+	pool.Asset = btcbAsset
+	pool.BalanceRune = cosmos.NewUint(266945012751528)
+	pool.BalanceAsset = cosmos.NewUint(27894503029)
+	k.SetPool(ctx, pool)
+	usdtAsset, _ := common.NewAsset("BNB.USDT-6D8")
+	pool.Asset = usdtAsset
+	pool.BalanceRune = cosmos.NewUint(44922569882915)
+	pool.BalanceAsset = cosmos.NewUint(172284758807476)
+	k.SetPool(ctx, pool)
+
+	comp := Composite{
+		Id:   "idx-test",
+		Name: "test",
+		Type: DynamicComposite,
+		Holdings: common.NewCoins(
+			common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(400*common.One)),
+			common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(300*common.One)),
+			common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One)),
+		),
+	}
+	c.Assert(k.SetComposite(ctx, comp), IsNil)
+	c.Assert(k.MintToModule(ctx, CompositeName, common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(4000*common.One))), IsNil)
+	c.Assert(k.MintToModule(ctx, CompositeName, common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(300*common.One))), IsNil)
+	c.Assert(k.MintToModule(ctx, CompositeName, common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One))), IsNil)
+
+	dummyMgr := NewDummyMgr()
+	dummyMgr.gasMgr = NewGasMgrV1(constAccessor, k)
+	dummyMgr.compMgr = NewCompMgrV1(k)
+	handler := NewBurnCompositeHandler(k, dummyMgr)
+
+	// create account and mint assets
+	addr := GetRandomBech32Addr()
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(common.RuneAsset(), cosmos.NewUint(200*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(btcbAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(usdtAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(500*common.One))), IsNil)
+	c.Assert(k.MintAndSendToAccount(ctx, addr, common.NewCoin(comp.Asset(), cosmos.NewUint(500*common.One))), IsNil)
+
+	// happy path
+	coin := common.NewCoin(comp.Asset(), cosmos.NewUint(30*common.One))
+	msg := NewMsgBurnComposite(coin, addr)
+	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, IsNil)
-	voter, err := k.GetObservedTxInVoter(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Assert(voter.Tx.IsEmpty(), Equals, false)
-	c.Assert(voter.Tx.Status, Equals, types.Status_done)
-}
 
-type HandlerCompositeTestHelper struct {
-	keeper.Keeper
-}
-
-func NewHandlerCompositeTestHelper(k keeper.Keeper) *HandlerCompositeTestHelper {
-	return &HandlerCompositeTestHelper{
-		Keeper: k,
-	}
-}
-
-func (s *HandlerCompositeSuite) TestDifferentValidation(c *C) {
-	acctAddr := GetRandomBech32Addr()
-	testCases := []struct {
-		name            string
-		messageProvider func(c *C, ctx cosmos.Context, helper *HandlerCompositeTestHelper) cosmos.Msg
-		validator       func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerCompositeTestHelper, name string)
-	}{
-		{
-			name: "invalid message should result an error",
-			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerCompositeTestHelper) cosmos.Msg {
-				return NewMsgNetworkFee(ctx.BlockHeight(), common.BNBChain, 1, bnbSingleTxFee.Uint64(), GetRandomBech32Addr())
-			},
-			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerCompositeTestHelper, name string) {
-				c.Check(err, NotNil, Commentf(name))
-				c.Check(result, IsNil, Commentf(name))
-				c.Check(errors.Is(err, errInvalidMessage), Equals, true, Commentf(name))
-			},
-		},
-		{
-			name: "coin is not on THORChain should result in an error",
-			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerCompositeTestHelper) cosmos.Msg {
-				return NewMsgDeposit(common.Coins{
-					common.NewCoin(common.BNBAsset, cosmos.NewUint(100)),
-				}, "hello", GetRandomBech32Addr())
-			},
-			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerCompositeTestHelper, name string) {
-				c.Check(err, NotNil, Commentf(name))
-				c.Check(result, IsNil, Commentf(name))
-			},
-		},
-		{
-			name: "Insufficient funds should result in an error",
-			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerCompositeTestHelper) cosmos.Msg {
-				return NewMsgDeposit(common.Coins{
-					common.NewCoin(common.RuneNative, cosmos.NewUint(100)),
-				}, "hello", GetRandomBech32Addr())
-			},
-			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerCompositeTestHelper, name string) {
-				c.Check(err, NotNil, Commentf(name))
-				c.Check(result, IsNil, Commentf(name))
-				c.Check(errors.Is(err, se.ErrInsufficientFunds), Equals, true, Commentf(name))
-			},
-		},
-		{
-			name: "invalid memo should refund",
-			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerCompositeTestHelper) cosmos.Msg {
-				FundAccount(c, ctx, helper.Keeper, acctAddr, 100)
-				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.THORChain}.Strings(), []ChainContract{})
-				c.Check(helper.Keeper.SetVault(ctx, vault), IsNil)
-				return NewMsgDeposit(common.Coins{
-					common.NewCoin(common.RuneNative, cosmos.NewUint(2*common.One)),
-				}, "hello", acctAddr)
-			},
-			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerCompositeTestHelper, name string) {
-				c.Check(err, IsNil, Commentf(name))
-				c.Check(result, NotNil, Commentf(name))
-				coins := common.NewCoin(common.RuneNative, cosmos.NewUint(98*common.One))
-				coin, err := coins.Native()
-				c.Check(err, IsNil)
-				hasCoin := helper.Keeper.HasCoins(ctx, acctAddr, cosmos.NewCoins().Add(coin))
-				c.Check(hasCoin, Equals, true)
-			},
-		},
-	}
-	for _, tc := range testCases {
-		ctx, k := setupKeeperForTest(c)
-		helper := NewHandlerCompositeTestHelper(k)
-		mgr := NewManagers(helper)
-		mgr.BeginBlock(ctx)
-		handler := NewDepositHandler(helper, mgr)
-		msg := tc.messageProvider(c, ctx, helper)
-		constantAccessor := constants.GetConstantValues(constants.SWVersion)
-		result, err := handler.Run(ctx, msg, semver.MustParse("0.1.0"), constantAccessor)
-		tc.validator(c, ctx, result, err, helper, tc.name)
-	}
+	c.Check(k.GetTotalSupply(ctx, comp.Asset()).Uint64(), Equals, uint64(470*common.One))
+	balance := k.GetBalance(ctx, addr)
+	target := cosmos.NewCoin(comp.Id, cosmos.NewInt(470*common.One))
+	c.Check(balance[0].IsEqual(target), Equals, true)
 }

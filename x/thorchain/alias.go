@@ -71,6 +71,8 @@ var (
 	NewBanVoter                    = types.NewBanVoter
 	NewErrataTxVoter               = types.NewErrataTxVoter
 	NewObservedTxVoter             = types.NewObservedTxVoter
+	NewMsgMintComposite            = types.NewMsgMintComposite
+	NewMsgBurnComposite            = types.NewMsgBurnComposite
 	NewMsgMimir                    = types.NewMsgMimir
 	NewMsgDeposit                  = types.NewMsgDeposit
 	NewMsgTssPool                  = types.NewMsgTssPool
@@ -272,6 +274,4 @@ type (
 	SwitchMemo            = mem.SwitchMemo
 )
 
-var (
-	_ codec.ProtoMarshaler = &types.LiquidityProvider{}
-)
+var _ codec.ProtoMarshaler = &types.LiquidityProvider{}

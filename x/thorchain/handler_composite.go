@@ -96,6 +96,21 @@ func (h MintCompositeHandler) handleV1(ctx cosmos.Context, msg MsgMintComposite,
 		return nil, fmt.Errorf("composite id %s is not found", msg.CompositeId)
 	}
 
+	pools := make([]Pool, len(comp.Holdings))
+	for i, coin := range comp.Holdings {
+		pools[i], err = h.keeper.GetPool(ctx, coin.Asset)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// sort by rune balance
+	sort.Slice(pools[:], func(i, j int) bool {
+		return pools[i].BalanceRune.GT(pools[j].BalanceRune)
+	})
+	if len(pools) > 0 && !pools[0].Asset.Equals(msg.Coin.Asset.GetLayer1Asset()) {
+		return nil, fmt.Errorf("wrong synthetic asset supplied. Requires %s", pools[0].Asset.GetSyntheticAsset())
+	}
+
 	totalCompSupply := h.keeper.GetTotalSupply(ctx, comp.Asset())
 	totalRuneValue, err := h.mgr.CompositeManager().GetRuneValue(ctx, &comp)
 	if err != nil {

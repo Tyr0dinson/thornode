@@ -61,6 +61,8 @@ var (
 	QueryPendingOutbound    = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
 	QueryTssKeygenMetrics   = Query{Key: "tss_keygen_metric", EndpointTemplate: "/%s/metric/keygen/{%s}"}
 	QueryTssMetrics         = Query{Key: "tss_metric", EndpointTemplate: "/%s/metrics"}
+	QueryComposite          = Query{Key: "composite", EndpointTemplate: "/%s/composite/{%s}"}
+	QueryComposites         = Query{Key: "composites", EndpointTemplate: "/%s/composites"}
 )
 
 // Queries all queries
@@ -93,4 +95,6 @@ var Queries = []Query{
 	QueryPendingOutbound,
 	QueryTssMetrics,
 	QueryTssKeygenMetrics,
+	QueryComposite,
+	QueryComposites,
 }

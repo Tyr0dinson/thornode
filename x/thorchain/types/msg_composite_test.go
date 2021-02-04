@@ -44,14 +44,15 @@ func (MsgCompositeSuite) TestMsgMintCompositeSuite(c *C) {
 	err2 := msg2.ValidateBasic()
 	c.Assert(err2, NotNil)
 	c.Assert(errors.Is(err2, se.ErrUnknownRequest), Equals, true)
-
 }
 
 func (MsgCompositeSuite) TestMsgBurnCompositeSuite(c *C) {
 	acc1 := GetRandomBech32Addr()
 	c.Assert(acc1.Empty(), Equals, false)
 
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(12*common.One))
+	asset, err := common.NewCompositeAsset("usd")
+	c.Assert(err, IsNil)
+	coin := common.NewCoin(asset, cosmos.NewUint(12*common.One))
 	msg := NewMsgBurnComposite(coin, acc1)
 	c.Assert(msg.Route(), Equals, RouterKey)
 	c.Assert(msg.Type(), Equals, "burn_composite")

@@ -64,7 +64,7 @@ func (m *MsgBurnComposite) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if !m.Coin.Asset.IsCompositeAsset() {
-		return cosmos.ErrUnknownRequest("can only burn composite assets to rune")
+		return cosmos.ErrUnknownRequest("can only burn composite assets to synthetics")
 	}
 	return nil
 }

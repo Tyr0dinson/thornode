@@ -36,14 +36,14 @@ func (k KVStore) GetCompositeIterator(ctx cosmos.Context) cosmos.Iterator {
 }
 
 // CompositeExist check whether the given composite exists in the data store
-func (k KVStore) CompositeExists(ctx cosmos.Context, name string) bool {
-	return k.has(ctx, k.GetKey(ctx, prefixComposite, name))
+func (k KVStore) CompositeExists(ctx cosmos.Context, id string) bool {
+	return k.has(ctx, k.GetKey(ctx, prefixComposite, id))
 }
 
-// GetComposite get Composite by given name
-func (k KVStore) GetComposite(ctx cosmos.Context, name string) (Composite, error) {
+// GetComposite get Composite by given id
+func (k KVStore) GetComposite(ctx cosmos.Context, id string) (Composite, error) {
 	record := Composite{}
-	_, err := k.getComposite(ctx, k.GetKey(ctx, prefixComposite, name), &record)
+	_, err := k.getComposite(ctx, k.GetKey(ctx, prefixComposite, id), &record)
 
 	return record, err
 }
@@ -51,9 +51,9 @@ func (k KVStore) GetComposite(ctx cosmos.Context, name string) (Composite, error
 // SetComposite save the entire Composite metadata struct to key value store
 func (k KVStore) SetComposite(ctx cosmos.Context, comp Composite) error {
 	if comp.IsEmpty() {
-		return errors.New("cannot save a composite asset with an empty name")
+		return errors.New("cannot save a composite asset with an empty id")
 	}
 
-	k.setComposite(ctx, k.GetKey(ctx, prefixComposite, comp.Name), comp)
+	k.setComposite(ctx, k.GetKey(ctx, prefixComposite, comp.Id), comp)
 	return nil
 }

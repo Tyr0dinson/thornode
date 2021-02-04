@@ -1,6 +1,8 @@
 package types
 
-import "gitlab.com/thorchain/thornode/common"
+import (
+	"gitlab.com/thorchain/thornode/common"
+)
 
 func (c Composite) IsEmpty() bool {
 	return len(c.Name) == 0 || len(c.Id) == 0

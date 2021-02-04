@@ -95,10 +95,11 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
-		ModuleName:  {authtypes.Minter, authtypes.Burner},
-		AsgardName:  {},
-		BondName:    {},
-		ReserveName: {},
+		ModuleName:    {authtypes.Minter, authtypes.Burner},
+		AsgardName:    {},
+		BondName:      {},
+		ReserveName:   {},
+		CompositeName: {authtypes.Minter, authtypes.Burner},
 	})
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)

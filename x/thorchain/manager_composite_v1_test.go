@@ -110,7 +110,6 @@ func (s CompositeManagerSuite) TestRebalance(c *C) {
 	c.Check(comp.Holdings.GetCoin(common.BNBAsset).Amount.Uint64(), Equals, uint64(4))
 	c.Check(comp.Holdings.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(4))
 	c.Check(comp.Holdings.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(4))
-
 }
 
 func (s CompositeManagerSuite) TestFindSimilarValuedAssets(c *C) {

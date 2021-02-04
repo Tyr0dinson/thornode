@@ -64,7 +64,10 @@ func NewAsset(input string) (Asset, error) {
 }
 
 func NewCompositeAsset(input string) (Asset, error) {
-	return NewAsset(fmt.Sprintf("THOR.%s-%s", CompositePrefix, input))
+	if !strings.HasPrefix(input, CompositePrefix) {
+		input = fmt.Sprintf("%s-%s", CompositePrefix, input)
+	}
+	return NewAsset(fmt.Sprintf("THOR.%s", input))
 }
 
 // Equals determinate whether two assets are equivalent
@@ -121,7 +124,7 @@ func (a Asset) IsSyntheticAsset() bool {
 
 // Check if asset is a composite asset
 func (a Asset) IsCompositeAsset() bool {
-	if !a.isNativeUtilityAsset() {
+	if !a.Chain.Equals(THORChain) {
 		return false
 	}
 	if !strings.HasPrefix(strings.ToLower(a.Symbol.String()), CompositePrefix) {

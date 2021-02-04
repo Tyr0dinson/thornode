@@ -78,6 +78,11 @@ func NewQuerier(keeper keeper.Keeper, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryTssKeygenMetric(ctx, path[1:], req, keeper)
 		case q.QueryTssMetrics.Key:
 			return queryTssMetric(ctx, path[1:], req, keeper)
+		case q.QueryComposite.Key:
+			return queryComposite(ctx, path[1:], req, keeper)
+		case q.QueryComposites.Key:
+			return queryComposites(ctx, path[1:], req, keeper)
+
 		default:
 			return nil, cosmos.ErrUnknownRequest(
 				fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
@@ -1065,4 +1070,47 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, ke
 		KeysignMetric: keysignMetric,
 	}
 	return json.MarshalIndent(m, "", "	")
+}
+
+// queryComposite return the composite information
+// /thorchain/composite/{composite_id}
+func queryComposite(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+	if len(path) == 0 {
+		return nil, errors.New("composite id not provided")
+	}
+	id := path[0]
+
+	comp, err := keeper.GetComposite(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get composite: %w", err)
+	}
+
+	res, err := json.MarshalIndent(comp, "", "	")
+	if err != nil {
+		return nil, fmt.Errorf("fail to marshal composite to json: %w", err)
+	}
+
+	return res, nil
+}
+
+// queryComposites return all the composites
+// /thorchain/nodes
+func queryComposites(ctx cosmos.Context, path []string, req abci.RequestQuery, keeper keeper.Keeper) ([]byte, error) {
+	comps := make([]Composite, 0)
+	iter := keeper.GetCompositeIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var comp Composite
+		if err := keeper.Cdc().UnmarshalBinaryBare(iter.Value(), &comp); err != nil {
+			ctx.Logger().Error("fail to unmarshal composite", "error", err)
+			continue
+		}
+		comps = append(comps, comp)
+	}
+	res, err := json.MarshalIndent(comps, "", "	")
+	if err != nil {
+		ctx.Logger().Error("fail to marshal composite values to json", "error", err)
+		return nil, fmt.Errorf("fail to marshal composite values to json: %w", err)
+	}
+	return res, nil
 }
