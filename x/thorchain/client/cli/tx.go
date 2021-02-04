@@ -34,7 +34,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(GetCmdSend())
 	for _, subCmd := range cmd.Commands() {
 		flags.AddTxFlagsToCmd(subCmd)
-		subCmd.Flag(flags.FlagGas).DefValue = flags.GasFlagAuto
+		subCmd.Flag(flags.FlagGas).DefValue = "2000000"
 	}
 	return cmd
 }
