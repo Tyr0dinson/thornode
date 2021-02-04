@@ -69,7 +69,7 @@ func (s *HandlerCompositeSuite) TestMintHandle(c *C) {
 	target := cosmos.NewCoin(comp.Id, cosmos.NewInt(2089906))
 	c.Check(balance[0].IsEqual(target), Equals, true)
 
-	// mising comp
+	// missing comp
 	msg = NewMsgMintComposite(coin, "idx-not-found", addr)
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, NotNil)
