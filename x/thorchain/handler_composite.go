@@ -146,6 +146,11 @@ func (h MintCompositeHandler) handleV1(ctx cosmos.Context, msg MsgMintComposite,
 		return nil, err
 	}
 
+	// rebalance the composite
+	if err := h.mgr.CompositeManager().Maintain(ctx, &comp); err != nil {
+		ctx.Logger().Error("failed to rebalance composite", "composite", comp.Id, "error", err)
+	}
+
 	return &cosmos.Result{}, nil
 }
 
@@ -273,6 +278,11 @@ func (h BurnCompositeHandler) handleV1(ctx cosmos.Context, msg MsgBurnComposite,
 	}
 	if err := h.keeper.SendFromModuleToAccount(ctx, CompositeName, msg.Signer, toSend); err != nil {
 		return nil, err
+	}
+
+	// rebalance the composite
+	if err := h.mgr.CompositeManager().Maintain(ctx, &comp); err != nil {
+		ctx.Logger().Error("failed to rebalance composite", "composite", comp.Id, "error", err)
 	}
 
 	return &cosmos.Result{}, nil
