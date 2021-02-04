@@ -64,6 +64,11 @@ func (s *HandlerCompositeSuite) TestMintHandle(c *C) {
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, IsNil)
 
+	c.Check(k.GetTotalSupply(ctx, comp.Asset()).Uint64(), Equals, uint64(2089906))
+	balance := k.GetBalance(ctx, addr)
+	target := cosmos.NewCoin(comp.Id, cosmos.NewInt(2089906))
+	c.Check(balance[0].IsEqual(target), Equals, true)
+
 	// mising comp
 	msg = NewMsgMintComposite(coin, "idx-not-found", addr)
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
@@ -80,6 +85,7 @@ func (s *HandlerCompositeSuite) TestMintHandle(c *C) {
 	msg = NewMsgMintComposite(coin, comp.Id, addr)
 	_, err = handler.handle(ctx, *msg, constants.SWVersion, constAccessor)
 	c.Assert(err, NotNil)
+
 }
 
 func (s *HandlerCompositeSuite) TestBurnHandle(c *C) {
