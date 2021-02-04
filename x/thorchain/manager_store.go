@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -51,14 +52,14 @@ func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor constants.ConstantValues) error {
 	ctx.Logger().Info("Migrating store to new version", "version", i)
 	// add the logic to migrate store here when it is needed
-	// switch i {
-	// case 20:
-	// 	smgr.keeper.SetChainContract(ctx, ChainContract{
-	// 		Chain:  common.ETHChain,
-	// 		Router: "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
-	// 	})
-	// 	ctx.Logger().Info("update ETH chain contract", "contract", "0x69800327b38A4CeF30367Dec3f64c2f2386f3848")
-	// }
+	switch i {
+	case 20:
+		smgr.keeper.SetChainContract(ctx, ChainContract{
+			Chain:  common.ETHChain,
+			Router: "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
+		})
+		ctx.Logger().Info("update ETH chain contract", "contract", "0x69800327b38A4CeF30367Dec3f64c2f2386f3848")
+	}
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
 }
