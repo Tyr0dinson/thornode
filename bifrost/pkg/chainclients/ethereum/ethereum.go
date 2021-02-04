@@ -393,6 +393,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				Amount: assetAmt,
 			})
 		}
+		c.logger.Info().Msgf("contract address: %s", newSmartContractAddr)
+		c.logger.Info().Msgf("coins to transfer: %+v", coins)
 		data, err = c.vaultABI.Pack("returnVaultAssets", ecommon.HexToAddress(newSmartContractAddr.String()), dest, coins, tx.Memo)
 		if err != nil {
 			return nil, fmt.Errorf("fail to create data to call smart contract(transferVaultAssets): %w", err)
@@ -443,7 +445,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 			if memo.GetType() == mem.TxYggdrasilReturn {
 				// yggdrasil return fund
 				gap := totalGas.Sub(totalGas, gasOut)
-				c.logger.Info().Msgf("yggdrasil return fund , gass need: %s", gap.String())
+				c.logger.Info().Msgf("yggdrasil return fund , gas need: %s", gap.String())
 				ethValue = ethValue.Sub(ethValue, gap)
 			} else {
 				gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
@@ -512,6 +514,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to create vaultAllowance data to call smart contract")
 	}
+	c.logger.Info().Msgf("query contract:%s for balance", contractAddresses[0].String())
 	toAddr := ecommon.HexToAddress(contractAddresses[0].String())
 	res, err := c.client.CallContract(ctx, ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
@@ -587,7 +590,7 @@ func (c *Client) GetAccountByAddress(address string) (common.Account, error) {
 }
 
 // BroadcastTx decodes tx using rlp and broadcasts too Ethereum chain
-func (c *Client) BroadcastTx(_ stypes.TxOutItem, hexTx []byte) (string, error) {
+func (c *Client) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
 	tx := &etypes.Transaction{}
 	if err := tx.UnmarshalJSON(hexTx); err != nil {
 		return "", err
@@ -597,6 +600,7 @@ func (c *Client) BroadcastTx(_ stypes.TxOutItem, hexTx []byte) (string, error) {
 	if err := c.client.SendTransaction(ctx, tx); err != nil && err.Error() != ecore.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
 		return "", err
 	}
+	c.logger.Info().Msgf("broadcast tx with memo: %s to ETH chain , hash: %s", txOutItem.Memo, tx.Hash().String())
 	return tx.Hash().String(), nil
 }
 

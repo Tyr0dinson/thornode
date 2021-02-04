@@ -11,7 +11,7 @@ SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
 BINANCE=${BINANCE:=$PEER:26660}
 THORNODE_API_ENABLED=true
-if [ ! -f ~/.thord/config/genesis.json ]; then
+if [ ! -f ~/.thornode/config/genesis.json ]; then
     if [[ "$PEER" == "none" && "$SEEDS" == "none" ]]; then
         echo "Missing PEER / SEEDS"
         exit 1
@@ -67,7 +67,7 @@ if [ ! -f ~/.thord/config/genesis.json ]; then
 
         sleep 30 # wait for thorchain to register the new node account
 
-        printf "$SIGNER_PASSWD\n" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS"  --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes
+        printf "$SIGNER_PASSWD\n" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS"  --node tcp://$PEER:26657 --from $SIGNER_NAME --keyring-backend=file --chain-id thorchain --yes --gas auto
 
         # send bond
 
