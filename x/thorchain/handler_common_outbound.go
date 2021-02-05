@@ -208,6 +208,7 @@ func (h CommonOutboundTxHandler) handleV20(ctx cosmos.Context, version semver.Ve
 
 				// when the total coin match,  continue to check this logic for ETH chain
 				//  as on ETH, we can specify a maximum gas, however we don't know exactly how much it will be spend
+				//  the real gas spend will be here , thus need to balance the pool accordingly
 				if matchCoin && txOutItem.Chain.Equals(common.ETHChain) && txOutItem.Coin.Asset.Equals(common.ETHChain.GetGasAsset()) {
 					asset := txOutItem.Chain.GetGasAsset()
 					maxGas := txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount

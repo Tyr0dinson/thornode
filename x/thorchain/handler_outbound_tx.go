@@ -51,7 +51,9 @@ func (h OutboundTxHandler) validateV1(ctx cosmos.Context, msg MsgOutboundTx) err
 
 func (h OutboundTxHandler) handle(ctx cosmos.Context, msg MsgOutboundTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgOutboundTx", "request outbound tx hash", msg.Tx.Tx.ID)
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.20.0")) {
+		return h.handleV20(ctx, version, msg, constAccessor)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg, constAccessor)
 	}
 	return nil, errBadVersion
@@ -59,4 +61,8 @@ func (h OutboundTxHandler) handle(ctx cosmos.Context, msg MsgOutboundTx, version
 
 func (h OutboundTxHandler) handleV1(ctx cosmos.Context, version semver.Version, msg MsgOutboundTx, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	return h.ch.handle(ctx, version, msg.Tx, msg.InTxID, constAccessor)
+}
+
+func (h OutboundTxHandler) handleV20(ctx cosmos.Context, version semver.Version, msg MsgOutboundTx, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	return h.ch.handleV20(ctx, version, msg.Tx, msg.InTxID, constAccessor)
 }
