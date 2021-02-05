@@ -445,10 +445,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		// adjust the gas price to reflect that , so not breach the MaxGas restriction
 		// This might cause the tx to delay
 		if totalGas.Cmp(gasOut) == 1 {
+			// for Yggdrasil return , the total gas will always larger than gasOut , as we don't specify MaxGas
 			if memo.GetType() == mem.TxYggdrasilReturn {
 				if hasRouterUpdated {
-					// when we are doing smart contract upgrade , we inflate the estimate gas by multiple the number of coins
-					estimatedGas = estimatedGas * uint64(len(tx.Coins))
+					// when we are doing smart contract upgrade , we inflate the estimate gas by 1.5 , to give it more room with gas
+					estimatedGas = estimatedGas * 3 / 2
 					totalGas = big.NewInt(int64(estimatedGas) * gasRate.Int64())
 				}
 				// yggdrasil return fund
@@ -460,11 +461,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
 			}
 		} else {
-			extra := gasOut.Sub(gasOut, totalGas)
-			if extra.Uint64() > 0 {
-				ethValue = ethValue.Add(ethValue, extra)
-				c.logger.Info().Msgf("%s extra ETH.ETH pay to customer,customer get paid: %s", extra, ethValue)
-			}
+			// override estimate gas with the max
+			estimatedGas = big.NewInt(0).Div(gasOut, gasRate).Uint64()
+			c.logger.Info().Msgf("transaction with memo %s can spend up to %d gas unit, gasRate:%s", tx.Memo, estimatedGas, gasRate)
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	} else {
@@ -474,7 +473,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		if totalGas.Cmp(gasOut) == 1 {
 			gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 		}
-
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
 
