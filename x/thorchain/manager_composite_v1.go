@@ -121,6 +121,20 @@ func (cmgr CompMgrV1) Rebalance(ctx cosmos.Context, targetAssets []common.Asset,
 		)
 	}
 
+	// burn current holdings
+	for _, coin := range comp.Holdings {
+		if err := cmgr.keeper.BurnFromModule(ctx, CompositeName, coin); err != nil {
+			return err
+		}
+	}
+
+	// mint new holdings
+	for _, coin := range newHoldings {
+		if err := cmgr.keeper.MintToModule(ctx, CompositeName, coin); err != nil {
+			return err
+		}
+	}
+
 	comp.Holdings = newHoldings
 	return nil
 }
