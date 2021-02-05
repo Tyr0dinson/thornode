@@ -39,6 +39,14 @@ func (k TestRebalanceKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (Po
 	return pool, nil
 }
 
+func (k TestRebalanceKeeper) MintToModule(ctx cosmos.Context, _ string, _ common.Coin) error {
+	return nil
+}
+
+func (k TestRebalanceKeeper) BurnFromModule(ctx cosmos.Context, _ string, _ common.Coin) error {
+	return nil
+}
+
 func (k TestRebalanceKeeper) GetPoolIterator(ctx cosmos.Context) cosmos.Iterator {
 	iter := keeper.NewDummyIterator()
 	cdc := MakeCodec()
