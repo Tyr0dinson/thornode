@@ -144,9 +144,9 @@ func (cmgr CompMgrV1) findDynamicAssets(ctx cosmos.Context, comp *Composite) ([]
 	case "USD":
 		return cmgr.findDynamicAssetsForUSDStableCoin(ctx, comp)
 	case "Top 10 Crypto":
-		return cmgr.findDynamicAssetsForUSDStableCoin(ctx, comp)
+		return cmgr.findTopTenCrypto(ctx, comp)
 	case "All Crypto":
-		return cmgr.findDynamicAssetsForUSDStableCoin(ctx, comp)
+		return cmgr.findAllCrypto(ctx, comp)
 	default:
 		return nil, fmt.Errorf("cannot find dynamic assets, %s not implemented", comp.Name)
 	}
