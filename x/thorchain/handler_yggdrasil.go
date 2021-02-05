@@ -139,6 +139,8 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil, version
 			fromAddress.Equals(msg.Tx.FromAddress) {
 
 			matchCoin := msg.Tx.Coins.Equals(common.Coins{tx.Coin})
+			// here it doesn't need special logic to deal with ETH , because for yggdrasil return ,
+			// it is internal tx , the network doesn't take ETH from the pool
 			// when outbound is gas asset
 			if !matchCoin && tx.Coin.Asset.Equals(tx.Chain.GetGasAsset()) {
 				asset := tx.Chain.GetGasAsset()

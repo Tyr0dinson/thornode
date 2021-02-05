@@ -207,9 +207,13 @@ func (h CommonOutboundTxHandler) handleV20(ctx cosmos.Context, version semver.Ve
 				matchCoin := tx.Tx.Coins.Equals(common.Coins{txOutItem.Coin})
 
 				// when the total coin match,  continue to check this logic for ETH chain
-				//  as on ETH, we can specify a maximum gas, however we don't know exactly how much it will be spend
-				//  the real gas spend will be here , thus need to balance the pool accordingly
-				if matchCoin && txOutItem.Chain.Equals(common.ETHChain) && txOutItem.Coin.Asset.Equals(common.ETHChain.GetGasAsset()) {
+				// the reason the network need this special logic for ETH chain is because
+				// on ETH, when bifrost sign and send out a tx , it could ask the chain to do an estimate of gas ,
+				// however the real amount gas that will be spend, can't be predict, so there might be some room there ,
+				// sometimes it spend a bit more , sometimes it spend a bit less , if bifrost spend less sending out the tx
+				// the network need to put the ETH that left in the wallet back to pool , and take RUNE , and send it to reserve
+				if matchCoin && txOutItem.Chain.Equals(common.ETHChain) &&
+					txOutItem.Coin.Asset.Equals(common.ETHChain.GetGasAsset()) {
 					asset := txOutItem.Chain.GetGasAsset()
 					maxGas := txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount
 					realGas := tx.Tx.Gas.ToCoins().GetCoin(asset).Amount
