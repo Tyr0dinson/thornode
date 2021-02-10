@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"errors"
+	"fmt"
+	"math/big"
 	"os"
 
 	"github.com/blang/semver"
@@ -523,4 +525,10 @@ func (s SwapSuite) TestCalculators(c *C) {
 	c.Check(calcAssetEmission(X, x, Y).Uint64(), Equals, uint64(0))
 	c.Check(calcLiquidityFee(X, x, Y).Uint64(), Equals, uint64(100*common.One), Commentf("%d", calcLiquidityFee(X, x, Y).Uint64()))
 	c.Check(calcSwapSlip(X, x).Uint64(), Equals, uint64(10000), Commentf("%d", calcSwapSlip(X, x).Uint64()))
+}
+func (s SwapSuite) TestSTUFF(c *C) {
+	start := cosmos.NewUint(1249988)
+	amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(2), nil))
+	start = start.Quo(amt).Mul(amt)
+	fmt.Println(start.String())
 }

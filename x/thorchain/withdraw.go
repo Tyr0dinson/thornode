@@ -92,8 +92,9 @@ func withdraw(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, 
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
 	}
 	if !withDrawAsset.IsZero() && pool.Decimals != 0 && pool.Decimals < common.THORChainDecimals {
-		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(pool.Decimals), nil))
-		withDrawAsset = withDrawAsset.Mul(amt).QuoUint64(common.One)
+		precisionDiff := common.THORChainDecimals - pool.Decimals
+		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(precisionDiff), nil))
+		withDrawAsset = withDrawAsset.Quo(amt).Mul(amt)
 	}
 	gasAsset := cosmos.ZeroUint()
 	// If the pool is empty, and there is a gas asset, subtract required gas

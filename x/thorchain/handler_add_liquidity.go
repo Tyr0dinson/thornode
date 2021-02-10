@@ -122,6 +122,7 @@ func (h AddLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgAddLiquidity, v
 	// in the case that RUNE get send in before Asset , then pool unit will be still 0, however asset Amount will not
 	// in that case , it should try to set the pools decimal
 	if pool.PoolUnits.IsZero() && !msg.AssetAmount.IsZero() && pool.Decimals == 0 {
+		ctx.Logger().Info("try update pool decimals", "asset", msg.Asset, "pool decimals", pool.Decimals)
 		pool.Decimals = msg.GetTx().Coins[0].Decimals
 		if err := h.keeper.SetPool(ctx, pool); err != nil {
 			return ErrInternal(err, "fail to save pool to key value store")

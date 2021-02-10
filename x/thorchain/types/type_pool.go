@@ -121,8 +121,9 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 
 	assetAmnt := common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
 	if m.Decimals != 0 && m.Decimals < common.THORChainDecimals {
-		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(m.Decimals), nil))
-		assetAmnt = assetAmnt.Mul(amt).QuoUint64(common.One)
+		precisionDiff := common.THORChainDecimals - m.Decimals
+		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(precisionDiff), nil))
+		assetAmnt = assetAmnt.Quo(amt).Mul(amt)
 	}
 	return assetAmnt
 }

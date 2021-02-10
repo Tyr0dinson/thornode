@@ -578,6 +578,7 @@ func (e *ETHScanner) getTokenMeta(token string) (types.TokenMeta, error) {
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to get decimals from smart contract, default to: %d", defaultDecimals)
 		}
+		e.logger.Info().Msgf("token:%s, decimals: %d", token, decimals)
 		tokenMeta = types.NewTokenMeta(symbol, token, decimals)
 		if err = e.tokens.SaveTokenMeta(symbol, token, decimals); err != nil {
 			return types.TokenMeta{}, fmt.Errorf("fail to save token meta: %w", err)
@@ -616,7 +617,7 @@ func (e *ETHScanner) getTokenDecimalsForTHORChain(token string) int64 {
 	if err != nil {
 		e.logger.Err(err).Msgf("fail to get token meta for token address: %s", token)
 	}
-	if !tokenMeta.IsEmpty() {
+	if tokenMeta.IsEmpty() {
 		return 0
 	}
 	// when the token's precision is more than THORChain , that's fine , just use THORChainDecimals
@@ -675,6 +676,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction) (*stypes.T
 				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
 			}
 			decimals := e.getTokenDecimalsForTHORChain(depositEvt.Asset.String())
+			e.logger.Info().Msgf("token:%s,decimals:%d", depositEvt.Asset, decimals)
 			txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(depositEvt.Asset.String(), depositEvt.Amount)).WithDecimals(decimals))
 		case transferOutEvent:
 			transferOutEvt, err := e.parseTransferOut(*item)
