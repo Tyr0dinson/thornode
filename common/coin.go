@@ -46,9 +46,6 @@ func (c Coin) Equals(cc Coin) bool {
 	if !c.Amount.Equal(cc.Amount) {
 		return false
 	}
-	if c.Decimals != cc.Decimals {
-		return false
-	}
 	return true
 }
 
