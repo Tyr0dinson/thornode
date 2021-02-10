@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/blang/semver"
 
@@ -89,6 +90,10 @@ func withdraw(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, 
 	if (withdrawRune.Equal(poolRune) && !withDrawAsset.Equal(poolAsset)) || (!withdrawRune.Equal(poolRune) && withDrawAsset.Equal(poolAsset)) {
 		ctx.Logger().Error("fail to withdraw: cannot withdraw 100% of only one side of the pool")
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+	}
+	if !withDrawAsset.IsZero() && pool.Decimals != 0 && pool.Decimals < common.THORChainDecimals {
+		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(pool.Decimals), nil))
+		withDrawAsset = withDrawAsset.Mul(amt).QuoUint64(common.One)
 	}
 	gasAsset := cosmos.ZeroUint()
 	// If the pool is empty, and there is a gas asset, subtract required gas

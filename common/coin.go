@@ -9,6 +9,9 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+// THORChainDecimals indicate the number of decimal points used in THORChain
+const THORChainDecimals = 8
+
 // NoCoin is empty Coin
 var NoCoin = Coin{
 	Asset:  EmptyAsset,
@@ -99,6 +102,7 @@ func (c Coin) WithDecimals(decimal int64) Coin {
 	return c
 }
 
+// Valid check whether all the coins are valid , if not , then return an error
 func (cs Coins) Valid() error {
 	for _, coin := range cs {
 		if err := coin.Valid(); err != nil {
@@ -155,6 +159,7 @@ func (cs Coins) Native() (cosmos.Coins, error) {
 	return coins, nil
 }
 
+// String implement fmt.Stringer
 func (cs Coins) String() string {
 	coins := make([]string, len(cs))
 	for i, c := range cs {

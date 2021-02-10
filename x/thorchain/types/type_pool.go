@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"strconv"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -80,6 +82,7 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("pool-units: " + m.PoolUnits.String()))
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))
+	sb.WriteString(fmt.Sprintln("decimals:" + strconv.FormatInt(m.Decimals, 10)))
 	return sb.String()
 }
 
@@ -115,5 +118,11 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 	if m.BalanceRune.IsZero() || m.BalanceAsset.IsZero() {
 		return cosmos.ZeroUint()
 	}
-	return common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
+
+	assetAmnt := common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
+	if m.Decimals != 0 && m.Decimals < common.THORChainDecimals {
+		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(m.Decimals), nil))
+		assetAmnt = assetAmnt.Mul(amt).QuoUint64(common.One)
+	}
+	return assetAmnt
 }

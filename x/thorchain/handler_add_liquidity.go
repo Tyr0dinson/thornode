@@ -111,6 +111,18 @@ func (h AddLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgAddLiquidity, v
 	if pool.IsEmpty() {
 		ctx.Logger().Info("pool doesn't exist yet, creating a new one...", "symbol", msg.Asset.String(), "creator", msg.RuneAddress)
 		pool.Asset = msg.Asset
+		// when msg has asset amount , then it should
+		if !msg.AssetAmount.IsZero() {
+			pool.Decimals = msg.GetTx().Coins[0].Decimals
+		}
+		if err := h.keeper.SetPool(ctx, pool); err != nil {
+			return ErrInternal(err, "fail to save pool to key value store")
+		}
+	}
+	// in the case that RUNE get send in before Asset , then pool unit will be still 0, however asset Amount will not
+	// in that case , it should try to set the pools decimal
+	if pool.PoolUnits.IsZero() && !msg.AssetAmount.IsZero() && pool.Decimals == 0 {
+		pool.Decimals = msg.GetTx().Coins[0].Decimals
 		if err := h.keeper.SetPool(ctx, pool); err != nil {
 			return ErrInternal(err, "fail to save pool to key value store")
 		}

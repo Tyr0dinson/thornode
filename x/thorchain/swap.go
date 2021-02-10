@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -247,6 +248,10 @@ func swapOne(ctx cosmos.Context,
 	liquidityFee = calcLiquidityFee(X, x, Y)
 	tradeSlip = calcSwapSlip(X, x)
 	emitAssets = calcAssetEmission(X, x, Y)
+	if pool.Decimals != 0 && pool.Decimals < common.THORChainDecimals {
+		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(pool.Decimals), nil))
+		emitAssets = emitAssets.Mul(amt).QuoUint64(common.One)
+	}
 	swapEvt.LiquidityFee = liquidityFee
 
 	if source.IsRune() {
