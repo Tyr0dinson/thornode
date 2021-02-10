@@ -249,11 +249,9 @@ func swapOne(ctx cosmos.Context,
 	tradeSlip = calcSwapSlip(X, x)
 	emitAssets = calcAssetEmission(X, x, Y)
 	if pool.Decimals != 0 && pool.Decimals < common.THORChainDecimals {
-		ctx.Logger().Info("adjust asset decimals", "decimals", pool.Decimals)
 		precisionDiff := common.THORChainDecimals - pool.Decimals
 		amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(precisionDiff), nil))
 		emitAssets = emitAssets.Quo(amt).Mul(amt)
-		ctx.Logger().Info(fmt.Sprintf("emit asset:%s", emitAssets))
 	}
 	swapEvt.LiquidityFee = liquidityFee
 
