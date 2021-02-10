@@ -6,14 +6,16 @@ import (
 	"sort"
 	"strings"
 
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+// NoCoin is empty Coin
 var NoCoin = Coin{
 	Asset:  EmptyAsset,
 	Amount: cosmos.ZeroUint(),
 }
 
+// Coins represent a slice of Coin
 type Coins []Coin
 
 // NewCoin return a new instance of Coin
@@ -24,6 +26,7 @@ func NewCoin(asset Asset, amount cosmos.Uint) Coin {
 	}
 }
 
+// NewCoins create a new Coins structure
 func NewCoins(coins ...Coin) Coins {
 	result := make(Coins, len(coins))
 	for i, c := range coins {
@@ -32,6 +35,7 @@ func NewCoins(coins ...Coin) Coins {
 	return result
 }
 
+// Equals compare two coins to see whether they represent the same information
 func (c Coin) Equals(cc Coin) bool {
 	if !c.Asset.Equals(cc.Asset) {
 		return false
@@ -39,9 +43,13 @@ func (c Coin) Equals(cc Coin) bool {
 	if !c.Amount.Equal(cc.Amount) {
 		return false
 	}
+	if c.Decimals != cc.Decimals {
+		return false
+	}
 	return true
 }
 
+// IsEmpty check whether asset is empty and also amount is zero
 func (c Coin) IsEmpty() bool {
 	if c.Asset.IsEmpty() {
 		return true
@@ -52,6 +60,7 @@ func (c Coin) IsEmpty() bool {
 	return false
 }
 
+// Valid return an error if the coin is not correct
 func (c Coin) Valid() error {
 	if c.Asset.IsEmpty() {
 		return errors.New("Denom cannot be empty")
@@ -63,10 +72,12 @@ func (c Coin) Valid() error {
 	return nil
 }
 
+// IsNative check whether the coin is native on THORChain
 func (c Coin) IsNative() bool {
 	return c.Asset.Chain.Equals(THORChain)
 }
 
+// Native create a new instance of cosmos.Coin
 func (c Coin) Native() (cosmos.Coin, error) {
 	if !c.IsNative() {
 		return cosmos.Coin{}, errors.New("coin is not on thorchain")
@@ -77,8 +88,15 @@ func (c Coin) Native() (cosmos.Coin, error) {
 	), nil
 }
 
+// String implement fmt.Stringer
 func (c Coin) String() string {
 	return fmt.Sprintf("%s %s", c.Amount.String(), c.Asset.String())
+}
+
+// WithDecimals update coin with a decimal
+func (c Coin) WithDecimals(decimal int64) Coin {
+	c.Decimals = decimal
+	return c
 }
 
 func (cs Coins) Valid() error {
@@ -90,7 +108,7 @@ func (cs Coins) Valid() error {
 	return nil
 }
 
-// Check if two lists of coins are equal to each other. Order does not matter
+// Equals Check if two lists of coins are equal to each other. Order does not matter
 func (cs1 Coins) Equals(cs2 Coins) bool {
 	if len(cs1) != len(cs2) {
 		return false
