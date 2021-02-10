@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -174,6 +175,11 @@ func (vm *NetworkMgrV20) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 					// Round 4 = 80%
 					// Round 5 = 100%
 					amt = amt.MulUint64(uint64(nth)).QuoUint64(5)
+				}
+				if coin.Decimals != 0 && coin.Decimals < common.THORChainDecimals {
+					precisionDiff := common.THORChainDecimals - coin.Decimals
+					precisionAdjust := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(precisionDiff), nil))
+					amt = amt.Quo(precisionAdjust).Mul(precisionAdjust)
 				}
 
 				// minus gas costs for our transactions
