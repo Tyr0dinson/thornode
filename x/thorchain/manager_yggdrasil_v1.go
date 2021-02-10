@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/hashicorp/go-multierror"
 
@@ -323,7 +324,13 @@ func (ymgr YggMgrV1) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, totalB
 		// add rune amt (not asset since the two are considered to be equal)
 		// in a single pool X, the value of 1% asset X in RUNE ,equals the 1% RUNE in the same pool
 		yggCoin := ygg.GetCoin(pool.Asset)
-		coin := common.NewCoin(pool.Asset, common.SafeSub(assetAmt, yggCoin.Amount))
+		assetAmt = common.SafeSub(assetAmt, yggCoin.Amount)
+		if pool.Decimals != 0 && pool.Decimals < common.THORChainDecimals {
+			precisionDiff := common.THORChainDecimals - pool.Decimals
+			amt := cosmos.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(precisionDiff), nil))
+			assetAmt = assetAmt.Quo(amt).Mul(amt)
+		}
+		coin := common.NewCoin(pool.Asset, assetAmt)
 		if !coin.IsEmpty() {
 			counter = counter.Add(runeAmt)
 			if !coin.IsNative() {
