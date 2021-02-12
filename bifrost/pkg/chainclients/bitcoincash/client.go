@@ -38,7 +38,7 @@ const (
 	MaximumConfirmation = 99999999
 	MaxAsgardAddresses  = 100
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 250 here , as most of time it will spend 1 input, have 3 output
-	EstimateAverageTxSize = 250
+	EstimateAverageTxSize = 1500
 )
 
 // Client observes bitcoin cash chain and allows to sign and broadcast tx
@@ -592,6 +592,9 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64) (types.TxInItem,
 	output, err := c.getOutput(sender, tx)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to get output from tx: %w", err)
+	}
+	if output.Value <= minSpendableUTXOAmount {
+		return types.TxInItem{}, fmt.Errorf("amount is less than %f, consider as dust,ignore", minSpendableUTXOAmount)
 	}
 	amount, err := bchutil.NewAmount(output.Value)
 	if err != nil {
