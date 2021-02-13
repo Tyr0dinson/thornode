@@ -147,6 +147,8 @@ func (cmgr CompMgrV1) findDynamicAssets(ctx cosmos.Context, comp *Composite) ([]
 		return cmgr.findTopTenCrypto(ctx, comp)
 	case "All Crypto":
 		return cmgr.findAllCrypto(ctx, comp)
+	case "Altcoins":
+		return cmgr.findAltcoins(ctx, comp)
 	default:
 		return nil, fmt.Errorf("cannot find dynamic assets, %s not implemented", comp.Name)
 	}
@@ -162,6 +164,24 @@ func (cmgr CompMgrV1) findAllCrypto(ctx cosmos.Context, comp *Composite) ([]comm
 			return nil, err
 		}
 		if pool.Status != PoolAvailable {
+			continue
+		}
+
+		assets = append(assets, pool.Asset)
+	}
+	return assets, nil
+}
+
+func (cmgr CompMgrV1) findAltcoins(ctx cosmos.Context, comp *Composite) ([]common.Asset, error) {
+	assets := make([]common.Asset, 0)
+	iterator := cmgr.keeper.GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := cmgr.keeper.Cdc().UnmarshalBinaryBare(iterator.Value(), &pool); err != nil {
+			return nil, err
+		}
+		if pool.Status != PoolAvailable || pool.Asset == common.BTCAsset {
 			continue
 		}
 
