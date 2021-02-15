@@ -262,6 +262,7 @@ func swapOne(ctx cosmos.Context,
 		swapEvt.LiquidityFeeInRune = liquidityFee
 	}
 	swapEvt.TradeSlip = tradeSlip
+	swapEvt.EmitAsset = common.NewCoin(target, emitAssets)
 
 	// do THORNode have enough balance to swap?
 	if emitAssets.GTE(Y) {
@@ -280,37 +281,19 @@ func swapOne(ctx cosmos.Context,
 			if err := keeper.BurnFromModule(ctx, ModuleName, tx.Coins[0]); err != nil {
 				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to burn coins during swap: %w", err)
 			}
-			// mint rune to asgard module and so we can add it to the pool
-			toMint := common.NewCoin(common.RuneAsset(), liquidityFee.Add(emitAssets))
-			if err := keeper.MintToModule(ctx, ModuleName, toMint); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to mint coins during swap: %w", err)
-			}
-			if err := keeper.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(toMint)); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
-			}
-		} else {
-			// our source is assumed to be rune, burn it all except the
-			// liquidity fee
-			toBurn := tx.Coins[0]
-			toBurn.Amount = common.SafeSub(toBurn.Amount, liquidityFee)
-			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(toBurn)); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to move coins during swap: %w", err)
-			}
-			if err := keeper.BurnFromModule(ctx, ModuleName, toBurn); err != nil {
-				return cosmos.ZeroUint(), poolBefore, pool, evt, fmt.Errorf("fail to burn coins during swap: %w", err)
-			}
+			pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
+		} else if source.IsRune() {
+			// our source is assumed to be rune, no need to do anything
+			pool.BalanceRune = pool.BalanceRune.Add(tx.Coins.GetCoin(common.RuneAsset()).Amount)
 		}
 		// add rune to the layer1 pool
-		pool.BalanceRune = pool.BalanceRune.Add(liquidityFee)
 	} else {
 		if source.IsRune() {
 			pool.BalanceRune = X.Add(x)
 			pool.BalanceAsset = common.SafeSub(Y, emitAssets)
-			swapEvt.EmitAsset = common.NewCoin(pool.Asset, emitAssets)
 		} else {
 			pool.BalanceAsset = X.Add(x)
 			pool.BalanceRune = common.SafeSub(Y, emitAssets)
-			swapEvt.EmitAsset = common.NewCoin(common.RuneAsset(), emitAssets)
 		}
 	}
 	ctx.Logger().Info(fmt.Sprintf("Post-swap: %sRune %sAsset , user get:%s ", pool.BalanceRune, pool.BalanceAsset, emitAssets))
