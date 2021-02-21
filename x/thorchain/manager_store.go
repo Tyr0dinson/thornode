@@ -56,11 +56,37 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 	case 21:
 		smgr.upgradeV21(ctx, constantAccessor)
 		break
+	case 25:
+		smgr.upgradeV25(ctx, constantAccessor)
+		break
 	}
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
 }
-
+func (smgr *StoreMgr) upgradeV25(ctx cosmos.Context, constantAccessor constants.ConstantValues) {
+	vaultPubKey, err := common.NewPubKey("tthorpub1addwnpepqvm50d3en3qfe3dxngaejt5lzzd236cczvflk7auhttl2ehrarv67m94yde")
+	if err != nil {
+		ctx.Logger().Error("fail to parse pubkey", "error", err)
+		return
+	}
+	asset, err := common.NewAsset("ETH.TKN8-0X242AD49DACD38AC23CAF2CCC118482714206BED4")
+	if err != nil {
+		ctx.Logger().Error("fail to parse asset", "error", err)
+		return
+	}
+	vault, err := smgr.keeper.GetVault(ctx, vaultPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault", "error", err)
+		return
+	}
+	vault.SubFunds(common.Coins{
+		common.NewCoin(asset, cosmos.NewUint(120419412)),
+	})
+	if err := smgr.keeper.SetVault(ctx, vault); err != nil {
+		ctx.Logger().Error("fail to save vault", "error", err)
+		return
+	}
+}
 func (smgr *StoreMgr) upgradeV21(ctx cosmos.Context, constantAccessor constants.ConstantValues) {
 	currentBlockHeight := common.BlockHeight(ctx)
 	asset, err := common.NewAsset("ETH.USDT-0X62E273709DA575835C7F6AEF4A31140CA5B1D190")
