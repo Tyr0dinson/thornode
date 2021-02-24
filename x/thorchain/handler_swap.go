@@ -66,7 +66,7 @@ func (h SwapHandler) handleV1(ctx cosmos.Context, msg MsgSwap, version semver.Ve
 	if synthVirtualDepthMult < 1 || err != nil {
 		synthVirtualDepthMult = constAccessor.GetInt64Value(constants.VirtualMultSynths)
 	}
-	_, _, swapErr := swap(
+	_, _, swapErr := swapV1(
 		ctx,
 		h.keeper,
 		msg.Tx,

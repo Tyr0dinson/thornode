@@ -93,7 +93,7 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, units, gasAsset, err := withdraw(ctx, version, h.keeper, msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, h.keeper, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -183,7 +183,9 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 		cosmos.ZeroDec(),
 		msg.Tx,
 		assetAmount,
-		runeAmt)
+		runeAmt,
+		impLossProtection,
+	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
 		return nil, multierror.Append(errFailSaveEvent, err)
 	}

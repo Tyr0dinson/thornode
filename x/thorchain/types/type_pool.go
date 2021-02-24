@@ -51,6 +51,7 @@ func NewPool() Pool {
 		BalanceRune:  cosmos.ZeroUint(),
 		BalanceAsset: cosmos.ZeroUint(),
 		PoolUnits:    cosmos.ZeroUint(),
+		SynthUnits:   cosmos.ZeroUint(),
 		Status:       PoolStatus_Available,
 	}
 }
@@ -80,6 +81,7 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset-balance: " + m.BalanceAsset.String()))
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("pool-units: " + m.PoolUnits.String()))
+	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))
 	sb.WriteString(fmt.Sprintln("decimals:" + strconv.FormatInt(m.Decimals, 10)))
 	return sb.String()
@@ -117,5 +119,6 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 	if m.BalanceRune.IsZero() || m.BalanceAsset.IsZero() {
 		return cosmos.ZeroUint()
 	}
-	return common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
+	assetAmt := common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
+	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
 }
