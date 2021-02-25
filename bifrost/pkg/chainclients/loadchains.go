@@ -23,7 +23,7 @@ func LoadChains(thorKeys *thorclient.Keys, cfg []config.ChainConfiguration, serv
 		case common.BNBChain:
 			bnb, err := binance.NewBinance(thorKeys, chain, server, thorchainBridge, m, keySignPartyMgr)
 			if err != nil {
-				logger.Error().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
+				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
 				continue
 			}
 			chains[common.BNBChain] = bnb
