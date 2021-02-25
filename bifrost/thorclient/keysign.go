@@ -36,21 +36,28 @@ func (b *ThorchainBridge) GetKeysign(blockHeight int64, pk string) (types.TxOut,
 		return types.TxOut{}, fmt.Errorf("failed to unmarshal TxOut: %w", err)
 	}
 
-	if query.Signature == "" {
-		return types.TxOut{}, errors.New("invalid keysign signature: empty")
-	}
+	// insecure ignore any signatures of the keysign data. This is typically
+	// here to ensure that keysign data is coming from our own thornode and not
+	// from a malicious man in the middle. Insecure should never be turned on
+	// in normal circumstances as it creates a security hole for your own funds
+	// to be stolen by a third party
+	if !b.cfg.Insecure {
+		if query.Signature == "" {
+			return types.TxOut{}, errors.New("invalid keysign signature: empty")
+		}
 
-	buf, err := b.cdc.MarshalBinaryBare(query.Keysign)
-	if err != nil {
-		return types.TxOut{}, fmt.Errorf("fail to marshal keysign block to json: %w", err)
-	}
-	pubKey := b.keys.signerInfo.GetPubKey()
-	s, err := base64.StdEncoding.DecodeString(query.Signature)
-	if err != nil {
-		return types.TxOut{}, errors.New("invalid keysign signature: cannot decode signature")
-	}
-	if !pubKey.VerifyBytes(buf, s) {
-		return types.TxOut{}, errors.New("invalid keysign signature: bad signature")
+		buf, err := b.cdc.MarshalBinaryBare(query.Keysign)
+		if err != nil {
+			return types.TxOut{}, fmt.Errorf("fail to marshal keysign block to json: %w", err)
+		}
+		pubKey := b.keys.signerInfo.GetPubKey()
+		s, err := base64.StdEncoding.DecodeString(query.Signature)
+		if err != nil {
+			return types.TxOut{}, errors.New("invalid keysign signature: cannot decode signature")
+		}
+		if !pubKey.VerifyBytes(buf, s) {
+			return types.TxOut{}, errors.New("invalid keysign signature: bad signature")
+		}
 	}
 
 	return query.Keysign, nil
