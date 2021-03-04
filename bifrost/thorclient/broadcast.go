@@ -82,6 +82,8 @@ func (b *ThorchainBridge) Broadcast(msgs ...stypes.Msg) (common.TxID, error) {
 	}
 	// Code will be the tendermint ABICode , it start at 1 , so if it is an error , code will not be zero
 	if commit.Code > 0 {
+		b.logger.Info().Msgf("all messages: %+v", msgs)
+		b.logger.Info().Msgf("response from thornode: %+v", commit)
 		return txHash, fmt.Errorf("fail to broadcast to THORChain,code:%d", commit.Code)
 	}
 	b.m.GetCounter(metrics.TxToThorchain).Inc()
