@@ -33,7 +33,7 @@ func (d DummySlasher) LackSigning(ctx cosmos.Context, constAccessor constants.Co
 	return kaboom
 }
 
-func (d DummySlasher) SlashNodeAccount(ctx cosmos.Context, observedPubKey common.PubKey, asset common.Asset, slashAmount cosmos.Uint, mgr Manager) error {
+func (d DummySlasher) SlashVault(ctx cosmos.Context, _ common.PubKey, _ common.Coins, mgr Manager) error {
 	return kaboom
 }
 

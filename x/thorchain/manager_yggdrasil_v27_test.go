@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
@@ -258,9 +260,10 @@ func (s YggdrasilManagerV27Suite) TestAbandonYggdrasil(c *C) {
 	yggdrasilVault.Type = YggdrasilVault
 	yggdrasilVault.Status = ActiveVault
 	c.Assert(k.SetVault(ctx, yggdrasilVault), IsNil)
-	ver := semver.MustParse("0.13.0")
+	ver := semver.MustParse("0.27.0")
 	constAccessor := constants.GetConstantValues(ver)
 	ymgr := NewYggMgrV27(k)
+	fmt.Println("TESTTTTTTTTTTTTTTTT")
 	err := ymgr.Fund(ctx, mgr, constAccessor)
 	c.Assert(err, IsNil)
 	// make sure the yggdrasil vault had been removed
@@ -268,7 +271,7 @@ func (s YggdrasilManagerV27Suite) TestAbandonYggdrasil(c *C) {
 	// make sure the node account had been slashed with bond
 	naDisabled, err = k.GetNodeAccount(ctx, naDisabled.NodeAddress)
 	c.Assert(err, IsNil)
-	c.Assert(naDisabled.Bond.Equal(cosmos.NewUint(999325*common.One)), Equals, true)
+	c.Assert(naDisabled.Bond.Equal(cosmos.NewUint(999325*common.One)), Equals, true, Commentf("%d", naDisabled.Bond.Uint64()))
 }
 
 func (s YggdrasilManagerV27Suite) TestAbandonYggdrasilWithDifferentConditions(c *C) {

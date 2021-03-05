@@ -147,23 +147,9 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, version semver.Versio
 		// from a yggdrasil vault, slash the node
 		memo, _ := ParseMemo(tx.Tx.Memo)
 		if memo.IsEmpty() || memo.IsInbound() {
-			vault, err := h.keeper.GetVault(ctx, tx.ObservedPubKey)
-			if err != nil {
-				ctx.Logger().Error("fail to get vault", "error", err)
-				continue
-			}
-			if vault.IsYggdrasil() {
-				// a yggdrasil vault has apparently stolen funds, slash them
-				for _, c := range append(tx.Tx.Coins, tx.Tx.Gas.ToCoins()...) {
-					if err := h.mgr.Slasher().SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount, h.mgr); err != nil {
-						ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
-					}
-				}
-				vault.SubFunds(tx.Tx.Coins)
-				vault.SubFunds(tx.Tx.Gas.ToCoins()) // we don't subsidize the gas when it's theft
-				if err := h.keeper.SetVault(ctx, vault); err != nil {
-					ctx.Logger().Error("fail to save vault", "error", err)
-				}
+			toSlash := tx.Tx.Coins.Adds(tx.Tx.Gas.ToCoins())
+			if err := h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr); err != nil {
+				ctx.Logger().Error("fail to slash vault for stolen funds", "tx", tx.Tx.String(), "error", err)
 			}
 
 			continue

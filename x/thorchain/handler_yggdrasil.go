@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
-	"github.com/hashicorp/go-multierror"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -72,18 +71,7 @@ func (h YggdrasilHandler) handle(ctx cosmos.Context, msg MsgYggdrasil, version s
 }
 
 func (h YggdrasilHandler) slash(ctx cosmos.Context, version semver.Version, pk common.PubKey, coins common.Coins) error {
-	var returnErr error
-	for _, c := range coins {
-		if err := h.mgr.Slasher().SlashNodeAccount(ctx, pk, c.Asset, c.Amount, h.mgr); err != nil {
-			ctx.Logger().Error("fail to slash account", "error", err)
-			if returnErr == nil {
-				returnErr = err
-			} else {
-				returnErr = multierror.Append(returnErr, err)
-			}
-		}
-	}
-	return returnErr
+	return h.mgr.Slasher().SlashVault(ctx, pk, coins, h.mgr)
 }
 
 func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil, version semver.Version) (*cosmos.Result, error) {
@@ -170,7 +158,8 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil, version
 
 	if shouldSlash {
 		ctx.Logger().Info("slash node account, no matched tx out item", "outbound tx", msg.Tx)
-		if err := h.slash(ctx, version, msg.PubKey, msg.Tx.Coins); err != nil {
+		toSlash := msg.Tx.Coins.Adds(msg.Tx.Gas.ToCoins())
+		if err := h.slash(ctx, version, msg.PubKey, toSlash); err != nil {
 			return nil, ErrInternal(err, "fail to slash account")
 		}
 	}
