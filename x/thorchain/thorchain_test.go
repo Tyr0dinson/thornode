@@ -111,6 +111,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	// create starting point, vault and four node active node accounts
 	vault := GetRandomVault()
+	vault.Membership = nil
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(79*common.One)),
@@ -446,6 +447,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 
 	// create active asgard vault
 	asgard := GetRandomVault()
+	asgard.Membership = nil
 	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
 
 	// create pools

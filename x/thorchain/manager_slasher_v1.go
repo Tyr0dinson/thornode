@@ -323,11 +323,15 @@ func (s *SlasherV1) LackSigning(ctx cosmos.Context, constAccessor constants.Cons
 // it will slash the node account who does that by taking 1.5 * extra fund from
 // node account's bond and subsidise the pool that actually lost it.
 func (s *SlasherV1) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error {
+	fmt.Println("SLASHING VAULT...")
+	defer fmt.Println("done.")
 	if coins.IsEmpty() {
+		fmt.Println("return 1")
 		return nil
 	}
 	vault, err := s.keeper.GetVault(ctx, vaultPK)
 	if err != nil {
+		fmt.Println("return 2")
 		return fmt.Errorf("fail to get slash vault (pubkey %s), %w", vaultPK, err)
 	}
 	membership := vault.GetMembership()
@@ -353,6 +357,10 @@ func (s *SlasherV1) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins 
 		}
 
 		for _, coin := range coins {
+			fmt.Printf("%s %s\n", member, coin)
+			if coin.IsEmpty() {
+				continue
+			}
 			slashAmount := common.GetShare(na.Bond, totalBond, coin.Amount)
 			ctx.Logger().Info("slash node account", "node address", na.NodeAddress.String(), "asset", coin.Asset.String(), "amount", slashAmount.String())
 
@@ -433,11 +441,9 @@ func (s *SlasherV1) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins 
 		if err != nil {
 			ctx.Logger().Error("fail to save node account for slash", "error", err)
 		}
+		fmt.Println("donne")
 	}
-	vault.SubFunds(coins)
-	if err := s.keeper.SetVault(ctx, vault); err != nil {
-		ctx.Logger().Error("fail to save vault for slash", "error", err)
-	}
+	fmt.Println("return 3")
 	return nil
 }
 

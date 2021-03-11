@@ -28,11 +28,9 @@ func (ymgr YggMgrV27) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	// Check if we have triggered the ragnarok protocol
 	ragnarokHeight, err := ymgr.keeper.GetRagnarokBlockHeight(ctx)
 	if err != nil {
-		fmt.Println("BAR 1")
 		return fmt.Errorf("fail to get ragnarok height: %w", err)
 	}
 	if ragnarokHeight > 0 {
-		fmt.Println("BAR 2")
 		return nil
 	}
 
@@ -40,12 +38,10 @@ func (ymgr YggMgrV27) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	retiring, err := ymgr.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
 	if err != nil {
 		ctx.Logger().Error("fail to get retiring vaults", "error", err)
-		fmt.Println("BAR 3")
 		return err
 	}
 	if len(retiring) > 0 {
 		// skip yggdrasil funding while a migration is in progress
-		fmt.Println("BAR 4")
 		return nil
 	}
 
@@ -53,17 +49,14 @@ func (ymgr YggMgrV27) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	totalBond := cosmos.ZeroUint()
 	nodeAccs, err := ymgr.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
-		fmt.Println("BAR 5")
 		return err
 	}
 	minimumNodesForYggdrasil := constAccessor.GetInt64Value(constants.MinimumNodesForYggdrasil)
 	if int64(len(nodeAccs)) < minimumNodesForYggdrasil {
-		fmt.Println("BAR 6")
 		return nil
 	}
 
 	// check abandon yggdrasil
-	fmt.Println("BAR 7")
 	if err := ymgr.abandonYggdrasilVaults(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to check whether need to abandon yggdrasil vault", "error", err)
 	}
@@ -403,7 +396,6 @@ func (ymgr YggMgrV27) abandonYggdrasilVaults(ctx cosmos.Context, mgr Manager) er
 			continue
 		}
 
-		fmt.Println("SLASH V")
 		if err := ymgr.slash(ctx, slasher, mgr, na.PubKeySet.Secp256k1, v); err != nil {
 			ctx.Logger().Error("fail to slash node account", "key", na.PubKeySet.Secp256k1, "error", err)
 			continue
@@ -419,5 +411,10 @@ func (ymgr YggMgrV27) abandonYggdrasilVaults(ctx cosmos.Context, mgr Manager) er
 
 func (ymgr YggMgrV27) slash(ctx cosmos.Context, slasher Slasher, mgr Manager, pk common.PubKey, ygg Vault) error {
 	ctx.Logger().Info(fmt.Sprintf("slash, node account %s churned out , but fail to return yggdrasil fund", pk.String()), "coins", ygg.Coins.String())
-	return slasher.SlashVault(ctx, pk, ygg.Coins, mgr)
+	err := slasher.SlashVault(ctx, pk, ygg.Coins, mgr)
+	ygg.SubFunds(ygg.Coins)
+	if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
+		return fmt.Errorf("fail to save yggdrasil vault: %w", err)
+	}
+	return err
 }
