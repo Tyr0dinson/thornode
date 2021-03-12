@@ -173,6 +173,10 @@ func (c *Client) GetHeight() (int64, error) {
 	return c.client.GetBlockCount()
 }
 
+func (c *Client) IsBlockScannerHealthy() bool {
+	return c.blockScanner.IsHealthy()
+}
+
 // GetAddress returns address from pubkey
 func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 	addr, err := poolPubKey.GetAddress(common.BTCChain)
@@ -490,7 +494,6 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	block, err := c.getBlock(height)
 	if err != nil {
 		if rpcErr, ok := err.(*btcjson.RPCError); ok && rpcErr.Code == btcjson.ErrRPCInvalidParameter {
-			// this means the tx had been broadcast to chain, it must be another signer finished quicker then us
 			return txIn, btypes.UnavailableBlock
 		}
 		return txIn, fmt.Errorf("fail to get block: %w", err)
