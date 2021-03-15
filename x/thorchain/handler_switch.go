@@ -93,11 +93,11 @@ func (h SwitchHandler) handleV1(ctx cosmos.Context, msg MsgSwitch, version semve
 
 func (h SwitchHandler) toNative(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
 	coin := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount)
-
 	addr, err := cosmos.AccAddressFromBech32(msg.Destination.String())
 	if err != nil {
 		return nil, ErrInternal(err, "fail to parse thor address")
 	}
+
 	if err := h.keeper.MintAndSendToAccount(ctx, addr, coin); err != nil {
 		return nil, ErrInternal(err, "fail to mint native rune coins")
 	}
