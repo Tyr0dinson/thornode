@@ -58,8 +58,14 @@ func refundTxV32(ctx cosmos.Context, tx ObservedTx, mgr Manager, keeper keeper.K
 		}
 		// BEP2 RUNE can be refund but the amount of Native Rune has been minted before , thus need to be burned
 		if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.BNBChain) {
-			if err := keeper.BurnFromModule(ctx, AsgardName, common.NewCoin(common.RuneNative, coin.Amount)); err != nil {
+			// send those RUNE to ModuleName account , so we can burn it
+			if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, common.Coins{common.NewCoin(common.RuneNative, coin.Amount)}); err != nil {
+				ctx.Logger().Error("fail to send native RUNE from asgard module", "error", err)
+				continue
+			}
+			if err := keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneNative, coin.Amount)); err != nil {
 				ctx.Logger().Error("fail to burn native RUNE from asgard module", "error", err)
+				continue
 			}
 			// update network data
 			network, err := keeper.GetNetwork(ctx)
