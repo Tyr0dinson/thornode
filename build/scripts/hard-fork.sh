@@ -13,10 +13,12 @@ cp -r ~/.thornode/data ~/.thornode/data.$DATE.bak
 thornode export --height $HARDFORK_BLOCK_HEIGHT > thorchain_genesis_export.$DATE.json
 
 # delete existing data files
-rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornode/data/cs.wal ~/.thornode/data/evidence.db ~/.thornode/data/snapshots ~/.thornode/data/state.db ~/.thornode/data/tx_index.db
+rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornode/data/cs.wal ~/.thornode/data/evidence.db ~/.thornode/data/snapshots ~/.thornode/data/state.db ~/.thornode/data/tx_index.db ~/.thornode/data/priv_validator_state.json
 
 # delete old genesis file
 rm -rf ~/.thornode/config/genesis.json
+
+# if we need to run some command to change the state
 
 # copied exported genesis file to the config directory
 cp thorchain_genesis_export.$DATE.json ~/.thornode/config/genesis.json
