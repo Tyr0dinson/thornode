@@ -70,6 +70,8 @@ func (h SwitchHandler) validateV1(ctx cosmos.Context, msg MsgSwitch) error {
 func (h SwitchHandler) handle(ctx cosmos.Context, msg MsgSwitch, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgSwitch request", "destination address", msg.Destination.String())
 	if version.GTE(semver.MustParse("0.1.0")) {
+		return h.handleV32(ctx, msg, version, constAccessor)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg, version, constAccessor)
 	}
 	return nil, errBadVersion
@@ -120,4 +122,27 @@ func (h SwitchHandler) toNative(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Resu
 	}
 
 	return &cosmos.Result{}, nil
+}
+func (h SwitchHandler) handleV32(ctx cosmos.Context, msg MsgSwitch, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	haltHeight, err := h.keeper.GetMimir(ctx, "HaltTHORChain")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
+	}
+	if haltHeight > 0 && common.BlockHeight(ctx) > haltHeight {
+		return nil, fmt.Errorf("mimir has halted THORChain transactions")
+	}
+
+	if !msg.Tx.Coins[0].IsNative() && msg.Tx.Coins[0].Asset.IsRune() {
+		coin := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount)
+		addr, err := cosmos.AccAddressFromBech32(msg.Destination.String())
+		if err != nil {
+			return nil, ErrInternal(err, "fail to parse thor address")
+		}
+		if err := h.keeper.SendFromModuleToAccount(ctx, AsgardName, addr, common.Coins{coin}); err != nil {
+			return nil, fmt.Errorf("fail to send native RUNE from asgard to %s, err:%w", addr, err)
+		}
+		return &cosmos.Result{}, nil
+	}
+
+	return nil, fmt.Errorf("only non-native rune can be 'switched' to native rune")
 }
