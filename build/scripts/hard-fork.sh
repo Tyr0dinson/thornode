@@ -19,6 +19,11 @@ rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornod
 rm -rf ~/.thornode/config/genesis.json
 
 # if we need to run some command to change the state
+echo '{
+  "height": "0",
+  "round": 0,
+  "step": 0
+}' > ~/.thornode/data/priv_validator_state.json
 
 # copied exported genesis file to the config directory
 cp thorchain_genesis_export.$DATE.json ~/.thornode/config/genesis.json
