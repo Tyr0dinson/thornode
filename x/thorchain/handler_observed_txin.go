@@ -434,10 +434,14 @@ func (h ObservedTxInHandler) mintNativeRuneToAsgard(ctx cosmos.Context, txIn Obs
 		}
 
 		coin := common.NewCoin(common.RuneNative, c.Amount)
-		if err := h.keeper.MintToModule(ctx, AsgardName, coin); err != nil {
+		if err := h.keeper.MintToModule(ctx, ModuleName, coin); err != nil {
+			ctx.Logger().Error("fail to mint Native RUNE", "error", err)
 			return ErrInternal(err, "fail to mint native rune coins")
 		}
-
+		if err := h.keeper.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.Coins{coin}); err != nil {
+			ctx.Logger().Error("fail to send from thorchain to asgard", "error", err)
+			return ErrInternal(err, "fail to send from thorchain to asgard")
+		}
 		// update network data
 		network, err := h.keeper.GetNetwork(ctx)
 		if err != nil {
