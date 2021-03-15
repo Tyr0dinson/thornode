@@ -2,7 +2,7 @@
 
 set -ex
 
-HARDFORK_BLOCK_HEIGHT="${HARDFORK_BLOCK_HEIGHT:-1}"
+HARDFORK_BLOCK_HEIGHT="${HARDFORK_BLOCK_HEIGHT:--1}"
 DATE=$(date +%s)
 
 # backup first
@@ -10,7 +10,7 @@ cp -r ~/.thornode/config ~/.thornode/config.$DATE.bak
 cp -r ~/.thornode/data ~/.thornode/data.$DATE.bak
 
 # export genesis file
-thornode export --heigth $HARDFORK_BLOCK_HEIGHT > thorchain_genesis_export.$DATE.json
+thornode export --height $HARDFORK_BLOCK_HEIGHT > thorchain_genesis_export.$DATE.json
 
 # delete existing data files
 rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornode/data/cs.wal ~/.thornode/data/evidence.db ~/.thornode/data/snapshots ~/.thornode/data/state.db ~/.thornode/data/tx_index.db
