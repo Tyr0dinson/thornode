@@ -269,7 +269,9 @@ func GetObserverManager(version semver.Version) (ObserverManager, error) {
 
 // GetSwapQueue retrieve a SwapQueue that is compatible with the given version
 func GetSwapQueue(keeper keeper.Keeper, version semver.Version) (SwapQueue, error) {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.32.0")) {
+		return NewSwapQv32(keeper), nil
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return NewSwapQv1(keeper), nil
 	}
 	return nil, errInvalidVersion

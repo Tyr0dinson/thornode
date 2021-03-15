@@ -65,7 +65,9 @@ func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn)
 }
 
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.32.0")) {
+		return h.handleV32(ctx, version, msg, constAccessor)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg, constAccessor)
 	}
 	return nil, errBadVersion
@@ -380,7 +382,7 @@ func (h ObservedTxInHandler) handleV32(ctx cosmos.Context, version semver.Versio
 		m, txErr := processOneTxIn(ctx, h.keeper, txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
-			if newErr := refundTx(ctx, tx, h.mgr, h.keeper, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
+			if newErr := refundTxV32(ctx, tx, h.mgr, h.keeper, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 				ctx.Logger().Error("fail to refund", "error", err)
 			}
 			continue
@@ -393,7 +395,7 @@ func (h ObservedTxInHandler) handleV32(ctx cosmos.Context, version semver.Versio
 		if isSwap || isAddLiquidity {
 			if (haltTrading > 0 && haltTrading < common.BlockHeight(ctx) && err == nil) || h.keeper.RagnarokInProgress(ctx) {
 				ctx.Logger().Info("trading is halted!!")
-				if newErr := refundTx(ctx, tx, h.mgr, h.keeper, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
+				if newErr := refundTxV32(ctx, tx, h.mgr, h.keeper, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
 					ctx.Logger().Error("fail to refund for halted trading", "error", err)
 				}
 				continue
@@ -408,7 +410,7 @@ func (h ObservedTxInHandler) handleV32(ctx cosmos.Context, version semver.Versio
 
 		_, err = handler(ctx, m)
 		if err != nil {
-			if err := refundTx(ctx, tx, h.mgr, h.keeper, constAccessor, CodeTxFail, err.Error(), ""); err != nil {
+			if err := refundTxV32(ctx, tx, h.mgr, h.keeper, constAccessor, CodeTxFail, err.Error(), ""); err != nil {
 				ctx.Logger().Error("fail to refund", "error", err)
 			}
 		}
@@ -421,6 +423,7 @@ func (h ObservedTxInHandler) handleV32(ctx cosmos.Context, version semver.Versio
 	return &cosmos.Result{}, nil
 }
 
+// mintNativeRuneToAsgard if there are BEP2 RUNE / ERC20 RUNE
 func (h ObservedTxInHandler) mintNativeRuneToAsgard(ctx cosmos.Context, txIn ObservedTx) error {
 	for _, c := range txIn.Tx.Coins {
 		if !c.Asset.IsRune() {
