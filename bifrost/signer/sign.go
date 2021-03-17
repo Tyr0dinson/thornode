@@ -188,7 +188,6 @@ func (s *Signer) runWithContext(ctx context.Context, fn func() error) error {
 	case err := <-ch:
 		return err
 	}
-	return nil
 }
 
 func (s *Signer) processTransactions() {
