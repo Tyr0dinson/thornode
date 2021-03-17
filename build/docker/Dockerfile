@@ -9,7 +9,7 @@ FROM golang:1.15.5 AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
-ENV CGO_ENABLED=0
+ENV CGO_ENABLED=1
 ENV GOOS=linux
 
 RUN apt update -q && apt install -y protobuf-compiler
@@ -26,10 +26,10 @@ RUN make install
 #
 # Main
 #
-FROM alpine
+FROM ubuntu
+RUN apt-get update
 
-RUN apk add --update gcc musl-dev python3-dev libffi-dev openssl-dev jq curl bind-tools py3-pip protoc && \
-    rm -rf /var/cache/apk/*
+RUN apt-get install python3-dev jq curl python3-pip -y
 
 RUN pip3 install requests==2.22.0 web3==5.12.0
 
