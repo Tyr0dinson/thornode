@@ -16,6 +16,9 @@ rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornod
 # delete old genesis file
 rm -rf ~/.thornode/config/genesis.json
 
+# delete old addrbook
+rm -rf ~/.thornode/config/addrbook.json
+
 # if we need to run some command to change the state
 echo '{
   "height": "0",

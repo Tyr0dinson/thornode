@@ -33,14 +33,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
     NODE_ADDRESS=$(echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME -a --keyring-backend file)
     init_chain $NODE_ADDRESS
 
-    if [[ "$PEER" != "none" ]]; then
-      fetch_genesis $PEER
-
-      # add persistent peer tendermint config
-      NODE_ID=$(fetch_node_id $PEER)
-      peer_list $NODE_ID $PEER
-    fi
-
     if [[ "$SEEDS" != "none" ]]; then
       fetch_genesis_from_seeds $SEEDS
 
@@ -104,12 +96,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
     fi
 
 else
-    # update seeds tendermint config if available
-    if [[ "$PEER" != "none" ]]; then
-      # add persistent peer tendermint config
-      NODE_ID=$(fetch_node_id $PEER)
-      peer_list $NODE_ID $PEER
-    fi
 
     if [[ "$SEEDS" != "none" ]]; then
       # add seeds tendermint config
