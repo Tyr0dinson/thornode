@@ -8,23 +8,17 @@ cp -r ~/.thornode/config ~/.thornode/config.$DATE.bak
 cp -r ~/.thornode/data ~/.thornode/data.$DATE.bak
 
 # export genesis file
-thornode export --height $HARDFORK_BLOCK_HEIGHT > thorchain_genesis_export.$DATE.json
+thornode export --height $HARDFORK_BLOCK_HEIGHT >thorchain_genesis_export.$DATE.json
 
-# delete existing data files
-rm -rf ~/.thornode/data/application.db ~/.thornode/data/blockstore.db ~/.thornode/data/cs.wal ~/.thornode/data/evidence.db ~/.thornode/data/snapshots ~/.thornode/data/state.db ~/.thornode/data/tx_index.db ~/.thornode/data/priv_validator_state.json
+# reset the database
+thornode unsafe-reset-all
 
-# delete old genesis file
-rm -rf ~/.thornode/config/genesis.json
-
-# delete old addrbook
-rm -rf ~/.thornode/config/addrbook.json
-
-# if we need to run some command to change the state
-echo '{
-  "height": "0",
-  "round": 0,
-  "step": 0
-}' > ~/.thornode/data/priv_validator_state.json
+# keep all the settings
+cp ~/.thornode/config.$DATE.bak/addrbook.json ~/.thornode/config/addrbook.json
+cp ~/.thornode/config.$DATE.bak/addrbook.json ~/.thornode/config/app.toml
+cp ~/.thornode/config.$DATE.bak/config.toml ~/.thornode/config/config.toml
+cp ~/.thornode/config.$DATE.bak/node_key.json ~/.thornode/config/node_key.json
+cp ~/.thornode/config.$DATE.bak/priv_validator_key.json ~/.thornode/config/priv_validator_key.json
 
 # copied exported genesis file to the config directory
 cp thorchain_genesis_export.$DATE.json ~/.thornode/config/genesis.json
