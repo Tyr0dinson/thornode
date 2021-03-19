@@ -104,7 +104,7 @@ smoke-test:
     name: integration
   script:
     - cd ./heimdall
-    - make smoke
+    - make build smoke
   after_script:
     - ./scripts/docker_logs.sh
 
