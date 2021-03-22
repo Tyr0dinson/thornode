@@ -173,6 +173,154 @@ func swapV1(ctx cosmos.Context,
 	return assetAmount, swapEvents, nil
 }
 
+func swapV36(ctx cosmos.Context,
+	keeper keeper.Keeper,
+	tx common.Tx,
+	target common.Asset,
+	destination common.Address,
+	tradeTarget cosmos.Uint,
+	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager) (cosmos.Uint, []*EventSwap, error) {
+	var swapEvents []*EventSwap
+
+	// determine if target is layer1 vs synthetic asset
+	if !target.IsRune() && !destination.IsChain(target.Chain) {
+		if destination.IsChain(common.THORChain) {
+			target = target.GetSyntheticAsset()
+		} else {
+			target = target.GetLayer1Asset()
+		}
+	}
+
+	if err := validateMessageV1(tx, target, destination); err != nil {
+		return cosmos.ZeroUint(), swapEvents, err
+	}
+	source := tx.Coins[0].Asset
+
+	if err := validatePoolsV1(ctx, keeper, source, target); err != nil {
+		if err == errInvalidPoolStatus && source.IsSyntheticAsset() {
+			// the pool is not available, but we can allow synthetic assets to still swap back to rune/asset ok
+		} else {
+			return cosmos.ZeroUint(), swapEvents, err
+		}
+	}
+	if !destination.IsChain(target.GetChain()) {
+		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("destination address is not a valid %s address", target.GetChain())
+	}
+	if source.Equals(target) {
+		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
+	}
+
+	poolsBeforeSwap := make([]Pool, 0)
+	restorePool := func(pools []Pool) {
+		// when it fail to send out the txout item , thus let's restore the pool balance here , thus nothing happen to the pool
+		// given the previous pool status is already in memory, so here just apply it again
+		for _, pool := range pools {
+			if err := keeper.SetPool(ctx, pool); err != nil {
+				ctx.Logger().Error("fail to save pool to previous state", "error", err, "pool", pool.Asset)
+			}
+		}
+
+	}
+	isDoubleSwap := !source.IsRune() && !target.IsRune()
+	if isDoubleSwap {
+		var swapErr error
+		var swapEvt *EventSwap
+		var amt cosmos.Uint
+		// Here we use a tradeTarget of 0 because the target is for the next swap asset in a double swap
+		amt, poolBefore, sourcePool, swapEvt, swapErr := swapOneV1(ctx, keeper, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), transactionFee, synthVirtualDepthMult)
+		if swapErr != nil {
+			return cosmos.ZeroUint(), swapEvents, swapErr
+		}
+		// save the pool first
+		if err := keeper.SetPool(ctx, sourcePool); err != nil {
+			return cosmos.ZeroUint(), swapEvents, errSwapFail
+		}
+
+		poolsBeforeSwap = append(poolsBeforeSwap, poolBefore)
+		tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), amt)}
+		tx.Gas = nil
+		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
+		swapEvents = append(swapEvents, swapEvt)
+
+	}
+	assetAmount, poolBefore, pool, swapEvt, swapErr := swapOneV1(ctx, keeper, tx, target, destination, tradeTarget, transactionFee, synthVirtualDepthMult)
+	if swapErr != nil {
+		restorePool(poolsBeforeSwap)
+		return cosmos.ZeroUint(), swapEvents, swapErr
+	}
+
+	if !tradeTarget.IsZero() && assetAmount.LT(tradeTarget) {
+		restorePool(poolsBeforeSwap)
+		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, tradeTarget)
+	}
+	if target.IsRune() {
+		if assetAmount.LTE(transactionFee) {
+			restorePool(poolsBeforeSwap)
+			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
+		}
+	}
+	// emit asset is zero
+	if assetAmount.IsZero() {
+		restorePool(poolsBeforeSwap)
+		return cosmos.ZeroUint(), swapEvents, errors.New("zero emit asset")
+	}
+
+	swapEvents = append(swapEvents, swapEvt)
+	found := false
+	for _, p := range poolsBeforeSwap {
+		if p.Asset == poolBefore.Asset {
+			found = true
+			break
+		}
+	}
+	if !found {
+		poolsBeforeSwap = append(poolsBeforeSwap, poolBefore)
+	}
+	// persistent pools to the key value store as the next step will be trying to add TxOutItem
+	// during AddTxOutItem , it will try to take some asset from the emitted asset, and add it back to pool
+	// thus it put some asset back to compensate gas
+
+	if err := keeper.SetPool(ctx, pool); err != nil {
+		return cosmos.ZeroUint(), swapEvents, errSwapFail
+	}
+
+	toi := TxOutItem{
+		Chain:     target.GetChain(),
+		InHash:    tx.ID,
+		ToAddress: destination,
+		Coin:      common.NewCoin(target, assetAmount),
+	}
+	// let the txout manager mint our outbound asset if it is a synthetic asset
+	if toi.Chain.IsTHORChain() && (toi.Coin.Asset.IsSyntheticAsset() || source.IsSyntheticAsset()) {
+		toi.ModuleName = ModuleName
+	}
+
+	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
+	if err != nil {
+		// when the emit asset is not enough to pay for tx fee, consider it as a success
+		if !errors.Is(err, ErrNotEnoughToPayFee) {
+			restorePool(poolsBeforeSwap)
+			return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
+		}
+		ok = true
+	}
+	if !ok {
+		return assetAmount, swapEvents, errFailAddOutboundTx
+	}
+
+	// emit the swap events , by this stage , it is guarantee that swap already happened
+	for _, evt := range swapEvents {
+		if err := mgr.EventMgr().EmitSwapEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit swap event", "error", err)
+		}
+		if err := keeper.AddToLiquidityFees(ctx, evt.Pool, evt.LiquidityFeeInRune); err != nil {
+			return assetAmount, swapEvents, fmt.Errorf("fail to add to liquidity fees: %w", err)
+		}
+	}
+
+	return assetAmount, swapEvents, nil
+}
+
 func swapOneV1(ctx cosmos.Context,
 	keeper keeper.Keeper, tx common.Tx,
 	target common.Asset,
