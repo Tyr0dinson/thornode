@@ -211,7 +211,7 @@ func swapV36(ctx cosmos.Context,
 	}
 
 	poolsBeforeSwap := make([]Pool, 0)
-	restorePool := func(pools []Pool) {
+	restorePools := func(pools []Pool) {
 		// when it fail to send out the txout item , thus let's restore the pool balance here , thus nothing happen to the pool
 		// given the previous pool status is already in memory, so here just apply it again
 		for _, pool := range pools {
@@ -245,23 +245,23 @@ func swapV36(ctx cosmos.Context,
 	}
 	assetAmount, poolBefore, pool, swapEvt, swapErr := swapOneV1(ctx, keeper, tx, target, destination, tradeTarget, transactionFee, synthVirtualDepthMult)
 	if swapErr != nil {
-		restorePool(poolsBeforeSwap)
+		restorePools(poolsBeforeSwap)
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
 
 	if !tradeTarget.IsZero() && assetAmount.LT(tradeTarget) {
-		restorePool(poolsBeforeSwap)
+		restorePools(poolsBeforeSwap)
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, tradeTarget)
 	}
 	if target.IsRune() {
 		if assetAmount.LTE(transactionFee) {
-			restorePool(poolsBeforeSwap)
+			restorePools(poolsBeforeSwap)
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
 		}
 	}
 	// emit asset is zero
 	if assetAmount.IsZero() {
-		restorePool(poolsBeforeSwap)
+		restorePools(poolsBeforeSwap)
 		return cosmos.ZeroUint(), swapEvents, errors.New("zero emit asset")
 	}
 
@@ -299,7 +299,7 @@ func swapV36(ctx cosmos.Context,
 	if err != nil {
 		// when the emit asset is not enough to pay for tx fee, consider it as a success
 		if !errors.Is(err, ErrNotEnoughToPayFee) {
-			restorePool(poolsBeforeSwap)
+			restorePools(poolsBeforeSwap)
 			return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
 		}
 		ok = true
