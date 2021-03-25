@@ -377,11 +377,12 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	// decom a chain and not accept new trades/liquidity providing
 
 	type address struct {
-		Chain   common.Chain   `json:"chain"`
-		PubKey  common.PubKey  `json:"pub_key"`
-		Address common.Address `json:"address"`
-		Router  common.Address `json:"router"`
-		Halted  bool           `json:"halted"`
+		Chain   common.Chain   `json:"chain,omitempty"`
+		PubKey  common.PubKey  `json:"pub_key,omitempty"`
+		Address common.Address `json:"address,omitempty"`
+		Router  common.Address `json:"router,omitempty"`
+		Halted  bool           `json:"halted,omitempty"`
+		GasRate cosmos.Uint    `json:"gas_rate,omitempty"`
 	}
 	var resp []address
 	version := keeper.GetLowestActiveVersion(ctx)
@@ -396,7 +397,10 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
-
+	mgr := NewManagers(keeper)
+	if err := mgr.BeginBlock(ctx); err != nil {
+		return nil, fmt.Errorf("fail to build manager: %w", err)
+	}
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chain == common.THORChain {
@@ -408,13 +412,14 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
 		cc := vault.GetContract(chain)
-
+		gasRate := mgr.GasMgr().GetGasRate(ctx, chain)
 		addr := address{
 			Chain:   chain,
 			PubKey:  vault.PubKey,
 			Address: vaultAddress,
 			Router:  cc.Router,
 			Halted:  halted,
+			GasRate: gasRate,
 		}
 
 		resp = append(resp, addr)
