@@ -163,7 +163,6 @@ func (tx Tx) Valid() error {
 	if err := tx.Gas.Valid(); err != nil {
 		return err
 	}
-	// relax this check from 150 -> 180
 	if len([]byte(tx.Memo)) > constants.MaxMemoSize {
 		return fmt.Errorf("memo must not exceed %d bytes: %d", constants.MaxMemoSize, len([]byte(tx.Memo)))
 	}
