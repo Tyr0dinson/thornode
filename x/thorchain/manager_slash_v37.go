@@ -427,9 +427,6 @@ func (s *SlasherV37) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 		}
 		totalBond = totalBond.Add(na.Bond)
 	}
-
-	activeCount, _ := s.keeper.TotalActiveNodeAccount(ctx)
-
 	for _, member := range membership {
 		na, err := s.keeper.GetNodeAccountByPubKey(ctx, member)
 		if err != nil {
@@ -508,12 +505,6 @@ func (s *SlasherV37) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 			if err := mgr.EventMgr().EmitEvent(ctx, eventSlash); err != nil {
 				ctx.Logger().Error("fail to emit slash event", "error", err)
 			}
-		}
-
-		// Ban the node account, if we not banning the remainder node accounts
-		if activeCount > len(membership) && vault.IsYggdrasil() {
-			na.ForcedToLeave = true
-			na.LeaveScore = 1 // Set Leave Score to 1, which means the nodes is bad
 		}
 
 		err = s.keeper.SetNodeAccount(ctx, na)
