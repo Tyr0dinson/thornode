@@ -276,6 +276,8 @@ func (s *SlashingV37Suite) TestNotSigningSlash(c *C) {
 	c.Assert(keeper.voter.Actions, HasLen, 1)
 	// ensure we've updated our action item
 	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(outItems[0].VaultPubKey), Equals, true)
+	// make sure the txout item's OutHash has been set to blankTxID
+	c.Assert(txOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
 }
 
 func (s *SlashingV37Suite) TestNewSlasher(c *C) {
