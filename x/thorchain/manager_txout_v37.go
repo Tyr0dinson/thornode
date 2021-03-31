@@ -266,8 +266,8 @@ func (tos *TxOutStorageV37) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				if outputs[i].Coin.Amount.LTE(assetFee) {
 					assetFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
-				// if pool asset depth is zero, no asset fee is taken
-				if pool.BalanceAsset.IsZero() {
+				// if pool units is zero, no asset fee is taken
+				if pool.PoolUnits.IsZero() {
 					assetFee = cosmos.ZeroUint()
 				}
 				synthUnits := cosmos.ZeroUint()

@@ -2,7 +2,6 @@ package thorchain
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -139,8 +138,6 @@ func newYggdrasilHandlerTestHelper(c *C) yggdrasilHandlerTestHelper {
 }
 
 func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
-	fmt.Println("START")
-	defer fmt.Println("END")
 	testCases := []struct {
 		name           string
 		messageCreator func(helper yggdrasilHandlerTestHelper) cosmos.Msg
