@@ -129,7 +129,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 
 	midLiquidityPool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Assert(midLiquidityPool.PendingInboundRune.String(), Equals, "10000000000")
+	c.Assert(midLiquidityPool.PendingInboundRune, Equals, "10000000000")
 
 	msg.RuneAmount = cosmos.ZeroUint()
 	msg.AssetAmount = cosmos.NewUint(100 * common.One)
@@ -140,8 +140,8 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(postLiquidityPool.BalanceAsset.String(), Equals, "10000000000")
 	c.Assert(postLiquidityPool.BalanceRune.String(), Equals, "10000000000")
-	c.Assert(postLiquidityPool.PendingInboundAsset.String(), Equals, "0")
-	c.Assert(postLiquidityPool.PendingInboundRune.String(), Equals, "0")
+	c.Assert(postLiquidityPool.PendingInboundAsset, Equals, "0")
+	c.Assert(postLiquidityPool.PendingInboundRune, Equals, "0")
 }
 
 func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNewPool(c *C) {

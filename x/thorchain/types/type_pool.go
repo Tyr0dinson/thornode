@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -48,13 +50,11 @@ type Pools []Pool
 // NewPool Returns a new Pool
 func NewPool() Pool {
 	return Pool{
-		BalanceRune:         cosmos.ZeroUint(),
-		BalanceAsset:        cosmos.ZeroUint(),
-		PoolUnits:           cosmos.ZeroUint(),
-		SynthUnits:          cosmos.ZeroUint(),
-		PendingInboundRune:  cosmos.ZeroUint(),
-		PendingInboundAsset: cosmos.ZeroUint(),
-		Status:              PoolStatus_Available,
+		BalanceRune:  cosmos.ZeroUint(),
+		BalanceAsset: cosmos.ZeroUint(),
+		PoolUnits:    cosmos.ZeroUint(),
+		SynthUnits:   cosmos.ZeroUint(),
+		Status:       PoolStatus_Available,
 	}
 }
 
@@ -84,8 +84,12 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("pool-units: " + m.PoolUnits.String()))
 	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
-	sb.WriteString(fmt.Sprintln("pending-inbound-rune: " + m.PendingInboundRune.String()))
-	sb.WriteString(fmt.Sprintln("pending-inbound-asset: " + m.PendingInboundAsset.String()))
+	if m.PendingInboundRune != "" {
+		sb.WriteString(fmt.Sprintln("pending-inbound-rune: " + m.PendingInboundRune))
+	}
+	if m.PendingInboundAsset != "" {
+		sb.WriteString(fmt.Sprintln("pending-inbound-asset: " + m.PendingInboundAsset))
+	}
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))
 	sb.WriteString(fmt.Sprintln("decimals:" + strconv.FormatInt(m.Decimals, 10)))
 	return sb.String()
@@ -125,4 +129,16 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 	}
 	assetAmt := common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
 	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
+}
+func (m Pool) GetPendingInboundRune() cosmos.Uint {
+	if m.PendingInboundRune == "" {
+		return cosmos.ZeroUint()
+	}
+	return sdk.NewUintFromString(m.PendingInboundRune)
+}
+func (m Pool) GetPendingInboundAsset() cosmos.Uint {
+	if m.PendingInboundAsset == "" {
+		return cosmos.ZeroUint()
+	}
+	return sdk.NewUintFromString(m.PendingInboundAsset)
 }

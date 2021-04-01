@@ -577,7 +577,7 @@ func (h AddLiquidityHandler) addLiquidityV37(ctx cosmos.Context,
 
 	// if we have an asset address and no asset amount, put the rune pending
 	if stage && addAssetAmount.IsZero() {
-		pool.PendingInboundRune = pool.PendingInboundRune.Add(common.SafeSub(addRuneAmount, su.PendingRune))
+		pool.PendingInboundRune = pool.GetPendingInboundRune().Add(common.SafeSub(addRuneAmount, su.PendingRune)).String()
 		su.PendingRune = addRuneAmount
 		su.PendingTxID = requestTxHash
 		h.keeper.SetLiquidityProvider(ctx, su)
@@ -589,7 +589,7 @@ func (h AddLiquidityHandler) addLiquidityV37(ctx cosmos.Context,
 
 	// if we have a rune address and no rune asset, put the asset in pending
 	if stage && addRuneAmount.IsZero() {
-		pool.PendingInboundAsset = pool.PendingInboundAsset.Add(common.SafeSub(addAssetAmount, su.PendingAsset))
+		pool.PendingInboundAsset = pool.GetPendingInboundAsset().Add(common.SafeSub(addAssetAmount, su.PendingAsset)).String()
 		su.PendingAsset = addAssetAmount
 		su.PendingTxID = requestTxHash
 		h.keeper.SetLiquidityProvider(ctx, su)
@@ -599,8 +599,8 @@ func (h AddLiquidityHandler) addLiquidityV37(ctx cosmos.Context,
 		return nil
 	}
 
-	pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, su.PendingRune)
-	pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, su.PendingAsset)
+	pool.PendingInboundRune = common.SafeSub(pool.GetPendingInboundRune(), su.PendingRune).String()
+	pool.PendingInboundAsset = common.SafeSub(pool.GetPendingInboundAsset(), su.PendingAsset).String()
 	su.PendingAsset = cosmos.ZeroUint()
 	su.PendingRune = cosmos.ZeroUint()
 
