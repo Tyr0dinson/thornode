@@ -247,7 +247,7 @@ func (tos *TxOutStorageV37) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
 				if err := tos.eventMgr.EmitFeeEvent(ctx, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint())); err != nil {
-					go ctx.Logger().Error("fail to emit fee event", "error", err)
+					ctx.Logger().Error("fail to emit fee event", "error", err)
 				}
 
 				if err := tos.keeper.AddFeeToReserve(ctx, runeFee); err != nil {
@@ -256,67 +256,67 @@ func (tos *TxOutStorageV37) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				}
 
 			} else {
-
 				pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset) // Get pool
 				if err != nil {
 					// the error is already logged within kvstore
 					return nil, fmt.Errorf("fail to get pool: %w", err)
 				}
-				assetFee := transactionFeeAsset
-				if outputs[i].Coin.Amount.LTE(assetFee) {
-					assetFee = outputs[i].Coin.Amount // Fee is the full amount
-				}
+
 				// if pool units is zero, no asset fee is taken
-				if pool.PoolUnits.IsZero() {
-					assetFee = cosmos.ZeroUint()
-				}
-				synthUnits := cosmos.ZeroUint()
-				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
-				if outputs[i].Coin.Asset.IsSyntheticAsset() {
-					totalSynthSupply := tos.keeper.GetTotalSupply(ctx, outputs[i].Coin.Asset)
-					// at this point ,the pool synth unit had been update to the new amount , however the synth has not been minted yet,
-					// thus the total supply didn't change yet , need to add the output asset amount
-					if outputs[i].ModuleName == ModuleName {
-						totalSynthSupply = totalSynthSupply.Add(outputs[i].Coin.Amount)
-					}
-					minusSynthUnits := common.GetShare(assetFee, totalSynthSupply, pool.SynthUnits)
-					pool.SynthUnits = common.SafeSub(pool.SynthUnits, minusSynthUnits)
-					pool.PoolUnits = common.SafeSub(pool.PoolUnits, minusSynthUnits)
-					synthUnits = minusSynthUnits
-					ctx.Logger().Info("minus synth unit", "units", synthUnits.String())
-					// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
-					if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {
-						if err := tos.keeper.SendFromModuleToModule(ctx,
-							AsgardName,
-							ModuleName,
-							common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
-							ctx.Logger().Error("fail to move synth asset fee from asgard to Module", "error", err)
-						} else {
-							if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
-								ctx.Logger().Error("fail to burn synth asset", "error", err)
-							}
-						}
+				if !pool.PoolUnits.IsZero() {
+					assetFee := transactionFeeAsset
+					if outputs[i].Coin.Amount.LTE(assetFee) {
+						assetFee = outputs[i].Coin.Amount // Fee is the full amount
 					}
 
-				} else {
-					pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
-				}
-				var poolDeduct cosmos.Uint
-				if runeFee.GT(pool.BalanceRune) {
-					poolDeduct = pool.BalanceRune
-				} else {
-					poolDeduct = runeFee
-				}
-				pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeFee) // Deduct Rune from Pool
-				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
-				if err := tos.eventMgr.EmitFeeEvent(ctx, NewEventFee(outputs[i].InHash, fee, synthUnits)); err != nil {
-					ctx.Logger().Error("fail to emit fee event", "error", err)
-				}
-				if err := tos.keeper.SetPool(ctx, pool); err != nil { // Set Pool
-					return nil, fmt.Errorf("fail to save pool: %w", err)
-				}
-				if err := tos.keeper.AddFeeToReserve(ctx, runeFee); err != nil {
-					return nil, fmt.Errorf("fail to add fee to reserve: %w", err)
+					synthUnits := cosmos.ZeroUint()
+					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
+					if outputs[i].Coin.Asset.IsSyntheticAsset() {
+						totalSynthSupply := tos.keeper.GetTotalSupply(ctx, outputs[i].Coin.Asset)
+						// at this point ,the pool synth unit had been update to the new amount , however the synth has not been minted yet,
+						// thus the total supply didn't change yet , need to add the output asset amount
+						if outputs[i].ModuleName == ModuleName {
+							totalSynthSupply = totalSynthSupply.Add(outputs[i].Coin.Amount)
+						}
+						minusSynthUnits := common.GetShare(assetFee, totalSynthSupply, pool.SynthUnits)
+						pool.SynthUnits = common.SafeSub(pool.SynthUnits, minusSynthUnits)
+						pool.PoolUnits = common.SafeSub(pool.PoolUnits, minusSynthUnits)
+						synthUnits = minusSynthUnits
+						ctx.Logger().Info("minus synth unit", "units", synthUnits.String())
+						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
+						if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {
+							if err := tos.keeper.SendFromModuleToModule(ctx,
+								AsgardName,
+								ModuleName,
+								common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
+								ctx.Logger().Error("fail to move synth asset fee from asgard to Module", "error", err)
+							} else {
+								if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
+									ctx.Logger().Error("fail to burn synth asset", "error", err)
+								}
+							}
+						}
+
+					} else {
+						pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+					}
+					var poolDeduct cosmos.Uint
+					if runeFee.GT(pool.BalanceRune) {
+						poolDeduct = pool.BalanceRune
+					} else {
+						poolDeduct = runeFee
+					}
+					pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeFee) // Deduct Rune from Pool
+					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
+					if err := tos.eventMgr.EmitFeeEvent(ctx, NewEventFee(outputs[i].InHash, fee, synthUnits)); err != nil {
+						ctx.Logger().Error("fail to emit fee event", "error", err)
+					}
+					if err := tos.keeper.SetPool(ctx, pool); err != nil { // Set Pool
+						return nil, fmt.Errorf("fail to save pool: %w", err)
+					}
+					if err := tos.keeper.AddFeeToReserve(ctx, runeFee); err != nil {
+						return nil, fmt.Errorf("fail to add fee to reserve: %w", err)
+					}
 				}
 			}
 		}
