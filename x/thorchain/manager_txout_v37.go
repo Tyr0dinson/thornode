@@ -247,7 +247,7 @@ func (tos *TxOutStorageV37) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
 				if err := tos.eventMgr.EmitFeeEvent(ctx, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint())); err != nil {
-					go ctx.Logger().Error("fail to emit fee event", "error", err)
+					ctx.Logger().Error("fail to emit fee event", "error", err)
 				}
 
 				if err := tos.keeper.AddFeeToReserve(ctx, runeFee); err != nil {
@@ -269,6 +269,7 @@ func (tos *TxOutStorageV37) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				// if pool units is zero, no asset fee is taken
 				if pool.PoolUnits.IsZero() {
 					assetFee = cosmos.ZeroUint()
+					runeFee = cosmos.ZeroUint()
 				}
 				synthUnits := cosmos.ZeroUint()
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
