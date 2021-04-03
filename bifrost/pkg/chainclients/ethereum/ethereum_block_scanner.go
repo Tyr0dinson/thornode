@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -64,6 +65,8 @@ type ETHScanner struct {
 	pubkeyMgr          pubkeymanager.PubKeyValidator
 	eipSigner          etypes.EIP155Signer
 	currentBlockHeight int64
+	gasBurned          map[string]*big.Int
+	gasBurnedLock      *sync.Mutex
 }
 
 // NewETHScanner create a new instance of ETHScanner
@@ -118,6 +121,8 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		erc20ABI:          erc20ABI,
 		eipSigner:         etypes.NewEIP155Signer(chainID),
 		pubkeyMgr:         pubkeyMgr,
+		gasBurned:         make(map[string]*big.Int),
+		gasBurnedLock:     &sync.Mutex{},
 	}, nil
 }
 
@@ -735,6 +740,8 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction) (*stypes.T
 	// 1 is Transaction success state
 	if receipt.Status != 1 {
 		e.logger.Info().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
+		// for a failed tx , if the transaction is sending from our own address , then it keep track of burned gas
+		e.updateFailedTransactionGas(sender, receipt, tx.GasPrice())
 		return nil, nil
 	}
 	for _, item := range receipt.Logs {
@@ -817,7 +824,12 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction) (*stypes.T
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeETHGas(txGasPrice, receipt.GasUsed)
+	gas := common.MakeETHGas(txGasPrice, receipt.GasUsed)
+	bufferedGas := e.getBufferedGas(sender)
+	if bufferedGas != nil {
+		gas[0].Amount = gas[0].Amount.AddUint64(bufferedGas.Uint64())
+	}
+	txInItem.Gas = gas
 	if txInItem.Coins.IsEmpty() {
 		e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
 		return nil, nil
@@ -870,4 +882,32 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		return e.getTxInFromSmartContract(tx)
 	}
 	return e.getTxInFromTransaction(tx)
+}
+func (e *ETHScanner) updateFailedTransactionGas(sender ecommon.Address, receipt *etypes.Receipt, gasPrice *big.Int) {
+	// when status is success , we don't need to get into this function
+	if receipt.Status == 1 {
+		return
+	}
+	isOutbound, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), common.ETHChain)
+	if !isOutbound {
+		return
+	}
+	e.gasBurnedLock.Lock()
+	defer e.gasBurnedLock.Unlock()
+	gas := common.MakeETHGas(gasPrice, receipt.GasUsed)
+	senderAddr := strings.ToLower(sender.String())
+	bufferedGas, ok := e.gasBurned[senderAddr]
+	if !ok {
+		e.gasBurned[senderAddr] = gas[0].Amount.BigInt()
+	} else {
+		e.gasBurned[senderAddr] = bufferedGas.Add(bufferedGas, gas[0].Amount.BigInt())
+	}
+
+	return
+}
+func (e *ETHScanner) getBufferedGas(sender ecommon.Address) *big.Int {
+	e.gasBurnedLock.Lock()
+	defer e.gasBurnedLock.Unlock()
+	senderAddr := strings.ToLower(sender.String())
+	return e.gasBurned[senderAddr]
 }

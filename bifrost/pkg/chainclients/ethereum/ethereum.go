@@ -440,6 +440,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		return nil, fmt.Errorf("fail to estimate gas: %w", err)
 	}
 	c.logger.Info().Msgf("memo:%s estimated gas unit: %d", tx.Memo, estimatedGas)
+	// inflate 20% estimate gas
+	estimatedGas = estimatedGas + estimatedGas/5
+	maxEstimateGas := uint64(MaxContractGas + MaxContractGas/2)
+	if estimatedGas > maxEstimateGas {
+		estimatedGas = maxEstimateGas
+	}
+	c.logger.Info().Msgf("memo:%s real gas unit: %d", tx.Memo, estimatedGas)
 
 	gasOut := big.NewInt(0)
 	for _, coin := range tx.MaxGas {
