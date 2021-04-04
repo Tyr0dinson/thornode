@@ -442,7 +442,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	c.logger.Info().Msgf("memo:%s estimated gas unit: %d", tx.Memo, estimatedGas)
 	// inflate 20% estimate gas
 	estimatedGas = estimatedGas + estimatedGas/5
-	maxEstimateGas := uint64(MaxContractGas + MaxContractGas/2)
+	maxEstimateGas := uint64(MaxContractGas * 3 / 2)
 	if estimatedGas > maxEstimateGas {
 		estimatedGas = maxEstimateGas
 	}
