@@ -48,11 +48,13 @@ type Pools []Pool
 // NewPool Returns a new Pool
 func NewPool() Pool {
 	return Pool{
-		BalanceRune:  cosmos.ZeroUint(),
-		BalanceAsset: cosmos.ZeroUint(),
-		PoolUnits:    cosmos.ZeroUint(),
-		SynthUnits:   cosmos.ZeroUint(),
-		Status:       PoolStatus_Available,
+		BalanceRune:         cosmos.ZeroUint(),
+		BalanceAsset:        cosmos.ZeroUint(),
+		PoolUnits:           cosmos.ZeroUint(),
+		SynthUnits:          cosmos.ZeroUint(),
+		PendingInboundRune:  cosmos.ZeroUint(),
+		PendingInboundAsset: cosmos.ZeroUint(),
+		Status:              PoolStatus_Available,
 	}
 }
 
