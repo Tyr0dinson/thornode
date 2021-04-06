@@ -25,11 +25,10 @@ func (m *MsgLeave) ValidateBasic() error {
 	if m.Tx.FromAddress.IsEmpty() {
 		return cosmos.ErrInvalidAddress("from address cannot be empty")
 	}
+	// here we can't call m.Tx.Valid , because we allow user to send leave request without any coins in it
+	// m.Tx.Valid will reject this kind request , which result leave to fail
 	if m.Tx.ID.IsEmpty() {
 		return cosmos.ErrUnknownRequest("tx id cannot be empty")
-	}
-	if m.Tx.FromAddress.IsEmpty() {
-		return cosmos.ErrInvalidAddress("tx from address cannot be empty")
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress("signer cannot be empty ")

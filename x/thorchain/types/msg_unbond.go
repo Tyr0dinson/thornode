@@ -33,6 +33,8 @@ func (m *MsgUnBond) ValidateBasic() error {
 	if m.BondAddress.IsEmpty() {
 		return cosmos.ErrInvalidAddress("bond address cannot be empty")
 	}
+	// here we can't call m.TxIn.Valid , because we allow user to send unbond request without any coins in it
+	// m.TxIn.Valid will reject this kind request , which result unbond to fail
 	if m.TxIn.ID.IsEmpty() {
 		return cosmos.ErrUnknownRequest("tx id cannot be empty")
 	}

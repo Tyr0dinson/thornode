@@ -614,6 +614,7 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 	c.Assert(unitsLeft.IsZero(), Equals, true)
 	c.Assert(gas.IsZero(), Equals, true)
 }
+
 func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddress common.Address) keeper.Keeper {
 	store := NewWithdrawTestKeeper(k)
 	pool := Pool{

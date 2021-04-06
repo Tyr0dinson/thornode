@@ -88,7 +88,7 @@ func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiqu
 	return nil, errBadVersion
 }
 
-func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h WithdrawLiquidityHandler) handleCurrent(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	lp, err := h.keeper.GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
@@ -149,14 +149,6 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 		}
 	}
 
-	// If the pool is in staged status, then we won't have withheld the asset
-	// above from being deducted a fee/gas from the transaction. So we have to
-	// do it here, on the rune side.
-	if pool.Status != PoolAvailable {
-		transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Asset.GetChain(), common.RuneAsset())
-		runeAmt = common.SafeSub(runeAmt, transactionFee)
-	}
-
 	if !runeAmt.IsZero() {
 		toi := TxOutItem{
 			Chain:     common.RuneAsset().GetChain(),
@@ -203,9 +195,4 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	}
 
 	return &cosmos.Result{}, nil
-
-}
-
-func (h WithdrawLiquidityHandler) handleCurrent(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	return h.handleV1(ctx, msg, version, constAccessor)
 }
