@@ -89,6 +89,7 @@ var (
 	NewKeygen                      = types.NewKeygen
 	NewKeygenBlock                 = types.NewKeygenBlock
 	NewMsgSetNodeKeys              = types.NewMsgSetNodeKeys
+	NewMsgManageTHORName           = types.NewMsgManageTHORName
 	NewTxOut                       = types.NewTxOut
 	NewEventRewards                = types.NewEventRewards
 	NewEventPool                   = types.NewEventPool
@@ -136,6 +137,7 @@ var (
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
 	NewNetworkFee                  = types.NewNetworkFee
+	NewTHORName                    = types.NewTHORName
 	GetPoolStatus                  = types.GetPoolStatus
 	GetRandomVault                 = types.GetRandomVault
 	GetRandomTx                    = types.GetRandomTx
@@ -200,6 +202,7 @@ type (
 	MsgTssPool                     = types.MsgTssPool
 	MsgTssKeysignFail              = types.MsgTssKeysignFail
 	MsgNetworkFee                  = types.MsgNetworkFee
+	MsgManageTHORName              = types.MsgManageTHORName
 	QueryVersion                   = types.QueryVersion
 	QueryQueue                     = types.QueryQueue
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck
@@ -262,6 +265,7 @@ type (
 	ChainContract                  = types.ChainContract
 	Blame                          = types.Blame
 	Node                           = types.Node
+	THORName                       = types.THORName
 
 	// Memo
 	SwapMemo              = mem.SwapMemo

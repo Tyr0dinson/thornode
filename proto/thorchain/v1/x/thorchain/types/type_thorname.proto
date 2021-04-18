@@ -1,0 +1,13 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+message THORName {
+  string name = 1 ;
+  string chain = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Chain"];
+  string address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  int64 expire_block_height = 4;
+}
