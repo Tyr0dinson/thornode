@@ -709,7 +709,9 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 		if !exist {
 			c.logger.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-			c.blockMetaAccessor.RemoveObservedTxCache(txInItem.Tx)
+			if err := c.blockMetaAccessor.RemoveObservedTxCache(txInItem.Tx); err != nil {
+				c.logger.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
+			}
 			continue
 		}
 		txItems = append(txItems, txInItem)
