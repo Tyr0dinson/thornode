@@ -663,6 +663,10 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		if txInItem.Coins[0].Amount.LTE(cosmos.NewUint(minSpendableUTXOAmountSats)) {
 			continue
 		}
+		if c.isSelfTransaction(txInItem.Tx) {
+			c.logger.Info().Msgf("tx: %s had been report as part of mempool tx, ignore", txInItem.Tx)
+			continue
+		}
 		txItems = append(txItems, txInItem)
 	}
 	txIn.TxArray = txItems
