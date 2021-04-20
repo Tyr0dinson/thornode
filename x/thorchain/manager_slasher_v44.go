@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"runtime"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto"
@@ -484,6 +485,11 @@ func (s *SlasherV44) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 
 // IncSlashPoints will increase the given account's slash points
 func (s *SlasherV44) IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
+	pc, _, _, ok := runtime.Caller(1)
+	details := runtime.FuncForPC(pc)
+	if ok && details != nil {
+		ctx.Logger().Info("increase slash points", "from", details.Name())
+	}
 	for _, addr := range addresses {
 		if err := s.keeper.IncNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to increase node account slash point", "error", err, "address", addr.String())
@@ -493,6 +499,11 @@ func (s *SlasherV44) IncSlashPoints(ctx cosmos.Context, point int64, addresses .
 
 // DecSlashPoints will decrease the given account's slash points
 func (s *SlasherV44) DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
+	pc, _, _, ok := runtime.Caller(1)
+	details := runtime.FuncForPC(pc)
+	if ok && details != nil {
+		ctx.Logger().Info("decrease slash points", "from", details.Name())
+	}
 	for _, addr := range addresses {
 		if err := s.keeper.DecNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to decrease node account slash point", "error", err, "address", addr.String())
