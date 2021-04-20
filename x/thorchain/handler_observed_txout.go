@@ -79,6 +79,7 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
 	ok := false
 	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, signer)
+	ctx.Logger().Info(fmt.Sprintf("increase slash for signer: %s, tx: %s", signer, tx.Tx))
 	if err := h.keeper.SetLastObserveHeight(ctx, tx.Tx.Chain, signer, tx.BlockHeight); err != nil {
 		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
 	}
@@ -93,6 +94,7 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 			voter.FinalisedHeight = common.BlockHeight(ctx)
 			voter.Tx = voter.GetTx(nas)
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
+			ctx.Logger().Info("decrease slash for signer: %v, tx: %s", voter.Tx.GetSigners(), voter.Tx.Tx)
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.GetSigners()...)
 
 		} else {
