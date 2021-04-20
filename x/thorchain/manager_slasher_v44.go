@@ -490,7 +490,9 @@ func (s *SlasherV44) IncSlashPoints(ctx cosmos.Context, point int64, addresses .
 	if ok && details != nil {
 		ctx.Logger().Info("increase slash points", "from", details.Name())
 	}
+
 	for _, addr := range addresses {
+
 		if err := s.keeper.IncNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to increase node account slash point", "error", err, "address", addr.String())
 		}

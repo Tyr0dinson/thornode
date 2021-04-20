@@ -83,6 +83,7 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
 	}
 	if !voter.Add(tx, signer) {
+		ctx.Logger().Info("outbound voter already vote it")
 		// when the signer already sign it
 		return voter, ok
 	}
