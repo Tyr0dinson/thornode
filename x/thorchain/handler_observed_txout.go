@@ -94,7 +94,7 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 			voter.FinalisedHeight = common.BlockHeight(ctx)
 			voter.Tx = voter.GetTx(nas)
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
-			// ctx.Logger().Info("decrease slash for signer: %v, tx: %s", voter.Tx.GetSigners(), voter.Tx.Tx)
+			ctx.Logger().Info("decrease slash for signer: %v, tx: %s", voter.Tx.GetSigners(), voter.Tx.Tx)
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.GetSigners()...)
 
 		} else {
