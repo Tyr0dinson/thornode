@@ -311,25 +311,35 @@ func (c *Client) convertThorchainAmountToWei(amt *big.Int) *big.Int {
 }
 
 // unstuckTxs is the method used to unstuck ETH address
-func (c *Client) unstuckTxs(vaultPubKey string, address string, startNonce uint64) {
+func (c *Client) unstuckTxs(vaultPubKey string, startNonce uint64) {
 	pubKey, err := common.NewPubKey(vaultPubKey)
 	if err != nil {
-		c.logger.Err(err).Msgf("publick key: %s is invalid", vaultPubKey)
+		c.logger.Err(err).Msgf("public key: %s is invalid", vaultPubKey)
+		return
+	}
+	address, err := pubKey.GetAddress(common.ETHChain)
+	if err != nil {
+		c.logger.Err(err).Msgf("fail to get ETH address")
 		return
 	}
 	for {
-		finishNonce, err := c.GetNonce(address)
+		finishNonce, err := c.GetNonce(address.String())
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get current nonce for address: %s", address)
+			continue
 		}
 
+		if finishNonce < startNonce {
+			c.logger.Info().Msgf("current nonce for address %s is %d , exit", address, finishNonce)
+			return
+		}
 		if startNonce == finishNonce {
 			c.logger.Info().Msgf("finished sending unstuck txs , current nonce: %d", finishNonce)
 			break
 		}
 		c.logger.Info().Msgf("signing tx with nonce: %d", startNonce)
 		gasRate := big.NewInt(tenGwei * 30) // pay 300 GWei
-		tx := etypes.NewTransaction(startNonce, ecommon.HexToAddress(address), big.NewInt(0), MaxContractGas, gasRate, nil)
+		tx := etypes.NewTransaction(startNonce, ecommon.HexToAddress(address.String()), big.NewInt(0), MaxContractGas, gasRate, nil)
 		rawBytes, err := c.kw.Sign(tx, pubKey)
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to sign tx for nonce: %d", startNonce)
