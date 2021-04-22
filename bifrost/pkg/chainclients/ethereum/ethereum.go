@@ -323,7 +323,7 @@ func (c *Client) unstuckTxs(vaultPubKey string, address string, startNonce uint6
 			c.logger.Err(err).Msgf("fail to get current nonce for address: %s", address)
 		}
 
-		if startNonce == (finishNonce - 1) {
+		if startNonce == finishNonce {
 			c.logger.Info().Msgf("finished sending unstuck txs , current nonce: %d", finishNonce)
 			break
 		}
