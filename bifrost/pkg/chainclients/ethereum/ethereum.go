@@ -310,6 +310,47 @@ func (c *Client) convertThorchainAmountToWei(amt *big.Int) *big.Int {
 	return big.NewInt(0).Mul(amt, big.NewInt(common.One*100))
 }
 
+// unstuckTxs is the method used to unstuck ETH address
+func (c *Client) unstuckTxs(vaultPubKey string, address string, startNonce uint64) {
+	pubKey, err := common.NewPubKey(vaultPubKey)
+	if err != nil {
+		c.logger.Err(err).Msgf("publick key: %s is invalid", vaultPubKey)
+		return
+	}
+	for {
+		finishNonce, err := c.GetNonce(address)
+		if err != nil {
+			c.logger.Err(err).Msgf("fail to get current nonce for address: %s", address)
+		}
+
+		if startNonce == (finishNonce - 1) {
+			c.logger.Info().Msgf("finished sending unstuck txs , current nonce: %d", finishNonce)
+			break
+		}
+		c.logger.Info().Msgf("signing tx with nonce: %d", startNonce)
+		gasRate := big.NewInt(tenGwei * 30) // pay 300 GWei
+		tx := etypes.NewTransaction(startNonce, ecommon.HexToAddress(address), big.NewInt(0), MaxContractGas, gasRate, nil)
+		rawBytes, err := c.kw.Sign(tx, pubKey)
+		if err != nil {
+			c.logger.Err(err).Msgf("fail to sign tx for nonce: %d", startNonce)
+			continue
+		}
+		broadcastTx := &etypes.Transaction{}
+		if err := tx.UnmarshalJSON(rawBytes); err != nil {
+			c.logger.Err(err).Msgf("fail to unmarshal tx for nonce:%d", startNonce)
+			continue
+		}
+		ctx, cancel := c.getContext()
+		if err := c.client.SendTransaction(ctx, broadcastTx); err != nil && err.Error() != ecore.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
+			c.logger.Err(err).Msgf("fail to broadcast transaction with nonce: %d", startNonce)
+			cancel()
+			continue
+		}
+		cancel()
+		startNonce++
+	}
+}
+
 // SignTx sign the the given TxArrayItem
 func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	if !tx.Chain.Equals(common.ETHChain) {
