@@ -62,7 +62,9 @@ func (h ObservedTxOutHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxOu
 }
 
 func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	if version.GTE(semver.MustParse("0.13.0")) {
+	if version.GTE(semver.MustParse("0.20.0")) {
+		return h.handleV20(ctx, version, msg, constAccessor)
+	} else if version.GTE(semver.MustParse("0.13.0")) {
 		return h.handleV13(ctx, version, msg, constAccessor)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, version, msg, constAccessor)
@@ -257,6 +259,130 @@ func (h ObservedTxOutHandler) preflightV10(ctx cosmos.Context, voter ObservedTxV
 
 // Handle a message to observe outbound tx
 func (h ObservedTxOutHandler) handleV13(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
+	if err != nil {
+		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
+	}
+
+	handler := NewInternalHandler(h.keeper, h.mgr)
+
+	for _, tx := range msg.Txs {
+		// check we are sending from a valid vault
+		if !h.keeper.VaultExists(ctx, tx.ObservedPubKey) {
+			ctx.Logger().Info("Not valid Observed Pubkey", tx.ObservedPubKey)
+			continue
+		}
+
+		voter, err := h.keeper.GetObservedTxOutVoter(ctx, tx.Tx.ID)
+		if err != nil {
+			ctx.Logger().Error("fail to get tx out voter", "error", err)
+			continue
+		}
+
+		// check whether the tx has consensus
+		voter, ok := h.preflightV10(ctx, voter, activeNodeAccounts, tx, msg.Signer, version, constAccessor)
+		if !ok {
+			if voter.Height == common.BlockHeight(ctx) {
+				// we've already process the transaction, but we should still
+				// update the observing addresses
+				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
+			}
+			continue
+		}
+		tx.Tx.Memo = fetchMemo(ctx, constAccessor, h.keeper, tx.Tx)
+		if len(tx.Tx.Memo) == 0 {
+			// we didn't find our memo, it might be yggdrasil return. These are
+			// tx markers without coin amounts because we allow yggdrasil to
+			// figure out the coin amounts
+			txYgg := tx.Tx
+			txYgg.Coins = common.Coins{
+				common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+			}
+			tx.Tx.Memo = fetchMemo(ctx, constAccessor, h.keeper, txYgg)
+		}
+		ctx.Logger().Info("handleMsgObservedTxOut request", "Tx:", tx.String())
+
+		// if memo isn't valid or its an inbound memo, and its funds moving
+		// from a yggdrasil vault, slash the node
+		memo, _ := ParseMemo(tx.Tx.Memo)
+		if memo.IsEmpty() || memo.IsInbound() {
+			vault, err := h.keeper.GetVault(ctx, tx.ObservedPubKey)
+			if err != nil {
+				ctx.Logger().Error("fail to get vault", "error", err)
+				continue
+			}
+			if vault.IsYggdrasil() {
+				// a yggdrasil vault has apparently stolen funds, slash them
+				for _, c := range append(tx.Tx.Coins, tx.Tx.Gas.ToCoins()...) {
+					if err := h.mgr.Slasher().SlashNodeAccount(ctx, tx.ObservedPubKey, c.Asset, c.Amount, h.mgr); err != nil {
+						ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
+					}
+				}
+				vault.SubFunds(tx.Tx.Coins)
+				vault.SubFunds(tx.Tx.Gas.ToCoins()) // we don't subsidize the gas when it's theft
+				if err := h.keeper.SetVault(ctx, vault); err != nil {
+					ctx.Logger().Error("fail to save vault", "error", err)
+				}
+			}
+
+			continue
+		}
+
+		txOut := voter.GetTxV13(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+		txOut.Tx.Memo = tx.Tx.Memo
+		m, err := processOneTxIn(ctx, h.keeper, txOut, msg.Signer)
+		if err != nil || tx.Tx.Chain.IsEmpty() {
+			ctx.Logger().Error("fail to process txOut",
+				"error", err,
+				"tx", tx.Tx.String())
+			continue
+		}
+
+		// Apply Gas fees
+		if err := AddGasFees(ctx, h.keeper, tx, h.mgr.GasMgr()); err != nil {
+			ctx.Logger().Error("fail to add gas fee", "error", err)
+			continue
+		}
+
+		// If sending from one of our vaults, decrement coins
+		vault, err := h.keeper.GetVault(ctx, tx.ObservedPubKey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "error", err)
+			continue
+		}
+		vault.SubFunds(tx.Tx.Coins)
+		vault.OutboundTxCount++
+		if vault.IsAsgard() && memo.IsType(TxMigrate) {
+			// only remove the block height that had been specified in the memo
+			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
+		}
+
+		if !vault.HasFunds() && vault.Status == RetiringVault {
+			// we have successfully removed all funds from a retiring vault,
+			// mark it as inactive
+			vault.Status = InactiveVault
+		}
+		if err := h.keeper.SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+			continue
+		}
+
+		// add addresses to observing addresses. This is used to detect
+		// active/inactive observing node accounts
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txOut.Signers)
+
+		_, err = handler(ctx, m)
+		if err != nil {
+			ctx.Logger().Error("handler failed:", "error", err)
+			continue
+		}
+	}
+
+	return &cosmos.Result{}, nil
+}
+
+// Handle a message to observe outbound tx
+func (h ObservedTxOutHandler) handleV20(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
