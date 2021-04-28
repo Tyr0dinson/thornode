@@ -51,7 +51,7 @@ func ParseAddLiquidityMemo(asset common.Asset, parts []string) (AddLiquidityMemo
 	return NewAddLiquidityMemo(asset, addr, affAddr, affPts), nil
 }
 
-func ParseAddLiquidityMemoSaveTestnet(asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+func ParseAddLiquidityMemoTestnetOnly(asset common.Asset, parts []string) (AddLiquidityMemo, error) {
 	var err error
 	addr := common.NoAddress
 	affAddr := common.NoAddress

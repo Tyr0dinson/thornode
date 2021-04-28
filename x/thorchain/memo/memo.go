@@ -266,7 +266,7 @@ func ParseMemoTestnetOnly(memo string) (Memo, error) {
 	case TxDonate:
 		return NewDonateMemo(asset), nil
 	case TxAdd:
-		return ParseAddLiquidityMemoSaveTestnet(asset, parts)
+		return ParseAddLiquidityMemoTestnetOnly(asset, parts)
 	case TxWithdraw:
 		return ParseWithdrawLiquidityMemo(asset, parts)
 	case TxSwap:
