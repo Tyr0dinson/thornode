@@ -4,7 +4,7 @@ import (
 	"strconv"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 type AddLiquidityMemo struct {
@@ -38,6 +38,32 @@ func ParseAddLiquidityMemo(asset common.Asset, parts []string) (AddLiquidityMemo
 	}
 
 	if len(parts) > 4 && len(parts[3]) > 0 && len(parts[4]) > 0 {
+		affAddr, err = common.NewAddress(parts[3])
+		if err != nil {
+			return AddLiquidityMemo{}, err
+		}
+		pts, err := strconv.ParseUint(parts[4], 10, 64)
+		if err != nil {
+			return AddLiquidityMemo{}, err
+		}
+		affPts = cosmos.NewUint(pts)
+	}
+	return NewAddLiquidityMemo(asset, addr, affAddr, affPts), nil
+}
+
+func ParseAddLiquidityMemoSaveTestnet(asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+	var err error
+	addr := common.NoAddress
+	affAddr := common.NoAddress
+	affPts := cosmos.ZeroUint()
+	if len(parts) >= 3 && len(parts[2]) > 0 {
+		addr, err = common.NewAddress(parts[2])
+		if err != nil {
+			return AddLiquidityMemo{}, err
+		}
+	}
+
+	if len(parts) >= 4 && len(parts[3]) > 0 && len(parts[4]) > 0 {
 		affAddr, err = common.NewAddress(parts[3])
 		if err != nil {
 			return AddLiquidityMemo{}, err

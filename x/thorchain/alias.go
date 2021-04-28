@@ -159,13 +159,14 @@ var (
 	DefaultGenesis                 = types.DefaultGenesis
 
 	// Memo
-	ParseMemo          = mem.ParseMemo
-	NewRefundMemo      = mem.NewRefundMemo
-	NewOutboundMemo    = mem.NewOutboundMemo
-	NewRagnarokMemo    = mem.NewRagnarokMemo
-	NewYggdrasilReturn = mem.NewYggdrasilReturn
-	NewYggdrasilFund   = mem.NewYggdrasilFund
-	NewMigrateMemo     = mem.NewMigrateMemo
+	ParseMemo            = mem.ParseMemo
+	ParseMemoSaveTestnet = mem.ParseMemoSaveTestnet
+	NewRefundMemo        = mem.NewRefundMemo
+	NewOutboundMemo      = mem.NewOutboundMemo
+	NewRagnarokMemo      = mem.NewRagnarokMemo
+	NewYggdrasilReturn   = mem.NewYggdrasilReturn
+	NewYggdrasilFund     = mem.NewYggdrasilFund
+	NewMigrateMemo       = mem.NewMigrateMemo
 )
 
 type (

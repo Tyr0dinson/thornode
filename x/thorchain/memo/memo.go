@@ -236,3 +236,64 @@ func ParseMemo(memo string) (Memo, error) {
 		return noMemo, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
 }
+func ParseMemoSaveTestnet(memo string) (Memo, error) {
+	var err error
+	noMemo := MemoBase{TxType: TxUnknown}
+	if len(memo) == 0 {
+		return noMemo, fmt.Errorf("memo can't be empty")
+	}
+	parts := strings.Split(memo, ":")
+	tx, err := StringToTxType(parts[0])
+	if err != nil {
+		return noMemo, err
+	}
+
+	var asset common.Asset
+	switch tx {
+	case TxDonate, TxAdd, TxSwap, TxWithdraw:
+		if len(parts) < 2 {
+			return noMemo, fmt.Errorf("cannot parse given memo: length %d", len(parts))
+		}
+		asset, err = common.NewAsset(parts[1])
+		if err != nil {
+			return noMemo, err
+		}
+	}
+
+	switch tx {
+	case TxLeave:
+		return ParseLeaveMemo(parts)
+	case TxDonate:
+		return NewDonateMemo(asset), nil
+	case TxAdd:
+		return ParseAddLiquidityMemoSaveTestnet(asset, parts)
+	case TxWithdraw:
+		return ParseWithdrawLiquidityMemo(asset, parts)
+	case TxSwap:
+		return ParseSwapMemo(asset, parts)
+	case TxOutbound:
+		return ParseOutboundMemo(parts)
+	case TxRefund:
+		return ParseRefundMemo(parts)
+	case TxBond:
+		return ParseBondMemo(parts)
+	case TxUnbond:
+		return ParseUnbondMemo(parts)
+	case TxYggdrasilFund:
+		return ParseYggdrasilFundMemo(parts)
+	case TxYggdrasilReturn:
+		return ParseYggdrasilReturnMemo(parts)
+	case TxReserve:
+		return NewReserveMemo(), nil
+	case TxMigrate:
+		return ParseMigrateMemo(parts)
+	case TxRagnarok:
+		return ParseRagnarokMemo(parts)
+	case TxSwitch:
+		return ParseSwitchMemo(parts)
+	case TxNoOp:
+		return ParseNoOpMemo(parts)
+	default:
+		return noMemo, fmt.Errorf("TxType not supported: %s", tx.String())
+	}
+}
