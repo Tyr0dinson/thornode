@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	thorchain "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
 // MsgHandler is an interface expect all handler to implement
@@ -237,15 +237,7 @@ func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddre
 }
 
 func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	var memo thorchain.Memo
-	var err error
-	// 245087 is the block height that add liquidity will cause a panic
-	if common.BlockHeight(ctx) <= 254087 {
-		memo, err = ParseMemoSaveTestnet(tx.Tx.Memo)
-	} else {
-		memo, err = ParseMemo(tx.Tx.Memo)
-	}
-
+	memo, err := ParseMemo(tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
