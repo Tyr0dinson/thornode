@@ -395,7 +395,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 
 	var memo thorchain.Memo
 	if common.BlockHeight(ctx) < 254087 {
-		memo, _ = ParseMemoSaveTestnet(msg.Memo)
+		memo, _ = ParseMemoTestnetOnly(msg.Memo)
 	} else {
 		memo, _ = ParseMemo(msg.Memo) // ignore err
 	}

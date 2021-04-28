@@ -236,7 +236,7 @@ func ParseMemo(memo string) (Memo, error) {
 		return noMemo, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
 }
-func ParseMemoSaveTestnet(memo string) (Memo, error) {
+func ParseMemoTestnetOnly(memo string) (Memo, error) {
 	var err error
 	noMemo := MemoBase{TxType: TxUnknown}
 	if len(memo) == 0 {
@@ -270,7 +270,7 @@ func ParseMemoSaveTestnet(memo string) (Memo, error) {
 	case TxWithdraw:
 		return ParseWithdrawLiquidityMemo(asset, parts)
 	case TxSwap:
-		return ParseSwapMemo(asset, parts)
+		return ParseSwapMemoTestnetOnly(asset, parts)
 	case TxOutbound:
 		return ParseOutboundMemo(parts)
 	case TxRefund:

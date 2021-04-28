@@ -160,7 +160,7 @@ var (
 
 	// Memo
 	ParseMemo            = mem.ParseMemo
-	ParseMemoSaveTestnet = mem.ParseMemoSaveTestnet
+	ParseMemoTestnetOnly = mem.ParseMemoTestnetOnly
 	NewRefundMemo        = mem.NewRefundMemo
 	NewOutboundMemo      = mem.NewOutboundMemo
 	NewRagnarokMemo      = mem.NewRagnarokMemo
