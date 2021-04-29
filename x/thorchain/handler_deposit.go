@@ -7,6 +7,7 @@ import (
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	tmtypes "github.com/tendermint/tendermint/types"
+	thorchain "gitlab.com/thorchain/thornode/x/thorchain/memo"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -392,7 +393,12 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 
 	handler := NewInternalHandler(h.keeper, h.mgr)
 
-	memo, _ := ParseMemo(msg.Memo) // ignore err
+	var memo thorchain.Memo
+	if common.BlockHeight(ctx) < 254087 {
+		memo, _ = ParseMemoTestnetOnly(msg.Memo)
+	} else {
+		memo, _ = ParseMemo(msg.Memo) // ignore err
+	}
 	var targetModule string
 	switch memo.GetType() {
 	case TxBond:

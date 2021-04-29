@@ -360,4 +360,6 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, NotNil)
 	_, err = ParseMemo("whatever") // not support
 	c.Assert(err, NotNil)
+	m1, err := ParseMemo("+:LTC.LTC:tthor139gj73hulcesq5fsz4txgmjumkmrt7w3e6t9wt::AGX")
+	c.Log(m1)
 }
