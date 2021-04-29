@@ -1,9 +1,11 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/go-multierror"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -235,4 +237,17 @@ func ParseMemo(memo string) (Memo, error) {
 	default:
 		return noMemo, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
+}
+
+var ErrParseMemoPanic = errors.New("panic at parse memo")
+
+func ParseMemoWithRecover(memo string) (m Memo, err error) {
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			m = MemoBase{TxType: TxUnknown}
+			err = multierror.Append(ErrParseMemoPanic, fmt.Errorf("fail to parse memo(%s),err: %s", memo, panicErr))
+		}
+	}()
+	m, err = ParseMemo(memo)
+	return
 }

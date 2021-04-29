@@ -95,7 +95,7 @@ func (t TxIn) GetTotalTransactionValue(asset common.Asset, excludeFrom []common.
 			continue
 		}
 		// skip confirmation counting if it is internal tx
-		m, err := memo.ParseMemo(item.Memo)
+		m, err := memo.ParseMemoWithRecover(item.Memo)
 		if err == nil && m.IsInternal() {
 			continue
 		}
