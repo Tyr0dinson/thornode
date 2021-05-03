@@ -3,6 +3,7 @@ package common
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -26,6 +27,32 @@ func NewCoin(asset Asset, amount cosmos.Uint) Coin {
 		Asset:  asset,
 		Amount: amount,
 	}
+}
+
+// ParseCoins return a new instance of Coins
+func ParseCoins(raw string) Coins {
+	coins := make(Coins, 0)
+
+	for _, item := range strings.Split(raw, ",") {
+		// trim whitespace
+		item = strings.TrimSpace(item)
+		re := regexp.MustCompile("^[0-9]+")
+		nums := re.FindAllString(item, 1)
+		if len(nums) == 0 {
+			continue
+		}
+
+		amt, err := cosmos.ParseUint(nums[0])
+		if err != nil {
+			continue
+		}
+		asset, err := NewAsset(item[len(nums[0]):len(item)])
+		if err != nil {
+			continue
+		}
+		coins = append(coins, NewCoin(asset, amt))
+	}
+	return coins
 }
 
 func (c Coin) Equals(cc Coin) bool {
