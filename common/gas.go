@@ -126,7 +126,7 @@ func ParseGas(raw string) Gas {
 		if err != nil {
 			continue
 		}
-		asset, err := NewAsset(item[len(nums[0]):len(item)])
+		asset, err := NewAsset(item[len(nums[0]):])
 		if err != nil {
 			continue
 		}
