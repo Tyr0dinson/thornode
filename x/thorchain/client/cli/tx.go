@@ -35,6 +35,7 @@ func GetTxCmd(storeKey string, cdc *codec.Codec) *cobra.Command {
 		GetCmdSetIPAddress(cdc),
 		GetCmdBan(cdc),
 		GetCmdMimir(cdc),
+		GetCmdSetObservedTxIn(cdc),
 	)...)
 
 	return thorchainTxCmd
@@ -169,11 +170,11 @@ func GetCmdSetNodeKeys(cdc *codec.Codec) *cobra.Command {
 	}
 }
 
-// GetCmdSetObservedTx command to make an observation of a transaction (typically from bifrost)
-func GetCmdSetObservedTx(cdc *codec.Codec) *cobra.Command {
+// GetCmdSetObservedTxIn command to make an observation of a transaction (typically from bifrost)
+func GetCmdSetObservedTxIn(cdc *codec.Codec) *cobra.Command {
 	return &cobra.Command{
-		Use:   "observed-tx  [vault_pubkey] [hash] [block_height] [from_address] [to_address] [coins] [gas] [memo]",
-		Short: "make an observed transaction",
+		Use:   "observed-txin  [vault_pubkey] [hash] [block_height] [from_address] [to_address] [coins] [gas] [memo]",
+		Short: "make an observed inbound transaction",
 		Args:  cobra.ExactArgs(8),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			inBuf := bufio.NewReader(cmd.InOrStdin())
