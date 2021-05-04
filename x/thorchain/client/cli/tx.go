@@ -192,24 +192,24 @@ func GetCmdSetObservedTxIn(cdc *codec.Codec) *cobra.Command {
 				return fmt.Errorf("fail to parse tx hash ,err:%w", err)
 			}
 
-			blockHeight, err := strconv.ParseInt(args[3], 10, 64)
+			blockHeight, err := strconv.ParseInt(args[2], 10, 64)
 			if err != nil {
 				return fmt.Errorf("fail to parse block height,err:%w", err)
 			}
 
-			fromAddress, err := common.NewAddress(args[4])
+			fromAddress, err := common.NewAddress(args[3])
 			if err != nil {
 				return fmt.Errorf("fail to parse from address ,err:%w", err)
 			}
 
-			toAddress, err := common.NewAddress(args[5])
+			toAddress, err := common.NewAddress(args[4])
 			if err != nil {
 				return fmt.Errorf("fail to parse to address ,err:%w", err)
 			}
 
-			coins := common.ParseCoins(args[6])
-			gas := common.ParseGas(args[7])
-			memo := args[8]
+			coins := common.ParseCoins(args[5])
+			gas := common.ParseGas(args[6])
+			memo := args[7]
 
 			tx := common.NewTx(txhash, fromAddress, toAddress, coins, gas, memo)
 			observedTx := types.NewObservedTx(tx, blockHeight, pk)
