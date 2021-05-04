@@ -2,7 +2,9 @@ package common
 
 import (
 	"math/big"
+	"regexp"
 	"sort"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -105,6 +107,32 @@ func (g Gas) Valid() error {
 	}
 
 	return nil
+}
+
+// ParseGas return a new instance of Gas
+func ParseGas(raw string) Gas {
+	gas := make(Gas, 0)
+
+	for _, item := range strings.Split(raw, ",") {
+		// trim whitespace
+		item = strings.TrimSpace(item)
+		re := regexp.MustCompile("^[0-9]+")
+		nums := re.FindAllString(item, 1)
+		if len(nums) == 0 {
+			continue
+		}
+
+		amt, err := cosmos.ParseUint(nums[0])
+		if err != nil {
+			continue
+		}
+		asset, err := NewAsset(item[len(nums[0]):])
+		if err != nil {
+			continue
+		}
+		gas = append(gas, NewCoin(asset, amt))
+	}
+	return gas
 }
 
 // IsEmpty return true as long as there is one coin in it that is not empty

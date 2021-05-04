@@ -35,6 +35,7 @@ func GetTxCmd(storeKey string, cdc *codec.Codec) *cobra.Command {
 		GetCmdSetIPAddress(cdc),
 		GetCmdBan(cdc),
 		GetCmdMimir(cdc),
+		GetCmdSetObservedTxIn(cdc),
 	)...)
 
 	return thorchainTxCmd
@@ -160,6 +161,60 @@ func GetCmdSetNodeKeys(cdc *codec.Codec) *cobra.Command {
 				return fmt.Errorf("fail to convert public key to string: %w", err)
 			}
 			msg := types.NewMsgSetNodeKeys(pk, validatorConsPubKeyStr, cliCtx.GetFromAddress())
+			err = msg.ValidateBasic()
+			if err != nil {
+				return err
+			}
+			return utils.GenerateOrBroadcastMsgs(cliCtx, txBldr, []cosmos.Msg{msg})
+		},
+	}
+}
+
+// GetCmdSetObservedTxIn command to make an observation of a transaction (typically from bifrost)
+func GetCmdSetObservedTxIn(cdc *codec.Codec) *cobra.Command {
+	return &cobra.Command{
+		Use:   "observed-txin  [vault_pubkey] [hash] [block_height] [from_address] [to_address] [coins] [gas] [memo]",
+		Short: "make an observed inbound transaction",
+		Args:  cobra.ExactArgs(8),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			inBuf := bufio.NewReader(cmd.InOrStdin())
+			cliCtx := context.NewCLIContextWithInput(inBuf).WithCodec(cdc)
+			txBldr := auth.NewTxBuilderFromCLI(inBuf).WithTxEncoder(utils.GetTxEncoder(cdc))
+			txBldr = txBldr.WithGas(600000) // set gas
+
+			pk, err := common.NewPubKey(args[0])
+			if err != nil {
+				return fmt.Errorf("fail to parse pubkey ,err:%w", err)
+			}
+
+			txhash, err := common.NewTxID(args[1])
+			if err != nil {
+				return fmt.Errorf("fail to parse tx hash ,err:%w", err)
+			}
+
+			blockHeight, err := strconv.ParseInt(args[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("fail to parse block height,err:%w", err)
+			}
+
+			fromAddress, err := common.NewAddress(args[3])
+			if err != nil {
+				return fmt.Errorf("fail to parse from address ,err:%w", err)
+			}
+
+			toAddress, err := common.NewAddress(args[4])
+			if err != nil {
+				return fmt.Errorf("fail to parse to address ,err:%w", err)
+			}
+
+			coins := common.ParseCoins(args[5])
+			gas := common.ParseGas(args[6])
+			memo := args[7]
+
+			tx := common.NewTx(txhash, fromAddress, toAddress, coins, gas, memo)
+			observedTx := types.NewObservedTx(tx, blockHeight, pk)
+
+			msg := types.NewMsgObservedTxIn(types.ObservedTxs{observedTx}, cliCtx.GetFromAddress())
 			err = msg.ValidateBasic()
 			if err != nil {
 				return err
