@@ -448,13 +448,13 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 				ctx.Logger().Error("fail to get inbound tx count", "vault", v.PubKey.String(), "chain", c.String())
 				continue
 			}
-			if count == 0 {
-				continue
-			}
-			if count%constants.InboundTxCountToConslidateUTXO == 0 {
+			if count > constants.InboundTxCountToConslidateUTXO {
 				ygg, err := ymgr.getTargetYggdrasilVault(ctx, c.GetGasAsset(), constAccessor)
 				if err != nil {
 					ctx.Logger().Error("fail to get yggdrasil vault to send fund to", "error", err)
+					continue
+				}
+				if ygg.IsEmpty() {
 					continue
 				}
 				to, err := ygg.PubKey.GetAddress(c)
@@ -485,6 +485,10 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 				ygg.AppendPendingTxBlockHeights(common.BlockHeight(ctx), constAccessor)
 				if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
 					return fmt.Errorf("fail to create yggdrasil pool: %w", err)
+				}
+				// every TSS keysign it consume 15 UTXOs
+				if err := ymgr.keeper.DecInboundTxCount(ctx, v.PubKey, c, -15); err != nil {
+					ctx.Logger().Error("fail to decrease the inbound tx count", "error", err)
 				}
 			}
 

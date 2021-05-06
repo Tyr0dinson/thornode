@@ -346,3 +346,43 @@ func (s YggdrasilManagerV52Suite) TestAbandonYggdrasilWithDifferentConditions(c 
 	c.Assert(ymgr.abandonYggdrasilVaults(ctx, mgr), IsNil)
 	c.Assert(k.VaultExists(ctx, naDisabled.PubKeySet.Secp256k1), Equals, true)
 }
+func (s YggdrasilManagerV52Suite) TestConsolidateUTXO(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	k.SetVault(ctx, vault)
+	mgr := NewDummyMgr()
+
+	// setup 6 active nodes
+	for i := 0; i < 6; i++ {
+		na := GetRandomNodeAccount(NodeActive)
+		na.Bond = cosmos.NewUint(common.One * 1000000)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	ymgr := NewYggMgrV52(k)
+	for i := 0; i < 20; i++ {
+		k.IncInboundTxCount(ctx, vault.PubKey, common.BTCChain)
+	}
+	err := ymgr.Fund(ctx, mgr, constAccessor)
+	c.Assert(err, IsNil)
+	na1 := GetRandomNodeAccount(NodeActive)
+	na1.Bond = cosmos.NewUint(1000000 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	bnbPool := NewPool()
+	bnbPool.Asset = common.BNBAsset
+	bnbPool.BalanceAsset = cosmos.NewUint(100000 * common.One)
+	bnbPool.BalanceRune = cosmos.NewUint(100000 * common.One)
+	c.Assert(k.SetPool(ctx, bnbPool), IsNil)
+	err1 := ymgr.Fund(ctx, mgr, constAccessor)
+	c.Assert(err1, IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	// This will send another yggdrasil for the purpose of consolidate UTXO
+	c.Assert(items, HasLen, 2)
+}

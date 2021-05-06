@@ -246,6 +246,7 @@ type KeeperChainContract interface {
 
 type KeeperInboundTxCount interface {
 	IncInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) error
+	DecInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain, num int64) error
 	GetInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) (int64, error)
 }
 

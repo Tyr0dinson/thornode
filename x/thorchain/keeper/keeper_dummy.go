@@ -396,6 +396,9 @@ func (k KVStoreDummy) GetInboundTxCount(ctx cosmos.Context, pubKey common.PubKey
 func (k KVStoreDummy) IncInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) error {
 	return nil
 }
+func (k KVStoreDummy) DecInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain, num int64) error {
+	return nil
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

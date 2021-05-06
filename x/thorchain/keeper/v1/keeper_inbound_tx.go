@@ -27,6 +27,20 @@ func (k KVStore) GetInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, cha
 	return record, err
 }
 
+// DecInboundTxCount decrease the tx count
+func (k KVStore) DecInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain, num int64) error {
+	record, err := k.GetInboundTxCount(ctx, pubKey, chain)
+	if err != nil {
+		return fmt.Errorf("fail to get current inbound tx count: %w", err)
+	}
+	record -= num
+	if record < 0 {
+		record = 0
+	}
+	k.setInboundTxCount(ctx, pubKey, chain, record)
+	return nil
+}
+
 func (k KVStore) setInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain, count int64) {
 	if count < 0 {
 		count = 0
