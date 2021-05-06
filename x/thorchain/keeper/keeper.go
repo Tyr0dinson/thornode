@@ -58,6 +58,7 @@ type Keeper interface {
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
 	KeeperChainContract
+	KeeperInboundTxCount
 }
 
 type KeeperPool interface {
@@ -241,6 +242,11 @@ type KeeperChainContract interface {
 	GetChainContract(ctx cosmos.Context, chain common.Chain) (ChainContract, error)
 	GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract
 	GetChainContractIterator(ctx cosmos.Context) cosmos.Iterator
+}
+
+type KeeperInboundTxCount interface {
+	IncInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) error
+	GetInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) (int64, error)
 }
 
 // NewKVStore creates new instances of the thorchain Keeper

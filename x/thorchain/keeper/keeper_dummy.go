@@ -390,6 +390,12 @@ func (k KVStoreDummy) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterat
 func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
 	return nil
 }
+func (k KVStoreDummy) GetInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) (int64, error) {
+	return 0, nil
+}
+func (k KVStoreDummy) IncInboundTxCount(ctx cosmos.Context, pubKey common.PubKey, chain common.Chain) error {
+	return nil
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
