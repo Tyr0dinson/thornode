@@ -26,8 +26,10 @@ var SWVersion, _ = semver.Make(Version)
 // Block time of THORChain
 var ThorchainBlockTime = 5 * time.Second
 
-// Memo Size
+// MaxMemoSize maximum Memo Size
 var MaxMemoSize = 250
+
+const InboundTxCountToConslidateUTXO = 15
 
 // ConstantValues implement ConstantValues interface
 type ConstantVals struct {
