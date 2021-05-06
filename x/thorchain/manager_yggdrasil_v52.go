@@ -448,7 +448,9 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 				ctx.Logger().Error("fail to get inbound tx count", "vault", v.PubKey.String(), "chain", c.String())
 				continue
 			}
-
+			if count == 0 {
+				continue
+			}
 			if count%constants.InboundTxCountToConslidateUTXO == 0 {
 				ygg, err := ymgr.getTargetYggdrasilVault(ctx, c.GetGasAsset(), constAccessor)
 				if err != nil {
