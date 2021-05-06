@@ -60,6 +60,9 @@ func (ymgr YggMgrV52) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	if err := ymgr.abandonYggdrasilVaults(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to check whether need to abandon yggdrasil vault", "error", err)
 	}
+	if err := ymgr.consolidateUTXOs(ctx, mgr, constAccessor); err != nil {
+		ctx.Logger().Error("fail to consolidate UTXOs", "error", err)
+	}
 	// Gather list of all pools
 	pools, err := ymgr.keeper.GetPools(ctx)
 	if err != nil {
@@ -447,7 +450,7 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 			}
 
 			if count%constants.InboundTxCountToConslidateUTXO == 0 {
-				ygg, err := ymgr.getTargetYggdrasilVault(ctx, c.GetGasAsset())
+				ygg, err := ymgr.getTargetYggdrasilVault(ctx, c.GetGasAsset(), constAccessor)
 				if err != nil {
 					ctx.Logger().Error("fail to get yggdrasil vault to send fund to", "error", err)
 					continue
@@ -487,14 +490,26 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 	}
 	return nil
 }
-func (ymgr YggMgrV52) getTargetYggdrasilVault(ctx cosmos.Context, asset common.Asset) (Vault, error) {
+func (ymgr YggMgrV52) getTargetYggdrasilVault(ctx cosmos.Context, asset common.Asset, constAccessor constants.ConstantValues) (Vault, error) {
 	targarVault := Vault{}
 	nodeAccs, err := ymgr.keeper.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return targarVault, fmt.Errorf("fail to get all active nodes: %w", err)
 	}
 	vaults := Vaults{}
+	// check that we have enough bond
+	minBond, err := ymgr.keeper.GetMimir(ctx, constants.MinimumBondInRune.String())
+	if minBond < 0 || err != nil {
+		minBond = constAccessor.GetInt64Value(constants.MinimumBondInRune)
+	}
+
 	for _, node := range nodeAccs {
+		if node.RequestedToLeave || node.ForcedToLeave {
+			continue
+		}
+		if node.Bond.LT(cosmos.NewUint(uint64(minBond))) {
+			continue
+		}
 		v, err := ymgr.keeper.GetVault(ctx, node.PubKeySet.Secp256k1)
 		if err != nil {
 			ctx.Logger().Error("fail to get yggdrasil vault", "pubkey", node.PubKeySet.Secp256k1)
