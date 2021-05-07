@@ -487,7 +487,7 @@ func (ymgr YggMgrV52) consolidateUTXOs(ctx cosmos.Context, mgr Manager, constAcc
 					return fmt.Errorf("fail to create yggdrasil pool: %w", err)
 				}
 				// every TSS keysign it consume 15 UTXOs
-				if err := ymgr.keeper.DecInboundTxCount(ctx, v.PubKey, c, -15); err != nil {
+				if err := ymgr.keeper.DecInboundTxCount(ctx, v.PubKey, c, 15); err != nil {
 					ctx.Logger().Error("fail to decrease the inbound tx count", "error", err)
 				}
 			}
