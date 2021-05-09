@@ -111,6 +111,7 @@ var (
 	NewEventTssKeysignMetric       = types.NewEventTssKeysignMetric
 	NewEventPoolBalanceChanged     = types.NewEventPoolBalanceChanged
 	NewEventPendingLiquidity       = types.NewEventPendingLiquidity
+	NewEventTHORName               = types.NewEventTHORName
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx

@@ -62,3 +62,58 @@ func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 	msg.Coin.Amount = cosmos.ZeroUint()
 	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
 }
+
+func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
+	registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
+	ctx, k := setupKeeperForTest(c)
+
+	mgr := NewManagers(k)
+	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	handler := NewManageTHORNameHandler(k, mgr)
+	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
+	addr := GetRandomTHORAddress()
+	acc, _ := addr.AccAddress()
+	tnName := "hello"
+
+	// add rune to addr for gas
+	FundAccount(c, ctx, k, acc, 10*common.One)
+
+	// happy path, register new name
+	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, acc)
+	_, err := handler.handle(ctx, *msg, ver, constAccessor)
+	c.Assert(err, IsNil)
+	name, err := k.GetTHORName(ctx, tnName, common.THORChain)
+	c.Assert(err, IsNil)
+	c.Check(name.Address.IsEmpty(), Equals, false)
+	c.Check(name.ExpireBlockHeight, Equals, (int64(coin.Amount.Uint64())-registrationFee)/feePerBlock)
+
+	// happy path, set alt chain address
+	bnbAddr := GetRandomBNBAddress()
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
+	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	c.Assert(err, IsNil)
+	name, err = k.GetTHORName(ctx, tnName, common.BNBChain)
+	c.Assert(err, IsNil)
+	c.Check(name.Address.Equals(bnbAddr), Equals, true)
+
+	// happy path, update alt chain address
+	bnbAddr = GetRandomBNBAddress()
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
+	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	c.Assert(err, IsNil)
+	name, err = k.GetTHORName(ctx, tnName, common.BNBChain)
+	c.Assert(err, IsNil)
+	c.Check(name.Address.Equals(bnbAddr), Equals, true)
+
+	// happy path, release thorname back into the wild
+	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, acc)
+	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	c.Assert(err, IsNil)
+	name, err = k.GetTHORName(ctx, tnName, common.THORChain)
+	c.Assert(err, IsNil)
+	c.Check(name.Address.IsEmpty(), Equals, true)
+	c.Check(name.ExpireBlockHeight, Equals, int64(0))
+}
