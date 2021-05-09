@@ -867,3 +867,27 @@ func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason str
 		ctx.Logger().Error("fail to emit pool balance changed event", "error", err)
 	}
 }
+
+func nativeGasFee(ctx cosmos.Context, addr cosmos.AccAddress, keeper keeper.Keeper, constAccessor constants.ConstantValues) error {
+	nativeTxFee, err := keeper.GetMimir(ctx, constants.NativeTransactionFee.String())
+	if err != nil || nativeTxFee < 0 {
+		nativeTxFee = constAccessor.GetInt64Value(constants.NativeTransactionFee)
+	}
+	gas := common.NewCoin(common.RuneNative, cosmos.NewUint(uint64(nativeTxFee)))
+	gasFee, err := gas.Native()
+	if err != nil {
+		return fmt.Errorf("fail to get gas fee: %w", err)
+	}
+
+	if !keeper.HasCoins(ctx, addr, cosmos.NewCoins(gasFee)) {
+		return cosmos.ErrInsufficientCoins(err, fmt.Sprintf("insufficient funds for gas: %d", nativeTxFee))
+	}
+
+	// send gas to reserve
+	sdkErr := keeper.SendFromAccountToModule(ctx, addr, ReserveName, common.NewCoins(gas))
+	if sdkErr != nil {
+		return fmt.Errorf("unable to send gas to reserve: %w", sdkErr)
+	}
+
+	return nil
+}
