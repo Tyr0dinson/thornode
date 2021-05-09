@@ -158,7 +158,7 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		}
 		feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
 		fundPaid = msg.Coin.Amount
-		addBlocks := int64(msg.Coin.Amount.Uint64()) / int64(feePerBlock)
+		addBlocks := int64(msg.Coin.Amount.Uint64()) / feePerBlock
 		tn.ExpireBlockHeight += addBlocks
 		h.keeper.SetTHORName(ctx, tn)
 	}
