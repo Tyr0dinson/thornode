@@ -126,17 +126,23 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	var err error
 
-	// TODO: pay rune gas
 	// TODO: write keeper unit tests
 
-	var tn THORName
-	exists := h.keeper.THORNameExists(ctx, msg.Name, common.THORChain)
+	if err := nativeGasFee(ctx, msg.GetSigners()[0], h.keeper, constAccessor); err != nil {
+		return nil, err
+	}
+
+	tn := NewTHORName(msg.Name, msg.Chain, msg.Address, 0)
+	exists := h.keeper.THORNameExists(ctx, msg.Name, msg.Chain)
 	if exists {
-		tn, err = h.keeper.GetTHORName(ctx, msg.Name, common.THORChain)
+		tn, err = h.keeper.GetTHORName(ctx, msg.Name, msg.Chain)
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	registrationFeePaid := cosmos.ZeroUint()
+	fundPaid := cosmos.ZeroUint()
 
 	// check if user is trying to extend expiration
 	if !msg.Coin.Amount.IsZero() {
@@ -148,24 +154,31 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 			// minus registration fee
 			registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
 			msg.Coin.Amount = common.SafeSub(msg.Coin.Amount, cosmos.NewUint(uint64(registrationFee)))
+			registrationFeePaid = cosmos.NewUint(uint64(registrationFee))
 		}
 		feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
+		fundPaid = msg.Coin.Amount
 		addBlocks := int64(msg.Coin.Amount.Uint64()) / int64(feePerBlock)
 		tn.ExpireBlockHeight += addBlocks
 		h.keeper.SetTHORName(ctx, tn)
 	}
 
 	// check if we need to reduce the expire time, upon user request
-	if msg.ExpireBlockHeight < tn.ExpireBlockHeight {
+	if msg.ExpireBlockHeight > 0 && msg.ExpireBlockHeight < tn.ExpireBlockHeight {
 		tn.ExpireBlockHeight = msg.ExpireBlockHeight
 		h.keeper.SetTHORName(ctx, tn)
 	}
 
 	// update address
 	if !msg.Address.IsEmpty() {
-		name, _ := h.keeper.GetTHORName(ctx, msg.Name, msg.Chain)
-		name.Address = msg.Address
-		h.keeper.SetTHORName(ctx, name)
+		tn, _ := h.keeper.GetTHORName(ctx, msg.Name, msg.Chain)
+		tn.Address = msg.Address
+		h.keeper.SetTHORName(ctx, tn)
+	}
+
+	evt := NewEventTHORName(tn.Name, tn.Chain, tn.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, msg.GetSigners()[0])
+	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); nil != err {
+		ctx.Logger().Error("fail to emit THORName event", "error", err)
 	}
 
 	return &cosmos.Result{}, nil
