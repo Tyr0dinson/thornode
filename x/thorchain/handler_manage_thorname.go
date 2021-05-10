@@ -127,6 +127,7 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 	var err error
 
 	// TODO: write keeper unit tests
+	// TODO: check account has enough rune coin, and send rune to reserve
 
 	if err := nativeGasFee(ctx, msg.GetSigners()[0], h.keeper, constAccessor); err != nil {
 		return nil, err
