@@ -57,7 +57,8 @@ func getMsgTssKeysignFailID(members []blame.Node, height int64, memo string, coi
 		sb.WriteString(c.String())
 	}
 	hash := sha256.New()
-	return hex.EncodeToString(hash.Sum([]byte(sb.String())))
+	_, _ = hash.Write([]byte(sb.String()))
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Route should return the route key of the module

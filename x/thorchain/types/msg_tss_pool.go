@@ -64,7 +64,8 @@ func getTssID(members common.PubKeys, poolPk common.PubKey, height int64, bl bla
 	sb.WriteString(poolPk.String())
 	sb.WriteString(fmt.Sprintf("%d", height))
 	hash := sha256.New()
-	return hex.EncodeToString(hash.Sum([]byte(sb.String())))
+	_, _ = hash.Write([]byte(sb.String()))
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Route should return the route key of the module
