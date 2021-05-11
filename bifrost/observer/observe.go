@@ -294,6 +294,7 @@ func (o *Observer) signAndSendToThorchain(txIn types.TxIn) error {
 	return backoff.Retry(func() error {
 		txID, err := o.thorchainBridge.Broadcast(*stdTx, types.TxSync)
 		if err != nil {
+			o.logger.Err(err).Msg("fail to send the tx to thorchain")
 			return fmt.Errorf("fail to send the tx to thorchain: %w", err)
 		}
 		o.logger.Info().Str("thorchain hash", txID.String()).Msg("sign and send to thorchain successfully")
