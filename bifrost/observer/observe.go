@@ -291,7 +291,8 @@ func (o *Observer) signAndSendToThorchain(txIn types.TxIn) error {
 		return fmt.Errorf("fail to sign the tx: %w", err)
 	}
 	bf := backoff.NewExponentialBackOff()
-	return backoff.Retry(func() error {
+	bf.MaxElapsedTime = constants.ThorchainBlockTime
+	retryErr := backoff.Retry(func() error {
 		txID, err := o.thorchainBridge.Broadcast(*stdTx, types.TxSync)
 		if err != nil {
 			o.logger.Err(err).Msg("fail to send the tx to thorchain")
@@ -300,6 +301,11 @@ func (o *Observer) signAndSendToThorchain(txIn types.TxIn) error {
 		o.logger.Info().Str("thorchain hash", txID.String()).Msg("sign and send to thorchain successfully")
 		return nil
 	}, bf)
+	if retryErr != nil {
+		// Panic it thus bifrost will restart and get to a good state
+		panic(retryErr)
+	}
+	return retryErr
 }
 
 // getThorchainTxIns convert to the type thorchain expected
