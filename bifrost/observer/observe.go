@@ -290,8 +290,8 @@ func (o *Observer) signAndSendToThorchain(txIn types.TxIn) error {
 	if err != nil {
 		return fmt.Errorf("fail to sign the tx: %w", err)
 	}
-	bf := backoff.NewExponentialBackOff()
-	bf.MaxElapsedTime = constants.ThorchainBlockTime
+
+	bf := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 5)
 	retryErr := backoff.Retry(func() error {
 		txID, err := o.thorchainBridge.Broadcast(*stdTx, types.TxSync)
 		if err != nil {
