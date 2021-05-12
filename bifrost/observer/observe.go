@@ -38,11 +38,17 @@ type Observer struct {
 	m                 *metrics.Metrics
 	errCounter        *prometheus.CounterVec
 	thorchainBridge   *thorclient.ThorchainBridge
+	storage           *ObserverStorage
 }
 
 // NewObserver create a new instance of Observer for chain
-func NewObserver(pubkeyMgr pubkeymanager.PubKeyValidator, chains map[common.Chain]chainclients.ChainClient, thorchainBridge *thorclient.ThorchainBridge, m *metrics.Metrics) (*Observer, error) {
+func NewObserver(pubkeyMgr pubkeymanager.PubKeyValidator, chains map[common.Chain]chainclients.ChainClient, thorchainBridge *thorclient.ThorchainBridge, m *metrics.Metrics, dataPath string) (*Observer, error) {
 	logger := log.Logger.With().Str("module", "observer").Logger()
+	storage, err := NewObserverStorage(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create observer storage: %w", err)
+	}
+
 	return &Observer{
 		logger:            logger,
 		chains:            chains,
@@ -54,6 +60,7 @@ func NewObserver(pubkeyMgr pubkeymanager.PubKeyValidator, chains map[common.Chai
 		globalErrataQueue: make(chan types.ErrataBlock),
 		errCounter:        m.GetCounterVec(metrics.ObserverError),
 		thorchainBridge:   thorchainBridge,
+		storage:           storage,
 	}, nil
 }
 
@@ -67,6 +74,7 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 }
 
 func (o *Observer) Start() error {
+	o.restoreDeck()
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue)
 	}
@@ -74,6 +82,16 @@ func (o *Observer) Start() error {
 	go o.processErrataTx()
 	go o.deck()
 	return nil
+}
+
+func (o *Observer) restoreDeck() {
+	onDeckTxs, err := o.storage.GetOnDeckTxs()
+	if err != nil {
+		o.logger.Error().Err(err).Msg("fail to restore ondeck txs")
+	}
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	o.onDeck = onDeckTxs
 }
 
 func (o *Observer) deck() {
@@ -122,6 +140,9 @@ func (o *Observer) sendDeck() {
 		}
 	}
 	o.onDeck = make([]types.TxIn, 0)
+	if err := o.storage.SetOnDeckTxs(o.onDeck); err != nil {
+		o.logger.Error().Err(err).Msg("fail to save ondeck tx to key value store")
+	}
 }
 
 func (o *Observer) processTxIns() {
@@ -140,6 +161,9 @@ func (o *Observer) processTxIns() {
 			}
 			if !found {
 				o.onDeck = append(o.onDeck, txIn)
+			}
+			if err := o.storage.SetOnDeckTxs(o.onDeck); err != nil {
+				o.logger.Err(err).Msg("fail to save ondeck tx")
 			}
 			o.lock.Unlock()
 		}
