@@ -32,6 +32,7 @@ const (
 	TxSwitch
 	TxNoOp
 	TxConsolidate
+	TxTHORName
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -58,6 +59,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"switch":      TxSwitch,
 	"noop":        TxNoOp,
 	"consolidate": TxConsolidate,
+	"thorname":    TxTHORName,
 }
 
 var txToStringMap = map[TxType]string{
@@ -78,6 +80,7 @@ var txToStringMap = map[TxType]string{
 	TxSwitch:          "switch",
 	TxNoOp:            "noop",
 	TxConsolidate:     "consolidate",
+	TxTHORName:        "thorname",
 }
 
 // converts a string into a txType
@@ -92,7 +95,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve, TxNoOp:
+	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve, TxNoOp, TxTHORName:
 		return true
 	default:
 		return false
@@ -242,6 +245,8 @@ func ParseMemo(ctx cosmos.Context, keeper keeper.Keeper, memo string) (mem Memo,
 		return ParseNoOpMemo(parts)
 	case TxConsolidate:
 		return ParseConsolidateMemo(parts)
+	case TxTHORName:
+		return ParseManageTHORNameMemo(parts)
 	default:
 		return mem, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
