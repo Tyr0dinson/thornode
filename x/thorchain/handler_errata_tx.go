@@ -8,7 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
 // ErrataTxHandler is to handle ErrataTx message
@@ -146,7 +145,7 @@ func (h ErrataTxHandler) handleV1(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.
 		}
 	}
 
-	memo, _ := ParseMemo(tx.Memo)
+	memo, _ := ParseMemo(ctx, h.keeper, tx.Memo)
 	if !memo.IsType(TxSwap) && !memo.IsType(TxAdd) {
 		// must be a swap or add transaction
 		return &cosmos.Result{}, nil
@@ -271,7 +270,7 @@ func (h ErrataTxHandler) handleV42(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 		}
 	}
 
-	memo, _ := ParseMemo(tx.Memo)
+	memo, _ := ParseMemo(ctx, h.keeper, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
 		return h.processErrataOutboundTxV42(ctx, msg)
@@ -411,7 +410,7 @@ func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*co
 		return &cosmos.Result{}, nil
 	}
 
-	memo, _ := ParseMemo(tx.Memo)
+	memo, _ := ParseMemo(ctx, h.keeper, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
 		return h.processErrataOutboundTxV42(ctx, msg)
@@ -496,7 +495,7 @@ func (h ErrataTxHandler) processErrataOutboundTx(ctx cosmos.Context, msg MsgErra
 		return &cosmos.Result{}, nil
 	}
 	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
-	m, err := memo.ParseMemo(tx.Memo)
+	m, err := ParseMemo(ctx, h.keeper, tx.Memo)
 	if err != nil {
 		return nil, fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
 	}
@@ -620,7 +619,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV42(ctx cosmos.Context, msg MsgE
 		return &cosmos.Result{}, nil
 	}
 	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
-	m, err := memo.ParseMemo(tx.Memo)
+	m, err := ParseMemo(ctx, h.keeper, tx.Memo)
 	if err != nil {
 		return nil, fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
 	}

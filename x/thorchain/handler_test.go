@@ -349,7 +349,8 @@ func (HandlerSuite) TestRefund(c *C) {
 }
 
 func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
-	m, err := ParseMemo("swap:BNB.BNB")
+	ctx, k := setupKeeperForTest(c)
+	m, err := ParseMemo(ctx, k, "swap:BNB.BNB")
 	swapMemo, ok := m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	c.Assert(err, IsNil)
@@ -434,7 +435,7 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	// provide BNB, however THORNode send T-CAN as coin , which is incorrect, should result in an error
-	m, err := ParseMemo(fmt.Sprintf("add:BNB.BNB:%s", GetRandomRUNEAddress()))
+	m, err := ParseMemo(w.ctx, w.keeper, fmt.Sprintf("add:BNB.BNB:%s", GetRandomRUNEAddress()))
 	c.Assert(err, IsNil)
 	lpMemo, ok := m.(AddLiquidityMemo)
 	c.Assert(ok, Equals, true)
@@ -499,7 +500,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	}
 
 	runeAddr := GetRandomRUNEAddress()
-	lokiAddLiquidityMemo, err := ParseMemo(fmt.Sprintf("add:BNB.LOKI:%s", runeAddr))
+	lokiAddLiquidityMemo, err := ParseMemo(w.ctx, w.keeper, fmt.Sprintf("add:BNB.LOKI:%s", runeAddr))
 	c.Assert(err, IsNil)
 	msg4, err4 := getMsgAddLiquidityFromMemo(w.ctx, lokiAddLiquidityMemo.(AddLiquidityMemo), txin, GetRandomBech32Addr())
 	c.Assert(err4, IsNil)

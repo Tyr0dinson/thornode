@@ -282,7 +282,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	observerAddr := keeper.activeNodeAccount.NodeAddress
 
 	// double swap - happy path
-	m, err := ParseMemo("swap:BNB.BNB:" + signerBNBAddr.String())
+	m, err := ParseMemo(ctx, keeper, "swap:BNB.BNB:"+signerBNBAddr.String())
 	txIn := NewObservedTx(
 		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
@@ -309,7 +309,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	c.Assert(items, HasLen, 1)
 	// double swap , RUNE not enough to pay for transaction fee
 	testnetBNBAddr := GetRandomBNBAddress()
-	m1, err := ParseMemo("swap:BNB.BNB:" + testnetBNBAddr.String())
+	m1, err := ParseMemo(ctx, keeper, "swap:BNB.BNB:"+testnetBNBAddr.String())
 	txIn1 := NewObservedTx(
 		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
