@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	types2 "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -81,6 +82,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryTssKeygenMetric(ctx, path[1:], req, mgr)
 		case q.QueryTssMetrics.Key:
 			return queryTssMetric(ctx, path[1:], req, mgr)
+		case q.QueryTHORName.Key:
+			return queryTHORName(ctx, path[1:], req, mgr)
 		default:
 			return nil, cosmos.ErrUnknownRequest(
 				fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
@@ -116,6 +119,37 @@ func queryBalanceModule(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		Coins:   bal,
 	}
 	res, err := json.MarshalIndent(balance, "", "	")
+	if err != nil {
+		return nil, ErrInternal(err, "fail to marshal response to json")
+	}
+	return res, nil
+}
+
+func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	names := make([]THORName, 0)
+	ref := path[0]
+	parts := strings.SplitAfterN(path[0], ".", 2)
+	if len(parts) > 1 {
+		chain, err := common.NewChain(parts[1])
+		if err != nil {
+			return nil, ErrInternal(err, "invalid chain")
+		}
+		name, err := mgr.Keeper.GetTHORName(ctx, parts[0], chain)
+		if err != nil {
+			return nil, ErrInternal(err, "fail to fetch THORName")
+		}
+		names = append(names, name)
+	} else {
+		iterator := mgr.Keeper.GetTHORNameIterator(ctx, ref)
+		defer iterator.Close()
+		for ; iterator.Valid(); iterator.Next() {
+			var n THORName
+			mgr.Keeper.Cdc().MustUnmarshalBinaryBare(iterator.Value(), &n)
+			names = append(names, n)
+		}
+	}
+
+	res, err := json.MarshalIndent(names, "", "	")
 	if err != nil {
 		return nil, ErrInternal(err, "fail to marshal response to json")
 	}
