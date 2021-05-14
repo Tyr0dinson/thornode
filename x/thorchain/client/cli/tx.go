@@ -31,8 +31,47 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(GetCmdMimir())
 	cmd.AddCommand(GetCmdDeposit())
 	cmd.AddCommand(GetCmdSend())
+	cmd.AddCommand(GetCmdTHORName())
 	for _, subCmd := range cmd.Commands() {
 		flags.AddTxFlagsToCmd(subCmd)
+	}
+	return cmd
+}
+
+// GetCmdTHORName command to manage THORNames
+func GetCmdTHORName() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "thorname [name] [chain] [address] [amount]",
+		Short: "manage a thorname",
+		Args:  cobra.ExactArgs(4),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			chain, err := common.NewChain(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid asset: %w", err)
+			}
+
+			addr, err := common.NewAddress(args[2])
+			if err != nil {
+				return fmt.Errorf("invalid asset: %w", err)
+			}
+
+			amt, err := strconv.ParseInt(args[3], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid amount (must be an integer): %w", err)
+			}
+			coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(amt)))
+
+			msg := types.NewMsgManageTHORName(args[0], chain, addr, coin, 0, clientCtx.GetFromAddress())
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
 	}
 	return cmd
 }
