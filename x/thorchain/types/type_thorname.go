@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 )
@@ -32,5 +33,5 @@ func (m *THORName) Valid() error {
 }
 
 func (m *THORName) Key() string {
-	return fmt.Sprintf("%s/%s", m.Name, m.Chain.String())
+	return fmt.Sprintf("%s/%s", strings.ToLower(m.Name), strings.ToLower(m.Chain.String()))
 }
