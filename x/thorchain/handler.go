@@ -106,6 +106,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgSwitch{}.Type()] = NewSwitchHandler(mgr)
 	m[MsgNoOp{}.Type()] = NewNoOpHandler(mgr)
 	m[MsgConsolidate{}.Type()] = NewConsolidateHandler(mgr)
+	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(keeper, mgr)
 	return m
 }
 
@@ -152,6 +153,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
 	case NoOpMemo:
 		newMsg = NewMsgNoOp(tx, signer, m.Action)
+	case ManageTHORNameMemo:
+		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}
@@ -235,6 +238,13 @@ func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddre
 	return NewMsgUnBond(tx.Tx, memo.GetAccAddress(), memo.GetAmount(), tx.Tx.FromAddress, signer), nil
 }
 
+func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	if len(tx.Tx.Coins) == 0 {
+		return nil, fmt.Errorf("transaction must have rune in it")
+	}
+	return NewMsgManageTHORName(memo.Name, memo.Chain, memo.Address, tx.Tx.Coins[0], memo.Expire, signer), nil
+}
+
 func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemo(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
@@ -284,6 +294,8 @@ func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 		newMsg = NewMsgNoOp(tx, signer, m.Action)
 	case ConsolidateMemo:
 		newMsg = NewMsgConsolidate(tx, signer)
+	case ManageTHORNameMemo:
+		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}
