@@ -36,7 +36,7 @@ func (k KVStore) GetTHORNameIterator(ctx cosmos.Context, name string) cosmos.Ite
 		return k.getIterator(ctx, prefixTHORName)
 	}
 	store := ctx.KVStore(k.storeKey)
-	return cosmos.KVStorePrefixIterator(store, []byte(fmt.Sprintf("%s%s", prefixTHORName, name)))
+	return cosmos.KVStorePrefixIterator(store, []byte(k.GetKey(ctx, prefixTHORName, name+"/")))
 }
 
 // SetTHORName save the THORName object to store
