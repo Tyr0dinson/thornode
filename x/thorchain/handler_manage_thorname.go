@@ -127,10 +127,20 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 	var err error
 
 	// TODO: write keeper unit tests
-	// TODO: check account has enough rune coin, and send rune to reserve
+	// TODO: add API query
+	// TODO: replace memo address with thorname alias
+	// TODO: create cli command
 
-	if err := nativeGasFee(ctx, msg.GetSigners()[0], h.keeper, constAccessor); err != nil {
+	// pay for gas
+	if err := nativeGasFee(ctx, msg.Signer, h.keeper, constAccessor); err != nil {
 		return nil, err
+	}
+
+	// send rune to the reserve from the account
+	if !msg.Coin.IsEmpty() {
+		if err := h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.Coins{msg.Coin}); err != nil {
+			return nil, err
+		}
 	}
 
 	tn := NewTHORName(msg.Name, msg.Chain, msg.Address, 0)
