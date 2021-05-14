@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 // TXTYPE:STATE1:STATE2:STATE3:FINALMEMO
@@ -178,7 +179,7 @@ func (m MemoBase) IsInbound() bool                  { return m.TxType.IsInbound(
 func (m MemoBase) IsInternal() bool                 { return m.TxType.IsInternal() }
 func (m MemoBase) IsEmpty() bool                    { return m.TxType.IsEmpty() }
 
-func ParseMemo(memo string) (mem Memo, err error) {
+func ParseMemo(ctx cosmos.Context, keeper keeper.Keeper, memo string) (mem Memo, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked parsing memo(%s), err: %s", memo, r)
@@ -212,11 +213,11 @@ func ParseMemo(memo string) (mem Memo, err error) {
 	case TxDonate:
 		return NewDonateMemo(asset), nil
 	case TxAdd:
-		return ParseAddLiquidityMemo(asset, parts)
+		return ParseAddLiquidityMemo(ctx, keeper, asset, parts)
 	case TxWithdraw:
 		return ParseWithdrawLiquidityMemo(asset, parts)
 	case TxSwap:
-		return ParseSwapMemo(asset, parts)
+		return ParseSwapMemo(ctx, keeper, asset, parts)
 	case TxOutbound:
 		return ParseOutboundMemo(parts)
 	case TxRefund:
@@ -236,7 +237,7 @@ func ParseMemo(memo string) (mem Memo, err error) {
 	case TxRagnarok:
 		return ParseRagnarokMemo(parts)
 	case TxSwitch:
-		return ParseSwitchMemo(parts)
+		return ParseSwitchMemo(ctx, keeper, parts)
 	case TxNoOp:
 		return ParseNoOpMemo(parts)
 	case TxConsolidate:
@@ -244,4 +245,30 @@ func ParseMemo(memo string) (mem Memo, err error) {
 	default:
 		return mem, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
+}
+
+func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain common.Chain) (common.Address, error) {
+	// if name is an address, return as is
+	addr, err := common.NewAddress(name)
+	if err == nil {
+		return addr, nil
+	}
+
+	parts := strings.SplitAfterN(name, ".", 2)
+	if len(parts) > 1 {
+		chain, err = common.NewChain(parts[1])
+		if err != nil {
+			return common.NoAddress, err
+		}
+	}
+
+	if keeper.THORNameExists(ctx, name, chain) {
+		thorname, err := keeper.GetTHORName(ctx, name, chain)
+		if err != nil {
+			return common.NoAddress, err
+		}
+		return thorname.Address, nil
+	}
+
+	return common.NoAddress, fmt.Errorf("%s is not a recognizable", name)
 }
