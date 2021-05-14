@@ -126,7 +126,6 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	var err error
 
-	// TODO: create cli command
 	// TODO: add thornames to genesis
 
 	// pay for gas
