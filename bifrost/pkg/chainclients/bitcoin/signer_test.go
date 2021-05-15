@@ -163,7 +163,7 @@ func (s *BitcoinSignerSuite) TestGetChainCfg(c *C) {
 
 func (s *BitcoinSignerSuite) TestSignTx(c *C) {
 	txOutItem := stypes.TxOutItem{
-		Chain:       common.BNBChain,
+		Chain:       common.BTCChain,
 		ToAddress:   types2.GetRandomBNBAddress(),
 		VaultPubKey: types2.GetRandomPubKey(),
 		Coins: common.Coins{

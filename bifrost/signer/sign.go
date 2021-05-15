@@ -381,7 +381,17 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 	if !chain.IsBlockScannerHealthy() {
 		return fmt.Errorf("The block scanner for chain %s is unhealthy, not signing transactions due to it", chain.GetChain())
 	}
+	// if Halt%sHeight is not zero , then it will ignore all the outbound tx
+	// check if mimir has disabled this chain
+	haltHeight, err := s.thorchainBridge.GetMimir(fmt.Sprintf("Halt%sChain", chain.GetChain()))
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get mimir setting")
+	}
 
+	if haltHeight > 0 {
+		s.logger.Info().Msgf("chain(%s) is halt, ignore txout item", chain)
+		return nil
+	}
 	// Check if we're sending all funds back , given we don't have memo in txoutitem anymore, so it rely on the coins field to be empty
 	// In this scenario, we should chose the coins to send ourselves
 	if tx.Coins.IsEmpty() {

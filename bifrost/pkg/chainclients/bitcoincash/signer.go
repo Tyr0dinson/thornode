@@ -200,7 +200,7 @@ func (c *Client) estimateTxSize(memo string, txes []btcjson.ListUnspentResult) i
 // SignTx is going to generate the outbound transaction, and also sign it
 func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, error) {
 	if !tx.Chain.Equals(common.BCHChain) {
-		return nil, errors.New("not BCH chain")
+		return nil, nil
 	}
 	// when there is no coin , skip it
 	if tx.Coins.IsEmpty() {

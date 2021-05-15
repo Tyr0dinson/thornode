@@ -163,7 +163,7 @@ func (s *DogecoinSignerSuite) TestGetChainCfg(c *C) {
 
 func (s *DogecoinSignerSuite) TestSignTx(c *C) {
 	txOutItem := stypes.TxOutItem{
-		Chain:       common.BNBChain,
+		Chain:       common.DOGEChain,
 		ToAddress:   types2.GetRandomBNBAddress(),
 		VaultPubKey: types2.GetRandomPubKey(),
 		Coins: common.Coins{
