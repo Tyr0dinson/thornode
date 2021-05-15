@@ -43,8 +43,17 @@ func (m *MsgSwap) ValidateBasic() error {
 	if m.Tx.Coins.IsEmpty() {
 		return cosmos.ErrUnknownRequest("swap coin cannot be empty")
 	}
+	// determine if target is layer1 vs synthetic asset
+	target := m.TargetAsset
+	if !target.IsRune() && !m.Destination.IsChain(target.Chain) {
+		if m.Destination.IsChain(common.THORChain) {
+			target = target.GetSyntheticAsset()
+		} else {
+			target = target.GetLayer1Asset()
+		}
+	}
 	for _, coin := range m.Tx.Coins {
-		if coin.Asset.Equals(m.TargetAsset) {
+		if coin.Asset.Equals(target) {
 			return cosmos.ErrUnknownRequest("swap Source and Target cannot be the same.")
 		}
 	}

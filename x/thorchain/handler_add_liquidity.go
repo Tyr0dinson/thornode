@@ -481,8 +481,8 @@ func (h AddLiquidityHandler) addLiquidityV1(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info(fmt.Sprintf("Pre-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
-	ctx.Logger().Info(fmt.Sprintf("Adding Liquidity: %sRUNE %sAsset", addRuneAmount, addAssetAmount))
+	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("adding liquidity", "rune", addRuneAmount, "asset", addAssetAmount)
 
 	balanceRune := pool.BalanceRune
 	balanceAsset := pool.BalanceAsset
@@ -493,13 +493,12 @@ func (h AddLiquidityHandler) addLiquidityV1(ctx cosmos.Context,
 		return ErrInternal(err, "fail to calculate pool unit")
 	}
 
-	ctx.Logger().Info(fmt.Sprintf("current pool units : %s ,liquidity units : %s", newPoolUnits, liquidityUnits))
 	poolRune := balanceRune.Add(addRuneAmount)
 	poolAsset := balanceAsset.Add(addAssetAmount)
 	pool.PoolUnits = newPoolUnits
 	pool.BalanceRune = poolRune
 	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info(fmt.Sprintf("Post-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
 	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
@@ -627,8 +626,8 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info(fmt.Sprintf("Pre-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
-	ctx.Logger().Info(fmt.Sprintf("Adding Liquidity: %sRUNE %sAsset", pendingRuneAmt, pendingAssetAmt))
+	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("adding liquidity", "rune", pendingRuneAmt, "asset", pendingAssetAmt)
 
 	balanceRune := pool.BalanceRune
 	balanceAsset := pool.BalanceAsset
@@ -639,13 +638,12 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 		return ErrInternal(err, "fail to calculate pool unit")
 	}
 
-	ctx.Logger().Info(fmt.Sprintf("current pool units : %s ,liquidity units : %s", newPoolUnits, liquidityUnits))
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.PoolUnits = newPoolUnits
 	pool.BalanceRune = poolRune
 	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info(fmt.Sprintf("Post-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
 	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}

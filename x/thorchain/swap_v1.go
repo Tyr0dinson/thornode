@@ -75,12 +75,6 @@ func (s *SwapperV1) swap(ctx cosmos.Context,
 		}
 	}
 
-	// Temporarily disable synths
-	// TODO enable synths again by removing this code below
-	if target.IsSyntheticAsset() {
-		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("synthetic assets are not yet supported")
-	}
-
 	if err := s.validateMessage(tx, target, destination); err != nil {
 		return cosmos.ZeroUint(), swapEvents, err
 	}
@@ -202,7 +196,7 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
 
-	ctx.Logger().Info(fmt.Sprintf("%s Swapping %s(%s) -> %s to %s (Fee %s)", tx.FromAddress, source, tx.Coins[0].Amount, target, destination, transactionFee))
+	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination, "fee", transactionFee)
 
 	var X, x, Y, liquidityFee, emitAssets cosmos.Uint
 	var swapSlip cosmos.Uint
@@ -295,7 +289,7 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
 	}
 
-	ctx.Logger().Info(fmt.Sprintf("Pre-Pool: %sRune %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits)
 
 	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
 		// we're doing a synth swap
@@ -331,7 +325,7 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 			pool.BalanceRune = common.SafeSub(Y, emitAssets)
 		}
 	}
-	ctx.Logger().Info(fmt.Sprintf("Post-swap: %sRune %sAsset , user get:%s ", pool.BalanceRune, pool.BalanceAsset, emitAssets))
+	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
 
 	// add the new pool to the cache
 	s.pools[pool.Asset] = pool
