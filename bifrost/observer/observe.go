@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -306,6 +308,30 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 // given that Bifrost have to filter out those txes
 // the logic has to be here as THORChain is chain agnostic , customer can swap from BTC/ETH to BNB
 func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInItem) (txs []types.TxInItem) {
+	// finds the destination address, and supports THORNames
+	fetchAddr := func(memo string, bridge *thorclient.ThorchainBridge) common.Address {
+		m, _ := mem.ParseMemo(memo)
+		if !m.GetDestination().IsEmpty() {
+			return m.GetDestination()
+		}
+
+		// could not find an address, check THORNames
+		var raw string
+		parts := strings.Split(memo, ":")
+		switch m.GetType() {
+		case mem.TxAdd:
+			if len(parts) > 2 {
+				raw = parts[2]
+			}
+		case mem.TxSwap:
+			if len(parts) > 3 {
+				raw = parts[3]
+			}
+		}
+		name, _ := bridge.GetTHORName(raw, common.BNBChain)
+		return name.Address
+	}
+
 	bnbClient, ok := o.chains[common.BNBChain]
 	if !ok {
 		txs = items
@@ -313,7 +339,7 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 	}
 	for _, txInItem := range items {
 		var addressesToCheck []string
-		addr := txInItem.GetAddressToCheck()
+		addr := fetchAddr(txInItem.Memo, o.thorchainBridge)
 		if !addr.IsEmpty() && addr.IsChain(common.BNBChain) {
 			addressesToCheck = append(addressesToCheck, addr.String())
 		}
