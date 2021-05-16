@@ -33,8 +33,6 @@ func NewManageTHORNameMemo(name string, chain common.Chain, addr common.Address,
 func ParseManageTHORNameMemo(parts []string) (ManageTHORNameMemo, error) {
 	var err error
 	var name string
-	chain := common.EmptyChain
-	addr := common.NoAddress
 	expire := int64(0)
 
 	if len(parts) < 4 {
@@ -42,12 +40,12 @@ func ParseManageTHORNameMemo(parts []string) (ManageTHORNameMemo, error) {
 	}
 
 	name = parts[1]
-	chain, err = common.NewChain(parts[2])
+	chain, err := common.NewChain(parts[2])
 	if err != nil {
 		return ManageTHORNameMemo{}, err
 	}
 
-	addr, err = common.NewAddress(parts[3])
+	addr, err := common.NewAddress(parts[3])
 	if err != nil {
 		return ManageTHORNameMemo{}, err
 	}
