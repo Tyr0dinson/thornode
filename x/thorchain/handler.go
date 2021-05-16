@@ -64,8 +64,10 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
 
 	// native handlers (non-consensus)
-	m[MsgSend{}.Type()] = NewSendHandler(mgr)
-	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
+	m[MsgSend{}.Type()] = NewSendHandler(keeper, mgr)
+	m[MsgDeposit{}.Type()] = NewDepositHandler(keeper, mgr)
+	// TODO: uncomment this line once THORNames is supported
+	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(keeper, mgr)
 	return m
 }
 
@@ -305,7 +307,7 @@ func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 }
 
 func processOneTxInV54(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	memo, err := ParseMemo(tx.Tx.Memo)
+	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
