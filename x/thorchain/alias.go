@@ -3,6 +3,7 @@ package thorchain
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -50,6 +51,20 @@ const (
 	// Bond type
 	AddPendingLiquidity      = types.PendingLiquidityType_add
 	WithdrawPendingLiquidity = types.PendingLiquidityType_withdraw
+
+	// Memos
+	TxSwap            = mem.TxSwap
+	TxAdd             = mem.TxAdd
+	TxBond            = mem.TxBond
+	TxYggdrasilFund   = mem.TxYggdrasilFund
+	TxYggdrasilReturn = mem.TxYggdrasilReturn
+	TxMigrate         = mem.TxMigrate
+	TxRagnarok        = mem.TxRagnarok
+	TxReserve         = mem.TxReserve
+	TxOutbound        = mem.TxOutbound
+	TxUnBond          = mem.TxUnbond
+	TxLeave           = mem.TxLeave
+	TxTHORName        = mem.TxTHORName
 )
 
 var (
@@ -147,6 +162,17 @@ var (
 	HasSuperMajority               = types.HasSuperMajority
 	NewTssKeysignMetric            = types.NewTssKeysignMetric
 	DefaultGenesis                 = types.DefaultGenesis
+
+	// Memo
+	ParseMemo              = mem.ParseMemo
+	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
+	FetchAddress           = mem.FetchAddress
+	NewRefundMemo          = mem.NewRefundMemo
+	NewOutboundMemo        = mem.NewOutboundMemo
+	NewRagnarokMemo        = mem.NewRagnarokMemo
+	NewYggdrasilReturn     = mem.NewYggdrasilReturn
+	NewYggdrasilFund       = mem.NewYggdrasilFund
+	NewMigrateMemo         = mem.NewMigrateMemo
 )
 
 type (
@@ -262,6 +288,7 @@ type (
 	SwitchMemo            = mem.SwitchMemo
 	NoOpMemo              = mem.NoOpMemo
 	ConsolidateMemo       = mem.ConsolidateMemo
+	ManageTHORNameMemo    = mem.ManageTHORNameMemo
 )
 
 var _ codec.ProtoMarshaler = &types.LiquidityProvider{}

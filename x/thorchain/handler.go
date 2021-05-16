@@ -113,7 +113,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 }
 
 func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	memo, err := ParseMemo(ctx, keeper, tx.Tx.Memo)
+	memo, err := ParseMemo(tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
@@ -248,7 +248,7 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 }
 
 func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	memo, err := ParseMemo(ctx, keeper, tx.Tx.Memo)
+	memo, err := ParseMemo(tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
