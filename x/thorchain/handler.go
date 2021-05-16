@@ -68,7 +68,7 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(keeper, mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(keeper, mgr)
-	// TODO: uncomment this line once THORNames is supported
+	// TODO: uncomment this line once THORNames is deployed (post version 0.54.0)
 	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(keeper, mgr)
 	return m
 }
