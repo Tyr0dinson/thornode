@@ -64,10 +64,37 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		smgr.migrateStoreV46(ctx, version, constantAccessor)
 	case 49:
 		smgr.migrateStoreV49(ctx, version, constantAccessor)
+	case 53:
+		smgr.migrateStoreV53(ctx, version, constantAccessor)
 	}
 
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
+}
+
+// migrateStoreV53
+func (smgr *StoreMgr) migrateStoreV53(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	vaultPubKey, err := common.NewPubKey("tthorpub1addwnpepq26uhtkcw3updxyc4pz804uxpewvv584zm6z5qhcs5y3qtm5j04gjkd59h7")
+	if err != nil {
+		ctx.Logger().Error("fail to parse pubkey (tthorpub1addwnpepq26uhtkcw3updxyc4pz804uxpewvv584zm6z5qhcs5y3qtm5j04gjkd59h7)", "error", err)
+		return
+	}
+	vault, err := smgr.keeper.GetVault(ctx, vaultPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault", "error", err)
+		return
+	}
+	asset, err := common.NewAsset("ETH.DAI-0XAD6D458402F60FD3BD25163575031ACDCE07538D")
+	if err != nil {
+		ctx.Logger().Error("fail to parse DAI asset", "error", err)
+		return
+	}
+	vault.SubFunds(common.Coins{
+		common.NewCoin(asset, cosmos.NewUint(2304146750)),
+	})
+	if err := smgr.keeper.SetVault(ctx, vault); err != nil {
+		ctx.Logger().Error("fail to save vault", "error", err)
+	}
 }
 
 func (smgr *StoreMgr) migrateStoreV49(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
