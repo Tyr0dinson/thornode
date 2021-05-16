@@ -182,7 +182,73 @@ func (m MemoBase) IsInbound() bool                  { return m.TxType.IsInbound(
 func (m MemoBase) IsInternal() bool                 { return m.TxType.IsInternal() }
 func (m MemoBase) IsEmpty() bool                    { return m.TxType.IsEmpty() }
 
-func ParseMemo(ctx cosmos.Context, keeper keeper.Keeper, memo string) (mem Memo, err error) {
+func ParseMemo(memo string) (mem Memo, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked parsing memo(%s), err: %s", memo, r)
+		}
+	}()
+	mem = MemoBase{TxType: TxUnknown}
+	if len(memo) == 0 {
+		return mem, fmt.Errorf("memo can't be empty")
+	}
+	parts := strings.Split(memo, ":")
+	tx, err := StringToTxType(parts[0])
+	if err != nil {
+		return mem, err
+	}
+
+	var asset common.Asset
+	switch tx {
+	case TxDonate, TxAdd, TxSwap, TxWithdraw:
+		if len(parts) < 2 {
+			return mem, fmt.Errorf("cannot parse given memo: length %d", len(parts))
+		}
+		asset, err = common.NewAsset(parts[1])
+		if err != nil {
+			return mem, err
+		}
+	}
+
+	switch tx {
+	case TxLeave:
+		return ParseLeaveMemo(parts)
+	case TxDonate:
+		return NewDonateMemo(asset), nil
+	case TxAdd:
+		return ParseAddLiquidityMemo(cosmos.Context{}, nil, asset, parts)
+	case TxWithdraw:
+		return ParseWithdrawLiquidityMemo(asset, parts)
+	case TxSwap:
+		return ParseSwapMemo(cosmos.Context{}, nil, asset, parts)
+	case TxOutbound:
+		return ParseOutboundMemo(parts)
+	case TxRefund:
+		return ParseRefundMemo(parts)
+	case TxBond:
+		return ParseBondMemo(parts)
+	case TxUnbond:
+		return ParseUnbondMemo(parts)
+	case TxYggdrasilFund:
+		return ParseYggdrasilFundMemo(parts)
+	case TxYggdrasilReturn:
+		return ParseYggdrasilReturnMemo(parts)
+	case TxReserve:
+		return NewReserveMemo(), nil
+	case TxMigrate:
+		return ParseMigrateMemo(parts)
+	case TxRagnarok:
+		return ParseRagnarokMemo(parts)
+	case TxSwitch:
+		return ParseSwitchMemo(cosmos.Context{}, nil, parts)
+	case TxNoOp:
+		return ParseNoOpMemo(parts)
+	default:
+		return mem, fmt.Errorf("TxType not supported: %s", tx.String())
+	}
+}
+
+func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo string) (mem Memo, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked parsing memo(%s), err: %s", memo, r)

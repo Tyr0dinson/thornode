@@ -43,7 +43,11 @@ func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset,
 	affPts := cosmos.ZeroUint()
 	if len(parts) > 2 {
 		if len(parts[2]) > 0 {
-			destination, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+			if keeper == nil {
+				destination, err = common.NewAddress(parts[2])
+			} else {
+				destination, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+			}
 			if err != nil {
 				return SwapMemo{}, err
 			}
@@ -60,7 +64,11 @@ func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset,
 	}
 
 	if len(parts) > 5 && len(parts[4]) > 0 && len(parts[5]) > 0 {
-		affAddr, err = FetchAddress(ctx, keeper, parts[4], common.THORChain)
+		if keeper == nil {
+			affAddr, err = common.NewAddress(parts[4])
+		} else {
+			affAddr, err = FetchAddress(ctx, keeper, parts[4], common.THORChain)
+		}
 		if err != nil {
 			return SwapMemo{}, err
 		}

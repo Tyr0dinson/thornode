@@ -349,8 +349,7 @@ func (HandlerSuite) TestRefund(c *C) {
 }
 
 func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	m, err := ParseMemo(ctx, k, "swap:BNB.BNB")
+	m, err := ParseMemo("swap:BNB.BNB")
 	swapMemo, ok := m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	c.Assert(err, IsNil)
@@ -435,7 +434,7 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	// provide BNB, however THORNode send T-CAN as coin , which is incorrect, should result in an error
-	m, err := ParseMemo(w.ctx, w.keeper, fmt.Sprintf("add:BNB.BNB:%s", GetRandomRUNEAddress()))
+	m, err := ParseMemo(fmt.Sprintf("add:BNB.BNB:%s", GetRandomRUNEAddress()))
 	c.Assert(err, IsNil)
 	lpMemo, ok := m.(AddLiquidityMemo)
 	c.Assert(ok, Equals, true)
@@ -500,7 +499,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	}
 
 	runeAddr := GetRandomRUNEAddress()
-	lokiAddLiquidityMemo, err := ParseMemo(w.ctx, w.keeper, fmt.Sprintf("add:BNB.LOKI:%s", runeAddr))
+	lokiAddLiquidityMemo, err := ParseMemo(fmt.Sprintf("add:BNB.LOKI:%s", runeAddr))
 	c.Assert(err, IsNil)
 	msg4, err4 := getMsgAddLiquidityFromMemo(w.ctx, lokiAddLiquidityMemo.(AddLiquidityMemo), txin, GetRandomBech32Addr())
 	c.Assert(err4, IsNil)
@@ -674,4 +673,21 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 	check, _ = common.NewAsset("ETH.USDT-1EC7")
 	result = fuzzyAssetMatch(ctx, k, check)
 	c.Check(result.Equals(p2.Asset), Equals, true)
+}
+
+func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	thorAddr := GetRandomTHORAddress()
+	name := NewTHORName("hello", common.THORChain, thorAddr, 50)
+	k.SetTHORName(ctx, name)
+
+	bnbAddr := GetRandomBNBAddress()
+	addr, err := FetchAddress(ctx, k, bnbAddr.String(), common.BNBChain)
+	c.Assert(err, IsNil)
+	c.Check(addr.Equals(bnbAddr), Equals, true)
+
+	addr, err = FetchAddress(ctx, k, "hello", common.THORChain)
+	c.Assert(err, IsNil)
+	c.Check(addr.Equals(thorAddr), Equals, true)
 }
