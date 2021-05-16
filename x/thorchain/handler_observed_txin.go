@@ -187,7 +187,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxIn) (
 		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
-		memo, _ := ParseMemo(ctx, h.keeper, tx.Tx.Memo) // ignore err
+		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
 		if vault.IsYggdrasil() && memo.IsType(TxYggdrasilFund) {
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault
@@ -335,7 +335,7 @@ func (h ObservedTxInHandler) handleV36(ctx cosmos.Context, msg MsgObservedTxIn) 
 		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
-		memo, _ := ParseMemo(ctx, h.keeper, tx.Tx.Memo) // ignore err
+		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
 		if vault.IsYggdrasil() && memo.IsType(TxYggdrasilFund) {
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault
@@ -479,7 +479,7 @@ func (h ObservedTxInHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxIn) 
 		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
-		memo, _ := ParseMemo(ctx, h.keeper, tx.Tx.Memo) // ignore err
+		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
 		if vault.IsYggdrasil() && memo.IsType(TxYggdrasilFund) {
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault
@@ -627,7 +627,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
-		memo, _ := ParseMemo(ctx, h.keeper, tx.Tx.Memo) // ignore err
+		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
 		if vault.IsYggdrasil() && memo.IsType(TxYggdrasilFund) {
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault
