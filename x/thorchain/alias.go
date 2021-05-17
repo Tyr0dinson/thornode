@@ -81,6 +81,7 @@ var (
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut
 	NewMsgNoOp                     = types.NewMsgNoOp
+	NewMsgConsolidate              = types.NewMsgConsolidate
 	NewMsgDonate                   = types.NewMsgDonate
 	NewMsgAddLiquidity             = types.NewMsgAddLiquidity
 	NewMsgWithdrawLiquidity        = types.NewMsgWithdrawLiquidity
@@ -176,6 +177,7 @@ type (
 	MsgBond                        = types.MsgBond
 	MsgUnBond                      = types.MsgUnBond
 	MsgNoOp                        = types.MsgNoOp
+	MsgConsolidate                 = types.MsgConsolidate
 	MsgDonate                      = types.MsgDonate
 	MsgWithdrawLiquidity           = types.MsgWithdrawLiquidity
 	MsgAddLiquidity                = types.MsgAddLiquidity
@@ -278,6 +280,7 @@ type (
 	ReserveMemo           = mem.ReserveMemo
 	SwitchMemo            = mem.SwitchMemo
 	NoOpMemo              = mem.NoOpMemo
+	ConsolidateMemo       = mem.ConsolidateMemo
 )
 
 var _ codec.ProtoMarshaler = &types.LiquidityProvider{}
