@@ -389,7 +389,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) error {
 	}
 
 	if haltHeight > 0 {
-		s.logger.Info().Msgf("chain(%s) is halt, ignore txout item", chain)
+		s.logger.Info().Msgf("chain(%s) is halt, ignore txout item", chain.GetChain())
 		return nil
 	}
 	// Check if we're sending all funds back , given we don't have memo in txoutitem anymore, so it rely on the coins field to be empty
