@@ -97,6 +97,7 @@ func NewHandlerDepositTestHelper(k keeper.Keeper) *HandlerDepositTestHelper {
 
 func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 	acctAddr := GetRandomBech32Addr()
+	bnbSynthAsset, _ := common.NewAsset("BNB/BNB")
 	testCases := []struct {
 		name            string
 		messageProvider func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg
@@ -126,7 +127,19 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 			},
 		},
 		{
-			name: "Insufficient funds should result in an error",
+			name: "synth coin should result in an error",
+			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg {
+				return NewMsgDeposit(common.Coins{
+					common.NewCoin(bnbSynthAsset, cosmos.NewUint(100)),
+				}, "ADD:BNB/BNB", GetRandomBech32Addr())
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerDepositTestHelper, name string) {
+				c.Check(err, NotNil, Commentf(name))
+				c.Check(result, IsNil, Commentf(name))
+			},
+		},
+		{
+			name: "insufficient funds should result in an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg {
 				return NewMsgDeposit(common.Coins{
 					common.NewCoin(common.RuneNative, cosmos.NewUint(100)),

@@ -215,6 +215,17 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
 	runeAddr := GetRandomRUNEAddress()
 	bnbAddr := GetRandomBNBAddress()
+	bnbSynthAsset, _ := common.NewAsset("BNB/BNB")
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomRUNEAddress(),
+		GetRandomRUNEAddress(),
+		common.Coins{common.NewCoin(bnbSynthAsset, cosmos.NewUint(common.One*5))},
+		common.Gas{
+			{Asset: common.RuneNative, Amount: cosmos.NewUint(1 * common.One)},
+		},
+		"add:BNB.BNB",
+	)
 	k := &MockAddLiquidityKeeper{
 		activeNodeAccount: activeNodeAccount,
 		currentPool: Pool{
@@ -248,6 +259,16 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 		{
 			name:           "empty asset should fail",
 			msg:            NewMsgAddLiquidity(GetRandomTx(), common.Asset{}, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
+			expectedResult: errAddLiquidityFailValidation,
+		},
+		{
+			name:           "synth asset from memo should fail",
+			msg:            NewMsgAddLiquidity(GetRandomTx(), bnbSynthAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
+			expectedResult: errAddLiquidityFailValidation,
+		},
+		{
+			name:           "synth asset from coins should fail",
+			msg:            NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
 			expectedResult: errAddLiquidityFailValidation,
 		},
 		{
