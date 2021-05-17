@@ -59,7 +59,9 @@ var stringToTxTypeMap = map[string]TxType{
 	"switch":      TxSwitch,
 	"noop":        TxNoOp,
 	"consolidate": TxConsolidate,
-	"thorname":    TxTHORName,
+	"name":        TxTHORName,
+	"n":           TxTHORName,
+	"~":           TxTHORName,
 }
 
 var txToStringMap = map[TxType]string{
@@ -341,5 +343,5 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 		return thorname.Address, nil
 	}
 
-	return common.NoAddress, fmt.Errorf("%s is not a recognizable", name)
+	return common.NoAddress, fmt.Errorf("%s is not recognizable", name)
 }
