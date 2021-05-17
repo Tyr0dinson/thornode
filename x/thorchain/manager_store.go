@@ -64,12 +64,16 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		smgr.migrateStoreV46(ctx, version, constantAccessor)
 	case 49:
 		smgr.migrateStoreV49(ctx, version, constantAccessor)
+	case 54:
+		smgr.migrateStoreV54(ctx, version, constantAccessor)
 	}
 
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
 	return nil
 }
-
+func (smgr *StoreMgr) migrateStoreV54(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	smgr.keeper.SetMimir(ctx, "HaltLTCChain", 1)
+}
 func (smgr *StoreMgr) migrateStoreV49(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
 	// due to a withdrawal bug, this user lost their BTC. Recuperate a user's
 	// lost pending asset
