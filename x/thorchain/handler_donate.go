@@ -39,18 +39,33 @@ func (h DonateHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Vers
 }
 
 func (h DonateHandler) validate(ctx cosmos.Context, msg MsgDonate, version semver.Version) error {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.54.0")) {
+		return h.validateV1(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
 func (h DonateHandler) validateV1(ctx cosmos.Context, msg MsgDonate) error {
+	return msg.ValidateBasic()
+}
+func (h DonateHandler) validateV54(ctx cosmos.Context, msg MsgDonate) error {
 	return h.validateCurrent(ctx, msg)
 }
-
 func (h DonateHandler) validateCurrent(ctx cosmos.Context, msg MsgDonate) error {
-	return msg.ValidateBasic()
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+	// Synths are not compatible with add liquidity
+	if msg.Asset.IsSyntheticAsset() {
+		return cosmos.ErrUnknownRequest("asset cannot be synth")
+	}
+	// Synths coins are not compatible with add liquidity
+	if msg.Tx.Coins.HasSynthetic() {
+		return cosmos.ErrUnknownRequest("asset coins cannot be synth")
+	}
+	return nil
 }
 
 // handle process MsgDonate, MsgDonate add asset and RUNE to the asset pool
