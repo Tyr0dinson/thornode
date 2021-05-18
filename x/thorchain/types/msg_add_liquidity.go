@@ -43,20 +43,12 @@ func (m *MsgAddLiquidity) ValidateBasic() error {
 	if m.Asset.IsRune() {
 		return cosmos.ErrUnknownRequest("asset cannot be rune")
 	}
-	// Synths are not compatible with add liquidity
-	if m.Asset.IsSyntheticAsset() {
-		return cosmos.ErrUnknownRequest("asset cannot be synth")
-	}
 	// test scenario we get two coins, but none are rune, invalid liquidity provider
 	if len(m.Tx.Coins) == 2 && (m.AssetAmount.IsZero() || m.RuneAmount.IsZero()) {
 		return cosmos.ErrUnknownRequest("did not find both coins")
 	}
 	if len(m.Tx.Coins) > 2 {
 		return cosmos.ErrUnknownRequest("not expecting more than two coins in adding liquidity")
-	}
-	// Synths coins are not compatible with add liquidity
-	if m.Tx.Coins.HasSynthetic() {
-		return cosmos.ErrUnknownRequest("asset coins cannot be synth")
 	}
 	if m.RuneAmount.IsZero() && m.AssetAmount.IsZero() {
 		return cosmos.ErrUnknownRequest("rune and asset amounts cannot both be empty")

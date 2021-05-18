@@ -264,12 +264,12 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 		{
 			name:           "synth asset from memo should fail",
 			msg:            NewMsgAddLiquidity(GetRandomTx(), bnbSynthAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
-			expectedResult: errAddLiquidityFailValidation,
+			expectedResult: cosmos.ErrUnknownRequest("asset cannot be synth"),
 		},
 		{
 			name:           "synth asset from coins should fail",
 			msg:            NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
-			expectedResult: errAddLiquidityFailValidation,
+			expectedResult: cosmos.ErrUnknownRequest("asset coins cannot be synth"),
 		},
 		{
 			name:           "empty addresses should fail",
