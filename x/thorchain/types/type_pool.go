@@ -52,6 +52,7 @@ func NewPool() Pool {
 		BalanceAsset:        cosmos.ZeroUint(),
 		PoolUnits:           cosmos.ZeroUint(),
 		SynthUnits:          cosmos.ZeroUint(),
+		LPUnits:             cosmos.ZeroUint(),
 		PendingInboundRune:  cosmos.ZeroUint(),
 		PendingInboundAsset: cosmos.ZeroUint(),
 		Status:              PoolStatus_Available,
@@ -64,6 +65,18 @@ func (m Pool) Valid() error {
 		return errors.New("pool asset cannot be empty")
 	}
 	return nil
+}
+
+func (m *Pool) CalcUnits(synthSupply cosmos.Uint) {
+	if !m.PoolUnits.IsZero() && m.LPUnits.IsZero() {
+		// pre v54, no changes
+		return
+	}
+
+	// TODO: calculate synth units
+	m.SynthUnits = cosmos.ZeroUint()
+
+	m.PoolUnits = m.LPUnits.Add(m.SynthUnits)
 }
 
 // IsAvailable check whether the pool is in Available status
@@ -84,6 +97,7 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("pool-units: " + m.PoolUnits.String()))
 	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
+	sb.WriteString(fmt.Sprintln("lp-units: " + m.LPUnits.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-rune: " + m.PendingInboundRune.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-asset: " + m.PendingInboundAsset.String()))
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))
