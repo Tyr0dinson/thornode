@@ -27,19 +27,73 @@ func NewAddLiquidityHandler(keeper keeper.Keeper, mgr Manager) AddLiquidityHandl
 }
 
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity, version semver.Version, constAccessor constants.ConstantValues) error {
-	if version.GTE(semver.MustParse("0.1.0")) {
+	if version.GTE(semver.MustParse("0.54.0")) {
+		return h.validateV54(ctx, msg, constAccessor)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg, constAccessor)
 	}
 	return errBadVersion
 }
 
 func (h AddLiquidityHandler) validateV1(ctx cosmos.Context, msg MsgAddLiquidity, constAccessor constants.ConstantValues) error {
+	if err := msg.ValidateBasic(); err != nil {
+		ctx.Logger().Error(err.Error())
+		return errAddLiquidityFailValidation
+	}
+
+	ensureLiquidityNoLargerThanBond := constAccessor.GetBoolValue(constants.StrictBondLiquidityRatio)
+	// the following  only applicable for chaosnet
+	totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)
+	if err != nil {
+		return ErrInternal(err, "fail to get total liquidity RUNE")
+	}
+
+	// total liquidity RUNE after current add liquidity
+	totalLiquidityRUNE = totalLiquidityRUNE.Add(msg.RuneAmount)
+	maximumLiquidityRune, err := h.keeper.GetMimir(ctx, constants.MaximumLiquidityRune.String())
+	if maximumLiquidityRune < 0 || err != nil {
+		maximumLiquidityRune = constAccessor.GetInt64Value(constants.MaximumLiquidityRune)
+	}
+	if maximumLiquidityRune > 0 {
+		if totalLiquidityRUNE.GT(cosmos.NewUint(uint64(maximumLiquidityRune))) {
+			return errAddLiquidityRUNEOverLimit
+		}
+	}
+
+	if !ensureLiquidityNoLargerThanBond {
+		return nil
+	}
+	totalBondRune, err := h.getTotalActiveBond(ctx)
+	if err != nil {
+		return ErrInternal(err, "fail to get total bond RUNE")
+	}
+	if totalLiquidityRUNE.GT(totalBondRune) {
+		ctx.Logger().Info(fmt.Sprintf("total liquidity RUNE(%s) is more than total Bond(%s)", totalLiquidityRUNE, totalBondRune))
+		return errAddLiquidityRUNEMoreThanBond
+	}
+
+	return nil
+
+}
+
+func (h AddLiquidityHandler) validateV54(ctx cosmos.Context, msg MsgAddLiquidity, constAccessor constants.ConstantValues) error {
 	return h.validateCurrent(ctx, msg, constAccessor)
 }
 
 func (h AddLiquidityHandler) validateCurrent(ctx cosmos.Context, msg MsgAddLiquidity, constAccessor constants.ConstantValues) error {
 	if err := msg.ValidateBasic(); err != nil {
 		ctx.Logger().Error(err.Error())
+		return errAddLiquidityFailValidation
+	}
+
+	if msg.Asset.IsSyntheticAsset() {
+		ctx.Logger().Error("asset cannot be synth", "error", errAddLiquidityFailValidation)
+		return errAddLiquidityFailValidation
+	}
+
+	// Synths coins are not compatible with add liquidity
+	if msg.Tx.Coins.HasSynthetic() {
+		ctx.Logger().Error("asset coins cannot be synth", "error", errAddLiquidityFailValidation)
 		return errAddLiquidityFailValidation
 	}
 
@@ -885,8 +939,8 @@ func (h AddLiquidityHandler) addLiquidityV54(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info(fmt.Sprintf("Pre-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
-	ctx.Logger().Info(fmt.Sprintf("Adding Liquidity: %sRUNE %sAsset", pendingRuneAmt, pendingAssetAmt))
+	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("adding liquidity", "rune", addRuneAmount, "asset", addAssetAmount)
 
 	balanceRune := pool.BalanceRune
 	balanceAsset := pool.BalanceAsset
@@ -903,7 +957,7 @@ func (h AddLiquidityHandler) addLiquidityV54(ctx cosmos.Context,
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
 	pool.BalanceRune = poolRune
 	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info(fmt.Sprintf("Post-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
 	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}

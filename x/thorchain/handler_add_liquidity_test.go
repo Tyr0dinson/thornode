@@ -215,6 +215,18 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
 	runeAddr := GetRandomRUNEAddress()
 	bnbAddr := GetRandomBNBAddress()
+	bnbSynthAsset, _ := common.NewAsset("BNB/BNB")
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomRUNEAddress(),
+		GetRandomRUNEAddress(),
+		common.Coins{common.NewCoin(bnbSynthAsset, cosmos.NewUint(common.One*5))},
+		common.Gas{
+			{Asset: common.RuneNative, Amount: cosmos.NewUint(1 * common.One)},
+		},
+		"add:BNB.BNB",
+	)
+
 	k := &MockAddLiquidityKeeper{
 		activeNodeAccount: activeNodeAccount,
 		currentPool: Pool{
@@ -251,6 +263,16 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 			expectedResult: errAddLiquidityFailValidation,
 		},
 		{
+			name:           "synth asset from memo should fail",
+			msg:            NewMsgAddLiquidity(GetRandomTx(), bnbSynthAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
+			expectedResult: errAddLiquidityFailValidation,
+		},
+		{
+			name:           "synth asset from coins should fail",
+			msg:            NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
+			expectedResult: errAddLiquidityFailValidation,
+		},
+		{
 			name:           "empty addresses should fail",
 			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BTCAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), common.NoAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), GetRandomNodeAccount(NodeActive).NodeAddress),
 			expectedResult: errAddLiquidityFailValidation,
@@ -271,7 +293,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 	for _, item := range testCases {
 		addHandler := NewAddLiquidityHandler(k, NewDummyMgr())
 		_, err := addHandler.Run(ctx, item.msg, ver, constAccessor)
-		c.Assert(errors.Is(err, item.expectedResult), Equals, true, Commentf("name:%s", item.name))
+		c.Assert(errors.Is(err, item.expectedResult), Equals, true, Commentf("name:%s, %w", item.name, err))
 	}
 }
 
