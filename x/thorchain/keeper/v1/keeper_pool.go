@@ -47,7 +47,7 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 		if err != nil {
 			return nil, dbError(ctx, "Unmarsahl: pool", err)
 		}
-		pool = k.CalcUnits(pool)
+		pool = k.CalcUnits(ctx, pool)
 		pools = append(pools, pool)
 	}
 	return pools, nil
@@ -61,7 +61,7 @@ func (k KVStore) GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error) {
 	record := NewPool()
 	_, err := k.getPool(ctx, k.GetKey(ctx, prefixPool, asset.String()), &record)
 
-	record = k.CalcUnits(record)
+	record = k.CalcUnits(ctx, record)
 	return record, err
 }
 
@@ -86,14 +86,22 @@ func (k KVStore) RemovePool(ctx cosmos.Context, asset common.Asset) {
 	k.del(ctx, k.GetKey(ctx, prefixPool, asset.String()))
 }
 
-func (k KVStore) CalcUnits(p Pool) Pool {
+func (k KVStore) CalcUnits(ctx cosmos.Context, p Pool) Pool {
 	if p.LPUnits == (cosmos.Uint{}) || (!p.PoolUnits.IsZero() && p.LPUnits.IsZero()) {
 		// LPunits is not initiated, pre version 54
 		return p
 	}
 
-	// TODO: dynamically calculate synth units, based on pool and synth supply
-	p.SynthUnits = cosmos.ZeroUint()
+	// Calculate synth units
+	// (P*S)/(2*A)
+	S := k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
+	if p.BalanceAsset.IsZero() {
+		p.SynthUnits = cosmos.ZeroUint()
+	} else {
+		numerator := p.LPUnits.Mul(S)
+		denomerator := p.BalanceAsset.MulUint64(2)
+		p.SynthUnits = numerator.Quo(denomerator)
+	}
 
 	p.PoolUnits = p.LPUnits.Add(p.SynthUnits)
 	return p
