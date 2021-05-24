@@ -633,6 +633,25 @@ func (HandlerAddLiquiditySuite) TestRuneOnlyLiquidity(c *C) {
 	c.Assert(pool.PoolUnits.Uint64(), Equals, uint64(12500000000), Commentf("%d", pool.PoolUnits.Uint64()))
 }
 
+func (HandlerAddLiquiditySuite) TestRuneOnlyLiquidityToStagedPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	txID := GetRandomTxHash()
+
+	c.Assert(k.SetPool(ctx, Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:        common.BTCAsset,
+		PoolUnits:    cosmos.NewUint(100 * common.One),
+		Status:       PoolStaged,
+	}), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	h := NewAddLiquidityHandler(k, NewDummyMgr())
+	err := h.addLiquidityV54(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), runeAddr, common.NoAddress, txID, false, constAccessor)
+	c.Assert(err, IsNil)
+}
+
 func (HandlerAddLiquiditySuite) TestAssetOnlyProvidedLiquidity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	txID := GetRandomTxHash()
