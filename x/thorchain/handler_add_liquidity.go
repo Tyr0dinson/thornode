@@ -955,6 +955,7 @@ func (h AddLiquidityHandler) addLiquidityV54(ctx cosmos.Context,
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
+	pool.PoolUnits = pool.PoolUnits.Add(liquidityUnits)
 	pool.BalanceRune = poolRune
 	pool.BalanceAsset = poolAsset
 	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "units", pool.PoolUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
