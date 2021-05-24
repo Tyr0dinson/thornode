@@ -95,6 +95,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 			BalanceAsset:        cosmos.ZeroUint(),
 			Asset:               common.BNBAsset,
 			PoolUnits:           cosmos.ZeroUint(),
+			LPUnits:             cosmos.ZeroUint(),
 			PendingInboundRune:  cosmos.ZeroUint(),
 			PendingInboundAsset: cosmos.ZeroUint(),
 			Status:              PoolAvailable,
