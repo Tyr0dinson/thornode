@@ -80,6 +80,19 @@ func (s *SwapperV54) swap(ctx cosmos.Context,
 	}
 	source := tx.Coins[0].Asset
 
+	if source.IsSyntheticAsset() {
+		burnHeight, _ := keeper.GetMimir(ctx, "BurnSynths")
+		if burnHeight > 0 && common.BlockHeight(ctx) > burnHeight {
+			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
+		}
+	}
+	if target.IsSyntheticAsset() {
+		mintHeight, _ := keeper.GetMimir(ctx, "MintSynths")
+		if mintHeight > 0 && common.BlockHeight(ctx) > mintHeight {
+			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
+		}
+	}
+
 	if err := s.validatePools(ctx, keeper, source, target); err != nil {
 		if err == errInvalidPoolStatus && source.IsSyntheticAsset() {
 			// the pool is not available, but we can allow synthetic assets to still swap back to rune/asset ok
