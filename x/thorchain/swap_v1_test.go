@@ -365,7 +365,7 @@ func (s *SwapSuite) TestSwap(c *C) {
 			"",
 		)
 		tx.Chain = common.BNBChain
-		m := NewManagers(poolStorage)
+		m := setupManagerForTest(c, poolStorage)
 		m.BeginBlock(ctx)
 		m.txOutStore = NewTxStoreDummy()
 
@@ -406,7 +406,7 @@ func (s *SwapSuite) TestSynthSwap(c *C) {
 		"",
 	)
 	tx.Chain = common.BNBChain
-	m := NewManagers(k)
+	m := setupManagerForTest(c, k)
 	m.BeginBlock(ctx)
 	m.txOutStore = NewTxStoreDummy()
 

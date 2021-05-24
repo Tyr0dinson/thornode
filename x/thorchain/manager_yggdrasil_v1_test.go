@@ -228,7 +228,7 @@ func (s YggdrasilManagerV1Suite) TestAbandonYggdrasil(c *C) {
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	k.SetVault(ctx, vault)
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	mgr.BeginBlock(ctx)
 	// add a queue , if we don't have pool , we don't know how to slash
 	bnbPool := NewPool()
@@ -300,7 +300,7 @@ func (s YggdrasilManagerV1Suite) TestAbandonYggdrasilWithDifferentConditions(c *
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	k.SetVault(ctx, vault)
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	mgr.BeginBlock(ctx)
 	// add a queue , if we don't have pool , we don't know how to slash
 	bnbPool := NewPool()

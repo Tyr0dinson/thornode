@@ -54,7 +54,7 @@ func (vm *SwapQv47) FetchQueue(ctx cosmos.Context) (swapItems, error) {
 
 // EndBlock trigger the real swap to be processed
 func (vm *SwapQv47) EndBlock(ctx cosmos.Context, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error {
-	handler := NewSwapHandler(vm.k, mgr)
+	handler := NewSwapHandler(mgr)
 
 	minSwapsPerBlock, err := vm.k.GetMimir(ctx, constants.MinSwapsPerBlock.String())
 	if minSwapsPerBlock < 0 || err != nil {

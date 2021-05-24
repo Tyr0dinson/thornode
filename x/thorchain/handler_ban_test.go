@@ -97,7 +97,7 @@ func (s *HandlerBanSuite) TestValidate(c *C) {
 		banner2: banner2,
 	}
 
-	handler := NewBanHandler(keeper, NewDummyMgr())
+	handler := NewBanHandler(NewDummyMgrWithKeeper(keeper))
 	// happy path
 	msg := NewMsgBan(toBan.NodeAddress, banner1.NodeAddress)
 	err := handler.validate(ctx, *msg, GetCurrentVersion())
@@ -134,7 +134,7 @@ func (s *HandlerBanSuite) TestHandle(c *C) {
 		modules: make(map[string]int64, 0),
 	}
 
-	handler := NewBanHandler(keeper, NewDummyMgr())
+	handler := NewBanHandler(NewDummyMgrWithKeeper(keeper))
 
 	// ban with banner 1
 	msg := NewMsgBan(toBan.NodeAddress, banner1.NodeAddress)
@@ -457,8 +457,8 @@ func (s *HandlerBanSuite) TestBanHandlerValidation(c *C) {
 			helper := NewTestBanKeeperHelper(k)
 			helper.toBanNodeAddr = toBanAddr
 			helper.bannerNodeAddr = bannerNodeAddr
-			mgr := NewManagers(helper)
-			handler := NewBanHandler(helper, mgr)
+			_, mgr := setupManagerForTestWithKeeper(c, helper)
+			handler := NewBanHandler(mgr)
 			constAccessor := constants.GetConstantValues(ver)
 			result, err := handler.Run(ctx, tc.messageProvider(ctx, helper), ver, constAccessor)
 			tc.validator(c, result, err, helper, tc.name)

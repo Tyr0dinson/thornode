@@ -256,10 +256,9 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 	c.Check(items[0].Memo, Equals, NewYggdrasilReturn(common.BlockHeight(ctx)).String())
 	c.Check(items[0].Chain.Equals(common.BTCChain), Equals, true)
 
-	ctx, k = setupKeeperForTest(c)
-	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr1 := NewManagers(helper)
-	mgr1.BeginBlock(ctx)
+	ctx, mgr1 := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr1.Keeper())
+	mgr.K = helper
 	vaultMgr1 := NewNetworkMgrV1(helper, mgr1.TxOutStore(), mgr1.EventMgr())
 	// fail to get active nodes should error out
 	helper.failToListActiveAccounts = true
@@ -287,7 +286,7 @@ func (s *NetworkManagerV1TestSuite) TestUpdateNetwork(c *C) {
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -475,7 +474,7 @@ func (*NetworkManagerV1TestSuite) TestProcessGenesisSetup(c *C) {
 	constAccessor := constants.GetConstantValues(ver)
 	helper := NewVaultGenesisSetupTestHelper(k)
 	ctx = ctx.WithBlockHeight(1)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// no active account
@@ -500,7 +499,7 @@ func (*NetworkManagerV1TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx, k = setupKeeperForTest(c)
 	helper = NewVaultGenesisSetupTestHelper(k)
 	ctx = ctx.WithBlockHeight(1)
-	mgr = NewManagers(helper)
+	mgr = setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr = NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
@@ -524,7 +523,7 @@ func (*NetworkManagerV1TestSuite) TestProcessGenesisSetup(c *C) {
 func (*NetworkManagerV1TestSuite) TestGetTotalActiveBond(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
@@ -541,7 +540,7 @@ func (*NetworkManagerV1TestSuite) TestGetTotalActiveBond(c *C) {
 func (*NetworkManagerV1TestSuite) TestGetTotalLiquidityRune(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
@@ -559,7 +558,7 @@ func (*NetworkManagerV1TestSuite) TestGetTotalLiquidityRune(c *C) {
 func (*NetworkManagerV1TestSuite) TestPayPoolRewards(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
@@ -576,7 +575,7 @@ func (*NetworkManagerV1TestSuite) TestPayPoolRewards(c *C) {
 func (*NetworkManagerV1TestSuite) TestFindChainsToRetire(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// fail to get active asgard vault
@@ -597,7 +596,7 @@ func (*NetworkManagerV1TestSuite) TestFindChainsToRetire(c *C) {
 func (*NetworkManagerV1TestSuite) TestRecallChainFunds(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(k)
-	mgr := NewManagers(helper)
+	mgr := setupManagerForTest(c, helper)
 	mgr.BeginBlock(ctx)
 	vaultMgr := NewNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true

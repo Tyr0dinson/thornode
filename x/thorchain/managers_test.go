@@ -13,7 +13,7 @@ var _ = Suite(&ManagersTestSuite{})
 
 func (ManagersTestSuite) TestManagers(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	mgr.BeginBlock(ctx)
 	ver := semver.MustParse("0.0.1")
 

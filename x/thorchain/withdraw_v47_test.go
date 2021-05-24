@@ -387,7 +387,7 @@ func (WithdrawSuiteV47) TestWithdraw(c *C) {
 	for _, tc := range testCases {
 		c.Logf("name:%s", tc.name)
 		version := GetCurrentVersion()
-		mgr := NewManagers(tc.ps)
+		mgr := setupManagerForTest(c, tc.ps)
 		mgr.BeginBlock(ctx)
 		tc.ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
@@ -453,7 +453,7 @@ func (WithdrawSuiteV47) TestWithdrawAsym(c *C) {
 		version := GetCurrentVersion()
 		ctx, k := setupKeeperForTest(c)
 		ps := getWithdrawTestKeeper2(c, ctx, k, runeAddress)
-		mgr := NewManagers(ps)
+		mgr := setupManagerForTest(c, ps)
 		mgr.BeginBlock(ctx)
 		ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
@@ -478,7 +478,7 @@ func (WithdrawSuiteV47) TestWithdrawPendingRuneOrAsset(c *C) {
 	version := GetCurrentVersion()
 	accountAddr := GetRandomNodeAccount(NodeActive).NodeAddress
 	ctx, k := setupKeeperForTest(c)
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	mgr.BeginBlock(ctx)
 	pool := Pool{
 		BalanceRune:  cosmos.NewUint(100 * common.One),

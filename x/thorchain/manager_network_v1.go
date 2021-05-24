@@ -547,7 +547,7 @@ func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nt
 	if err != nil {
 		return err
 	}
-	withdrawHandler := NewWithdrawLiquidityHandler(vm.k, mgr)
+	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
 
 	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {

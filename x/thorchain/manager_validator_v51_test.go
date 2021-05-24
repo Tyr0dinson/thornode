@@ -65,7 +65,7 @@ func (vts *ValidatorMgrV51TestSuite) TestSetupValidatorNodes(c *C) {
 
 func (vts *ValidatorMgrV51TestSuite) TestRagnarokForChaosnet(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	vMgr := newValidatorMgrV51(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -110,7 +110,7 @@ func (vts *ValidatorMgrV51TestSuite) TestLowerVersion(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1440)
 
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	vMgr := newValidatorMgrV51(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(vMgr, NotNil)
@@ -135,7 +135,7 @@ func (vts *ValidatorMgrV51TestSuite) TestBadActors(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	vMgr := newValidatorMgrV51(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(vMgr, NotNil)
@@ -192,7 +192,7 @@ func (vts *ValidatorMgrV51TestSuite) TestFindBadActors(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
-	mgr := NewManagers(k)
+	mgr := setupManagerForTest(c, k)
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	vMgr := newValidatorMgrV51(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(vMgr, NotNil)

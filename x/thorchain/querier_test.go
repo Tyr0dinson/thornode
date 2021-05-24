@@ -53,7 +53,7 @@ func (s *QuerierSuite) SetUpTest(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	s.k = k
 	s.ctx = ctx
-	s.mgr = NewManagers(s.k)
+	s.mgr = setupManagerForTest(c, s.k)
 	c.Assert(s.mgr.BeginBlock(ctx), IsNil)
 	s.querier = NewQuerier(s.mgr, s.kb)
 }
@@ -77,7 +77,7 @@ func (s *QuerierSuite) TestQueryKeysign(c *C) {
 		txOut: txOut,
 	}
 
-	querier := NewQuerier(NewManagers(keeper), s.kb)
+	querier := NewQuerier(setupManagerForTest(c, keeper), s.kb)
 
 	path := []string{
 		"keysign",
@@ -92,7 +92,7 @@ func (s *QuerierSuite) TestQueryKeysign(c *C) {
 func (s *QuerierSuite) TestQueryPool(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(NewManagers(keeper), s.kb)
+	querier := NewQuerier(setupManagerForTest(c, keeper), s.kb)
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
@@ -141,7 +141,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 func (s *QuerierSuite) TestVaultss(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(NewManagers(keeper), s.kb)
+	querier := NewQuerier(setupManagerForTest(c, keeper), s.kb)
 	path := []string{"pools"}
 
 	pubKey := GetRandomPubKey()
@@ -189,7 +189,7 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	querier := NewQuerier(NewManagers(keeper), s.kb)
+	querier := NewQuerier(setupManagerForTest(c, keeper), s.kb)
 	path := []string{"nodes"}
 
 	signer := GetRandomBech32Addr()
