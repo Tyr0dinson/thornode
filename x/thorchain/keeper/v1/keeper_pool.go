@@ -93,12 +93,12 @@ func (k KVStore) CalcUnits(ctx cosmos.Context, p Pool) Pool {
 	}
 
 	// Calculate synth units
-	// (P*S)/(2*A)
+	// (S * R )/(2 * A)
 	S := k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
 	if p.BalanceAsset.IsZero() {
 		p.SynthUnits = cosmos.ZeroUint()
 	} else {
-		numerator := p.LPUnits.Mul(S)
+		numerator := p.BalanceRune.Mul(S)
 		denomerator := p.BalanceAsset.MulUint64(2)
 		p.SynthUnits = numerator.Quo(denomerator)
 	}
