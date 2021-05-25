@@ -64,6 +64,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		smgr.migrateStoreV46(ctx, version, constantAccessor)
 	case 49:
 		smgr.migrateStoreV49(ctx, version, constantAccessor)
+	case 55:
+		smgr.migrateStoreV49(ctx, version, constantAccessor)
 	}
 
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
@@ -211,4 +213,22 @@ func (smgr *StoreMgr) migrateStoreV42(ctx cosmos.Context, version semver.Version
 		}
 	}
 
+}
+
+func (smgr *StoreMgr) migrateStoreV55(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	// iteratre over every pool and set the `LPUnits value from PoolUnits.
+
+	iterator := smgr.keeper.GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		err := smgr.keeper.Cdc().UnmarshalBinaryBare(iterator.Value(), &pool)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get pool for kvstore migration: %s", err))
+		}
+		pool.LPUnits = pool.PoolUnits
+		if err := smgr.keeper.SetPool(ctx, pool); err != nil {
+			panic(fmt.Sprintf("failed to set pool for kvstore migration: %s", err))
+		}
+	}
 }
