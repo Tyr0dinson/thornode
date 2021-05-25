@@ -11,17 +11,17 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// TxOutStorageV54 is going to manage all the outgoing tx
-type TxOutStorageV54 struct {
+// TxOutStorageV55 is going to manage all the outgoing tx
+type TxOutStorageV55 struct {
 	keeper        keeper.Keeper
 	constAccessor constants.ConstantValues
 	eventMgr      EventManager
 	gasManager    GasManager
 }
 
-// NewTxOutStorageV54 will create a new instance of TxOutStore.
-func NewTxOutStorageV54(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorageV54 {
-	return &TxOutStorageV54{
+// NewTxOutStorageV55 will create a new instance of TxOutStore.
+func NewTxOutStorageV55(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorageV55 {
+	return &TxOutStorageV55{
 		keeper:        keeper,
 		eventMgr:      eventMgr,
 		constAccessor: constAccessor,
@@ -30,12 +30,12 @@ func NewTxOutStorageV54(keeper keeper.Keeper, constAccessor constants.ConstantVa
 }
 
 // GetBlockOut read the TxOut from kv store
-func (tos *TxOutStorageV54) GetBlockOut(ctx cosmos.Context) (*TxOut, error) {
+func (tos *TxOutStorageV55) GetBlockOut(ctx cosmos.Context) (*TxOut, error) {
 	return tos.keeper.GetTxOut(ctx, common.BlockHeight(ctx))
 }
 
 // GetOutboundItems read all the outbound item from kv store
-func (tos *TxOutStorageV54) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error) {
+func (tos *TxOutStorageV55) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error) {
 	block, err := tos.keeper.GetTxOut(ctx, common.BlockHeight(ctx))
 	if block == nil {
 		return nil, nil
@@ -44,7 +44,7 @@ func (tos *TxOutStorageV54) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, e
 }
 
 // GetOutboundItemByToAddress read all the outbound items filter by the given to address
-func (tos *TxOutStorageV54) GetOutboundItemByToAddress(ctx cosmos.Context, to common.Address) []TxOutItem {
+func (tos *TxOutStorageV55) GetOutboundItemByToAddress(ctx cosmos.Context, to common.Address) []TxOutItem {
 	filterItems := make([]TxOutItem, 0)
 	items, _ := tos.GetOutboundItems(ctx)
 	for _, item := range items {
@@ -56,14 +56,14 @@ func (tos *TxOutStorageV54) GetOutboundItemByToAddress(ctx cosmos.Context, to co
 }
 
 // ClearOutboundItems remove all the tx out items , mostly used for test
-func (tos *TxOutStorageV54) ClearOutboundItems(ctx cosmos.Context) {
+func (tos *TxOutStorageV55) ClearOutboundItems(ctx cosmos.Context) {
 	_ = tos.keeper.ClearTxOut(ctx, common.BlockHeight(ctx))
 }
 
 // TryAddTxOutItem add an outbound tx to block
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
-func (tos *TxOutStorageV54) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
+func (tos *TxOutStorageV55) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
 	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
@@ -82,7 +82,7 @@ func (tos *TxOutStorageV54) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 
 // UnSafeAddTxOutItem - blindly adds a tx out, skipping vault selection, transaction
 // fee deduction, etc
-func (tos *TxOutStorageV54) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
+func (tos *TxOutStorageV55) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
 	// BCH chain will convert legacy address to new format automatically , thus when observe it back can't be associated with the original inbound
 	// so here convert the legacy address to new format
 	if toi.Chain.Equals(common.BCHChain) {
@@ -103,7 +103,7 @@ func (tos *TxOutStorageV54) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 // 2. choose an appropriate vault(s) to send from (ygg first, active asgard, then retiring asgard)
 // 3. deduct transaction fee, keep in mind, only take transaction fee when active nodes are  more then minimumBFT
 // return list of outbound transactions
-func (tos *TxOutStorageV54) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, error) {
+func (tos *TxOutStorageV55) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, error) {
 	// Default the memo to the standard outbound memo
 	if toi.Memo == "" {
 		toi.Memo = NewOutboundMemo(toi.InHash).String()
@@ -383,7 +383,7 @@ func (tos *TxOutStorageV54) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	return finalOutput, nil
 }
 
-func (tos *TxOutStorageV54) addToBlockOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
+func (tos *TxOutStorageV55) addToBlockOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
 	// THORChain , native RUNE will not need to forward the txout to bifrost
 	if toi.Chain.Equals(common.THORChain) {
 		return tos.nativeTxOut(ctx, mgr, toi)
@@ -392,7 +392,7 @@ func (tos *TxOutStorageV54) addToBlockOut(ctx cosmos.Context, mgr Manager, toi T
 	return tos.keeper.AppendTxOut(ctx, common.BlockHeight(ctx), toi)
 }
 
-func (tos *TxOutStorageV54) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
+func (tos *TxOutStorageV55) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
 	addr, err := cosmos.AccAddressFromBech32(toi.ToAddress.String())
 	if err != nil {
 		return err
@@ -464,7 +464,7 @@ func (tos *TxOutStorageV54) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 }
 
 // collectYggdrasilPools is to get all the yggdrasil vaults , that THORChain can used to send out fund
-func (tos *TxOutStorageV54) collectYggdrasilPools(ctx cosmos.Context, tx ObservedTx, gasAsset common.Asset) (Vaults, error) {
+func (tos *TxOutStorageV55) collectYggdrasilPools(ctx cosmos.Context, tx ObservedTx, gasAsset common.Asset) (Vaults, error) {
 	// collect yggdrasil pools
 	var vaults Vaults
 	iterator := tos.keeper.GetVaultIterator(ctx)
@@ -517,7 +517,7 @@ func (tos *TxOutStorageV54) collectYggdrasilPools(ctx cosmos.Context, tx Observe
 	return vaults, nil
 }
 
-func (tos *TxOutStorageV54) deductVaultPendingOutboundBalance(ctx cosmos.Context, vault Vault) (Vault, error) {
+func (tos *TxOutStorageV55) deductVaultPendingOutboundBalance(ctx cosmos.Context, vault Vault) (Vault, error) {
 	block, err := tos.GetBlockOut(ctx)
 	if err != nil {
 		return types.Vault{}, fmt.Errorf("fail to get block:%w", err)
@@ -546,7 +546,7 @@ func (tos *TxOutStorageV54) deductVaultPendingOutboundBalance(ctx cosmos.Context
 	return vault, nil
 }
 
-func (tos *TxOutStorageV54) deductVaultBlockPendingOutbound(vault Vault, block *TxOut) Vault {
+func (tos *TxOutStorageV55) deductVaultBlockPendingOutbound(vault Vault, block *TxOut) Vault {
 	for _, txOutItem := range block.TxArray {
 		if !txOutItem.VaultPubKey.Equals(vault.PubKey) {
 			continue

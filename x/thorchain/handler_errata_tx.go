@@ -64,8 +64,8 @@ func (h ErrataTxHandler) validateCurrent(ctx cosmos.Context, msg MsgErrataTx) er
 
 func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.handleV54(ctx, msg, version, constAccessor)
+	if version.GTE(semver.MustParse("0.55.0")) {
+		return h.handleV55(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.45.0")) {
 		return h.handleV45(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.42.0")) {
@@ -478,7 +478,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 
 }
 
-func (h ErrataTxHandler) handleV54(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ErrataTxHandler) handleV55(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg, version, constAccessor)
 
 }

@@ -9,11 +9,11 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-type TxOutStoreV54Suite struct{}
+type TxOutStoreV55Suite struct{}
 
-var _ = Suite(&TxOutStoreV54Suite{})
+var _ = Suite(&TxOutStoreV55Suite{})
 
-func (s TxOutStoreV54Suite) TestAddGasFees(c *C) {
+func (s TxOutStoreV55Suite) TestAddGasFees(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	tx := GetRandomObservedTx()
 
@@ -25,7 +25,7 @@ func (s TxOutStoreV54Suite) TestAddGasFees(c *C) {
 	c.Assert(gasMgr.gas, HasLen, 1)
 }
 
-func (s TxOutStoreV54Suite) TestAddOutTxItem(c *C) {
+func (s TxOutStoreV55Suite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -150,7 +150,7 @@ func (s TxOutStoreV54Suite) TestAddOutTxItem(c *C) {
 	c.Assert(msgs[0].ToAddress.String(), Equals, "qzg5mkh7rkw3y8kw47l3rrnvhmenvctmd5yg6hxe64")
 }
 
-func (s TxOutStoreV54Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
+func (s TxOutStoreV55Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -220,7 +220,7 @@ func (s TxOutStoreV54Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	c.Assert(msgs, HasLen, 0)
 }
 
-func (s TxOutStoreV54Suite) TestAddOutTxItemWithoutBFT(c *C) {
+func (s TxOutStoreV55Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -245,7 +245,7 @@ func (s TxOutStoreV54Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 }
 
-func (s TxOutStoreV54Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
+func (s TxOutStoreV55Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{

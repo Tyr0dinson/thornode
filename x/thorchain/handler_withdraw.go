@@ -82,8 +82,8 @@ func (h WithdrawLiquidityHandler) validateCurrent(ctx cosmos.Context, msg MsgWit
 }
 
 func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.handleV54(ctx, msg, version, constAccessor)
+	if version.GTE(semver.MustParse("0.55.0")) {
+		return h.handleV55(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.50.0")) {
 		return h.handleV50(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.49.0")) {
@@ -848,7 +848,7 @@ func (h WithdrawLiquidityHandler) handleV50(ctx cosmos.Context, msg MsgWithdrawL
 
 }
 
-func (h WithdrawLiquidityHandler) handleV54(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h WithdrawLiquidityHandler) handleV55(ctx cosmos.Context, msg MsgWithdrawLiquidity, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg, version, constAccessor)
 }
 
@@ -861,7 +861,7 @@ func (h WithdrawLiquidityHandler) handleCurrent(ctx cosmos.Context, msg MsgWithd
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV54(ctx, version, h.keeper, msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV55(ctx, version, h.keeper, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}

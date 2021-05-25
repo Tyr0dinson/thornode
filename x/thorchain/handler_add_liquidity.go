@@ -27,8 +27,8 @@ func NewAddLiquidityHandler(keeper keeper.Keeper, mgr Manager) AddLiquidityHandl
 }
 
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity, version semver.Version, constAccessor constants.ConstantValues) error {
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.validateV54(ctx, msg, constAccessor)
+	if version.GTE(semver.MustParse("0.55.0")) {
+		return h.validateV55(ctx, msg, constAccessor)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg, constAccessor)
 	}
@@ -76,7 +76,7 @@ func (h AddLiquidityHandler) validateV1(ctx cosmos.Context, msg MsgAddLiquidity,
 
 }
 
-func (h AddLiquidityHandler) validateV54(ctx cosmos.Context, msg MsgAddLiquidity, constAccessor constants.ConstantValues) error {
+func (h AddLiquidityHandler) validateV55(ctx cosmos.Context, msg MsgAddLiquidity, constAccessor constants.ConstantValues) error {
 	return h.validateCurrent(ctx, msg, constAccessor)
 }
 
@@ -154,8 +154,8 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semve
 }
 
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity, version semver.Version, constAccessor constants.ConstantValues) error {
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.handleV54(ctx, msg, version, constAccessor)
+	if version.GTE(semver.MustParse("0.55.0")) {
+		return h.handleV55(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return h.handleV47(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
@@ -370,7 +370,7 @@ func (h AddLiquidityHandler) handleV47(ctx cosmos.Context, msg MsgAddLiquidity, 
 
 }
 
-func (h AddLiquidityHandler) handleV54(ctx cosmos.Context, msg MsgAddLiquidity, version semver.Version, constAccessor constants.ConstantValues) (errResult error) {
+func (h AddLiquidityHandler) handleV55(ctx cosmos.Context, msg MsgAddLiquidity, version semver.Version, constAccessor constants.ConstantValues) (errResult error) {
 	return h.handleCurrent(ctx, msg, version, constAccessor)
 }
 
@@ -419,7 +419,7 @@ func (h AddLiquidityHandler) handleCurrent(ctx cosmos.Context, msg MsgAddLiquidi
 		stage = true
 	}
 
-	addLiquidity := h.addLiquidityV54
+	addLiquidity := h.addLiquidityV55
 	if msg.AffiliateBasisPoints.IsZero() {
 		return addLiquidity(
 			ctx,
@@ -830,7 +830,7 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 	return nil
 }
 
-func (h AddLiquidityHandler) addLiquidityV54(ctx cosmos.Context,
+func (h AddLiquidityHandler) addLiquidityV55(ctx cosmos.Context,
 	asset common.Asset,
 	addRuneAmount, addAssetAmount cosmos.Uint,
 	runeAddr, assetAddr common.Address,
@@ -848,7 +848,7 @@ func (h AddLiquidityHandler) addLiquidityV54(ctx cosmos.Context,
 	}
 
 	// check if LPUnits have been init'ed. This attribute was added later, in
-	// version 54
+	// version 55
 	if pool.LPUnits == (cosmos.Uint{}) {
 		pool.LPUnits = cosmos.ZeroUint()
 	}

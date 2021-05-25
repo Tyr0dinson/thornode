@@ -9,21 +9,21 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-type SwapperV54 struct {
+type SwapperV55 struct {
 	pools       map[common.Asset]Pool // caches pool state changes
 	poolsOrig   map[common.Asset]Pool // retains original pool state
 	coinsToBurn common.Coins
 }
 
-func NewSwapperV54() *SwapperV54 {
-	return &SwapperV54{
+func NewSwapperV55() *SwapperV55 {
+	return &SwapperV55{
 		pools:     make(map[common.Asset]Pool),
 		poolsOrig: make(map[common.Asset]Pool),
 	}
 }
 
 // validate if pools exist
-func (s *SwapperV54) validatePools(ctx cosmos.Context, keeper keeper.Keeper, assets ...common.Asset) error {
+func (s *SwapperV55) validatePools(ctx cosmos.Context, keeper keeper.Keeper, assets ...common.Asset) error {
 	for _, asset := range assets {
 		if !asset.IsRune() {
 			if !keeper.PoolExist(ctx, asset) {
@@ -43,7 +43,7 @@ func (s *SwapperV54) validatePools(ctx cosmos.Context, keeper keeper.Keeper, ass
 }
 
 // validateMessage is trying to validate the legitimacy of the incoming message and decide whether THORNode can handle it
-func (s *SwapperV54) validateMessage(tx common.Tx, target common.Asset, destination common.Address) error {
+func (s *SwapperV55) validateMessage(tx common.Tx, target common.Asset, destination common.Address) error {
 	if err := tx.Valid(); err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (s *SwapperV54) validateMessage(tx common.Tx, target common.Asset, destinat
 	return nil
 }
 
-func (s *SwapperV54) swap(ctx cosmos.Context,
+func (s *SwapperV55) swap(ctx cosmos.Context,
 	keeper keeper.Keeper,
 	tx common.Tx,
 	target common.Asset,
@@ -199,7 +199,7 @@ func (s *SwapperV54) swap(ctx cosmos.Context,
 	return assetAmount, swapEvents, nil
 }
 
-func (s *SwapperV54) swapOne(ctx cosmos.Context,
+func (s *SwapperV55) swapOne(ctx cosmos.Context,
 	keeper keeper.Keeper, tx common.Tx,
 	target common.Asset,
 	destination common.Address,
@@ -332,7 +332,7 @@ func (s *SwapperV54) swapOne(ctx cosmos.Context,
 }
 
 // calculate the number of assets sent to the address (includes liquidity fee)
-func (s *SwapperV54) calcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperV55) calcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x * X * Y ) / ( x + X )^2
 	numerator := x.Mul(X).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -343,7 +343,7 @@ func (s *SwapperV54) calcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 }
 
 // calculateFee the fee of the swap
-func (s *SwapperV54) calcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperV55) calcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x^2 *  Y ) / ( x + X )^2
 	numerator := x.Mul(x).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -354,7 +354,7 @@ func (s *SwapperV54) calcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 }
 
 // calcSwapSlip - calculate the swap slip, expressed in basis points (10000)
-func (s *SwapperV54) calcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
+func (s *SwapperV55) calcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
 	// Cast to DECs
 	xD := cosmos.NewDecFromBigInt(xi.BigInt())
 	XD := cosmos.NewDecFromBigInt(Xi.BigInt())
