@@ -294,12 +294,6 @@ func (tos *TxOutStorageV55) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
 					if outputs[i].Coin.Asset.IsSyntheticAsset() {
-						totalSynthSupply := tos.keeper.GetTotalSupply(ctx, outputs[i].Coin.Asset)
-						// at this point ,the pool synth unit had been update to the new amount , however the synth has not been minted yet,
-						// thus the total supply didn't change yet , need to add the output asset amount
-						if outputs[i].ModuleName == ModuleName {
-							totalSynthSupply = totalSynthSupply.Add(outputs[i].Coin.Amount)
-						}
 						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
 						if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {
 							if err := tos.keeper.SendFromModuleToModule(ctx,
