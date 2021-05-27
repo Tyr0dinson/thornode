@@ -67,18 +67,6 @@ func (m Pool) Valid() error {
 	return nil
 }
 
-func (m *Pool) CalcUnits(synthSupply cosmos.Uint) {
-	if !m.PoolUnits.IsZero() && m.LPUnits.IsZero() {
-		// pre v54, no changes
-		return
-	}
-
-	// TODO: calculate synth units
-	m.SynthUnits = cosmos.ZeroUint()
-
-	m.PoolUnits = m.LPUnits.Add(m.SynthUnits)
-}
-
 // IsAvailable check whether the pool is in Available status
 func (m Pool) IsAvailable() bool {
 	return m.Status == PoolStatus_Available

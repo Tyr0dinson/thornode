@@ -1,6 +1,11 @@
 package keeperv1
 
 import (
+	"encoding/hex"
+	"fmt"
+
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -32,4 +37,15 @@ func (s *KeeperPoolSuite) TestPool(c *C) {
 	p, err := k.GetPool(ctx, common.BTCAsset)
 	c.Check(err, IsNil)
 	c.Check(p.Valid(), NotNil)
+	newPool := NewPool()
+	newPool.Asset = common.BTCAsset
+	newPool.PoolUnits = cosmos.NewUint(1024)
+	newPool.BalanceRune = cosmos.NewUint(1000)
+	newPool.BalanceAsset = cosmos.NewUint(1000)
+	newPool.Status = types.PoolStatus_Available
+	b, err := k.cdc.MarshalBinaryBare(&newPool)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("hex:", hex.EncodeToString(b))
 }

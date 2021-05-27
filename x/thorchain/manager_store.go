@@ -65,7 +65,7 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 	case 49:
 		smgr.migrateStoreV49(ctx, version, constantAccessor)
 	case 55:
-		smgr.migrateStoreV49(ctx, version, constantAccessor)
+		smgr.migrateStoreV55(ctx, version, constantAccessor)
 	}
 
 	smgr.keeper.SetStoreVersion(ctx, int64(i))
