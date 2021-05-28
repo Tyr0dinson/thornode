@@ -5,6 +5,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -48,7 +49,7 @@ func (lpm *LPManagerV1) EndBlock(ctx cosmos.Context, mgr Manager, version semver
 			ctx.Logger().Error("fail to get liquidity providers that has pending liquidity", "error", err)
 			continue
 		}
-		if err := lpm.processPendingLiquidity(ctx, lps, p, mgr, version, constAccessor); err != nil {
+		if err := lpm.processPendingLiquidity(ctx, lps, p.Asset, mgr, version, constAccessor); err != nil {
 			ctx.Logger().Error("fail to process pending liquidity", "error", err)
 			continue
 		}
@@ -86,18 +87,75 @@ func (lpm *LPManagerV1) getPendingLiquidity(ctx cosmos.Context, p Pool, age int6
 	return liquidityProviders, nil
 }
 
-func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []LiquidityProvider, p Pool, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error {
-	handler := NewAddLiquidityHandler(lpm.k, mgr)
-	addLiquidity := handler.addLiquidityV46
+func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []LiquidityProvider, asset common.Asset, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error {
 	for _, lp := range lps {
-		if err := addLiquidity(ctx,
-			p.Asset, lp.PendingRune,
-			lp.PendingAsset,
-			lp.RuneAddress,
-			lp.AssetAddress, lp.PendingTxID,
-			false, constAccessor); err != nil {
-			ctx.Logger().Error("fail to add pending liquidity to pool", "error", err)
+		p, err := lpm.k.GetPool(ctx, asset)
+		if err != nil {
+			return fmt.Errorf("fail to get pool(%s),err:%w", asset, err)
 		}
+		if err := lpm.commitPendingLiquidity(ctx, asset, p, lp, mgr); err != nil {
+			ctx.Logger().Error("fail to commit pending liquidity", "error", err)
+			if savePoolErr := lpm.k.SetPool(ctx, p); savePoolErr != nil {
+				return fmt.Errorf("fail to restore pool(%s),err: %w", asset, err)
+			}
+		}
+	}
+	return nil
+}
+
+func (lpm *LPManagerV1) commitPendingLiquidity(ctx cosmos.Context, asset common.Asset, pool Pool, lp LiquidityProvider, mgr Manager) error {
+
+	pendingRuneAmt := lp.PendingRune
+	pendingAssetAmt := lp.PendingAsset
+	runeTxID := common.BlankTxID
+	assetTxID := common.BlankTxID
+	if !lp.PendingRune.IsZero() {
+		runeTxID = lp.PendingTxID
+	}
+	if !lp.PendingAsset.IsZero() {
+		assetTxID = lp.PendingTxID
+	}
+	pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
+	pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
+	lp.PendingAsset = cosmos.ZeroUint()
+	lp.PendingRune = cosmos.ZeroUint()
+	lp.PendingTxID = ""
+
+	ctx.Logger().Info(fmt.Sprintf("Pre-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	ctx.Logger().Info(fmt.Sprintf("Adding Liquidity: %sRUNE %sAsset", pendingRuneAmt, pendingAssetAmt))
+
+	balanceRune := pool.BalanceRune
+	balanceAsset := pool.BalanceAsset
+
+	oldPoolUnits := pool.PoolUnits
+	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
+	if err != nil {
+		return ErrInternal(err, "fail to calculate pool unit")
+	}
+
+	ctx.Logger().Info(fmt.Sprintf("current pool units : %s ,liquidity units : %s", newPoolUnits, liquidityUnits))
+	poolRune := balanceRune.Add(pendingRuneAmt)
+	poolAsset := balanceAsset.Add(pendingAssetAmt)
+	pool.PoolUnits = newPoolUnits
+	pool.BalanceRune = poolRune
+	pool.BalanceAsset = poolAsset
+	ctx.Logger().Info(fmt.Sprintf("Post-Pool: %sRUNE %sAsset", pool.BalanceRune, pool.BalanceAsset))
+	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+		return ErrInternal(err, "pool cannot have zero rune or asset balance")
+	}
+
+	if err := lpm.k.SetPool(ctx, pool); err != nil {
+		return ErrInternal(err, "fail to save pool")
+	}
+
+	lp.Units = lp.Units.Add(liquidityUnits)
+	lp.RuneDepositValue = lp.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.PoolUnits, pool.BalanceRune))
+	lp.AssetDepositValue = lp.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.PoolUnits, pool.BalanceAsset))
+	lpm.k.SetLiquidityProvider(ctx, lp)
+
+	evt := NewEventAddLiquidity(asset, liquidityUnits, lp.RuneAddress, pendingRuneAmt, pendingAssetAmt, runeTxID, assetTxID, lp.AssetAddress)
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit add liquidity event", "error", err)
 	}
 	return nil
 }
