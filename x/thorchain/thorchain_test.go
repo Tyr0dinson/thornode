@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
 	"sort"
 	"testing"
 
@@ -103,23 +102,21 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 }
 
 func (s *ThorchainSuite) TestChurn(c *C) {
-	ctx, keeper := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
 	consts := constants.GetConstantValues(ver)
-	mgr := setupManagerForTest(c, keeper)
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	// create starting point, vault and four node active node accounts
 	vault := GetRandomVault()
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(79*common.One)),
 	})
-	c.Assert(keeper.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 		Chain:              common.BNBChain,
 		TransactionSize:    1,
 		TransactionFeeRate: 37500,
 	}), IsNil)
-	c.Assert(keeper.SetPool(ctx, Pool{
+	c.Assert(mgr.Keeper().SetPool(ctx, Pool{
 		BalanceRune:  cosmos.NewUint(common.One),
 		BalanceAsset: cosmos.NewUint(common.One),
 		Asset:        common.BNBAsset,
@@ -143,22 +140,22 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		caddr := types.ValAddress(pk.Address()).String()
 		existingValidators = append(existingValidators, caddr)
 		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
-		c.Assert(keeper.SetNodeAccount(ctx, na), IsNil)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	}
-	c.Assert(keeper.SetVault(ctx, vault), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// create new node account to rotate in
 	na := GetRandomNodeAccount(NodeReady)
-	c.Assert(keeper.SetNodeAccount(ctx, na), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// trigger marking bad actors as well as a keygen
 	rotateHeight := consts.GetInt64Value(constants.ChurnInterval) + vault.BlockHeight
 	ctx = ctx.WithBlockHeight(rotateHeight)
-	valMgr := newValidatorMgrV1(keeper, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	valMgr := newValidatorMgrV1(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(valMgr.BeginBlock(ctx, consts, existingValidators), IsNil)
 
 	// check we've created a keygen, with the correct members
-	keygenBlock, err := keeper.GetKeygenBlock(ctx, common.BlockHeight(ctx))
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, common.BlockHeight(ctx))
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.IsEmpty(), Equals, false)
 	expected := append(vault.Membership[1:], na.PubKeySet.Secp256k1.String())
@@ -193,31 +190,31 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		signers[i-1] = sig.String()
 	}
 	voter.Signers = signers // ensure we have consensus, so handler is properly executed
-	keeper.SetTssVoter(ctx, voter)
+	mgr.Keeper().SetTssVoter(ctx, voter)
 
 	_, err = tssHandler.Run(ctx, msg, ver, consts)
 	c.Assert(err, IsNil)
 
 	// check that we've rotated our vaults
-	vault1, err := keeper.GetVault(ctx, vault.PubKey)
+	vault1, err := mgr.Keeper().GetVault(ctx, vault.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(vault1.Status, Equals, RetiringVault) // first vault should now be retiring
-	vault2, err := keeper.GetVault(ctx, newVaultPk)
+	vault2, err := mgr.Keeper().GetVault(ctx, newVaultPk)
 	c.Assert(err, IsNil)
 	c.Assert(vault2.Status, Equals, ActiveVault) // new vault should now be active
 	c.Assert(vault2.Membership, HasLen, 4)
 
 	// check our validators get rotated appropriately
 	validators := valMgr.EndBlock(ctx, mgr, consts)
-	nas, err := keeper.ListActiveNodeAccounts(ctx)
+	nas, err := mgr.Keeper().ListActiveNodeAccounts(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 4)
 	c.Assert(validators, HasLen, 2)
 	// ensure that the first one is rotated out and the new one is rotated in
-	standby, err := keeper.GetNodeAccount(ctx, addresses[0])
+	standby, err := mgr.Keeper().GetNodeAccount(ctx, addresses[0])
 	c.Assert(err, IsNil)
 	c.Check(standby.Status == NodeDisabled, Equals, true)
-	na, err = keeper.GetNodeAccount(ctx, na.NodeAddress)
+	na, err = mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(na.Status == NodeActive, Equals, true)
 
@@ -226,7 +223,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	ctx = ctx.WithBlockHeight(vault1.StatusSince)
 	err = mgr.VaultMgr().EndBlock(ctx, mgr, consts) // should attempt to send 20% of the coin values
 	c.Assert(err, IsNil)
-	vault, err = keeper.GetVault(ctx, vault1.PubKey)
+	vault, err = mgr.Keeper().GetVault(ctx, vault1.PubKey)
 	c.Assert(err, IsNil)
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -236,10 +233,10 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// check we empty the rest at the last migration event
 	migrateInterval := consts.GetInt64Value(constants.FundMigrationInterval)
 	ctx = ctx.WithBlockHeight(vault.StatusSince + (migrateInterval * 7))
-	vault, err = keeper.GetVault(ctx, vault.PubKey)
+	vault, err = mgr.Keeper().GetVault(ctx, vault.PubKey)
 	c.Assert(err, IsNil)
 	vault.PendingTxBlockHeights = nil
-	c.Assert(keeper.SetVault(ctx, vault), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	c.Check(mgr.VaultMgr().EndBlock(ctx, mgr, consts), IsNil) // should attempt to send 100% of the coin values
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -251,16 +248,15 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 func (s *ThorchainSuite) TestRagnarok(c *C) {
 	SetupConfigForTest()
 	var err error
-	ctx, keeper, mgr := setupKeeperForTest2(c)
+	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(10)
 	ver := GetCurrentVersion()
 	consts := constants.GetConstantValues(ver)
-	c.Assert(keeper.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 		Chain:              common.BNBChain,
 		TransactionSize:    1,
 		TransactionFeeRate: bnbSingleTxFee.Uint64(),
 	}), IsNil)
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
 
 	// create active asgard vault
 	asgard := GetRandomVault()
@@ -335,10 +331,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	for i := 1; i <= bonderCount; i++ {
 		na := GetRandomNodeAccount(NodeActive)
 		na.Bond = cosmos.NewUint(1_000_000 * uint64(i) * common.One)
-		fmt.Println("-----------------------------------")
-		fmt.Printf("KEEPER: %+v\n", mgr.Keeper())
 		FundModule(c, ctx, mgr.Keeper(), BondName, na.Bond.Uint64())
-		fmt.Println("-----------------------------------")
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 		bonders[i-1] = na
 
@@ -437,27 +430,24 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 
 func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	var err error
-	ctx, keeper := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(10)
 	ver := GetCurrentVersion()
 	consts := constants.GetConstantValues(ver)
 
-	mgr := setupManagerForTest(c, keeper)
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
-
 	// create active asgard vault
 	asgard := GetRandomVault()
-	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
 	// create pools
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	c.Assert(keeper.SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	boltAsset, err := common.NewAsset("BNB.BOLT-123")
 	c.Assert(err, IsNil)
 	pool.Asset = boltAsset
-	c.Assert(keeper.SetPool(ctx, pool), IsNil)
-	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(keeper))
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(mgr.Keeper()))
 	// add liquidity providers
 	lp1 := GetRandomRUNEAddress() // LiquidityProvider1
 	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
@@ -478,9 +468,9 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	_ = lps
 
 	// get new pool data
-	bnbPool, err := keeper.GetPool(ctx, common.BNBAsset)
+	bnbPool, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	boltPool, err := keeper.GetPool(ctx, boltAsset)
+	boltPool, err := mgr.Keeper().GetPool(ctx, boltAsset)
 	c.Assert(err, IsNil)
 
 	// Add bonders/validators
@@ -489,7 +479,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	for i := 1; i <= bonderCount; i++ {
 		na := GetRandomNodeAccount(NodeActive)
 		na.Bond = cosmos.NewUint(1_000_000 * uint64(i) * common.One)
-		c.Assert(keeper.SetNodeAccount(ctx, na), IsNil)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 		bonders[i-1] = na
 
 		// Add bond to asgard
@@ -497,7 +487,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 			common.NewCoin(common.RuneAsset(), na.Bond),
 		})
 		asgard.Membership = append(asgard.Membership, na.PubKeySet.Secp256k1.String())
-		c.Assert(keeper.SetVault(ctx, asgard), IsNil)
+		c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
 		// create yggdrasil vault, with 1/3 of the liquidity provider funds
 		ygg := GetRandomVault()
@@ -509,7 +499,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 			common.NewCoin(common.RuneAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
 			common.NewCoin(boltAsset, boltPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
 		})
-		c.Assert(keeper.SetVault(ctx, ygg), IsNil)
+		c.Assert(mgr.Keeper().SetVault(ctx, ygg), IsNil)
 
 	}
 
@@ -530,13 +520,13 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 		_ = err
 		// c.Assert(err, IsNil)
 	}
-	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 	asgard.Membership = asgard.Membership[:len(asgard.Membership)-1]
-	c.Assert(keeper.SetVault(ctx, asgard), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 	// no validator should leave, because it trigger ragnarok
 	updates := mgr.ValidatorMgr().EndBlock(ctx, mgr, consts)
 	c.Assert(updates, IsNil)
-	ragnarokHeight, err := keeper.GetRagnarokBlockHeight(ctx)
+	ragnarokHeight, err := mgr.Keeper().GetRagnarokBlockHeight(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(ragnarokHeight, Equals, common.BlockHeight(ctx))
 	currentHeight := common.BlockHeight(ctx)
