@@ -160,9 +160,9 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 		},
 	}
 	for _, tc := range testCases {
-		ctx, k := setupKeeperForTest(c)
-		helper := NewHandlerDepositTestHelper(k)
-		_, mgr := setupManagerForTestWithKeeper(c, helper)
+		ctx, mgr := setupManagerForTest(c)
+		helper := NewHandlerDepositTestHelper(mgr.Keeper())
+		mgr.K = helper
 		handler := NewDepositHandler(mgr)
 		msg := tc.messageProvider(c, ctx, helper)
 		constantAccessor := constants.GetConstantValues(GetCurrentVersion())

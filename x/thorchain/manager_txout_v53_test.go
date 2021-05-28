@@ -304,9 +304,9 @@ func (s TxOutStoreV53Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 		Chain:     common.BNBChain,
 		ToAddress: GetRandomBNBAddress(),
 		InHash:    inTxID,
-		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(3900000000)),
+		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(39*common.One)),
 		MaxGas: common.Gas{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100000000)),
+			common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 		},
 	}
 	txOutStore := w.mgr.TxOutStore()
@@ -321,7 +321,7 @@ func (s TxOutStoreV53Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 		Chain:     common.BNBChain,
 		ToAddress: GetRandomBNBAddress(),
 		InHash:    inTxID,
-		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000000)),
+		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(10*common.One)),
 		MaxGas: common.Gas{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(7500)),
 		},

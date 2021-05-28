@@ -117,48 +117,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	})
 	os.Setenv("NET", "mocknet")
 	mgr := NewManagers(k, marshaler, bk, ak, keyThorchain)
-	mgr.BeginBlock(ctx)
-	return ctx, mgr
-}
-
-func setupManagerForTestWithKeeper(c *C, k keeper.Keeper) (cosmos.Context, *Mgrs) {
-	cosmostypes.SetCoinDenomRegex(func() string {
-		return cmd.DenomRegex
-	})
-	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
-	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
-	keyParams := cosmos.NewKVStoreKey(paramstypes.StoreKey)
-	tkeyParams := cosmos.NewTransientStoreKey(paramstypes.TStoreKey)
-
-	db := dbm.NewMemDB()
-	ms := store.NewCommitMultiStore(db)
-	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyParams, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
-	ms.MountStoreWithDB(tkeyParams, cosmos.StoreTypeTransient, db)
-	err := ms.LoadLatestVersion()
-	c.Assert(err, IsNil)
-
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
-	ctx = ctx.WithBlockHeight(18)
-	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
-
-	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
-	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
-		ModuleName:  {authtypes.Minter, authtypes.Burner},
-		AsgardName:  {},
-		BondName:    {},
-		ReserveName: {},
-	})
-
-	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
-	bk.SetSupply(ctx, banktypes.NewSupply(cosmos.Coins{
-		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
-	}))
-	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, marshaler, bk, ak, keyThorchain)
+	constants.SWVersion = GetCurrentVersion()
 	mgr.BeginBlock(ctx)
 	return ctx, mgr
 }

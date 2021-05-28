@@ -100,8 +100,8 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 			AssetDepositValue: cosmos.ZeroUint(),
 		},
 	}
+	mgr.K = k
 	// happy path
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	addHandler := NewAddLiquidityHandler(mgr)
 	addTxHash := GetRandomTxHash()
 	tx := common.NewTx(
@@ -126,7 +126,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 	_, err = addHandler.Run(ctx, msg, ver, constAccessor)
 	c.Assert(err, IsNil)
 
-	midLiquidityPool, err := k.GetPool(ctx, common.BNBAsset)
+	midLiquidityPool, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(midLiquidityPool.PendingInboundRune.String(), Equals, "10000000000")
 
@@ -135,7 +135,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 	_, err = addHandler.Run(ctx, msg, ver, constAccessor)
 	c.Assert(err, IsNil)
 
-	postLiquidityPool, err := k.GetPool(ctx, common.BNBAsset)
+	postLiquidityPool, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(postLiquidityPool.BalanceAsset.String(), Equals, "10000000000")
 	c.Assert(postLiquidityPool.BalanceRune.String(), Equals, "10000000000")
@@ -165,7 +165,8 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNe
 		},
 	}
 	// happy path
-	ctx, mgr := setupManagerForTestWithKeeper(c, k)
+	ctx, mgr := setupManagerForTest(c)
+	mgr.K = k
 	addHandler := NewAddLiquidityHandler(mgr)
 	preLiquidityPool, err := k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
@@ -273,7 +274,6 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 }
 
 func (s *HandlerAddLiquiditySuite) TestHandlerAddLiquidityFailScenario(c *C) {
-	ctx, _ := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
 	emptyPool := Pool{
 		BalanceRune:  cosmos.ZeroUint(),
@@ -335,7 +335,8 @@ func (s *HandlerAddLiquiditySuite) TestHandlerAddLiquidityFailScenario(c *C) {
 			bnbAddr,
 			common.NoAddress, cosmos.ZeroUint(),
 			activeNodeAccount.NodeAddress)
-		_, mgr := setupManagerForTestWithKeeper(c, tc.k)
+		ctx, mgr := setupManagerForTest(c)
+		mgr.K = tc.k
 		addHandler := NewAddLiquidityHandler(mgr)
 		_, err := addHandler.Run(ctx, msg, ver, constAccessor)
 		c.Assert(errors.Is(err, tc.expectedResult), Equals, true, Commentf(tc.name))
@@ -480,7 +481,8 @@ func (s *HandlerAddLiquiditySuite) TestCalculatePoolUnitsV1(c *C) {
 
 func (s *HandlerAddLiquiditySuite) TestValidateAddLiquidityMessage(c *C) {
 	ps := NewAddLiquidityTestKeeper()
-	ctx, mgr := setupManagerForTestWithKeeper(c, ps)
+	ctx, mgr := setupManagerForTest(c)
+	mgr.K = ps
 	txID := GetRandomTxHash()
 	bnbAddress := GetRandomBNBAddress()
 	assetAddress := GetRandomBNBAddress()

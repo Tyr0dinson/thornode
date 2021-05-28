@@ -452,12 +452,12 @@ func (s *HandlerBanSuite) TestBanHandlerValidation(c *C) {
 			continue
 		}
 		for _, ver := range versions {
-			ctx, k := setupKeeperForTest(c)
-			k.SetNodeAccount(ctx, banner)
-			helper := NewTestBanKeeperHelper(k)
+			ctx, mgr := setupManagerForTest(c)
+			mgr.Keeper().SetNodeAccount(ctx, banner)
+			helper := NewTestBanKeeperHelper(mgr.Keeper())
 			helper.toBanNodeAddr = toBanAddr
 			helper.bannerNodeAddr = bannerNodeAddr
-			_, mgr := setupManagerForTestWithKeeper(c, helper)
+			mgr.K = helper
 			handler := NewBanHandler(mgr)
 			constAccessor := constants.GetConstantValues(ver)
 			result, err := handler.Run(ctx, tc.messageProvider(ctx, helper), ver, constAccessor)

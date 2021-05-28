@@ -232,7 +232,7 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 		lps:         lps,
 	}
 
-	mgr := NewDummyMgr()
+	mgr := NewDummyMgrWithKeeper(keeper)
 
 	vaultMgr := NewNetworkMgrV1(keeper, mgr.TxOutStore(), mgr.EventMgr())
 

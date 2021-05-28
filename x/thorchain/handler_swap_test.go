@@ -202,7 +202,6 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	}
 	ver := GetCurrentVersion()
 	mgr.K = keeper
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	mgr.txOutStore = NewTxStoreDummy()
 	handler := NewSwapHandler(mgr)
 	constAccessor := constants.GetConstantValues(ver)

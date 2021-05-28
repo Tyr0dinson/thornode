@@ -400,6 +400,7 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 		ctx, mgr := setupManagerForTest(c)
 		FundModule(c, ctx, mgr.Keeper(), BondName, 1000)
 		helper := NewLeaveHandlerTestHelper(mgr.Keeper())
+		mgr.K = helper
 		handler := NewLeaveHandler(mgr)
 		msg := tc.messageProvider(ctx, helper)
 		ver := GetCurrentVersion()

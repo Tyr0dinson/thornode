@@ -93,7 +93,7 @@ func (s *HandlerErrataTxSuite) TestValidate(c *C) {
 }
 
 func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
-	ctx, _ := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 
@@ -140,8 +140,8 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 			},
 		},
 	}
+	mgr.K = keeper
 
-	_, mgr := setupManagerForTestWithKeeper(c, keeper)
 	handler := NewErrataTxHandler(mgr)
 	msg := NewMsgErrataTx(txID, common.BNBChain, na.NodeAddress)
 	_, err := handler.handle(ctx, *msg, ver, constAccessor)
@@ -481,6 +481,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 	for _, tc := range testCases {
 		ctx, mgr := setupManagerForTest(c)
 		helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
+		mgr.K = helper
 		msg := tc.messageProvider(ctx, helper)
 		handler := NewErrataTxHandler(mgr)
 		constAccessor := constants.GetConstantValues(GetCurrentVersion())
