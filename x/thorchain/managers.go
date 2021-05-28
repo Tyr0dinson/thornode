@@ -112,6 +112,10 @@ type YggManager interface {
 	Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error
 }
 
+type LPManager interface {
+	EndBlock(ctx cosmos.Context, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
 	CurrentVersion semver.Version

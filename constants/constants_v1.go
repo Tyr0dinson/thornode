@@ -41,6 +41,8 @@ func NewConstantValue010() *ConstantVals {
 			VirtualMultSynths:             2,                  // pool depth multiplier for synthetic swaps
 			MinSlashPointsForBadValidator: 100,                // The minimum slash point
 			FullImpLossProtectionBlocks:   1440000,            // number of blocks before a liquidity provider gets 100% impermanent loss protection
+			MaxPendingLiquidityAge:        120960,             // How long pending liquidity can stay pending before add it asymetrically
+			PendingLiquidityCheckInterval: 17280,              // how frequent the network check pending liquidity
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
