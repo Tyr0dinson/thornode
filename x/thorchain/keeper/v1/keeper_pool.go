@@ -87,7 +87,7 @@ func (k KVStore) RemovePool(ctx cosmos.Context, asset common.Asset) {
 }
 
 func (k KVStore) CalcUnits(ctx cosmos.Context, p Pool) Pool {
-	if p.LPUnits == (cosmos.Uint{}) || (!p.PoolUnits.IsZero() && p.LPUnits.IsZero()) {
+	if p.LPUnits == (common.Uint{}) || (!p.PoolUnits.IsZero() && p.LPUnits.IsZero()) {
 		// LPunits is not initiated, pre version 54
 		return p
 	}

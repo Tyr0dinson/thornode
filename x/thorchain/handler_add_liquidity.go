@@ -849,8 +849,8 @@ func (h AddLiquidityHandler) addLiquidityV55(ctx cosmos.Context,
 
 	// check if LPUnits have been init'ed. This attribute was added later, in
 	// version 55
-	if pool.LPUnits == (cosmos.Uint{}) {
-		pool.LPUnits = cosmos.ZeroUint()
+	if pool.LPUnits.IsInitialized() {
+		pool.LPUnits = common.ZeroUint()
 	}
 
 	originalUnits := pool.PoolUnits
