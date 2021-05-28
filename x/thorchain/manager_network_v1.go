@@ -231,7 +231,7 @@ func (vm *NetworkMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor 
 						emitPoolBalanceChangedEvent(ctx,
 							NewPoolMod(p.Asset, runeAmt, true, coin.Amount, false),
 							"burn dust",
-							vm.k, vm.eventMgr)
+							mgr)
 						continue
 					}
 				}

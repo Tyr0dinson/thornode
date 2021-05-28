@@ -104,7 +104,7 @@ func (h WithdrawLiquidityHandler) handleV1(ctx cosmos.Context, msg MsgWithdrawLi
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -214,7 +214,7 @@ func (h WithdrawLiquidityHandler) handleV42(ctx cosmos.Context, msg MsgWithdrawL
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -319,7 +319,7 @@ func (h WithdrawLiquidityHandler) handleV45(ctx cosmos.Context, msg MsgWithdrawL
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV1(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -433,7 +433,7 @@ func (h WithdrawLiquidityHandler) handleV47(ctx cosmos.Context, msg MsgWithdrawL
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV47(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV47(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -573,7 +573,7 @@ func (h WithdrawLiquidityHandler) handleV49(ctx cosmos.Context, msg MsgWithdrawL
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV49(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV49(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -714,7 +714,7 @@ func (h WithdrawLiquidityHandler) handleCurrent(ctx cosmos.Context, msg MsgWithd
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get pool")
 	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV50(ctx, version, h.mgr.Keeper(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdrawV50(ctx, version, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}

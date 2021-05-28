@@ -465,7 +465,7 @@ func (WithdrawSuite) TestWithdraw(c *C) {
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
 		})
-		r, asset, _, _, _, err := withdrawV1(ctx, version, tc.ps, tc.msg, mgr)
+		r, asset, _, _, _, err := withdrawV1(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
 			c.Check(err.Error(), Equals, tc.expectedError.Error())
@@ -530,7 +530,7 @@ func (WithdrawSuite) TestWithdrawAsym(c *C) {
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
 		})
-		r, asset, _, _, _, err := withdrawV1(ctx, version, ps, tc.msg, mgr)
+		r, asset, _, _, _, err := withdrawV1(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
 			c.Check(err.Error(), Equals, tc.expectedError.Error())
@@ -576,7 +576,7 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 		WithdrawalAsset: common.BNBAsset,
 		Signer:          accountAddr,
 	}
-	runeAmt, assetAmt, _, unitsLeft, gas, err := withdrawV1(ctx, version, mgr.Keeper(), msg, mgr)
+	runeAmt, assetAmt, _, unitsLeft, gas, err := withdrawV1(ctx, version, msg, mgr)
 	c.Assert(err, IsNil)
 	c.Assert(runeAmt.Equal(cosmos.NewUint(1024)), Equals, true)
 	c.Assert(assetAmt.IsZero(), Equals, true)
@@ -603,7 +603,7 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 		WithdrawalAsset: common.BNBAsset,
 		Signer:          accountAddr,
 	}
-	runeAmt, assetAmt, _, unitsLeft, gas, err = withdrawV1(ctx, version, mgr.Keeper(), msg1, mgr)
+	runeAmt, assetAmt, _, unitsLeft, gas, err = withdrawV1(ctx, version, msg1, mgr)
 	c.Assert(err, IsNil)
 	c.Assert(assetAmt.Equal(cosmos.NewUint(1024)), Equals, true)
 	c.Assert(runeAmt.IsZero(), Equals, true)

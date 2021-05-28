@@ -222,7 +222,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		if stagedPoolCost < 0 || err != nil {
 			stagedPoolCost = constantValues.GetInt64Value(constants.StagedPoolCost)
 		}
-		if err := cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, am.mgr.Keeper(), am.mgr.EventMgr()); err != nil {
+		if err := cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, am.mgr); err != nil {
 			ctx.Logger().Error("Unable to enable a pool", "error", err)
 		}
 	}
