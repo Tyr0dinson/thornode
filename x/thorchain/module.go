@@ -249,7 +249,10 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	if err := am.mgr.YggManager().Fund(ctx, am.mgr, constantValues); err != nil {
 		ctx.Logger().Error("unable to fund yggdrasil", "error", err)
 	}
-
+	// LP Manager , check pending liquidity , and commit if it meet criteria
+	if err := am.mgr.LPManager().EndBlock(ctx, am.mgr, version, constantValues); err != nil {
+		ctx.Logger().Error("fail to check pending liquidity", "error", err)
+	}
 	am.mgr.GasMgr().EndBlock(ctx, am.keeper, am.mgr.EventMgr())
 
 	return validators

@@ -32,6 +32,7 @@ type Manager interface {
 	SwapQ() SwapQueue
 	Slasher() Slasher
 	YggManager() YggManager
+	LPManager() LPManager
 }
 
 // GasManager define all the methods required to manage gas
@@ -129,6 +130,7 @@ type Mgrs struct {
 	slasher        Slasher
 	yggManager     YggManager
 	Keeper         keeper.Keeper
+	lpManager      LPManager
 }
 
 // NewManagers  create a new Manager
@@ -189,6 +191,10 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to create swap queue: %w", err)
 	}
+	mgr.lpManager, err = GetLPManager(mgr.Keeper, v)
+	if err != nil {
+		return fmt.Errorf("fail to create LPManager: %w", err)
+	}
 	return nil
 }
 
@@ -218,6 +224,9 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 
 // YggManager return an implementation of YggManager
 func (mgr *Mgrs) YggManager() YggManager { return mgr.yggManager }
+
+// LPManager return an implementation of LPManager
+func (mgr *Mgrs) LPManager() LPManager { return mgr.lpManager }
 
 // GetGasManager return GasManager
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
@@ -316,6 +325,14 @@ func GetYggManager(keeper keeper.Keeper, version semver.Version) (YggManager, er
 		return NewYggMgrV45(keeper), nil
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return NewYggMgrV1(keeper), nil
+	}
+	return nil, errInvalidVersion
+}
+
+// GetLPManager return an implementation of LPManager
+func GetLPManager(keeper keeper.Keeper, version semver.Version) (LPManager, error) {
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return NewLPManager(keeper), nil
 	}
 	return nil, errInvalidVersion
 }

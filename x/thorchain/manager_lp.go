@@ -28,11 +28,16 @@ func (lpm *LPManagerV1) EndBlock(ctx cosmos.Context, mgr Manager, version semver
 	if version.LT(semver.MustParse("0.55.0")) {
 		return nil
 	}
+
 	checkInterval, err := lpm.k.GetMimir(ctx, constants.PendingLiquidityCheckInterval.String())
 	if checkInterval < 0 || err != nil {
 		checkInterval = constAccessor.GetInt64Value(constants.PendingLiquidityCheckInterval)
 	}
+	// Mimir PendingLiquidityCheckInterval to 0 will disable this
 	if checkInterval == 0 {
+		return nil
+	}
+	if ctx.BlockHeight()%checkInterval != 0 {
 		return nil
 	}
 	maxAge := constAccessor.GetInt64Value(constants.MaxPendingLiquidityAge)
@@ -49,7 +54,10 @@ func (lpm *LPManagerV1) EndBlock(ctx cosmos.Context, mgr Manager, version semver
 			ctx.Logger().Error("fail to get liquidity providers that has pending liquidity", "error", err)
 			continue
 		}
-		if err := lpm.processPendingLiquidity(ctx, lps, p.Asset, mgr, version, constAccessor); err != nil {
+		if lps == nil {
+			continue
+		}
+		if err := lpm.processPendingLiquidity(ctx, lps, p.Asset, mgr); err != nil {
 			ctx.Logger().Error("fail to process pending liquidity", "error", err)
 			continue
 		}
@@ -79,6 +87,7 @@ func (lpm *LPManagerV1) getPendingLiquidity(ctx cosmos.Context, p Pool, age int6
 		if lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
 			continue
 		}
+		// not time to be committed
 		if blockHeight-lp.LastAddHeight < age {
 			continue
 		}
@@ -87,7 +96,7 @@ func (lpm *LPManagerV1) getPendingLiquidity(ctx cosmos.Context, p Pool, age int6
 	return liquidityProviders, nil
 }
 
-func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []LiquidityProvider, asset common.Asset, mgr Manager, version semver.Version, constAccessor constants.ConstantValues) error {
+func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []LiquidityProvider, asset common.Asset, mgr Manager) error {
 	for _, lp := range lps {
 		p, err := lpm.k.GetPool(ctx, asset)
 		if err != nil {
@@ -95,6 +104,7 @@ func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []Liquid
 		}
 		if err := lpm.commitPendingLiquidity(ctx, asset, p, lp, mgr); err != nil {
 			ctx.Logger().Error("fail to commit pending liquidity", "error", err)
+			// roll back the changes in pool
 			if savePoolErr := lpm.k.SetPool(ctx, p); savePoolErr != nil {
 				return fmt.Errorf("fail to restore pool(%s),err: %w", asset, err)
 			}
@@ -104,7 +114,6 @@ func (lpm *LPManagerV1) processPendingLiquidity(ctx cosmos.Context, lps []Liquid
 }
 
 func (lpm *LPManagerV1) commitPendingLiquidity(ctx cosmos.Context, asset common.Asset, pool Pool, lp LiquidityProvider, mgr Manager) error {
-
 	pendingRuneAmt := lp.PendingRune
 	pendingAssetAmt := lp.PendingAsset
 	runeTxID := common.BlankTxID
