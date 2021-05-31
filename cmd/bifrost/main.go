@@ -105,7 +105,10 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create pubkey manager")
 	}
-
+	// start the pubkey manager after load chain client , so asgard address can be loaded again
+	if err := pubkeyMgr.Start(); err != nil {
+		log.Fatal().Err(err).Msg("fail to start pubkey manager")
+	}
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
 	if err != nil {
@@ -177,10 +180,6 @@ func main() {
 		log.Fatal().Msg("fail to load any chains")
 	}
 
-	// start the pubkey manager after load chain client , so asgard address can be loaded again
-	if err := pubkeyMgr.Start(); err != nil {
-		log.Fatal().Err(err).Msg("fail to start pubkey manager")
-	}
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
 	// start observer
 	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfg.Chains[0].BlockScanner.DBPath, tssKeysignMetricMgr)
