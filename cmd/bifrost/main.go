@@ -105,9 +105,6 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create pubkey manager")
 	}
-	if err := pubkeyMgr.Start(); err != nil {
-		log.Fatal().Err(err).Msg("fail to start pubkey manager")
-	}
 
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
@@ -173,6 +170,10 @@ func main() {
 		if !strings.HasPrefix(chainCfg.BlockScanner.RPCHost, "http") {
 			chainCfg.BlockScanner.RPCHost = fmt.Sprintf("http://%s", chainCfg.BlockScanner.RPCHost)
 		}
+	}
+	// start the pubkey manager after load chain client , so asgard address can be loaded again
+	if err := pubkeyMgr.Start(); err != nil {
+		log.Fatal().Err(err).Msg("fail to start pubkey manager")
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
 	chains := chainclients.LoadChains(k, cfg.Chains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
