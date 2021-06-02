@@ -105,9 +105,6 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create pubkey manager")
 	}
-	if err := pubkeyMgr.Start(); err != nil {
-		log.Fatal().Err(err).Msg("fail to start pubkey manager")
-	}
 
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
@@ -178,6 +175,9 @@ func main() {
 	chains := chainclients.LoadChains(k, cfg.Chains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
 	if len(chains) == 0 {
 		log.Fatal().Msg("fail to load any chains")
+	}
+	if err := pubkeyMgr.Start(); err != nil {
+		log.Fatal().Err(err).Msg("fail to start pubkey manager")
 	}
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
 	// start observer
