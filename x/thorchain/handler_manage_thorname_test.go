@@ -24,16 +24,14 @@ func NewKeeperManageTHORNameTest(k keeper.Keeper) KeeperManageTHORNameTest {
 func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
-	ctx, k := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 
-	mgr := NewManagers(k)
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
-	handler := NewManageTHORNameHandler(k, mgr)
+	handler := NewManageTHORNameHandler(mgr)
 	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
 	addr := GetRandomTHORAddress()
 	acc, _ := addr.AccAddress()
 	name := NewTHORName("hello", common.THORChain, addr, 50)
-	k.SetTHORName(ctx, name)
+	mgr.Keeper().SetTHORName(ctx, name)
 
 	// happy path
 	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.THORChain, addr, coin, 0, acc)
@@ -68,24 +66,22 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	constAccessor := constants.GetConstantValues(ver)
 	feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
 	registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
-	ctx, k := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 
-	mgr := NewManagers(k)
-	c.Assert(mgr.BeginBlock(ctx), IsNil)
-	handler := NewManageTHORNameHandler(k, mgr)
+	handler := NewManageTHORNameHandler(mgr)
 	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
 	addr := GetRandomTHORAddress()
 	acc, _ := addr.AccAddress()
 	tnName := "hello"
 
 	// add rune to addr for gas
-	FundAccount(c, ctx, k, acc, 10*common.One)
+	FundAccount(c, ctx, mgr.Keeper(), acc, 10*common.One)
 
 	// happy path, register new name
 	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, acc)
 	_, err := handler.handle(ctx, *msg, ver, constAccessor)
 	c.Assert(err, IsNil)
-	name, err := k.GetTHORName(ctx, tnName, common.THORChain)
+	name, err := mgr.Keeper().GetTHORName(ctx, tnName, common.THORChain)
 	c.Assert(err, IsNil)
 	c.Check(name.Address.IsEmpty(), Equals, false)
 	c.Check(name.ExpireBlockHeight, Equals, (int64(coin.Amount.Uint64())-registrationFee)/feePerBlock)
@@ -95,7 +91,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
 	_, err = handler.handle(ctx, *msg, ver, constAccessor)
 	c.Assert(err, IsNil)
-	name, err = k.GetTHORName(ctx, tnName, common.BNBChain)
+	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.BNBChain)
 	c.Assert(err, IsNil)
 	c.Check(name.Address.Equals(bnbAddr), Equals, true)
 
@@ -104,7 +100,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
 	_, err = handler.handle(ctx, *msg, ver, constAccessor)
 	c.Assert(err, IsNil)
-	name, err = k.GetTHORName(ctx, tnName, common.BNBChain)
+	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.BNBChain)
 	c.Assert(err, IsNil)
 	c.Check(name.Address.Equals(bnbAddr), Equals, true)
 
@@ -112,7 +108,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, acc)
 	_, err = handler.handle(ctx, *msg, ver, constAccessor)
 	c.Assert(err, IsNil)
-	name, err = k.GetTHORName(ctx, tnName, common.THORChain)
+	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.THORChain)
 	c.Assert(err, IsNil)
 	c.Check(name.Address.IsEmpty(), Equals, true)
 	c.Check(name.ExpireBlockHeight, Equals, int64(0))

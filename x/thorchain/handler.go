@@ -64,10 +64,10 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
 
 	// native handlers (non-consensus)
-	m[MsgSend{}.Type()] = NewSendHandler(keeper, mgr)
-	m[MsgDeposit{}.Type()] = NewDepositHandler(keeper, mgr)
+	m[MsgSend{}.Type()] = NewSendHandler(mgr)
+	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
 	// TODO: uncomment this line once THORNames is deployed (post version 0.54.0)
-	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(keeper, mgr)
+	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	return m
 }
 
@@ -108,7 +108,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgSwitch{}.Type()] = NewSwitchHandler(mgr)
 	m[MsgNoOp{}.Type()] = NewNoOpHandler(mgr)
 	m[MsgConsolidate{}.Type()] = NewConsolidateHandler(mgr)
-	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(keeper, mgr)
+	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	return m
 }
 

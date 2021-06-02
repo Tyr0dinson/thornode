@@ -134,17 +134,17 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		if err != nil {
 			return nil, ErrInternal(err, "invalid chain")
 		}
-		name, err := mgr.Keeper.GetTHORName(ctx, parts[0], chain)
+		name, err := mgr.Keeper().GetTHORName(ctx, parts[0], chain)
 		if err != nil {
 			return nil, ErrInternal(err, "fail to fetch THORName")
 		}
 		names = append(names, name)
 	} else {
-		iterator := mgr.Keeper.GetTHORNameIterator(ctx, ref)
+		iterator := mgr.Keeper().GetTHORNameIterator(ctx, ref)
 		defer iterator.Close()
 		for ; iterator.Valid(); iterator.Next() {
 			var n THORName
-			mgr.Keeper.Cdc().MustUnmarshalBinaryBare(iterator.Value(), &n)
+			mgr.Keeper().Cdc().MustUnmarshalBinaryBare(iterator.Value(), &n)
 			names = append(names, n)
 		}
 	}
@@ -1030,7 +1030,7 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		}
 		for _, tx := range txs.TxArray {
 			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper, tx.Memo)
+				memo, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
