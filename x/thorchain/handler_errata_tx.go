@@ -332,12 +332,12 @@ func (h ErrataTxHandler) handleV42(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 }
 
 func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	active, err := h.keeper.ListActiveNodeAccounts(ctx)
+	active, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 
-	voter, err := h.keeper.GetErrataTxVoter(ctx, msg.TxID, msg.Chain)
+	voter, err := h.mgr.Keeper().GetErrataTxVoter(ctx, msg.TxID, msg.Chain)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 		ctx.Logger().Info("signer already signed MsgErrataTx", "signer", msg.Signer.String(), "txid", msg.TxID)
 		return &cosmos.Result{}, nil
 	}
-	h.keeper.SetErrataTxVoter(ctx, voter)
+	h.mgr.Keeper().SetErrataTxVoter(ctx, voter)
 	// doesn't have consensus yet
 	if !voter.HasConsensus(active) {
 		ctx.Logger().Info("not having consensus yet, return")
@@ -364,10 +364,10 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 	}
 
 	voter.BlockHeight = common.BlockHeight(ctx)
-	h.keeper.SetErrataTxVoter(ctx, voter)
+	h.mgr.Keeper().SetErrataTxVoter(ctx, voter)
 	// decrease the slash points
 	h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.GetSigners()...)
-	observedVoter, err := h.keeper.GetObservedTxInVoter(ctx, msg.TxID)
+	observedVoter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, msg.TxID)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +377,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 	}
 	// set the observed Tx to reverted
 	observedVoter.SetReverted()
-	h.keeper.SetObservedTxInVoter(ctx, observedVoter)
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, observedVoter)
 	if observedVoter.Tx.IsEmpty() {
 		ctx.Logger().Info("tx has not reach consensus yet, so nothing need to be done", "tx_id", msg.TxID)
 		return &cosmos.Result{}, nil
@@ -392,12 +392,12 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 		vaultPubKey := observedVoter.Tx.ObservedPubKey
 		if !vaultPubKey.IsEmpty() {
 			// try to deduct the asset from asgard
-			vault, err := h.keeper.GetVault(ctx, vaultPubKey)
+			vault, err := h.mgr.Keeper().GetVault(ctx, vaultPubKey)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get active asgard vaults: %w", err)
 			}
 			vault.SubFunds(tx.Coins)
-			if err := h.keeper.SetVault(ctx, vault); err != nil {
+			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return nil, fmt.Errorf("fail to save vault, err: %w", err)
 			}
 		}
@@ -430,7 +430,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 	}
 
 	// fetch pool from memo
-	pool, err := h.keeper.GetPool(ctx, assetCoin.Asset)
+	pool, err := h.mgr.Keeper().GetPool(ctx, assetCoin.Asset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool for errata tx", "error", err)
 		return nil, err
@@ -446,7 +446,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
 	if memo.IsType(TxAdd) {
-		lp, err := h.keeper.GetLiquidityProvider(ctx, pool.Asset, tx.FromAddress)
+		lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, tx.FromAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get liquidity provider: %w", err)
 		}
@@ -456,10 +456,10 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 		lp.Units = cosmos.ZeroUint()
 		lp.LastAddHeight = common.BlockHeight(ctx)
 
-		h.keeper.SetLiquidityProvider(ctx, lp)
+		h.mgr.Keeper().SetLiquidityProvider(ctx, lp)
 	}
 
-	if err := h.keeper.SetPool(ctx, pool); err != nil {
+	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 		ctx.Logger().Error("fail to save pool", "error", err)
 	}
 
@@ -557,7 +557,7 @@ func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*co
 		return &cosmos.Result{}, nil
 	}
 
-	memo, _ := ParseMemoWithTHORNames(ctx, h.keeper, tx.Memo)
+	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
 		return h.processErrataOutboundTxV54(ctx, msg)
@@ -878,7 +878,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV42(ctx cosmos.Context, msg MsgE
 // processErrataOutboundTx when the network detect an outbound tx which previously had been sent out to customer , however it get re-org , and it doesn't
 // exist on the external chain anymore , then it will need to reschedule the tx
 func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
-	txOutVoter, err := h.keeper.GetObservedTxOutVoter(ctx, msg.GetTxID())
+	txOutVoter, err := h.mgr.Keeper().GetObservedTxOutVoter(ctx, msg.GetTxID())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", msg.GetTxID(), err)
 	}
@@ -893,7 +893,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 		return &cosmos.Result{}, nil
 	}
 	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
-	m, err := ParseMemoWithTHORNames(ctx, h.keeper, tx.Memo)
+	m, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Memo)
 	if err != nil {
 		return nil, fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
 	}
@@ -902,7 +902,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 	}
 	vaultPubKey := txOutVoter.Tx.ObservedPubKey
 	if !vaultPubKey.IsEmpty() {
-		v, err := h.keeper.GetVault(ctx, vaultPubKey)
+		v, err := h.mgr.Keeper().GetVault(ctx, vaultPubKey)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get vault with pubkey %s: %w", vaultPubKey, err)
 		}
@@ -919,7 +919,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 		}
 
 		if v.IsYggdrasil() {
-			node, err := h.keeper.GetNodeAccountByPubKey(ctx, v.PubKey)
+			node, err := h.mgr.Keeper().GetNodeAccountByPubKey(ctx, v.PubKey)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get node account with pubkey: %s,err: %w", v.PubKey, err)
 			}
@@ -935,7 +935,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 		}
 
 		if !v.IsEmpty() {
-			if err := h.keeper.SetVault(ctx, v); err != nil {
+			if err := h.mgr.Keeper().SetVault(ctx, v); err != nil {
 				return nil, fmt.Errorf("fail to save vault: %w", err)
 			}
 		}
@@ -945,19 +945,19 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 					// it is using native rune, so outbound can't be RUNE
 					continue
 				}
-				p, err := h.keeper.GetPool(ctx, coin.Asset)
+				p, err := h.mgr.Keeper().GetPool(ctx, coin.Asset)
 				if err != nil {
 					return nil, fmt.Errorf("fail to get pool(%s): %w", coin.Asset, err)
 				}
 				runeValue := p.AssetValueInRune(coin.Amount)
 				p.BalanceRune = p.BalanceRune.Add(runeValue)
 				p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
-				if err := h.keeper.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
+				if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
 					common.NewCoin(common.RuneAsset(), runeValue),
 				}); err != nil {
 					return nil, fmt.Errorf("fail to send fund from reserve to asgard: %w", err)
 				}
-				if err := h.keeper.SetPool(ctx, p); err != nil {
+				if err := h.mgr.Keeper().SetPool(ctx, p); err != nil {
 					return nil, fmt.Errorf("fail to save pool (%s) : %w", p.Asset, err)
 				}
 				// send errata event
@@ -974,7 +974,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 	}
 
 	if !m.IsInternal() {
-		txInVoter, err := h.keeper.GetObservedTxInVoter(ctx, m.GetTxID())
+		txInVoter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, m.GetTxID())
 		if err != nil {
 			return nil, fmt.Errorf("fail to get tx in voter for tx (%s): %w", m.GetTxID(), err)
 		}
@@ -998,6 +998,6 @@ func (h ErrataTxHandler) processErrataOutboundTxV54(ctx cosmos.Context, msg MsgE
 		}
 	}
 	txOutVoter.SetReverted()
-	h.keeper.SetObservedTxOutVoter(ctx, txOutVoter)
+	h.mgr.Keeper().SetObservedTxOutVoter(ctx, txOutVoter)
 	return &cosmos.Result{}, nil
 }

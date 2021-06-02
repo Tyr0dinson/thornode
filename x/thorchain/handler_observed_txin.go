@@ -570,19 +570,19 @@ func (h ObservedTxInHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxIn) 
 }
 
 func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Version, msg MsgObservedTxIn, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	activeNodeAccounts, err := h.keeper.ListActiveNodeAccounts(ctx)
+	activeNodeAccounts, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
-	handler := NewInternalHandler(h.keeper, h.mgr)
+	handler := NewInternalHandler(h.mgr)
 	for _, tx := range msg.Txs {
 		// check we are sending to a valid vault
-		if !h.keeper.VaultExists(ctx, tx.ObservedPubKey) {
+		if !h.mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
 			ctx.Logger().Info("Not valid Observed Pubkey", "observed pub key", tx.ObservedPubKey)
 			continue
 		}
 
-		voter, err := h.keeper.GetObservedTxInVoter(ctx, tx.Tx.ID)
+		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out voter", "error", err)
 			continue
@@ -611,7 +611,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
-		vault, err := h.keeper.GetVault(ctx, tx.ObservedPubKey)
+		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
 			continue
@@ -638,8 +638,8 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
 		}
 		// save the changes in Tx Voter to key value store
-		h.keeper.SetObservedTxInVoter(ctx, voter)
-		if err := h.keeper.SetVault(ctx, vault); err != nil {
+		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to set vault", "error", err)
 			continue
 		}
@@ -654,7 +654,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 			continue
 		}
 
-		if err := h.keeper.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}
 
@@ -668,10 +668,10 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxInV54(ctx, h.keeper, txIn, msg.Signer)
+		m, txErr := processOneTxInV54(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
-			if newErr := refundTxV47(ctx, tx, h.mgr, h.keeper, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
+			if newErr := refundTxV47(ctx, tx, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
 				ctx.Logger().Error("fail to refund", "error", err)
 			}
 			continue
@@ -680,11 +680,11 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 		// check if we've halted trading
 		swapMsg, isSwap := m.(*MsgSwap)
 		_, isAddLiquidity := m.(*MsgAddLiquidity)
-		haltTrading, err := h.keeper.GetMimir(ctx, "HaltTrading")
+		haltTrading, err := h.mgr.Keeper().GetMimir(ctx, "HaltTrading")
 		if isSwap || isAddLiquidity {
-			if (haltTrading > 0 && haltTrading < common.BlockHeight(ctx) && err == nil) || h.keeper.RagnarokInProgress(ctx) {
+			if (haltTrading > 0 && haltTrading < common.BlockHeight(ctx) && err == nil) || h.mgr.Keeper().RagnarokInProgress(ctx) {
 				ctx.Logger().Info("trading is halted!!")
-				if newErr := refundTxV47(ctx, tx, h.mgr, h.keeper, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
+				if newErr := refundTxV47(ctx, tx, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
 					ctx.Logger().Error("fail to refund for halted trading", "error", err)
 				}
 				continue
@@ -699,14 +699,14 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 
 		_, err = handler(ctx, m)
 		if err != nil {
-			if err := refundTxV47(ctx, tx, h.mgr, h.keeper, constAccessor, CodeTxFail, err.Error(), ""); err != nil {
+			if err := refundTxV47(ctx, tx, h.mgr, constAccessor, CodeTxFail, err.Error(), ""); err != nil {
 				ctx.Logger().Error("fail to refund", "error", err)
 			}
 		}
 		// for those Memo that will not have outbound at all , set the observedTx to done
 		if !memo.GetType().HasOutbound() {
 			voter.SetDone()
-			h.keeper.SetObservedTxInVoter(ctx, voter)
+			h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 		}
 	}
 	return &cosmos.Result{}, nil
@@ -773,7 +773,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
-		memo, _ := ParseMemoWithTHORNames(ctx, h.keeper, tx.Tx.Memo) // ignore err
+		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
 		if vault.IsYggdrasil() && memo.IsType(TxYggdrasilFund) {
 			// only add the fund to yggdrasil vault when the memo is yggdrasil+
 			// no one should send fund to yggdrasil vault , if somehow scammer / airdrop send fund to yggdrasil vault

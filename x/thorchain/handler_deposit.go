@@ -346,9 +346,8 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 
 }
 
-func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
-	return h.handleCurrent(ctx, msg)
-	nativeTxFee, err := h.keeper.GetMimir(ctx, constants.NativeTransactionFee.String())
+func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+	nativeTxFee, err := h.mgr.Keeper().GetMimir(ctx, constants.NativeTransactionFee.String())
 	if err != nil || nativeTxFee < 0 {
 		nativeTxFee = constAccessor.GetInt64Value(constants.NativeTransactionFee)
 	}
@@ -364,12 +363,12 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	}
 
 	totalCoins := cosmos.NewCoins(gasFee).Add(coins...)
-	if !h.keeper.HasCoins(ctx, msg.GetSigners()[0], totalCoins) {
+	if !h.mgr.Keeper().HasCoins(ctx, msg.GetSigners()[0], totalCoins) {
 		return nil, cosmos.ErrInsufficientCoins(err, "insufficient funds")
 	}
 
 	// send gas to reserve
-	sdkErr := h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.NewCoins(gas))
+	sdkErr := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.NewCoins(gas))
 	if sdkErr != nil {
 		return nil, fmt.Errorf("unable to send gas to reserve: %w", sdkErr)
 	}
@@ -383,12 +382,12 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	if err != nil {
 		return nil, fmt.Errorf("fail to get from address: %w", err)
 	}
-	to, err := h.keeper.GetModuleAddress(AsgardName)
+	to, err := h.mgr.Keeper().GetModuleAddress(AsgardName)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get to address: %w", err)
 	}
 
-	handler := NewInternalHandler(h.keeper, h.mgr)
+	handler := NewInternalHandler(h.mgr)
 
 	memo, _ := ParseMemo(msg.Memo) // ignore err
 	var targetModule string
@@ -403,7 +402,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	coinsInMsg := msg.Coins
 	if !coinsInMsg.IsEmpty() {
 		// send funds to target module
-		sdkErr = h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
+		sdkErr = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
 		if sdkErr != nil {
 			return nil, sdkErr
 		}
@@ -415,7 +414,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}
 	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
-	activeNodes, err := h.keeper.ListActiveNodeAccounts(ctx)
+	activeNodes, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active nodes: %w", err)
 	}
@@ -424,14 +423,14 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
 	txInVoter.Tx = txInVoter.GetTx(activeNodes)
-	h.keeper.SetObservedTxInVoter(ctx, txInVoter)
-	m, txErr := processOneTxInV46(ctx, h.keeper, txIn, msg.Signer)
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
+	m, txErr := processOneTxInV46(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if newErr := refundTxV47(ctx, txIn, h.mgr, h.keeper, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
+		if newErr := refundTxV47(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
 			return nil, newErr
 		}
 
@@ -441,14 +440,14 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	// check if we've halted trading
 	_, isSwap := m.(*MsgSwap)
 	_, isAddLiquidity := m.(*MsgAddLiquidity)
-	haltTrading, err := h.keeper.GetMimir(ctx, "HaltTrading")
+	haltTrading, err := h.mgr.Keeper().GetMimir(ctx, "HaltTrading")
 	if isSwap || isAddLiquidity {
-		if (haltTrading > 0 && haltTrading < common.BlockHeight(ctx) && err == nil) || h.keeper.RagnarokInProgress(ctx) {
+		if (haltTrading > 0 && haltTrading < common.BlockHeight(ctx) && err == nil) || h.mgr.Keeper().RagnarokInProgress(ctx) {
 			ctx.Logger().Info("trading is halted!!")
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}
-			if newErr := refundTxV47(ctx, txIn, h.mgr, h.keeper, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
+			if newErr := refundTxV47(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
 				return nil, ErrInternal(newErr, "trading is halted, fail to refund")
 			}
 			return &cosmos.Result{}, nil
@@ -472,14 +471,14 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if err := refundTxV47(ctx, txIn, h.mgr, h.keeper, constAccessor, code, err.Error(), targetModule); err != nil {
+		if err := refundTxV47(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
 			return nil, fmt.Errorf("fail to refund tx: %w", err)
 		}
 	}
 	// for those Memo that will not have outbound at all , set the observedTx to done
 	if !memo.GetType().HasOutbound() {
 		txInVoter.SetDone()
-		h.keeper.SetObservedTxInVoter(ctx, txInVoter)
+		h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	}
 	return result, nil
 
@@ -532,7 +531,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 
 	handler := NewInternalHandler(h.mgr)
 
-	memo, _ := ParseMemoWithTHORNames(ctx, h.keeper, msg.Memo) // ignore err
+	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Memo) // ignore err
 	var targetModule string
 	switch memo.GetType() {
 	case TxBond:

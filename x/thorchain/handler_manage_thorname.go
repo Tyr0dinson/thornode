@@ -10,20 +10,18 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 var IsValidTHORNameV1 = regexp.MustCompile(`^[a-zA-Z0-9+_-]+$`).MatchString
 
 // ManageTHORNameHandler a handler to process MsgNetworkFee messages
 type ManageTHORNameHandler struct {
-	keeper keeper.Keeper
-	mgr    Manager
+	mgr Manager
 }
 
 // NewManageTHORNameHandler create a new instance of network fee handler
-func NewManageTHORNameHandler(keeper keeper.Keeper, mgr Manager) ManageTHORNameHandler {
-	return ManageTHORNameHandler{keeper: keeper, mgr: mgr}
+func NewManageTHORNameHandler(mgr Manager) ManageTHORNameHandler {
+	return ManageTHORNameHandler{mgr: mgr}
 }
 
 // Run is the main entry point for network fee logic
@@ -70,7 +68,7 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 		return err
 	}
 
-	exists := h.keeper.THORNameExists(ctx, msg.Name, common.THORChain)
+	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name, common.THORChain)
 
 	if !exists {
 		// thornode doesn't appear to exist, lets validate the name
@@ -82,7 +80,7 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 			return fmt.Errorf("not enough funds")
 		}
 	} else {
-		name, err := h.keeper.GetTHORName(ctx, msg.Name, common.THORChain)
+		name, err := h.mgr.Keeper().GetTHORName(ctx, msg.Name, common.THORChain)
 		if err != nil {
 			return err
 		}
@@ -127,21 +125,21 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 	var err error
 
 	// pay for gas
-	if err := nativeGasFee(ctx, msg.Signer, h.keeper, constAccessor); err != nil {
+	if err := nativeGasFee(ctx, msg.Signer, h.mgr.Keeper(), constAccessor); err != nil {
 		return nil, err
 	}
 
 	// send rune to the reserve from the account
 	if !msg.Coin.IsEmpty() {
-		if err := h.keeper.SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.Coins{msg.Coin}); err != nil {
+		if err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.Coins{msg.Coin}); err != nil {
 			return nil, err
 		}
 	}
 
 	tn := NewTHORName(msg.Name, msg.Chain, msg.Address, 0)
-	exists := h.keeper.THORNameExists(ctx, msg.Name, msg.Chain)
+	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name, msg.Chain)
 	if exists {
-		tn, err = h.keeper.GetTHORName(ctx, msg.Name, msg.Chain)
+		tn, err = h.mgr.Keeper().GetTHORName(ctx, msg.Name, msg.Chain)
 		if err != nil {
 			return nil, err
 		}
@@ -166,20 +164,20 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		fundPaid = msg.Coin.Amount
 		addBlocks := int64(msg.Coin.Amount.Uint64()) / feePerBlock
 		tn.ExpireBlockHeight += addBlocks
-		h.keeper.SetTHORName(ctx, tn)
+		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
 	// check if we need to reduce the expire time, upon user request
 	if msg.ExpireBlockHeight > 0 && msg.ExpireBlockHeight < tn.ExpireBlockHeight {
 		tn.ExpireBlockHeight = msg.ExpireBlockHeight
-		h.keeper.SetTHORName(ctx, tn)
+		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
 	// update address
 	if !msg.Address.IsEmpty() {
-		tn, _ := h.keeper.GetTHORName(ctx, msg.Name, msg.Chain)
+		tn, _ := h.mgr.Keeper().GetTHORName(ctx, msg.Name, msg.Chain)
 		tn.Address = msg.Address
-		h.keeper.SetTHORName(ctx, tn)
+		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
 	evt := NewEventTHORName(tn.Name, tn.Chain, tn.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, msg.GetSigners()[0])
