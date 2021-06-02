@@ -66,7 +66,7 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
-	// TODO: uncomment this line once THORNames is deployed (post version 0.54.0)
+	// TODO: uncomment this line once THORNames is deployed (post version 0.56.0)
 	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	return m
 }
@@ -306,7 +306,7 @@ func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 	return newMsg, newMsg.ValidateBasic()
 }
 
-func processOneTxInV54(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV56(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
@@ -353,6 +353,8 @@ func processOneTxInV54(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
 	case NoOpMemo:
 		newMsg = NewMsgNoOp(tx, signer, m.Action)
+	case ConsolidateMemo:
+		newMsg = NewMsgConsolidate(tx, signer)
 	case ManageTHORNameMemo:
 		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
 	default:
