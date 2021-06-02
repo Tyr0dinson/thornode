@@ -272,7 +272,7 @@ func (tos *TxOutStorageV54) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 		runeFee := transactionFeeRune // Fee is the prescribed fee
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
-		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo) // ignore err
+		memo, err := ParseMemo(outputs[i].Memo) // ignore err
 		if err == nil && !memo.IsType(TxYggdrasilFund) && !memo.IsType(TxYggdrasilReturn) && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) {
 			if outputs[i].Coin.Asset.IsRune() {
 				if outputs[i].Coin.Amount.LTE(transactionFeeRune) {
@@ -459,7 +459,7 @@ func (tos *TxOutStorageV54) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 		Tx:             tx,
 		FinaliseHeight: common.BlockHeight(ctx),
 	}
-	m, err := processOneTxInV54(ctx, tos.keeper, observedTx, tos.keeper.GetModuleAccAddress(AsgardName))
+	m, err := processOneTxInV46(ctx, tos.keeper, observedTx, tos.keeper.GetModuleAccAddress(AsgardName))
 	if err != nil {
 		ctx.Logger().Error("fail to process txOut", "error", err, "tx", tx.String())
 		return err
