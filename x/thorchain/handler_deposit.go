@@ -58,8 +58,8 @@ func (h DepositHandler) validateV1(ctx cosmos.Context, msg MsgDeposit) error {
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.handleV54(ctx, msg, version, constAccessor)
+	if version.GTE(semver.MustParse("0.56.0")) {
+		return h.handleV56(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return h.handleV47(ctx, msg, version, constAccessor)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
@@ -484,7 +484,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit, version se
 
 }
 
-func (h DepositHandler) handleV54(ctx cosmos.Context, msg MsgDeposit, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h DepositHandler) handleV56(ctx cosmos.Context, msg MsgDeposit, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg, version, constAccessor)
 }
 
@@ -566,7 +566,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
 	txInVoter.Tx = txInVoter.GetTx(activeNodes)
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
-	m, txErr := processOneTxInV54(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+	m, txErr := processOneTxInV56(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
 		if txIn.Tx.Coins.IsEmpty() {

@@ -68,8 +68,8 @@ func (h ObservedTxInHandler) validateCurrent(ctx cosmos.Context, msg MsgObserved
 
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.54.0")) {
-		return h.handleV54(ctx, version, msg, constAccessor)
+	if version.GTE(semver.MustParse("0.56.0")) {
+		return h.handleV56(ctx, version, msg, constAccessor)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return h.handleV47(ctx, version, msg, constAccessor)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
@@ -668,7 +668,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxInV54(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxInV46(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTxV47(ctx, tx, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
@@ -713,7 +713,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, version semver.Versio
 
 }
 
-func (h ObservedTxInHandler) handleV54(ctx cosmos.Context, version semver.Version, msg MsgObservedTxIn, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ObservedTxInHandler) handleV56(ctx cosmos.Context, version semver.Version, msg MsgObservedTxIn, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, version, msg, constAccessor)
 }
 
@@ -816,7 +816,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxInV54(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxInV56(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTx(ctx, tx, h.mgr, h.mgr.GetConstants(), CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
