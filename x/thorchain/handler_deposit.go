@@ -146,7 +146,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit, version sem
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
 	txInVoter.Tx = txInVoter.GetTx(activeNodes)
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
-	m, txErr := processOneTxIn(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+	m, txErr := processOneTxIn(ctx, version, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
 		if txIn.Tx.Coins.IsEmpty() {
@@ -564,7 +564,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
 	txInVoter.Tx = txInVoter.GetTx(activeNodes)
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
-	m, txErr := processOneTxInV56(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+	m, txErr := processOneTxIn(ctx, version, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
 		if txIn.Tx.Coins.IsEmpty() {

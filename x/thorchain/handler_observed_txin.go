@@ -235,7 +235,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, version semver.Version
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxIn(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxIn(ctx, version, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTx(ctx, tx, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
@@ -378,7 +378,7 @@ func (h ObservedTxInHandler) handleV36(ctx cosmos.Context, version semver.Versio
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxIn(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxIn(ctx, version, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTx(ctx, tx, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
@@ -814,7 +814,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, version semver.Ve
 			continue
 		}
 		// construct msg from memo
-		m, txErr := processOneTxInV56(ctx, h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxIn(ctx, version, h.mgr.Keeper(), txIn, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTx(ctx, tx, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
