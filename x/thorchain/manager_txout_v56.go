@@ -293,26 +293,14 @@ func (tos *TxOutStorageV56) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				}
 
 				// if pool units is zero, no asset fee is taken
-				if !pool.PoolUnits.IsZero() {
+				if !pool.GetPoolUnits().IsZero() {
 					assetFee := transactionFeeAsset
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
 					}
 
-					synthUnits := cosmos.ZeroUint()
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
 					if outputs[i].Coin.Asset.IsSyntheticAsset() {
-						totalSynthSupply := tos.keeper.GetTotalSupply(ctx, outputs[i].Coin.Asset)
-						// at this point ,the pool synth unit had been update to the new amount , however the synth has not been minted yet,
-						// thus the total supply didn't change yet , need to add the output asset amount
-						if outputs[i].ModuleName == ModuleName {
-							totalSynthSupply = totalSynthSupply.Add(outputs[i].Coin.Amount)
-						}
-						minusSynthUnits := common.GetShare(assetFee, totalSynthSupply, pool.SynthUnits)
-						pool.SynthUnits = common.SafeSub(pool.SynthUnits, minusSynthUnits)
-						pool.PoolUnits = common.SafeSub(pool.PoolUnits, minusSynthUnits)
-						synthUnits = minusSynthUnits
-						ctx.Logger().Info("minus synth unit", "units", synthUnits.String())
 						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
 						if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {
 							if err := tos.keeper.SendFromModuleToModule(ctx,
@@ -339,7 +327,7 @@ func (tos *TxOutStorageV56) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 					finalRuneFee = finalRuneFee.Add(runeFee)
 					pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeFee) // Deduct Rune from Pool
 					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
-					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, synthUnits))
+					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 				}
 			}
 		}
