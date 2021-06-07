@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"testing"
 
 	. "gopkg.in/check.v1"
 
@@ -12,6 +13,8 @@ import (
 )
 
 type MemoSuite struct{}
+
+func TestPackage(t *testing.T) { TestingT(t) }
 
 var _ = Suite(&MemoSuite{})
 
