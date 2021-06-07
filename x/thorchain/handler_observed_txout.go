@@ -173,7 +173,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxOut)
 
 		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
-		m, err := processOneTxIn(ctx, h.mgr.Keeper(), txOut, msg.Signer)
+		m, err := processOneTxIn(ctx, version, h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut",
 				"error", err,
@@ -438,7 +438,7 @@ func (h ObservedTxOutHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedT
 
 		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
-		m, err := processOneTxInV56(ctx, h.mgr.Keeper(), txOut, msg.Signer)
+		m, err := processOneTxIn(ctx, version, h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut",
 				"error", err,
