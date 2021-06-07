@@ -450,7 +450,7 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 		}
 
 		// since this address is being malicious, zero their liquidity provider units
-		pool.PoolUnits = common.SafeSub(pool.PoolUnits, lp.Units)
+		pool.LPUnits = common.SafeSub(pool.LPUnits, lp.Units)
 		lp.Units = cosmos.ZeroUint()
 		lp.LastAddHeight = common.BlockHeight(ctx)
 
