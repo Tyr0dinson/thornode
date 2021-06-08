@@ -367,7 +367,7 @@ func (h UnBondHandler) handleCurrent(ctx cosmos.Context, msg MsgUnBond, version 
 	if isMemberOfRetiringVault {
 		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
 	}
-	if err := refundBondV46(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
+	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
 	}
 
