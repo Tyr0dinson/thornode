@@ -151,7 +151,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit, version sem
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if newErr := refundTxV1(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
+		if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
 			return nil, newErr
 		}
 
@@ -168,7 +168,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit, version sem
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}
-			if newErr := refundTxV1(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
+			if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
 				return nil, ErrInternal(newErr, "trading is halted, fail to refund")
 			}
 			return &cosmos.Result{}, nil
@@ -192,7 +192,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit, version sem
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if err := refundTxV1(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
+		if err := refundTx(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
 			return nil, fmt.Errorf("fail to refund tx: %w", err)
 		}
 	}
@@ -289,7 +289,7 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit, version se
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if newErr := refundTxV1(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
+		if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
 			return nil, newErr
 		}
 
@@ -306,7 +306,7 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit, version se
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}
-			if newErr := refundTxV1(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
+			if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
 				return nil, ErrInternal(newErr, "trading is halted, fail to refund")
 			}
 			return &cosmos.Result{}, nil
@@ -330,7 +330,7 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit, version se
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if err := refundTxV1(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
+		if err := refundTx(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
 			return nil, fmt.Errorf("fail to refund tx: %w", err)
 		}
 	}
@@ -436,7 +436,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if newErr := refundTxV47(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
+		if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
 			return nil, newErr
 		}
 
@@ -453,7 +453,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}
-			if newErr := refundTxV47(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
+			if newErr := refundTx(ctx, txIn, h.mgr, constAccessor, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
 				return nil, ErrInternal(newErr, "trading is halted, fail to refund")
 			}
 			return &cosmos.Result{}, nil
@@ -477,7 +477,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit, versio
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if err := refundTxV47(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
+		if err := refundTx(ctx, txIn, h.mgr, constAccessor, code, err.Error(), targetModule); err != nil {
 			return nil, fmt.Errorf("fail to refund tx: %w", err)
 		}
 	}
