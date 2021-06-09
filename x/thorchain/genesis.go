@@ -17,6 +17,7 @@ func NewGenesisState() GenesisState {
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
+	fmt.Printf("%+v\n", data)
 	for _, record := range data.Pools {
 		if err := record.Valid(); err != nil {
 			return err
@@ -133,7 +134,9 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	validators := make([]abci.ValidatorUpdate, 0, len(data.NodeAccounts))
+	fmt.Printf("Node Accounts: %+v\n", data.NodeAccounts)
 	for _, nodeAccount := range data.NodeAccounts {
+		fmt.Printf("Genesis Node Account: %+v\n", nodeAccount)
 		if nodeAccount.Status == NodeActive {
 			// Only Active node will become validator
 			pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, nodeAccount.ValidatorConsPubKey)
@@ -141,6 +144,7 @@ func InitGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 				ctx.Logger().Error("fail to parse consensus public key", "key", nodeAccount.ValidatorConsPubKey, "error", err)
 				panic(err)
 			}
+			fmt.Printf("Add Validator: %s\n", pk)
 			validators = append(validators, abci.Ed25519ValidatorUpdate(pk.Bytes(), 100))
 		}
 

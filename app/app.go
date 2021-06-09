@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -334,6 +335,7 @@ func (app *THORChainApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) a
 func (app *THORChainApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
 	var genesisState GenesisState
 	app.cdc.MustUnmarshalJSON(req.AppStateBytes, &genesisState)
+	fmt.Printf("App State: %+v\n", string(req.AppStateBytes))
 	return app.mm.InitGenesis(ctx, app.appCodec, genesisState)
 }
 
