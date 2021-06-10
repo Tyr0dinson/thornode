@@ -98,4 +98,5 @@ var Queries = []Query{
 	QueryPendingOutbound,
 	QueryTssMetrics,
 	QueryTssKeygenMetrics,
+	QueryTHORName,
 }

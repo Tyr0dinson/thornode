@@ -245,6 +245,8 @@ func ParseMemo(memo string) (mem Memo, err error) {
 		return ParseSwitchMemo(cosmos.Context{}, nil, parts)
 	case TxNoOp:
 		return ParseNoOpMemo(parts)
+	case TxConsolidate:
+		return ParseConsolidateMemo(parts)
 	default:
 		return mem, fmt.Errorf("TxType not supported: %s", tx.String())
 	}
@@ -327,7 +329,7 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 		return addr, nil
 	}
 
-	parts := strings.SplitAfterN(name, ".", 2)
+	parts := strings.SplitN(name, ".", 2)
 	if len(parts) > 1 {
 		chain, err = common.NewChain(parts[1])
 		if err != nil {

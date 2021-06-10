@@ -606,7 +606,7 @@ func (m *EventPendingLiquidity) Events() (cosmos.Events, error) {
 }
 
 // NewEventTHORName create a new instance of EventTHORName
-func NewEventTHORName(name string, chain common.Chain, addr common.Address, reg_fee, fund_amt cosmos.Uint, expire int64, signer cosmos.AccAddress) *EventTHORName {
+func NewEventTHORName(name string, chain common.Chain, addr common.Address, reg_fee, fund_amt cosmos.Uint, expire int64, owner cosmos.AccAddress) *EventTHORName {
 	return &EventTHORName{
 		Name:            name,
 		Chain:           chain,
@@ -614,7 +614,7 @@ func NewEventTHORName(name string, chain common.Chain, addr common.Address, reg_
 		RegistrationFee: reg_fee,
 		FundAmt:         fund_amt,
 		Expire:          expire,
-		Signer:          signer,
+		Owner:           owner,
 	}
 }
 
@@ -632,6 +632,6 @@ func (m *EventTHORName) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("registration_fee", m.RegistrationFee.String()),
 		cosmos.NewAttribute("fund_amount", m.FundAmt.String()),
 		cosmos.NewAttribute("expire", fmt.Sprintf("%d", m.Expire)),
-		cosmos.NewAttribute("signer", m.Signer.String()))
+		cosmos.NewAttribute("owner", m.Owner.String()))
 	return cosmos.Events{evt}, nil
 }
