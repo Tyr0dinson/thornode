@@ -150,6 +150,7 @@ echo "{
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"opt_to_retire\": true,
         \"block_scanner\": {
           \"rpc_host\": \"$LTC_HOST\",
           \"enforce_block_height\": false,
