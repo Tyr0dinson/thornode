@@ -406,8 +406,11 @@ func (vm *NetworkMgrV1) manageChains(ctx cosmos.Context, mgr Manager, constAcces
 	}
 
 	for _, chain := range chains {
-		if err := vm.RecallChainFunds(ctx, chain, mgr, common.PubKeys{}); err != nil {
-			return err
+		// the first round to recall fund from yggdrasil
+		if nth == 1 {
+			if err := vm.RecallChainFunds(ctx, chain, mgr, common.PubKeys{}); err != nil {
+				return err
+			}
 		}
 
 		// only refund after the first nth. This gives yggs time to send funds
@@ -532,7 +535,6 @@ func (vm *NetworkMgrV1) RecallChainFunds(ctx cosmos.Context, chain common.Chain,
 // ragnarokChain - ends a chain by withdrawing all liquidity providers of any pool that's
 // asset is on the given chain
 func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nth int64, mgr Manager, constAccessor constants.ConstantValues) error {
-	version := vm.k.GetLowestActiveVersion(ctx)
 	nas, err := vm.k.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		ctx.Logger().Error("can't get active nodes", "error", err)
@@ -547,60 +549,60 @@ func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nt
 	if err != nil {
 		return err
 	}
-	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
-
-	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
-		return err
-	}
-	vault := active.SelectByMinCoin(common.RuneAsset())
-	if vault.IsEmpty() {
-		return fmt.Errorf("unable to determine asgard vault")
-	}
 
 	// rangarok this chain
 	for _, pool := range pools {
 		if !pool.Asset.GetChain().Equals(chain) || pool.LPUnits.IsZero() {
 			continue
 		}
-		iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
-		defer iterator.Close()
-		for ; iterator.Valid(); iterator.Next() {
-			var lp LiquidityProvider
-
-			if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &lp); err != nil {
-				ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
-				continue
-			}
-			var withdrawAddr common.Address
-			withdrawAsset := common.EmptyAsset
-			if !lp.RuneAddress.IsEmpty() {
-				withdrawAddr = lp.RuneAddress
-				// if liquidity provider only add RUNE , then asset address will be empty
-				if lp.AssetAddress.IsEmpty() {
-					withdrawAsset = common.RuneAsset()
-				}
-			} else {
-				// if liquidity provider only add Asset, then RUNE Address will be empty
-				withdrawAddr = lp.AssetAddress
-				withdrawAsset = lp.Asset
-			}
-			withdrawMsg := NewMsgWithdrawLiquidity(
-				common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
-				withdrawAddr,
-				cosmos.NewUint(uint64(MaxWithdrawBasisPoints/100*(nth*10))),
-				pool.Asset,
-				withdrawAsset,
-				na.NodeAddress,
-			)
-
-			_, err := withdrawHandler.Run(ctx, withdrawMsg, version, constAccessor)
-			if err != nil {
-				ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
-			}
+		if err := vm.withdrawLiquidity(ctx, pool, na, nth, mgr, constAccessor); err != nil {
+			ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
 		}
 	}
 
+	return nil
+}
+
+func (vm *NetworkMgrV1) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, nth int64, mgr Manager, constAccessor constants.ConstantValues) error {
+	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
+	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var lp LiquidityProvider
+		if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &lp); err != nil {
+			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
+			continue
+		}
+		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
+			continue
+		}
+		var withdrawAddr common.Address
+		withdrawAsset := common.EmptyAsset
+		if !lp.RuneAddress.IsEmpty() {
+			withdrawAddr = lp.RuneAddress
+			// if liquidity provider only add RUNE , then asset address will be empty
+			if lp.AssetAddress.IsEmpty() {
+				withdrawAsset = common.RuneAsset()
+			}
+		} else {
+			// if liquidity provider only add Asset, then RUNE Address will be empty
+			withdrawAddr = lp.AssetAddress
+			withdrawAsset = lp.Asset
+		}
+		withdrawMsg := NewMsgWithdrawLiquidity(
+			common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
+			withdrawAddr,
+			cosmos.NewUint(uint64(MaxWithdrawBasisPoints/100*(nth*10))),
+			pool.Asset,
+			withdrawAsset,
+			na.NodeAddress,
+		)
+
+		_, err := withdrawHandler.Run(ctx, withdrawMsg, mgr.GetVersion(), constAccessor)
+		if err != nil {
+			ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
+		}
+	}
 	return nil
 }
 
