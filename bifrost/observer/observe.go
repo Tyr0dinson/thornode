@@ -316,7 +316,11 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInItem) (txs []types.TxInItem) {
 	// finds the destination address, and supports THORNames
 	fetchAddr := func(memo string, bridge *thorclient.ThorchainBridge) common.Address {
-		m, _ := mem.ParseMemo(memo)
+		m, err := mem.ParseMemo(memo)
+		if err != nil {
+			o.logger.Error().Err(err).Msgf("Unable to parse memo: %s", memo)
+			return common.NoAddress
+		}
 		if !m.GetDestination().IsEmpty() {
 			return m.GetDestination()
 		}

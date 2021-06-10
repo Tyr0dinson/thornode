@@ -128,7 +128,7 @@ func queryBalanceModule(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	names := make([]THORName, 0)
 	ref := path[0]
-	parts := strings.SplitAfterN(path[0], ".", 2)
+	parts := strings.SplitN(path[0], ".", 2)
 	if len(parts) > 1 {
 		chain, err := common.NewChain(parts[1])
 		if err != nil {

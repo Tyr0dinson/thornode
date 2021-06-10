@@ -75,9 +75,13 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 		if err := h.validateNameV1(msg.Name); err != nil {
 			return err
 		}
-		registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
-		if msg.Coin.Amount.LTE(cosmos.NewUint(uint64(registrationFee))) {
-			return fmt.Errorf("not enough funds")
+		if msg.Chain.Equals(common.THORChain) {
+			registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
+			if msg.Coin.Amount.LTE(cosmos.NewUint(uint64(registrationFee))) {
+				return fmt.Errorf("not enough funds")
+			}
+		} else {
+			return fmt.Errorf("THOR address for name %s needs to be claimed first, before other chain addresses can be added", msg.Name)
 		}
 	} else {
 		name, err := h.mgr.Keeper().GetTHORName(ctx, msg.Name, common.THORChain)
@@ -96,6 +100,10 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 			if !acc.Equals(msg.Signer) && common.BlockHeight(ctx) <= name.ExpireBlockHeight {
 				ctx.Logger().Error("no authorization", "owner", name.Address)
 				return fmt.Errorf("no authorization: owned by %s", name.Address)
+			}
+		} else {
+			if !msg.Chain.Equals(common.THORChain) {
+				return fmt.Errorf("THOR address for name %s needs to be claimed first, before other chain addresses can be added", msg.Name)
 			}
 		}
 
@@ -154,7 +162,8 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		if err := h.validateNameV1(msg.Name); err != nil {
 			return nil, err
 		}
-		if !exists {
+		// regisration fee is for THORChain addresses only
+		if !exists && msg.Chain.Equals(common.THORChain) {
 			// minus registration fee
 			registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
 			msg.Coin.Amount = common.SafeSub(msg.Coin.Amount, cosmos.NewUint(uint64(registrationFee)))
@@ -163,7 +172,11 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
 		fundPaid = msg.Coin.Amount
 		addBlocks := int64(msg.Coin.Amount.Uint64()) / feePerBlock
-		tn.ExpireBlockHeight += addBlocks
+		if tn.ExpireBlockHeight < common.BlockHeight(ctx) {
+			tn.ExpireBlockHeight = common.BlockHeight(ctx) + addBlocks
+		} else {
+			tn.ExpireBlockHeight += addBlocks
+		}
 		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
