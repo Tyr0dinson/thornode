@@ -120,6 +120,10 @@ func (vm *NetworkMgrV56) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 
 		// move partial funds every 30 minutes
 		if (common.BlockHeight(ctx)-vault.StatusSince)%migrateInterval == 0 {
+			retiredChains, err := vm.findChainsToRetire(ctx)
+			if err != nil {
+				ctx.Logger().Error("fail to get retired chains", "error", err)
+			}
 			for _, coin := range vault.Coins {
 				// non-native rune assets are no migrated, therefore they are
 				// burned in each churn
@@ -132,6 +136,10 @@ func (vm *NetworkMgrV56) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 				}
 
 				if coin.Amount.Equal(cosmos.ZeroUint()) {
+					continue
+				}
+				// if the coin belongs to a chain that is retired , then it doesn't migrate
+				if retiredChains.Has(coin.Asset.Chain) {
 					continue
 				}
 				var target Vault
@@ -592,7 +600,7 @@ func (vm *NetworkMgrV56) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 			na.NodeAddress,
 		)
 
-		_, err := withdrawHandler.Run(ctx, withdrawMsg, mgr.GetVersion(), constAccessor)
+		_, err := withdrawHandler.Run(ctx, withdrawMsg)
 		if err != nil {
 			ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
 		}
@@ -858,18 +866,4 @@ func (vm *NetworkMgrV56) getPoolShare(incentiveCurve int64, totalProvidedLiquidi
 	}
 	part := common.SafeSub(totalBonded, totalProvidedLiquidity)
 	return common.GetShare(part, total, totalRewards)
-}
-
-func getTotalActiveNodeWithBond(ctx cosmos.Context, k keeper.Keeper) (int64, error) {
-	nas, err := k.ListActiveNodeAccounts(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("fail to get active node accounts: %w", err)
-	}
-	var total int64
-	for _, item := range nas {
-		if !item.Bond.IsZero() {
-			total++
-		}
-	}
-	return total, nil
 }
