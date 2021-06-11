@@ -311,6 +311,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 	}
 	for name, chain := range s.chains {
 		if !chain.GetConfig().OptToRetire {
+			s.logger.Info().Msgf("chain: %s not to retire", name)
 			chains = append(chains, name)
 		}
 	}
