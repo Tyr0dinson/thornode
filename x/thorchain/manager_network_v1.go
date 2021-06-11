@@ -535,6 +535,9 @@ func (vm *NetworkMgrV1) RecallChainFunds(ctx cosmos.Context, chain common.Chain,
 // ragnarokChain - ends a chain by withdrawing all liquidity providers of any pool that's
 // asset is on the given chain
 func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nth int64, mgr Manager, constAccessor constants.ConstantValues) error {
+	// the following line is pointless, granted. But in this case, removing it
+	// would cause a consensus failure
+	_ = vm.k.GetLowestActiveVersion(ctx)
 	nas, err := vm.k.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		ctx.Logger().Error("can't get active nodes", "error", err)
@@ -560,29 +563,35 @@ func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nt
 		}
 	}
 
-	return nil
-}
+			if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &lp); err != nil {
+				ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
+				continue
+			}
+			var withdrawAddr common.Address
+			withdrawAsset := common.EmptyAsset
+			if !lp.RuneAddress.IsEmpty() {
+				withdrawAddr = lp.RuneAddress
+				// if liquidity provider only add RUNE , then asset address will be empty
+				if lp.AssetAddress.IsEmpty() {
+					withdrawAsset = common.RuneAsset()
+				}
+			} else {
+				// if liquidity provider only add Asset, then RUNE Address will be empty
+				withdrawAddr = lp.AssetAddress
+				withdrawAsset = lp.Asset
+			}
+			withdrawMsg := NewMsgWithdrawLiquidity(
+				common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
+				withdrawAddr,
+				cosmos.NewUint(uint64(MaxWithdrawBasisPoints/100*(nth*10))),
+				pool.Asset,
+				withdrawAsset,
+				na.NodeAddress,
+			)
 
-func (vm *NetworkMgrV1) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, nth int64, mgr Manager, constAccessor constants.ConstantValues) error {
-	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
-	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var lp LiquidityProvider
-		if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &lp); err != nil {
-			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
-			continue
-		}
-		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
-			continue
-		}
-		var withdrawAddr common.Address
-		withdrawAsset := common.EmptyAsset
-		if !lp.RuneAddress.IsEmpty() {
-			withdrawAddr = lp.RuneAddress
-			// if liquidity provider only add RUNE , then asset address will be empty
-			if lp.AssetAddress.IsEmpty() {
-				withdrawAsset = common.RuneAsset()
+			_, err := withdrawHandler.Run(ctx, withdrawMsg)
+			if err != nil {
+				ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
 			}
 		} else {
 			// if liquidity provider only add Asset, then RUNE Address will be empty
