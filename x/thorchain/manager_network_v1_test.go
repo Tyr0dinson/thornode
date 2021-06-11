@@ -175,7 +175,6 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 	constAccessor := constants.GetConstantValues(ver)
 
 	activeVault := GetRandomVault()
-	activeVault.StatusSince = common.BlockHeight(ctx) - 10
 	activeVault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
@@ -237,19 +236,7 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 
 	vaultMgr := NewNetworkMgrV1(keeper, mgr.TxOutStore(), mgr.EventMgr())
 
-	// the first round should just recall yggdrasil fund
 	err := vaultMgr.manageChains(ctx, mgr, constAccessor)
-	c.Assert(err, IsNil)
-	c.Check(keeper.pools[1].Asset.Equals(common.BTCAsset), Equals, true)
-	c.Check(keeper.pools[1].LPUnits.IsZero(), Equals, false, Commentf("%d\n", keeper.pools[1].LPUnits.Uint64()))
-	c.Check(keeper.pools[0].LPUnits.Equal(cosmos.NewUint(1600)), Equals, true)
-	for _, skr := range keeper.lps {
-		c.Check(skr.Units.IsZero(), Equals, false)
-	}
-
-	// the first round should just recall yggdrasil fund
-	ctx = ctx.WithBlockHeight(200000)
-	err = vaultMgr.manageChains(ctx, mgr, constAccessor)
 	c.Assert(err, IsNil)
 	c.Check(keeper.pools[1].Asset.Equals(common.BTCAsset), Equals, true)
 	c.Check(keeper.pools[1].LPUnits.IsZero(), Equals, true, Commentf("%d\n", keeper.pools[1].LPUnits.Uint64()))
@@ -257,6 +244,7 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 	for _, skr := range keeper.lps {
 		c.Check(skr.Units.IsZero(), Equals, true)
 	}
+
 	// ensure we have requested for ygg funds to be returned
 	txOutStore := mgr.TxOutStore()
 	c.Assert(err, IsNil)
@@ -265,7 +253,7 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 
 	// 1 ygg return + 4 withdrawals
 	c.Check(items, HasLen, 3, Commentf("Len %d", items))
-	c.Check(items[0].Memo, Equals, NewYggdrasilReturn(100000).String())
+	c.Check(items[0].Memo, Equals, NewYggdrasilReturn(common.BlockHeight(ctx)).String())
 	c.Check(items[0].Chain.Equals(common.BTCChain), Equals, true)
 
 	ctx, mgr1 := setupManagerForTest(c)
@@ -286,6 +274,11 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 	helper.failGetPools = true
 	c.Assert(vaultMgr1.ragnarokChain(ctx, common.BNBChain, 1, mgr, constAccessor), NotNil)
 	helper.failGetPools = false
+
+	// fail to get active asgard vault should error out
+	helper.failGetActiveAsgardVault = true
+	c.Assert(vaultMgr1.ragnarokChain(ctx, common.BNBChain, 1, mgr, constAccessor), NotNil)
+	helper.failGetActiveAsgardVault = false
 }
 
 func (s *NetworkManagerV1TestSuite) TestUpdateNetwork(c *C) {

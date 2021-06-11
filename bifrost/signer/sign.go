@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
@@ -311,7 +312,6 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 	}
 	for name, chain := range s.chains {
 		if !chain.GetConfig().OptToRetire {
-			s.logger.Info().Msgf("chain: %s not to retire", name)
 			chains = append(chains, name)
 		}
 	}

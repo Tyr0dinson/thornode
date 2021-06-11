@@ -1,9 +1,8 @@
 package chainclients
 
 import (
-	"fmt"
-
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -30,7 +29,6 @@ func LoadChains(thorKeys *thorclient.Keys,
 	chains := make(map[common.Chain]ChainClient, 0)
 
 	for _, chain := range cfg {
-		fmt.Println("chain:", chain.ChainID.String(), "OptToRetire", chain.OptToRetire)
 		switch chain.ChainID {
 		case common.BNBChain:
 			bnb, err := binance.NewBinance(thorKeys, chain, server, thorchainBridge, m)
