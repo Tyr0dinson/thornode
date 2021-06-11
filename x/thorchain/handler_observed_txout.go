@@ -310,7 +310,7 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, version semver.Versi
 		}
 
 		// Apply Gas fees
-		if err := AddGasFees(ctx, h.mgr, tx); err != nil {
+		if err := addGasFees(ctx, h.mgr, tx); err != nil {
 			ctx.Logger().Error("fail to add gas fee", "error", err)
 			continue
 		}
