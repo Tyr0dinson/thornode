@@ -596,7 +596,11 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
 		msg := m.(*MsgSwap)
-		if !msg.Destination.IsChain(msg.TargetAsset.Chain) {
+		targetChain := msg.TargetAsset.Chain
+		if msg.TargetAsset.IsSyntheticAsset() {
+			targetChain = common.THORChain
+		}
+		if !msg.Destination.IsChain(targetChain) {
 			return nil, fmt.Errorf("destination and target asset doesn't match")
 		}
 		h.addSwapV1(ctx, *msg)
