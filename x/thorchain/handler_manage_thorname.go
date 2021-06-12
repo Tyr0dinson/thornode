@@ -134,18 +134,6 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
-	// pay for gas
-	if err := nativeGasFee(ctx, msg.Signer, h.mgr.Keeper(), h.mgr.GetConstants()); err != nil {
-		return nil, err
-	}
-
-	// send rune to the reserve from the account
-	if !msg.Coin.IsEmpty() {
-		if err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], ReserveName, common.Coins{msg.Coin}); err != nil {
-			return nil, err
-		}
-	}
-
 	tn := NewTHORName(msg.Name, msg.Chain, msg.Address, 0)
 	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name, msg.Chain)
 	if exists {
