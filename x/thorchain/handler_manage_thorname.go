@@ -25,31 +25,32 @@ func NewManageTHORNameHandler(mgr Manager) ManageTHORNameHandler {
 }
 
 // Run is the main entry point for network fee logic
-func (h ManageTHORNameHandler) Run(ctx cosmos.Context, m cosmos.Msg, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ManageTHORNameHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
 	msg, ok := m.(*MsgManageTHORName)
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	if err := h.validate(ctx, *msg, version, constAccessor); err != nil {
+	if err := h.validate(ctx, *msg); err != nil {
 		ctx.Logger().Error("MsgManageTHORName failed validation", "error", err)
 		return nil, err
 	}
-	result, err := h.handle(ctx, *msg, version, constAccessor)
+	result, err := h.handle(ctx, *msg)
 	if err != nil {
 		ctx.Logger().Error("fail to process MsgManageTHORName", "error", err)
 	}
 	return result, err
 }
 
-func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) error {
+func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORName) error {
+	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg, constAccessor)
+		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h ManageTHORNameHandler) validateV1(ctx cosmos.Context, msg MsgManageTHORName, constAccessor constants.ConstantValues) error {
-	return h.validateCurrent(ctx, msg, constAccessor)
+func (h ManageTHORNameHandler) validateV1(ctx cosmos.Context, msg MsgManageTHORName) error {
+	return h.validateCurrent(ctx, msg)
 }
 
 func (h ManageTHORNameHandler) validateNameV1(n string) error {
@@ -63,7 +64,7 @@ func (h ManageTHORNameHandler) validateNameV1(n string) error {
 	return nil
 }
 
-func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManageTHORName, constAccessor constants.ConstantValues) error {
+func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManageTHORName) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -76,7 +77,7 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 			return err
 		}
 		if msg.Chain.Equals(common.THORChain) {
-			registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
+			registrationFee := h.mgr.GetConstants().GetInt64Value(constants.TNSRegisterFee)
 			if msg.Coin.Amount.LTE(cosmos.NewUint(uint64(registrationFee))) {
 				return fmt.Errorf("not enough funds")
 			}
@@ -117,23 +118,24 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 }
 
 // handle process MsgManageTHORName
-func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
+	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg, version, constAccessor)
+		return h.handleV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
 // handleV1 process MsgManageTHORName
-func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	return h.handleCurrent(ctx, msg, version, constAccessor)
+func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
+	return h.handleCurrent(ctx, msg)
 }
 
-func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
 	// pay for gas
-	if err := nativeGasFee(ctx, msg.Signer, h.mgr.Keeper(), constAccessor); err != nil {
+	if err := nativeGasFee(ctx, msg.Signer, h.mgr.Keeper(), h.mgr.GetConstants()); err != nil {
 		return nil, err
 	}
 
@@ -165,11 +167,11 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		// regisration fee is for THORChain addresses only
 		if !exists && msg.Chain.Equals(common.THORChain) {
 			// minus registration fee
-			registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
+			registrationFee := h.mgr.GetConstants().GetInt64Value(constants.TNSRegisterFee)
 			msg.Coin.Amount = common.SafeSub(msg.Coin.Amount, cosmos.NewUint(uint64(registrationFee)))
 			registrationFeePaid = cosmos.NewUint(uint64(registrationFee))
 		}
-		feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
+		feePerBlock := h.mgr.GetConstants().GetInt64Value(constants.TNSFeePerBlock)
 		fundPaid = msg.Coin.Amount
 		addBlocks := int64(msg.Coin.Amount.Uint64()) / feePerBlock
 		if tn.ExpireBlockHeight < common.BlockHeight(ctx) {

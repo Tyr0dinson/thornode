@@ -63,9 +63,9 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.56.0")) {
-		return h.handleV56(ctx, msg, version, constAccessor)
+		return h.handleV56(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.45.0")) {
-		return h.handleV45(ctx, msg, version, constAccessor)
+		return h.handleV45(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.42.0")) {
 		return h.handleV42(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
@@ -331,7 +331,7 @@ func (h ErrataTxHandler) handleV42(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 
 }
 
-func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
 	active, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -341,8 +341,8 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 	if err != nil {
 		return nil, err
 	}
-	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
-	observeFlex := constAccessor.GetInt64Value(constants.ObservationDelayFlexibility)
+	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 	h.mgr.Slasher().IncSlashPoints(ctx, observeSlashPoints, msg.Signer)
 	if !voter.Sign(msg.Signer) {
 		ctx.Logger().Info("signer already signed MsgErrataTx", "signer", msg.Signer.String(), "txid", msg.TxID)
@@ -476,8 +476,8 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx, version 
 
 }
 
-func (h ErrataTxHandler) handleV56(ctx cosmos.Context, msg MsgErrataTx, version semver.Version, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	return h.handleCurrent(ctx, msg, version, constAccessor)
+func (h ErrataTxHandler) handleV56(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
+	return h.handleCurrent(ctx, msg)
 }
 
 func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {

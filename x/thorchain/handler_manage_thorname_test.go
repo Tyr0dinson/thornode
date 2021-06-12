@@ -22,8 +22,6 @@ func NewKeeperManageTHORNameTest(k keeper.Keeper) KeeperManageTHORNameTest {
 }
 
 func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	ctx, mgr := setupManagerForTest(c)
 
 	handler := NewManageTHORNameHandler(mgr)
@@ -35,30 +33,30 @@ func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 
 	// happy path
 	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.THORChain, addr, coin, 0, acc)
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), IsNil)
+	c.Assert(handler.validate(ctx, *msg), IsNil)
 
 	// fail: name is too long
 	msg.Name = "this_name_is_way_too_long_to_be_a_valid_name"
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
+	c.Assert(handler.validate(ctx, *msg), NotNil)
 
 	// fail: bad characters
 	msg.Name = "i am the walrus"
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
+	c.Assert(handler.validate(ctx, *msg), NotNil)
 
 	// fail: bad attempt to inflate expire block height
 	msg.Name = "hello"
 	msg.ExpireBlockHeight = 100
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
+	c.Assert(handler.validate(ctx, *msg), NotNil)
 
 	// fail: bad auth
 	msg.ExpireBlockHeight = 0
 	msg.Signer = GetRandomBech32Addr()
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
+	c.Assert(handler.validate(ctx, *msg), NotNil)
 
 	// fail: not enough funds for new THORName
 	msg.Name = "bang"
 	msg.Coin.Amount = cosmos.ZeroUint()
-	c.Assert(handler.validate(ctx, *msg, ver, constAccessor), NotNil)
+	c.Assert(handler.validate(ctx, *msg), NotNil)
 }
 
 func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
@@ -79,7 +77,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, register new name
 	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, acc)
-	_, err := handler.handle(ctx, *msg, ver, constAccessor)
+	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err := mgr.Keeper().GetTHORName(ctx, tnName, common.THORChain)
 	c.Assert(err, IsNil)
@@ -89,7 +87,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	// happy path, set alt chain address
 	bnbAddr := GetRandomBNBAddress()
 	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
-	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.BNBChain)
 	c.Assert(err, IsNil)
@@ -98,7 +96,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	// happy path, update alt chain address
 	bnbAddr = GetRandomBNBAddress()
 	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, acc)
-	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.BNBChain)
 	c.Assert(err, IsNil)
@@ -106,7 +104,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, release thorname back into the wild
 	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, acc)
-	_, err = handler.handle(ctx, *msg, ver, constAccessor)
+	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName, common.THORChain)
 	c.Assert(err, IsNil)

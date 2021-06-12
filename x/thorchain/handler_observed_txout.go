@@ -66,9 +66,9 @@ func (h ObservedTxOutHandler) validateCurrent(ctx cosmos.Context, msg MsgObserve
 func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.56.0")) {
-		return h.handleV56(ctx, version, msg, constAccessor)
+		return h.handleV56(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return h.handleV46(ctx, version, msg, constAccessor)
+		return h.handleV46(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
 	}
@@ -173,7 +173,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxOut)
 
 		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
-		m, err := processOneTxIn(ctx, version, h.mgr.Keeper(), txOut, msg.Signer)
+		m, err := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut",
 				"error", err,
@@ -239,7 +239,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxOut)
 }
 
 // Handle a message to observe outbound tx
-func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
+func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -269,7 +269,7 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, version semver.Versi
 		}
 
 		// check whether the tx has consensus
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer, version, constAccessor)
+		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
 		if !ok {
 			if voter.FinalisedHeight == common.BlockHeight(ctx) {
 				// we've already process the transaction, but we should still
@@ -312,7 +312,7 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, version semver.Versi
 		}
 
 		// Apply Gas fees
-		if err := AddGasFees(ctx, h.mgr, tx); err != nil {
+		if err := addGasFees(ctx, h.mgr, tx); err != nil {
 			ctx.Logger().Error("fail to add gas fee", "error", err)
 			continue
 		}
@@ -369,8 +369,8 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, version semver.Versi
 }
 
 // Handle a message to observe outbound tx
-func (h ObservedTxOutHandler) handleV56(ctx cosmos.Context, version semver.Version, msg MsgObservedTxOut, constAccessor constants.ConstantValues) (*cosmos.Result, error) {
-	return h.handleCurrent(ctx, version, msg, constAccessor)
+func (h ObservedTxOutHandler) handleV56(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
+	return h.handleCurrent(ctx, msg)
 }
 
 // Handle a message to observe outbound tx
@@ -438,7 +438,7 @@ func (h ObservedTxOutHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedT
 
 		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
-		m, err := processOneTxIn(ctx, version, h.mgr.Keeper(), txOut, msg.Signer)
+		m, err := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
 			ctx.Logger().Error("fail to process txOut",
 				"error", err,
