@@ -11,8 +11,11 @@ type THORNameSuite struct{}
 var _ = Suite(&THORNameSuite{})
 
 func (THORNameSuite) TestTHORName(c *C) {
+	// happy path
 	n := NewTHORName("iamthewalrus", common.BNBChain, GetRandomTHORAddress(), 0)
 	c.Check(n.Valid(), IsNil)
+
+	// unhappy path
 	n1 := NewTHORName("", common.BNBChain, GetRandomTHORAddress(), 0)
 	c.Check(n1.Valid(), NotNil)
 	n2 := NewTHORName("hello", common.EmptyChain, GetRandomTHORAddress(), 0)

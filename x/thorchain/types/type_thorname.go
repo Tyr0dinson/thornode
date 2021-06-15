@@ -2,19 +2,17 @@ package types
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
-	"gitlab.com/thorchain/thornode/common"
+	b64 "encoding/base64"
 )
 
 // NewTHORName create a new instance of network fee
-func NewTHORName(name string, chain common.Chain, addr common.Address, exp int64) THORName {
+func NewTHORName(name string, exp int64, aliases []THORNameAlias) THORName {
 	return THORName{
 		Name:              name,
-		Chain:             chain,
-		Address:           addr,
 		ExpireBlockHeight: exp,
+		Aliases:           aliases,
 	}
 }
 
@@ -23,15 +21,21 @@ func (m *THORName) Valid() error {
 	if len(m.Name) == 0 {
 		return errors.New("name can't be empty")
 	}
-	if m.Chain.IsEmpty() {
-		return errors.New("chain can't be empty")
+	if len(m.Aliases) == 0 {
+		return errors.New("aliases can't be empty")
 	}
-	if m.Address.IsEmpty() {
-		return errors.New("address cannot be empty")
+	for _, a := range m.Aliases {
+		if a.Chain.IsEmpty() {
+			return errors.New("chain can't be empty")
+		}
+		if a.Address.IsEmpty() {
+			return errors.New("address cannot be empty")
+		}
 	}
 	return nil
 }
 
 func (m *THORName) Key() string {
-	return fmt.Sprintf("%s/%s", strings.ToLower(m.Name), strings.ToLower(m.Chain.String()))
+	// key is Base64 endoded
+	return b64.StdEncoding.EncodeToString([]byte(strings.ToLower(m.Name)))
 }
