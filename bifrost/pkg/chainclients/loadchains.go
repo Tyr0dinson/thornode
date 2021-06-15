@@ -2,6 +2,7 @@ package chainclients
 
 import (
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/litecoin"
 
 	"gitlab.com/thorchain/tss/go-tss/tss"
 
@@ -59,14 +60,14 @@ func LoadChains(thorKeys *thorclient.Keys,
 			}
 			pubKeyValidator.RegisterCallback(bch.RegisterPublicKey)
 			chains[common.BCHChain] = bch
-		// case common.LTCChain:
-		// 	ltc, err := litecoin.NewClient(thorKeys, chain, server, thorchainBridge, m)
-		// 	if err != nil {
-		// 		logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
-		// 		continue
-		// 	}
-		// 	pubKeyValidator.RegisterCallback(ltc.RegisterPublicKey)
-		// 	chains[common.LTCChain] = ltc
+		case common.LTCChain:
+			ltc, err := litecoin.NewClient(thorKeys, chain, server, thorchainBridge, m)
+			if err != nil {
+				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
+				continue
+			}
+			pubKeyValidator.RegisterCallback(ltc.RegisterPublicKey)
+			chains[common.LTCChain] = ltc
 		default:
 			continue
 		}
