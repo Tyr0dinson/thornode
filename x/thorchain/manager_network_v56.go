@@ -49,7 +49,7 @@ func (vm *NetworkMgrV56) processGenesisSetup(ctx cosmos.Context) error {
 		supportChains := common.Chains{
 			common.THORChain,
 			common.BTCChain,
-			common.LTCChain,
+			// common.LTCChain,
 			common.BCHChain,
 			common.BNBChain,
 			common.ETHChain,
