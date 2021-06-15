@@ -120,10 +120,6 @@ func (vm *NetworkMgrV56) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 
 		// move partial funds every 30 minutes
 		if (common.BlockHeight(ctx)-vault.StatusSince)%migrateInterval == 0 {
-			retiredChains, err := vm.findChainsToRetire(ctx)
-			if err != nil {
-				ctx.Logger().Error("fail to get retired chains", "error", err)
-			}
 			for _, coin := range vault.Coins {
 				// non-native rune assets are no migrated, therefore they are
 				// burned in each churn
@@ -136,10 +132,6 @@ func (vm *NetworkMgrV56) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 				}
 
 				if coin.Amount.Equal(cosmos.ZeroUint()) {
-					continue
-				}
-				// if the coin belongs to a chain that is retired , then it doesn't migrate
-				if retiredChains.Has(coin.Asset.Chain) {
 					continue
 				}
 				var target Vault
@@ -270,12 +262,6 @@ func (vm *NetworkMgrV56) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 		}
 	}
 
-	if common.BlockHeight(ctx)%migrateInterval == 0 {
-		// checks to see if we need to ragnarok a chain, and ragnarok them (if needed)
-		if err := vm.manageChains(ctx, mgr, constAccessor); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
