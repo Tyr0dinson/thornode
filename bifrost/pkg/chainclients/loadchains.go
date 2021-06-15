@@ -2,19 +2,17 @@ package chainclients
 
 import (
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/litecoin"
-
-	"gitlab.com/thorchain/tss/go-tss/tss"
-
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/binance"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/bitcoin"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/bitcoincash"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/litecoin"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/tss/go-tss/tss"
 )
 
 // LoadChains returns chain clients from chain configuration
