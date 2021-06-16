@@ -13,5 +13,6 @@ message THORNameAlias {
 message THORName {
   string name = 1 ;
   int64 expire_block_height = 2;
-  repeated THORNameAlias aliases = 3  [(gogoproto.nullable) = false];
+  bytes owner = 3  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  repeated THORNameAlias aliases = 4  [(gogoproto.nullable) = false];
 }

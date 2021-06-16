@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	b64 "encoding/base64"
+
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // NewTHORName create a new instance of network fee
@@ -33,6 +35,25 @@ func (m *THORName) Valid() error {
 		}
 	}
 	return nil
+}
+
+func (m *THORName) GetAlias(chain common.Chain) common.Address {
+	for _, a := range m.Aliases {
+		if a.Chain.Equals(chain) {
+			return a.Address
+		}
+	}
+	return common.NoAddress
+}
+
+func (m *THORName) SetAlias(chain common.Chain, addr common.Address) {
+	for i, a := range m.Aliases {
+		if a.Chain.Equals(chain) {
+			m.Aliases[i].Address = addr
+			return
+		}
+	}
+	m.Aliases = append(m.Aliases, THORNameAlias{Chain: chain, Address: addr})
 }
 
 func (m *THORName) Key() string {

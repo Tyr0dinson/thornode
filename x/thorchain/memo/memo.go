@@ -337,12 +337,12 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 		}
 	}
 
-	if keeper.THORNameExists(ctx, parts[0], chain) {
-		thorname, err := keeper.GetTHORName(ctx, name, chain)
+	if keeper.THORNameExists(ctx, parts[0]) {
+		thorname, err := keeper.GetTHORName(ctx, name)
 		if err != nil {
 			return common.NoAddress, err
 		}
-		return thorname.Address, nil
+		return thorname.GetAlias(chain), nil
 	}
 
 	return common.NoAddress, fmt.Errorf("%s is not recognizable", name)

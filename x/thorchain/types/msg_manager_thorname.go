@@ -6,13 +6,14 @@ import (
 )
 
 // NewMsgManageTHORName create a new instance of MsgManageTHORName
-func NewMsgManageTHORName(name string, chain common.Chain, addr common.Address, coin common.Coin, exp int64, signer cosmos.AccAddress) *MsgManageTHORName {
+func NewMsgManageTHORName(name string, chain common.Chain, addr common.Address, coin common.Coin, exp int64, owner, signer cosmos.AccAddress) *MsgManageTHORName {
 	return &MsgManageTHORName{
 		Name:              name,
 		Chain:             chain,
 		Address:           addr,
 		Coin:              coin,
 		ExpireBlockHeight: exp,
+		Owner:             owner,
 		Signer:            signer,
 	}
 }
@@ -28,6 +29,9 @@ func (m *MsgManageTHORName) ValidateBasic() error {
 	// validate n
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+	if m.Owner.Empty() {
+		return cosmos.ErrInvalidAddress(m.Owner.String())
 	}
 	if m.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain can't be empty")
