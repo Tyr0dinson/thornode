@@ -9,15 +9,15 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-type NetworkManagerV56TestSuite struct{}
+type NetworkManagerV57TestSuite struct{}
 
-var _ = Suite(&NetworkManagerV56TestSuite{})
+var _ = Suite(&NetworkManagerV57TestSuite{})
 
-func (s *NetworkManagerV56TestSuite) SetUpSuite(c *C) {
+func (s *NetworkManagerV57TestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
-func (s *NetworkManagerV56TestSuite) TestRagnarokChain(c *C) {
+func (s *NetworkManagerV57TestSuite) TestRagnarokChain(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(100000)
 	ver := GetCurrentVersion()
@@ -137,7 +137,7 @@ func (s *NetworkManagerV56TestSuite) TestRagnarokChain(c *C) {
 	helper.failGetPools = false
 }
 
-func (s *NetworkManagerV56TestSuite) TestUpdateNetwork(c *C) {
+func (s *NetworkManagerV57TestSuite) TestUpdateNetwork(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
@@ -188,7 +188,7 @@ func (s *NetworkManagerV56TestSuite) TestUpdateNetwork(c *C) {
 	c.Assert(vaultMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), NotNil)
 }
 
-func (s *NetworkManagerV56TestSuite) TestCalcBlockRewards(c *C) {
+func (s *NetworkManagerV57TestSuite) TestCalcBlockRewards(c *C) {
 	mgr := NewDummyMgr()
 	vaultMgr := NewNetworkMgrV56(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
 
@@ -229,7 +229,7 @@ func (s *NetworkManagerV56TestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
 }
 
-func (s *NetworkManagerV56TestSuite) TestCalcPoolDeficit(c *C) {
+func (s *NetworkManagerV57TestSuite) TestCalcPoolDeficit(c *C) {
 	pool1Fees := cosmos.NewUint(1000)
 	pool2Fees := cosmos.NewUint(3000)
 	totalFees := cosmos.NewUint(4000)
@@ -245,7 +245,7 @@ func (s *NetworkManagerV56TestSuite) TestCalcPoolDeficit(c *C) {
 	c.Check(amt2.Equal(cosmos.NewUint(840)), Equals, true, Commentf("%d", amt2.Uint64()))
 }
 
-func (*NetworkManagerV56TestSuite) TestProcessGenesisSetup(c *C) {
+func (*NetworkManagerV57TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
@@ -295,7 +295,7 @@ func (*NetworkManagerV56TestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
-func (*NetworkManagerV56TestSuite) TestGetTotalActiveBond(c *C) {
+func (*NetworkManagerV57TestSuite) TestGetTotalActiveBond(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
@@ -311,7 +311,7 @@ func (*NetworkManagerV56TestSuite) TestGetTotalActiveBond(c *C) {
 	c.Assert(bond.Uint64() > 0, Equals, true)
 }
 
-func (*NetworkManagerV56TestSuite) TestGetTotalLiquidityRune(c *C) {
+func (*NetworkManagerV57TestSuite) TestGetTotalLiquidityRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
@@ -328,7 +328,7 @@ func (*NetworkManagerV56TestSuite) TestGetTotalLiquidityRune(c *C) {
 	c.Assert(totalLiquidity.Equal(p.BalanceRune), Equals, true)
 }
 
-func (*NetworkManagerV56TestSuite) TestPayPoolRewards(c *C) {
+func (*NetworkManagerV57TestSuite) TestPayPoolRewards(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
@@ -344,7 +344,7 @@ func (*NetworkManagerV56TestSuite) TestPayPoolRewards(c *C) {
 	c.Assert(vaultMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(100 * common.One)}, Pools{p}), NotNil)
 }
 
-func (*NetworkManagerV56TestSuite) TestFindChainsToRetire(c *C) {
+func (*NetworkManagerV57TestSuite) TestFindChainsToRetire(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
@@ -364,7 +364,7 @@ func (*NetworkManagerV56TestSuite) TestFindChainsToRetire(c *C) {
 	helper.failGetRetiringAsgardVault = false
 }
 
-func (*NetworkManagerV56TestSuite) TestRecallChainFunds(c *C) {
+func (*NetworkManagerV57TestSuite) TestRecallChainFunds(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
