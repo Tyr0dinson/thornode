@@ -245,10 +245,10 @@ type KeeperChainContract interface {
 }
 
 type KeeperTHORName interface {
-	THORNameExists(ctx cosmos.Context, _ string, _ common.Chain) bool
-	GetTHORName(ctx cosmos.Context, _ string, _ common.Chain) (THORName, error)
+	THORNameExists(ctx cosmos.Context, _ string) bool
+	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
 	SetTHORName(ctx cosmos.Context, name THORName)
-	GetTHORNameIterator(ctx cosmos.Context, _ string) cosmos.Iterator
+	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteTHORName(ctx cosmos.Context, _ string) error
 }
 

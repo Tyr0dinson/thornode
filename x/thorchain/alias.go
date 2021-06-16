@@ -270,6 +270,7 @@ type (
 	Blame                          = types.Blame
 	Node                           = types.Node
 	THORName                       = types.THORName
+	THORNameAlias                  = types.THORNameAlias
 
 	// Memo
 	SwapMemo              = mem.SwapMemo

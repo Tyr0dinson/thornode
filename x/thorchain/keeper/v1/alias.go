@@ -92,6 +92,7 @@ type (
 	TssKeysignMetric         = types.TssKeysignMetric
 	ChainContract            = types.ChainContract
 	THORName                 = types.THORName
+	THORNameAlias            = types.THORNameAlias
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64

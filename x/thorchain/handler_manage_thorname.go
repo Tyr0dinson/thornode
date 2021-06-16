@@ -69,42 +69,29 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 		return err
 	}
 
-	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name, common.THORChain)
+	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name)
 
 	if !exists {
 		// thornode doesn't appear to exist, lets validate the name
 		if err := h.validateNameV1(msg.Name); err != nil {
 			return err
 		}
-		if msg.Chain.Equals(common.THORChain) {
-			registrationFee := h.mgr.GetConstants().GetInt64Value(constants.TNSRegisterFee)
-			if msg.Coin.Amount.LTE(cosmos.NewUint(uint64(registrationFee))) {
-				return fmt.Errorf("not enough funds")
-			}
-		} else {
-			return fmt.Errorf("THOR address for name %s needs to be claimed first, before other chain addresses can be added", msg.Name)
+		registrationFee := h.mgr.GetConstants().GetInt64Value(constants.TNSRegisterFee)
+		if msg.Coin.Amount.LTE(cosmos.NewUint(uint64(registrationFee))) {
+			return fmt.Errorf("not enough funds")
 		}
 	} else {
-		name, err := h.mgr.Keeper().GetTHORName(ctx, msg.Name, common.THORChain)
+		name, err := h.mgr.Keeper().GetTHORName(ctx, msg.Name)
 		if err != nil {
 			return err
 		}
 
 		// if this thorname is already owned, check signer has ownership. If
 		// expiration is past, allow different user to take ownership
-		if !name.Address.IsEmpty() {
-			acc, err := name.Address.AccAddress()
-			if err != nil {
-				ctx.Logger().Error("fail to get THORName AccAddress", "error", err)
-				return err
-			}
-			if !acc.Equals(msg.Signer) && common.BlockHeight(ctx) <= name.ExpireBlockHeight {
-				ctx.Logger().Error("no authorization", "owner", name.Address)
-				return fmt.Errorf("no authorization: owned by %s", name.Address)
-			}
-		} else {
-			if !msg.Chain.Equals(common.THORChain) {
-				return fmt.Errorf("THOR address for name %s needs to be claimed first, before other chain addresses can be added", msg.Name)
+		if !name.GetAlias(common.THORChain).IsEmpty() {
+			if !name.Owner.Equals(msg.Signer) && common.BlockHeight(ctx) <= name.ExpireBlockHeight {
+				ctx.Logger().Error("no authorization", "owner", name.Owner)
+				return fmt.Errorf("no authorization: owned by %s", name.Owner)
 			}
 		}
 
@@ -134,10 +121,10 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
-	tn := NewTHORName(msg.Name, msg.Chain, msg.Address, 0)
-	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name, msg.Chain)
+	tn := THORName{Name: msg.Name}
+	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name)
 	if exists {
-		tn, err = h.mgr.Keeper().GetTHORName(ctx, msg.Name, msg.Chain)
+		tn, err = h.mgr.Keeper().GetTHORName(ctx, msg.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -176,14 +163,13 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
-	// update address
-	if !msg.Address.IsEmpty() {
-		tn, _ := h.mgr.Keeper().GetTHORName(ctx, msg.Name, msg.Chain)
-		tn.Address = msg.Address
-		h.mgr.Keeper().SetTHORName(ctx, tn)
+	tn.SetAlias(msg.Chain, msg.Address) // update address
+	if !msg.Owner.Empty() {
+		tn.Owner = msg.Owner // update owner
 	}
+	h.mgr.Keeper().SetTHORName(ctx, tn)
 
-	evt := NewEventTHORName(tn.Name, tn.Chain, tn.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, msg.GetSigners()[0])
+	evt := NewEventTHORName(tn.Name, msg.Chain, msg.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, msg.GetSigners()[0])
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); nil != err {
 		ctx.Logger().Error("fail to emit THORName event", "error", err)
 	}

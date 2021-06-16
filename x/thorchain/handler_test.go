@@ -679,7 +679,7 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	thorAddr := GetRandomTHORAddress()
-	name := NewTHORName("hello", common.THORChain, thorAddr, 50)
+	name := NewTHORName("hello", 50, []THORNameAlias{THORNameAlias{Chain: common.THORChain, Address: thorAddr}})
 	k.SetTHORName(ctx, name)
 
 	bnbAddr := GetRandomBNBAddress()

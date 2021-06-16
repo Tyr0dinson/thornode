@@ -462,7 +462,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	}
 
 	names := make([]THORName, 0)
-	iterNames := k.GetTHORNameIterator(ctx, "")
+	iterNames := k.GetTHORNameIterator(ctx)
 	defer iterNames.Close()
 	for ; iterNames.Valid(); iterNames.Next() {
 		var n THORName
