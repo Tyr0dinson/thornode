@@ -154,13 +154,11 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 		} else {
 			tn.ExpireBlockHeight += addBlocks
 		}
-		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
 	// check if we need to reduce the expire time, upon user request
 	if msg.ExpireBlockHeight > 0 && msg.ExpireBlockHeight < tn.ExpireBlockHeight {
 		tn.ExpireBlockHeight = msg.ExpireBlockHeight
-		h.mgr.Keeper().SetTHORName(ctx, tn)
 	}
 
 	tn.SetAlias(msg.Chain, msg.Address) // update address
@@ -169,7 +167,7 @@ func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTH
 	}
 	h.mgr.Keeper().SetTHORName(ctx, tn)
 
-	evt := NewEventTHORName(tn.Name, msg.Chain, msg.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, msg.GetSigners()[0])
+	evt := NewEventTHORName(tn.Name, msg.Chain, msg.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, tn.Owner)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); nil != err {
 		ctx.Logger().Error("fail to emit THORName event", "error", err)
 	}

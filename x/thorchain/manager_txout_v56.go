@@ -447,8 +447,7 @@ func (tos *TxOutStorageV56) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 		Tx:             tx,
 		FinaliseHeight: common.BlockHeight(ctx),
 	}
-	version := mgr.Keeper().GetLowestActiveVersion(ctx)
-	m, err := processOneTxIn(ctx, version, tos.keeper, observedTx, tos.keeper.GetModuleAccAddress(AsgardName))
+	m, err := processOneTxIn(ctx, mgr.GetVersion(), tos.keeper, observedTx, tos.keeper.GetModuleAccAddress(AsgardName))
 	if err != nil {
 		ctx.Logger().Error("fail to process txOut", "error", err, "tx", tx.String())
 		return err

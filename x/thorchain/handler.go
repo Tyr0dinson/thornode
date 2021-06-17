@@ -250,8 +250,6 @@ func processOneTxInV1(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, s
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)
 	case NoOpMemo:
 		newMsg = NewMsgNoOp(tx, signer, m.Action)
-	case ManageTHORNameMemo:
-		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}
