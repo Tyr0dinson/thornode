@@ -297,3 +297,7 @@ merge_request:
 author:
 type: added
 ```
+
+## Links
+1. [add a new chain](docs/newchain.md)
+2. [run a private chain with mocknet](docs/private_mock_chain.md)
