@@ -690,4 +690,8 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 	addr, err = FetchAddress(ctx, k, "hello", common.THORChain)
 	c.Assert(err, IsNil)
 	c.Check(addr.Equals(thorAddr), Equals, true)
+
+	addr, err = FetchAddress(ctx, k, "hello.thor", common.THORChain)
+	c.Assert(err, IsNil)
+	c.Check(addr.Equals(thorAddr), Equals, true)
 }
