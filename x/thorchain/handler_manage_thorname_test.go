@@ -62,14 +62,13 @@ func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 }
 
 func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
-	fmt.Println("***********************************")
-	defer fmt.Println("***********************************")
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	feePerBlock := constAccessor.GetInt64Value(constants.TNSFeePerBlock)
 	registrationFee := constAccessor.GetInt64Value(constants.TNSRegisterFee)
 	ctx, mgr := setupManagerForTest(c)
 
+	blocksPerYear := mgr.GetConstants().GetInt64Value(constants.BlocksPerYear)
 	handler := NewManageTHORNameHandler(mgr)
 	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
 	addr := GetRandomTHORAddress()
@@ -87,7 +86,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	fmt.Printf("NAAA: %+v\n", name)
 	c.Assert(err, IsNil)
 	c.Check(name.Owner.Empty(), Equals, false)
-	c.Check(name.ExpireBlockHeight, Equals, common.BlockHeight(ctx)+(int64(coin.Amount.Uint64())-registrationFee)/feePerBlock)
+	c.Check(name.ExpireBlockHeight, Equals, common.BlockHeight(ctx)+blocksPerYear+(int64(coin.Amount.Uint64())-registrationFee)/feePerBlock)
 
 	// happy path, set alt chain address
 	bnbAddr := GetRandomBNBAddress()

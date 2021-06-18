@@ -210,7 +210,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	poolTCAN.BalanceRune = cosmos.NewUint(2349500000)
 	c.Assert(keeper.SetPool(ctx, poolTCAN), IsNil)
 	bnbAddr := GetRandomBNBAddress()
-	m, err := ParseMemo("swap:BNB.BNB:" + bnbAddr.String() + ":124958592")
+	m, err := ParseMemo("swap:BNB.BNB:" + bnbAddr.String() + ":121893238")
 	txIn := NewObservedTx(
 		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
