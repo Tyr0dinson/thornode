@@ -332,8 +332,8 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 				raw = parts[3]
 			}
 		}
-		name, _ := bridge.GetTHORName(raw, common.BNBChain)
-		return name.Address
+		name, _ := bridge.GetTHORName(raw)
+		return name.GetAlias(common.BNBChain)
 	}
 
 	bnbClient, ok := o.chains[common.BNBChain]

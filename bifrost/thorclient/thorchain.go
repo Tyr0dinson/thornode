@@ -54,7 +54,7 @@ const (
 	ChainVersionEndpoint     = "/thorchain/version"
 	InboundAddressesEndpoint = "/thorchain/inbound_addresses"
 	PoolsEndpoint            = "/thorchain/pools"
-	THORNameEndpoint         = "/thorchain/thorname/%s/%s"
+	THORNameEndpoint         = "/thorchain/thorname/%s"
 )
 
 // ThorchainBridge will be used to send tx to THORChain
@@ -586,8 +586,8 @@ func (b *ThorchainBridge) GetPools() (stypes.Pools, error) {
 }
 
 // GetTHORName get THORName from THORChain
-func (b *ThorchainBridge) GetTHORName(name string, chain common.Chain) (stypes.THORName, error) {
-	p := fmt.Sprintf(THORNameEndpoint, name, chain.String())
+func (b *ThorchainBridge) GetTHORName(name string) (stypes.THORName, error) {
+	p := fmt.Sprintf(THORNameEndpoint, name)
 	buf, s, err := b.getWithPath(p)
 	if err != nil {
 		return stypes.THORName{}, fmt.Errorf("fail to get THORName: %w", err)
@@ -595,12 +595,9 @@ func (b *ThorchainBridge) GetTHORName(name string, chain common.Chain) (stypes.T
 	if s != http.StatusOK {
 		return stypes.THORName{}, fmt.Errorf("unexpected status code: %d", s)
 	}
-	var names []stypes.THORName
-	if err := json.Unmarshal(buf, &names); err != nil {
+	var tn stypes.THORName
+	if err := json.Unmarshal(buf, &tn); err != nil {
 		return stypes.THORName{}, fmt.Errorf("fail to unmarshal THORNames from json: %w", err)
 	}
-	if len(names) == 0 {
-		return stypes.THORName{}, fmt.Errorf("unable to find THORName: %s.%s", name, chain)
-	}
-	return names[0], nil
+	return tn, nil
 }
