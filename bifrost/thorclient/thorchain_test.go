@@ -280,10 +280,11 @@ func (s *ThorchainSuite) TestGetContractAddress(c *C) {
 }
 
 func (s *ThorchainSuite) TestTHORName(c *C) {
-	result, err := s.bridge.GetTHORName("test1", common.THORChain)
+	result, err := s.bridge.GetTHORName("test1")
 	c.Assert(err, IsNil)
 	c.Assert(result.Name, Equals, "test1")
-	c.Assert(result.Chain, Equals, common.THORChain)
-	c.Assert(result.Address, Equals, common.Address("tthor1tdfqy34uptx207scymqsy4k5uzfmry5sf7z3dw"))
 	c.Assert(result.ExpireBlockHeight, Equals, int64(10000))
+	c.Assert(result.Aliases, HasLen, 1)
+	c.Assert(result.Aliases[0].Chain, Equals, common.THORChain)
+	c.Assert(result.Aliases[0].Address, Equals, common.Address("tthor1tdfqy34uptx207scymqsy4k5uzfmry5sf7z3dw"))
 }
