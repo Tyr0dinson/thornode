@@ -69,7 +69,7 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
 	// TODO: uncomment this line once THORNames is deployed (post version
-	// 0.56.0). If this is done, gas is paid with deposit handler, so we'll
+	// 0.57.0). If this is done, gas is paid with deposit handler, so we'll
 	// need to charge for gas, but not twice
 	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	return m
@@ -197,8 +197,8 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 }
 
 func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	if version.GTE(semver.MustParse("0.56.0")) {
-		return processOneTxInV56(ctx, keeper, tx, signer)
+	if version.GTE(semver.MustParse("0.57.0")) {
+		return processOneTxInV57(ctx, keeper, tx, signer)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return processOneTxInV46(ctx, keeper, tx, signer)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
@@ -318,7 +318,7 @@ func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 	return newMsg, newMsg.ValidateBasic()
 }
 
-func processOneTxInV56(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV57(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)

@@ -65,8 +65,8 @@ func (h ObservedTxOutHandler) validateCurrent(ctx cosmos.Context, msg MsgObserve
 
 func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.56.0")) {
-		return h.handleV56(ctx, msg)
+	if version.GTE(semver.MustParse("0.57.0")) {
+		return h.handleV57(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
 		return h.handleV46(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
@@ -369,7 +369,7 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxOut
 }
 
 // Handle a message to observe outbound tx
-func (h ObservedTxOutHandler) handleV56(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
+func (h ObservedTxOutHandler) handleV57(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg)
 }
 

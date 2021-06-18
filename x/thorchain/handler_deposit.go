@@ -58,8 +58,8 @@ func (h DepositHandler) validateV1(ctx cosmos.Context, msg MsgDeposit) error {
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.56.0")) {
-		return h.handleV56(ctx, msg)
+	if version.GTE(semver.MustParse("0.57.0")) {
+		return h.handleV57(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return h.handleV47(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
@@ -484,7 +484,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 
 }
 
-func (h DepositHandler) handleV56(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handleV57(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg)
 }
 
