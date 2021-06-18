@@ -30,9 +30,6 @@ func (m *MsgManageTHORName) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if m.Owner.Empty() {
-		return cosmos.ErrInvalidAddress(m.Owner.String())
-	}
 	if m.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain can't be empty")
 	}
