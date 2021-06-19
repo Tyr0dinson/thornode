@@ -390,7 +390,12 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 
 	handler := NewInternalHandler(h.mgr)
 
-	memo, _ := ParseMemo(msg.Memo) // ignore err
+	var memo thorchain.Memo
+	if common.BlockHeight(ctx) < 254087 {
+		memo, _ = ParseMemoTestnetOnly(ctx, h.mgr.Keeper(), msg.Memo)
+	} else {
+		memo, _ = ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Memo) // ignore err
+	}
 	var targetModule string
 	switch memo.GetType() {
 	case TxBond:
