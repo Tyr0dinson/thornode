@@ -56,6 +56,9 @@ const (
 	FullImpLossProtectionBlocks
 	BondLockupPeriod
 	NumberOfNewNodesPerChurn
+	TNSRegisterFee
+	TNSFeeOnSale
+	TNSFeePerBlock
 )
 
 var nameToString = map[ConstantName]string{
@@ -105,6 +108,9 @@ var nameToString = map[ConstantName]string{
 	FullImpLossProtectionBlocks:   "FullImpLossProtectionBlocks",
 	BondLockupPeriod:              "BondLockupPeriod",
 	NumberOfNewNodesPerChurn:      "NumberOfNewNodesPerChurn",
+	TNSRegisterFee:                "TNSRegisterFee",
+	TNSFeeOnSale:                  "TNSFeeOnSale",
+	TNSFeePerBlock:                "TNSFeePerBlock",
 }
 
 // String implement fmt.stringer
