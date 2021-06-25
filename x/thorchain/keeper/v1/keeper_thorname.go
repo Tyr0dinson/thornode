@@ -8,7 +8,6 @@ import (
 )
 
 func (k KVStore) setTHORName(ctx cosmos.Context, key string, record THORName) {
-	fmt.Printf("Set THORName (%s): %+v\n", key, record)
 	store := ctx.KVStore(k.storeKey)
 	buf := k.cdc.MustMarshalBinaryBare(&record)
 	if buf == nil {
@@ -19,7 +18,6 @@ func (k KVStore) setTHORName(ctx cosmos.Context, key string, record THORName) {
 }
 
 func (k KVStore) getTHORName(ctx cosmos.Context, key string, record *THORName) (bool, error) {
-	fmt.Printf("Get THORName (%s) \n", key)
 	store := ctx.KVStore(k.storeKey)
 	if !store.Has([]byte(key)) {
 		return false, nil

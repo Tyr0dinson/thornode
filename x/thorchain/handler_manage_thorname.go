@@ -88,11 +88,9 @@ func (h ManageTHORNameHandler) validateCurrent(ctx cosmos.Context, msg MsgManage
 
 		// if this thorname is already owned, check signer has ownership. If
 		// expiration is past, allow different user to take ownership
-		if !name.GetAlias(common.THORChain).IsEmpty() {
-			if !name.Owner.Equals(msg.Signer) && common.BlockHeight(ctx) <= name.ExpireBlockHeight {
-				ctx.Logger().Error("no authorization", "owner", name.Owner)
-				return fmt.Errorf("no authorization: owned by %s", name.Owner)
-			}
+		if !name.Owner.Equals(msg.Signer) && common.BlockHeight(ctx) <= name.ExpireBlockHeight {
+			ctx.Logger().Error("no authorization", "owner", name.Owner)
+			return fmt.Errorf("no authorization: owned by %s", name.Owner)
 		}
 
 		// ensure user isn't inflating their expire block height artificaially
