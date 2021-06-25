@@ -64,7 +64,7 @@ type ETHScanner struct {
 	tokens               *LevelDBTokenMeta
 	bridge               *thorclient.ThorchainBridge
 	pubkeyMgr            pubkeymanager.PubKeyValidator
-	eipSigner            etypes.EIP155Signer
+	eipSigner            etypes.Signer
 	currentBlockHeight   int64
 	gasCache             []*big.Int
 }
@@ -120,7 +120,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		bridge:               bridge,
 		vaultABI:             vaultABI,
 		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewEIP155Signer(chainID),
+		eipSigner:            etypes.NewLondonSigner(chainID),
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 	}, nil
@@ -640,7 +640,7 @@ func (e *ETHScanner) getDecimals(token string) (uint64, error) {
 
 // replace the . in symbol to *, and replace the - in symbol to #
 // because . and - had been reserved to use in THORChain symbol
-var symbolReplacer = strings.NewReplacer(".", "*", "-", "#")
+var symbolReplacer = strings.NewReplacer(".", "*", "-", "#", `\u0000`, "", "\u0000", "")
 
 func sanitiseSymbol(symbol string) string {
 	return symbolReplacer.Replace(symbol)
