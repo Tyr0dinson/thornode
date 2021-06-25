@@ -38,7 +38,10 @@ func (b *ThorchainBridge) Broadcast(msgs ...stypes.Msg) (common.TxID, error) {
 			return noTxID, fmt.Errorf("fail to get account number and sequence number from thorchain : %w", err)
 		}
 		b.blockHeight = blockHeight
-		b.seqNumber = seqNum
+		if b.seqNumber != seqNum {
+			b.logger.Info().Msgf("local seq number: %d is different from seq number from THORChain: %d, override local one", b.seqNumber, seqNum)
+			b.seqNumber = seqNum
+		}
 	}
 
 	b.logger.Info().Uint64("account_number", b.accountNumber).Uint64("sequence_number", b.seqNumber).Msg("account info")
