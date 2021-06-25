@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	abci "github.com/tendermint/tendermint/abci/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -15,6 +15,32 @@ import (
 )
 
 type HandlerUnBondSuite struct{}
+
+var returnYggErr = errors.New("returnYgg")
+
+type BlankValidatorManager struct {
+	ValidatorDummyMgr
+}
+
+func (vm BlankValidatorManager) BeginBlock(_ cosmos.Context, _ constants.ConstantValues, _ []string) error {
+	return nil
+}
+
+func (vm BlankValidatorManager) EndBlock(_ cosmos.Context, _ Manager, _ constants.ConstantValues) []abci.ValidatorUpdate {
+	return nil
+}
+
+func (vm BlankValidatorManager) RequestYggReturn(_ cosmos.Context, _ NodeAccount, _ Manager, _ constants.ConstantValues) error {
+	return returnYggErr
+}
+
+func (vm BlankValidatorManager) processRagnarok(_ cosmos.Context, _ Manager, _ constants.ConstantValues) error {
+	return nil
+}
+
+func (vm BlankValidatorManager) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error) {
+	return NodeActive, nil
+}
 
 type TestUnBondKeeper struct {
 	keeper.KVStoreDummy
@@ -66,6 +92,20 @@ func (k *TestUnBondKeeper) GetNodeAccountJail(ctx cosmos.Context, addr cosmos.Ac
 	return Jail{}, nil
 }
 
+func (k *TestUnBondKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
+	if status == k.vault.Status {
+		return Vaults{k.vault}, nil
+	}
+	return nil, nil
+}
+
+func (k *TestUnBondKeeper) GetMostSecure(_ cosmos.Context, vaults Vaults, _ int64) Vault {
+	if len(vaults) == 0 {
+		return Vault{}
+	}
+	return vaults[0]
+}
+
 var _ = Suite(&HandlerUnBondSuite{})
 
 func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
@@ -84,8 +124,6 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	txIn := common.NewTx(
 		GetRandomTxHash(),
 		standbyNodeAccount.BondAddress,
@@ -97,7 +135,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 		"unbond me please",
 	)
 	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(5*common.One)), standbyNodeAccount.BondAddress, activeNodeAccount.NodeAddress)
-	_, err := handler.Run(ctx, msg, ver, constAccessor)
+	_, err := handler.Run(ctx, msg)
 	c.Assert(err, IsNil)
 	na, err := k1.GetNodeAccount(ctx, standbyNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
@@ -108,12 +146,12 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	mgrBad.txOutStore = NewTxStoreFailDummy()
 	handler.mgr = mgrBad
 	msg = NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(1*common.One)), standbyNodeAccount.BondAddress, activeNodeAccount.NodeAddress)
-	_, err = handler.Run(ctx, msg, ver, constAccessor)
+	_, err = handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	na, err = k1.GetNodeAccount(ctx, standbyNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(na.Bond.Equal(cosmos.NewUint(95*common.One+1)), Equals, true, Commentf("%d", na.Bond.Uint64()))
-	handler.mgr = NewDummyMgr() // revert bad handler
+	handler.mgr = NewDummyMgr()
 
 	k := &TestUnBondKeeper{
 		activeNodeAccount:   activeNodeAccount,
@@ -121,16 +159,13 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 		notEmptyNodeAccount: standbyNodeAccount,
 		jailNodeAccount:     GetRandomNodeAccount(NodeStandby),
 	}
-	// invalid version
-	handler = NewUnBondHandler(NewDummyMgrWithKeeper(k))
-	ver = semver.Version{}
-	_, err = handler.Run(ctx, msg, ver, constAccessor)
-	c.Assert(errors.Is(err, errBadVersion), Equals, true)
+	mgr := NewDummyMgrWithKeeper(k)
+	mgr.validatorMgr = BlankValidatorManager{}
+	handler = NewUnBondHandler(mgr)
 
 	// simulate fail to get node account
-	ver = GetCurrentVersion()
 	msg = NewMsgUnBond(txIn, k.failGetNodeAccount.NodeAddress, cosmos.NewUint(uint64(1)), GetRandomBNBAddress(), activeNodeAccount.NodeAddress)
-	_, err = handler.Run(ctx, msg, ver, constAccessor)
+	_, err = handler.Run(ctx, msg)
 	c.Assert(errors.Is(err, errInternal), Equals, true)
 
 	// simulate vault with funds
@@ -142,13 +177,13 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 		PubKey: standbyNodeAccount.PubKeySet.Secp256k1,
 	}
 	msg = NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(1)), GetRandomBNBAddress(), standbyNodeAccount.NodeAddress)
-	_, err = handler.Run(ctx, msg, ver, constAccessor)
-	c.Assert(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+	_, err = handler.Run(ctx, msg)
+	c.Assert(errors.Is(err, returnYggErr), Equals, true)
 
 	// simulate fail to get vault
 	k.vault = GetRandomVault()
 	msg = NewMsgUnBond(txIn, activeNodeAccount.NodeAddress, cosmos.NewUint(uint64(1)), GetRandomBNBAddress(), activeNodeAccount.NodeAddress)
-	result, err := handler.Run(ctx, msg, ver, constAccessor)
+	result, err := handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
@@ -160,18 +195,18 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	}
 
 	msg = NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(1)), GetRandomBNBAddress(), standbyNodeAccount.NodeAddress)
-	result, err = handler.Run(ctx, msg, ver, constAccessor)
+	result, err = handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// simulate jail nodeAccount can't unbound
 	msg = NewMsgUnBond(txIn, k.jailNodeAccount.NodeAddress, cosmos.NewUint(uint64(1)), GetRandomBNBAddress(), k.jailNodeAccount.NodeAddress)
-	result, err = handler.Run(ctx, msg, ver, constAccessor)
+	result, err = handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// invalid message should cause error
-	result, err = handler.Run(ctx, NewMsgMimir("whatever", 1, GetRandomBech32Addr()), ver, constAccessor)
+	result, err = handler.Run(ctx, NewMsgMimir("whatever", 1, GetRandomBech32Addr()))
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 }
@@ -181,8 +216,6 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 	activeNodeAccount := GetRandomNodeAccount(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	txIn := common.NewTx(
 		GetRandomTxHash(),
 		activeNodeAccount.BondAddress,
@@ -238,7 +271,7 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 	}
 	for _, item := range testCases {
 		c.Log(item.name)
-		_, err := handler.Run(ctx, item.msg, ver, constAccessor)
+		_, err := handler.Run(ctx, item.msg)
 
 		c.Check(errors.Is(err, item.expectedErr), Equals, true, Commentf("name: %s, %s", item.name, err))
 	}
@@ -272,8 +305,6 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	}
 	c.Assert(k1.SetVault(ctx, retiringVault), IsNil)
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	txIn := common.NewTx(
 		GetRandomTxHash(),
 		standbyNodeAccount.BondAddress,
@@ -285,6 +316,6 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 		"unbond me please",
 	)
 	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.NewUint(uint64(5*common.One)), standbyNodeAccount.BondAddress, activeNodeAccount.NodeAddress)
-	_, err := handler.Run(ctx, msg, ver, constAccessor)
+	_, err := handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
 }

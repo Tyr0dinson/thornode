@@ -38,38 +38,32 @@ CONTRACT="${CONTRACT:=0x8c2A90D36Ec9F745C9B28B588Cba5e2A978A1656}"
 RPC_USER="${RPC_USER:=thorchain}"
 RPC_PASSWD="${RPC_PASSWD:=password}"
 
-$(dirname "$0")/wait-for-thorchain-api.sh $CHAIN_API
+THOR_BLOCK_TIME="${THOR_BLOCK_TIME:=5s}"
+BLOCK_SCANNER_BACKOFF="${BLOCK_SCANNER_BACKOFF:=5s}"
+. "$(dirname "$0")/core.sh"
+"$(dirname "$0")/wait-for-thorchain-api.sh" $CHAIN_API
 
-# create thorchain user, if it doesn't already
-echo $SIGNER_PASSWD | thornode keys show $SIGNER_NAME --keyring-backend file
-if [ $? -gt 0 ]; then
-  if [ "$SIGNER_SEED_PHRASE" != "" ]; then
-    printf "$SIGNER_SEED_PHRASE\n$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME --recover
-  else
-    printf "$SIGNER_PASSWD\n$SIGNER_PASSWD\n" | thornode keys --keyring-backend file add $SIGNER_NAME
-  fi
-fi
+create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
-if [ ! -z "$PEER" ]; then
-    OLD_IFS=$IFS
-    IFS=","
-    SEED_LIST=""
-    for SEED in $PEER
-    do
-      # check if we have a hostname we extract the IP
-      if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
-        SEED=$(host $SEED | awk '{print $4}')
-      fi
-      SEED_ID=$(curl -m 10 -sL --fail http://$SEED:6040/p2pid) || continue
-      SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
-      if [[ "$SEED_LIST" == "" ]]; then
-        SEED_LIST="\"$SEED\""
-      else
-        SEED_LIST="$SEED_LIST,\"$SEED\""
-      fi
-    done
-    IFS=$OLD_IFS
-    PEER=$SEED_LIST
+if [ -n "$PEER" ]; then
+  OLD_IFS=$IFS
+  IFS=","
+  SEED_LIST=""
+  for SEED in $PEER; do
+    # check if we have a hostname we extract the IP
+    if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+      SEED=$(host "$SEED" | awk '{print $4}')
+    fi
+    SEED_ID=$(curl -m 10 -sL --fail "http://$SEED:6040/p2pid") || continue
+    SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
+    if [ -z "$SEED_LIST" ]; then
+      SEED_LIST="\"$SEED\""
+    else
+      SEED_LIST="$SEED_LIST,\"$SEED\""
+    fi
+  done
+  IFS=$OLD_IFS
+  PEER=$SEED_LIST
 fi
 
 OBSERVER_PATH=$DB_PATH/bifrost/observer/
@@ -118,7 +112,7 @@ echo "{
           \"rpc_host\": \"$BTC_HOST\",
           \"enforce_block_height\": false,
           \"block_scan_processors\": 1,
-          \"block_height_discover_back_off\": \"5s\",
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
           \"block_retry_interval\": \"10s\",
           \"chain_id\": \"BTC\",
           \"http_request_timeout\": \"30s\",
@@ -140,7 +134,7 @@ echo "{
           \"rpc_host\": \"$DOGE_HOST\",
           \"enforce_block_height\": false,
           \"block_scan_processors\": 1,
-          \"block_height_discover_back_off\": \"5s\",
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
           \"block_retry_interval\": \"10s\",
           \"chain_id\": \"DOGE\",
           \"http_request_timeout\": \"30s\",
@@ -162,7 +156,7 @@ echo "{
           \"rpc_host\": \"$LTC_HOST\",
           \"enforce_block_height\": false,
           \"block_scan_processors\": 1,
-          \"block_height_discover_back_off\": \"5s\",
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
           \"block_retry_interval\": \"10s\",
           \"chain_id\": \"LTC\",
           \"http_request_timeout\": \"30s\",
@@ -184,7 +178,7 @@ echo "{
           \"rpc_host\": \"$BCH_HOST\",
           \"enforce_block_height\": false,
           \"block_scan_processors\": 1,
-          \"block_height_discover_back_off\": \"5s\",
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
           \"block_retry_interval\": \"10s\",
           \"chain_id\": \"BCH\",
           \"http_request_timeout\": \"30s\",
@@ -207,7 +201,7 @@ echo "{
           \"rpc_host\": \"$ETH_HOST\",
           \"enforce_block_height\": false,
           \"block_scan_processors\": 1,
-          \"block_height_discover_back_off\": \"3s\",
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
           \"block_retry_interval\": \"10s\",
           \"chain_id\": \"ETH\",
           \"http_request_timeout\": \"30s\",
@@ -233,7 +227,7 @@ echo "{
         \"start_block_height\": $START_BLOCK_HEIGHT,
         \"enforce_block_height\": false,
         \"block_scan_processors\": 1,
-        \"block_height_discover_back_off\": \"5s\",
+        \"block_height_discover_back_off\": \"$THOR_BLOCK_TIME\",
         \"block_retry_interval\": \"10s\",
         \"start_block_height\": 0,
         \"db_path\": \"$SIGNER_PATH\",

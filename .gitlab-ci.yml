@@ -60,6 +60,30 @@ lint-code:
     - make lint-managers
     - golangci-lint run -v --skip-files ".*\\.pb\\.go$"
 
+shellcheck:
+  image: koalaman/shellcheck-alpine:latest
+  stage: test
+  tags:
+    - thorchain
+  except:
+    - schedules
+  before_script:
+    - shellcheck --version
+  script:
+    - find . -type f -name "*.*sh" | xargs shellcheck --exclude SC1091,SC3020,SC3040
+
+shfmt:
+  image: mvdan/shfmt:v3.3.0-alpine
+  stage: test
+  tags:
+    - thorchain
+  except:
+    - schedules
+  before_script:
+    - shfmt -version
+  script:
+    - find . -type f -name "*.*sh" | xargs shfmt -i 2 -ci -d
+
 build-thornode:
   stage: build
   image: docker:19.03.12
@@ -111,6 +135,10 @@ smoke-test:
     HEIMDALL_IMAGE: registry.gitlab.com/thorchain/heimdall:develop
     MIDGARD_REPO: https://gitlab.com/thorchain/midgard.git
     MIDGARD_IMAGE: registry.gitlab.com/thorchain/midgard:develop
+    THOR_BLOCK_TIME: 0.8s
+    BLOCK_TIME: 0.8s
+    BLOCK_SCANNER_BACKOFF: 0.8s
+    ETH_BLOCK_TIME: "0"
   before_script:
     # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
     - |
@@ -133,9 +161,9 @@ release:
   stage: release
   tags:
     - thorchain
-  image: registry.gitlab.com/thorchain/release-tool:latest
+  image: registry.gitlab.com/thorchain/misc/release-tool:latest
   only:
-    - master
+    - develop
   except:
     - schedules
   script:

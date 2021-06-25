@@ -532,7 +532,9 @@ func (vm *NetworkMgrV1) RecallChainFunds(ctx cosmos.Context, chain common.Chain,
 // ragnarokChain - ends a chain by withdrawing all liquidity providers of any pool that's
 // asset is on the given chain
 func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nth int64, mgr Manager, constAccessor constants.ConstantValues) error {
-	version := vm.k.GetLowestActiveVersion(ctx)
+	// the following line is pointless, granted. But in this case, removing it
+	// would cause a consensus failure
+	_ = vm.k.GetLowestActiveVersion(ctx)
 	nas, err := vm.k.ListActiveNodeAccounts(ctx)
 	if err != nil {
 		ctx.Logger().Error("can't get active nodes", "error", err)
@@ -560,7 +562,7 @@ func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nt
 
 	// rangarok this chain
 	for _, pool := range pools {
-		if !pool.Asset.GetChain().Equals(chain) || pool.PoolUnits.IsZero() {
+		if !pool.Asset.GetChain().Equals(chain) || pool.LPUnits.IsZero() {
 			continue
 		}
 		iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
@@ -594,7 +596,7 @@ func (vm *NetworkMgrV1) ragnarokChain(ctx cosmos.Context, chain common.Chain, nt
 				na.NodeAddress,
 			)
 
-			_, err := withdrawHandler.Run(ctx, withdrawMsg, version, constAccessor)
+			_, err := withdrawHandler.Run(ctx, withdrawMsg)
 			if err != nil {
 				ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
 			}

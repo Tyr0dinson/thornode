@@ -64,7 +64,7 @@ type ETHScanner struct {
 	tokens               *LevelDBTokenMeta
 	bridge               *thorclient.ThorchainBridge
 	pubkeyMgr            pubkeymanager.PubKeyValidator
-	eipSigner            etypes.EIP155Signer
+	eipSigner            etypes.Signer
 	currentBlockHeight   int64
 	gasCache             []*big.Int
 }
@@ -120,7 +120,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		bridge:               bridge,
 		vaultABI:             vaultABI,
 		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewEIP155Signer(chainID),
+		eipSigner:            etypes.NewLondonSigner(chainID),
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 	}, nil
@@ -640,7 +640,7 @@ func (e *ETHScanner) getDecimals(token string) (uint64, error) {
 
 // replace the . in symbol to *, and replace the - in symbol to #
 // because . and - had been reserved to use in THORChain symbol
-var symbolReplacer = strings.NewReplacer(".", "*", "-", "#")
+var symbolReplacer = strings.NewReplacer(".", "*", "-", "#", `\u0000`, "", "\u0000", "")
 
 func sanitiseSymbol(symbol string) string {
 	return symbolReplacer.Replace(symbol)
@@ -664,11 +664,14 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fail to call to smart contract and get symbol: %w", err)
 	}
+	var symbol string
 	output, err := e.erc20ABI.Unpack(symbolMethod, res)
 	if err != nil {
-		return "", fmt.Errorf("fail to unpack symbol method call: %w", err)
+		symbol = string(res)
+		e.logger.Err(err).Msgf("fail to unpack symbol method call,token address: %s , symbol: %s", token, symbol)
+		return sanitiseSymbol(symbol), nil
 	}
-	symbol := *abi.ConvertType(output[0], new(string)).(*string)
+	symbol = *abi.ConvertType(output[0], new(string)).(*string)
 	return sanitiseSymbol(symbol), nil
 }
 
@@ -917,7 +920,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		return nil, fmt.Errorf("fail to get transaction receipt: %w", err)
 	}
 	if receipt.Status != 1 {
-		e.logger.Info().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
+		e.logger.Debug().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
 		return nil, nil
 	}
 	smartContract := e.isToSmartContract(receipt)

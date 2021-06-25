@@ -1,14 +1,10 @@
 package thorchain
 
 import (
-	"errors"
-
-	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -39,6 +35,9 @@ func (k *TestIPAddresslKeeper) GetNetwork(ctx cosmos.Context) (Network, error) {
 func (k *TestIPAddresslKeeper) SetNetwork(ctx cosmos.Context, data Network) error {
 	return nil
 }
+func (k *TestIPAddresslKeeper) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
+	return nil
+}
 
 var _ = Suite(&HandlerIPAddressSuite{})
 
@@ -51,26 +50,18 @@ func (s *HandlerIPAddressSuite) TestValidate(c *C) {
 
 	handler := NewIPAddressHandler(NewDummyMgrWithKeeper(keeper))
 	// happy path
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 	msg := NewMsgSetIPAddress("8.8.8.8", keeper.na.NodeAddress)
-	err := handler.validate(ctx, *msg, ver, constAccessor)
+	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
-
-	// invalid version
-	err = handler.validate(ctx, *msg, semver.Version{}, constAccessor)
-	c.Assert(err, Equals, errBadVersion)
 
 	// invalid msg
 	msg = &MsgSetIPAddress{}
-	err = handler.validate(ctx, *msg, ver, constAccessor)
+	err = handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
 }
 
 func (s *HandlerIPAddressSuite) TestHandle(c *C) {
 	ctx, _ := setupKeeperForTest(c)
-	ver := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(ver)
 
 	keeper := &TestIPAddresslKeeper{
 		na: GetRandomNodeAccount(NodeActive),
@@ -79,13 +70,9 @@ func (s *HandlerIPAddressSuite) TestHandle(c *C) {
 	handler := NewIPAddressHandler(NewDummyMgrWithKeeper(keeper))
 
 	msg := NewMsgSetIPAddress("192.168.0.1", GetRandomBech32Addr())
-	err := handler.handle(ctx, *msg, ver, constAccessor)
+	err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Check(keeper.na.IPAddress, Equals, "192.168.0.1")
-
-	err1 := handler.handle(ctx, *msg, semver.MustParse("0.0.1"), constAccessor)
-	c.Check(err1, NotNil)
-	c.Check(errors.Is(err1, errBadVersion), Equals, true)
 }
 
 type HandlerIPAddressTestHelper struct {
@@ -178,6 +165,7 @@ func (s *HandlerIPAddressSuite) TestHandlerSetIPAddress_validation(c *C) {
 			name: "all good - happy path",
 			messageProvider: func(ctx cosmos.Context, helper *HandlerIPAddressTestHelper) cosmos.Msg {
 				nodeAccount := GetRandomNodeAccount(NodeWhiteListed)
+				FundModule(c, ctx, helper, BondName, common.One*100)
 				helper.SendFromModuleToAccount(ctx, ModuleName, nodeAccount.NodeAddress, common.Coins{
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000*common.One)),
 				})
@@ -197,9 +185,7 @@ func (s *HandlerIPAddressSuite) TestHandlerSetIPAddress_validation(c *C) {
 		mgr.K = helper
 		handler := NewIPAddressHandler(mgr)
 		msg := tc.messageProvider(ctx, helper)
-		constantAccessor := constants.GetConstantValues(GetCurrentVersion())
-		result, err := handler.Run(ctx, msg, GetCurrentVersion(), constantAccessor)
+		result, err := handler.Run(ctx, msg)
 		tc.validator(c, ctx, result, err, helper, tc.name)
-
 	}
 }

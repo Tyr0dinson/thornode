@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/blang/semver"
 	"github.com/hashicorp/go-multierror"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -11,6 +12,16 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
+
+func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.47.0")) {
+		return refundTxV47(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
+		return refundTxV1(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
+	}
+	return errBadVersion
+}
 
 // nativeRuneModuleName will be empty if it is not NATIVE Rune
 func refundTxV1(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
@@ -192,6 +203,75 @@ func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 	fee.PoolDeduct = transactionFee.MulUint64(uint64(assetTxCount))
 	return fee
 }
+
+func subsidizePoolWithSlashBond(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.46.0")) {
+		return subsidizePoolWithSlashBondV46(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
+		return subsidizePoolWithSlashBondV1(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
+	}
+	return errBadVersion
+}
+
+func subsidizePoolWithSlashBondV1(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
+	// Thorchain did not slash the node account
+	if slashRuneAmt.IsZero() {
+		return nil
+	}
+	stolenRUNE := ygg.GetCoin(common.RuneAsset()).Amount
+	slashRuneAmt = common.SafeSub(slashRuneAmt, stolenRUNE)
+	yggTotalStolen = common.SafeSub(yggTotalStolen, stolenRUNE)
+	type fund struct {
+		stolenAsset   cosmos.Uint
+		subsidiseRune cosmos.Uint
+	}
+	// here need to use a map to hold on to the amount of RUNE need to be subsidized to each pool
+	// reason being , if ygg pool has both RUNE and BNB coin left, these two coin share the same pool
+	// which is BNB pool , if add the RUNE directly back to pool , it will affect BNB price , which will affect the result
+	subsidizeAmounts := make(map[common.Asset]fund)
+	for _, coin := range ygg.Coins {
+		asset := coin.Asset
+		if coin.Asset.IsRune() {
+			// when the asset is RUNE, thorchain don't need to update the RUNE balance on pool
+			continue
+		}
+		f, ok := subsidizeAmounts[asset]
+		if !ok {
+			f = fund{
+				stolenAsset:   cosmos.ZeroUint(),
+				subsidiseRune: cosmos.ZeroUint(),
+			}
+		}
+
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		if err != nil {
+			return err
+		}
+		f.stolenAsset = f.stolenAsset.Add(coin.Amount)
+		runeValue := pool.AssetValueInRune(coin.Amount)
+		// the amount of RUNE thorchain used to subsidize the pool is calculate by ratio
+		// slashRune * (stealAssetRuneValue /totalStealAssetRuneValue)
+		subsidizeAmt := slashRuneAmt.Mul(runeValue).Quo(yggTotalStolen)
+		f.subsidiseRune = f.subsidiseRune.Add(subsidizeAmt)
+		subsidizeAmounts[asset] = f
+	}
+
+	for asset, f := range subsidizeAmounts {
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		if err != nil {
+			return err
+		}
+		pool.BalanceRune = pool.BalanceRune.Add(f.subsidiseRune)
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, f.stolenAsset)
+
+		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+			return fmt.Errorf("fail to save pool: %w", err)
+		}
+	}
+	return nil
+}
+
 func subsidizePoolWithSlashBondV46(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
 	// Thorchain did not slash the node account
 	if slashRuneAmt.IsZero() {
@@ -264,64 +344,6 @@ func subsidizePoolWithSlashBondV46(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	return nil
 }
 
-func subsidizePoolWithSlashBond(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint) error {
-	// Thorchain did not slash the node account
-	if slashRuneAmt.IsZero() {
-		return nil
-	}
-	stolenRUNE := ygg.GetCoin(common.RuneAsset()).Amount
-	slashRuneAmt = common.SafeSub(slashRuneAmt, stolenRUNE)
-	yggTotalStolen = common.SafeSub(yggTotalStolen, stolenRUNE)
-	type fund struct {
-		stolenAsset   cosmos.Uint
-		subsidiseRune cosmos.Uint
-	}
-	// here need to use a map to hold on to the amount of RUNE need to be subsidized to each pool
-	// reason being , if ygg pool has both RUNE and BNB coin left, these two coin share the same pool
-	// which is BNB pool , if add the RUNE directly back to pool , it will affect BNB price , which will affect the result
-	subsidizeAmounts := make(map[common.Asset]fund)
-	for _, coin := range ygg.Coins {
-		asset := coin.Asset
-		if coin.Asset.IsRune() {
-			// when the asset is RUNE, thorchain don't need to update the RUNE balance on pool
-			continue
-		}
-		f, ok := subsidizeAmounts[asset]
-		if !ok {
-			f = fund{
-				stolenAsset:   cosmos.ZeroUint(),
-				subsidiseRune: cosmos.ZeroUint(),
-			}
-		}
-
-		pool, err := keeper.GetPool(ctx, asset)
-		if err != nil {
-			return err
-		}
-		f.stolenAsset = f.stolenAsset.Add(coin.Amount)
-		runeValue := pool.AssetValueInRune(coin.Amount)
-		// the amount of RUNE thorchain used to subsidize the pool is calculate by ratio
-		// slashRune * (stealAssetRuneValue /totalStealAssetRuneValue)
-		subsidizeAmt := slashRuneAmt.Mul(runeValue).Quo(yggTotalStolen)
-		f.subsidiseRune = f.subsidiseRune.Add(subsidizeAmt)
-		subsidizeAmounts[asset] = f
-	}
-
-	for asset, f := range subsidizeAmounts {
-		pool, err := keeper.GetPool(ctx, asset)
-		if err != nil {
-			return err
-		}
-		pool.BalanceRune = pool.BalanceRune.Add(f.subsidiseRune)
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, f.stolenAsset)
-
-		if err := keeper.SetPool(ctx, pool); err != nil {
-			return fmt.Errorf("fail to save pool: %w", err)
-		}
-	}
-	return nil
-}
-
 // getTotalYggValueInRune will go through all the coins in ygg , and calculate the total value in RUNE
 // return value will be totalValueInRune,error
 func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault) (cosmos.Uint, error) {
@@ -341,6 +363,16 @@ func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault)
 }
 
 func refundBond(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.46.0")) {
+		return refundBondV46(ctx, tx, amt, nodeAcc, mgr)
+	} else if version.GTE(semver.MustParse("0.1.0")) {
+		return refundBondV1(ctx, tx, amt, nodeAcc, mgr)
+	}
+	return errBadVersion
+}
+
+func refundBondV1(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
@@ -432,7 +464,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *Node
 		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
 		return err
 	}
-	if err := subsidizePoolWithSlashBond(ctx, mgr.Keeper(), ygg, yggRune, slashRune); err != nil {
+	if err := subsidizePoolWithSlashBond(ctx, ygg, yggRune, slashRune, mgr); err != nil {
 		ctx.Logger().Error("fail to subsidize pool with slashed bond", "error", err)
 		return err
 	}
@@ -549,15 +581,23 @@ func refundBondV46(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *N
 	return nil
 }
 
-func isSignedByActiveNodeAccounts(ctx cosmos.Context, keeper keeper.Keeper, signers []cosmos.AccAddress) bool {
+func isSignedByActiveNodeAccounts(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress) bool {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return isSignedByActiveNodeAccountsV1(ctx, mgr, signers)
+	}
+	return false
+}
+
+func isSignedByActiveNodeAccountsV1(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress) bool {
 	if len(signers) == 0 {
 		return false
 	}
 	for _, signer := range signers {
-		if signer.Equals(keeper.GetModuleAccAddress(AsgardName)) {
+		if signer.Equals(mgr.Keeper().GetModuleAccAddress(AsgardName)) {
 			continue
 		}
-		nodeAccount, err := keeper.GetNodeAccount(ctx, signer)
+		nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, signer)
 		if err != nil {
 			ctx.Logger().Error("unauthorized account", "address", signer.String(), "error", err)
 			return false
@@ -575,6 +615,14 @@ func isSignedByActiveNodeAccounts(ctx cosmos.Context, keeper keeper.Keeper, sign
 }
 
 func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return cyclePoolsV1(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr)
+	}
+	return errBadVersion
+}
+
+func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
 	var availblePoolCount int64
 	onDeck := NewPool()        // currently staged pool that could get promoted
 	choppingBlock := NewPool() // currently available pool that is on the chopping block to being demoted
@@ -667,29 +715,8 @@ func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedP
 				// tokens)
 				ctx.Logger().Info("burning pool", "pool", pool.Asset)
 
-				// delete all liquidity provider records
-				iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, pool.Asset)
-				defer iterator.Close()
-				for ; iterator.Valid(); iterator.Next() {
-					var lp LiquidityProvider
-					mgr.Keeper().Cdc().MustUnmarshalBinaryBare(iterator.Value(), &lp)
-
-					withdrawEvt := NewEventWithdraw(
-						pool.Asset,
-						lp.Units,
-						int64(0),
-						cosmos.ZeroDec(),
-						common.Tx{},
-						cosmos.ZeroUint(),
-						cosmos.ZeroUint(),
-						cosmos.ZeroUint(),
-					)
-					if err := mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
-						ctx.Logger().Error("fail to emit pool withdraw event", "error", err)
-					}
-
-					mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
-				}
+				// remove LPs
+				removeLiquidityProviders(ctx, pool.Asset, mgr)
 
 				// delete the pool
 				mgr.Keeper().RemovePool(ctx, pool.Asset)
@@ -698,26 +725,8 @@ func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedP
 				if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
 					ctx.Logger().Error("fail to emit pool event", "error", err)
 				}
-
-				// zero vaults with the pool asset
-				vaultIter := mgr.Keeper().GetVaultIterator(ctx)
-				defer vaultIter.Close()
-				for ; vaultIter.Valid(); vaultIter.Next() {
-					var vault Vault
-					mgr.Keeper().Cdc().MustUnmarshalBinaryBare(vaultIter.Value(), &vault)
-
-					if vault.HasAsset(pool.Asset) {
-						for i, coin := range vault.Coins {
-							if pool.Asset.Equals(coin.Asset) {
-								vault.Coins[i].Amount = cosmos.ZeroUint()
-								if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
-									ctx.Logger().Error("fail to save vault", "error", err)
-								}
-								break
-							}
-						}
-					}
-				}
+				// remove asset from Vault
+				removeAssetFromVault(ctx, pool.Asset, mgr)
 
 			} else {
 				if valid_pool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
@@ -757,6 +766,54 @@ func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedP
 
 	return nil
 }
+func removeAssetFromVault(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+	// zero vaults with the pool asset
+	vaultIter := mgr.Keeper().GetVaultIterator(ctx)
+	defer vaultIter.Close()
+	for ; vaultIter.Valid(); vaultIter.Next() {
+		var vault Vault
+		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(vaultIter.Value(), &vault); err != nil {
+			ctx.Logger().Error("fail to unmarshal vault", "error", err)
+			continue
+		}
+		if vault.HasAsset(asset) {
+			for i, coin := range vault.Coins {
+				if asset.Equals(coin.Asset) {
+					vault.Coins[i].Amount = cosmos.ZeroUint()
+					if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+						ctx.Logger().Error("fail to save vault", "error", err)
+					}
+					break
+				}
+			}
+		}
+	}
+}
+func removeLiquidityProviders(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var lp LiquidityProvider
+		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iterator.Value(), &lp); err != nil {
+			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
+			continue
+		}
+		withdrawEvt := NewEventWithdraw(
+			asset,
+			lp.Units,
+			int64(0),
+			cosmos.ZeroDec(),
+			common.Tx{},
+			cosmos.ZeroUint(),
+			cosmos.ZeroUint(),
+			cosmos.ZeroUint(),
+		)
+		if err := mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
+			ctx.Logger().Error("fail to emit pool withdraw event", "error", err)
+		}
+		mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
+	}
+}
 
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
 	err = fmt.Errorf("%s: %w", wrap, err)
@@ -764,8 +821,16 @@ func wrapError(ctx cosmos.Context, err error, wrap string) error {
 	return multierror.Append(errInternal, err)
 }
 
-// AddGasFees to vault
-func AddGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
+func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
+	version := mgr.GetVersion()
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return addGasFeesV1(ctx, mgr, tx)
+	}
+	return errBadVersion
+}
+
+// addGasFees to vault
+func addGasFeesV1(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	if len(tx.Tx.Gas) == 0 {
 		return nil
 	}
@@ -795,6 +860,7 @@ func AddGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	}
 	return nil
 }
+
 func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason string, mgr Manager) {
 	evt := NewEventPoolBalanceChanged(poolMod, reason)
 	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
