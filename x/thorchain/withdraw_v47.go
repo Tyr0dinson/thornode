@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -181,14 +183,18 @@ func calcImpLossV47(lp LiquidityProvider, withdrawBasisPoints cosmos.Uint, prote
 		A1 = GetShare(liquidityUnits, lpUnits, assetDepth);
 		R1 = GetShare(liquidityUnits, lpUnits, runeDepth);
 		P1 = R1/A1
-		coverage = (R0 - R1) + (A0 - A1) * P1
+		coverage = ((A0 * P1) + R0) - ((A1 * P1) + R1)
 	*/
 	A0 := lp.AssetDepositValue
 	R0 := lp.RuneDepositValue
 	A1 := common.GetShare(lp.Units, pool.LPUnits, pool.BalanceAsset)
 	R1 := common.GetShare(lp.Units, pool.LPUnits, pool.BalanceRune)
 	P1 := R1.Quo(A1)
-	coverage := common.SafeSub(A0, A1).Mul(P1).Add(common.SafeSub(R0, R1))
+	coverage := common.SafeSub(A0.Mul(P1).Add(R0), A1.Mul(P1).Add(R1))
+
+	// TODO: log deposit value, redeem value
+	fmt.Printf("Deposit Value: %d\n", A0.Mul(P1).Add(R0).Uint64())
+	fmt.Printf("Redeem  Value: %d\n", A1.Mul(P1).Add(R1).Uint64())
 
 	// taking withdrawBasisPoints, calculate how much of the coverage the user should receives
 	coverage = common.GetShare(withdrawBasisPoints, cosmos.NewUint(10000), coverage)
