@@ -390,6 +390,10 @@ func (k KVStoreDummy) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterat
 func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
 	return nil
 }
+func (k KVStoreDummy) SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter) {}
+func (k KVStoreDummy) GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error) {
+	return SolvencyVoter{}, kaboom
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

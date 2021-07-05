@@ -15,5 +15,6 @@ message SolvencyVoter {
   string pub_key = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   repeated common.Coin coins = 4 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
   int64 height = 5;
-  repeated string signers = 6;
+  int64 consensus_block_height = 6;
+  repeated string signers = 7;
 }

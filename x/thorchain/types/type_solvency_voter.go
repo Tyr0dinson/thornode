@@ -43,12 +43,12 @@ func (m *SolvencyVoter) HasSigned(signer cosmos.AccAddress) bool {
 }
 
 // Sign this voter with given signer address
-func (m *SolvencyVoter) Sign(signer cosmos.AccAddress, chains []string) bool {
+func (m *SolvencyVoter) Sign(signer cosmos.AccAddress) bool {
 	if m.HasSigned(signer) {
 		return false
 	}
 	m.Signers = append(m.Signers, signer.String())
-	return false
+	return true
 }
 
 // HasConsensus determine if this errata has enough signers

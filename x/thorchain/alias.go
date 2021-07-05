@@ -159,6 +159,7 @@ var (
 	HasSuperMajority               = types.HasSuperMajority
 	NewTssKeysignMetric            = types.NewTssKeysignMetric
 	DefaultGenesis                 = types.DefaultGenesis
+	NewSolvencyVoter               = types.NewSolvencyVoter
 
 	// Memo
 	ParseMemo          = mem.ParseMemo
