@@ -200,6 +200,7 @@ type (
 	MsgTssPool                     = types.MsgTssPool
 	MsgTssKeysignFail              = types.MsgTssKeysignFail
 	MsgNetworkFee                  = types.MsgNetworkFee
+	MsgSolvency                    = types.MsgSolvency
 	QueryVersion                   = types.QueryVersion
 	QueryQueue                     = types.QueryQueue
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck

@@ -1,20 +1,28 @@
 package types
 
 import (
+	"crypto/sha256"
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 // NewMsgSolvency create a new MsgSolvency
-func NewMsgSolvency(id string, chain common.Chain, address common.Address, coins common.Coins, height int64, signer cosmos.AccAddress) *MsgSolvency {
-	return &MsgSolvency{
-		Id:      id,
-		Chain:   chain,
-		Address: address,
-		Coins:   coins,
-		Height:  height,
-		Signer:  signer,
+func NewMsgSolvency(chain common.Chain, pubKey common.PubKey, coins common.Coins, height int64, signer cosmos.AccAddress) (*MsgSolvency, error) {
+	input := fmt.Sprintf("%s|%s|%s|%d", chain, pubKey, coins, height)
+	id, err := common.NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(input))))
+	if err != nil {
+		return nil, fmt.Errorf("fail to create msg solvency hash")
 	}
+	return &MsgSolvency{
+		Id:     id,
+		Chain:  chain,
+		PubKey: pubKey,
+		Coins:  coins,
+		Height: height,
+		Signer: signer,
+	}, nil
 }
 
 // Route Implements Msg.
@@ -25,7 +33,7 @@ func (m MsgSolvency) Type() string { return "solvency" }
 
 // ValidateBasic Implements Msg.
 func (m *MsgSolvency) ValidateBasic() error {
-	if len(m.Id) == 0 {
+	if m.Id.IsEmpty() {
 		return cosmos.ErrUnknownRequest("invalid id")
 	}
 	if m.Coins.IsEmpty() {
@@ -34,16 +42,15 @@ func (m *MsgSolvency) ValidateBasic() error {
 	if m.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain can't be empty")
 	}
-	if m.Address.IsEmpty() {
-		return cosmos.ErrUnknownRequest("address can't be empty")
-	}
-	if m.Address.IsChain(m.Chain) {
-		return cosmos.ErrUnknownRequest("invalid address")
+	if m.PubKey.IsEmpty() {
+		return cosmos.ErrUnknownRequest("pubkey is empty")
 	}
 	if m.Height <= 0 {
 		return cosmos.ErrUnknownRequest("block height is invalid")
 	}
-
+	if m.Signer.Empty() {
+		return cosmos.ErrUnauthorized("invalid sender")
+	}
 	return nil
 }
 
