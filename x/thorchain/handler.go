@@ -66,6 +66,8 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
+	// MsgSolvency will be support after 0.59.0
+	m[MsgSolvency{}.Type()] = NewSolvencyHandler(mgr)
 	return m
 }
 
