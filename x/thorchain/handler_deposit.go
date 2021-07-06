@@ -7,11 +7,10 @@ import (
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	tmtypes "github.com/tendermint/tendermint/types"
-	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
 // DepositHandler is to process native messages on THORChain
@@ -249,15 +248,8 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	if err != nil {
 		return nil, fmt.Errorf("fail to get to address: %w", err)
 	}
-
 	handler := NewInternalHandler(h.mgr)
-
-	var memo mem.Memo
-	if common.BlockHeight(ctx) < 254087 {
-		memo, _ = ParseMemoTestnetOnly(msg.Memo)
-	} else {
-		memo, _ = ParseMemo(msg.Memo) // ignore err
-	}
+	memo, _ := ParseMemo(msg.Memo) // ignore err
 	var targetModule string
 	switch memo.GetType() {
 	case TxBond:
@@ -395,7 +387,12 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 
 	handler := NewInternalHandler(h.mgr)
 
-	memo, _ := ParseMemo(msg.Memo) // ignore err
+	var memo mem.Memo
+	if common.BlockHeight(ctx) < 254087 {
+		memo, _ = ParseMemoTestnetOnly(msg.Memo)
+	} else {
+		memo, _ = ParseMemo(msg.Memo) // ignore err
+	}
 	var targetModule string
 	switch memo.GetType() {
 	case TxBond:
