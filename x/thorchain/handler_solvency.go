@@ -107,6 +107,9 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 		return &cosmos.Result{}, nil
 	}
 	haltTrading, err := h.mgr.Keeper().GetMimir(ctx, haltTradingKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get mimir", "error", err)
+	}
 	if haltTrading > 0 && haltTrading < common.BlockHeight(ctx) {
 		// Trading already halt
 		return &cosmos.Result{}, nil
