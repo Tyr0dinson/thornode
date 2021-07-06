@@ -62,4 +62,5 @@ type (
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract
 	SolvencyVoter            = types.SolvencyVoter
+	THORName                 = types.THORName
 )

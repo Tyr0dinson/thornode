@@ -59,6 +59,7 @@ const (
 	prefixTssKeysignMetricLatest kvTypes.DbPrefix = "latest_tss_keysign_metric/"
 	prefixChainContract          kvTypes.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter          kvTypes.DbPrefix = "solvency_voter/"
+	prefixTHORName               kvTypes.DbPrefix = "thorname/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

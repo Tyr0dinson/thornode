@@ -59,6 +59,7 @@ type Keeper interface {
 	KeeperObservedNetworkFeeVoter
 	KeeperChainContract
 	KeeperSolvencyVoter
+	KeeperTHORName
 }
 
 type KeeperPool interface {
@@ -249,6 +250,15 @@ type KeeperSolvencyVoter interface {
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
+type KeeperTHORName interface {
+	THORNameExists(ctx cosmos.Context, _ string) bool
+	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
+	SetTHORName(ctx cosmos.Context, name THORName)
+	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
+	DeleteTHORName(ctx cosmos.Context, _ string) error
+}
+
+// NewKVStore creates new instances of the thorchain Keeper
 func NewKeeper(cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) Keeper {
 	return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey)
 }
