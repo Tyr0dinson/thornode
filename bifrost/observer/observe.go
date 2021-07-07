@@ -451,7 +451,7 @@ func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pub
 		o.errCounter.WithLabelValues("fail_to_send_to_thorchain", strHeight).Inc()
 		return fmt.Errorf("fail to send the MsgSolvency to thorchain: %w", err)
 	}
-	o.logger.Info().Int64("block", height).Str("thorchain hash", txID.String()).Msg("sign and send MsgSolvency to thorchain successfully")
+	o.logger.Info().Int64("block", height).Str("chain", chain.String()).Str("thorchain hash", txID.String()).Msg("sign and send MsgSolvency to thorchain successfully")
 	return nil
 }
 func (o *Observer) updateSignerCache(txIn types.TxIn) error {
@@ -599,10 +599,13 @@ func (o *Observer) processSolvencyQueue() {
 			if !more {
 				return
 			}
-
+			if solvencyItem.Chain.IsEmpty() || solvencyItem.Coins.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
+				continue
+			}
+			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
 			if err := o.sendSolvencyToThorchain(solvencyItem.Height, solvencyItem.Chain, solvencyItem.PubKey, solvencyItem.Coins); err != nil {
 				o.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
-				o.logger.Error().Err(err).Msg("fail to broadcast errata tx")
+				o.logger.Error().Err(err).Msg("fail to broadcast solvency tx")
 			}
 		}
 	}

@@ -82,6 +82,7 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 	if !voter.HasConsensus(active) {
 		return &cosmos.Result{}, nil
 	}
+
 	// from this point , solvency reach consensus
 	if voter.ConsensusBlockHeight > 0 {
 		if (voter.ConsensusBlockHeight + observeFlex) >= common.BlockHeight(ctx) {
@@ -123,9 +124,18 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 // insolvent usually means vault has more coins than wallet
 // return true means the vault is insolvent , the network should halt , otherwise false
 func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins common.Coins, chain common.Chain) bool {
+	adjustVault, err := h.excludePendingOutboundFromVault(ctx, vault)
+	if err != nil {
+		return false
+	}
 	// Use the coin in vault as baseline , wallet can have more coins than vault
-	for _, c := range vault.Coins {
+	for _, c := range adjustVault.Coins {
 		if !c.Asset.Chain.Equals(chain) {
+			continue
+		}
+
+		// ETH.RUNE will be burned on the way in , so the wallet will not have any, thus exclude it from solvency check
+		if c.Asset.IsRune() {
 			continue
 		}
 		walletCoin := coins.GetCoin(c.Asset)
@@ -135,9 +145,54 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 		}
 		if c.Amount.GT(walletCoin.Amount) {
 			gap := c.Amount.Sub(walletCoin.Amount)
-			ctx.Logger().Info("vault has more asset than wallet, insolvent", "asset", c.Asset.String(), "vault amount", c.Amount.String(), "wallet amount", walletCoin.Amount.String(), "gap", gap.String())
-			return true
+			if gap.MulUint64(100).GT(walletCoin.Amount) {
+				ctx.Logger().Info("vault has more asset than wallet, insolvent", "asset", c.Asset.String(), "vault amount", c.Amount.String(), "wallet amount", walletCoin.Amount.String(), "gap", gap.String())
+				return true
+			}
 		}
 	}
 	return false
+}
+func (h SolvencyHandler) excludePendingOutboundFromVault(ctx cosmos.Context, vault Vault) (Vault, error) {
+	// go back SigningTransactionPeriod blocks to see whether there are outstanding tx, the vault need to send out
+	// if there is , deduct it from their balance
+	signingPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	startHeight := common.BlockHeight(ctx) - signingPeriod
+	if startHeight < 1 {
+		startHeight = 1
+	}
+	for i := startHeight; i < common.BlockHeight(ctx); i++ {
+		blockOut, err := h.mgr.Keeper().GetTxOut(ctx, i)
+		if err != nil {
+			ctx.Logger().Error("fail to get block tx out", "error", err)
+			return vault, fmt.Errorf("fail to get block tx out, err: %w", err)
+		}
+		vault = h.deductVaultBlockPendingOutbound(vault, blockOut)
+	}
+	return vault, nil
+}
+func (h SolvencyHandler) deductVaultBlockPendingOutbound(vault Vault, block *TxOut) Vault {
+	for _, txOutItem := range block.TxArray {
+		if !txOutItem.VaultPubKey.Equals(vault.PubKey) {
+			continue
+		}
+		// only still outstanding txout will be considered
+		if !txOutItem.OutHash.IsEmpty() {
+			continue
+		}
+		// deduct the gas asset from the vault as well
+		var gasCoin common.Coin
+		if !txOutItem.MaxGas.IsEmpty() {
+			gasCoin = txOutItem.MaxGas.ToCoins().GetCoin(txOutItem.Chain.GetGasAsset())
+		}
+		for i, yggCoin := range vault.Coins {
+			if yggCoin.Asset.Equals(txOutItem.Coin.Asset) {
+				vault.Coins[i].Amount = common.SafeSub(vault.Coins[i].Amount, txOutItem.Coin.Amount)
+			}
+			if yggCoin.Asset.Equals(gasCoin.Asset) {
+				vault.Coins[i].Amount = common.SafeSub(vault.Coins[i].Amount, gasCoin.Amount)
+			}
+		}
+	}
+	return vault
 }
