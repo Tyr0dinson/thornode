@@ -46,7 +46,13 @@ func (h SolvencyHandler) validateV1(ctx cosmos.Context, msg MsgSolvency) error {
 	return h.validateCurrent(ctx, msg)
 }
 func (h SolvencyHandler) validateCurrent(ctx cosmos.Context, msg MsgSolvency) error {
-	return msg.ValidateBasic()
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+	if !isSignedByActiveNodeAccounts(ctx, h.mgr, msg.GetSigners()) {
+		return cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", msg.GetSigners()))
+	}
+	return nil
 }
 func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	ctx.Logger().Info("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
