@@ -438,6 +438,14 @@ func (o *Observer) sendErrataTxToThorchain(height int64, txID common.TxID, chain
 }
 
 func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) error {
+	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
+	if err != nil {
+		return fmt.Errorf("failed to get node status: %w", err)
+	}
+
+	if nodeStatus != stypes.NodeStatus_Active {
+		return nil
+	}
 	msg := o.thorchainBridge.GetSolvencyMsg(height, chain, pubKey, coins)
 	if msg == nil {
 		return fmt.Errorf("fail to create solvency message")
