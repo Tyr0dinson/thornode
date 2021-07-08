@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
@@ -71,6 +72,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 	case 58:
 		smgr.migrateStoreV58(ctx, version, constantAccessor)
 		smgr.migrateStoreV58Refund(ctx, version, constantAccessor)
+	case 59:
+		smgr.migrateStoreV59(ctx, version, constantAccessor)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -466,4 +469,27 @@ func (smgr *StoreMgr) migrateStoreV58(ctx cosmos.Context, version semver.Version
 		ctx.Logger().Error("fail to save retiring vault", "error", err)
 		return
 	}
+}
+
+func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	newRouterAddr, err := common.NewAddress("0xF141f1715B7D922e416B1e79BCb18ce2f28a1b87")
+	if err != nil {
+		ctx.Logger().Error("fail to parse router address", "error", err)
+		return
+	}
+	cc, err := smgr.mgr.Keeper().GetChainContract(ctx, common.ETHChain)
+	if err != nil {
+		ctx.Logger().Error("fail to get existing chain contract")
+		return
+	}
+	// ensure it is upgrading the current router contract used on multichain chaosnet
+	if !strings.EqualFold(cc.Router.String(), "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44") {
+		ctx.Logger().Info("old router is not 0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44, no need to upgrade")
+		return
+	}
+	// Update the contract address
+	smgr.mgr.Keeper().SetChainContract(ctx, ChainContract{
+		Chain:  common.ETHChain,
+		Router: newRouterAddr,
+	})
 }
