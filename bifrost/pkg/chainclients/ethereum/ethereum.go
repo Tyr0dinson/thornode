@@ -568,6 +568,11 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 	}
 	coins := common.Coins{}
 	for _, token := range tokens {
+		// TODO: need to revert this once network upgrade to new router
+		// This will ignore xRUNE from been used in yggdrasil Return
+		if strings.EqualFold(token.Address, "0x69fa0feE221AD11012BAb0FdB45d444D3D2Ce71c") {
+			continue
+		}
 		balance, err := c.GetBalance(addr, token.Address)
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get balance for token:%s", token.Address)

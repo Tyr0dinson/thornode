@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
@@ -71,6 +72,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 	case 58:
 		smgr.migrateStoreV58(ctx, version, constantAccessor)
 		smgr.migrateStoreV58Refund(ctx, version, constantAccessor)
+	case 59:
+		smgr.migrateStoreV59(ctx, version, constantAccessor)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -466,4 +469,56 @@ func (smgr *StoreMgr) migrateStoreV58(ctx cosmos.Context, version semver.Version
 		ctx.Logger().Error("fail to save retiring vault", "error", err)
 		return
 	}
+}
+
+func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	xRUNEAsset, err := common.NewAsset("ETH.XRUNE-0X69FA0FEE221AD11012BAB0FDB45D444D3D2CE71C")
+	if err != nil {
+		ctx.Logger().Error("fail to parse XRUNE asset", "error", err)
+		return
+	}
+	vaultIter := smgr.mgr.Keeper().GetVaultIterator(ctx)
+	defer vaultIter.Close()
+	for ; vaultIter.Valid(); vaultIter.Next() {
+		var vault Vault
+		if err := smgr.mgr.Keeper().Cdc().UnmarshalBinaryBare(vaultIter.Value(), &vault); err != nil {
+			ctx.Logger().Error("fail to unmarshal vault", "error", err)
+			continue
+		}
+		// vault is empty , ignore
+		if vault.IsEmpty() {
+			continue
+		}
+		hasChange := false
+		for idx, c := range vault.Coins {
+			if c.Asset.Equals(xRUNEAsset) {
+				vault.Coins[idx].Amount = cosmos.ZeroUint()
+				hasChange = true
+			}
+		}
+		if hasChange {
+			if err := smgr.mgr.Keeper().SetVault(ctx, vault); err != nil {
+				ctx.Logger().Error("fail to save vault", "error", err)
+			}
+		}
+	}
+	// TODO: replace it with the new contract once it is ready
+	newRouterAddr, err := common.NewAddress("0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B")
+	if err != nil {
+		ctx.Logger().Error("fail to parse router address", "error", err)
+		return
+	}
+	cc, err := smgr.mgr.Keeper().GetChainContract(ctx, common.ETHChain)
+	if err != nil {
+		ctx.Logger().Error("fail to get existing chain contract")
+		return
+	}
+	if !strings.EqualFold(cc.Router.String(), "0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B") {
+		ctx.Logger().Info("old router is not 0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B, no need to upgrade")
+		return
+	}
+	smgr.mgr.Keeper().SetChainContract(ctx, ChainContract{
+		Chain:  common.ETHChain,
+		Router: newRouterAddr,
+	})
 }
