@@ -513,10 +513,12 @@ func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version
 		ctx.Logger().Error("fail to get existing chain contract")
 		return
 	}
+	// ensure it is upgrading the current router contract used on multichain chaosnet
 	if !strings.EqualFold(cc.Router.String(), "0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B") {
 		ctx.Logger().Info("old router is not 0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B, no need to upgrade")
 		return
 	}
+	// Update the contract address
 	smgr.mgr.Keeper().SetChainContract(ctx, ChainContract{
 		Chain:  common.ETHChain,
 		Router: newRouterAddr,
