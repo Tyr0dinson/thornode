@@ -1,0 +1,9 @@
+// +build !testnet,!mocknet
+
+package thorchain
+
+var (
+	ethUSDTAsset = `ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7`
+	ethOldRouter = `0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B`
+	ethNewRouter = `0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B`
+)
