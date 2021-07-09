@@ -437,6 +437,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	if gasRate.Cmp(c.GetGasPrice()) < 0 {
 		gasRate = c.GetGasPrice()
 	}
+	// Temporary for test purpose , the way how thorchain pay fee, cause the gas rate goes very high after a little while
+	if gasRate.Cmp(big.NewInt(10000000000)) > 0 {
+		gasRate = big.NewInt(10000000000)
+	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
 	// outbound tx always send to smart contract address
 	estimatedETHValue := big.NewInt(0)
