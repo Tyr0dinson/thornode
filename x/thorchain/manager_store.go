@@ -73,6 +73,7 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64, constantAccessor con
 		smgr.migrateStoreV58(ctx, version, constantAccessor)
 		smgr.migrateStoreV58Refund(ctx, version, constantAccessor)
 	case 59:
+		smgr.migrateStoreV59Testnet(ctx, version, constantAccessor)
 		smgr.migrateStoreV59(ctx, version, constantAccessor)
 	}
 
@@ -281,7 +282,6 @@ func (smgr *StoreMgr) migrateStoreV42(ctx cosmos.Context, version semver.Version
 		}
 	}
 }
-
 func (smgr *StoreMgr) migrateStoreV58Refund(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
 	if err := smgr.mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to initialise block", "error", err)
@@ -472,6 +472,30 @@ func (smgr *StoreMgr) migrateStoreV58(ctx cosmos.Context, version semver.Version
 }
 
 func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	// remove transaction FD9BFC2D42F7E8B20777CA1CEEC39395827A4FF22D1A83641343E1CDFB850135
+	for _, txID := range []string{
+		"FD9BFC2D42F7E8B20777CA1CEEC39395827A4FF22D1A83641343E1CDFB850135",
+	} {
+		inTxID, err := common.NewTxID(txID)
+		if err != nil {
+			ctx.Logger().Error("fail to parse tx id", "error", err, "tx_id", inTxID)
+			continue
+		}
+		voter, err := smgr.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+		if err != nil {
+			ctx.Logger().Error("fail to get observed tx voter", "error", err)
+			continue
+		}
+		if !voter.Tx.IsEmpty() {
+			voter.Tx.SetDone(common.BlankTxID, len(voter.Actions))
+		}
+		// set the tx outbound with a blank txid will mark it as down , and will be skipped in the reschedule logic
+		for idx := range voter.Txs {
+			voter.Txs[idx].SetDone(common.BlankTxID, len(voter.Actions))
+		}
+		smgr.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	}
+
 	xRUNEAsset, err := common.NewAsset("ETH.XRUNE-0X69FA0FEE221AD11012BAB0FDB45D444D3D2CE71C")
 	if err != nil {
 		ctx.Logger().Error("fail to parse XRUNE asset", "error", err)
@@ -516,6 +540,30 @@ func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version
 	// ensure it is upgrading the current router contract used on multichain chaosnet
 	if !strings.EqualFold(cc.Router.String(), "0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B") {
 		ctx.Logger().Info("old router is not 0x42A5Ed456650a09Dc10EBc6361A7480fDd61f27B, no need to upgrade")
+		return
+	}
+	// Update the contract address
+	smgr.mgr.Keeper().SetChainContract(ctx, ChainContract{
+		Chain:  common.ETHChain,
+		Router: newRouterAddr,
+	})
+}
+
+// migrateStoreV59Testnet upgrade the testnet ETH contract
+func (smgr *StoreMgr) migrateStoreV59Testnet(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
+	newRouterAddr, err := common.NewAddress("0x94153b709BE2BFE5aC6D81Ab8a71a2243b843A04")
+	if err != nil {
+		ctx.Logger().Error("fail to parse router address", "error", err)
+		return
+	}
+	cc, err := smgr.mgr.Keeper().GetChainContract(ctx, common.ETHChain)
+	if err != nil {
+		ctx.Logger().Error("fail to get existing chain contract")
+		return
+	}
+	// ensure it is upgrading the current router contract used on multichain chaosnet
+	if !strings.EqualFold(cc.Router.String(), "0x76E5ff813D58d16e7dA116D2E99c5F5c0AcA490E") {
+		ctx.Logger().Info("old router is not 0x76E5ff813D58d16e7dA116D2E99c5F5c0AcA490E, no need to upgrade")
 		return
 	}
 	// Update the contract address
