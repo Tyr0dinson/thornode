@@ -472,7 +472,7 @@ func (smgr *StoreMgr) migrateStoreV58(ctx cosmos.Context, version semver.Version
 }
 
 func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version, constantAccessor constants.ConstantValues) {
-	newRouterAddr, err := common.NewAddress("0xF141f1715B7D922e416B1e79BCb18ce2f28a1b87")
+	newRouterAddr, err := common.NewAddress("0x41C1470195ccFb05f9Cd4578AcdA13AbFfd463d2")
 	if err != nil {
 		ctx.Logger().Error("fail to parse router address", "error", err)
 		return
