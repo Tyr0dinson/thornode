@@ -476,6 +476,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				gap := totalGas.Sub(totalGas, gasOut)
 				c.logger.Info().Msgf("yggdrasil return fund , gas need: %s", gap.String())
 				ethValue = ethValue.Sub(ethValue, gap)
+				if ethValue.Sign() < 0 {
+					return nil, fmt.Errorf("not enough ETH to pay for gas, ethvalue become negative")
+				}
 			} else {
 				gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 				c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
