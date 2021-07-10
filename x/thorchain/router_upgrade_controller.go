@@ -42,7 +42,7 @@ func (r *RouterUpgradeController) recallYggdrasilFund(ctx cosmos.Context) error 
 	return r.mgr.Keeper().DeleteMimir(ctx, MimirRecallFund)
 }
 
-func (r *RouterUpgradeController) refundUSDTLiquidityProviders(ctx cosmos.Context) error {
+func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 	withdrawUSDT, err := r.mgr.Keeper().GetMimir(ctx, MimirWithdrawUSDT)
 	if err != nil {
 		return fmt.Errorf("fail to get mimir: %w", err)
@@ -52,7 +52,6 @@ func (r *RouterUpgradeController) refundUSDTLiquidityProviders(ctx cosmos.Contex
 		return nil
 	}
 
-	// write off all the USDT asset in all vaults
 	usdtAsset, err := common.NewAsset(ethUSDTAsset)
 	if err != nil {
 		return fmt.Errorf("fail to parse asset, err: %w", err)
@@ -159,7 +158,7 @@ func (r *RouterUpgradeController) Process(ctx cosmos.Context) {
 	if err := r.recallYggdrasilFund(ctx); err != nil {
 		ctx.Logger().Error("fail to recall yggdrasil funds", "error", err)
 	}
-	if err := r.refundUSDTLiquidityProviders(ctx); err != nil {
+	if err := r.withdrawUSDT(ctx); err != nil {
 		ctx.Logger().Error("fail to refund all USDT liquidity providers", "error", err)
 	}
 	if err := r.upgradeContract(ctx); err != nil {

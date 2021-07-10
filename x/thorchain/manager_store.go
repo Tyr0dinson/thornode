@@ -513,16 +513,13 @@ func (smgr *StoreMgr) migrateStoreV59(ctx cosmos.Context, version semver.Version
 		if vault.IsEmpty() {
 			continue
 		}
-		hasChange := false
+
 		for idx, c := range vault.Coins {
 			if c.Asset.Equals(xRUNEAsset) {
 				vault.Coins[idx].Amount = cosmos.ZeroUint()
-				hasChange = true
-			}
-		}
-		if hasChange {
-			if err := smgr.mgr.Keeper().SetVault(ctx, vault); err != nil {
-				ctx.Logger().Error("fail to save vault", "error", err)
+				if err := smgr.mgr.Keeper().SetVault(ctx, vault); err != nil {
+					ctx.Logger().Error("fail to save vault", "error", err)
+				}
 			}
 		}
 	}
