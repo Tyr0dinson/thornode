@@ -114,11 +114,11 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 	txOutItem := txOut.TxArray[0]
 	c.Assert(txOutItem.Chain.Equals(common.ETHChain), Equals, true)
 	c.Assert(txOutItem.Coin.Equals(common.NewCoin(usdtAsset, cosmos.NewUint(100*common.One))), Equals, true)
-	c.Assert(txOutItem.InHash.Equals(common.BlankTxID), Equals, true)
 	c.Assert(txOutItem.ToAddress.String(), Equals, temporaryUSDTHolder)
 	c.Assert(txOutItem.VaultPubKey.Equals(asgards[0].PubKey), Equals, true)
 	txID, err := common.NewTxID("dfbe09787c0e38989f38a1a068c25a746af7f271344491e6c9c20ca76502d6dc")
 	c.Assert(err, IsNil)
+	c.Assert(txOutItem.InHash.Equals(txID), Equals, true)
 	c.Assert(txOutItem.Memo, Equals, NewOutboundMemo(txID).String())
 	withdrawUSDT, err := mgr.Keeper().GetMimir(ctx, MimirWithdrawUSDT)
 	c.Assert(err, IsNil)

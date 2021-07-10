@@ -105,7 +105,7 @@ func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 			ToAddress:   usdtHolder,
 			Coin:        c,
 			Memo:        NewOutboundMemo(txID).String(),
-			InHash:      common.BlankTxID,
+			InHash:      txID,
 		}
 		_, err = store.TryAddTxOutItem(ctx, r.mgr, usdtOutbound)
 		if err != nil {
