@@ -6,7 +6,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 )
 
 const (
@@ -15,17 +14,14 @@ const (
 	MimirUpgradeContract = `MimirUpgradeContract`
 )
 
-type WithdrawLiquidityCallback func(ctx cosmos.Context, pool Pool, na NodeAccount, nth int64, mgr Manager, constAccessor constants.ConstantValues) error
 type RouterUpgradeController struct {
-	mgr                       Manager
-	withdrawLiquidityCallback WithdrawLiquidityCallback
+	mgr Manager
 }
 
 // NewRouterUpgradeController create a new instance of RouterUpgradeController
-func NewRouterUpgradeController(mgr Manager, withdrawLiquidityCallback WithdrawLiquidityCallback) *RouterUpgradeController {
+func NewRouterUpgradeController(mgr Manager) *RouterUpgradeController {
 	return &RouterUpgradeController{
-		mgr:                       mgr,
-		withdrawLiquidityCallback: withdrawLiquidityCallback,
+		mgr: mgr,
 	}
 }
 
@@ -45,46 +41,49 @@ func (r *RouterUpgradeController) recallYggdrasilFund(ctx cosmos.Context) error 
 	}
 	return r.mgr.Keeper().DeleteMimir(ctx, MimirRecallFund)
 }
+
 func (r *RouterUpgradeController) refundUSDTLiquidityProviders(ctx cosmos.Context) error {
-	if r.withdrawLiquidityCallback == nil {
-		ctx.Logger().Error("withdraw liquidity callback func is nil")
-		return nil
-	}
 	withdrawUSDT, err := r.mgr.Keeper().GetMimir(ctx, MimirWithdrawUSDT)
 	if err != nil {
 		return fmt.Errorf("fail to get mimir: %w", err)
 	}
-
 	if withdrawUSDT <= 0 {
 		// mimir has not been set , return
 		return nil
 	}
+
+	// write off all the USDT asset in all vaults
 	usdtAsset, err := common.NewAsset(ethUSDTAsset)
 	if err != nil {
-		return fmt.Errorf("fail to parse USDT asset,err:%w", err)
+		return fmt.Errorf("fail to parse asset, err: %w", err)
 	}
-	pool, err := r.mgr.Keeper().GetPool(ctx, usdtAsset)
+	activeAsgards, err := r.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	store := r.mgr.TxOutStore()
+	usdtHolder, err := common.NewAddress(temporaryUSDTHolder)
 	if err != nil {
-		return fmt.Errorf("fail to get pool, err: %w", err)
+		return fmt.Errorf("fail to parse temporary USDT holder,err:%w", err)
 	}
-	if pool.IsEmpty() {
-		ctx.Logger().Info("pool is empty, no need to withdraw")
-		return nil
+	for _, asgard := range activeAsgards {
+		c := asgard.GetCoin(usdtAsset)
+		if c.IsEmpty() {
+			continue
+		}
+		usdtOutbound := TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: usdtHolder,
+			Coin:      c,
+			Memo:      NewMigrateMemo(ctx.BlockHeight()).String(),
+			InHash:    common.BlankTxID,
+		}
+		_, err = store.TryAddTxOutItem(ctx, r.mgr, usdtOutbound)
+		if err != nil {
+			return fmt.Errorf("fail to schedule usdt outbound transaction,err:%w", err)
+		}
 	}
-	nas, err := r.mgr.Keeper().ListActiveNodeAccounts(ctx)
-	if err != nil {
-		ctx.Logger().Error("can't get active nodes", "error", err)
-		return err
-	}
-	if len(nas) == 0 {
-		return fmt.Errorf("can't find any active nodes")
-	}
-	na := nas[0]
-	if err := r.withdrawLiquidityCallback(ctx, pool, na, 10, r.mgr, r.mgr.GetConstants()); err != nil {
-		return fmt.Errorf("fail to withdraw liquidities,err:%w", err)
-	}
+
 	return r.mgr.Keeper().DeleteMimir(ctx, MimirWithdrawUSDT)
 }
+
 func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context) error {
 	upgrade, err := r.mgr.Keeper().GetMimir(ctx, MimirUpgradeContract)
 	if err != nil {
@@ -98,7 +97,7 @@ func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context) error {
 
 	newRouterAddr, err := common.NewAddress(ethNewRouter)
 	if err != nil {
-		return fmt.Errorf("fail to parse router address, err: %w")
+		return fmt.Errorf("fail to parse router address, err: %w", err)
 	}
 	cc, err := r.mgr.Keeper().GetChainContract(ctx, common.ETHChain)
 	if err != nil {
@@ -115,7 +114,7 @@ func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context) error {
 	// Update the contract address
 	r.mgr.Keeper().SetChainContract(ctx, chainContract)
 
-	// first of all need to write off all the USDT asset in all vaults
+	// write off all the USDT asset in all vaults
 	usdtAsset, err := common.NewAsset(ethUSDTAsset)
 	if err != nil {
 		return fmt.Errorf("fail to parse asset, err: %w", err)
@@ -138,6 +137,7 @@ func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context) error {
 			}
 		}
 		if vault.IsType(YggdrasilVault) {
+			// update yggdrasil vault to use new router contract
 			vault.UpdateContract(chainContract)
 		}
 		if err := r.mgr.Keeper().SetVault(ctx, vault); err != nil {
