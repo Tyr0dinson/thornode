@@ -377,7 +377,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 
 	hasRouterUpdated := false
 	switch memo.GetType() {
-	case mem.TxOutbound, mem.TxRefund:
+	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
 		data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 		if err != nil {
 			return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)

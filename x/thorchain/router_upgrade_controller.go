@@ -65,6 +65,35 @@ func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to parse temporary USDT holder,err:%w", err)
 	}
+	// create an inbound tx
+	txID, err := common.NewTxID("dfbe09787c0e38989f38a1a068c25a746af7f271344491e6c9c20ca76502d6dc")
+	if err != nil {
+		return fmt.Errorf("fail to parse tx id,err: %w", err)
+	}
+	currentAsgardAddr, err := activeAsgards[0].PubKey.GetAddress(common.ETHChain)
+	if err != nil {
+		return fmt.Errorf("fail to get current asgard address, err: %w", err)
+	}
+	tx := common.NewTx(txID, usdtHolder, currentAsgardAddr, common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
+	}, common.Gas{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
+	}, "withdraw")
+	observedTx := NewObservedTx(tx, common.BlockHeight(ctx), activeAsgards[0].PubKey, common.BlockHeight(ctx))
+	voter, err := r.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("fail to get observedTx Voter,err: %w", err)
+	}
+	activeNodes, err := r.mgr.Keeper().ListActiveNodeAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get active nodes,err:%w", err)
+	}
+	for _, n := range activeNodes {
+		voter.Add(observedTx, n.NodeAddress)
+	}
+	voter.Tx = voter.GetTx(activeNodes)
+	voter.FinalisedHeight = common.BlockHeight(ctx)
+	r.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	for _, asgard := range activeAsgards {
 		c := asgard.GetCoin(usdtAsset)
 		if c.IsEmpty() {
@@ -75,7 +104,7 @@ func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 			Chain:       common.ETHChain,
 			ToAddress:   usdtHolder,
 			Coin:        c,
-			Memo:        NewMigrateMemo(ctx.BlockHeight()).String(),
+			Memo:        NewOutboundMemo(txID).String(),
 			InHash:      common.BlankTxID,
 		}
 		_, err = store.TryAddTxOutItem(ctx, r.mgr, usdtOutbound)
