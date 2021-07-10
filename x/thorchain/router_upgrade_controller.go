@@ -58,6 +58,9 @@ func (r *RouterUpgradeController) refundUSDTLiquidityProviders(ctx cosmos.Contex
 		return fmt.Errorf("fail to parse asset, err: %w", err)
 	}
 	activeAsgards, err := r.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active asgards, err:%w", err)
+	}
 	store := r.mgr.TxOutStore()
 	usdtHolder, err := common.NewAddress(temporaryUSDTHolder)
 	if err != nil {
@@ -69,11 +72,12 @@ func (r *RouterUpgradeController) refundUSDTLiquidityProviders(ctx cosmos.Contex
 			continue
 		}
 		usdtOutbound := TxOutItem{
-			Chain:     common.ETHChain,
-			ToAddress: usdtHolder,
-			Coin:      c,
-			Memo:      NewMigrateMemo(ctx.BlockHeight()).String(),
-			InHash:    common.BlankTxID,
+			VaultPubKey: asgard.PubKey,
+			Chain:       common.ETHChain,
+			ToAddress:   usdtHolder,
+			Coin:        c,
+			Memo:        NewMigrateMemo(ctx.BlockHeight()).String(),
+			InHash:      common.BlankTxID,
 		}
 		_, err = store.TryAddTxOutItem(ctx, r.mgr, usdtOutbound)
 		if err != nil {
@@ -150,7 +154,7 @@ func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context) error {
 }
 
 // Process is the main entry of router upgrade controller , it will recall yggdrasil fund , and refund all USDT liquidity , and then upgrade contract
-//  all these steps are controled by mimir
+//  all these steps are controlled by mimir
 func (r *RouterUpgradeController) Process(ctx cosmos.Context) {
 	if err := r.recallYggdrasilFund(ctx); err != nil {
 		ctx.Logger().Error("fail to recall yggdrasil funds", "error", err)
