@@ -106,7 +106,7 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return &cosmos.Result{}, fmt.Errorf("fail to get vault: %w", err)
 	}
-	const haltTradingKey = `HaltTrading`
+	haltTradingKey := fmt.Sprintf(`Halt%sTrading`, voter.Chain)
 	if !h.insolvencyCheck(ctx, vault, voter.Coins, voter.Chain) {
 		// here doesn't override HaltTrading when the vault is solvent
 		// in some case even the vault is solvent , the network might need to halt for some reasons
