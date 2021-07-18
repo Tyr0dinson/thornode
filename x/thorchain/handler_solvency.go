@@ -106,23 +106,32 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return &cosmos.Result{}, fmt.Errorf("fail to get vault: %w", err)
 	}
-	haltTradingKey := fmt.Sprintf(`Halt%sTrading`, voter.Chain)
+	const StopSolvencyCheckKey = `StopSolvencyCheck`
+	stopSolvencyCheck, err := h.mgr.Keeper().GetMimir(ctx, StopSolvencyCheckKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get mimir", "key", StopSolvencyCheckKey, "error", err)
+	}
+	if stopSolvencyCheck > 0 && stopSolvencyCheck < common.BlockHeight(ctx) {
+		return &cosmos.Result{}, nil
+	}
+
 	if !h.insolvencyCheck(ctx, vault, voter.Coins, voter.Chain) {
-		// here doesn't override HaltTrading when the vault is solvent
-		// in some case even the vault is solvent , the network might need to halt for some reasons
+		// here doesn't override HaltChain when the vault is solvent
+		// in some case even the vault is solvent , the network might need to halt
 		// Use mimir to enable it again
 		return &cosmos.Result{}, nil
 	}
-	haltTrading, err := h.mgr.Keeper().GetMimir(ctx, haltTradingKey)
+	haltChainKey := fmt.Sprintf(`Halt%sChain`, voter.Chain)
+	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)
 	}
-	if haltTrading > 0 && haltTrading < common.BlockHeight(ctx) {
+	if haltChain > 0 && haltChain < common.BlockHeight(ctx) {
 		// Trading already halt
 		return &cosmos.Result{}, nil
 	}
-	h.mgr.Keeper().SetMimir(ctx, haltTradingKey, 1)
-	ctx.Logger().Info("vault is insolvent, halt trading until it is resolved")
+	h.mgr.Keeper().SetMimir(ctx, haltChainKey, 1)
+	ctx.Logger().Info(fmt.Sprintf("%s is insolvent, halt chain until it is resolved", voter.Chain))
 	return &cosmos.Result{}, nil
 }
 
