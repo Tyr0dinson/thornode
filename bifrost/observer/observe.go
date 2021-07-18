@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -438,6 +439,17 @@ func (o *Observer) sendErrataTxToThorchain(height int64, txID common.TxID, chain
 }
 
 func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) error {
+	// TODO: the following version check can be removed once the network has been upgrade to 0.61.0 and beyond
+	// before the network get to 0.61.0 , it won't understand  how to process solvency messages
+	v, err := o.thorchainBridge.GetThorchainVersion()
+	if err != nil {
+		o.logger.Err(err).Msg("fail to get THORChain version")
+		return nil
+	}
+	if v.LT(semver.MustParse("0.61.0")) {
+		o.logger.Info().Msgf("THORChain version is %s , less than 0.61.0", v)
+		return nil
+	}
 	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
 	if err != nil {
 		return fmt.Errorf("failed to get node status: %w", err)
@@ -446,6 +458,7 @@ func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pub
 	if nodeStatus != stypes.NodeStatus_Active {
 		return nil
 	}
+
 	msg := o.thorchainBridge.GetSolvencyMsg(height, chain, pubKey, coins)
 	if msg == nil {
 		return fmt.Errorf("fail to create solvency message")
