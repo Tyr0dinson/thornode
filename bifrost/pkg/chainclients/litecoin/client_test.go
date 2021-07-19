@@ -175,6 +175,21 @@ func (s *LitecoinSuite) TestGetBlock(c *C) {
 }
 
 func (s *LitecoinSuite) TestFetchTxs(c *C) {
+	globalTxQueue := make(chan types.TxIn)
+	globalErrQueue := make(chan types.ErrataBlock)
+	globalSolvencyQueue := make(chan types.Solvency)
+	stopchan := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-globalSolvencyQueue:
+			case <-globalErrQueue:
+			case <-globalTxQueue:
+			case <-stopchan:
+				return
+			}
+		}
+	}()
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.LTCChain)
@@ -186,6 +201,7 @@ func (s *LitecoinSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Coins.Equals(common.Coins{common.NewCoin(common.LTCAsset, cosmos.NewUint(10000000))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.LTCAsset, cosmos.NewUint(22705334))}), Equals, true)
 	c.Assert(len(txs.TxArray), Equals, 102)
+	close(stopchan)
 }
 
 func (s *LitecoinSuite) TestGetSender(c *C) {
