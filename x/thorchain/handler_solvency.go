@@ -55,7 +55,7 @@ func (h SolvencyHandler) validateCurrent(ctx cosmos.Context, msg MsgSolvency) er
 	return nil
 }
 func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
-	ctx.Logger().Info("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
+	ctx.Logger().Info("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String(), "coins", msg.Coins.String(), "chain", msg.Chain)
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return h.handleV1(ctx, msg)
@@ -94,7 +94,7 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 	if !voter.HasConsensus(active) {
 		return &cosmos.Result{}, nil
 	}
-
+	ctx.Logger().Info("Solvency request reach consensus", "id", msg.Id.String(), "signer", msg.Signer.String(), "coins", msg.Coins.String(), "chain", msg.Chain)
 	// from this point , solvency reach consensus
 	if voter.ConsensusBlockHeight > 0 {
 		if (voter.ConsensusBlockHeight + observeFlex) >= common.BlockHeight(ctx) {
