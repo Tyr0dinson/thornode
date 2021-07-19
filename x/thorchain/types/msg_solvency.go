@@ -36,9 +36,6 @@ func (m *MsgSolvency) ValidateBasic() error {
 	if m.Id.IsEmpty() {
 		return cosmos.ErrUnknownRequest("invalid id")
 	}
-	if m.Coins.IsEmpty() {
-		return cosmos.ErrUnknownRequest("coins must be valid")
-	}
 	if m.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain can't be empty")
 	}

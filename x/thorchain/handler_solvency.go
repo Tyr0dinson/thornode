@@ -64,10 +64,16 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	return nil, errBadVersion
 }
 
+// handleV1 is the first implementation of MsgSolvency, the feature works like this
+// 1. Bifrost report MsgSolvency to thornode , which is the balance of asgard wallet on each individual chain
+// 2. once MsgSolvency reach consensus , then the network compare the wallet balance against wallet
+//    if wallet has less fund than asgard vault , and the gap is more than 1% , then the chain
+//    that is insolvent will be halt
+// 3. When chain is halt , bifrost will not observe inbound , and will not sign outbound txs until the issue has been investigated , and enabled it again using mimir
 func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	voter, err := h.mgr.Keeper().GetSolvencyVoter(ctx, msg.Id, msg.Chain)
 	if err != nil {
-		return &cosmos.Result{}, fmt.Errorf("fail to ")
+		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
 	}
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
@@ -130,7 +136,7 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 		// Trading already halt
 		return &cosmos.Result{}, nil
 	}
-	h.mgr.Keeper().SetMimir(ctx, haltChainKey, 1)
+	h.mgr.Keeper().SetMimir(ctx, haltChainKey, common.BlockHeight(ctx))
 	ctx.Logger().Info(fmt.Sprintf("%s is insolvent, halt chain until it is resolved", voter.Chain))
 	return &cosmos.Result{}, nil
 }

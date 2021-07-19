@@ -68,7 +68,7 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
-	// MsgSolvency will be support after 0.59.0
+	// MsgSolvency will be support after 0.61.0
 	m[MsgSolvency{}.Type()] = NewSolvencyHandler(mgr)
 	// TODO: uncomment this line once THORNames is deployed (post version
 	// 0.57.0). If this is done, gas is paid with deposit handler, so we'll
