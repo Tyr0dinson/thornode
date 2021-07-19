@@ -164,6 +164,7 @@ var (
 	NewTssKeysignMetric            = types.NewTssKeysignMetric
 	DefaultGenesis                 = types.DefaultGenesis
 	NewSolvencyVoter               = types.NewSolvencyVoter
+	NewMsgSolvency                 = types.NewMsgSolvency
 
 	// Memo
 	ParseMemo              = mem.ParseMemo

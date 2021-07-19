@@ -1,8 +1,6 @@
 package types
 
 import (
-	"fmt"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -75,5 +73,5 @@ func (m *SolvencyVoter) Empty() bool {
 
 // String implement fmt.Stinger , return a string representation of solvency tx voter
 func (m *SolvencyVoter) String() string {
-	return fmt.Sprintf("%s-%s", m.Chain, m.Id)
+	return m.Id.String()
 }
