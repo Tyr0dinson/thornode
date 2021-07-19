@@ -45,12 +45,6 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(voter.Empty(), Equals, false)
 
-	// second active node report solvency , it should be accepted
-	msgSolvency.Signer = activeNodes[1].NodeAddress
-	result, err = handler.Run(ctx, msgSolvency)
-	c.Assert(err, IsNil)
-	c.Assert(result, NotNil)
-
 	asgard := NewVault(1024, ActiveVault, AsgardVault, msgSolvency.PubKey, []string{
 		common.ETHChain.String(),
 		common.BTCChain.String(),
@@ -60,8 +54,15 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 	}, nil)
 	asgard.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
 	// second active node report solvency , it should be accepted
 	// reach consensus , vault is solvent , everything continues
+	msgSolvency.Signer = activeNodes[1].NodeAddress
+	result, err = handler.Run(ctx, msgSolvency)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// third active node report solvency , it should be accepted
 	msgSolvency.Signer = activeNodes[2].NodeAddress
 	result, err = handler.Run(ctx, msgSolvency)
 	c.Assert(err, IsNil)
@@ -75,13 +76,14 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 		),
 		1024,
 		GetRandomBech32Addr())
-	for i := 0; i < 2; i++ {
-		msgSolvency1.Signer = activeNodes[i].NodeAddress
-		result, err = handler.Run(ctx, msgSolvency1)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-	msgSolvency1.Signer = activeNodes[2].NodeAddress
+
+	msgSolvency1.Signer = activeNodes[0].NodeAddress
+	result, err = handler.Run(ctx, msgSolvency1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// minority , so the second voter should reach consensus
+	msgSolvency1.Signer = activeNodes[1].NodeAddress
 	result, err = handler.Run(ctx, msgSolvency1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -89,6 +91,7 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, ctx.BlockHeight())
 	mgr.Keeper().DeleteMimir(ctx, "HaltETHChain")
+
 	// vault suppose to have 1024 ETH, however only 1000 left , but there are 20 ETH in the pending outbound queue
 	// chain should not stopped
 	txOut := NewTxOut(ctx.BlockHeight())
@@ -111,13 +114,13 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 		),
 		1024,
 		GetRandomBech32Addr())
-	for i := 0; i < 2; i++ {
-		msgSolvency2.Signer = activeNodes[i].NodeAddress
-		result, err = handler.Run(ctx, msgSolvency2)
-		c.Assert(err, IsNil)
-		c.Assert(result, NotNil)
-	}
-	msgSolvency2.Signer = activeNodes[2].NodeAddress
+
+	msgSolvency2.Signer = activeNodes[0].NodeAddress
+	result, err = handler.Run(ctx, msgSolvency2)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	msgSolvency2.Signer = activeNodes[1].NodeAddress
 	result, err = handler.Run(ctx, msgSolvency2)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)

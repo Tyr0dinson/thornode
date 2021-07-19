@@ -57,7 +57,7 @@ func (m *SolvencyVoter) HasConsensus(nas NodeAccounts) bool {
 			count++
 		}
 	}
-	if HasSuperMajority(count, len(nas)) {
+	if HasMinority(count, len(nas)) {
 		return true
 	}
 	return false
