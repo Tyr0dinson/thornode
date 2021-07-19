@@ -51,7 +51,7 @@ func (MsgSolvencyTestSuite) TestMsgSolvency(c *C) {
 			coins:     common.NewCoins(),
 			height:    height,
 			signer:    signer,
-			expectErr: true,
+			expectErr: false,
 		},
 		{
 			name:      "invalid height should fail",
