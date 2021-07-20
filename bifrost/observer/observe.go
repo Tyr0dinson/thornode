@@ -446,8 +446,8 @@ func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pub
 		o.logger.Err(err).Msg("fail to get THORChain version")
 		return nil
 	}
-	if v.LT(semver.MustParse("0.61.0")) {
-		o.logger.Info().Msgf("THORChain version is %s , less than 0.61.0", v)
+	if v.LT(semver.MustParse("0.62.0")) {
+		o.logger.Info().Msgf("THORChain version is %s , less than 0.62.0", v)
 		return nil
 	}
 	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
