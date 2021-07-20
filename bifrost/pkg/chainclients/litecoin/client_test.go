@@ -191,6 +191,7 @@ func (s *LitecoinSuite) TestFetchTxs(c *C) {
 		}
 	}()
 	s.client.Start(globalTxQueue, globalErrQueue, globalSolvencyQueue)
+	defer s.client.Stop()
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.LTCChain)

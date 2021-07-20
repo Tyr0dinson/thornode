@@ -142,6 +142,7 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		}
 	}))
+
 	cfg.ChainHost = s.server.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, thorKeys)
 	c.Assert(err, IsNil)
@@ -191,6 +192,7 @@ func (s *BitcoinCashSuite) TestFetchTxs(c *C) {
 		}
 	}()
 	s.client.Start(globalTxQueue, globalErrQueue, globalSolvencyQueue)
+	defer s.client.Stop()
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.BCHChain)
