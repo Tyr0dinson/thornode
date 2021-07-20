@@ -164,6 +164,10 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 			ctx.Logger().Info("asset exist in vault , but not in wallet, insolvent", "asset", c.Asset.String(), "amount", c.Amount.String())
 			return true
 		}
+		//	The total amount of asset in asgard is not enough to justify the solvency check
+		if c.Amount.LTE(cosmos.NewUint(common.One)) {
+			continue
+		}
 		if c.Amount.GT(walletCoin.Amount) {
 			gap := c.Amount.Sub(walletCoin.Amount)
 			if gap.MulUint64(100).GT(walletCoin.Amount) {
