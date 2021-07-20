@@ -154,15 +154,21 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 		if !c.Asset.Chain.Equals(chain) {
 			continue
 		}
-
 		// ETH.RUNE will be burned on the way in , so the wallet will not have any, thus exclude it from solvency check
 		if c.Asset.IsRune() {
+			continue
+		}
+		if c.IsEmpty() {
 			continue
 		}
 		walletCoin := coins.GetCoin(c.Asset)
 		if walletCoin.IsEmpty() {
 			ctx.Logger().Info("asset exist in vault , but not in wallet, insolvent", "asset", c.Asset.String(), "amount", c.Amount.String())
 			return true
+		}
+		// if the given asset doesn't even have at least 1 in asgard , it is not worth to halt chain for it
+		if c.Amount.LTE(cosmos.NewUint(common.One)) {
+			continue
 		}
 		if c.Amount.GT(walletCoin.Amount) {
 			gap := c.Amount.Sub(walletCoin.Amount)
