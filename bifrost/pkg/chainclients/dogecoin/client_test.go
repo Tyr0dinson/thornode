@@ -190,6 +190,7 @@ func (s *DogecoinSuite) TestFetchTxs(c *C) {
 			}
 		}
 	}()
+	s.client.Start(globalTxQueue, globalErrQueue, globalSolvencyQueue)
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.DOGEChain)
