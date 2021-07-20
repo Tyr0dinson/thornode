@@ -166,10 +166,16 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 			ctx.Logger().Info("asset exist in vault , but not in wallet, insolvent", "asset", c.Asset.String(), "amount", c.Amount.String())
 			return true
 		}
-		// if the given asset doesn't even have at least 1 in asgard , it is not worth to halt chain for it
-		if c.Amount.LTE(cosmos.NewUint(common.One)) {
-			continue
+		if c.Asset.IsGasAsset() {
+			gas, err := h.mgr.GasMgr().GetMaxGas(ctx, c.Asset.GetChain())
+			if err != nil {
+				ctx.Logger().Error("fail to get max gas", "error", err)
+			} else if c.Amount.LTE(gas.Amount.MulUint64(2)) {
+				// if the amount left in asgard vault is not enough for 2 * max gas, then skip it from solvency check
+				continue
+			}
 		}
+
 		if c.Amount.GT(walletCoin.Amount) {
 			gap := c.Amount.Sub(walletCoin.Amount)
 			if gap.MulUint64(100).GT(walletCoin.Amount) {
