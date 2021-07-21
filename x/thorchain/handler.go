@@ -47,8 +47,8 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 }
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
-	if mgr.GetVersion().GTE(semver.MustParse("0.62.0")) {
-		return getHandlerMappingV62(mgr)
+	if mgr.GetVersion().GTE(semver.MustParse("0.63.0")) {
+		return getHandlerMappingV63(mgr)
 	}
 	return getHandlerMappingV1(mgr)
 }
@@ -74,7 +74,7 @@ func getHandlerMappingV1(mgr Manager) map[string]MsgHandler {
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
 	return m
 }
-func getHandlerMappingV62(mgr Manager) map[string]MsgHandler {
+func getHandlerMappingV63(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 
