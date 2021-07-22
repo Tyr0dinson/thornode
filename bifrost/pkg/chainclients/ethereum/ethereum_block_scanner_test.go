@@ -205,6 +205,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
+	whitelistSmartContractAddres = append(whitelistSmartContractAddres, "0x40bcd4dB8889a8Bf0b1391d0c819dcd9627f9d0a")
 	txIn, err := bs.FetchTxs(int64(1))
 	c.Assert(err, IsNil)
 	c.Check(len(txIn.TxArray), Equals, 1)
@@ -405,6 +406,10 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	})
+	// whitelist the address for test
+	whitelistSmartContractAddres = append(whitelistSmartContractAddres,
+		"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44",
+		"0x81a392e6a757d58a7eb6781a775a3449da3b9df5")
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	// smart contract - deposit via smart contract (transaction to != router)
