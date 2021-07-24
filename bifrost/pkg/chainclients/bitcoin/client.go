@@ -19,6 +19,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	types3 "gitlab.com/thorchain/thornode/bifrost/types"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
@@ -529,8 +530,8 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 	if err := g.Wait(); err != nil {
 		c.logger.Err(err).Msgf("fail to scan mempool")
 	}
-	if err := c.checkSolvency(txIn); err != nil {
-		return types.TxIn{}, fmt.Errorf("vault is insolvent,err: %w", err)
+	if err := c.updateLocalVaultBalance(txIn); err != nil {
+		c.logger.Err(err).Msg("fail to update local vault balance")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn, nil
@@ -1073,13 +1074,92 @@ func (c *Client) getVaultSignerLock(vaultPubKey string) *sync.Mutex {
 	}
 	return l
 }
-
-func (c *Client) checkSolvency(txs types.TxIn) error {
+func (c *Client) updateLocalVaultBalance(txs types.TxIn) error {
+	if len(txs.TxArray) == 0 {
+		return nil
+	}
+	// this method only deal with txs discovered in mempool
+	if !txs.MemPool {
+		return nil
+	}
+	c.logger.Info().Msgf("%+v", txs)
 	asgards, err := c.bridge.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards from thornode,err: %w", err)
 	}
+	for _, tx := range txs.TxArray {
+		// asgard outbound transactions
+		if c.isAsgardTxs(asgards, tx.Sender) {
+			fromAddr, err := common.NewAddress(tx.Sender)
+			if err != nil {
+				c.logger.Err(err).Msgf("fail to parse from address,from: %s", tx.To)
+				continue
+			}
 
+			vaultBalance, err := c.blockMetaAccessor.GetVaultBalance(c.GetChain(), fromAddr)
+			if err != nil {
+				c.logger.Err(err).Msg("fail to get vault balance")
+				continue
+			}
+			// whether the same transaction has been applied to current vault
+			if vaultBalance.HasTxID(common.TxID(tx.Tx)) {
+				continue
+			}
+
+			vaultBalance.Coins = vaultBalance.Coins.Subs(tx.Coins)
+			// deduct gas as well , for outbound
+			vaultBalance.Coins = vaultBalance.Coins.Subs(tx.Gas.ToCoins())
+			vaultBalance.Txs = append(vaultBalance.Txs, common.TxID(tx.Tx))
+			if err := c.blockMetaAccessor.SetVaultBalance(vaultBalance); err != nil {
+				c.logger.Err(err).Msg("fail to save vault balance")
+			}
+		}
+		// asgard internal transaction , migration or consolidation
+		// inbound self transaction can be credit to vault
+		if c.isSelfTransaction(tx.Tx) && c.isAsgardTxs(asgards, tx.To) {
+			if c.isAsgardTxs(asgards, tx.To) {
+				toAddr, err := common.NewAddress(tx.To)
+				if err != nil {
+					c.logger.Err(err).Msgf("fail to parse to address,to: %s", tx.To)
+					continue
+				}
+				vaultBalance, err := c.blockMetaAccessor.GetVaultBalance(c.GetChain(), toAddr)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to get vault balance")
+					continue
+				}
+				if vaultBalance.HasTxID(common.TxID(tx.Tx)) {
+					// the same transaction has been processed
+					continue
+				}
+				vaultBalance.Coins = vaultBalance.Coins.Adds(tx.Coins)
+				vaultBalance.Txs = append(vaultBalance.Txs, common.TxID(tx.Tx))
+				if err := c.blockMetaAccessor.SetVaultBalance(vaultBalance); err != nil {
+					c.logger.Err(err).Msg("fail to save vault balance")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// checkSolvency process transactions that have been committed to blocks
+// when vault is not solvent , it will return an errVaultInsolvent
+func (c *Client) checkSolvency(txs types.TxIn) error {
+	if len(txs.TxArray) == 0 {
+		return nil
+	}
+	if txs.MemPool {
+		return nil
+	}
+	c.logger.Info().Msgf("%+v", txs)
+	asgards, err := c.bridge.GetAsgards()
+	if err != nil {
+		return fmt.Errorf("fail to get asgards from thornode,err: %w", err)
+	}
+	// when transactions in a block cause the vault to insolvent , then the vault balance object will not be saved to key value store
+	// given this method will return errVaultInsolvent which will cause the block scanner to keep scanning the same block , until it is solvent again
+	inMemoryVaultBalance := make(map[common.Address]types3.VaultBalance)
 	for _, tx := range txs.TxArray {
 		toAddr, err := common.NewAddress(tx.To)
 		if err != nil {
@@ -1087,40 +1167,50 @@ func (c *Client) checkSolvency(txs types.TxIn) error {
 			continue
 		}
 		// inbound
+		// when inbound transaction is in mempool , don't add it to local vault balance
 		if c.isAsgardTxs(asgards, tx.To) {
-			vaultBalance, err := c.blockMetaAccessor.GetVaultBalance(c.GetChain(), toAddr)
-			if err != nil {
-				c.logger.Err(err).Msg("fail to get vault balance")
+			vaultBalance, ok := inMemoryVaultBalance[toAddr]
+			if !ok {
+				vaultBalance, err = c.blockMetaAccessor.GetVaultBalance(c.GetChain(), toAddr)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to get vault balance")
+					continue
+				}
+			}
+			if vaultBalance.HasTxID(common.TxID(tx.Tx)) {
 				continue
 			}
 			vaultBalance.Coins = vaultBalance.Coins.Adds(tx.Coins)
-			if err := c.blockMetaAccessor.SetVaultBalance(vaultBalance); err != nil {
-				c.logger.Err(err).Msg("fail to save vault balance")
-				continue
-			}
+			vaultBalance.Txs = append(vaultBalance.Txs, common.TxID(tx.Tx))
+			inMemoryVaultBalance[toAddr] = vaultBalance
 		}
 
-		// outbound
+		// outbound , there is a chance that the outbound transaction didn't observed in mempool ,and get committed to block quickly
 		if c.isAsgardTxs(asgards, tx.Sender) {
 			fromAddr, err := common.NewAddress(tx.Sender)
 			if err != nil {
 				c.logger.Err(err).Msgf("fail to parse from address,from: %s", tx.To)
 				continue
 			}
-			vaultBalance, err := c.blockMetaAccessor.GetVaultBalance(c.GetChain(), fromAddr)
-			if err != nil {
-				c.logger.Err(err).Msg("fail to get vault balance")
+			vaultBalance, ok := inMemoryVaultBalance[fromAddr]
+			if !ok {
+				vaultBalance, err = c.blockMetaAccessor.GetVaultBalance(c.GetChain(), fromAddr)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to get vault balance")
+					continue
+				}
+			}
+			if vaultBalance.HasTxID(common.TxID(tx.Tx)) {
 				continue
 			}
 			vaultBalance.Coins = vaultBalance.Coins.Subs(tx.Coins)
 			// deduct gas as well , for outbound
 			vaultBalance.Coins = vaultBalance.Coins.Subs(tx.Gas.ToCoins())
-			if err := c.blockMetaAccessor.SetVaultBalance(vaultBalance); err != nil {
-				c.logger.Err(err).Msg("fail to save vault balance")
-				continue
-			}
+			vaultBalance.Txs = append(vaultBalance.Txs, common.TxID(tx.Tx))
+			inMemoryVaultBalance[fromAddr] = vaultBalance
 		}
 	}
+
 	for _, v := range asgards {
 		account, err := c.GetAccount(v.PubKey)
 		if err != nil {
@@ -1133,10 +1223,13 @@ func (c *Client) checkSolvency(txs types.TxIn) error {
 			c.logger.Err(err).Msgf("fail to get address for pubkey: %s", v.PubKey)
 			continue
 		}
-		vaultBalance, err := c.blockMetaAccessor.GetVaultBalance(c.GetChain(), addr)
-		if err != nil {
-			c.logger.Err(err).Msgf("fail to get vault balance,address: %s", addr)
-			continue
+		vaultBalance, ok := inMemoryVaultBalance[addr]
+		if !ok {
+			vaultBalance, err = c.blockMetaAccessor.GetVaultBalance(c.GetChain(), addr)
+			if err != nil {
+				c.logger.Err(err).Msgf("fail to get vault balance,address: %s", addr)
+				continue
+			}
 		}
 		c.logger.Info().Msgf("account: %+v", account)
 		c.logger.Info().Msgf("vault balance: %+v", vaultBalance)
@@ -1145,11 +1238,18 @@ func (c *Client) checkSolvency(txs types.TxIn) error {
 				if !localCoin.Asset.Equals(walletCoin.Asset) {
 					continue
 				}
-				// TODO: Give a little bit flexible room
+				// TODO: need to give a little bit flexible room
 				if localCoin.Amount.GT(walletCoin.Amount) {
 					return fmt.Errorf("insolvent, asset: %s, local: %s , wallet: %s, err: %w", walletCoin.Asset, localCoin.Amount, walletCoin.Amount, errVaultInsolvent)
 				}
 			}
+		}
+	}
+
+	// Save the local vault balance to
+	for _, item := range inMemoryVaultBalance {
+		if err := c.blockMetaAccessor.SetVaultBalance(item); err != nil {
+			c.logger.Err(err).Msg("fail to save vault balance to key value store")
 		}
 	}
 	return nil
