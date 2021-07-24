@@ -98,6 +98,16 @@ func (c Coin) WithDecimals(decimal int64) Coin {
 	c.Decimals = decimal
 	return c
 }
+func (cs Coins) Sub(coin Coin) Coins {
+	for i, c := range cs {
+		if c.Asset.Equals(coin.Asset) {
+			cs[i].Amount = SafeSub(cs[i].Amount, coin.Amount)
+			return cs
+		}
+	}
+
+	return append(cs, coin)
+}
 
 // Valid check whether all the coins are valid , if not , then return an error
 func (cs Coins) Valid() error {
@@ -247,4 +257,10 @@ func (cs Coins) NoneEmpty() Coins {
 		newCoins = append(newCoins, item)
 	}
 	return newCoins
+}
+func (cs Coins) Subs(coins Coins) Coins {
+	for _, c := range coins {
+		cs = cs.Sub(c)
+	}
+	return cs
 }
