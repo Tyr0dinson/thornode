@@ -18,11 +18,15 @@ type ClientSolvencyChecker struct {
 
 // NewClientSolvencyChecker create a new instance of client solvency checker
 func NewClientSolvencyChecker(pubkeyMgr *pubkeymanager.PubKeyManager,
-	chains map[common.Chain]chainclients.ChainClient, storage *ObserverStorage) *ClientSolvencyChecker {
+	chains map[common.Chain]chainclients.ChainClient,
+	storage *ObserverStorage) *ClientSolvencyChecker {
 	return &ClientSolvencyChecker{
 		logger:    log.Logger.With().Str("module", "solvency_checker").Logger(),
 		pubkeyMgr: pubkeyMgr,
 		chains:    chains,
 		storage:   storage,
 	}
+	pubkeyMgr.RegisterCallback()
 }
+
+func()
