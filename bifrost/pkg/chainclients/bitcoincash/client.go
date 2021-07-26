@@ -71,6 +71,7 @@ type Client struct {
 	signerLock            *sync.Mutex
 	vaultSignerLocks      map[string]*sync.Mutex
 	consolidateInProgress bool
+	solvencyChecker       *blockscanner.SolvencyChecker
 }
 
 // NewClient generates a new Client
@@ -147,7 +148,11 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server 
 		return c, fmt.Errorf("fail to create utxo accessor: %w", err)
 	}
 	c.blockMetaAccessor = dbAccessor
-
+	solvencyChecker, err := blockscanner.NewSolvencyChecker(bridge, common.BCHChain, storage, c.GetAccountWithHeight)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create solvency checker: err: %w", err)
+	}
+	c.solvencyChecker = solvencyChecker
 	if err := c.registerAddressInWalletAsWatch(c.nodePubKey); err != nil {
 		return nil, fmt.Errorf("fail to register (%s): %w", c.nodePubKey, err)
 	}
@@ -241,6 +246,11 @@ func (c *Client) GetAccount(pkey common.PubKey) (common.Account, error) {
 	return common.NewAccount(0, 0, common.Coins{
 		common.NewCoin(common.BCHAsset, cosmos.NewUint(uint64(totalAmt))),
 	}, false), nil
+}
+
+// GetAccountWithHeight get the account balance at the given block height
+func (c *Client) GetAccountWithHeight(height int64, pkey common.PubKey) (common.Account, error) {
+	return c.GetAccount(pkey)
 }
 
 func (c *Client) GetAccountByAddress(string) (common.Account, error) {
@@ -521,6 +531,9 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 	if err := g.Wait(); err != nil {
 		c.logger.Err(err).Msgf("fail to scan mempool")
 	}
+	if err := c.solvencyChecker.UpdateMemPool(txIn); err != nil {
+		c.logger.Err(err).Msg("fail to update local vault balance")
+	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn, nil
 }
@@ -597,8 +610,12 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if err := c.sendNetworkFee(height); err != nil {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
-	if err := c.reportSolvency(height); err != nil {
-		c.logger.Err(err).Msg("fail to send solvency to THORChain")
+	if err := c.solvencyChecker.CheckSolvency(txIn); err != nil {
+		// report solvency when local detect vault is insolvent
+		if err := c.reportSolvency(height); err != nil {
+			c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
+		}
+		return types.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	if !c.consolidateInProgress {

@@ -151,8 +151,11 @@ func NewClient(thorKeys *thorclient.Keys,
 	if err != nil {
 		return c, fmt.Errorf("fail to create blockscanner storage: %w", err)
 	}
-
-	c.ethScanner, err = NewETHScanner(c.cfg.BlockScanner, storage, chainID, c.client, c.bridge, m, pubkeyMgr, c.reportSolvency)
+	solvencyChecker, err := blockscanner.NewSolvencyChecker(bridge, common.ETHChain, storage, c.GetAccountWithHeight)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create solvency checker: err: %w", err)
+	}
+	c.ethScanner, err = NewETHScanner(c.cfg.BlockScanner, storage, chainID, c.client, c.bridge, m, pubkeyMgr, c.reportSolvency, solvencyChecker)
 	if err != nil {
 		return c, fmt.Errorf("fail to create eth block scanner: %w", err)
 	}
@@ -542,7 +545,7 @@ func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height i
 }
 
 // GetBalance call smart contract to find out the balance of the given address and token
-func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
+func (c *Client) GetBalance(addr, token string, height int64) (*big.Int, error) {
 	ctx, cancel := c.getContext()
 	defer cancel()
 	if IsETH(token) {
@@ -558,11 +561,15 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 	}
 	c.logger.Debug().Msgf("query contract:%s for balance", contractAddresses[0].String())
 	toAddr := ecommon.HexToAddress(contractAddresses[0].String())
+	var blockNumber *big.Int
+	if height > 0 {
+		blockNumber = big.NewInt(height)
+	}
 	res, err := c.client.CallContract(ctx, ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
 		To:   &toAddr,
 		Data: input,
-	}, nil)
+	}, blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +582,7 @@ func (c *Client) GetBalance(addr, token string) (*big.Int, error) {
 }
 
 // GetBalances gets all the balances of the given address
-func (c *Client) GetBalances(addr string) (common.Coins, error) {
+func (c *Client) GetBalances(addr string, height int64) (common.Coins, error) {
 	// for all the tokens , this chain client have deal with before
 	tokens, err := c.ethScanner.GetTokens()
 	if err != nil {
@@ -583,7 +590,7 @@ func (c *Client) GetBalances(addr string) (common.Coins, error) {
 	}
 	coins := common.Coins{}
 	for _, token := range tokens {
-		balance, err := c.GetBalance(addr, token.Address)
+		balance, err := c.GetBalance(addr, token.Address, height)
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get balance for token:%s", token.Address)
 			continue
@@ -609,7 +616,7 @@ func (c *Client) GetAccount(pk common.PubKey) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins, err := c.GetBalances(addr)
+	coins, err := c.GetBalances(addr, 0)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -623,7 +630,22 @@ func (c *Client) GetAccountByAddress(address string) (common.Account, error) {
 	if err != nil {
 		return common.Account{}, err
 	}
-	coins, err := c.GetBalances(address)
+	coins, err := c.GetBalances(address, 0)
+	if err != nil {
+		return common.Account{}, err
+	}
+	account := common.NewAccount(int64(nonce), 0, coins, false)
+	return account, nil
+}
+
+// GetAccountWithHeight get the account balance on the given block height
+func (c *Client) GetAccountWithHeight(height int64, pk common.PubKey) (common.Account, error) {
+	addr := c.GetAddress(pk)
+	nonce, err := c.GetNonce(addr)
+	if err != nil {
+		return common.Account{}, err
+	}
+	coins, err := c.GetBalances(addr, height)
 	if err != nil {
 		return common.Account{}, err
 	}

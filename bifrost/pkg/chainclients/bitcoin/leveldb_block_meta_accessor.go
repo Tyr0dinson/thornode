@@ -2,22 +2,18 @@ package bitcoin
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	"gitlab.com/thorchain/thornode/bifrost/types"
-	"gitlab.com/thorchain/thornode/common"
 )
 
 // PrefixUTXOStorage declares prefix to use in leveldb to avoid conflicts
 const (
-	TransactionFeeKey     = "transactionfee-"
-	PrefixBlockMeta       = `blockmeta-`
-	PrefixMempool         = "mempool-"
-	PrefixObservedTx      = "observed-"
-	PrefixVaultBalanceKey = "vault-balance"
+	TransactionFeeKey = "transactionfee-"
+	PrefixBlockMeta   = `blockmeta-`
+	PrefixMempool     = "mempool-"
+	PrefixObservedTx  = "observed-"
 )
 
 // LevelDBBlockMetaAccessor struct
@@ -190,38 +186,4 @@ func (t *LevelDBBlockMetaAccessor) TryAddToObservedTxCache(hash string) (bool, e
 func (t *LevelDBBlockMetaAccessor) RemoveObservedTxCache(hash string) error {
 	key := t.getObservedTxHashKey(hash)
 	return t.db.Delete([]byte(key), nil)
-}
-
-// SetVaultBalance save the given vault balance to key value store
-func (t *LevelDBBlockMetaAccessor) SetVaultBalance(bal types.VaultBalance) error {
-	key := t.getVaultBalanceKey(bal.Chain, bal.Address)
-	buf, err := json.Marshal(bal)
-	if err != nil {
-		return fmt.Errorf("fail to marshal vault balance,err: %w", err)
-	}
-	return t.db.Put([]byte(key), buf, nil)
-}
-
-// GetVaultBalance get vault balance from local key value store
-func (t *LevelDBBlockMetaAccessor) GetVaultBalance(chain common.Chain, address common.Address) (types.VaultBalance, error) {
-	bal := types.VaultBalance{
-		Chain:   chain,
-		Address: address,
-		Coins:   common.Coins{},
-	}
-	key := t.getVaultBalanceKey(chain, address)
-	buf, err := t.db.Get([]byte(key), nil)
-	if err != nil {
-		if errors.Is(err, leveldb.ErrNotFound) {
-			return bal, nil
-		}
-		return bal, fmt.Errorf("fail to get vault balance from key value store,err:%w", err)
-	}
-	if err := json.Unmarshal(buf, &bal); err != nil {
-		return bal, fmt.Errorf("fail to unmarshal vault balance,err: %w", err)
-	}
-	return bal, nil
-}
-func (t *LevelDBBlockMetaAccessor) getVaultBalanceKey(chain common.Chain, address common.Address) string {
-	return fmt.Sprintf("%s-%s-%s", PrefixVaultBalanceKey, chain, address)
 }

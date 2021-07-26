@@ -76,6 +76,7 @@ type ETHScanner struct {
 	currentBlockHeight   int64
 	gasCache             []*big.Int
 	solvencyReporter     SolvencyReporter
+	solvencyChecker      *blockscanner.SolvencyChecker
 }
 
 // NewETHScanner create a new instance of ETHScanner
@@ -86,7 +87,8 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 	bridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	solvencyReporter SolvencyReporter) (*ETHScanner, error) {
+	solvencyReporter SolvencyReporter,
+	solvencyChecker *blockscanner.SolvencyChecker) (*ETHScanner, error) {
 	if storage == nil {
 		return nil, errors.New("storage is nil")
 	}
@@ -134,6 +136,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 		solvencyReporter:     solvencyReporter,
+		solvencyChecker:      solvencyChecker,
 	}, nil
 }
 
@@ -216,9 +219,14 @@ func (e *ETHScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 			}
 		}
 	}
-	if e.solvencyReporter != nil {
-		if err := e.solvencyReporter(height); err != nil {
-			e.logger.Err(err).Msg("fail to report Solvency info to THORNode")
+	if e.solvencyChecker != nil {
+		if err := e.solvencyChecker.CheckSolvency(txIn); err != nil {
+			if e.solvencyReporter != nil {
+				if err := e.solvencyReporter(height); err != nil {
+					e.logger.Err(err).Msg("fail to report Solvency info to THORNode")
+				}
+			}
+			return stypes.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
 		}
 	}
 	return txIn, nil

@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,8 +108,12 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
+	solvencyChecker, err := blockscanner.NewSolvencyChecker(thorchainBridge, common.BNBChain, b.storage, b.GetAccountWithHeight)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create solvency checker: err: %w", err)
+	}
 
-	b.bnbScanner, err = NewBinanceBlockScanner(b.cfg.BlockScanner, b.storage, b.isTestNet, b.thorchainBridge, m, b.reportSolvency)
+	b.bnbScanner, err = NewBinanceBlockScanner(b.cfg.BlockScanner, b.storage, b.isTestNet, b.thorchainBridge, m, b.reportSolvency, solvencyChecker)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create block scanner: %w", err)
 	}
@@ -398,16 +403,21 @@ func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common
 }
 
 func (b *Binance) GetAccount(pkey common.PubKey) (common.Account, error) {
+	return b.GetAccountAtHeight(pkey, 0)
+}
+func (b *Binance) GetAccountAtHeight(pkey common.PubKey, height int64) (common.Account, error) {
 	addr := b.GetAddress(pkey)
 	address, err := types.AccAddressFromBech32(addr)
 	if err != nil {
 		b.logger.Error().Err(err).Msgf("fail to get parse address: %s", addr)
 		return common.Account{}, err
 	}
-	return b.GetAccountByAddress(address.String())
+	return b.GetAccountByAddressWithHeight(address.String(), height)
 }
-
 func (b *Binance) GetAccountByAddress(address string) (common.Account, error) {
+	return b.GetAccountByAddressWithHeight(address, 0)
+}
+func (b *Binance) GetAccountByAddressWithHeight(address string, height int64) (common.Account, error) {
 	u, err := url.Parse(b.cfg.RPCHost)
 	if err != nil {
 		log.Fatal().Msgf("Error parsing rpc (%s): %s", b.cfg.RPCHost, err)
@@ -416,6 +426,9 @@ func (b *Binance) GetAccountByAddress(address string) (common.Account, error) {
 	u.Path = "/abci_query"
 	v := u.Query()
 	v.Set("path", fmt.Sprintf("\"/account/%s\"", address))
+	if height > 0 {
+		v.Set("height", strconv.FormatInt(height, 10))
+	}
 	u.RawQuery = v.Encode()
 
 	resp, err := http.Get(u.String())
@@ -468,6 +481,11 @@ func (b *Binance) GetAccountByAddress(address string) (common.Account, error) {
 	}
 	account := common.NewAccount(acc.BaseAccount.Sequence, acc.BaseAccount.AccountNumber, coins, acc.Flags > 0)
 	return account, nil
+}
+
+// GetAccountWithHeight get the account balance at the given block height
+func (b *Binance) GetAccountWithHeight(height int64, pkey common.PubKey) (common.Account, error) {
+	return b.GetAccountAtHeight(pkey, height)
 }
 
 // BroadcastTx is to broadcast the tx to binance chain

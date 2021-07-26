@@ -1,10 +1,5 @@
 package bitcoin
 
-import (
-	"gitlab.com/thorchain/thornode/bifrost/types"
-	"gitlab.com/thorchain/thornode/common"
-)
-
 type PruneBlockMetaCallback func(meta *BlockMeta) bool
 
 // BlockMetaAccessor define methods need to access block meta storage
@@ -19,6 +14,4 @@ type BlockMetaAccessor interface {
 	RemoveFromMemPoolCache(hash string) error
 	TryAddToObservedTxCache(hash string) (bool, error)
 	RemoveObservedTxCache(hash string) error
-	GetVaultBalance(chain common.Chain, address common.Address) (types.VaultBalance, error)
-	SetVaultBalance(bal types.VaultBalance) error
 }

@@ -48,6 +48,7 @@ type BinanceBlockScanner struct {
 	multiFee         uint64
 	bridge           *thorclient.ThorchainBridge
 	solvencyReporter SolvencyReporter
+	solvencyChecker  *blockscanner.SolvencyChecker
 }
 
 // NewBinanceBlockScanner create a new instance of BlockScan
@@ -55,7 +56,9 @@ func NewBinanceBlockScanner(cfg config.BlockScannerConfiguration,
 	scanStorage blockscanner.ScannerStorage,
 	isTestNet bool,
 	bridge *thorclient.ThorchainBridge,
-	m *metrics.Metrics, solvencyReporter SolvencyReporter) (*BinanceBlockScanner, error) {
+	m *metrics.Metrics,
+	solvencyReporter SolvencyReporter,
+	solvencyChecker *blockscanner.SolvencyChecker) (*BinanceBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
 	}
@@ -80,6 +83,7 @@ func NewBinanceBlockScanner(cfg config.BlockScannerConfiguration,
 		http:             netClient,
 		bridge:           bridge,
 		solvencyReporter: solvencyReporter,
+		solvencyChecker:  solvencyChecker,
 	}, nil
 }
 
@@ -365,9 +369,14 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	if err := b.db.RemoveBlockStatus(block.Height); err != nil {
 		b.logger.Error().Err(err).Int64("block", block.Height).Msg("fail to remove block status from data store, thus block will be re processed")
 	}
-	if b.solvencyReporter != nil {
-		if err := b.solvencyReporter(height); err != nil {
-			b.logger.Err(err).Msg("fail to report solvency to THORChain")
+	if b.solvencyChecker != nil {
+		if err := b.solvencyChecker.CheckSolvency(txIn); err != nil {
+			if b.solvencyReporter != nil {
+				if err := b.solvencyReporter(height); err != nil {
+					b.logger.Err(err).Msg("fail to report solvency to THORChain")
+				}
+			}
+			return stypes.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
 		}
 	}
 	return txIn, nil
