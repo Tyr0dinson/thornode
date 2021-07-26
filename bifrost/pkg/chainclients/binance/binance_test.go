@@ -341,3 +341,17 @@ func getTxOutFromJsonInput(input string, c *C) types.TxOut {
 	c.Check(err, IsNil)
 	return txOut
 }
+
+// func(s *BinancechainSuite) TestGetAccountBalance(c *C){
+// 	b2, err2 := NewBinance(s.thorKeys, config.ChainConfiguration{
+// 		RPCHost: "https://dataseed1.defibit.io",
+// 		BlockScanner: config.BlockScannerConfiguration{
+// 			StartBlockHeight: 1, // avoids querying thorchain for block height
+// 		},
+// 	}, nil, s.bridge, s.m)
+// 	c.Assert(err2, IsNil)
+// 	c.Assert(b2, NotNil)
+// 	acct,err := b2.GetAccountByAddressWithHeight("bnb1qefsjm654cdw94ejj8g4s49w7z8te75veslusz",1024)
+// 	c.Assert(err,IsNil)
+// 	c.Logf("%+v",acct)
+// }

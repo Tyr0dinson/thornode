@@ -100,9 +100,9 @@ func (sc *SolvencyChecker) updateLocalVaultBalance(txs types.TxIn, asgards ttype
 		isFromAsgard := false
 		// asgard outbound transactions
 		if sc.isAsgardTxs(asgards, tx.Sender) {
-			fromAddr, err := common.NewAddress(tx.Sender)
+			fromAddr, err := common.NewAddress(strings.ToLower(tx.Sender))
 			if err != nil {
-				sc.logger.Err(err).Msgf("fail to parse from address,from: %s", tx.To)
+				sc.logger.Err(err).Msgf("fail to parse from address,from: %s", strings.ToLower(tx.Sender))
 				continue
 			}
 			vaultBalance, ok := inMemoryVaultBalance[fromAddr]
@@ -129,9 +129,9 @@ func (sc *SolvencyChecker) updateLocalVaultBalance(txs types.TxIn, asgards ttype
 		// asgard internal transaction , migration or consolidation
 		// inbound self transaction can be credit to vault
 		if (isFromAsgard || !txs.MemPool) && sc.isAsgardTxs(asgards, tx.To) {
-			toAddr, err := common.NewAddress(tx.To)
+			toAddr, err := common.NewAddress(strings.ToLower(tx.To))
 			if err != nil {
-				sc.logger.Err(err).Msgf("fail to parse to address,to: %s", tx.To)
+				sc.logger.Err(err).Msgf("fail to parse to address,to: %s", strings.ToLower(tx.To))
 				continue
 			}
 			vaultBalance, ok := inMemoryVaultBalance[toAddr]
@@ -194,6 +194,8 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 		sc.logger.Info().Msgf("account: %+v", account)
 		sc.logger.Info().Msgf("local vault balance: %+v", vaultBalance)
 		for _, walletCoin := range account.Coins {
+			// if an asset exist in wallet , but doesn't exist in local vault balance , that should be ok
+			// if an asset exist in wallet, and exist in local vault balance , but local has more than wallet, which means there might be fake transactions
 			exist := false
 			for _, localCoin := range vaultBalance.Coins {
 				if !localCoin.Asset.Equals(walletCoin.Asset) {
@@ -205,8 +207,8 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 					return fmt.Errorf("insolvent, asset: %s, local: %s , wallet: %s, err: %w", walletCoin.Asset, localCoin.Amount, walletCoin.Amount, ErrVaultInsolvent)
 				}
 			}
-			if !exist {
-				return fmt.Errorf("insolvent, asset: %s, local: %s , wallet: %s, err: %w", walletCoin.Asset, "0", walletCoin.Amount, ErrVaultInsolvent)
+			if !exist && !walletCoin.Amount.IsZero() {
+				sc.logger.Info().Msgf("asset: %s, exist in wallet ,amount: %s , but not in local vault balance", walletCoin.Asset, walletCoin.Amount.String())
 			}
 		}
 	}

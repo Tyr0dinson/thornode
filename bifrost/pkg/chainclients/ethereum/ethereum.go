@@ -548,8 +548,12 @@ func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height i
 func (c *Client) GetBalance(addr, token string, height int64) (*big.Int, error) {
 	ctx, cancel := c.getContext()
 	defer cancel()
+	var blockNumber *big.Int
+	if height > 0 {
+		blockNumber = big.NewInt(height)
+	}
 	if IsETH(token) {
-		return c.client.BalanceAt(ctx, ecommon.HexToAddress(addr), nil)
+		return c.client.BalanceAt(ctx, ecommon.HexToAddress(addr), blockNumber)
 	}
 	contractAddresses := c.pubkeyMgr.GetContracts(common.ETHChain)
 	if len(contractAddresses) == 0 {
@@ -561,10 +565,6 @@ func (c *Client) GetBalance(addr, token string, height int64) (*big.Int, error) 
 	}
 	c.logger.Debug().Msgf("query contract:%s for balance", contractAddresses[0].String())
 	toAddr := ecommon.HexToAddress(contractAddresses[0].String())
-	var blockNumber *big.Int
-	if height > 0 {
-		blockNumber = big.NewInt(height)
-	}
 	res, err := c.client.CallContract(ctx, ethereum.CallMsg{
 		From: ecommon.HexToAddress(addr),
 		To:   &toAddr,

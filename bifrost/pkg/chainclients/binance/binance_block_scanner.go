@@ -369,16 +369,16 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	if err := b.db.RemoveBlockStatus(block.Height); err != nil {
 		b.logger.Error().Err(err).Int64("block", block.Height).Msg("fail to remove block status from data store, thus block will be re processed")
 	}
-	if b.solvencyChecker != nil {
-		if err := b.solvencyChecker.CheckSolvency(txIn); err != nil {
-			if b.solvencyReporter != nil {
-				if err := b.solvencyReporter(height); err != nil {
-					b.logger.Err(err).Msg("fail to report solvency to THORChain")
-				}
-			}
-			return stypes.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
+	// if b.solvencyChecker != nil {
+	// 	if err := b.solvencyChecker.CheckSolvency(txIn); err != nil {
+	if b.solvencyReporter != nil {
+		if err := b.solvencyReporter(height); err != nil {
+			b.logger.Err(err).Msg("fail to report solvency to THORChain")
 		}
 	}
+	// 		return stypes.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
+	// 	}
+	// }
 	return txIn, nil
 }
 
