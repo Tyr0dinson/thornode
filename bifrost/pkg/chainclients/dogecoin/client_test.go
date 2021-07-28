@@ -175,23 +175,6 @@ func (s *DogecoinSuite) TestGetBlock(c *C) {
 }
 
 func (s *DogecoinSuite) TestFetchTxs(c *C) {
-	globalTxQueue := make(chan types.TxIn)
-	globalErrQueue := make(chan types.ErrataBlock)
-	globalSolvencyQueue := make(chan types.Solvency)
-	stopchan := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-globalSolvencyQueue:
-			case <-globalErrQueue:
-			case <-globalTxQueue:
-			case <-stopchan:
-				return
-			}
-		}
-	}()
-	s.client.Start(globalTxQueue, globalErrQueue, globalSolvencyQueue)
-	defer s.client.Stop()
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.DOGEChain)
@@ -203,7 +186,6 @@ func (s *DogecoinSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Coins.Equals(common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(4072503))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(11083355))}), Equals, true)
 	c.Assert(len(txs.TxArray), Equals, 1)
-	close(stopchan)
 }
 
 func (s *DogecoinSuite) TestGetSender(c *C) {
