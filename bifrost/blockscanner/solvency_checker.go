@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	btypes "gitlab.com/thorchain/thornode/bifrost/types"
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -203,8 +204,8 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 					continue
 				}
 				exist = true
-				// TODO: need to give a little bit flexible room
-				if localCoin.Amount.GT(walletCoin.Amount) {
+				gap := common.SafeSub(localCoin.Amount, walletCoin.Amount)
+				if gap.GTE(cosmos.NewUint(common.One)) {
 					return fmt.Errorf("insolvent, asset: %s, local: %s , wallet: %s, err: %w", walletCoin.Asset, localCoin.Amount, walletCoin.Amount, ErrVaultInsolvent)
 				}
 			}
