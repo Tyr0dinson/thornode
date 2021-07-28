@@ -8,6 +8,7 @@ const (
 	MaxCacheItem = 1024
 )
 
+// VaultBalance is a structure to keep track of how much fund a vault should have locally in bifrost
 type VaultBalance struct {
 	Chain   common.Chain   `json:"chain"`
 	Address common.Address `json:"address"`
@@ -17,6 +18,9 @@ type VaultBalance struct {
 
 // AddTxID add a tx id to the vault balance
 func (vb *VaultBalance) AddTxID(txID common.TxID) {
+	if vb.HasTxID(txID) {
+		return
+	}
 	vb.Txs = append(vb.Txs, txID)
 	if len(vb.Txs) > MaxCacheItem {
 		vb.Txs = vb.Txs[len(vb.Txs)-MaxCacheItem:]

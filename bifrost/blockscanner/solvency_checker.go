@@ -25,7 +25,6 @@ type VaultBalanceStorageAccessor interface {
 	SetVaultBalance(bal btypes.VaultBalance) error
 }
 
-// TODO: when bifrost restart , how to initialize vault balance?
 // TODO: Update SolvencyChecker to an interface, so it can be mocked and tested
 
 // SolvencyChecker is client side solvency checker ,which is doing a book keeping on the chain client level
@@ -142,7 +141,9 @@ func (sc *SolvencyChecker) updateLocalVaultBalance(txs types.TxIn, asgards ttype
 					continue
 				}
 			}
-			if vaultBalance.HasTxID(common.TxID(tx.Tx)) {
+			// for consolidation , both sender & to address is the same asgard address
+			// the amount has been deducted above, here need to add it back
+			if tx.Sender != tx.To && vaultBalance.HasTxID(common.TxID(tx.Tx)) {
 				continue
 			}
 			vaultBalance.Coins = vaultBalance.Coins.Adds(tx.Coins)
@@ -234,4 +235,36 @@ func (sc *SolvencyChecker) isAsgardTxs(asgards ttypes.Vaults, address string) bo
 		}
 	}
 	return false
+}
+
+// RestoreVaultBalanceFromAsgard when bifrost restart, or bifrost stopped for a while and start up again
+// it will jump start from where the network's last observation height.  In that case , quite some transactions have been skipped
+// by local node , thus it need to trust the balance in Asgard
+func (sc *SolvencyChecker) RestoreVaultBalanceFromAsgard() error {
+	sc.lock.Lock()
+	defer sc.lock.Unlock()
+	sc.logger.Info().Msg("block scanner jump start , restore vault balance from asgard")
+	asgards, err := sc.bridge.GetAsgards()
+	if err != nil {
+		return fmt.Errorf("fail to get asgards from thornode,err: %w", err)
+	}
+	for _, vault := range asgards {
+		addr, err := vault.PubKey.GetAddress(sc.chain)
+		if err != nil {
+			sc.logger.Err(err).Msgf("fail to get  address for pub key: %s", vault.PubKey)
+			continue
+		}
+		vaultBalance, err := sc.storage.GetVaultBalance(sc.chain, addr)
+		if err != nil {
+			sc.logger.Err(err).Msg("fail to get vault balance from key value store")
+			continue
+		}
+		// override the vault balance coins locally with those in asgard
+		vaultBalance.Coins = vault.Coins
+		if err := sc.storage.SetVaultBalance(vaultBalance); err != nil {
+			sc.logger.Err(err).Msg("fail to save value balance to local key value store")
+			continue
+		}
+	}
+	return nil
 }

@@ -130,7 +130,7 @@ func NewBinance(thorKeys *thorclient.Keys, cfg config.ChainConfiguration, server
 func (b *Binance) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
 	b.globalSolvencyQueue = globalSolvencyQueue
 	b.tssKeyManager.Start()
-	b.blockScanner.Start(globalTxsQueue)
+	b.blockScanner.Start(globalTxsQueue, nil)
 }
 
 // Stop Binance chain client

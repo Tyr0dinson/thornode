@@ -169,7 +169,11 @@ func (c *Client) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan ty
 	c.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.blockScanner.Start(globalTxsQueue, func(height int64) {
+		if err := c.solvencyChecker.RestoreVaultBalanceFromAsgard(); err != nil {
+			c.logger.Err(err).Msg("fail to restore vault balance from asgard")
+		}
+	})
 }
 
 // Stop stops the block scanner

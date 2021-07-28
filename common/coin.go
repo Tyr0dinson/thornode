@@ -98,6 +98,9 @@ func (c Coin) WithDecimals(decimal int64) Coin {
 	c.Decimals = decimal
 	return c
 }
+
+// Sub subtract the given coin & amount from the coins
+// if the given coin doesn't exist , then it will not do anything, as coin amount doesn't go negative
 func (cs Coins) Sub(coin Coin) Coins {
 	for i, c := range cs {
 		if c.Asset.Equals(coin.Asset) {
@@ -105,8 +108,7 @@ func (cs Coins) Sub(coin Coin) Coins {
 			return cs
 		}
 	}
-
-	return append(cs, coin)
+	return cs
 }
 
 // Valid check whether all the coins are valid , if not , then return an error
@@ -258,6 +260,8 @@ func (cs Coins) NoneEmpty() Coins {
 	}
 	return newCoins
 }
+
+// Subs subtract a list of coins from the list, coins doesn't exist will be ignored
 func (cs Coins) Subs(coins Coins) Coins {
 	for _, c := range coins {
 		cs = cs.Sub(c)

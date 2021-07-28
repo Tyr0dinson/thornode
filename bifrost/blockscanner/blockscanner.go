@@ -30,6 +30,8 @@ type BlockScannerFetcher interface {
 	GetHeight() (int64, error)
 }
 
+type JumpStartCallback func(height int64)
+
 type Block struct {
 	Height int64
 	Txs    []string
@@ -53,7 +55,11 @@ type BlockScanner struct {
 }
 
 // NewBlockScanner create a new instance of BlockScanner
-func NewBlockScanner(cfg config.BlockScannerConfiguration, scannerStorage ScannerStorage, m *metrics.Metrics, thorchainBridge *thorclient.ThorchainBridge, chainScanner BlockScannerFetcher) (*BlockScanner, error) {
+func NewBlockScanner(cfg config.BlockScannerConfiguration,
+	scannerStorage ScannerStorage,
+	m *metrics.Metrics,
+	thorchainBridge *thorclient.ThorchainBridge,
+	chainScanner BlockScannerFetcher) (*BlockScanner, error) {
 	var err error
 	if scannerStorage == nil {
 		return nil, errors.New("scannerStorage is nil")
@@ -95,14 +101,19 @@ func (b *BlockScanner) GetMessages() <-chan int64 {
 }
 
 // Start block scanner
-func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn) {
+func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, jumpStartCallback JumpStartCallback) {
 	b.globalTxsQueue = globalTxsQueue
 	currentPos, err := b.scannerStorage.GetScanPos()
 	if err != nil {
 		b.logger.Error().Err(err).Msgf("fail to get current block scan pos, %s will start from %d", b.cfg.ChainID, b.previousBlock)
 	} else if currentPos > b.previousBlock {
 		b.previousBlock = currentPos
+	} else if b.previousBlock > currentPos {
+		if jumpStartCallback != nil {
+			jumpStartCallback(b.previousBlock)
+		}
 	}
+
 	b.wg.Add(2)
 	go b.scanBlocks()
 	go b.scanMempool()
@@ -172,7 +183,6 @@ func (b *BlockScanner) scanBlocks() {
 				time.Sleep(constants.ThorchainBlockTime)
 				continue
 			}
-			//b.logger.Debug().Int64("block height", currentBlock).Msg("fetch txs")
 			txIn, err := b.chainScanner.FetchTxs(currentBlock)
 			if err != nil {
 				// don't log an error if its because the block doesn't exist yet

@@ -61,6 +61,7 @@ type Client struct {
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	globalSolvencyQueue chan stypes.Solvency
+	solvencyChecker     *blockscanner.SolvencyChecker
 }
 
 // NewClient create new instance of Ethereum client
@@ -159,7 +160,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	if err != nil {
 		return c, fmt.Errorf("fail to create eth block scanner: %w", err)
 	}
-
+	c.solvencyChecker = solvencyChecker
 	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, storage, m, c.bridge, c.ethScanner)
 	if err != nil {
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
@@ -183,7 +184,11 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.ethScanner.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.blockScanner.Start(globalTxsQueue, func(height int64) {
+		if err := c.solvencyChecker.RestoreVaultBalanceFromAsgard(); err != nil {
+			c.logger.Err(err).Msg("fail to restore vault balance from asgard")
+		}
+	})
 	c.wg.Add(1)
 	go c.unstuck()
 }
