@@ -149,6 +149,10 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 	if err != nil {
 		return false
 	}
+	permittedSolvencyGap, err := h.mgr.Keeper().GetMimir(ctx, constants.PermittedSolvencyGap.String())
+	if err != nil || permittedSolvencyGap <= 0 {
+		permittedSolvencyGap = h.mgr.GetConstants().GetInt64Value(constants.PermittedSolvencyGap)
+	}
 	// Use the coin in vault as baseline , wallet can have more coins than vault
 	for _, c := range adjustVault.Coins {
 		if !c.Asset.Chain.Equals(chain) {
@@ -178,7 +182,8 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 
 		if c.Amount.GT(walletCoin.Amount) {
 			gap := c.Amount.Sub(walletCoin.Amount)
-			if gap.MulUint64(100).GT(walletCoin.Amount) {
+			permittedGap := walletCoin.Amount.MulUint64(uint64(permittedSolvencyGap)).QuoUint64(10000)
+			if gap.GT(permittedGap) {
 				ctx.Logger().Info("vault has more asset than wallet, insolvent", "asset", c.Asset.String(), "vault amount", c.Amount.String(), "wallet amount", walletCoin.Amount.String(), "gap", gap.String())
 				return true
 			}
