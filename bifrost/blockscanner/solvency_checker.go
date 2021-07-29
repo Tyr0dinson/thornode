@@ -12,7 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	btypes "gitlab.com/thorchain/thornode/bifrost/types"
 	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -154,6 +154,24 @@ func (sc *SolvencyChecker) updateLocalVaultBalance(txs types.TxIn, asgards ttype
 	}
 	return inMemoryVaultBalance, nil
 }
+func (sc *SolvencyChecker) getPermittedSolvencyGap() int64 {
+	const defaultPermittedSolvencyGap = 100 // default one 100 basis points
+	permittedGapBasisPoints, err := sc.bridge.GetMimir(constants.PermittedSolvencyGap.String())
+	if err != nil {
+		sc.logger.Err(err).Msgf("fail to get mimir %s", constants.PermittedSolvencyGap)
+		constantValues, err := sc.bridge.GetConstants()
+		if err != nil {
+			sc.logger.Err(err).Msg("fail to get constants")
+			return defaultPermittedSolvencyGap
+		}
+		constValue, ok := constantValues[constants.PermittedSolvencyGap.String()]
+		if !ok {
+			return defaultPermittedSolvencyGap
+		}
+		permittedGapBasisPoints = constValue
+	}
+	return permittedGapBasisPoints
+}
 
 // CheckSolvency process transactions that have been committed to blocks
 // when vault is not solvent , it will return an errVaultInsolvent
@@ -173,6 +191,7 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 	if err != nil {
 		return fmt.Errorf("fail to update local vault balance,err: %w", err)
 	}
+	permittedGap := sc.getPermittedSolvencyGap()
 	for _, v := range asgards {
 		account, err := sc.accountAccessor(txs.TxArray[0].BlockHeight, v.PubKey)
 		if err != nil {
@@ -195,6 +214,7 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 		}
 		sc.logger.Info().Msgf("account: %+v", account)
 		sc.logger.Info().Msgf("local vault balance: %+v", vaultBalance)
+
 		for _, walletCoin := range account.Coins {
 			// if an asset exist in wallet , but doesn't exist in local vault balance , that should be ok
 			// if an asset exist in wallet, and exist in local vault balance , but local has more than wallet, which means there might be fake transactions
@@ -205,7 +225,8 @@ func (sc *SolvencyChecker) CheckSolvency(txs types.TxIn) error {
 				}
 				exist = true
 				gap := common.SafeSub(localCoin.Amount, walletCoin.Amount)
-				if gap.GTE(cosmos.NewUint(common.One)) {
+				permittedSolvencyGap := localCoin.Amount.MulUint64(uint64(permittedGap)).QuoUint64(10000)
+				if gap.GT(permittedSolvencyGap) {
 					return fmt.Errorf("insolvent, asset: %s, local: %s , wallet: %s, err: %w", walletCoin.Asset, localCoin.Amount, walletCoin.Amount, ErrVaultInsolvent)
 				}
 			}
