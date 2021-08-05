@@ -976,7 +976,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 		targetModule = BondName
 	case TxReserve:
 		targetModule = ReserveName
-	case TxRagnarok, TxYggdrasilFund, TxMigrate, TxYggdrasilReturn, TxOutbound, TxSwitch, TxRefund:
+	case TxRagnarok, TxYggdrasilFund, TxMigrate, TxYggdrasilReturn, TxOutbound, TxSwitch, TxRefund, TxConsolidate:
 		ctx.Logger().Info(fmt.Sprintf("memo:%s , it should not get into this handler", memo))
 		return &cosmos.Result{}, nil
 	default:

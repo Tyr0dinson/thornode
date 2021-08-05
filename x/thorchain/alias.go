@@ -64,6 +64,7 @@ const (
 	TxOutbound        = mem.TxOutbound
 	TxSwitch          = mem.TxSwitch
 	TxRefund          = mem.TxRefund
+	TxConsolidate     = mem.TxConsolidate
 	TxUnBond          = mem.TxUnbond
 	TxLeave           = mem.TxLeave
 	TxTHORName        = mem.TxTHORName
