@@ -119,7 +119,7 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 func (h ManageTHORNameHandler) handleCurrent(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
-	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORNames")
+	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORName")
 	if enable == 0 {
 		return nil, fmt.Errorf("THORNames are currently disabled")
 	}
