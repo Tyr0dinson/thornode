@@ -118,7 +118,6 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, jumpStartCallback J
 	go b.scanBlocks()
 	go b.scanMempool()
 }
-
 func (b *BlockScanner) scanMempool() {
 	b.logger.Debug().Msg("start to scan mempool")
 	defer b.logger.Debug().Msg("stop scan mempool")
