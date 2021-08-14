@@ -390,6 +390,9 @@ func (b *BinanceBlockScanner) getCoinsForTxIn(outputs []bmsg.Output, receiver st
 			if asset.Symbol.IsMiniToken() {
 				continue
 			}
+			if asset.IsRune() && !asset.Equals(common.BEP2RuneAsset()) {
+				continue
+			}
 			amt := cosmos.NewUint(uint64(c.Amount))
 			cc = append(cc, common.NewCoin(asset, amt))
 		}
