@@ -183,6 +183,7 @@ func (s *SlasherV17) LackSigning(ctx cosmos.Context, constAccessor constants.Con
 	}
 	for i, tx := range txs.TxArray {
 		if tx.OutHash.IsEmpty() {
+			startLoop := time.Now()
 			// Slash node account for not sending funds
 			vault, err := s.keeper.GetVault(ctx, tx.VaultPubKey)
 			if err != nil {
@@ -208,11 +209,12 @@ func (s *SlasherV17) LackSigning(ctx cosmos.Context, constAccessor constants.Con
 					ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
 				}
 			}
-
+			timeGetAsgard := time.Now()
 			active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 			if err != nil {
 				return fmt.Errorf("fail to get active asgard vaults: %w", err)
 			}
+			ctx.Logger().Info("time to get active asgard", "time elapse", time.Since(timeGetAsgard).String())
 
 			vault = active.SelectByMaxCoin(tx.Coin.Asset)
 			if vault.IsEmpty() {
@@ -287,6 +289,7 @@ func (s *SlasherV17) LackSigning(ctx cosmos.Context, constAccessor constants.Con
 				resultErr = fmt.Errorf("failed to add outbound tx: %w", err)
 				continue
 			}
+			ctx.Logger().Info("one loop time", "time elapse", time.Since(startLoop).String())
 		}
 	}
 	if !txs.IsEmpty() {
