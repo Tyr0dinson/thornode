@@ -2,6 +2,7 @@ package thorclient
 
 import (
 	"fmt"
+	"time"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
@@ -27,10 +28,15 @@ func (b *ThorchainBridge) GetLastSignedOutHeight() (int64, error) {
 
 // GetBlockHeight returns the current height for thorchain blocks
 func (b *ThorchainBridge) GetBlockHeight() (int64, error) {
+	if b.lastBlockHeight > 0 && time.Since(b.lastBlockCheck) > 1*time.Second {
+		return b.lastBlockHeight, nil
+	}
 	lastblock, err := b.getLastBlock("")
 	if err != nil {
 		return 0, fmt.Errorf("failed to GetThorchainHeight: %w", err)
 	}
+	b.lastBlockHeight = lastblock.Thorchain
+	b.lastBlockCheck = time.Now()
 	return lastblock.Thorchain, nil
 }
 

@@ -51,17 +51,19 @@ const (
 
 // ThorchainBridge will be used to send tx to thorchain
 type ThorchainBridge struct {
-	logger        zerolog.Logger
-	cdc           *codec.Codec
-	cfg           config.ClientConfiguration
-	keys          *Keys
-	errCounter    *prometheus.CounterVec
-	m             *metrics.Metrics
-	blockHeight   int64
-	accountNumber uint64
-	seqNumber     uint64
-	httpClient    *retryablehttp.Client
-	broadcastLock *sync.RWMutex
+	logger          zerolog.Logger
+	cdc             *codec.Codec
+	cfg             config.ClientConfiguration
+	keys            *Keys
+	errCounter      *prometheus.CounterVec
+	m               *metrics.Metrics
+	blockHeight     int64
+	accountNumber   uint64
+	seqNumber       uint64
+	lastBlockHeight uint64
+	lastBlockCheck  time.Time
+	httpClient      *retryablehttp.Client
+	broadcastLock   *sync.RWMutex
 }
 
 // NewThorchainBridge create a new instance of ThorchainBridge
