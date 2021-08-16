@@ -60,7 +60,7 @@ type ThorchainBridge struct {
 	blockHeight     int64
 	accountNumber   uint64
 	seqNumber       uint64
-	lastBlockHeight uint64
+	lastBlockHeight int64
 	lastBlockCheck  time.Time
 	httpClient      *retryablehttp.Client
 	broadcastLock   *sync.RWMutex
