@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"time"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto"
@@ -167,6 +168,9 @@ func (s *SlasherV17) slashNotObserving(ctx cosmos.Context, txHash common.TxID, c
 
 // LackSigning slash account that fail to sign tx
 func (s *SlasherV17) LackSigning(ctx cosmos.Context, constAccessor constants.ConstantValues, mgr Manager) error {
+	defer func(start time.Time) {
+		ctx.Logger().Info("lack signing time", "time elapsed", time.Since(start).String())
+	}(time.Now())
 	var resultErr error
 	signingTransPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	if common.BlockHeight(ctx) < signingTransPeriod {

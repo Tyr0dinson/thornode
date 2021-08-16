@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"time"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	tmtypes "github.com/tendermint/tendermint/types"
@@ -441,6 +442,9 @@ func (vm *validatorMgrV20) processRagnarok(ctx cosmos.Context, mgr Manager, cons
 }
 
 func (vm *validatorMgrV20) getPendingTxOut(ctx cosmos.Context, constAccessor constants.ConstantValues) (int64, error) {
+	defer func(start time.Time) {
+		ctx.Logger().Info("getPendingTxOut", "pending tx out time", time.Since(start).String())
+	}(time.Now())
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
 	count := int64(0)
