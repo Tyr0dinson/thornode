@@ -52,6 +52,7 @@ const (
 	prefixNodeJail               kvTypes.DbPrefix = "jail/"
 	prefixSwapQueueItem          kvTypes.DbPrefix = "swapitem/"
 	prefixMimir                  kvTypes.DbPrefix = "mimir/"
+	prefixMimirString            kvTypes.DbPrefix = "mimirstring/"
 	prefixNetworkFee             kvTypes.DbPrefix = "network_fee/"
 	prefixNetworkFeeVoter        kvTypes.DbPrefix = "network_fee_voter/"
 	prefixTssKeygenMetric        kvTypes.DbPrefix = "tss_keygen_metric/"
@@ -215,6 +216,32 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 	}
 
 	var value ProtoAccAddresses
+	bz := store.Get([]byte(key))
+	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	*record = value.Value
+	return true, nil
+}
+
+func (k KVStore) setString(ctx cosmos.Context, key string, record string) {
+	store := ctx.KVStore(k.storeKey)
+	value := ProtoString{Value: record}
+	buf := k.cdc.MustMarshalBinaryBare(&value)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
+}
+
+func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool, error) {
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	var value ProtoString
 	bz := store.Get([]byte(key))
 	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)

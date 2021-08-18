@@ -877,7 +877,9 @@ func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason str
 // isTradingHalt has been used in two handlers , thus put it here
 func isTradingHalt(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.63.0")) {
+	if version.GTE(semver.MustParse("0.65.0")) {
+		return isTradingHaltV65(ctx, msg, mgr)
+	} else if version.GTE(semver.MustParse("0.63.0")) {
 		return isTradingHaltV63(ctx, msg, mgr)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return isTradingHaltV1(ctx, msg, mgr)
@@ -927,6 +929,32 @@ func isTradingHaltV63(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 		return isChainTradingHalted(ctx, mgr, m.Asset.Chain)
 	default:
 		return false
+	}
+}
+
+func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
+	switch m := msg.(type) {
+	case *MsgSwap:
+		raw, _ := mgr.Keeper().GetMimirString(ctx, "WhiteListedTradingAddresses") // ignore error
+		for _, addr := range strings.Split(raw, ",") {
+			address, err := common.NewAddress(strings.TrimSpace(addr))
+			if err != nil {
+				continue
+			}
+			if address.Equals(m.Tx.FromAddress) {
+				return false
+			}
+		}
+		source := common.EmptyChain
+		if len(m.Tx.Coins) > 0 {
+			source = m.Tx.Coins[0].Asset.GetLayer1Asset().Chain
+		}
+		target := m.TargetAsset.GetLayer1Asset().Chain
+		return isChainTradingHalted(ctx, mgr, source) || isChainTradingHalted(ctx, mgr, target) || isGlobalTradingHalted(ctx, mgr)
+	case *MsgAddLiquidity:
+		return isChainTradingHalted(ctx, mgr, m.Asset.Chain) || isGlobalTradingHalted(ctx, mgr)
+	default:
+		return isGlobalTradingHalted(ctx, mgr)
 	}
 }
 

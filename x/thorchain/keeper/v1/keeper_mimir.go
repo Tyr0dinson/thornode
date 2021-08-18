@@ -41,3 +41,29 @@ func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {
 	k.del(ctx, k.GetKey(ctx, prefixMimir, key))
 	return nil
 }
+
+// GetMimirString get a mimir value from key value store
+func (k KVStore) GetMimirString(ctx cosmos.Context, key string) (string, error) {
+	// if we have the kraken, mimir is no more, ignore him
+	if k.haveKraken(ctx) {
+		return "", nil
+	}
+
+	record := ""
+	_, err := k.getString(ctx, k.GetKey(ctx, prefixMimirString, key), &record)
+	return record, err
+}
+
+// SetMimirString save a mimir value to key value store
+func (k KVStore) SetMimirString(ctx cosmos.Context, key string, value string) {
+	// if we have the kraken, mimir is no more, ignore him
+	if k.haveKraken(ctx) {
+		return
+	}
+	k.setString(ctx, k.GetKey(ctx, prefixMimirString, key), value)
+}
+
+func (k KVStore) DeleteMimirString(ctx cosmos.Context, key string) error {
+	k.del(ctx, k.GetKey(ctx, prefixMimirString, key))
+	return nil
+}

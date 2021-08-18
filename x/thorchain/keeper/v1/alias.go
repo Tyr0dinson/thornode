@@ -99,4 +99,5 @@ type (
 	ProtoUint64       = types.ProtoUint64
 	ProtoAccAddresses = types.ProtoAccAddresses
 	ProtoStrings      = types.ProtoStrings
+	ProtoString       = types.ProtoString
 )
