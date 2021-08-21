@@ -255,8 +255,6 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		if err := emitEndBlockTelemetry(ctx, am.mgr); err != nil {
 			ctx.Logger().Error("unable to emit end block telemetry", "error", err)
 		}
-	} else {
-		ctx.Logger().Info("telemetry is not enabled....")
 	}
 
 	return validators
