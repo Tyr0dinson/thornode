@@ -58,7 +58,9 @@ func (h DepositHandler) validateV1(ctx cosmos.Context, msg MsgDeposit) error {
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.64.0")) {
+	if version.GTE(semver.MustParse("0.65.0")) {
+		return h.handleV65(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.64.0")) {
 		return h.handleV64(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.63.0")) {
 		return h.handleV63(ctx, msg)
@@ -1049,8 +1051,11 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 		}
 	}
 	withdrawMsg, isWithdrawLiquidity := m.(*MsgWithdrawLiquidity)
-	if isWithdrawLiquidity && isChainHalted(ctx, h.mgr, withdrawMsg.Asset.Chain) {
-		return nil, fmt.Errorf("unable to withdraw liquidity while chain is halted")
+	if isWithdrawLiquidity && (isChainHalted(ctx, h.mgr, withdrawMsg.Asset.Chain) || isLPPaused(ctx, withdrawMsg.Asset.Chain, h.mgr)) {
+		return nil, fmt.Errorf("unable to withdraw liquidity while chain is halted or paused LP actions")
+	}
+	if isAddLiquidity && isLPPaused(ctx, m.Asset.Chain, h.mgr) {
+		return nil, fmt.Errorf("unable to add liquidity while chain has paused LP actions")
 	}
 
 	// if its a swap, send it to our queue for processing later
