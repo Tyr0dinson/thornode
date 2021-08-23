@@ -961,7 +961,7 @@ func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 func isLPPaused(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return isTradingHaltV1(ctx, chain, mgr)
+		return isLPPausedV1(ctx, chain, mgr)
 	}
 	return false
 }
