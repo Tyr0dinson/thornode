@@ -185,12 +185,12 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV58Refund(c *C) {
 
 	voterAfter, err := storeMgr.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
-	txAfter := voterAfter.GetTx(NodeAccounts{})
+	txAfter := voterAfter.GetTx(NodeAccounts{}, mgr.GetVersion())
 	c.Assert(txAfter.IsDone(len(voterAfter.Actions)), Equals, true)
 
 	voterAfter1, err := storeMgr.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID1)
 	c.Assert(err, IsNil)
-	txAfter1 := voterAfter.GetTx(NodeAccounts{})
+	txAfter1 := voterAfter.GetTx(NodeAccounts{}, mgr.GetVersion())
 	c.Assert(txAfter1.IsDone(len(voterAfter1.Actions)), Equals, true)
 }
 
@@ -307,7 +307,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 	for _, txID := range allTxIDs {
 		voterAfter, err := storeMgr.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 		c.Assert(err, IsNil)
-		txAfter := voterAfter.GetTx(NodeAccounts{})
+		txAfter := voterAfter.GetTx(NodeAccounts{}, mgr.GetVersion())
 		c.Assert(txAfter.IsDone(len(voterAfter.Actions)), Equals, true)
 	}
 }

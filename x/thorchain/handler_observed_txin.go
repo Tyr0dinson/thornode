@@ -95,11 +95,11 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 	if !voter.Add(tx, signer) {
 		return voter, ok
 	}
-	if voter.HasFinalised(nas) {
+	if voter.HasFinalised(nas, h.mgr.GetVersion()) {
 		if voter.FinalisedHeight == 0 {
 			ok = true
 			voter.FinalisedHeight = common.BlockHeight(ctx)
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = voter.GetTx(nas, h.mgr.GetVersion())
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.GetSigners()...)
 		} else {
@@ -110,12 +110,12 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 			}
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !ok && voter.HasConsensus(nas, h.mgr.GetVersion()) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
 			ok = true
 			voter.Height = common.BlockHeight(ctx)
 			// this is the tx that has consensus
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = voter.GetTx(nas, h.mgr.GetVersion())
 
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.GetSigners()...)
@@ -173,7 +173,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxIn) (
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -188,7 +188,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxIn) (
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
@@ -234,7 +234,7 @@ func (h ObservedTxInHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxIn) (
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -321,7 +321,7 @@ func (h ObservedTxInHandler) handleV36(ctx cosmos.Context, msg MsgObservedTxIn) 
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -336,7 +336,7 @@ func (h ObservedTxInHandler) handleV36(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
@@ -377,7 +377,7 @@ func (h ObservedTxInHandler) handleV36(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -465,7 +465,7 @@ func (h ObservedTxInHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxIn) 
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -480,7 +480,7 @@ func (h ObservedTxInHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
@@ -521,7 +521,7 @@ func (h ObservedTxInHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -609,7 +609,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, msg MsgObservedTxIn) 
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -624,7 +624,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemo(tx.Tx.Memo) // ignore err
@@ -665,7 +665,7 @@ func (h ObservedTxInHandler) handleV47(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -753,7 +753,7 @@ func (h ObservedTxInHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxIn) 
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -768,7 +768,7 @@ func (h ObservedTxInHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
@@ -809,7 +809,7 @@ func (h ObservedTxInHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -900,7 +900,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) || voter.HasConsensus(activeNodeAccounts, h.mgr.GetVersion()) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -915,7 +915,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
@@ -956,7 +956,7 @@ func (h ObservedTxInHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedTx
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !voter.HasFinalised(activeNodeAccounts, h.mgr.GetVersion()) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}

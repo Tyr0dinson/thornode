@@ -844,7 +844,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 	}{
 		KeysignMetrics: *keysignMetric,
 	}
-	result.ObservedTx = voter.GetTx(nodeAccounts)
+	result.ObservedTx = voter.GetTx(nodeAccounts, mgr.GetVersion())
 	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)

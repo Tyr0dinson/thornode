@@ -519,7 +519,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	c.Assert(result, IsNil)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
 	txOutVoter.Add(observedTx[0], node3.NodeAddress)
-	tx1 := txOutVoter.GetTx(NodeAccounts{node1, node2, node3})
+	tx1 := txOutVoter.GetTx(NodeAccounts{node1, node2, node3}, mgr.GetVersion())
 	c.Assert(tx1.IsEmpty(), Equals, false)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
@@ -674,7 +674,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	txOutVoter := NewObservedTxVoter(txID1, observedTx)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
 	txOutVoter.Add(observedTx[0], node3.NodeAddress)
-	c.Assert(txOutVoter.GetTx(NodeAccounts{node1, node2, node3}), NotNil)
+	c.Assert(txOutVoter.GetTx(NodeAccounts{node1, node2, node3}, mgr.GetVersion()), NotNil)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
 	// observed inbound tx in the active vault
@@ -686,7 +686,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	txInVoter := NewObservedTxVoter(txID1, observedTx)
 	txInVoter.Add(observedInboundTx[0], node2.NodeAddress)
 	txInVoter.Add(observedInboundTx[0], node3.NodeAddress)
-	c.Assert(txInVoter.GetTx(NodeAccounts{node1, node2, node3}), NotNil)
+	c.Assert(txInVoter.GetTx(NodeAccounts{node1, node2, node3}, mgr.GetVersion()), NotNil)
 	helper.Keeper.SetObservedTxInVoter(ctx, txInVoter)
 
 	result, err := handler.processErrataOutboundTxV42(ctx, *internalMigrationTx)

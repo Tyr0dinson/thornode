@@ -87,11 +87,11 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 		// when the signer already sign it
 		return voter, ok
 	}
-	if voter.HasFinalised(nas) {
+	if voter.HasFinalised(nas, h.mgr.GetVersion()) {
 		if voter.FinalisedHeight == 0 {
 			ok = true
 			voter.FinalisedHeight = common.BlockHeight(ctx)
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = voter.GetTx(nas, h.mgr.GetVersion())
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
 			h.mgr.Slasher().DecSlashPoints(ctx, observeSlashPoints, voter.Tx.GetSigners()...)
 
@@ -171,7 +171,7 @@ func (h ObservedTxOutHandler) handleV1(ctx cosmos.Context, msg MsgObservedTxOut)
 			continue
 		}
 
-		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+		txOut := voter.GetTx(activeNodeAccounts, h.mgr.GetVersion()) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
 		m, err := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
@@ -301,7 +301,7 @@ func (h ObservedTxOutHandler) handleV46(ctx cosmos.Context, msg MsgObservedTxOut
 			continue
 		}
 
-		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+		txOut := voter.GetTx(activeNodeAccounts, h.mgr.GetVersion()) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
 		m, err := processOneTxInV46(ctx, h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {
@@ -436,7 +436,7 @@ func (h ObservedTxOutHandler) handleCurrent(ctx cosmos.Context, msg MsgObservedT
 			continue
 		}
 
-		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+		txOut := voter.GetTx(activeNodeAccounts, h.mgr.GetVersion()) // get consensus tx, in case our for loop is incorrect
 		txOut.Tx.Memo = tx.Tx.Memo
 		m, err := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txOut, msg.Signer)
 		if err != nil || tx.Tx.Chain.IsEmpty() {

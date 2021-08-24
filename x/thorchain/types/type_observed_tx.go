@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -266,14 +267,14 @@ func (m *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) b
 
 // HasConsensus is to check whether the tx with finalise = false in this ObservedTxVoter reach consensus
 // if ObservedTxVoter HasFinalised , then this function will return true as well
-func (m *ObservedTxVoter) HasConsensus(nodeAccounts NodeAccounts) bool {
-	consensusTx := m.GetTx(nodeAccounts)
+func (m *ObservedTxVoter) HasConsensus(nodeAccounts NodeAccounts, version semver.Version) bool {
+	consensusTx := m.GetTx(nodeAccounts, version)
 	return !consensusTx.IsEmpty()
 }
 
 // HasFinalised is to check whether the tx with finalise = true  reach super majority
-func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
-	finalTx := m.GetTx(nodeAccounts)
+func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts, version semver.Version) bool {
+	finalTx := m.GetTx(nodeAccounts, version)
 	if finalTx.IsEmpty() {
 		return false
 	}
@@ -281,15 +282,21 @@ func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
 }
 
 // GetTx return the tx that has super majority
-func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
+func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts, version semver.Version) ObservedTx {
 	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
 		return m.Tx
 	}
-	finalTx := m.getConsensusTx(nodeAccounts, true)
+	var consensusTxAccessor func(accounts NodeAccounts, final bool) ObservedTx
+	if version.GTE(semver.MustParse("0.65.0")) {
+		consensusTxAccessor = m.getConsensusTxV65
+	} else {
+		consensusTxAccessor = m.getConsensusTx
+	}
+	finalTx := consensusTxAccessor(nodeAccounts, true)
 	if !finalTx.IsEmpty() {
 		m.Tx = finalTx
 	} else {
-		discoverTx := m.getConsensusTx(nodeAccounts, false)
+		discoverTx := consensusTxAccessor(nodeAccounts, false)
 		if !discoverTx.IsEmpty() {
 			m.Tx = discoverTx
 		}
@@ -320,6 +327,33 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obse
 	}
 	if HasSuperMajority(len(voters), len(accounts)) {
 		return txFinal
+	}
+	return ObservedTx{}
+}
+
+func (m *ObservedTxVoter) getConsensusTxV65(accounts NodeAccounts, final bool) ObservedTx {
+	for _, txFinal := range m.Txs {
+		voters := make(map[string]bool)
+		if txFinal.IsFinal() != final {
+			continue
+		}
+		for _, txIn := range m.Txs {
+			if txIn.IsFinal() != final {
+				continue
+			}
+			if !txFinal.Tx.Equals(txIn.Tx) {
+				continue
+			}
+			for _, signer := range txIn.GetSigners() {
+				_, exist := voters[signer.String()]
+				if !exist && accounts.IsNodeKeys(signer) {
+					voters[signer.String()] = true
+				}
+			}
+		}
+		if HasSuperMajority(len(voters), len(accounts)) {
+			return txFinal
+		}
 	}
 	return ObservedTx{}
 }

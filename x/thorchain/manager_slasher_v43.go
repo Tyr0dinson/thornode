@@ -270,7 +270,7 @@ func (s *SlasherV43) LackSigning(ctx cosmos.Context, constAccessor constants.Con
 
 			// update original tx action in observed tx
 			// check observedTx has done status. Skip if it does already.
-			voterTx := voter.GetTx(NodeAccounts{})
+			voterTx := voter.GetTx(NodeAccounts{}, mgr.GetVersion())
 			if voterTx.IsDone(len(voter.Actions)) {
 				if len(voterTx.OutHashes) > 0 && len(voterTx.GetOutHashes()) > 0 {
 					txs.TxArray[i].OutHash = voterTx.GetOutHashes()[0]

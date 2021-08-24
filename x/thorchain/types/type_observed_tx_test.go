@@ -129,26 +129,26 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 			ValidatorConsPubKey: accConsPub4,
 		},
 	}
-
-	tx := voter.GetTx(trusts3)
+	version := GetCurrentVersion()
+	tx := voter.GetTx(trusts3, version)
 	c.Check(tx.Tx.Memo, Equals, "hello")
-	txFinalised := voter.GetTx(trusts3)
+	txFinalised := voter.GetTx(trusts3, version)
 	c.Check(txFinalised.Tx.Memo, Equals, "hello")
 	voter.Tx = ObservedTx{} // reset the final observed tx
-	tx = voter.GetTx(trusts4)
+	tx = voter.GetTx(trusts4, version)
 	c.Check(tx.IsEmpty(), Equals, true)
-	c.Assert(voter.HasConsensus(trusts3), Equals, true)
+	c.Assert(voter.HasConsensus(trusts3, version), Equals, true)
 	voter.Tx = ObservedTx{} // reset the final observed tx
-	c.Check(voter.HasConsensus(trusts4), Equals, false)
+	c.Check(voter.HasConsensus(trusts4, version), Equals, false)
 	c.Check(voter.Key().Equals(txID), Equals, true)
 	c.Check(voter.String() == txID.String(), Equals, true)
 
 	voter.Tx = ObservedTx{}
-	txFinalised = voter.GetTx(trusts4)
+	txFinalised = voter.GetTx(trusts4, version)
 	c.Check(txFinalised.IsEmpty(), Equals, true)
-	c.Check(voter.HasFinalised(trusts3), Equals, true)
+	c.Check(voter.HasFinalised(trusts3, version), Equals, true)
 	voter.Tx = ObservedTx{}
-	c.Check(voter.HasFinalised(trusts4), Equals, false)
+	c.Check(voter.HasFinalised(trusts4, version), Equals, false)
 	c.Check(voter.Key().Equals(txID), Equals, true)
 	c.Check(voter.String() == txID.String(), Equals, true)
 
@@ -230,8 +230,8 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	voter.Add(observedTx, activeNodes[0].NodeAddress)
 	voter.Add(observedTx, activeNodes[1].NodeAddress)
 	voter.Add(observedTx, activeNodes[2].NodeAddress)
-	c.Assert(voter.HasConsensus(activeNodes), Equals, true)
-	consensusTx := voter.GetTx(activeNodes)
+	c.Assert(voter.HasConsensus(activeNodes, GetCurrentVersion()), Equals, true)
+	consensusTx := voter.GetTx(activeNodes, GetCurrentVersion())
 	c.Assert(consensusTx.IsEmpty(), Equals, false)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
 
@@ -239,8 +239,8 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	voter.Add(observedTx, activeNodes[0].NodeAddress)
 	voter.Add(observedTx, activeNodes[1].NodeAddress)
 	voter.Add(observedTx, activeNodes[2].NodeAddress)
-	c.Assert(voter.HasFinalised(activeNodes), Equals, true)
-	finalisedTx := voter.GetTx(activeNodes)
+	c.Assert(voter.HasFinalised(activeNodes, GetCurrentVersion()), Equals, true)
+	finalisedTx := voter.GetTx(activeNodes, GetCurrentVersion())
 	c.Assert(finalisedTx.IsEmpty(), Equals, false)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
 
@@ -265,8 +265,8 @@ func (TypeObservedTxSuite) TestSetTxToComplete(c *C) {
 	c.Assert(voter.Tx.OutHashes[0], Equals, tx.ID.String())
 
 	c.Assert(voter.IsDone(), Equals, true)
-	voter.Tx = voter.GetTx(activeNodes)
-	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
+	voter.Tx = voter.GetTx(activeNodes, GetCurrentVersion())
+	c.Assert(voter.GetTx(activeNodes, GetCurrentVersion()).Equals(voter.Tx), Equals, true)
 }
 
 func (TypeObservedTxSuite) TestAddOutTx(c *C) {
@@ -285,8 +285,8 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	voter.Add(observedTx, activeNodes[0].NodeAddress)
 	voter.Add(observedTx, activeNodes[1].NodeAddress)
 	voter.Add(observedTx, activeNodes[2].NodeAddress)
-	c.Assert(voter.HasFinalised(activeNodes), Equals, true)
-	finalisedTx := voter.GetTx(activeNodes)
+	c.Assert(voter.HasFinalised(activeNodes, GetCurrentVersion()), Equals, true)
+	finalisedTx := voter.GetTx(activeNodes, GetCurrentVersion())
 	c.Assert(finalisedTx.IsEmpty(), Equals, false)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
 
@@ -328,8 +328,8 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	}
 
 	c.Assert(voter.IsDone(), Equals, true)
-	voter.Tx = voter.GetTx(activeNodes)
-	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
+	voter.Tx = voter.GetTx(activeNodes, GetCurrentVersion())
+	c.Assert(voter.GetTx(activeNodes, GetCurrentVersion()).Equals(voter.Tx), Equals, true)
 }
 
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
@@ -511,14 +511,90 @@ func (TypeObservedTxSuite) TestObservedTxGetConsensus(c *C) {
 		},
 	}
 
-	tx := voter.GetTx(trusts4)
+	tx := voter.GetTx(trusts4, GetCurrentVersion())
 	c.Assert(tx.IsEmpty(), Equals, true)
 
 	voter.Add(obTx1Finalised, acc4) // append a signature
 	c.Assert(voter.Txs, HasLen, 3)
 	c.Assert(voter.Txs[2].Signers, HasLen, 3)
 
-	tx = voter.GetTx(trusts4)
+	tx = voter.GetTx(trusts4, GetCurrentVersion())
 	c.Assert(tx.IsEmpty(), Equals, false)
 	c.Assert(tx.Equals(obTx1), Equals, true)
+}
+
+func (TypeObservedTxSuite) TestGetConsensusTxV65v(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+	accConsPub4 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+	accPubKeySet4 := GetRandomPubKeySet()
+
+	trusts4 := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		NodeAccount{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+		NodeAccount{
+			NodeAddress:         acc4,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet4,
+			ValidatorConsPubKey: accConsPub4,
+		},
+	}
+	tx1 := GetRandomTx()
+	tx1.Memo = "hello"
+	tx1.ID = txID
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	txForged := GetRandomTx()
+	txForged.ID = txID
+	obTx1 := NewObservedTx(txForged, 1, observePoolAddr, 1)
+	obTx2 := NewObservedTx(tx1, 1, observePoolAddr, 2)
+
+	obTx3 := NewObservedTx(tx1, 2, observePoolAddr, 2)
+
+	c.Assert(voter.Add(obTx1, acc1), Equals, true)
+	c.Assert(voter.Add(obTx2, acc2), Equals, true)
+	c.Assert(voter.Add(obTx2, acc3), Equals, true)
+	c.Assert(voter.Add(obTx2, acc4), Equals, true)
+	c.Assert(voter.HasFinalised(trusts4, GetCurrentVersion()), Equals, false)
+	c.Assert(voter.HasConsensus(trusts4, GetCurrentVersion()), Equals, true)
+	tx := voter.GetTx(trusts4, GetCurrentVersion())
+
+	c.Assert(tx.Tx.Equals(tx1), Equals, true)
+	c.Assert(voter.Add(obTx3, acc2), Equals, true)
+	c.Assert(voter.Add(obTx3, acc3), Equals, true)
+	c.Assert(voter.Add(obTx3, acc4), Equals, true)
+
+	c.Assert(voter.HasFinalised(trusts4, GetCurrentVersion()), Equals, true)
+	txGood := voter.GetTx(trusts4, GetCurrentVersion())
+	c.Assert(txGood.IsEmpty(), Equals, false)
+	c.Assert(txGood.Equals(obTx3), Equals, true)
+
 }

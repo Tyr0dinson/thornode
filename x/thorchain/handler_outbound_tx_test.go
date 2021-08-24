@@ -221,7 +221,7 @@ func newOutboundTxHandlerTestHelper(c *C) outboundTxHandlerTestHelper {
 	voter := NewObservedTxVoter(tx.Tx.ID, make(ObservedTxs, 0))
 	voter.Add(tx, nodeAccount.NodeAddress)
 	voter.FinalisedHeight = common.BlockHeight(ctx)
-	voter.Tx = voter.GetTx(NodeAccounts{nodeAccount})
+	voter.Tx = voter.GetTx(NodeAccounts{nodeAccount}, mgr.GetVersion())
 	keeper.SetObservedTxOutVoter(ctx, voter)
 
 	constAccessor := constants.GetConstantValues(version)

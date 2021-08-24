@@ -152,7 +152,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Re
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -290,7 +290,7 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxInV46(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -428,7 +428,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxInV46(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -566,7 +566,7 @@ func (h DepositHandler) handleV58(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -713,7 +713,7 @@ func (h DepositHandler) handleV61(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -862,7 +862,7 @@ func (h DepositHandler) handleV63(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
@@ -1019,7 +1019,7 @@ func (h DepositHandler) handleCurrent(ctx cosmos.Context, msg MsgDeposit) (*cosm
 		txInVoter.Add(txIn, node.NodeAddress)
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
-	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx = txInVoter.GetTx(activeNodes, h.mgr.GetVersion())
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {

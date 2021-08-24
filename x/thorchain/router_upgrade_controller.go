@@ -91,7 +91,7 @@ func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 	for _, n := range activeNodes {
 		voter.Add(observedTx, n.NodeAddress)
 	}
-	voter.Tx = voter.GetTx(activeNodes)
+	voter.Tx = voter.GetTx(activeNodes, r.mgr.GetVersion())
 	voter.FinalisedHeight = common.BlockHeight(ctx)
 	r.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	for _, asgard := range activeAsgards {
