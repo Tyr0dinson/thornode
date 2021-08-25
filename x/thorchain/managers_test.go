@@ -25,7 +25,7 @@ func (ManagersTestSuite) TestManagers(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)
 
-	txOutStore, err := GetTxOutStore(mgr.Keeper(), ver, mgr.EventMgr(), gasMgr)
+	txOutStore, err := GetTxOutStore(mgr.Keeper(), ver, mgr.EventMgr(), gasMgr, mgr)
 	c.Assert(txOutStore, IsNil)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)

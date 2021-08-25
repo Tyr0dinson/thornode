@@ -17,15 +17,17 @@ type TxOutStorageV64 struct {
 	constAccessor constants.ConstantValues
 	eventMgr      EventManager
 	gasManager    GasManager
+	mgr           Manager
 }
 
 // NewTxOutStorageV64 will create a new instance of TxOutStore.
-func NewTxOutStorageV64(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorageV64 {
+func NewTxOutStorageV64(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager, mgr Manager) *TxOutStorageV64 {
 	return &TxOutStorageV64{
 		keeper:        keeper,
 		eventMgr:      eventMgr,
 		constAccessor: constAccessor,
 		gasManager:    gasManager,
+		mgr:           mgr,
 	}
 }
 
@@ -64,7 +66,7 @@ func (tos *TxOutStorageV64) ClearOutboundItems(ctx cosmos.Context) {
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageV64) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
-	outputs, err := tos.prepareTxOutItem(ctx, toi, mgr)
+	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
 	}
@@ -103,7 +105,7 @@ func (tos *TxOutStorageV64) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 // 2. choose an appropriate vault(s) to send from (ygg first, active asgard, then retiring asgard)
 // 3. deduct transaction fee, keep in mind, only take transaction fee when active nodes are  more then minimumBFT
 // return list of outbound transactions
-func (tos *TxOutStorageV64) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem, mgr Manager) ([]TxOutItem, error) {
+func (tos *TxOutStorageV64) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, error) {
 	var outputs []TxOutItem
 
 	// Default the memo to the standard outbound memo
@@ -167,7 +169,7 @@ func (tos *TxOutStorageV64) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem, 
 				if err != nil {
 					return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 				}
-				tx := voter.GetTx(activeNodeAccounts, mgr.GetVersion())
+				tx := voter.GetTx(activeNodeAccounts, tos.mgr.GetVersion())
 
 				// collect yggdrasil pools is going to get a list of yggdrasil
 				// vault that THORChain can used to send out fund

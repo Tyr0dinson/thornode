@@ -182,7 +182,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to get event manager: %w", err)
 	}
-	mgr.txOutStore, err = GetTxOutStore(mgr.K, v, mgr.eventMgr, mgr.gasMgr)
+	mgr.txOutStore, err = GetTxOutStore(mgr.K, v, mgr.eventMgr, mgr.gasMgr, mgr)
 	if err != nil {
 		return fmt.Errorf("fail to get tx out store: %w", err)
 	}
@@ -275,10 +275,10 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 }
 
 // GetTxOutStore will return an implementation of the txout store that
-func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
+func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventManager, gasManager GasManager, mgr Manager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
 	if version.GTE(semver.MustParse("0.64.0")) {
-		return NewTxOutStorageV64(keeper, constAccessor, eventMgr, gasManager), nil
+		return NewTxOutStorageV64(keeper, constAccessor, eventMgr, gasManager, mgr), nil
 	} else if version.GTE(semver.MustParse("0.58.0")) {
 		return NewTxOutStorageV58(keeper, constAccessor, eventMgr, gasManager), nil
 	} else if version.GTE(semver.MustParse("0.55.0")) {
