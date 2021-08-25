@@ -935,14 +935,20 @@ func isTradingHaltV63(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 	switch m := msg.(type) {
 	case *MsgSwap:
-		raw, _ := mgr.Keeper().GetMimirString(ctx, "WhiteListedTradingAddresses") // ignore error
-		for _, addr := range strings.Split(raw, ",") {
-			address, err := common.NewAddress(strings.TrimSpace(addr))
-			if err != nil {
-				continue
-			}
-			if address.Equals(m.Tx.FromAddress) {
-				return false
+		raw, err := mgr.Keeper().GetMimirString(ctx, "HaltBypassTradingAddresses")
+		if err != nil {
+			ctx.Logger().Error("fail to get mimir string: HaltBypassTradingAddresses")
+		}
+		if raw != "" {
+			for _, addr := range strings.Split(raw, ",") {
+				address, err := common.NewAddress(strings.TrimSpace(addr))
+				if err != nil {
+					ctx.Logger().Error("fail to parse mimir HaltBypassTradingAddresses: %s", strings.TrimSpace(addr))
+					continue
+				}
+				if address.Equals(m.Tx.FromAddress) {
+					return false
+				}
 			}
 		}
 		source := common.EmptyChain
