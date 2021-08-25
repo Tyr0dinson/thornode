@@ -1113,16 +1113,26 @@ func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery,
 	return res, nil
 }
 func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64, 0)
-	iter := mgr.Keeper().GetMimirIterator(ctx)
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
+	values := make(map[string]interface{}, 0)
+	intIter := mgr.Keeper().GetMimirIterator(ctx)
+	defer intIter.Close()
+	for ; intIter.Valid(); intIter.Next() {
 		value := types.ProtoInt64{}
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &value); err != nil {
+		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(intIter.Value(), &value); err != nil {
 			ctx.Logger().Error("fail to unmarshal mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal mimir value: %w", err)
 		}
-		values[string(iter.Key())] = value.GetValue()
+		values[string(intIter.Key())] = value.GetValue()
+	}
+	strIter := mgr.Keeper().GetMimirStringIterator(ctx)
+	defer strIter.Close()
+	for ; strIter.Valid(); strIter.Next() {
+		value := types.ProtoString{}
+		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(intIter.Value(), &value); err != nil {
+			ctx.Logger().Error("fail to unmarshal mimir string value", "error", err)
+			return nil, fmt.Errorf("fail to unmarshal mimir string value: %w", err)
+		}
+		values[string(intIter.Key())] = value.GetValue()
 	}
 	res, err := json.MarshalIndent(values, "", "	")
 	if err != nil {

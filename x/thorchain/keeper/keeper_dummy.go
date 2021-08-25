@@ -330,6 +330,7 @@ func (k KVStoreDummy) SetMimirString(_ cosmos.Context, key string, value string)
 func (k KVStoreDummy) DeleteMimirString(_ cosmos.Context, key string) error        { return kaboom }
 func (k KVStoreDummy) DeleteMimir(_ cosmos.Context, key string) error              { return kaboom }
 func (k KVStoreDummy) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator         { return nil }
+func (k KVStoreDummy) GetMimirStringIterator(ctx cosmos.Context) cosmos.Iterator   { return nil }
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
 	return NetworkFee{}, kaboom
 }

@@ -32,9 +32,14 @@ func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 	k.setInt64(ctx, k.GetKey(ctx, prefixMimir, key), value)
 }
 
-// GetMimirIterator iterate gas units
+// GetMimirIterator iterate mimir values
 func (k KVStore) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixMimir)
+}
+
+// GetMimirStringIterator iterate mimir string values
+func (k KVStore) GetMimirStringIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixMimirString)
 }
 
 func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {

@@ -224,6 +224,7 @@ type KeeperMimir interface {
 	GetMimirString(_ cosmos.Context, key string) (string, error)
 	SetMimirString(_ cosmos.Context, key string, value string)
 	GetMimirIterator(ctx cosmos.Context) cosmos.Iterator
+	GetMimirStringIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteMimir(_ cosmos.Context, key string) error
 	DeleteMimirString(_ cosmos.Context, key string) error
 }
