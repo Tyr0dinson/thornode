@@ -133,9 +133,9 @@ func (cs1 Coins) Equals(cs2 Coins) bool {
 	return true
 }
 
-// EqualsKeepOriginal Check if two lists of coins are equal to each other.
+// EqualsEx Check if two lists of coins are equal to each other.
 // This method will not change the original coins
-func (cs1 Coins) EqualsKeepOriginal(cs2 Coins) bool {
+func (cs1 Coins) EqualsEx(cs2 Coins) bool {
 	if len(cs1) != len(cs2) {
 		return false
 	}

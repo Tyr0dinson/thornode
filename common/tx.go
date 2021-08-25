@@ -136,8 +136,8 @@ func (tx Tx) Equals(tx2 Tx) bool {
 	return true
 }
 
-// EqualsKeepOriginal compare two Tx to see whether they represent the same Tx
-func (tx Tx) EqualsKeepOriginal(tx2 Tx) bool {
+// EqualsEx compare two Tx to see whether they represent the same Tx
+func (tx Tx) EqualsEx(tx2 Tx) bool {
 	if !tx.ID.Equals(tx2.ID) {
 		return false
 	}
@@ -150,7 +150,7 @@ func (tx Tx) EqualsKeepOriginal(tx2 Tx) bool {
 	if !tx.ToAddress.Equals(tx2.ToAddress) {
 		return false
 	}
-	if !tx.Coins.EqualsKeepOriginal(tx2.Coins) {
+	if !tx.Coins.EqualsEx(tx2.Coins) {
 		return false
 	}
 	if !tx.Gas.Equals(tx2.Gas) {

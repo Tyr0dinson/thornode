@@ -90,6 +90,6 @@ func (s CoinSuite) TestCoinsEqual(c *C) {
 	)
 
 	coins1 := coins
-	theSame := coins.EqualsKeepOriginal(coins1)
+	theSame := coins.EqualsEx(coins1)
 	c.Assert(theSame, Equals, true)
 }
