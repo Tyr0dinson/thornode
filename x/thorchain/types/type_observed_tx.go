@@ -307,7 +307,7 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obse
 			if txIn.IsFinal() != final {
 				continue
 			}
-			if !txFinal.Tx.Equals(txIn.Tx) {
+			if !txFinal.Tx.EqualsKeepOriginal(txIn.Tx) {
 				continue
 			}
 			for _, signer := range txIn.GetSigners() {
@@ -318,6 +318,7 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obse
 			}
 		}
 		if HasSuperMajority(len(voters), len(accounts)) {
+			fmt.Println("has super majority", len(voters), len(accounts))
 			return txFinal
 		}
 	}

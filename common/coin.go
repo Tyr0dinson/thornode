@@ -110,6 +110,7 @@ func (cs Coins) Valid() error {
 }
 
 // Equals Check if two lists of coins are equal to each other. Order does not matter
+// Deprecated
 func (cs1 Coins) Equals(cs2 Coins) bool {
 	if len(cs1) != len(cs2) {
 		return false
@@ -125,6 +126,31 @@ func (cs1 Coins) Equals(cs2 Coins) bool {
 
 	for i := range cs1 {
 		if !cs1[i].Equals(cs2[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// EqualsKeepOriginal Check if two lists of coins are equal to each other.
+// This method will not change the original coins
+func (cs1 Coins) EqualsKeepOriginal(cs2 Coins) bool {
+	if len(cs1) != len(cs2) {
+		return false
+	}
+
+	source := append(cs1[:0:0], cs1...)
+	dest := append(cs2[:0:0], cs2...)
+	// sort both lists
+	sort.Slice(source[:], func(i, j int) bool {
+		return source[i].Asset.String() < source[j].Asset.String()
+	})
+	sort.Slice(dest[:], func(i, j int) bool {
+		return dest[i].Asset.String() < dest[j].Asset.String()
+	})
+	for i := range source {
+		if !source[i].Equals(dest[i]) {
 			return false
 		}
 	}

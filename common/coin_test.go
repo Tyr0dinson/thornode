@@ -3,7 +3,7 @@ package common
 import (
 	. "gopkg.in/check.v1"
 
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 type CoinSuite struct{}
@@ -76,4 +76,20 @@ func (s CoinSuite) TestHasSynthetic(c *C) {
 		NewCoin(ETHAsset, cosmos.ZeroUint()),
 	}
 	c.Assert(coins.HasSynthetic(), Equals, false)
+}
+func (s CoinSuite) TestCoinsEqual(c *C) {
+	assetETH, _ := NewAsset("ETH.ETH")
+	assetSNX, _ := NewAsset("ETH.SNX-0XC011A73EE8576FB46F5E1C5751CA3B9FE0AF2A6F")
+	assetSUSHI, _ := NewAsset("ETH.SUSHI-0X6B3595068778DD592E39A122F4F5A5CF09C90FE2")
+	assetUSDT, _ := NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	coins := NewCoins(
+		NewCoin(assetSUSHI, cosmos.NewUint(256817616172)),
+		NewCoin(assetSNX, cosmos.NewUint(45667819317)),
+		NewCoin(assetUSDT, cosmos.NewUint(2453815652300)),
+		NewCoin(assetETH, cosmos.NewUint(1990254385)),
+	)
+
+	coins1 := coins
+	theSame := coins.EqualsKeepOriginal(coins1)
+	c.Assert(theSame, Equals, true)
 }

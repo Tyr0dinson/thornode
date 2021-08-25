@@ -136,6 +136,32 @@ func (tx Tx) Equals(tx2 Tx) bool {
 	return true
 }
 
+// EqualsKeepOriginal compare two Tx to see whether they represent the same Tx
+func (tx Tx) EqualsKeepOriginal(tx2 Tx) bool {
+	if !tx.ID.Equals(tx2.ID) {
+		return false
+	}
+	if !tx.Chain.Equals(tx2.Chain) {
+		return false
+	}
+	if !tx.FromAddress.Equals(tx2.FromAddress) {
+		return false
+	}
+	if !tx.ToAddress.Equals(tx2.ToAddress) {
+		return false
+	}
+	if !tx.Coins.EqualsKeepOriginal(tx2.Coins) {
+		return false
+	}
+	if !tx.Gas.Equals(tx2.Gas) {
+		return false
+	}
+	if !strings.EqualFold(tx.Memo, tx2.Memo) {
+		return false
+	}
+	return true
+}
+
 // Valid do some data sanity check , if the tx contains invalid information
 // it will return an none nil error
 func (tx Tx) Valid() error {
