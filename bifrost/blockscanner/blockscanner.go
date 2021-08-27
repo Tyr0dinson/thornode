@@ -148,8 +148,8 @@ func (b *BlockScanner) scanBlocks() {
 
 	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
 	haltHeight := int64(0)
+	thorHeight := int64(0)
 	var err error
-
 	// start up to grab those blocks
 	for {
 		select {
@@ -164,17 +164,23 @@ func (b *BlockScanner) scanBlocks() {
 				if err != nil {
 					b.logger.Error().Err(err).Msg("fail to get mimir setting")
 				}
+				thorHeight, err = b.thorchainBridge.GetBlockHeight()
+				if err != nil {
+					b.logger.Err(err).Msg("fail to get thorchain block height")
+				}
 				nodeHaltHeight, err := b.thorchainBridge.GetMimir("NodePauseChainGlobal")
 				if err != nil {
 					b.logger.Error().Err(err).Msg("fail to get mimir setting")
 				}
-				thorHeight, err := b.thorchainBridge.GetHeight()
-				if err == nil && nodeHaltHeight > 0 && thorHeight > nodeHaltHeight {
-					haltHeight = nodeHaltHeight
+				// nodeHaltHeight means the chain should be halt until the block height
+				// haltHeight means the chain should be halt after the block height
+				if nodeHaltHeight > 0 && thorHeight < nodeHaltHeight {
+					b.logger.Info().Msgf("chain has been halt by node")
+					haltHeight = 1
 				}
 				lastMimirCheck = time.Now()
 			}
-			if haltHeight > 0 && currentBlock > haltHeight {
+			if haltHeight > 0 && thorHeight > haltHeight {
 				// since current chain has been halted , so mark it as not healthy
 				b.healthy = false
 				time.Sleep(constants.ThorchainBlockTime)
