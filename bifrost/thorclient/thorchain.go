@@ -515,8 +515,8 @@ func (b *ThorchainBridge) GetThorchainVersion() (semver.Version, error) {
 	return version.Current, nil
 }
 
-// GetMimir - get mimir settings
-func (b *ThorchainBridge) GetMimir(key string) (int64, error) {
+// GetMimirInt - get mimir settings as int64
+func (b *ThorchainBridge) GetMimirInt(key string) (int64, error) {
 	buf, s, err := b.getWithPath(MimirEndpoint + "/" + key)
 	if err != nil {
 		return 0, fmt.Errorf("fail to get mimir: %w", err)
@@ -527,6 +527,22 @@ func (b *ThorchainBridge) GetMimir(key string) (int64, error) {
 	var value int64
 	if err := json.Unmarshal(buf, &value); err != nil {
 		return 0, fmt.Errorf("fail to unmarshal mimir: %w", err)
+	}
+	return value, nil
+}
+
+// GetMimirString - get mimir settings as string
+func (b *ThorchainBridge) GetMimirString(key string) (string, error) {
+	value := ""
+	buf, s, err := b.getWithPath(MimirEndpoint + "/" + key)
+	if err != nil {
+		return value, fmt.Errorf("fail to get mimir: %w", err)
+	}
+	if s != http.StatusOK {
+		return value, fmt.Errorf("unexpected status code: %d", s)
+	}
+	if err := json.Unmarshal(buf, &value); err != nil {
+		return value, fmt.Errorf("fail to unmarshal mimir: %w", err)
 	}
 	return value, nil
 }

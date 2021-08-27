@@ -268,7 +268,7 @@ func (s *ThorchainSuite) TestGetThorchainVersion(c *C) {
 }
 
 func (s *ThorchainSuite) TestGetMimir(c *C) {
-	result, err := s.bridge.GetMimir("HaltBNBChain")
+	result, err := s.bridge.GetMimirInt("HaltBNBChain")
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, int64(10))
 }
