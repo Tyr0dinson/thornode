@@ -17,8 +17,8 @@ type NetworkMgrV59 struct {
 	eventMgr   EventManager
 }
 
-// NewNetworkMgrV59 create a new vault manager
-func NewNetworkMgrV59(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgrV59 {
+// newNetworkMgrV59 create a new vault manager
+func newNetworkMgrV59(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgrV59 {
 	return &NetworkMgrV59{
 		k:          k,
 		txOutStore: txOutStore,
@@ -203,7 +203,7 @@ func (vm *NetworkMgrV59) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 					// the left amount is not enough to pay for gas, likely only dust left, the network can't migrate it across
 					// and this will only happen after 5th round
 					if amt.IsZero() && nth > 5 {
-						ctx.Logger().Info(fmt.Sprintf("%s is not enough to pay for gas %s, thus burn it", coin, gasAmount))
+						ctx.Logger().Info("left coin is not enough to pay for gas, thus burn it", "coin", coin, "gas", gasAmount)
 						vault.SubFunds(common.Coins{
 							coin,
 						})
@@ -584,7 +584,7 @@ func (vm *NetworkMgrV59) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 		withdrawMsg := NewMsgWithdrawLiquidity(
 			common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
 			withdrawAddr,
-			cosmos.NewUint(uint64(MaxWithdrawBasisPoints/100*(nth*10))),
+			cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
 			pool.Asset,
 			withdrawAsset,
 			na.NodeAddress,

@@ -18,8 +18,8 @@ type SlasherV1 struct {
 	eventMgr EventManager
 }
 
-// NewSlasherV1 create a new instance of Slasher
-func NewSlasherV1(keeper keeper.Keeper, eventMgr EventManager) *SlasherV1 {
+// newSlasherV1 create a new instance of Slasher
+func newSlasherV1(keeper keeper.Keeper, eventMgr EventManager) *SlasherV1 {
 	return &SlasherV1{keeper: keeper, eventMgr: eventMgr}
 }
 
@@ -35,7 +35,7 @@ func (s *SlasherV1) BeginBlock(ctx cosmos.Context, req abci.RequestBeginBlock, c
 				ctx.Logger().Error("fail to slash for double signing a block", "error", err)
 			}
 		default:
-			ctx.Logger().Error(fmt.Sprintf("ignored unknown evidence type: %s", evidence.Type))
+			ctx.Logger().Error("ignored unknown evidence type", "type", evidence.Type)
 		}
 	}
 }

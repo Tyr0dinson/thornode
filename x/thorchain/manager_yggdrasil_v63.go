@@ -20,8 +20,8 @@ type YggMgrV63 struct {
 	keeper keeper.Keeper
 }
 
-// NewYggMgrV63 create a new instance of YggMgrV63 which implement YggManager interface
-func NewYggMgrV63(keeper keeper.Keeper) *YggMgrV63 {
+// newYggMgrV63 create a new instance of YggMgrV63 which implement YggManager interface
+func newYggMgrV63(keeper keeper.Keeper) *YggMgrV63 {
 	return &YggMgrV63{
 		keeper: keeper,
 	}
@@ -221,7 +221,7 @@ func (ymgr YggMgrV63) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 
 			if !ymgr.shouldFundYggdrasil(ctx, active[0], ygg, coin.Asset.GetChain()) {
 				addr, _ := ygg.PubKey.GetThorAddress()
-				ctx.Logger().Error(fmt.Sprintf("yggdrasil with address %s didn't upgrade contract, should not be funded", addr))
+				ctx.Logger().Error("yggdrasil didn't upgrade contract, should not be funded", "address", addr)
 				continue
 			}
 

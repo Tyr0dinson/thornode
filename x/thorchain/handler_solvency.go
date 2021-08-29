@@ -64,7 +64,7 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	return nil, errBadVersion
 }
 
-// handleV1 is the first implementation of MsgSolvency, the feature works like this
+// handle V1 is the first implementation of MsgSolvency, the feature works like this
 // 1. Bifrost report MsgSolvency to thornode , which is the balance of asgard wallet on each individual chain
 // 2. once MsgSolvency reach consensus , then the network compare the wallet balance against wallet
 //    if wallet has less fund than asgard vault , and the gap is more than 1% , then the chain
@@ -137,7 +137,7 @@ func (h SolvencyHandler) handleV1(ctx cosmos.Context, msg MsgSolvency) (*cosmos.
 		return &cosmos.Result{}, nil
 	}
 	h.mgr.Keeper().SetMimir(ctx, haltChainKey, common.BlockHeight(ctx))
-	ctx.Logger().Info(fmt.Sprintf("%s is insolvent, halt chain until it is resolved", voter.Chain))
+	ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
 	return &cosmos.Result{}, nil
 }
 

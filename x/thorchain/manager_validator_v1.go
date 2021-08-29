@@ -667,7 +667,7 @@ func (vm *validatorMgrV1) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manage
 				return err
 			}
 			if ygg.HasFunds() {
-				ctx.Logger().Info(fmt.Sprintf("skip bond refund due to remaining funds: %s", na.NodeAddress))
+				ctx.Logger().Info("skip bond refund due to remaining funds", "node address", na.NodeAddress)
 				continue
 			}
 		}
@@ -736,18 +736,7 @@ func (vm *validatorMgrV1) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manag
 		return fmt.Errorf("fail to get ragnarok position: %w", err)
 	}
 
-	// each round of refund, we increase the percentage by 10%. This ensures
-	// that we slowly refund each person, while not sending out too much too
-	// fast. Also, we won't be running into any gas related issues until the
-	// very last round, which, by my calculations, if someone provided 100 coins,
-	// the last tx will send them 0.036288. So if we don't have enough gas to
-	// send them, its only a very small portion that is not refunded.
-	var basisPoints int64
-	if nth > 20 || (nth%10) == 0 {
-		basisPoints = MaxWithdrawBasisPoints
-	} else {
-		basisPoints = (nth % 10) * (MaxWithdrawBasisPoints / 10)
-	}
+	basisPoints := MaxWithdrawBasisPoints
 
 	// go through all the pools
 	pools, err := vm.k.GetPools(ctx)
@@ -914,7 +903,7 @@ func (vm *validatorMgrV1) RequestYggReturn(ctx cosmos.Context, node NodeAccount,
 			continue
 		}
 		if !ygg.HasFundsForChain(chain) {
-			ctx.Logger().Info(fmt.Sprintf("there is not fund for %s chain, no need for yggdrasil return", chain))
+			ctx.Logger().Info("there is not fund for chain, no need for yggdrasil return", "chain", chain)
 			continue
 		}
 		toAddr, err := vault.PubKey.GetAddress(chain)
@@ -1141,7 +1130,7 @@ func (vm *validatorMgrV1) findOldActor(ctx cosmos.Context) (NodeAccount, error) 
 // Mark an old to be churned out
 func (vm *validatorMgrV1) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
-		ctx.Logger().Info(fmt.Sprintf("Marked Validator to be churned out %s: %s", na.NodeAddress, reason))
+		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
 		slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
 			return fmt.Errorf("fail to get node account(%s) slash points: %w", na.NodeAddress, err)

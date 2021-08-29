@@ -42,7 +42,9 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.58.0")) {
+	if version.GTE(semver.MustParse("0.65.0")) {
+		return h.validateV65(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.58.0")) {
 		return h.validateV58(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.56.0")) {
 		return h.validateV56(ctx, msg)
@@ -114,7 +116,7 @@ func (h SwapHandler) validateV55(ctx cosmos.Context, msg MsgSwap) error {
 			return ErrInternal(err, "fail to get total bond RUNE")
 		}
 		if totalLiquidityRUNE.GT(totalBondRune) {
-			ctx.Logger().Info(fmt.Sprintf("total liquidity RUNE(%s) is more than total Bond(%s)", totalLiquidityRUNE, totalBondRune))
+			ctx.Logger().Info("total liquidity RUNE is more than total Bond", "liquidity rune", totalLiquidityRUNE, "bond rune", totalBondRune)
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
@@ -171,7 +173,7 @@ func (h SwapHandler) validateV56(ctx cosmos.Context, msg MsgSwap) error {
 		}
 		coverage := int64(synthSupply.Quo(pool.BalanceAsset).MulUint64(MaxWithdrawBasisPoints).Uint64())
 		if coverage > maxSynths {
-			return fmt.Errorf("Synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
+			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}
 
 		ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
@@ -183,7 +185,7 @@ func (h SwapHandler) validateV56(ctx cosmos.Context, msg MsgSwap) error {
 			return ErrInternal(err, "fail to get total bond RUNE")
 		}
 		if totalLiquidityRUNE.GT(totalBondRune) {
-			ctx.Logger().Info(fmt.Sprintf("total liquidity RUNE(%s) is more than total Bond(%s)", totalLiquidityRUNE, totalBondRune))
+			ctx.Logger().Info("total liquidity RUNE is more than total Bond", "liquidity rune", totalLiquidityRUNE, "bond rune", totalBondRune)
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
@@ -239,7 +241,7 @@ func (h SwapHandler) validateV58(ctx cosmos.Context, msg MsgSwap) error {
 		}
 		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset).Uint64())
 		if coverage > maxSynths {
-			return fmt.Errorf("Synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
+			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}
 
 		ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
@@ -251,13 +253,13 @@ func (h SwapHandler) validateV58(ctx cosmos.Context, msg MsgSwap) error {
 			return ErrInternal(err, "fail to get total bond RUNE")
 		}
 		if totalLiquidityRUNE.GT(totalBondRune) {
-			ctx.Logger().Info(fmt.Sprintf("total liquidity RUNE(%s) is more than total Bond(%s)", totalLiquidityRUNE, totalBondRune))
+			ctx.Logger().Info("total liquidity RUNE is more than total Bond", "liquidity rune", totalLiquidityRUNE, "bond rune", totalBondRune)
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
 	return nil
 }
-func (h SwapHandler) validateV63(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
 	return h.validateCurrent(ctx, msg)
 }
 
@@ -311,7 +313,7 @@ func (h SwapHandler) validateCurrent(ctx cosmos.Context, msg MsgSwap) error {
 		}
 		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset).Uint64())
 		if coverage > maxSynths {
-			return fmt.Errorf("Synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
+			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}
 
 		ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
@@ -323,7 +325,7 @@ func (h SwapHandler) validateCurrent(ctx cosmos.Context, msg MsgSwap) error {
 			return ErrInternal(err, "fail to get total bond RUNE")
 		}
 		if totalLiquidityRUNE.GT(totalBondRune) {
-			ctx.Logger().Info(fmt.Sprintf("total liquidity RUNE(%s) is more than total Bond(%s)", totalLiquidityRUNE, totalBondRune))
+			ctx.Logger().Info("total liquidity RUNE is more than total Bond", "liquidity rune", totalLiquidityRUNE, "bond rune", totalBondRune)
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
