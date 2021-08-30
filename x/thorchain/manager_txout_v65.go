@@ -434,19 +434,25 @@ func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (
 		maxTxOutOffset = tos.constAccessor.GetInt64Value(constants.MaxTxOutOffset)
 	}
 
+	dollarInRune := DollarInRune(ctx, tos.keeper)
+	if dollarInRune.IsZero() {
+		// fallback to one (noop) in case we can't get the dollar value in rune
+		dollarInRune = cosmos.OneUint()
+	}
+
 	// get txout item value in rune
-	runeValue := toi.Coin.Amount
+	dollarValue := toi.Coin.Amount.Quo(dollarInRune)
 	if !toi.Coin.Asset.IsRune() {
 		pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get pool for appending txout item", "error", err)
 			return common.BlockHeight(ctx) + maxTxOutOffset, err
 		}
-		runeValue = pool.AssetValueInRune(toi.Coin.Amount)
+		dollarValue = pool.AssetValueInRune(toi.Coin.Amount).Quo(dollarInRune)
 	}
 
 	// sum value of scheduled txns (including this one)
-	sumValue := runeValue
+	sumValue := dollarValue
 	for height := common.BlockHeight(ctx) + 1; height <= common.BlockHeight(ctx)+txOutDelayMax; height++ {
 		value, err := tos.keeper.GetTxOutValue(ctx, height)
 		if err != nil {
@@ -458,6 +464,7 @@ func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (
 			// rest will be empty as well
 			break
 		}
+		value = value.Quo(dollarInRune)
 		sumValue = sumValue.Add(value)
 	}
 	// reduce delay rate relative to the total scheduled value. In high volume
@@ -472,7 +479,7 @@ func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (
 	}
 
 	// calculate the minimum number of blocks in the future the txn has to be
-	minBlocks := int64(runeValue.Uint64()) / txOutDelayRate
+	minBlocks := int64(dollarValue.Uint64()) / txOutDelayRate
 	// min shouldn't be anything longer than the max txout offset
 	if minBlocks > maxTxOutOffset {
 		minBlocks = maxTxOutOffset
@@ -487,11 +494,12 @@ func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (
 			ctx.Logger().Error("fail to get txOutValue for block height", "error", err)
 			break
 		}
+		txOutValue = txOutValue.Quo(dollarInRune)
 		if txOutValue.IsZero() {
 			// the txout has no outbound txns, let's use this one
 			break
 		}
-		if txOutValue.Add(runeValue).LTE(minVolumeThreshold) {
+		if txOutValue.Add(dollarValue).LTE(minVolumeThreshold) {
 			// the txout + this txout item has enough space to fit, lets use this one
 			break
 		}

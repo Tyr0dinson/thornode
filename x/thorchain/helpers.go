@@ -1093,15 +1093,9 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// get rune price
-	busd, _ := common.NewAsset("BNB.BUSD-BD1")
-	pool, err := mgr.Keeper().GetPool(ctx, busd)
-	if err != nil {
-		return err
-	}
-	runeUSDPrice := float32(0)
-	if !pool.IsEmpty() && !pool.BalanceRune.IsZero() {
-		runeUSDPrice = telem(pool.BalanceAsset) / telem(pool.BalanceRune)
-		telemetry.SetGauge(runeUSDPrice, "thornode", "price", "usd", "thor", "rune")
+	dollarInRune := telem(DollarInRune(ctx, mgr.Keeper()))
+	if dollarInRune > 0 {
+		telemetry.SetGauge(dollarInRune, "thornode", "price", "usd", "thor", "rune")
 	}
 
 	// emit pool metrics
@@ -1125,7 +1119,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		// pricing
 		price := float32(0)
 		if !pool.BalanceAsset.IsZero() {
-			price = runeUSDPrice * telem(pool.BalanceRune) / telem(pool.BalanceAsset)
+			price = dollarInRune * telem(pool.BalanceRune) / telem(pool.BalanceAsset)
 		}
 		telemetry.SetGauge(price, "thornode", "price", "usd", strings.ToLower(pool.Asset.Chain.String()), strings.ToLower(pool.Asset.Symbol.String()))
 	}
@@ -1195,4 +1189,47 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(float32(query.Swap), "thornode", "queue", "swap")
 
 	return nil
+}
+
+// gets the amount of rune that is equal to 1 USD
+func DollarInRune(ctx cosmos.Context, keeper keeper.Keeper) cosmos.Uint {
+	busd, _ := common.NewAsset("BNB.BUSD-BD1")
+	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	usdAssets := []common.Asset{busd, usdc, usdt}
+
+	usd := make([]cosmos.Uint, 0)
+	for _, asset := range usdAssets {
+		pool, err := keeper.GetPool(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
+			continue
+		}
+		if pool.Status != PoolAvailable {
+			continue
+		}
+		value := pool.AssetValueInRune(cosmos.NewUint(common.One))
+		if !value.IsZero() {
+			usd = append(usd, value)
+		}
+	}
+
+	if len(usd) == 0 {
+		return cosmos.ZeroUint()
+	}
+
+	// calculate median of our USD figures
+	var median cosmos.Uint
+	if len(usd)%2 > 0 {
+		// odd number of figures in our slice. Take the middle figure. Since
+		// slices start with an index of zero, just need to length divide by two.
+		medianSpot := len(usd) / 2
+		median = usd[medianSpot]
+	} else {
+		// even number of figures in our slice. Average the middle two figures.
+		pt1 := usd[len(usd)/2-1]
+		pt2 := usd[len(usd)/2]
+		median = pt1.Add(pt2).QuoUint64(2)
+	}
+	return median
 }
