@@ -11,6 +11,14 @@ SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
 BINANCE=${BINANCE:=$PEER:26660}
 
+if [ -f /etc/thornode/password ]; then
+  SIGNER_PASSWD=$(cat /etc/thornode/password)
+fi
+
+if [ -f /etc/thornode/mnemonic ]; then
+  SIGNER_SEED_PHRASE=$(cat /etc/thornode/mnemonic)
+fi
+
 if [ ! -f ~/.thornode/config/genesis.json ]; then
   echo "Setting THORNode as Validator node"
   if [ "$PEER" = "none" ] && [ "$SEEDS" = "none" ]; then

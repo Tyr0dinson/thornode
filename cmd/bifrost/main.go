@@ -68,9 +68,17 @@ func main() {
 	// load configuration file
 	cfg, err := config.LoadBiFrostConfig(*cfgFile)
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to load config ")
+		log.Fatal().Err(err).Msg("fail to load config")
 	}
 	cfg.Thorchain.SignerPasswd = os.Getenv("SIGNER_PASSWD")
+
+	if _, err := os.Stat("/etc/bifrost/password"); err == nil || os.IsExist(err) {
+		b, err := ioutil.ReadFile("/etc/bifrost/password")
+		if err != nil {
+			log.Fatal().Err(err).Msg("fail to load signer password from file")
+		}
+		cfg.Thorchain.SignerPasswd = string(b)
+	}
 
 	// metrics
 	m, err := metrics.NewMetrics(cfg.Metrics)

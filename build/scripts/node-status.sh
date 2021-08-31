@@ -27,6 +27,11 @@ LITECOIN_PORT="${LITECOIN_DAEMON_SERVICE_PORT_RPC:-9332}"
 BITCOIN_CASH_PORT="${BITCOIN_CASH_DAEMON_SERVICE_PORT_RPC:-8332}"
 DOGECOIN_PORT="${DOGECOIN_DAEMON_SERVICE_PORT_RPC:-22555}"
 ETHEREUM_PORT="${ETHEREUM_DAEMON_SERVICE_PORT_RPC:-8545}"
+SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
+
+if [ -f /etc/thornode/password ]; then
+  SIGNER_PASSWD=$(cat /etc/thornode/password)
+fi
 
 ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 JSON=$(curl -sL --fail -m 10 "$API/thorchain/node/$ADDRESS")

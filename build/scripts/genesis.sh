@@ -12,6 +12,14 @@ SEED="${SEED:=thornode}" # the hostname of the master node
 ETH_HOST="${ETH_HOST:=http://ethereum-localnet:8545}"
 THOR_BLOCK_TIME="${THOR_BLOCK_TIME:=5s}"
 
+if [ -f /etc/thornode/password ]; then
+  SIGNER_PASSWD=$(cat /etc/thornode/password)
+fi
+
+if [ -f /etc/thornode/mnemonic ]; then
+  SIGNER_SEED_PHRASE=$(cat /etc/thornode/mnemonic)
+fi
+
 # this is required as it need to run thornode init , otherwise tendermint related commant doesn't work
 if [ "$SEED" = "$(hostname)" ]; then
   if [ ! -f ~/.thornode/config/priv_validator_key.json ]; then
