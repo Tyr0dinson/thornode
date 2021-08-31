@@ -390,7 +390,7 @@ func (tos *TxOutStorageV65) addToBlockOut(ctx cosmos.Context, mgr Manager, toi T
 		return tos.nativeTxOut(ctx, mgr, toi)
 	}
 
-	targetHeight, err := tos.calcTxOutHeight(ctx, toi)
+	targetHeight, err := tos.calcTxOutHeight(ctx, mgr, toi)
 	if err != nil {
 		ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 	}
@@ -408,7 +408,7 @@ func (tos *TxOutStorageV65) addToBlockOut(ctx cosmos.Context, mgr Manager, toi T
 	return tos.keeper.AppendTxOut(ctx, targetHeight, toi)
 }
 
-func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (int64, error) {
+func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, mgr Manager, toi TxOutItem) (int64, error) {
 	// non-outbound transactions are skipped. This is so this code does not
 	// affect internal transactions (ie consolidation and migrate txs)
 	memo, _ := ParseMemo(toi.Memo) // ignore err
@@ -434,7 +434,7 @@ func (tos *TxOutStorageV65) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (
 		maxTxOutOffset = tos.constAccessor.GetInt64Value(constants.MaxTxOutOffset)
 	}
 
-	dollarInRune := DollarInRune(ctx, tos.keeper)
+	dollarInRune := DollarInRune(ctx, mgr)
 	if dollarInRune.IsZero() {
 		// fallback to one (noop) in case we can't get the dollar value in rune
 		dollarInRune = cosmos.OneUint()

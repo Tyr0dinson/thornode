@@ -663,7 +663,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 }
 
 func (s *HelperSuite) TestRuneDollar(c *C) {
-	ctx, keeper := setupKeeperForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 	busd, _ := common.NewAsset("BNB.BUSD-BD1")
 	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
@@ -673,22 +673,22 @@ func (s *HelperSuite) TestRuneDollar(c *C) {
 		BalanceAsset: cosmos.NewUint(561004280893863),
 		Status:       PoolAvailable,
 	}
-	keeper.SetPool(ctx, pool)
+	mgr.Keeper().SetPool(ctx, pool)
 	pool = Pool{
 		Asset:        usdc,
 		BalanceRune:  cosmos.NewUint(63698785895423),
 		BalanceAsset: cosmos.NewUint(276015686236000),
 		Status:       PoolAvailable,
 	}
-	keeper.SetPool(ctx, pool)
+	mgr.Keeper().SetPool(ctx, pool)
 	pool = Pool{
 		Asset:        usdt,
 		BalanceRune:  cosmos.NewUint(32835318333562),
 		BalanceAsset: cosmos.NewUint(156711951489300),
 		Status:       PoolAvailable,
 	}
-	keeper.SetPool(ctx, pool)
+	mgr.Keeper().SetPool(ctx, pool)
 
-	dollar := DollarInRune(ctx, keeper)
+	dollar := DollarInRune(ctx, mgr)
 	c.Check(dollar.Uint64(), Equals, uint64(23077959), Commentf("%d", dollar.Uint64()))
 }

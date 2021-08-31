@@ -1093,7 +1093,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// get rune price
-	dollarInRune := telem(DollarInRune(ctx, mgr.Keeper()))
+	dollarInRune := telem(DollarInRune(ctx, mgr))
 	if dollarInRune > 0 {
 		telemetry.SetGauge(dollarInRune, "thornode", "price", "usd", "thor", "rune")
 	}
@@ -1192,7 +1192,13 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 }
 
 // gets the amount of rune that is equal to 1 USD
-func DollarInRune(ctx cosmos.Context, keeper keeper.Keeper) cosmos.Uint {
+func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
+	// check for mimir override
+	dollarInRune, err := mgr.Keeper().GetMimir(ctx, "DollarInRune")
+	if err == nil && dollarInRune > 0 {
+		return cosmos.NewUint(uint64(dollarInRune))
+	}
+
 	busd, _ := common.NewAsset("BNB.BUSD-BD1")
 	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
@@ -1200,7 +1206,10 @@ func DollarInRune(ctx cosmos.Context, keeper keeper.Keeper) cosmos.Uint {
 
 	usd := make([]cosmos.Uint, 0)
 	for _, asset := range usdAssets {
-		pool, err := keeper.GetPool(ctx, asset)
+		if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, asset.Chain) {
+			continue
+		}
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
 			continue
