@@ -26,8 +26,6 @@ type VaultBalanceStorageAccessor interface {
 	SetVaultBalance(bal btypes.VaultBalance) error
 }
 
-// TODO: Update SolvencyChecker to an interface, so it can be mocked and tested
-
 // SolvencyChecker is client side solvency checker ,which is doing a book keeping on the chain client level
 // when the chain client detect it is not solvent , it should stop observing
 type SolvencyChecker struct {

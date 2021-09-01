@@ -139,12 +139,16 @@ func (b *BinanceBlockScanner) GetHeight() (int64, error) {
 }
 
 func (b *BinanceBlockScanner) updateFees(height int64) error {
-	url := fmt.Sprintf("%s/abci_query?path=\"/param/fees\"&height=%d", b.cfg.RPCHost, height)
-	resp, err := b.http.Get(url)
+	feeUrl := fmt.Sprintf("%s/abci_query?path=\"/param/fees\"&height=%d", b.cfg.RPCHost, height)
+	resp, err := b.http.Get(feeUrl)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			b.logger.Err(err).Msg("fail to close response body")
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("failed to get current gas fees: non 200 error (%d)", resp.StatusCode)
@@ -305,8 +309,8 @@ func (b *BinanceBlockScanner) getRPCBlock(height int64) ([]string, error) {
 		duration := time.Since(start)
 		b.m.GetHistograms(metrics.BlockDiscoveryDuration).Observe(duration.Seconds())
 	}()
-	url := b.BlockRequest(height)
-	buf, err := b.getFromHttp(url)
+	heightUrl := b.BlockRequest(height)
+	buf, err := b.getFromHttp(heightUrl)
 	if err != nil {
 		if strings.Contains(err.Error(), "Height must be less than or equal to the current blockchain height") {
 			return nil, bltypes.UnavailableBlock
@@ -344,7 +348,7 @@ func (b *BinanceBlockScanner) UnmarshalBlock(buf []byte) ([]string, error) {
 	return block.Result.Block.Data.Txs, nil
 }
 
-func (c *BinanceBlockScanner) FetchMemPool(height int64) (stypes.TxIn, error) {
+func (c *BinanceBlockScanner) FetchMemPool(int64) (stypes.TxIn, error) {
 	return stypes.TxIn{}, nil
 }
 
@@ -369,16 +373,16 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	if err := b.db.RemoveBlockStatus(block.Height); err != nil {
 		b.logger.Error().Err(err).Int64("block", block.Height).Msg("fail to remove block status from data store, thus block will be re processed")
 	}
-	// if b.solvencyChecker != nil {
-	// 	if err := b.solvencyChecker.CheckSolvency(txIn); err != nil {
+	// on Binance chain , it doesn't support to request account balance on a specific block height
+	// so far the query to /abci_query with a block height will always return the latest balance
+	// also binance chain has 300ms block time , thus bifrost can't do appropriate accounting without causing false postive
+	// thus binance chain will report the account balance to thornode , and let thornode to finish the solvency check
 	if b.solvencyReporter != nil {
 		if err := b.solvencyReporter(height); err != nil {
 			b.logger.Err(err).Msg("fail to report solvency to THORChain")
 		}
 	}
-	// 		return stypes.TxIn{}, fmt.Errorf("vault insolvent, stop scanning blocks,err: %w", err)
-	// 	}
-	// }
+
 	return txIn, nil
 }
 
