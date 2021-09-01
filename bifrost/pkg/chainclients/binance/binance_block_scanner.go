@@ -375,7 +375,7 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	}
 	// on Binance chain , it doesn't support to request account balance on a specific block height
 	// so far the query to /abci_query with a block height will always return the latest balance
-	// also binance chain has 300ms block time , thus bifrost can't do appropriate accounting without causing false postive
+	// also binance chain has 300ms block time , thus bifrost can't do appropriate accounting without causing false positive
 	// thus binance chain will report the account balance to thornode , and let thornode to finish the solvency check
 	if b.solvencyReporter != nil {
 		if err := b.solvencyReporter(height); err != nil {
