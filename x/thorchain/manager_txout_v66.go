@@ -110,10 +110,8 @@ func (tos *TxOutStorageV66) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		return false, ErrNotEnoughToPayFee
 	}
 	// add tx to block out
-	for _, output := range outputs {
-		if err := tos.addToBlockOut(ctx, mgr, output); err != nil {
-			return false, err
-		}
+	if err := tos.addToBlockOut(ctx, mgr, outputs); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -133,7 +131,7 @@ func (tos *TxOutStorageV66) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		}
 		toi.ToAddress = newBCHAddress
 	}
-	return tos.addToBlockOut(ctx, mgr, toi)
+	return tos.addToBlockOut(ctx, mgr, []TxOutItem{toi})
 }
 
 // prepareTxOutItem will do some data validation which include the following
@@ -423,28 +421,74 @@ func (tos *TxOutStorageV66) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	return finalOutput, nil
 }
 
-func (tos *TxOutStorageV66) addToBlockOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	// THORChain , native RUNE will not need to forward the txout to bifrost
-	if toi.Chain.Equals(common.THORChain) {
-		return tos.nativeTxOut(ctx, mgr, toi)
+func (tos *TxOutStorageV66) addToBlockOut(ctx cosmos.Context, mgr Manager, items []TxOutItem) error {
+	if len(items) == 0 {
+		ctx.Logger().Error("cannot add txout items to txout, none given")
+		return nil
 	}
 
+	// sanity checks, ensure the asset and to address is all the same
+	asset := items[0].Coin.Asset
+	toAddress := items[0].ToAddress
+	for _, item := range items {
+		if !item.Coin.Asset.Equals(asset) {
+			ctx.Logger().Error("not all txout items have the same asset")
+			return nil
+		}
+		if !item.ToAddress.Equals(toAddress) {
+			ctx.Logger().Error("not all txout items have the same to address")
+			return nil
+		}
+	}
+
+	// if we're sending native assets, transfer them now and return
+	if items[0].Chain.Equals(common.THORChain) {
+		for _, item := range items {
+			if err := tos.nativeTxOut(ctx, mgr, item); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// The fact we are here means we're sending out a non-native asset to
+	// THORChain
+
+	// sum the amount of coins being sent out
+	sumAmount := cosmos.ZeroUint()
+	for _, item := range items {
+		sumAmount = sumAmount.Add(item.Coin.Amount)
+	}
+
+	// calculate the single block height to send all of these txout items,
+	// using the summed amount
+	voter, err := tos.keeper.GetObservedTxInVoter(ctx, items[0].InHash)
+	if err != nil {
+		ctx.Logger().Error("fail to get observe tx in voter", "error", err)
+		return fmt.Errorf("fail to get observe tx in voter,err:%w", err)
+	}
+	outboundHeight := voter.FinalisedHeight
+	toi := items[0]
+	toi.Coin.Amount = sumAmount
 	targetHeight, err := tos.calcTxOutHeight(ctx, toi)
 	if err != nil {
 		ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 	}
-
-	if targetHeight > common.BlockHeight(ctx) {
-		voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
-			return fmt.Errorf("fail to get observe tx in voter,err:%w", err)
-		}
-		voter.FinalisedHeight = targetHeight
-		tos.keeper.SetObservedTxInVoter(ctx, voter)
+	if targetHeight > outboundHeight {
+		outboundHeight = targetHeight
 	}
 
-	return tos.keeper.AppendTxOut(ctx, targetHeight, toi)
+	// update the OutboundHeight of the voter to the new height
+
+	voter.OutboundHeight = outboundHeight
+	tos.keeper.SetObservedTxInVoter(ctx, voter)
+
+	for _, item := range items {
+		if err := tos.keeper.AppendTxOut(ctx, outboundHeight, item); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (tos *TxOutStorageV66) calcTxOutHeight(ctx cosmos.Context, toi TxOutItem) (int64, error) {
