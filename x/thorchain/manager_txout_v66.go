@@ -115,15 +115,18 @@ func (tos *TxOutStorageV66) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 
 	outboundHeight := common.BlockHeight(ctx)
 	if !toi.Chain.IsTHORChain() {
+		toi.Memo = outputs[0].Memo
+		ctx.Logger().Info("toi", "toi", toi.String())
 		targetHeight, err := tos.calcTxOutHeight(ctx, toi)
 		if err != nil {
 			ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 		}
+		ctx.Logger().Info("calculated target height", "target height", targetHeight)
 		if targetHeight > outboundHeight {
 			outboundHeight = targetHeight
 		}
 	}
-	if !toi.InHash.Equals(common.BlankTxID) {
+	if !toi.InHash.IsEmpty() && !toi.InHash.Equals(common.BlankTxID) {
 		voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
 		if err != nil {
 			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
