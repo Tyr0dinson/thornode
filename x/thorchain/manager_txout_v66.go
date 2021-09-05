@@ -123,13 +123,15 @@ func (tos *TxOutStorageV66) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 			outboundHeight = targetHeight
 		}
 	}
-	voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
-	if err != nil {
-		ctx.Logger().Error("fail to get observe tx in voter", "error", err)
-		return false, fmt.Errorf("fail to get observe tx in voter,err:%w", err)
+	if !toi.InHash.Equals(common.BlankTxID) {
+		voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
+			return false, fmt.Errorf("fail to get observe tx in voter,err:%w", err)
+		}
+		voter.OutboundHeight = outboundHeight
+		tos.keeper.SetObservedTxInVoter(ctx, voter)
 	}
-	voter.OutboundHeight = outboundHeight
-	tos.keeper.SetObservedTxInVoter(ctx, voter)
 
 	// add tx to block out
 	for _, output := range outputs {
