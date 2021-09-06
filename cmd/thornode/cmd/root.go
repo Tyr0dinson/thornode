@@ -18,7 +18,6 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/snapshots"
 	"github.com/cosmos/cosmos-sdk/store"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
 	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
@@ -178,7 +177,11 @@ func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts serverty
 		skipUpgradeHeights[int64(h)] = true
 	}
 
-	pruningOpts := storetypes.NewPruningOptionsFromString(storetypes.PruningOptionNothing)
+	// pruningOpts := storetypes.NewPruningOptionsFromString(storetypes.PruningOptionNothing)
+	pruningOpts, err := server.GetPruningOptionsFromFlags(appOpts)
+	if err != nil {
+		panic(err)
+	}
 	snapshotDir := filepath.Join(cast.ToString(appOpts.Get(flags.FlagHome)), "data", "snapshots")
 	snapshotDB, err := sdk.NewLevelDB("metadata", snapshotDir)
 	if err != nil {
