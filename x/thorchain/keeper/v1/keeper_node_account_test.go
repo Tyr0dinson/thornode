@@ -17,8 +17,11 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 
 	na1 := GetRandomNodeAccount(NodeActive, NodeValidator)
 	na2 := GetRandomNodeAccount(NodeStandby, NodeValidator)
+	na3 := GetRandomNodeAccount(NodeActive, NodeLite)
+
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(k.SetNodeAccount(ctx, na3), IsNil)
 	c.Check(na1.ActiveBlockHeight, Equals, int64(10))
 	c.Check(na2.ActiveBlockHeight, Equals, int64(0))
 
@@ -53,7 +56,7 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	c.Assert(na.ValidatorConsPubKey, Equals, "")
 	nodeAccounts, err := k.ListValidatorsWithBond(ctx)
 	c.Check(err, IsNil)
-	c.Check(nodeAccounts.Len() > 0, Equals, true)
+	c.Check(nodeAccounts.Len() > 0 && nodeAccounts.Len() < 3, Equals, true)
 }
 
 func (s *KeeperNodeAccountSuite) TestGetMinJoinVersion(c *C) {

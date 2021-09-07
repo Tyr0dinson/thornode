@@ -219,6 +219,16 @@ func (HandlerSuite) TestIsSignedByActiveNodeAccounts(c *C) {
 	nodeAccount1 := GetRandomNodeAccount(NodeWhiteListed, NodeValidator)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
 	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, false)
+
+	// Update node to be active, check should succeed
+	nodeAccount1.Status = NodeActive
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
+	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, true)
+
+	// Update node to be a lite node, check should fail
+	nodeAccount1.Type = NodeLite
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
+	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, false)
 }
 
 func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {

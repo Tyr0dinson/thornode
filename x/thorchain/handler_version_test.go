@@ -18,6 +18,7 @@ type TestVersionlKeeper struct {
 	na                  NodeAccount
 	failNodeAccount     NodeAccount
 	emptyNodeAccount    NodeAccount
+	liteNodeAccount     NodeAccount
 	failSaveNodeAccount bool
 	failGetNetwork      bool
 	failSetNetwork      bool
@@ -33,6 +34,9 @@ func (k *TestVersionlKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAdd
 	}
 	if k.emptyNodeAccount.NodeAddress.Equals(addr) {
 		return NodeAccount{}, nil
+	}
+	if k.liteNodeAccount.NodeAddress.Equals(addr) {
+		return NodeAccount{Type: NodeLite}, nil
 	}
 	return k.na, nil
 }
@@ -72,6 +76,7 @@ func (s *HandlerVersionSuite) TestValidate(c *C) {
 		na:               GetRandomNodeAccount(NodeActive, NodeValidator),
 		failNodeAccount:  GetRandomNodeAccount(NodeActive, NodeValidator),
 		emptyNodeAccount: GetRandomNodeAccount(NodeStandby, NodeValidator),
+		liteNodeAccount:  GetRandomNodeAccount(NodeActive, NodeLite),
 	}
 
 	handler := NewVersionHandler(NewDummyMgrWithKeeper(keeper))
@@ -96,6 +101,13 @@ func (s *HandlerVersionSuite) TestValidate(c *C) {
 	// node account empty should fail
 	msg2 := NewMsgSetVersion(ver.String(), keeper.emptyNodeAccount.NodeAddress)
 	result, err = handler.Run(ctx, msg2)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(errors.Is(err, se.ErrUnauthorized), Equals, true)
+
+	// lite node should fail
+	msg3 := NewMsgSetVersion(ver.String(), keeper.liteNodeAccount.NodeAddress)
+	result, err = handler.Run(ctx, msg3)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(errors.Is(err, se.ErrUnauthorized), Equals, true)
