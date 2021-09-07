@@ -22,6 +22,10 @@ const (
 	NodeStandby = types.NodeStatus_Standby
 	NodeUnknown = types.NodeStatus_Unknown
 
+	// Node type
+	NodeValidator = types.NodeType_Validator
+	NodeLite      = types.NodeType_Lite
+
 	// Bond type
 	AsgardKeygen = types.KeygenType_AsgardKeygen
 )

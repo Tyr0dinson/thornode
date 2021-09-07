@@ -22,7 +22,7 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	c.Check(na1.ActiveBlockHeight, Equals, int64(10))
 	c.Check(na2.ActiveBlockHeight, Equals, int64(0))
 
-	count, err := k.TotalActiveNodeAccount(ctx)
+	count, err := k.TotalActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Check(count, Equals, 1)
 
@@ -51,7 +51,7 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(na.Status, Equals, NodeUnknown)
 	c.Assert(na.ValidatorConsPubKey, Equals, "")
-	nodeAccounts, err := k.ListNodeAccountsWithBond(ctx)
+	nodeAccounts, err := k.ListValidatorsWithBond(ctx)
 	c.Check(err, IsNil)
 	c.Check(nodeAccounts.Len() > 0, Equals, true)
 }

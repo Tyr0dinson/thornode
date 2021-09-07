@@ -23,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-// GetRandomNodeAccount create a random generated node account , used for test purpose
+// GetRandomValidator create a random generated validator node account , used for test purpose
 func GetRandomNodeAccount(status NodeStatus) NodeAccount {
 	s := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(s) // #nosec G404 this is a method only used for test purpose
@@ -43,6 +43,7 @@ func GetRandomNodeAccount(status NodeStatus) NodeAccount {
 		na.Bond = cosmos.NewUint(1000 * common.One)
 	}
 	na.IPAddress = "192.168.0.1"
+	na.Type = NodeType_Validator
 
 	return na
 }
