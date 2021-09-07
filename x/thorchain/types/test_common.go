@@ -23,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-// GetRandomValidator create a random generated validator node account , used for test purpose
+// GetRandomNodeAccount create a random generated node account, used for test purpose
 func GetRandomNodeAccount(status NodeStatus, nodeType NodeType) NodeAccount {
 	s := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(s) // #nosec G404 this is a method only used for test purpose

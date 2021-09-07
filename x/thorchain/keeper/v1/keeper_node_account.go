@@ -77,7 +77,7 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	return nodeAccounts, nil
 }
 
-// ListActiveValidators - get a list of active node accounts
+// ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
 }
