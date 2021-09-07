@@ -87,6 +87,7 @@ type (
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
 	NodeStatus               = types.NodeStatus
+	NodeType                 = types.NodeType
 	Network                  = types.Network
 	VaultStatus              = types.VaultStatus
 	NetworkFee               = types.NetworkFee

@@ -62,7 +62,7 @@ func newReserveContributorHandlerHelper(c *C) reserveContributorHandlerHelper {
 	keeper := newReserveContributorKeeper(k)
 
 	// active account
-	nodeAccount := GetRandomNodeAccount(NodeActive)
+	nodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
 	nodeAccount.Bond = cosmos.NewUint(100 * common.One)
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
 	constAccessor := constants.GetConstantValues(version)

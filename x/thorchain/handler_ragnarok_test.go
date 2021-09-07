@@ -31,7 +31,7 @@ func (HandlerRagnarokSuite) TestRagnarok(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	keeper := &TestRagnarokKeeper{
-		activeNodeAccount: GetRandomNodeAccount(NodeActive),
+		activeNodeAccount: GetRandomNodeAccount(NodeActive, NodeValidator),
 		vault:             GetRandomVault(),
 	}
 
@@ -135,7 +135,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 		Memo:        NewRagnarokMemo(1).String(),
 	})
 	keeper := &TestRagnarokKeeperHappyPath{
-		activeNodeAccount: GetRandomNodeAccount(NodeActive),
+		activeNodeAccount: GetRandomNodeAccount(NodeActive, NodeValidator),
 		newVault:          newVault,
 		retireVault:       retireVault,
 		txout:             txout,
@@ -180,7 +180,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	pool.Asset = common.BNBAsset
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	na := GetRandomNodeAccount(NodeActive)
+	na := GetRandomNodeAccount(NodeActive, NodeValidator)
 	na.Bond = cosmos.NewUint(100 * common.One)
 	retireVault.Membership = []string{
 		na.PubKeySet.Secp256k1.String(),

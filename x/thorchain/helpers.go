@@ -1162,7 +1162,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 
 	// emit node metrics
 	yggs := make(Vaults, 0)
-	nodes, err := mgr.Keeper().ListNodeAccountsWithBond(ctx)
+	nodes, err := mgr.Keeper().ListValidatorsWithBond(ctx)
 	if err != nil {
 		return err
 	}

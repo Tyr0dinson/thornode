@@ -24,7 +24,7 @@ import (
 )
 
 // GetRandomValidator create a random generated validator node account , used for test purpose
-func GetRandomNodeAccount(status NodeStatus) NodeAccount {
+func GetRandomNodeAccount(status NodeStatus, nodeType NodeType) NodeAccount {
 	s := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(s) // #nosec G404 this is a method only used for test purpose
 	accts := simtypes.RandomAccounts(r, 1)
@@ -43,7 +43,7 @@ func GetRandomNodeAccount(status NodeStatus) NodeAccount {
 		na.Bond = cosmos.NewUint(1000 * common.One)
 	}
 	na.IPAddress = "192.168.0.1"
-	na.Type = NodeType_Validator
+	na.Type = nodeType
 
 	return na
 }
