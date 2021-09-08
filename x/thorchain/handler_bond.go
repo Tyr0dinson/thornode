@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 // BondHandler a handler to process bond
@@ -176,6 +177,16 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 		}
 		nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cosmos.NewUint(common.One))
 		msg.Bond = common.SafeSub(msg.Bond, cosmos.NewUint(common.One))
+	}
+
+	if nodeAccount.Type == NodeLite {
+		minimumActiveBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
+
+		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumActiveBond)) {
+			nodeAccount.Status = NodeReady
+		}
+
+		nodeAccount.RequestedToLeave = false
 	}
 
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
