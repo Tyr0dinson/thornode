@@ -44,8 +44,8 @@ var _ = Suite(&HandlerObservedTxInSuite{})
 func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
 	var err error
 	ctx, _ := setupKeeperForTest(c)
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
-	standbyAccount := GetRandomNodeAccount(NodeStandby, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	standbyAccount := GetRandomValidatorNode(NodeStandby)
 	keeper := &TestObservedTxInValidateKeeper{
 		activeNodeAccount: activeNodeAccount,
 		standbyAccount:    standbyAccount,
@@ -219,10 +219,10 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 
 	keeper := &TestObservedTxInHandleKeeper{
 		nas: NodeAccounts{
-			GetRandomNodeAccount(NodeActive, NodeValidator),
-			GetRandomNodeAccount(NodeActive, NodeValidator),
-			GetRandomNodeAccount(NodeActive, NodeValidator),
-			GetRandomNodeAccount(NodeActive, NodeValidator),
+			GetRandomValidatorNode(NodeActive),
+			GetRandomValidatorNode(NodeActive),
+			GetRandomValidatorNode(NodeActive),
+			GetRandomValidatorNode(NodeActive),
 		},
 		vault: vault,
 		pool: Pool{
@@ -351,7 +351,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 	vault.PubKey = obTx.ObservedPubKey
 
 	keeper := &TestObservedTxInHandleKeeper{
-		nas:   NodeAccounts{GetRandomNodeAccount(NodeActive, NodeValidator)},
+		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
@@ -411,7 +411,7 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 
 	txs := ObservedTxs{tx}
 	keeper := &TestObservedTxInHandleKeeper{
-		nas:   NodeAccounts{GetRandomNodeAccount(NodeActive, NodeValidator)},
+		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
 		voter: NewObservedTxVoter(tx.Tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
@@ -482,7 +482,7 @@ func (h *ObservedTxInHandlerTestHelper) SetVault(ctx cosmos.Context, vault Vault
 }
 
 func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestHelper, c *C) *MsgObservedTxIn {
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	pk := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{

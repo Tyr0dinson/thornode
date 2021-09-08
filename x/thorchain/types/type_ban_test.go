@@ -26,10 +26,10 @@ func (s BanVoterSuite) TestVoter(c *C) {
 	c.Check(ban.HasSigned(addr), Equals, true)
 
 	nodes := NodeAccounts{
-		GetRandomNodeAccount(NodeStatus_Active, NodeType_Validator),
-		GetRandomNodeAccount(NodeStatus_Active, NodeType_Validator),
-		GetRandomNodeAccount(NodeStatus_Active, NodeType_Validator),
-		GetRandomNodeAccount(NodeStatus_Active, NodeType_Validator),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
+		GetRandomValidatorNode(NodeStatus_Active),
 	}
 
 	c.Check(ban.HasConsensus(nodes), Equals, false)

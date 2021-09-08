@@ -58,7 +58,7 @@ func (h *HandlerObserveNetworkFeeSuite) TestHandlerObserveNetworkFee(c *C) {
 
 func (*HandlerObserveNetworkFeeSuite) testHandlerObserveNetworkFeeWithVersion(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(keeper.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	handler := NewNetworkFeeHandler(NewDummyMgrWithKeeper(keeper))
 	msg := NewMsgNetworkFee(1024, common.BNBChain, 256, 100, activeNodeAccount.NodeAddress)

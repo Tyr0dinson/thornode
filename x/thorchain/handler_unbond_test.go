@@ -111,8 +111,8 @@ var _ = Suite(&HandlerUnBondSuite{})
 func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 	// happy path
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
-	standbyNodeAccount := GetRandomNodeAccount(NodeStandby, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
 	vault := NewVault(12, ActiveVault, YggdrasilVault, standbyNodeAccount.PubKeySet.Secp256k1, nil, []ChainContract{})
@@ -155,9 +155,9 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 
 	k := &TestUnBondKeeper{
 		activeNodeAccount:   activeNodeAccount,
-		failGetNodeAccount:  GetRandomNodeAccount(NodeActive, NodeValidator),
+		failGetNodeAccount:  GetRandomValidatorNode(NodeActive),
 		notEmptyNodeAccount: standbyNodeAccount,
-		jailNodeAccount:     GetRandomNodeAccount(NodeStandby, NodeValidator),
+		jailNodeAccount:     GetRandomValidatorNode(NodeStandby),
 	}
 	mgr := NewDummyMgrWithKeeper(k)
 	mgr.validatorMgr = BlankValidatorManager{}
@@ -213,7 +213,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 
 func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
 	txIn := common.NewTx(
@@ -240,22 +240,22 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 		},
 		{
 			name:        "zero bond",
-			msg:         NewMsgUnBond(txIn, GetRandomNodeAccount(NodeStandby, NodeValidator).NodeAddress, cosmos.ZeroUint(), activeNodeAccount.BondAddress, activeNodeAccount.NodeAddress),
+			msg:         NewMsgUnBond(txIn, GetRandomValidatorNode(NodeStandby).NodeAddress, cosmos.ZeroUint(), activeNodeAccount.BondAddress, activeNodeAccount.NodeAddress),
 			expectedErr: se.ErrUnknownRequest,
 		},
 		{
 			name:        "empty bond address",
-			msg:         NewMsgUnBond(txIn, GetRandomNodeAccount(NodeStandby, NodeValidator).NodeAddress, cosmos.NewUint(uint64(1)), common.Address(""), activeNodeAccount.NodeAddress),
+			msg:         NewMsgUnBond(txIn, GetRandomValidatorNode(NodeStandby).NodeAddress, cosmos.NewUint(uint64(1)), common.Address(""), activeNodeAccount.NodeAddress),
 			expectedErr: se.ErrInvalidAddress,
 		},
 		{
 			name:        "empty request hash",
-			msg:         NewMsgUnBond(txInNoTxID, GetRandomNodeAccount(NodeStandby, NodeValidator).NodeAddress, cosmos.NewUint(uint64(1)), activeNodeAccount.BondAddress, activeNodeAccount.NodeAddress),
+			msg:         NewMsgUnBond(txInNoTxID, GetRandomValidatorNode(NodeStandby).NodeAddress, cosmos.NewUint(uint64(1)), activeNodeAccount.BondAddress, activeNodeAccount.NodeAddress),
 			expectedErr: se.ErrUnknownRequest,
 		},
 		{
 			name:        "empty signer",
-			msg:         NewMsgUnBond(txIn, GetRandomNodeAccount(NodeStandby, NodeValidator).NodeAddress, cosmos.NewUint(uint64(1)), activeNodeAccount.BondAddress, cosmos.AccAddress{}),
+			msg:         NewMsgUnBond(txIn, GetRandomValidatorNode(NodeStandby).NodeAddress, cosmos.NewUint(uint64(1)), activeNodeAccount.BondAddress, cosmos.AccAddress{}),
 			expectedErr: se.ErrInvalidAddress,
 		},
 		{
@@ -280,8 +280,8 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 	// happy path
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
-	standbyNodeAccount := GetRandomNodeAccount(NodeStandby, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
 	vault := NewVault(12, ActiveVault, YggdrasilVault, standbyNodeAccount.PubKeySet.Secp256k1, []string{

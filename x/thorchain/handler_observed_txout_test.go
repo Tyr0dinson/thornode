@@ -32,7 +32,7 @@ var _ = Suite(&HandlerObservedTxOutSuite{})
 func (s *HandlerObservedTxOutSuite) TestValidate(c *C) {
 	var err error
 	ctx, _ := setupKeeperForTest(c)
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 
 	keeper := &TestObservedTxOutValidateKeeper{
 		activeNodeAccount: activeNodeAccount,
@@ -171,7 +171,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{
-		nas:   NodeAccounts{GetRandomNodeAccount(NodeActive, NodeValidator)},
+		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		pool: Pool{
 			Asset:        common.BNBAsset,
@@ -217,7 +217,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFunds(c *C) {
 	pk := GetRandomPubKey()
 	c.Assert(err, IsNil)
 
-	na := GetRandomNodeAccount(NodeActive, NodeValidator)
+	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
 
@@ -305,7 +305,7 @@ func (h *HandlerObservedTxOutTestHelper) SetVault(ctx cosmos.Context, vault Vaul
 }
 
 func setupAnObservedTxOut(ctx cosmos.Context, helper *HandlerObservedTxOutTestHelper, c *C) *MsgObservedTxOut {
-	activeNodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	pk := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{

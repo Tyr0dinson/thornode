@@ -151,7 +151,8 @@ var (
 	GetRandomVault                 = types.GetRandomVault
 	GetRandomTx                    = types.GetRandomTx
 	GetRandomObservedTx            = types.GetRandomObservedTx
-	GetRandomNodeAccount           = types.GetRandomNodeAccount
+	GetRandomValidatorNode         = types.GetRandomValidatorNode
+	GetRandomLiteNode              = types.GetRandomLiteNode
 	GetRandomTHORAddress           = types.GetRandomTHORAddress
 	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress

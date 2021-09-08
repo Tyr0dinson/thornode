@@ -49,7 +49,8 @@ var (
 	NewReserveContributor      = types.NewReserveContributor
 	NewTHORName                = types.NewTHORName
 	GetRandomTx                = types.GetRandomTx
-	GetRandomNodeAccount       = types.GetRandomNodeAccount
+	GetRandomValidatorNode     = types.GetRandomValidatorNode
+	GetRandomLiteNode          = types.GetRandomLiteNode
 	GetRandomBNBAddress        = types.GetRandomBNBAddress
 	GetRandomBTCAddress        = types.GetRandomBTCAddress
 	GetRandomBCHAddress        = types.GetRandomBCHAddress

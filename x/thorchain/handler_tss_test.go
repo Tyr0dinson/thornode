@@ -103,7 +103,7 @@ func newTssHandlerTestHelper(c *C) tssHandlerTestHelper {
 	keeper := newTssKeeperHelper(k)
 	FundModule(c, ctx, k, BondName, 500)
 	// active account
-	nodeAccount := GetRandomNodeAccount(NodeActive, NodeValidator)
+	nodeAccount := GetRandomValidatorNode(NodeActive)
 	nodeAccount.Bond = cosmos.NewUint(100 * common.One)
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
 
@@ -168,7 +168,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "Not signed by an active account should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				msg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), AsgardKeygen, common.BlockHeight(helper.ctx), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), GetRandomNodeAccount(NodeActive, NodeValidator).NodeAddress, keygenTime)
+				msg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), AsgardKeygen, common.BlockHeight(helper.ctx), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), GetRandomValidatorNode(NodeActive).NodeAddress, keygenTime)
 				c.Assert(err, IsNil)
 				return msg
 			},
@@ -308,7 +308,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			},
 			runner: func(handler TssHandler, msg cosmos.Msg, helper tssHandlerTestHelper) (*cosmos.Result, error) {
 				for i := 0; i < 8; i++ {
-					na := GetRandomNodeAccount(NodeActive, NodeValidator)
+					na := GetRandomValidatorNode(NodeActive)
 					_ = helper.keeper.SetNodeAccount(helper.ctx, na)
 				}
 				return handler.Run(helper.ctx, msg)
