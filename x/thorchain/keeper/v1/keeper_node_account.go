@@ -77,9 +77,31 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	return nodeAccounts, nil
 }
 
+// ListNodeAccountsByStatus - get a list of all node accounts with the given status
+func (k KVStore) ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	nodeAccounts := make(NodeAccounts, 0)
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		}
+		if na.Status == status {
+			nodeAccounts = append(nodeAccounts, na)
+		}
+	}
+	return nodeAccounts, nil
+}
+
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
+}
+
+// ListActiveNodeAccounts - get a list of all active node accounts
+func (k KVStore) ListActiveNodeAccounts(ctx cosmos.Context) (NodeAccounts, error) {
+	return k.ListNodeAccountsByStatus(ctx, NodeActive)
 }
 
 // GetMinJoinVersion - get min version to join. Min version is the most popular version
@@ -182,7 +204,7 @@ func (k KVStore) GetMinJoinVersionV1(ctx cosmos.Context) semver.Version {
 	return version
 }
 
-// GetLowestActiveVersion - get version number of lowest active node
+// GetLowestActiveVersion - get version number of lowest active validator node
 func (k KVStore) GetLowestActiveVersion(ctx cosmos.Context) semver.Version {
 	nodes, err := k.ListActiveValidators(ctx)
 	if err != nil {

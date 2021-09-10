@@ -23,7 +23,6 @@ func newYggMgrV65(keeper keeper.Keeper) *YggMgrV65 {
 	}
 }
 
-// ME Q: Should this func check 1 Validator Node and 1 Lite Node per Block?
 // Fund is a method to fund yggdrasil pool
 func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
 	// Check if we have triggered the ragnarok protocol
@@ -54,7 +53,9 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	// find total bonded
 	totalBond := cosmos.ZeroUint()
 
-	nodeAccs, err := ymgr.keeper.ListActiveValidators(ctx)
+	// Get all Active Validator + Lite Nodes
+	nodeAccs, err := ymgr.keeper.ListActiveNodeAccounts(ctx)
+
 	if err != nil {
 		return err
 	}
@@ -168,6 +169,7 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	}
 
 	if len(sendCoins) > 0 {
+		// set Lite node status to Active on observed TX in
 		count, err := ymgr.sendCoinsToYggdrasil(ctx, sendCoins, ygg, mgr, constAccessor)
 		if err != nil {
 			return err

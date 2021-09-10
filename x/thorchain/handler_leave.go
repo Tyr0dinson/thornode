@@ -183,6 +183,7 @@ func (h LeaveHandler) handleV46(ctx cosmos.Context, msg MsgLeave) error {
 	return h.handleCurrent(ctx, msg)
 }
 
+// Probably have two handlers one for Validators and one for Lite nodes
 func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 	nodeAcc, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
@@ -194,6 +195,15 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 	if !nodeAcc.BondAddress.Equals(msg.Tx.FromAddress) {
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%s are not authorized to manage %s", msg.Tx.FromAddress, msg.NodeAddress))
 	}
+
+	if nodeAcc.Type == NodeLite {
+		return h.handleLiteNode(ctx, msg, nodeAcc)
+	}
+
+	return h.handleValidator(ctx, msg, nodeAcc)
+}
+
+func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc NodeAccount) error {
 	// THORNode add the node to leave queue
 
 	coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
@@ -202,6 +212,7 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 	}
 
 	if nodeAcc.Status == NodeActive {
+		// LeaveScore doeesn't matter for Lite Nodes
 		if nodeAcc.LeaveScore == 0 {
 			// get to the 8th decimal point, but keep numbers integers for safer math
 			age := cosmos.NewUint(uint64((common.BlockHeight(ctx) - nodeAcc.StatusSince) * common.One))
@@ -255,7 +266,14 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 						if err := refundBond(ctx, msg.Tx, cosmos.ZeroUint(), &nodeAcc, h.mgr); err != nil {
 							return ErrInternal(err, "fail to refund bond")
 						}
-						nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+
+						// Lite Nodes should return to Standby status
+						if nodeAcc.Type == NodeLite {
+							nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
+						} else {
+							nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+						}
+
 					} else {
 						if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr, h.mgr.GetConstants()); err != nil {
 							return ErrInternal(err, "fail to request yggdrasil return fund")
@@ -265,6 +283,21 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 			}
 		}
 	}
+	nodeAcc.RequestedToLeave = true
+	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAcc); err != nil {
+		return ErrInternal(err, "fail to save node account to key value store")
+	}
+	ctx.EventManager().EmitEvent(
+		cosmos.NewEvent("validator_request_leave",
+			cosmos.NewAttribute("signer bnb address", msg.Tx.FromAddress.String()),
+			cosmos.NewAttribute("destination", nodeAcc.BondAddress.String()),
+			cosmos.NewAttribute("tx", msg.Tx.ID.String())))
+
+	return nil
+}
+
+func (h LeaveHandler) handleLiteNode(ctx cosmos.Context, msg MsgLeave, nodeAcc NodeAccount) error {
+
 	nodeAcc.RequestedToLeave = true
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAcc); err != nil {
 		return ErrInternal(err, "fail to save node account to key value store")

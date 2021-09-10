@@ -34,6 +34,7 @@ func (h BondHandler) validateV1(ctx cosmos.Context, msg MsgBond) error {
 	return h.validateCurrent(ctx, msg)
 }
 
+// Check nodeAccount.ForcedToLeave
 func (h BondHandler) validateCurrent(ctx cosmos.Context, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -183,7 +184,7 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 		minimumActiveBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
 
 		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumActiveBond)) {
-			nodeAccount.Status = NodeReady
+			nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
 		}
 
 		nodeAccount.RequestedToLeave = false
