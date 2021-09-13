@@ -796,21 +796,25 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		if !e.isToValidContractAddress(&item.Address, false) {
 			continue
 		}
+		earlyExit := false
 		switch item.Topics[0].String() {
 		case depositEvent:
+			// router contract , deposit function has re-entrance protection
 			depositEvt, err := e.parseDeposit(*item)
 			if err != nil {
 				return nil, fmt.Errorf("fail to parse deposit event: %w", err)
 			}
 			e.logger.Info().Msgf("deposit:%+v", depositEvt)
+			if len(depositEvt.Amount.Bits()) == 0 {
+				e.logger.Info().Msg("deposit amount is 0, ignore")
+				continue
+			}
 			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, depositEvt.To.String()) {
 				return nil, fmt.Errorf("multiple events in the same transaction, have different to addresses , ignore")
 			}
-			txInItem.To = depositEvt.To.String()
 			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, depositEvt.Memo) {
 				return nil, fmt.Errorf("multiple events in the same transaction , have different memo , ignore")
 			}
-			txInItem.Memo = depositEvt.Memo
 			asset, err := e.getAssetFromTokenAddress(depositEvt.Asset.String())
 			if err != nil {
 				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
@@ -818,27 +822,18 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 			if asset.IsEmpty() {
 				return nil, nil
 			}
+			txInItem.To = depositEvt.To.String()
+			txInItem.Memo = depositEvt.Memo
 			decimals := e.getTokenDecimalsForTHORChain(depositEvt.Asset.String())
 			e.logger.Info().Msgf("token:%s,decimals:%d", depositEvt.Asset, decimals)
 			txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(depositEvt.Asset.String(), depositEvt.Amount)).WithDecimals(decimals))
 		case transferOutEvent:
+			// it is not legal to have multiple transferOut event , transferOut event should be final
 			transferOutEvt, err := e.parseTransferOut(*item)
 			if err != nil {
 				return nil, fmt.Errorf("fail to parse transfer out event: %w", err)
 			}
 			e.logger.Info().Msgf("transfer out: %+v", transferOutEvt)
-			if len(txInItem.Sender) > 0 && !strings.EqualFold(txInItem.Sender, transferOutEvt.Vault.String()) {
-				return nil, fmt.Errorf("transfer out event , vault address is not the same as sender, ignore")
-			}
-			txInItem.Sender = transferOutEvt.Vault.String()
-			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, transferOutEvt.To.String()) {
-				return nil, fmt.Errorf("multiple events in the same transaction , have different to addresses , ignore")
-			}
-			txInItem.To = transferOutEvt.To.String()
-			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferOutEvt.Memo) {
-				return nil, fmt.Errorf("multiple events in the same transaction , have different memo , ignore")
-			}
-			txInItem.Memo = transferOutEvt.Memo
 			asset, err := e.getAssetFromTokenAddress(transferOutEvt.Asset.String())
 			if err != nil {
 				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
@@ -846,35 +841,48 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 			if asset.IsEmpty() {
 				return nil, nil
 			}
+			// txInItem.Sender = transferOutEvt.Vault.String()
+			txInItem.To = transferOutEvt.To.String()
+			txInItem.Memo = transferOutEvt.Memo
 			decimals := e.getTokenDecimalsForTHORChain(transferOutEvt.Asset.String())
-			txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals))
+			txInItem.Coins = common.NewCoins(common.NewCoin(asset, e.convertAmount(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals))
+			earlyExit = true
 		case transferAllowanceEvent:
+			// there is no circumstance , router will emit multiple transferAllowance event
+			// if that does happen , it means something dodgy happened
 			transferAllowanceEvt, err := e.parseTransferAllowanceEvent(*item)
 			if err != nil {
 				return nil, fmt.Errorf("fail to parse transfer allowance event: %w", err)
 			}
 			e.logger.Info().Msgf("transfer allowance: %+v", transferAllowanceEvt)
+			if len(transferAllowanceEvt.Amount.Bits()) == 0 {
+				e.logger.Error().Msg("transfer allowance event with amount 0, ignore")
+				continue
+			}
 			if len(txInItem.Sender) > 0 && !strings.EqualFold(txInItem.Sender, transferAllowanceEvt.OldVault.String()) {
-				return nil, fmt.Errorf("transfer allowance event , vault address is not the same as sender, ignore")
+				e.logger.Error().Msg("transfer allowance event , vault address is not the same as sender, ignore")
+				continue
 			}
-			txInItem.Sender = transferAllowanceEvt.OldVault.String()
 			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, transferAllowanceEvt.NewVault.String()) {
-				return nil, fmt.Errorf("multiple deposit events , have different to addresses , ignore")
+				e.logger.Error().Msg("multiple deposit events , have different to addresses , ignore")
+				continue
 			}
-			txInItem.To = transferAllowanceEvt.NewVault.String()
 			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferAllowanceEvt.Memo) {
-				return nil, fmt.Errorf("multiple events in the same transaction , have different memo , ignore")
+				e.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
+				continue
 			}
-			txInItem.Memo = transferAllowanceEvt.Memo
 			asset, err := e.getAssetFromTokenAddress(transferAllowanceEvt.Asset.String())
 			if err != nil {
-				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
+				e.logger.Err(err).Msgf("fail to get asset from token address")
+				continue
 			}
 			if asset.IsEmpty() {
-				return nil, nil
+				continue
 			}
+			txInItem.To = transferAllowanceEvt.NewVault.String()
+			txInItem.Memo = transferAllowanceEvt.Memo
 			decimals := e.getTokenDecimalsForTHORChain(transferAllowanceEvt.Asset.String())
-			txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(transferAllowanceEvt.Asset.String(), transferAllowanceEvt.Amount)).WithDecimals(decimals))
+			txInItem.Coins = common.NewCoins(common.NewCoin(asset, e.convertAmount(transferAllowanceEvt.Asset.String(), transferAllowanceEvt.Amount)).WithDecimals(decimals))
 		case vaultTransferEvent:
 			transferEvent, err := e.parseVaultTransfer(*item)
 			if err != nil {
@@ -882,17 +890,20 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 			}
 			e.logger.Info().Msgf("vault transfer: %+v", transferEvent)
 			if len(txInItem.Sender) > 0 && !strings.EqualFold(txInItem.Sender, transferEvent.OldVault.String()) {
-				return nil, fmt.Errorf("vault transfer event , vault address is not the same as sender, ignore")
+				e.logger.Error().Msg("vault transfer event , vault address is not the same as sender, ignore")
+				continue
 			}
-			txInItem.Sender = transferEvent.OldVault.String()
 			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, transferEvent.NewVault.String()) {
-				return nil, fmt.Errorf("multiple deposit events , have different to addresses , ignore")
+				e.logger.Error().Msg("multiple vaultTransfer events , have different to addresses , ignore")
+				continue
+			}
+			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferEvent.Memo) {
+				e.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
+				continue
 			}
 			txInItem.To = transferEvent.NewVault.String()
-			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferEvent.Memo) {
-				return nil, fmt.Errorf("multiple events in the same transaction , have different memo , ignore")
-			}
 			txInItem.Memo = transferEvent.Memo
+			var totalCoins common.Coins
 			for _, item := range transferEvent.Coins {
 				asset, err := e.getAssetFromTokenAddress(item.Asset.String())
 				if err != nil {
@@ -902,9 +913,13 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 					return nil, nil
 				}
 				decimals := e.getTokenDecimalsForTHORChain(item.Asset.String())
-				txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(item.Asset.String(), item.Amount)).WithDecimals(decimals))
+				totalCoins = append(totalCoins, common.NewCoin(asset, e.convertAmount(item.Asset.String(), item.Amount)).WithDecimals(decimals))
 			}
+			txInItem.Coins = totalCoins
 			isVaultTransfer = true
+		}
+		if earlyExit {
+			break
 		}
 	}
 
