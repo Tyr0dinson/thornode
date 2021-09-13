@@ -267,12 +267,7 @@ func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc 
 							return ErrInternal(err, "fail to refund bond")
 						}
 
-						// Lite Nodes should return to Standby status
-						if nodeAcc.Type == NodeLite {
-							nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
-						} else {
-							nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
-						}
+						nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
 
 					} else {
 						if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr, h.mgr.GetConstants()); err != nil {
@@ -297,6 +292,34 @@ func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc 
 }
 
 func (h LeaveHandler) handleLiteNode(ctx cosmos.Context, msg MsgLeave, nodeAcc NodeAccount) error {
+
+	if nodeAcc.Status == NodeStandby {
+		return nil
+	}
+
+	if !h.mgr.Keeper().VaultExists(ctx, nodeAcc.PubKeySet.Secp256k1) {
+		nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
+	} else {
+
+		vault, err := h.mgr.Keeper().GetVault(ctx, nodeAcc.PubKeySet.Secp256k1)
+
+		if err != nil {
+			return ErrInternal(err, "fail to get vault pool")
+		}
+
+		if !vault.HasFunds() {
+
+			nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
+		} else {
+
+			// Vault has funds, return them
+			if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr, h.mgr.GetConstants()); err != nil {
+				return ErrInternal(err, "fail to request yggdrasil return fund")
+			}
+
+			nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
+		}
+	}
 
 	nodeAcc.RequestedToLeave = true
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAcc); err != nil {
