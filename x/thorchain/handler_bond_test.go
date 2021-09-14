@@ -146,3 +146,7 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 		c.Check(errors.Is(err, item.expectedErr), Equals, true, Commentf("name: %s, %s != %s", item.name, item.expectedErr, err))
 	}
 }
+
+func (HandlerBondSuite) TestBondLiteNodes(c *C) {
+
+}
