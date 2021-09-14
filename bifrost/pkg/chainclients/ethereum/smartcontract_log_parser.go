@@ -239,7 +239,7 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferAllowanceEvt.Memo)
 				continue
 			}
-			if !m.IsType(memo.TxMigrate) && !m.IsType(memo.TxYggdrasilFund) {
+			if !(m.IsType(memo.TxMigrate) || m.IsType(memo.TxYggdrasilFund)) {
 				scp.logger.Error().Msgf("%s is not correct memo to use transfer allowance", transferAllowanceEvt.Memo)
 				continue
 			}
