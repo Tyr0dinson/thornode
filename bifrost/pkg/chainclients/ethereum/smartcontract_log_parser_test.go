@@ -1,7 +1,6 @@
 package ethereum
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strings"
@@ -719,6 +718,28 @@ func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
 	c.Assert(txInItem.Coins.EqualsEx(common.NewCoins(
 		common.NewCoin(tknAsset, cosmos.NewUint(1024000)),
 	)), Equals, true)
-	log := t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", "0x9F4AaB49A9cd8FC54Dcb3701846f608a6f2C44dA", "0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483", big.NewInt(1249509754000000000), "YGGDRASIL+:1024")
-	fmt.Println(hex.EncodeToString(log.Data))
+
+	// This test a scenario that user triggered both transfer allowance , and return vault asset , and then trigger a transfer out event
+	// transfer out event should be observed
+	txInItem = &types.TxInItem{
+		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
+	}
+	outboundHash = types2.GetRandomTxHash().String()
+	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
+			"0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken, big.NewInt(2048000), "YGGDRASIL+:1024"),
+		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437",
+			nil, "YGGDRASIL-:1024"),
+		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
+			"0x6c4a2eeb8531e3c18bca51104df7eb2377708263",
+			"0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken,
+			big.NewInt(1024000), "OUT:"+outboundHash),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(isVaultTransfer, Equals, false)
+	c.Assert(txInItem.To, Equals, "0x9EcA25ee04FDCc9d9CDFF377aa8da019Dba38437")
+	c.Assert(txInItem.Memo, Equals, "OUT:"+outboundHash)
+	c.Assert(txInItem.Coins.EqualsEx(common.NewCoins(
+		common.NewCoin(tknAsset, cosmos.NewUint(1024000)),
+	)), Equals, true)
 }
