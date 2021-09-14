@@ -197,12 +197,12 @@ func (s *SlashingV1Suite) SetUpSuite(c *C) {
 func (s *SlashingV1Suite) TestObservingSlashing(c *C) {
 	var err error
 	ctx, k := setupKeeperForTest(c)
-	naActiveAfterTx := GetRandomNodeAccount(NodeActive, NodeValidator)
+	naActiveAfterTx := GetRandomValidatorNode(NodeActive)
 	naActiveAfterTx.ActiveBlockHeight = 1030
 	nas := NodeAccounts{
-		GetRandomNodeAccount(NodeActive, NodeValidator),
-		GetRandomNodeAccount(NodeActive, NodeValidator),
-		GetRandomNodeAccount(NodeStandby, NodeValidator),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeStandby),
 		naActiveAfterTx,
 	}
 	for _, item := range nas {
@@ -275,8 +275,8 @@ func (s *SlashingV1Suite) TestLackObservingErrors(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	nas := NodeAccounts{
-		GetRandomNodeAccount(NodeActive, NodeValidator),
-		GetRandomNodeAccount(NodeActive, NodeValidator),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
 	}
 	keeper := &TestSlashObservingKeeper{
 		nas:      nas,
@@ -345,7 +345,7 @@ func (s *SlashingV1Suite) TestNodeSignSlashErrors(c *C) {
 		ctx = ctx.WithBlockHeight(201) // set blockheight
 		ver := GetCurrentVersion()
 		constAccessor := constants.GetConstantValues(ver)
-		na := GetRandomNodeAccount(NodeActive, NodeValidator)
+		na := GetRandomValidatorNode(NodeActive)
 		inTx := common.NewTx(
 			GetRandomTxHash(),
 			GetRandomBNBAddress(),
@@ -399,7 +399,7 @@ func (s *SlashingV1Suite) TestNotSigningSlash(c *C) {
 	txOutStore := NewTxStoreDummy()
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
-	na := GetRandomNodeAccount(NodeActive, NodeValidator)
+	na := GetRandomValidatorNode(NodeActive)
 	inTx := common.NewTx(
 		GetRandomTxHash(),
 		GetRandomBNBAddress(),
@@ -459,8 +459,8 @@ func (s *SlashingV1Suite) TestNotSigningSlash(c *C) {
 
 func (s *SlashingV1Suite) TestNewSlasher(c *C) {
 	nas := NodeAccounts{
-		GetRandomNodeAccount(NodeActive, NodeValidator),
-		GetRandomNodeAccount(NodeActive, NodeValidator),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
 	}
 	keeper := &TestSlashObservingKeeper{
 		nas:      nas,
@@ -475,7 +475,7 @@ func (s *SlashingV1Suite) TestDoubleSign(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 
-	na := GetRandomNodeAccount(NodeActive, NodeValidator)
+	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(100 * common.One)
 
 	keeper := &TestDoubleSlashKeeper{
@@ -497,7 +497,7 @@ func (s *SlashingV1Suite) TestDoubleSign(c *C) {
 func (s *SlashingV1Suite) TestIncreaseDecreaseSlashPoints(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
-	na := GetRandomNodeAccount(NodeActive, NodeValidator)
+	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(100 * common.One)
 
 	keeper := &TestDoubleSlashKeeper{

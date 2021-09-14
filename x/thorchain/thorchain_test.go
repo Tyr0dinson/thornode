@@ -126,7 +126,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	addresses := make([]cosmos.AccAddress, 4)
 	var existingValidators []string
 	for i := 0; i <= 3; i++ {
-		na := GetRandomNodeAccount(NodeActive, NodeValidator)
+		na := GetRandomValidatorNode(NodeActive)
 		addresses[i] = na.NodeAddress
 		na.SignerMembership = common.PubKeys{vault.PubKey}.Strings()
 		if i == 0 { // give the first node account slash points
@@ -145,7 +145,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// create new node account to rotate in
-	na := GetRandomNodeAccount(NodeReady, NodeValidator)
+	na := GetRandomValidatorNode(NodeReady)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// trigger marking bad actors as well as a keygen
@@ -329,7 +329,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	bonderCount := 3
 	bonders := make(NodeAccounts, bonderCount)
 	for i := 1; i <= bonderCount; i++ {
-		na := GetRandomNodeAccount(NodeActive, NodeValidator)
+		na := GetRandomValidatorNode(NodeActive)
 		na.Bond = cosmos.NewUint(1_000_000 * uint64(i) * common.One)
 		FundModule(c, ctx, mgr.Keeper(), BondName, na.Bond.Uint64())
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
@@ -472,7 +472,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	bonderCount := 4
 	bonders := make(NodeAccounts, bonderCount)
 	for i := 1; i <= bonderCount; i++ {
-		na := GetRandomNodeAccount(NodeActive, NodeValidator)
+		na := GetRandomValidatorNode(NodeActive)
 		na.Bond = cosmos.NewUint(1_000_000 * uint64(i) * common.One)
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 		bonders[i-1] = na

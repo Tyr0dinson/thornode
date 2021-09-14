@@ -15,9 +15,9 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(10)
 
-	na1 := GetRandomNodeAccount(NodeActive, NodeValidator)
-	na2 := GetRandomNodeAccount(NodeStandby, NodeValidator)
-	na3 := GetRandomNodeAccount(NodeActive, NodeLite)
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeStandby)
+	na3 := GetRandomLiteNode(NodeActive)
 
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
@@ -168,7 +168,7 @@ func (s *KeeperNodeAccountSuite) TestGetMinJoinVersion(c *C) {
 	for _, item := range inputs {
 		ctx, k := setupKeeperForTest(c)
 		for _, ni := range item.nodeInfoes {
-			na1 := GetRandomNodeAccount(ni.status, ni.nodeType)
+			na1 := GetRandomValidatorNode(ni.status)
 			na1.Version = ni.version.String()
 			c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 		}

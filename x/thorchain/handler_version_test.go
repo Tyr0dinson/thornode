@@ -73,10 +73,10 @@ func (s *HandlerVersionSuite) TestValidate(c *C) {
 	ver := GetCurrentVersion()
 
 	keeper := &TestVersionlKeeper{
-		na:               GetRandomNodeAccount(NodeActive, NodeValidator),
-		failNodeAccount:  GetRandomNodeAccount(NodeActive, NodeValidator),
-		emptyNodeAccount: GetRandomNodeAccount(NodeStandby, NodeValidator),
-		liteNodeAccount:  GetRandomNodeAccount(NodeActive, NodeLite),
+		na:               GetRandomValidatorNode(NodeActive),
+		failNodeAccount:  GetRandomValidatorNode(NodeActive),
+		emptyNodeAccount: GetRandomValidatorNode(NodeStandby),
+		liteNodeAccount:  GetRandomLiteNode(NodeActive),
 	}
 
 	handler := NewVersionHandler(NewDummyMgrWithKeeper(keeper))
@@ -117,7 +117,7 @@ func (s *HandlerVersionSuite) TestHandle(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	keeper := &TestVersionlKeeper{
-		na: GetRandomNodeAccount(NodeActive, NodeValidator),
+		na: GetRandomValidatorNode(NodeActive),
 	}
 
 	handler := NewVersionHandler(NewDummyMgrWithKeeper(keeper))
