@@ -272,94 +272,6 @@ func (e *ETHScanner) getHighestGasPrice() *big.Int {
 	return gasPrice
 }
 
-// vaultDepositEvent represent a vault deposit
-type vaultDepositEvent struct {
-	To     ecommon.Address
-	Asset  ecommon.Address
-	Amount *big.Int
-	Memo   string
-}
-
-func (e *ETHScanner) parseDeposit(log etypes.Log) (vaultDepositEvent, error) {
-	const DepositEventName = "Deposit"
-	event := vaultDepositEvent{}
-	if err := e.unpackVaultLog(&event, DepositEventName, log); err != nil {
-		return event, fmt.Errorf("fail to unpack event: %w", err)
-	}
-	return event, nil
-}
-
-// RouterCoin represent the coins transfer between vault
-type RouterCoin struct {
-	Asset  ecommon.Address
-	Amount *big.Int
-}
-
-type routerVaultTransfer struct {
-	OldVault ecommon.Address
-	NewVault ecommon.Address
-	Coins    []RouterCoin
-	Memo     string
-}
-
-func (e *ETHScanner) parseVaultTransfer(log etypes.Log) (routerVaultTransfer, error) {
-	const vaultTransferEventName = "VaultTransfer"
-	event := routerVaultTransfer{}
-	if err := e.unpackVaultLog(&event, vaultTransferEventName, log); err != nil {
-		return event, fmt.Errorf("fail to unpack event: %w", err)
-	}
-	return event, nil
-}
-
-func (e *ETHScanner) unpackVaultLog(out interface{}, event string, log etypes.Log) error {
-	if len(log.Data) > 0 {
-		if err := e.vaultABI.UnpackIntoInterface(out, event, log.Data); err != nil {
-			return fmt.Errorf("fail to parse event: %w", err)
-		}
-	}
-	var indexed abi.Arguments
-	for _, arg := range e.vaultABI.Events[event].Inputs {
-		if arg.Indexed {
-			indexed = append(indexed, arg)
-		}
-	}
-	return abi.ParseTopics(out, indexed, log.Topics[1:])
-}
-
-type vaultTransferOutEvent struct {
-	Vault  ecommon.Address
-	To     ecommon.Address
-	Asset  ecommon.Address
-	Amount *big.Int
-	Memo   string
-}
-
-func (e *ETHScanner) parseTransferOut(log etypes.Log) (vaultTransferOutEvent, error) {
-	const TransferOutEventName = "TransferOut"
-	event := vaultTransferOutEvent{}
-	if err := e.unpackVaultLog(&event, TransferOutEventName, log); err != nil {
-		return event, fmt.Errorf("fail to parse transfer out event")
-	}
-	return event, nil
-}
-
-type vaultTransferAllowanceEvent struct {
-	OldVault ecommon.Address
-	NewVault ecommon.Address
-	Asset    ecommon.Address
-	Amount   *big.Int
-	Memo     string
-}
-
-func (e *ETHScanner) parseTransferAllowanceEvent(log etypes.Log) (vaultTransferAllowanceEvent, error) {
-	const TransferAllowanceEventName = "TransferAllowance"
-	event := vaultTransferAllowanceEvent{}
-	if err := e.unpackVaultLog(&event, TransferAllowanceEventName, log); err != nil {
-		return event, fmt.Errorf("fail to parse transfer allowance event")
-	}
-	return event, nil
-}
-
 // processBlock extracts transactions from block
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	height := int64(block.NumberU64())
@@ -790,139 +702,17 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.logger.Info().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
 		return nil, nil
 	}
-	isVaultTransfer := false
-	for _, item := range receipt.Logs {
-		// only events produced by THORChain router is processed
-		if !e.isToValidContractAddress(&item.Address, false) {
-			continue
-		}
-		earlyExit := false
-		switch item.Topics[0].String() {
-		case depositEvent:
-			// router contract , deposit function has re-entrance protection
-			depositEvt, err := e.parseDeposit(*item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse deposit event: %w", err)
-			}
-			e.logger.Info().Msgf("deposit:%+v", depositEvt)
-			if len(depositEvt.Amount.Bits()) == 0 {
-				e.logger.Info().Msg("deposit amount is 0, ignore")
-				continue
-			}
-			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, depositEvt.To.String()) {
-				return nil, fmt.Errorf("multiple events in the same transaction, have different to addresses , ignore")
-			}
-			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, depositEvt.Memo) {
-				return nil, fmt.Errorf("multiple events in the same transaction , have different memo , ignore")
-			}
-			asset, err := e.getAssetFromTokenAddress(depositEvt.Asset.String())
-			if err != nil {
-				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
-			}
-			if asset.IsEmpty() {
-				return nil, nil
-			}
-			txInItem.To = depositEvt.To.String()
-			txInItem.Memo = depositEvt.Memo
-			decimals := e.getTokenDecimalsForTHORChain(depositEvt.Asset.String())
-			e.logger.Info().Msgf("token:%s,decimals:%d", depositEvt.Asset, decimals)
-			txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, e.convertAmount(depositEvt.Asset.String(), depositEvt.Amount)).WithDecimals(decimals))
-		case transferOutEvent:
-			// it is not legal to have multiple transferOut event , transferOut event should be final
-			transferOutEvt, err := e.parseTransferOut(*item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse transfer out event: %w", err)
-			}
-			e.logger.Info().Msgf("transfer out: %+v", transferOutEvt)
-			asset, err := e.getAssetFromTokenAddress(transferOutEvt.Asset.String())
-			if err != nil {
-				return nil, fmt.Errorf("fail to get asset from token address: %w", err)
-			}
-			if asset.IsEmpty() {
-				return nil, nil
-			}
-			// txInItem.Sender = transferOutEvt.Vault.String()
-			txInItem.To = transferOutEvt.To.String()
-			txInItem.Memo = transferOutEvt.Memo
-			decimals := e.getTokenDecimalsForTHORChain(transferOutEvt.Asset.String())
-			txInItem.Coins = common.NewCoins(common.NewCoin(asset, e.convertAmount(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals))
-			earlyExit = true
-		case transferAllowanceEvent:
-			// there is no circumstance , router will emit multiple transferAllowance event
-			// if that does happen , it means something dodgy happened
-			transferAllowanceEvt, err := e.parseTransferAllowanceEvent(*item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse transfer allowance event: %w", err)
-			}
-			e.logger.Info().Msgf("transfer allowance: %+v", transferAllowanceEvt)
-			if len(transferAllowanceEvt.Amount.Bits()) == 0 {
-				e.logger.Error().Msg("transfer allowance event with amount 0, ignore")
-				continue
-			}
-			if len(txInItem.Sender) > 0 && !strings.EqualFold(txInItem.Sender, transferAllowanceEvt.OldVault.String()) {
-				e.logger.Error().Msg("transfer allowance event , vault address is not the same as sender, ignore")
-				continue
-			}
-			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, transferAllowanceEvt.NewVault.String()) {
-				e.logger.Error().Msg("multiple deposit events , have different to addresses , ignore")
-				continue
-			}
-			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferAllowanceEvt.Memo) {
-				e.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
-				continue
-			}
-			asset, err := e.getAssetFromTokenAddress(transferAllowanceEvt.Asset.String())
-			if err != nil {
-				e.logger.Err(err).Msgf("fail to get asset from token address")
-				continue
-			}
-			if asset.IsEmpty() {
-				continue
-			}
-			txInItem.To = transferAllowanceEvt.NewVault.String()
-			txInItem.Memo = transferAllowanceEvt.Memo
-			decimals := e.getTokenDecimalsForTHORChain(transferAllowanceEvt.Asset.String())
-			txInItem.Coins = common.NewCoins(common.NewCoin(asset, e.convertAmount(transferAllowanceEvt.Asset.String(), transferAllowanceEvt.Amount)).WithDecimals(decimals))
-		case vaultTransferEvent:
-			transferEvent, err := e.parseVaultTransfer(*item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse vault transfer event: %w", err)
-			}
-			e.logger.Info().Msgf("vault transfer: %+v", transferEvent)
-			if len(txInItem.Sender) > 0 && !strings.EqualFold(txInItem.Sender, transferEvent.OldVault.String()) {
-				e.logger.Error().Msg("vault transfer event , vault address is not the same as sender, ignore")
-				continue
-			}
-			if len(txInItem.To) > 0 && !strings.EqualFold(txInItem.To, transferEvent.NewVault.String()) {
-				e.logger.Error().Msg("multiple vaultTransfer events , have different to addresses , ignore")
-				continue
-			}
-			if len(txInItem.Memo) > 0 && !strings.EqualFold(txInItem.Memo, transferEvent.Memo) {
-				e.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
-				continue
-			}
-			txInItem.To = transferEvent.NewVault.String()
-			txInItem.Memo = transferEvent.Memo
-			var totalCoins common.Coins
-			for _, item := range transferEvent.Coins {
-				asset, err := e.getAssetFromTokenAddress(item.Asset.String())
-				if err != nil {
-					return nil, fmt.Errorf("fail to get asset from token address: %w", err)
-				}
-				if asset.IsEmpty() {
-					return nil, nil
-				}
-				decimals := e.getTokenDecimalsForTHORChain(item.Asset.String())
-				totalCoins = append(totalCoins, common.NewCoin(asset, e.convertAmount(item.Asset.String(), item.Amount)).WithDecimals(decimals))
-			}
-			txInItem.Coins = totalCoins
-			isVaultTransfer = true
-		}
-		if earlyExit {
-			break
-		}
+	p := NewSmartContractLogParser(e.isToValidContractAddress,
+		e.getAssetFromTokenAddress,
+		e.getTokenDecimalsForTHORChain,
+		e.convertAmount,
+		e.vaultABI)
+	// txInItem will be changed in p.getTxInItem function, so if the function return an error
+	// txInItem should be abandoned
+	isVaultTransfer, err := p.getTxInItem(receipt.Logs, txInItem)
+	if err != nil {
+		return nil, fmt.Errorf("fail to parse logs, err: %w", err)
 	}
-
 	if isVaultTransfer {
 		contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain)
 		isDirectlyToRouter := false

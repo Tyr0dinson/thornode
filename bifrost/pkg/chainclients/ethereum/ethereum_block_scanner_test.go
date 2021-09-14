@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -29,8 +28,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 )
-
-func Test(t *testing.T) { TestingT(t) }
 
 type BlockScannerTestSuite struct {
 	m      *metrics.Metrics
