@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/blang/semver"
@@ -57,13 +56,14 @@ func (h MimirHandler) validateCurrent(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
-	for _, admin := range ADMINS {
-		addr, err := cosmos.AccAddressFromBech32(admin)
-		if msg.Signer.Equals(addr) && err == nil {
-			return nil
-		}
-	}
-	return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+	// for _, admin := range ADMINS {
+	// 	addr, err := cosmos.AccAddressFromBech32(admin)
+	// 	if msg.Signer.Equals(addr) && err == nil {
+	// 		return nil
+	// 	}
+	// }
+	// return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+	return nil
 }
 
 func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
