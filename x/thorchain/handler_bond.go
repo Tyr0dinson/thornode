@@ -181,9 +181,9 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	if nodeAccount.Type == NodeLite {
-		minimumActiveBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
+		minimumLiteNodeBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
 
-		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumActiveBond)) {
+		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumLiteNodeBond)) {
 			nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
 		}
 

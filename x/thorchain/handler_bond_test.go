@@ -17,9 +17,10 @@ type HandlerBondSuite struct{}
 
 type TestBondKeeper struct {
 	keeper.Keeper
-	activeNodeAccount   NodeAccount
-	failGetNodeAccount  NodeAccount
-	notEmptyNodeAccount NodeAccount
+	activeNodeAccount      NodeAccount
+	failGetNodeAccount     NodeAccount
+	notEmptyNodeAccount    NodeAccount
+	unknownLiteNodeAccount NodeAccount
 }
 
 func (k *TestBondKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
@@ -31,6 +32,9 @@ func (k *TestBondKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress
 	}
 	if k.notEmptyNodeAccount.NodeAddress.Equals(addr) {
 		return k.notEmptyNodeAccount, nil
+	}
+	if k.unknownLiteNodeAccount.NodeAddress.Equals(addr) {
+		return k.unknownLiteNodeAccount, nil
 	}
 	return NodeAccount{}, nil
 }
@@ -148,5 +152,77 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 }
 
 func (HandlerBondSuite) TestBondLiteNodes(c *C) {
+	ctx, k1 := setupKeeperForTest(c)
 
+	unknownLiteNodeAccount := GetRandomLiteNode(NodeReady)
+	k := &TestBondKeeper{
+		Keeper:                 k1,
+		unknownLiteNodeAccount: unknownLiteNodeAccount,
+	}
+
+	// msg bond must be greater than 1 to update bond
+	handler := NewBondHandler(NewDummyMgrWithKeeper(k1))
+	txIn := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+		},
+		BNBGasFeeSingleton,
+		"bond",
+	)
+	msg := NewMsgBond(txIn, unknownLiteNodeAccount.NodeAddress, cosmos.NewUint(uint64(common.One)), GetRandomBNBAddress(), unknownLiteNodeAccount.NodeAddress)
+
+	_, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	na, err := k1.GetNodeAccount(ctx, msg.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.Status.String(), Equals, NodeWhiteListed.String())
+	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(0))), Equals, true)
+
+	// 1 RUNE of submitted bond is used to init the account, rest is sent to bond module
+	txIn = common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One+common.One)),
+		},
+		BNBGasFeeSingleton,
+		"bond",
+	)
+	FundModule(c, ctx, k, BondName, uint64(common.One))
+	msg = NewMsgBond(txIn, unknownLiteNodeAccount.NodeAddress, cosmos.NewUint(uint64(common.One+common.One)), GetRandomBNBAddress(), unknownLiteNodeAccount.NodeAddress)
+
+	_, err = handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	na, err = k1.GetNodeAccount(ctx, msg.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.Status.String(), Equals, NodeWhiteListed.String())
+	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(common.One))), Equals, true)
+
+	// Lite node has minimum required bond, set to NodeReady
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	minimumLiteNodeBond := constAccessor.GetInt64Value(constants.MinimumLiteNodeBond)
+
+	txIn = common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(minimumLiteNodeBond))),
+		},
+		BNBGasFeeSingleton,
+		"bond",
+	)
+	FundModule(c, ctx, k, BondName, uint64(minimumLiteNodeBond))
+	msg = NewMsgBond(txIn, unknownLiteNodeAccount.NodeAddress, cosmos.NewUint(uint64(minimumLiteNodeBond)), GetRandomBNBAddress(), unknownLiteNodeAccount.NodeAddress)
+
+	_, err = handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	na, err = k1.GetNodeAccount(ctx, msg.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(minimumLiteNodeBond+common.One))), Equals, true)
 }

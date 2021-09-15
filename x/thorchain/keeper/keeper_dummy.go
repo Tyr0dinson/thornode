@@ -172,6 +172,14 @@ func (k KVStoreDummy) ListActiveValidators(_ cosmos.Context) (NodeAccounts, erro
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) ListNodeAccountsByStatus(_ cosmos.Context, _ NodeStatus) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ListActiveNodeAccounts(_ cosmos.Context) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
 func (k KVStoreDummy) GetLowestActiveVersion(_ cosmos.Context) semver.Version {
 	return semver.Version{
 		Major: 0,
