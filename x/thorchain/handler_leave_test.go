@@ -395,3 +395,87 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 		tc.validator(c, ctx, result, err, helper, tc.name, msg)
 	}
 }
+
+func (HandlerLeaveSuite) TestStandbyLiteNodeLeaves(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	acc := GetRandomLiteNode(NodeStandby)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
+
+	txID := GetRandomTxHash()
+	tx := common.NewTx(
+		txID,
+		acc.BondAddress,
+		GetRandomBNBAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		BNBGasFeeSingleton,
+		"LEAVE",
+	)
+
+	msgLeave := NewMsgLeave(tx, acc.NodeAddress, w.activeNodeAccount.NodeAddress)
+	_, err := leaveHandler.Run(w.ctx, msgLeave)
+	c.Assert(err, IsNil)
+	accAfterLeave, err := w.keeper.GetNodeAccount(w.ctx, acc.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(accAfterLeave.Status, Equals, NodeStandby)
+	c.Assert(accAfterLeave.RequestedToLeave, Equals, false)
+}
+
+func (HandlerLeaveSuite) TestActiveLiteNodeNoVaultLeaves(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
+
+	acc := GetRandomLiteNode(NodeActive)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
+
+	txID := GetRandomTxHash()
+	tx := common.NewTx(
+		txID,
+		acc.BondAddress,
+		GetRandomBNBAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		BNBGasFeeSingleton,
+		"LEAVE",
+	)
+
+	msgLeave := NewMsgLeave(tx, acc.NodeAddress, w.activeNodeAccount.NodeAddress)
+	_, err := leaveHandler.Run(w.ctx, msgLeave)
+	c.Assert(err, IsNil)
+	accAfterLeave, err := w.keeper.GetNodeAccount(w.ctx, acc.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(accAfterLeave.Status, Equals, NodeStandby)
+	c.Assert(accAfterLeave.RequestedToLeave, Equals, true)
+}
+
+func (HandlerLeaveSuite) TestActiveLiteNodeWithVaultLeaves(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	vault := GetRandomVault()
+	w.keeper.SetVault(w.ctx, vault)
+	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
+	acc := GetRandomLiteNode(NodeActive)
+	acc.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
+	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc.PubKeySet.Secp256k1, common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})
+	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
+
+	FundModule(c, w.ctx, w.keeper, BondName, 100)
+
+	txID := GetRandomTxHash()
+	tx := common.NewTx(
+		txID,
+		acc.BondAddress,
+		GetRandomBNBAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		BNBGasFeeSingleton,
+		"LEAVE",
+	)
+
+	msgLeave := NewMsgLeave(tx, acc.NodeAddress, w.activeNodeAccount.NodeAddress)
+	_, err := leaveHandler.Run(w.ctx, msgLeave)
+	c.Assert(err, IsNil)
+	accAfterLeave, err := w.keeper.GetNodeAccount(w.ctx, acc.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(accAfterLeave.Status, Equals, NodeStandby)
+	c.Assert(accAfterLeave.RequestedToLeave, Equals, true)
+}

@@ -198,9 +198,9 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 
 	if nodeAcc.Type == NodeLite {
 		return h.handleLiteNode(ctx, msg, nodeAcc)
+	} else {
+		return h.handleValidator(ctx, msg, nodeAcc)
 	}
-
-	return h.handleValidator(ctx, msg, nodeAcc)
 }
 
 func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc NodeAccount) error {
@@ -306,12 +306,9 @@ func (h LeaveHandler) handleLiteNode(ctx cosmos.Context, msg MsgLeave, nodeAcc N
 		if err != nil {
 			return ErrInternal(err, "fail to get vault pool")
 		}
-
 		if !vault.HasFunds() {
-
 			nodeAcc.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
 		} else {
-
 			// Vault has funds, return them
 			if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr, h.mgr.GetConstants()); err != nil {
 				return ErrInternal(err, "fail to request yggdrasil return fund")

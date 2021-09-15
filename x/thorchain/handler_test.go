@@ -178,7 +178,7 @@ type handlerTestWrapper struct {
 	notActiveNodeAccount NodeAccount
 }
 
-func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieBNBPool bool) handlerTestWrapper {
+func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActiveBNBPool bool) handlerTestWrapper {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(height)
 	acc1 := GetRandomValidatorNode(NodeActive)
@@ -186,7 +186,7 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieBNBPool 
 	if withActiveNode {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, acc1), IsNil)
 	}
-	if withActieBNBPool {
+	if withActiveBNBPool {
 		p, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
 		c.Assert(err, IsNil)
 		p.Asset = common.BNBAsset
