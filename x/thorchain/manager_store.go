@@ -75,6 +75,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV60(ctx, smgr.mgr)
 	case 62:
 		migrateStoreV62(ctx, smgr.mgr)
+	case 68:
+		migrateStoreV68(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -583,4 +585,80 @@ func migrateStoreV62(ctx cosmos.Context, mgr Manager) {
 	purgeETHOutboundQueue(ctx, mgr)
 	// the following two inbound from a binance address which has memo flag set , thus these outbound will not able to sent out
 	removeTransactions(ctx, mgr, "BB3A3E34783C11BE58C616F2C4D22C785D20697E793B54588035A2B0EE7B603A", "83C25D7AB3EBEBD462C95AF7D63E54DA010715541A1C73C0347E04191E78867D")
+}
+
+func migrateStoreV68(ctx cosmos.Context, mgr Manager) {
+	// due to outage, and binance daemons getting reset, some transaction were
+	// dropped by the network. This is an attempt to recover funds and donate
+	// to the pool/reserve. Users sending these txns will be compensated
+	// outside of the protocol.
+
+	const asgardPk = `thorpub1addwnpepqdr4386mnkqyqzpqlydtat0k82f8xvkfwzh4xtjc84cuaqmwx5vjvgnf6v5`
+	asgardPubKey, err := common.NewPubKey(asgardPk)
+	if err != nil {
+		ctx.Logger().Error("fail to parse pub key", "error", err)
+		return
+	}
+
+	gaps := []struct {
+		name   string
+		amount cosmos.Uint
+	}{
+		{"BNB.RUNE-B1A", cosmos.NewUint(1041129608000)},
+		{"BNB.BNB", cosmos.NewUint(1028570009)},
+		{"BNB.BUSD-BD1", cosmos.NewUint(630656834100)},
+		{"BNB.ETH-1C9", cosmos.NewUint(108972069)},
+		{"BNB.CAS-167", cosmos.NewUint(4330000000000)},
+	}
+	var coins common.Coins
+	for _, item := range gaps {
+		asset, err := common.NewAsset(item.name)
+		if err != nil {
+			ctx.Logger().Error("fail to parse asset", "asset", item.name, "error", err)
+			continue
+		}
+		coins = append(coins, common.NewCoin(asset, item.amount))
+	}
+
+	asgards, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active asgard", "error", err)
+		return
+	}
+
+	for _, v := range asgards {
+		if !v.PubKey.Equals(asgardPubKey) {
+			continue
+		}
+		v.AddFunds(coins)
+		if err := mgr.Keeper().SetVault(ctx, v); err != nil {
+			ctx.Logger().Error("fail to save asgard", "error", err)
+			continue
+		}
+
+		for _, coin := range coins {
+			if coin.Asset.IsRune() {
+				mint := common.NewCoin(common.RuneAsset(), coin.Amount)
+				if err := mgr.Keeper().MintToModule(ctx, ReserveName, mint); err != nil {
+					ctx.Logger().Error("fail to mint rune to reserve", "error", err)
+					continue
+				}
+			} else {
+				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+				if err != nil {
+					ctx.Logger().Error("fail to get pool", "asset", coin.Asset, "error", err)
+					continue
+				}
+				pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
+				if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+					ctx.Logger().Error("fail to save pool", "error", err)
+					continue
+				}
+
+				// emit event
+				mod := NewPoolMod(pool.Asset, cosmos.ZeroUint(), true, coin.Amount, true)
+				emitPoolBalanceChangedEvent(ctx, mod, "irregular state change", mgr)
+			}
+		}
+	}
 }
