@@ -34,7 +34,6 @@ func (h BondHandler) validateV1(ctx cosmos.Context, msg MsgBond) error {
 	return h.validateCurrent(ctx, msg)
 }
 
-// Check nodeAccount.ForcedToLeave
 func (h BondHandler) validateCurrent(ctx cosmos.Context, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err

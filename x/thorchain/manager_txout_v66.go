@@ -221,8 +221,7 @@ func (tos *TxOutStorageV66) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 			// only consider Yggdrasils where their observed saw the "correct"
 			// tx.
 
-			// This will need to change as Lite Nodes doesn't participate in consensus
-
+			// TODO: Choose between all Ygg vaults not just validators
 			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
 			if err != nil {
 				ctx.Logger().Error("fail to get all active node accounts", "error", err)
@@ -624,7 +623,6 @@ func (tos *TxOutStorageV66) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 	return nil
 }
 
-// ME: This func will need to change to return ygg vaults of Lite Nodes
 // collectYggdrasilPools is to get all the yggdrasil vaults , that THORChain can used to send out fund
 func (tos *TxOutStorageV66) collectYggdrasilPools(ctx cosmos.Context, tx ObservedTx, gasAsset common.Asset) (Vaults, error) {
 	// collect yggdrasil pools

@@ -183,7 +183,6 @@ func (h LeaveHandler) handleV46(ctx cosmos.Context, msg MsgLeave) error {
 	return h.handleCurrent(ctx, msg)
 }
 
-// Probably have two handlers one for Validators and one for Lite nodes
 func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 	nodeAcc, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
@@ -212,7 +211,6 @@ func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc 
 	}
 
 	if nodeAcc.Status == NodeActive {
-		// LeaveScore doeesn't matter for Lite Nodes
 		if nodeAcc.LeaveScore == 0 {
 			// get to the 8th decimal point, but keep numbers integers for safer math
 			age := cosmos.NewUint(uint64((common.BlockHeight(ctx) - nodeAcc.StatusSince) * common.One))

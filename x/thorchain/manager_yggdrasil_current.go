@@ -169,7 +169,6 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	}
 
 	if len(sendCoins) > 0 {
-		// set Lite node status to Active on observed TX in
 		count, err := ymgr.sendCoinsToYggdrasil(ctx, sendCoins, ygg, mgr, constAccessor)
 		if err != nil {
 			return err
