@@ -861,7 +861,7 @@ func (h ObservedTxInHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxIn) 
 }
 
 func (h ObservedTxInHandler) handleV61(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
-	activeNodeAccounts, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
+	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}

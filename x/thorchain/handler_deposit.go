@@ -1164,7 +1164,7 @@ func (h DepositHandler) handleV65(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}
 	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
-	activeNodes, err := h.mgr.Keeper().ListActiveNodeAccounts(ctx)
+	activeNodes, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active nodes: %w", err)
 	}
