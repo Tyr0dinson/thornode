@@ -5,7 +5,7 @@ package thorchain
 
 var (
 	ethUSDTAsset        = `ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306`
-	ethOldRouter        = `0x76E5ff813D58d16e7dA116D2E99c5F5c0AcA490E`
-	ethNewRouter        = `0xefA28233838f46a80AaaC8c309077a9ba70D123A`
+	ethOldRouter        = `0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44`
+	ethNewRouter        = `0xF141f1715B7D922e416B1e79BCb18ce2f28a1b87`
 	temporaryUSDTHolder = `0x8d8Bba78A27881294b34c82Fb5978596e2DF66dD`
 )
