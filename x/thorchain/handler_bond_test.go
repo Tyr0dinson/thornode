@@ -154,7 +154,7 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 func (HandlerBondSuite) TestBondLiteNodes(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 
-	unknownLiteNodeAccount := GetRandomLiteNode(NodeReady)
+	unknownLiteNodeAccount := GetRandomLiteNode(NodeUnknown)
 	k := &TestBondKeeper{
 		Keeper:                 k1,
 		unknownLiteNodeAccount: unknownLiteNodeAccount,
