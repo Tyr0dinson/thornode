@@ -75,8 +75,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV60(ctx, smgr.mgr)
 	case 62:
 		migrateStoreV62(ctx, smgr.mgr)
-	case 68:
-		migrateStoreV68(ctx, smgr.mgr)
+	case 69:
+		migrateStoreV69(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -587,7 +587,7 @@ func migrateStoreV62(ctx cosmos.Context, mgr Manager) {
 	removeTransactions(ctx, mgr, "BB3A3E34783C11BE58C616F2C4D22C785D20697E793B54588035A2B0EE7B603A", "83C25D7AB3EBEBD462C95AF7D63E54DA010715541A1C73C0347E04191E78867D")
 }
 
-func migrateStoreV68(ctx cosmos.Context, mgr Manager) {
+func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 	// due to outage, and binance daemons getting reset, some transaction were
 	// dropped by the network. This is an attempt to recover funds and donate
 	// to the pool/reserve. Users sending these txns will be compensated
