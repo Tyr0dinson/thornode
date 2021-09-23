@@ -234,6 +234,7 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 		minimumLiteNodeBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
 
 		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumLiteNodeBond)) {
+			// TODO: need to enforce YggNodes setting their Chains, shouldn't become active before that
 			nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
 		}
 

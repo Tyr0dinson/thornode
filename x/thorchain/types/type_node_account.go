@@ -181,6 +181,43 @@ func (m *NodeAccount) TryRemoveSignerPubKey(key common.PubKey) {
 	}
 }
 
+func (m NodeAccount) GetChains() common.Chains {
+	chains := make(common.Chains, 0)
+	for _, c := range m.Chains {
+		chain, err := common.NewChain(c)
+		if err != nil {
+			continue
+		}
+		chains = append(chains, chain)
+	}
+	return chains
+}
+
+func (m NodeAccount) GetSupportedPools(pools Pools) Pools {
+
+	supportedChains := m.Chains
+
+	// Only YggNodes set Chains, if this is not set this is a Validator node, all pools supported
+	if supportedChains == nil {
+		return pools
+	}
+
+	chainsMap := make(map[string]bool)
+
+	for _, chain := range supportedChains {
+		chainsMap[chain] = true
+	}
+
+	supportedPools := make(Pools, 0)
+	for _, pool := range pools {
+		if chainsMap[pool.Asset.Chain.String()] {
+			supportedPools = append(supportedPools, pool)
+		}
+	}
+
+	return supportedPools
+}
+
 // NodeAccounts just a list of NodeAccount
 type NodeAccounts []NodeAccount
 

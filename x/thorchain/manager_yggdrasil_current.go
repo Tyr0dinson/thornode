@@ -53,7 +53,7 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	// find total bonded
 	totalBond := cosmos.ZeroUint()
 
-	// Get all Active Validator + Lite Nodes
+	// Get all Active Validator + Ygg Nodes
 	nodeAccs, err := ymgr.keeper.ListActiveNodeAccounts(ctx)
 
 	if err != nil {
@@ -120,6 +120,13 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 			return fmt.Errorf("can't find current active asgard: %w", err)
 		}
 		supportChains := asgards[0].GetChains()
+
+		// If this is a Ygg Node, can only create vault with its supported chains
+		// Otherwise, this is a Validator and should support all chains that Asgard does
+		if na.Type == NodeLite {
+			supportChains = na.GetChains()
+		}
+
 		// supported chain for yggdrasil vault will be set at the time when it get created
 		ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, supportChains.Strings(), ymgr.keeper.GetChainContracts(ctx, supportChains))
 		ygg.Membership = append(ygg.Membership, na.PubKeySet.Secp256k1.String())
@@ -140,10 +147,17 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 		return fmt.Errorf("cannot send more yggdrasil funds while transactions are pending (%s: %d)", ygg.PubKey, pendingTxCount)
 	}
 
+	// ME-Q: Should this be a different constant for YggNodes?
 	yggFundLimit, err := ymgr.keeper.GetMimir(ctx, constants.YggFundLimit.String())
 	if yggFundLimit < 0 || err != nil {
 		yggFundLimit = constAccessor.GetInt64Value(constants.YggFundLimit)
 	}
+
+	// YggNodes only supoort certain chains, which means they only support certain pools
+	if na.Type == NodeLite {
+		pools = na.GetSupportedPools(pools)
+	}
+
 	targetCoins, err := ymgr.calcTargetYggCoins(pools, ygg, na.Bond, totalBond, cosmos.NewUint(uint64(yggFundLimit)))
 	if err != nil {
 		return err
@@ -326,6 +340,8 @@ func (ymgr YggMgrV65) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, total
 	}
 	// figure out what percentage of the bond this yggdrasil pool has. They
 	// should get half of that value.
+	// ME-Q: Should this calc be modified to account for the fact that YggVaults will have a smaller totalLiquidityRune than validator nodes?
+	// ME-N: Actually think this is fine, since totalLiquidityRune will be lower, targetRune will be lower too, which is what we want
 	targetRune := common.GetSafeShare(yggBond, bondVal, totalLiquidityRune)
 	// check if more rune would be allocated to this pool than their bond allows
 	if targetRune.GT(yggBond.Mul(yggFundLimit).QuoUint64(100)) {
@@ -355,6 +371,7 @@ func (ymgr YggMgrV65) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, total
 	}
 
 	// ensure THORNode don't send too much value in coins to the ygg pool
+	// ME-Q: could this just be: counter.GT(targetRune) ?
 	if counter.GT(yggBond.Mul(yggFundLimit).QuoUint64(100)) {
 		return nil, fmt.Errorf("exceeded safe amounts of assets for given Yggdrasil pool (%d/%d)", counter.Uint64(), yggBond.QuoUint64(2).Uint64())
 	}
