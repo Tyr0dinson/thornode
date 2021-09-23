@@ -178,7 +178,6 @@ func (HandlerBondSuite) TestBondLiteNodes(c *C) {
 	c.Assert(err, IsNil)
 	na, err := k1.GetNodeAccount(ctx, msg.NodeAddress)
 	c.Assert(err, IsNil)
-	c.Assert(na.Status.String(), Equals, NodeWhiteListed.String())
 	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(0))), Equals, true)
 
 	// 1 RUNE of submitted bond is used to init the account, rest is sent to bond module
