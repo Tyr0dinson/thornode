@@ -197,8 +197,10 @@ func (h LeaveHandler) handleCurrent(ctx cosmos.Context, msg MsgLeave) error {
 
 	if nodeAcc.Type == NodeLite {
 		return h.handleLiteNode(ctx, msg, nodeAcc)
-	} else {
+	} else if nodeAcc.Type == NodeValidator {
 		return h.handleValidator(ctx, msg, nodeAcc)
+	} else {
+		return fmt.Errorf("can't leave: invalid node type %s", nodeAcc.Type)
 	}
 }
 
@@ -291,7 +293,7 @@ func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc 
 
 func (h LeaveHandler) handleLiteNode(ctx cosmos.Context, msg MsgLeave, nodeAcc NodeAccount) error {
 
-	if nodeAcc.Status == NodeStandby {
+	if nodeAcc.Status != NodeActive {
 		return nil
 	}
 
@@ -321,8 +323,8 @@ func (h LeaveHandler) handleLiteNode(ctx cosmos.Context, msg MsgLeave, nodeAcc N
 		return ErrInternal(err, "fail to save node account to key value store")
 	}
 	ctx.EventManager().EmitEvent(
-		cosmos.NewEvent("validator_request_leave",
-			cosmos.NewAttribute("signer bnb address", msg.Tx.FromAddress.String()),
+		cosmos.NewEvent("lite_node_request_leave",
+			cosmos.NewAttribute("signer address", msg.Tx.FromAddress.String()),
 			cosmos.NewAttribute("destination", nodeAcc.BondAddress.String()),
 			cosmos.NewAttribute("tx", msg.Tx.ID.String())))
 

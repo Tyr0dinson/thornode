@@ -147,7 +147,6 @@ func (ymgr YggMgrV65) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 		return fmt.Errorf("cannot send more yggdrasil funds while transactions are pending (%s: %d)", ygg.PubKey, pendingTxCount)
 	}
 
-	// ME-Q: Should this be a different constant for YggNodes?
 	yggFundLimit, err := ymgr.keeper.GetMimir(ctx, constants.YggFundLimit.String())
 	if yggFundLimit < 0 || err != nil {
 		yggFundLimit = constAccessor.GetInt64Value(constants.YggFundLimit)
@@ -371,7 +370,6 @@ func (ymgr YggMgrV65) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, total
 	}
 
 	// ensure THORNode don't send too much value in coins to the ygg pool
-	// ME-Q: could this just be: counter.GT(targetRune) ?
 	if counter.GT(yggBond.Mul(yggFundLimit).QuoUint64(100)) {
 		return nil, fmt.Errorf("exceeded safe amounts of assets for given Yggdrasil pool (%d/%d)", counter.Uint64(), yggBond.QuoUint64(2).Uint64())
 	}

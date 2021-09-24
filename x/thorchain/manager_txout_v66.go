@@ -235,7 +235,6 @@ func (tos *TxOutStorageV66) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 
 				// collect yggdrasil pools is going to get a list of yggdrasil
 				// vault that THORChain can used to send out fund
-				// ME-N: We shouldn't have to explicitly check that a YggNode vault supports the asset, becasue they won't have the gas asset
 				yggs, err := tos.collectYggdrasilPools(ctx, tx, toi.Chain.GetGasAsset())
 				if err != nil {
 					return nil, fmt.Errorf("fail to collect yggdrasil pool: %w", err)
@@ -642,7 +641,6 @@ func (tos *TxOutStorageV66) collectYggdrasilPools(ctx cosmos.Context, tx Observe
 		// make sure the ygg pool has gasAsset , for example, if it is
 		// on Binance chain , make sure ygg pool has BNB asset in it ,
 		// otherwise it won't be able to pay the transaction fee
-		// ME-Q: Should we be checking that the vault has the actual asset as well as the gas asset (if they're different)?
 		if !vault.HasAsset(gasAsset) {
 			continue
 		}
