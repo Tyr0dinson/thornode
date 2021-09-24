@@ -76,7 +76,7 @@ func (s *HandlerVersionSuite) TestValidate(c *C) {
 		na:               GetRandomValidatorNode(NodeActive),
 		failNodeAccount:  GetRandomValidatorNode(NodeActive),
 		emptyNodeAccount: GetRandomValidatorNode(NodeStandby),
-		liteNodeAccount:  GetRandomLiteNode(NodeActive),
+		liteNodeAccount:  GetRandomLiteNode(NodeActive, []string{"BTC"}),
 	}
 
 	handler := NewVersionHandler(NewDummyMgrWithKeeper(keeper))

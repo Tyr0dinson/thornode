@@ -230,12 +230,13 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 		msg.Bond = common.SafeSub(msg.Bond, cosmos.NewUint(common.One))
 	}
 
-	if nodeAccount.Type == NodeLite {
+	if nodeAccount.Type == NodeLite && (nodeAccount.Status != NodeActive && nodeAccount.Status != NodeReady) {
 		minimumLiteNodeBond := uint64(h.mgr.GetConstants().GetInt64Value(constants.MinimumLiteNodeBond))
 
-		if (nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby) && nodeAccount.Bond.GTE(cosmos.NewUint(minimumLiteNodeBond)) {
-			// TODO: need to enforce YggNodes setting their Chains, shouldn't become active before that
-			nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
+		if nodeAccount.Bond.GTE(cosmos.NewUint(minimumLiteNodeBond)) && (nodeAccount.Chains != nil && len(nodeAccount.Chains) > 0) {
+			if nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby {
+				nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
+			}
 		}
 
 		nodeAccount.RequestedToLeave = false

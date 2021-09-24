@@ -50,7 +50,7 @@ func (s *HandlerIPAddressSuite) TestValidate(c *C) {
 
 	keeper := &TestIPAddresslKeeper{
 		na:       GetRandomValidatorNode(NodeActive),
-		liteNode: GetRandomLiteNode(NodeActive),
+		liteNode: GetRandomLiteNode(NodeActive, []string{"BTC"}),
 	}
 
 	handler := NewIPAddressHandler(NewDummyMgrWithKeeper(keeper))

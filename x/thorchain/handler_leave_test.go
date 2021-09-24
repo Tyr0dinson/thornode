@@ -400,7 +400,7 @@ func (HandlerLeaveSuite) TestStandbyLiteNodeLeaves(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
 
-	acc := GetRandomLiteNode(NodeStandby)
+	acc := GetRandomLiteNode(NodeStandby, []string{"BTC"})
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
 
 	txID := GetRandomTxHash()
@@ -426,7 +426,7 @@ func (HandlerLeaveSuite) TestActiveLiteNodeNoVaultLeaves(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
 
-	acc := GetRandomLiteNode(NodeActive)
+	acc := GetRandomLiteNode(NodeActive, []string{"BTC"})
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
 
 	txID := GetRandomTxHash()
@@ -453,7 +453,7 @@ func (HandlerLeaveSuite) TestActiveLiteNodeWithVaultLeaves(c *C) {
 	vault := GetRandomVault()
 	w.keeper.SetVault(w.ctx, vault)
 	leaveHandler := NewLeaveHandler(NewDummyMgrWithKeeper(w.keeper))
-	acc := GetRandomLiteNode(NodeActive)
+	acc := GetRandomLiteNode(NodeActive, []string{"BTC"})
 	acc.Bond = cosmos.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc), IsNil)
 	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc.PubKeySet.Secp256k1, common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})

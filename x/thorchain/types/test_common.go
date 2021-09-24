@@ -49,7 +49,7 @@ func GetRandomValidatorNode(status NodeStatus) NodeAccount {
 }
 
 // GetRandomLiteNode creates a random lite node account, used for testing
-func GetRandomLiteNode(status NodeStatus) NodeAccount {
+func GetRandomLiteNode(status NodeStatus, chains []string) NodeAccount {
 	s := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(s) // #nosec G404 this is a method only used for test purpose
 	accts := simtypes.RandomAccounts(r, 1)
@@ -69,6 +69,7 @@ func GetRandomLiteNode(status NodeStatus) NodeAccount {
 	}
 	na.IPAddress = "192.168.0.1"
 	na.Type = NodeType_Lite
+	na.Chains = chains
 
 	return na
 }

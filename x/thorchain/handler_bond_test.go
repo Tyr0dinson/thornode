@@ -21,6 +21,7 @@ type TestBondKeeper struct {
 	failGetNodeAccount     NodeAccount
 	notEmptyNodeAccount    NodeAccount
 	unknownLiteNodeAccount NodeAccount
+	unsetChainsLiteNode    NodeAccount
 }
 
 func (k *TestBondKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
@@ -35,6 +36,9 @@ func (k *TestBondKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress
 	}
 	if k.unknownLiteNodeAccount.NodeAddress.Equals(addr) {
 		return k.unknownLiteNodeAccount, nil
+	}
+	if k.unsetChainsLiteNode.NodeAddress.Equals(addr) {
+		return k.unsetChainsLiteNode, nil
 	}
 	return NodeAccount{}, nil
 }
@@ -154,10 +158,12 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 func (HandlerBondSuite) TestBondLiteNodes(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 
-	unknownLiteNodeAccount := GetRandomLiteNode(NodeUnknown)
+	unknownLiteNodeAccount := GetRandomLiteNode(NodeUnknown, []string{"BTC"})
+	unsetChainsLiteNode := GetRandomLiteNode(NodeWhiteListed, nil)
 	k := &TestBondKeeper{
 		Keeper:                 k1,
 		unknownLiteNodeAccount: unknownLiteNodeAccount,
+		unsetChainsLiteNode:    unsetChainsLiteNode,
 	}
 
 	// msg bond must be greater than 1 to update bond
@@ -224,4 +230,25 @@ func (HandlerBondSuite) TestBondLiteNodes(c *C) {
 	na, err = k1.GetNodeAccount(ctx, msg.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(minimumLiteNodeBond+common.One))), Equals, true)
+
+	// Lite node doesn't have chains set, don't set to NodeReady
+	txIn = common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(minimumLiteNodeBond+common.One))),
+		},
+		BNBGasFeeSingleton,
+		"bond",
+	)
+	FundModule(c, ctx, k, BondName, uint64(minimumLiteNodeBond+common.One))
+	msg = NewMsgBond(txIn, unsetChainsLiteNode.NodeAddress, cosmos.NewUint(uint64(minimumLiteNodeBond+common.One)), GetRandomBNBAddress(), unsetChainsLiteNode.NodeAddress)
+
+	_, err = handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	na, err = k1.GetNodeAccount(ctx, msg.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.Bond.Equal(cosmos.NewUint(uint64(minimumLiteNodeBond))), Equals, true)
+	c.Assert(na.Status.String(), Equals, NodeWhiteListed.String())
 }
