@@ -11,6 +11,35 @@ type StoreManagerTestSuite struct{}
 
 var _ = Suite(&StoreManagerTestSuite{})
 
+func (s *StoreManagerTestSuite) TestMigrateStoreV70(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	storeMgr := newStoreMgr(mgr)
+	keeper := storeMgr.mgr.Keeper()
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Type = NodeTypeUnknown
+	keeper.SetNodeAccount(ctx, na1)
+
+	na2 := GetRandomValidatorNode(NodeStandby)
+	na2.Type = NodeTypeUnknown
+	keeper.SetNodeAccount(ctx, na2)
+
+	na3 := GetRandomValidatorNode(NodeReady)
+	na3.Type = NodeTypeUnknown
+	keeper.SetNodeAccount(ctx, na3)
+
+	migrateStoreV70(ctx, mgr)
+
+	newNa1, _ := keeper.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(newNa1.Type, Equals, NodeTypeValidator)
+
+	newNa2, _ := keeper.GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(newNa2.Type, Equals, NodeTypeValidator)
+
+	newNa3, _ := keeper.GetNodeAccount(ctx, na3.NodeAddress)
+	c.Assert(newNa3.Type, Equals, NodeTypeValidator)
+}
+
 func (s *StoreManagerTestSuite) TestMigrateStoreV55(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	storeMgr := newStoreMgr(mgr)

@@ -75,10 +75,30 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV60(ctx, smgr.mgr)
 	case 62:
 		migrateStoreV62(ctx, smgr.mgr)
+	case 70:
+		migrateStoreV70(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
 	return nil
+}
+
+func migrateStoreV70(ctx cosmos.Context, mgr Manager) {
+	naIterator := mgr.Keeper().GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
+			ctx.Logger().Error("failed to unmarshal node account", "error", err)
+			naIterator.Next()
+		}
+
+		// Set all current nodes (which will all be validators) to have validator type
+		na.Type = NodeTypeValidator
+		if err := mgr.Keeper().SetNodeAccount(ctx, na); err != nil {
+			ctx.Logger().Error("failed to update node account", "error", err)
+		}
+	}
 }
 
 func migrateStoreV56(ctx cosmos.Context, mgr Manager) {
