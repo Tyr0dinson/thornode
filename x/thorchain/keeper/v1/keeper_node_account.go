@@ -87,7 +87,7 @@ func (k KVStore) ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus)
 		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
-		if na.Type == NodeValidator && na.Status == status {
+		if na.Status == status {
 			nodeAccounts = append(nodeAccounts, na)
 		}
 	}

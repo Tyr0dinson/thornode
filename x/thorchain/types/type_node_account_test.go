@@ -155,3 +155,24 @@ func (s *NodeAccountSuite) TestCalcNodeRewards(c *C) {
 	blocks = na.CalcBondUnits(50, 0)
 	c.Check(blocks.Uint64(), Equals, uint64(0), Commentf("%d", blocks.Uint64()))
 }
+
+func (s *NodeAccountSuite) TestChainsAndSupportedPools(c *C) {
+	na := NodeAccount{
+		Chains: []string{"BTC", "ETH"},
+		Type:   NodeType_Lite,
+	}
+
+	chains := na.GetChains()
+	c.Check(len(chains), Equals, 2)
+	c.Check(chains.Has(common.BTCChain), Equals, true)
+	c.Check(chains.Has(common.ETHChain), Equals, true)
+
+	a1, a2, a3, a4, a5, a6 := common.Asset{Chain: "BTC"}, common.Asset{Chain: "BTC"}, common.Asset{Chain: "LTC"}, common.Asset{Chain: "ETH"}, common.Asset{Chain: "XYZ"}, common.Asset{Chain: "ABC"}
+	p1, p2, p3, p4, p5, p6 := Pool{Asset: a1}, Pool{Asset: a2}, Pool{Asset: a3}, Pool{Asset: a4}, Pool{Asset: a5}, Pool{Asset: a6}
+
+	pools := na.GetSupportedPools([]Pool{p1, p2, p3, p4, p5, p6})
+	c.Check(len(pools), Equals, 3)
+	c.Check(pools[0], Equals, p1)
+	c.Check(pools[1], Equals, p2)
+	c.Check(pools[2], Equals, p4)
+}

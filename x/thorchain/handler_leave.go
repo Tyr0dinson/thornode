@@ -284,7 +284,7 @@ func (h LeaveHandler) handleValidator(ctx cosmos.Context, msg MsgLeave, nodeAcc 
 	}
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("validator_request_leave",
-			cosmos.NewAttribute("signer bnb address", msg.Tx.FromAddress.String()),
+			cosmos.NewAttribute("signer address", msg.Tx.FromAddress.String()),
 			cosmos.NewAttribute("destination", nodeAcc.BondAddress.String()),
 			cosmos.NewAttribute("tx", msg.Tx.ID.String())))
 

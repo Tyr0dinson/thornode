@@ -197,8 +197,8 @@ func (m NodeAccount) GetSupportedPools(pools Pools) Pools {
 
 	supportedChains := m.Chains
 
-	// Only YggNodes set Chains, if this is not set this is a Validator node, all pools supported
-	if supportedChains == nil {
+	// If this is a Validator node all pools should be supported
+	if m.Type == NodeType_Validator {
 		return pools
 	}
 
