@@ -235,7 +235,7 @@ func (h BondHandler) handleCurrent(ctx cosmos.Context, msg MsgBond) error {
 
 		if nodeAccount.Bond.GTE(cosmos.NewUint(minimumLiteNodeBond)) && (nodeAccount.Chains != nil && len(nodeAccount.Chains) > 0) {
 			if nodeAccount.Status == NodeWhiteListed || nodeAccount.Status == NodeStandby {
-				nodeAccount.UpdateStatus(NodeReady, ctx.BlockHeight())
+				nodeAccount.UpdateStatus(NodeReady, common.BlockHeight(ctx))
 			}
 		}
 
