@@ -90,7 +90,7 @@ func migrateStoreV70(ctx cosmos.Context, mgr Manager) {
 		var na NodeAccount
 		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
 			ctx.Logger().Error("failed to unmarshal node account", "error", err)
-			naIterator.Next()
+			continue
 		}
 
 		// Set all current nodes (which will all be validators) to have validator type
