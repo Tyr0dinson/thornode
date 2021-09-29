@@ -14,9 +14,12 @@ func (MsgSetNodeTypeSuite) TestMsgSetNodeType(c *C) {
 
 	msgSetNodeType := NewMsgSetNodeType(NodeType_TypeValidator, acc1)
 	c.Assert(msgSetNodeType.Route(), Equals, RouterKey)
-	c.Assert(msgSetNodeType.Type(), Equals, "set_node_keys")
+	c.Assert(msgSetNodeType.Type(), Equals, "set_node_type")
 	c.Assert(msgSetNodeType.ValidateBasic(), IsNil)
 	c.Assert(len(msgSetNodeType.GetSignBytes()) > 0, Equals, true)
 	c.Assert(msgSetNodeType.GetSigners(), NotNil)
 	c.Assert(msgSetNodeType.GetSigners()[0].String(), Equals, acc1.String())
+
+	msgSetNodeType2 := NewMsgSetNodeType(NodeType_TypeUnknown, acc1)
+	c.Assert(msgSetNodeType2.ValidateBasic(), NotNil)
 }

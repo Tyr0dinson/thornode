@@ -48,7 +48,9 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.65.0")) {
+	if version.GTE(semver.MustParse("0.70.0")) {
+
+	} else if version.GTE(semver.MustParse("0.65.0")) {
 		return getHandlerMappingV65(mgr)
 	} else if version.GTE(semver.MustParse("0.63.0")) {
 		return getHandlerMappingV63(mgr)
@@ -128,6 +130,34 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
 	m[MsgNodePauseChain{}.Type()] = NewNodePauseChainHandler(mgr)
+
+	// native handlers (non-consensus)
+	m[MsgSend{}.Type()] = NewSendHandler(mgr)
+	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
+	return m
+}
+
+func getHandlerMappingV70(mgr Manager) map[string]MsgHandler {
+	// New arch handlers
+	m := make(map[string]MsgHandler)
+
+	// consensus handlers
+	m[MsgTssPool{}.Type()] = NewTssHandler(mgr)
+	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(mgr)
+	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(mgr)
+	m[MsgTssKeysignFail{}.Type()] = NewTssKeysignHandler(mgr)
+	m[MsgErrataTx{}.Type()] = NewErrataTxHandler(mgr)
+	m[MsgBan{}.Type()] = NewBanHandler(mgr)
+	m[MsgNetworkFee{}.Type()] = NewNetworkFeeHandler(mgr)
+	m[MsgSolvency{}.Type()] = NewSolvencyHandler(mgr)
+
+	// cli handlers (non-consensus)
+	m[MsgMimir{}.Type()] = NewMimirHandler(mgr)
+	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(mgr)
+	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
+	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
+	m[MsgNodePauseChain{}.Type()] = NewNodePauseChainHandler(mgr)
+	m[MsgSetNodeType{}.Type()] = NewSetNodeTypeHandler(mgr)
 
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
