@@ -75,8 +75,6 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV60(ctx, smgr.mgr)
 	case 62:
 		migrateStoreV62(ctx, smgr.mgr)
-	case 70:
-		migrateStoreV70(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -90,7 +88,7 @@ func migrateStoreV70(ctx cosmos.Context, mgr Manager) {
 		var na NodeAccount
 		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
 			ctx.Logger().Error("failed to unmarshal node account", "error", err)
-			naIterator.Next()
+			continue
 		}
 
 		// Set all current nodes (which will all be validators) to have validator type
