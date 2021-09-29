@@ -206,6 +206,7 @@ type (
 	MsgSetVersion                  = types.MsgSetVersion
 	MsgSetIPAddress                = types.MsgSetIPAddress
 	MsgSetNodeKeys                 = types.MsgSetNodeKeys
+	MsgSetNodeType                 = types.MsgSetNodeType
 	MsgLeave                       = types.MsgLeave
 	MsgReserveContributor          = types.MsgReserveContributor
 	MsgYggdrasil                   = types.MsgYggdrasil
