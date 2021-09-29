@@ -71,6 +71,11 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 5
     done
 
+    # set node type
+    until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-node-type "Validator" --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id thorchain --yes; do
+      sleep 5
+    done
+
     # add IP address
     sleep 10 # wait for thorchain to commit a block
 

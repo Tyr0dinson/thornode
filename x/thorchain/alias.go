@@ -97,6 +97,7 @@ var (
 	NewKeygen                      = types.NewKeygen
 	NewKeygenBlock                 = types.NewKeygenBlock
 	NewMsgSetNodeKeys              = types.NewMsgSetNodeKeys
+	NewMsgSetNodeType              = types.NewMsgSetNodeType
 	NewMsgManageTHORName           = types.NewMsgManageTHORName
 	NewTxOut                       = types.NewTxOut
 	NewEventRewards                = types.NewEventRewards
@@ -153,6 +154,7 @@ var (
 	GetRandomObservedTx            = types.GetRandomObservedTx
 	GetRandomValidatorNode         = types.GetRandomValidatorNode
 	GetRandomLiteNode              = types.GetRandomLiteNode
+	GetRandomUnknownNode           = types.GetRandomUnknownNode
 	GetRandomTHORAddress           = types.GetRandomTHORAddress
 	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress

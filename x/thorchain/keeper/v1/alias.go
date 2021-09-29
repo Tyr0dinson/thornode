@@ -52,6 +52,7 @@ var (
 	GetRandomTx                = types.GetRandomTx
 	GetRandomValidatorNode     = types.GetRandomValidatorNode
 	GetRandomLiteNode          = types.GetRandomLiteNode
+	GetRandomUnknownNode       = types.GetRandomUnknownNode
 	GetRandomBNBAddress        = types.GetRandomBNBAddress
 	GetRandomBTCAddress        = types.GetRandomBTCAddress
 	GetRandomBCHAddress        = types.GetRandomBCHAddress
