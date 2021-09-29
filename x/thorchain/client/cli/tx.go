@@ -33,6 +33,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(GetCmdNodeResumeChain())
 	cmd.AddCommand(GetCmdDeposit())
 	cmd.AddCommand(GetCmdSend())
+	cmd.AddCommand(GetCmdSetNodeType())
 	for _, subCmd := range cmd.Commands() {
 		flags.AddTxFlagsToCmd(subCmd)
 	}
@@ -274,6 +275,35 @@ func GetCmdSetNodeKeys() *cobra.Command {
 				return err
 			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+}
+
+var stringToNodeTypeMap = map[string]types.NodeType{
+	"Validator": types.NodeType_TypeValidator,
+}
+
+func GetCmdSetNodeType() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-node-type [type (Validator)]",
+		Short: "Set node type. Node must be whitelisted first using BOND",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			if nodeType, ok := stringToNodeTypeMap[args[0]]; ok {
+				msg := types.NewMsgSetNodeType(nodeType, clientCtx.GetFromAddress())
+				err = msg.ValidateBasic()
+				if err != nil {
+					return err
+				}
+
+				return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			}
+			return fmt.Errorf("invalid node type")
 		},
 	}
 }

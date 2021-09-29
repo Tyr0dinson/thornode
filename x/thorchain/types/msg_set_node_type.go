@@ -5,7 +5,7 @@ import (
 )
 
 // NewMsgSetNodeType is a constructor function for NewMsgSetNodeType
-func NewMsgSetNodeType(nodeType string, signer cosmos.AccAddress) *MsgSetNodeType {
+func NewMsgSetNodeType(nodeType NodeType, signer cosmos.AccAddress) *MsgSetNodeType {
 	return &MsgSetNodeType{
 		NodeType: nodeType,
 		Signer:   signer,
@@ -23,8 +23,8 @@ func (m *MsgSetNodeType) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if m.NodeType == "" {
-		return cosmos.ErrUnknownRequest("node type cannot be empty")
+	if m.NodeType == NodeType_TypeUnknown {
+		return cosmos.ErrUnknownRequest("can not set node type as unknown")
 	}
 
 	return nil

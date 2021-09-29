@@ -3,9 +3,10 @@ package types;
 
 option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 
+import "thorchain/v1/x/thorchain/types/type_node_account.proto";
 import "gogoproto/gogo.proto";
 
 message MsgSetNodeType {
-  string node_type = 1 [(gogoproto.customname) = "NodeType"];
+  NodeType node_type = 1;
   bytes signer = 2 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
