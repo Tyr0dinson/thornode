@@ -84,7 +84,9 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.68.0")) {
+	if version.GTE(semver.MustParse("0.70.0")) {
+		return h.handleV70(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.68.0")) {
 		return h.handleV68(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
 		return h.handleV47(ctx, msg)
