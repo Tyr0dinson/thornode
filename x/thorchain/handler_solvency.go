@@ -35,6 +35,7 @@ func (h SolvencyHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 	}
 	return h.handle(ctx, *msg)
 }
+
 func (h SolvencyHandler) validate(ctx cosmos.Context, msg MsgSolvency) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.1.0")) {
@@ -42,10 +43,8 @@ func (h SolvencyHandler) validate(ctx cosmos.Context, msg MsgSolvency) error {
 	}
 	return errBadVersion
 }
+
 func (h SolvencyHandler) validateV1(ctx cosmos.Context, msg MsgSolvency) error {
-	return h.validateCurrent(ctx, msg)
-}
-func (h SolvencyHandler) validateCurrent(ctx cosmos.Context, msg MsgSolvency) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -54,6 +53,7 @@ func (h SolvencyHandler) validateCurrent(ctx cosmos.Context, msg MsgSolvency) er
 	}
 	return nil
 }
+
 func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	ctx.Logger().Info("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
@@ -191,6 +191,7 @@ func (h SolvencyHandler) insolvencyCheck(ctx cosmos.Context, vault Vault, coins 
 	}
 	return false
 }
+
 func (h SolvencyHandler) excludePendingOutboundFromVault(ctx cosmos.Context, vault Vault) (Vault, error) {
 	// go back SigningTransactionPeriod blocks to see whether there are outstanding tx, the vault need to send out
 	// if there is , deduct it from their balance
@@ -209,6 +210,7 @@ func (h SolvencyHandler) excludePendingOutboundFromVault(ctx cosmos.Context, vau
 	}
 	return vault, nil
 }
+
 func (h SolvencyHandler) deductVaultBlockPendingOutbound(vault Vault, block *TxOut) Vault {
 	for _, txOutItem := range block.TxArray {
 		if !txOutItem.VaultPubKey.Equals(vault.PubKey) {

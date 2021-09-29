@@ -50,10 +50,6 @@ func (h TssKeysignHandler) validate(ctx cosmos.Context, msg MsgTssKeysignFail) e
 }
 
 func (h TssKeysignHandler) validateV1(ctx cosmos.Context, msg MsgTssKeysignFail) error {
-	return h.validateCurrent(ctx, msg)
-}
-
-func (h TssKeysignHandler) validateCurrent(ctx cosmos.Context, msg MsgTssKeysignFail) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -111,10 +107,6 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 }
 
 func (h TssKeysignHandler) handleV1(ctx cosmos.Context, msg MsgTssKeysignFail) (*cosmos.Result, error) {
-	return h.handleCurrent(ctx, msg)
-}
-
-func (h TssKeysignHandler) handleCurrent(ctx cosmos.Context, msg MsgTssKeysignFail) (*cosmos.Result, error) {
 	voter, err := h.mgr.Keeper().GetTssKeysignFailVoter(ctx, msg.ID)
 	if err != nil {
 		return nil, err

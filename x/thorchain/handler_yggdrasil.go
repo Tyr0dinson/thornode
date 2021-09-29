@@ -56,10 +56,6 @@ func (h YggdrasilHandler) validate(ctx cosmos.Context, msg MsgYggdrasil) error {
 }
 
 func (h YggdrasilHandler) validateV1(ctx cosmos.Context, msg MsgYggdrasil) error {
-	return h.validateCurrent(ctx, msg)
-}
-
-func (h YggdrasilHandler) validateCurrent(ctx cosmos.Context, msg MsgYggdrasil) error {
 	return msg.ValidateBasic()
 }
 
