@@ -595,17 +595,15 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 	sushi, _ := common.NewAsset("ETH.SUSHI-0X6B3595068778DD592E39A122F4F5A5CF09C90FE2")
 	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	yfi, _ := common.NewAsset("ETH.YFI-0X0BC529C00C6401AEF6D220BE8C6EA1667F6AD93E")
-	ethrune, _ := common.NewAsset("ETH.RUNE-0X3155BA85D5F96B2D030A4966AF206230E46849CB")
 	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
 	xrune, _ := common.NewAsset("ETH.XRUNE-0X69FA0FEE221AD11012BAB0FDB45D444D3D2CE71C")
 	ethCoins := common.NewCoins(
-		common.NewCoin(alcx, cosmos.NewUint(966.89*1e8)),
-		common.NewCoin(sushi, cosmos.NewUint(56124.50*1e8)),
-		common.NewCoin(usdc, cosmos.NewUint(1672884.29*1e8)),
-		common.NewCoin(yfi, cosmos.NewUint(6.92*1e8)),
-		common.NewCoin(ethrune, cosmos.NewUint(395145.78)),
-		common.NewCoin(usdt, cosmos.NewUint(329400.472106*1e8)),
-		common.NewCoin(xrune, cosmos.NewUint(15138485.19*1e8)),
+		common.NewCoin(alcx, cosmos.NewUint(96688561785)),
+		common.NewCoin(sushi, cosmos.NewUint(5612449913455)),
+		common.NewCoin(usdc, cosmos.NewUint(167288429419600)),
+		common.NewCoin(yfi, cosmos.NewUint(691738219)),
+		common.NewCoin(usdt, cosmos.NewUint(99023689717400)),
+		common.NewCoin(xrune, cosmos.NewUint(2035726619258494)),
 	)
 
 	// due to outage, and binance daemons getting reset, some transaction were
@@ -626,8 +624,8 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 		{"BNB.RUNE-B1A", cosmos.NewUint(47717.64492 * 1e8)},
 		{"BNB.BNB", cosmos.NewUint(10.61276535 * 1e8)},
 		{"BNB.BUSD-BD1", cosmos.NewUint(6357.09857 * 1e8)},
-		{"BNB.ETH-1C9", cosmos.NewUint(108972069)},
-		{"BNB.CAS-167", cosmos.NewUint(4330000000000)},
+		{"BNB.ETH-1C9", cosmos.NewUint(1.08972069 * 1e8)},
+		{"BNB.CAS-167", cosmos.NewUint(10973.75396994 * 1e8)},
 	}
 	var coins common.Coins
 	for _, item := range gaps {
@@ -834,7 +832,7 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 			ctx.Logger().Error("fail to parse address", "address", item.addr, "error", err)
 			continue
 		}
-		asset, err := common.NewAsset(item.asset)
+		asset, err := common.NewAsset(fmt.Sprintf("BNB.%s", item.asset))
 		if err != nil {
 			ctx.Logger().Error("fail to parse asset", "asset", item.asset, "error", err)
 			continue
