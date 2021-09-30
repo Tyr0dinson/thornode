@@ -100,8 +100,9 @@ func (h SetNodeTypeHandler) handleCurrent(ctx cosmos.Context, msg MsgSetNodeType
 		cost = nodeAccount.Bond
 	}
 
-	// set the node type
+	// set node type and subtract cost from bond
 	nodeAccount.Type = msg.NodeType
+	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
 
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return nil, fmt.Errorf("fail to save node account: %w", err)
