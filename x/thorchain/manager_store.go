@@ -590,10 +590,7 @@ func migrateStoreV62(ctx cosmos.Context, mgr Manager) {
 func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 	// the following is to adjust the asgard vault, removing coins that were
 	// exploited out of the network a couple of months ago. The treasury is
-	// giving back 2/3rds of the assets in the asset taken, and the remainder
-	// will be donated in the rune asset. This change is to remove that 1/3rd
-	// of the assets from the vault so that the network will be solvent once
-	// the treasury adds the 2/3rds.
+	// giving back via `DONATE` memos of asset and rune
 	alcx, _ := common.NewAsset("ETH.ALCX-0XDBDB4D16EDA451D0503B854CF79D55697F90C8DF")
 	sushi, _ := common.NewAsset("ETH.SUSHI-0X6B3595068778DD592E39A122F4F5A5CF09C90FE2")
 	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
@@ -602,13 +599,13 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
 	xrune, _ := common.NewAsset("ETH.XRUNE-0X69FA0FEE221AD11012BAB0FDB45D444D3D2CE71C")
 	ethCoins := common.NewCoins(
-		common.NewCoin(alcx, cosmos.NewUint(322.79*1e8)),        // 966.89 - 644.10
-		common.NewCoin(sushi, cosmos.NewUint(18720.5*1e8)),      // 56,124.50 - 37,404.00
-		common.NewCoin(usdc, cosmos.NewUint(356149.71092*1e8)),  // 1,672,884.29 - 1,316,734.57908
-		common.NewCoin(yfi, cosmos.NewUint(0.309*1e8)),          // 6.92 - 6.611
-		common.NewCoin(ethrune, cosmos.NewUint(0)),              // 395,145.78 - 1,255,551.75483702
-		common.NewCoin(usdt, cosmos.NewUint(329400.472106*1e8)), // 990,236.90 - 660,836.427894
-		common.NewCoin(xrune, cosmos.NewUint(138485.19*1e8)),    // 15,138,485.19 - 15,000,000.00
+		common.NewCoin(alcx, cosmos.NewUint(966.89*1e8)),
+		common.NewCoin(sushi, cosmos.NewUint(56124.50*1e8)),
+		common.NewCoin(usdc, cosmos.NewUint(1672884.29*1e8)),
+		common.NewCoin(yfi, cosmos.NewUint(6.92*1e8)),
+		common.NewCoin(ethrune, cosmos.NewUint(395145.78)),
+		common.NewCoin(usdt, cosmos.NewUint(329400.472106*1e8)),
+		common.NewCoin(xrune, cosmos.NewUint(15138485.19*1e8)),
 	)
 
 	// due to outage, and binance daemons getting reset, some transaction were
