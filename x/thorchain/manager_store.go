@@ -854,6 +854,14 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 			VaultPubKey: asgardPubKey,
 		}
 
+		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
+			continue
+		}
+		voter.OutboundHeight = common.BlockHeight(ctx)
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
 		if err := mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi); err != nil {
 			ctx.Logger().Error("fail to send manual refund", "address", item.addr, "error", err)
 		}
