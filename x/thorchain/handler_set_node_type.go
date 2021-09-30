@@ -43,12 +43,12 @@ func (h SetNodeTypeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resul
 func (h SetNodeTypeHandler) validate(ctx cosmos.Context, msg MsgSetNodeType) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.70.0")) {
-		return h.validateV1(ctx, msg)
+		return h.validateV70(ctx, msg)
 	}
 	return errInvalidVersion
 }
 
-func (h SetNodeTypeHandler) validateV1(ctx cosmos.Context, msg MsgSetNodeType) error {
+func (h SetNodeTypeHandler) validateV70(ctx cosmos.Context, msg MsgSetNodeType) error {
 	return h.validateCurrent(ctx, msg)
 }
 
@@ -75,12 +75,12 @@ func (h SetNodeTypeHandler) handle(ctx cosmos.Context, msg MsgSetNodeType) (*cos
 	ctx.Logger().Info("handleMsgSetNodeType request")
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.70.0")) {
-		return h.handleV1(ctx, msg)
+		return h.handleV70(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
-func (h SetNodeTypeHandler) handleV1(ctx cosmos.Context, msg MsgSetNodeType) (*cosmos.Result, error) {
+func (h SetNodeTypeHandler) handleV70(ctx cosmos.Context, msg MsgSetNodeType) (*cosmos.Result, error) {
 	return h.handleCurrent(ctx, msg)
 }
 

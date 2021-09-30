@@ -15,8 +15,7 @@ type HandlerSetNodeTypeSuite struct{}
 
 type TestSetNodeTypeKeeper struct {
 	keeper.KVStoreDummy
-	na     NodeAccount
-	ensure error
+	na NodeAccount
 }
 
 func (k *TestSetNodeTypeKeeper) SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coins common.Coins) error {
@@ -25,10 +24,6 @@ func (k *TestSetNodeTypeKeeper) SendFromAccountToModule(ctx cosmos.Context, from
 
 func (k *TestSetNodeTypeKeeper) GetNodeAccount(ctx cosmos.Context, signer cosmos.AccAddress) (NodeAccount, error) {
 	return k.na, nil
-}
-
-func (k *TestSetNodeTypeKeeper) EnsureNodeKeysUnique(_ cosmos.Context, _ string, _ common.PubKeySet) error {
-	return k.ensure
 }
 
 func (k *TestSetNodeTypeKeeper) GetNetwork(ctx cosmos.Context) (Network, error) {
@@ -53,8 +48,7 @@ func (s *HandlerSetNodeTypeSuite) TestValidate(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	keeper := &TestSetNodeTypeKeeper{
-		na:     GetRandomUnknownNode(NodeStandby),
-		ensure: nil,
+		na: GetRandomUnknownNode(NodeStandby),
 	}
 	keeper.na.PubKeySet = common.PubKeySet{}
 

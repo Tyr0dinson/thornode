@@ -43,6 +43,7 @@ func GetRandomUnknownNode(status NodeStatus) NodeAccount {
 		na.Bond = cosmos.NewUint(1000 * common.One)
 	}
 	na.IPAddress = "192.168.0.1"
+	na.Type = NodeType_TypeUnknown
 
 	return na
 }
