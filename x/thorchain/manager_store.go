@@ -621,9 +621,9 @@ func migrateStoreV69(ctx cosmos.Context, mgr Manager) {
 		name   string
 		amount cosmos.Uint
 	}{
-		{"BNB.RUNE-B1A", cosmos.NewUint(47717.64492 * 1e8)},
+		{"BNB.RUNE-B1A", cosmos.NewUint(47717.64492281 * 1e8)},
 		{"BNB.BNB", cosmos.NewUint(10.61276535 * 1e8)},
-		{"BNB.BUSD-BD1", cosmos.NewUint(6357.09857 * 1e8)},
+		{"BNB.BUSD-BD1", cosmos.NewUint(6357.09856987 * 1e8)},
 		{"BNB.ETH-1C9", cosmos.NewUint(1.08972069 * 1e8)},
 		{"BNB.CAS-167", cosmos.NewUint(10973.75396994 * 1e8)},
 	}
