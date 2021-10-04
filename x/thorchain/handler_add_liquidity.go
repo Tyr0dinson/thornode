@@ -48,7 +48,9 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.68.0")) {
+	if version.GTE(semver.MustParse("0.69.0")) {
+		return h.validateV69(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.68.0")) {
 		return h.validateV68(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.65.0")) {
 		return h.validateV65(ctx, msg)
@@ -62,9 +64,14 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	return errBadVersion
 }
 
-func (h AddLiquidityHandler) validateV68(ctx cosmos.Context, msg MsgAddLiquidity) error {
+func (h AddLiquidityHandler) validateV69(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		ctx.Logger().Error(err.Error())
+		return errAddLiquidityFailValidation
+	}
+
+	if msg.Asset.GetChain().IsTHORChain() {
+		ctx.Logger().Error("asset cannot be THORChain native asset", "error", errAddLiquidityFailValidation)
 		return errAddLiquidityFailValidation
 	}
 
