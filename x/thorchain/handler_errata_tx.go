@@ -63,7 +63,7 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.70.0")) {
-		return h.handleV58(ctx, msg)
+		return h.handleV70(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.58.0")) {
 		return h.handleV58(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.45.0")) {
@@ -753,8 +753,7 @@ func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*co
 
 		// since this address is being malicious, zero their liquidity provider units
 		pool.LPUnits = common.SafeSub(pool.LPUnits, lp.Units)
-		lp.Units = cosmos.ZeroUint()
-		lp.LastAddHeight = common.BlockHeight(ctx)
+
 		ctx.Logger().Info("LP removed by errata", "LP address", destAddr, "asset address", tx.FromAddress)
 		h.mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
 	}

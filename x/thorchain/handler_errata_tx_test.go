@@ -438,6 +438,47 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			},
 		},
 		{
+			name: "add liquidity transaction get errata out",
+			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
+				// add an active node account
+				nodeAccount := GetRandomValidatorNode(NodeActive)
+				helper.SetNodeAccount(ctx, nodeAccount)
+				runeAddr := GetRandomRUNEAddress()
+				observedTx := GetRandomObservedTx()
+				observedTx.Tx.Chain = common.BTCChain
+				observedTx.Tx.FromAddress = GetRandomBTCAddress()
+				observedTx.Tx.Memo = "add:BTC.BTC:" + runeAddr.String()
+				observedTx.Tx.Coins = common.NewCoins(
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)))
+				lp := LiquidityProvider{
+					Asset:         common.BTCAsset,
+					AssetAddress:  observedTx.Tx.FromAddress,
+					LastAddHeight: 1024,
+					RuneAddress:   runeAddr,
+				}
+
+				helper.SetLiquidityProvider(ctx, lp)
+				pool := NewPool()
+				pool.Asset = common.BTCAsset
+				pool.BalanceRune = cosmos.NewUint(common.One * 100)
+				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
+				pool.Status = PoolAvailable
+				helper.Keeper.SetPool(ctx, pool)
+				voter := ObservedTxVoter{
+					TxID:   observedTx.Tx.ID,
+					Tx:     observedTx,
+					Txs:    ObservedTxs{observedTx},
+					Height: observedTx.BlockHeight,
+				}
+				helper.Keeper.SetObservedTxInVoter(ctx, voter)
+				return NewMsgErrataTx(voter.TxID, common.BTCChain, nodeAccount.NodeAddress)
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
+				c.Check(result, NotNil, Commentf(name))
+				c.Check(err, IsNil, Commentf(name))
+			},
+		},
+		{
 			name: " fail to save pool should not error out",
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
