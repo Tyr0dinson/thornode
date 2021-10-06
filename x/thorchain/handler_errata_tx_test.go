@@ -61,7 +61,13 @@ func (k *TestErrataTxKeeper) SetLiquidityProvider(_ cosmos.Context, lp Liquidity
 		}
 	}
 }
-
+func (k *TestErrataTxKeeper) RemoveLiquidityProvider(_ cosmos.Context, lp LiquidityProvider) {
+	for i, skr := range k.lps {
+		if skr.RuneAddress.Equals(lp.RuneAddress) {
+			k.lps[i] = LiquidityProvider{}
+		}
+	}
+}
 func (k *TestErrataTxKeeper) GetErrataTxVoter(_ cosmos.Context, txID common.TxID, chain common.Chain) (ErrataTxVoter, error) {
 	return NewErrataTxVoter(txID, chain), k.err
 }
@@ -92,15 +98,16 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	addr := GetRandomBNBAddress()
 	totalUnits := cosmos.NewUint(1600)
+	runeAddr := GetRandomRUNEAddress()
 	observedTx := ObservedTx{
 		Tx: common.Tx{
 			ID:          txID,
 			Chain:       common.BNBChain,
 			FromAddress: addr,
 			Coins: common.Coins{
-				common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
+				common.NewCoin(common.BNBAsset, cosmos.NewUint(30*common.One)),
 			},
-			Memo: fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()),
+			Memo: fmt.Sprintf("ADD:BNB.BNB:%s", runeAddr.String()),
 		},
 	}
 	keeper := &TestErrataTxKeeper{
@@ -118,7 +125,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 		},
 		lps: LiquidityProviders{
 			{
-				RuneAddress:   addr,
+				RuneAddress:   runeAddr,
 				LastAddHeight: 5,
 				Units:         totalUnits.QuoUint64(2),
 				PendingRune:   cosmos.ZeroUint(),
@@ -137,10 +144,8 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 	msg := NewMsgErrataTx(txID, common.BNBChain, na.NodeAddress)
 	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	c.Check(keeper.pool.BalanceRune.Equal(cosmos.NewUint(70*common.One)), Equals, true)
-	c.Check(keeper.pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
-	c.Check(keeper.lps[0].Units.IsZero(), Equals, true, Commentf("%d", keeper.lps[0].Units.Uint64()))
-	c.Check(keeper.lps[0].LastAddHeight, Equals, int64(18))
+	c.Check(keeper.pool.BalanceRune.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(keeper.pool.BalanceAsset.Equal(cosmos.NewUint(70*common.One)), Equals, true)
 }
 
 type ErrataTxHandlerTestHelper struct {

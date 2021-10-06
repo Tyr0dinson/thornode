@@ -722,7 +722,9 @@ func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*co
 			assetCoin = coin
 		}
 	}
-
+	if assetCoin.IsEmpty() {
+		return &cosmos.Result{}, nil
+	}
 	// fetch pool from memo
 	pool, err := h.mgr.Keeper().GetPool(ctx, assetCoin.Asset)
 	if err != nil {
@@ -753,7 +755,6 @@ func (h ErrataTxHandler) handleCurrent(ctx cosmos.Context, msg MsgErrataTx) (*co
 
 		// since this address is being malicious, zero their liquidity provider units
 		pool.LPUnits = common.SafeSub(pool.LPUnits, lp.Units)
-
 		ctx.Logger().Info("LP removed by errata", "LP address", destAddr, "asset address", tx.FromAddress)
 		h.mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
 	}
