@@ -556,7 +556,7 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 	// find the deepest pool
 	winner := NewPool()
 	for _, pool := range matches {
-		if winner.BalanceRune.LT(pool.BalanceRune) {
+		if winner.LPBalanceRune.LT(pool.LPBalanceRune) {
 			winner = pool
 		}
 	}

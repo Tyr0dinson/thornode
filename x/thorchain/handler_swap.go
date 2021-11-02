@@ -104,7 +104,7 @@ func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
 		if err != nil {
 			return ErrInternal(err, "fail to get pool")
 		}
-		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset).Uint64())
+		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.LPBalanceAsset).Uint64())
 		if coverage > maxSynths {
 			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}
@@ -202,7 +202,7 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		if p.Status == PoolSuspended {
 			continue
 		}
-		total = total.Add(p.BalanceRune)
+		total = total.Add(p.LPBalanceRune)
 	}
 	return total, nil
 }

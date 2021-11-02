@@ -330,16 +330,16 @@ func (tos *TxOutStorageV54) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 						}
 
 					} else {
-						pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+						pool.LPBalanceAsset = pool.LPBalanceAsset.Add(assetFee) // Add Asset fee to Pool
 					}
 					var poolDeduct cosmos.Uint
-					if runeFee.GT(pool.BalanceRune) {
-						poolDeduct = pool.BalanceRune
+					if runeFee.GT(pool.LPBalanceRune) {
+						poolDeduct = pool.LPBalanceRune
 					} else {
 						poolDeduct = runeFee
 					}
 					finalRuneFee = finalRuneFee.Add(runeFee)
-					pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeFee) // Deduct Rune from Pool
+					pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, runeFee) // Deduct Rune from Pool
 					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
 					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, synthUnits))
 				}

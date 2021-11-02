@@ -50,8 +50,8 @@ type Pools []Pool
 // NewPool Returns a new Pool
 func NewPool() Pool {
 	return Pool{
-		BalanceRune:         cosmos.ZeroUint(),
-		BalanceAsset:        cosmos.ZeroUint(),
+		LPBalanceRune:       cosmos.ZeroUint(),
+		LPBalanceAsset:      cosmos.ZeroUint(),
 		SynthUnits:          cosmos.ZeroUint(),
 		LPUnits:             cosmos.ZeroUint(),
 		PendingInboundRune:  cosmos.ZeroUint(),
@@ -77,11 +77,11 @@ func (m *Pool) CalcUnits(version semver.Version, S cosmos.Uint) cosmos.Uint {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		// (L*S)/(2*A-S)
 		// S := k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
-		if m.BalanceAsset.IsZero() {
+		if m.LPBalanceAsset.IsZero() {
 			m.SynthUnits = cosmos.ZeroUint()
 		} else {
 			numerator := m.LPUnits.Mul(S)
-			denominator := common.SafeSub(m.BalanceAsset.MulUint64(2), S)
+			denominator := common.SafeSub(m.LPBalanceAsset.MulUint64(2), S)
 			if denominator.IsZero() {
 				m.SynthUnits = cosmos.ZeroUint()
 			} else {
@@ -106,8 +106,8 @@ func (m Pool) IsEmpty() bool {
 // String implement fmt.Stringer
 func (m Pool) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintln("rune-balance: " + m.BalanceRune.String()))
-	sb.WriteString(fmt.Sprintln("asset-balance: " + m.BalanceAsset.String()))
+	sb.WriteString(fmt.Sprintln("rune-balance: " + m.LPBalanceRune.String()))
+	sb.WriteString(fmt.Sprintln("asset-balance: " + m.LPBalanceAsset.String()))
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
 	sb.WriteString(fmt.Sprintln("lp-units: " + m.LPUnits.String()))
@@ -139,17 +139,17 @@ func (m Pool) EnsureValidPoolStatus(msg cosmos.Msg) error {
 
 // AssetValueInRune convert a specific amount of asset amt into its rune value
 func (m Pool) AssetValueInRune(amt cosmos.Uint) cosmos.Uint {
-	if m.BalanceRune.IsZero() || m.BalanceAsset.IsZero() {
+	if m.LPBalanceRune.IsZero() || m.LPBalanceAsset.IsZero() {
 		return cosmos.ZeroUint()
 	}
-	return common.GetShare(m.BalanceRune, m.BalanceAsset, amt)
+	return common.GetShare(m.LPBalanceRune, m.LPBalanceAsset, amt)
 }
 
 // RuneValueInAsset convert a specific amount of rune amt into its asset value
 func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
-	if m.BalanceRune.IsZero() || m.BalanceAsset.IsZero() {
+	if m.LPBalanceRune.IsZero() || m.LPBalanceAsset.IsZero() {
 		return cosmos.ZeroUint()
 	}
-	assetAmt := common.GetShare(m.BalanceAsset, m.BalanceRune, amt)
+	assetAmt := common.GetShare(m.LPBalanceAsset, m.LPBalanceRune, amt)
 	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
 }

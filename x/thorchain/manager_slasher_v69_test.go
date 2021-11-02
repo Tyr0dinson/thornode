@@ -370,8 +370,8 @@ func (s *SlashingV69Suite) TestSlashVault(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	pool.Status = PoolAvailable
 
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)

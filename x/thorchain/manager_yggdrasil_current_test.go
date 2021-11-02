@@ -17,14 +17,14 @@ func (s YggdrasilManagerV65Suite) TestCalcTargetAmounts(c *C) {
 	var pools []Pool
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(1000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(500 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(500 * common.One)
 	pools = append(pools, p)
 
 	p = NewPool()
 	p.Asset = common.BTCAsset
-	p.BalanceRune = cosmos.NewUint(3000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(225 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(3000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(225 * common.One)
 	pools = append(pools, p)
 
 	ygg := GetRandomVault()
@@ -49,8 +49,8 @@ func (s YggdrasilManagerV65Suite) TestCalcTargetAmounts2(c *C) {
 	var pools []Pool
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(1000000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(1 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(1000000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(1 * common.One)
 	pools = append(pools, p)
 
 	ygg := GetRandomVault()
@@ -73,14 +73,14 @@ func (s YggdrasilManagerV65Suite) TestCalcTargetAmounts3(c *C) {
 	var pools []Pool
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(1000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(500 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(500 * common.One)
 	pools = append(pools, p)
 
 	p = NewPool()
 	p.Asset = common.BTCAsset
-	p.BalanceRune = cosmos.NewUint(3000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(225 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(3000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(225 * common.One)
 	pools = append(pools, p)
 
 	ygg := GetRandomVault()
@@ -107,14 +107,14 @@ func (s YggdrasilManagerV65Suite) TestCalcTargetAmounts4(c *C) {
 	var pools []Pool
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(1000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(500 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(500 * common.One)
 	pools = append(pools, p)
 
 	p = NewPool()
 	p.Asset = common.BTCAsset
-	p.BalanceRune = cosmos.NewUint(3000 * common.One)
-	p.BalanceAsset = cosmos.NewUint(225 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(3000 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(225 * common.One)
 	pools = append(pools, p)
 
 	ygg := GetRandomVault()
@@ -162,8 +162,8 @@ func (s YggdrasilManagerV65Suite) TestFund(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceAsset = cosmos.NewUint(100000 * common.One)
-	bnbPool.BalanceRune = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
 	c.Assert(k.SetPool(ctx, bnbPool), IsNil)
 	err1 := ymgr.Fund(ctx, mgr, constAccessor)
 	c.Assert(err1, IsNil)
@@ -201,14 +201,14 @@ func (s YggdrasilManagerV65Suite) TestNotAvailablePoolAssetWillNotFundYggdrasil(
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceAsset = cosmos.NewUint(100000 * common.One)
-	bnbPool.BalanceRune = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
 	c.Assert(k.SetPool(ctx, bnbPool), IsNil)
 
 	busdPool := NewPool()
 	busdPool.Asset = asset
-	busdPool.BalanceRune = cosmos.NewUint(100000 * common.One)
-	busdPool.BalanceAsset = cosmos.NewUint(10000 * common.One)
+	busdPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
+	busdPool.LPBalanceAsset = cosmos.NewUint(10000 * common.One)
 	busdPool.Status = PoolStaged
 	c.Assert(k.SetPool(ctx, busdPool), IsNil)
 
@@ -248,21 +248,21 @@ func (s YggdrasilManagerV65Suite) TestChainTradingHaltWillNotFundYggdrasil(c *C)
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceAsset = cosmos.NewUint(100000 * common.One)
-	bnbPool.BalanceRune = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(100000 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
 	c.Assert(k.SetPool(ctx, bnbPool), IsNil)
 
 	busdPool := NewPool()
 	busdPool.Asset = asset
-	busdPool.BalanceRune = cosmos.NewUint(100000 * common.One)
-	busdPool.BalanceAsset = cosmos.NewUint(10000 * common.One)
+	busdPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
+	busdPool.LPBalanceAsset = cosmos.NewUint(10000 * common.One)
 	busdPool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, busdPool), IsNil)
 
 	ethPool := NewPool()
 	ethPool.Asset = common.ETHAsset
-	ethPool.BalanceRune = cosmos.NewUint(100000 * common.One)
-	ethPool.BalanceAsset = cosmos.NewUint(10000 * common.One)
+	ethPool.LPBalanceRune = cosmos.NewUint(100000 * common.One)
+	ethPool.LPBalanceAsset = cosmos.NewUint(10000 * common.One)
 	ethPool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, ethPool), IsNil)
 	ymgr.keeper.SetMimir(ctx, "HaltETHTrading", 1)
@@ -284,8 +284,8 @@ func (s YggdrasilManagerV65Suite) TestAbandonYggdrasil(c *C) {
 	// add a queue , if we don't have pool , we don't know how to slash
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	bnbPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(mgr.Keeper().SetPool(ctx, bnbPool), IsNil)
 	// setup 6 active nodes ,  so it will fund yggdrasil
 	for i := 0; i < 6; i++ {
@@ -334,8 +334,8 @@ func (s YggdrasilManagerV65Suite) TestAbandonYggdrasilWithDifferentConditions(c 
 	// add a queue , if we don't have pool , we don't know how to slash
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	bnbPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(mgr.Keeper().SetPool(ctx, bnbPool), IsNil)
 	// setup 6 active nodes ,  so it will fund yggdrasil
 	for i := 0; i < 6; i++ {

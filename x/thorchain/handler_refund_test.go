@@ -123,9 +123,9 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 	ctx = ctx.WithBlockHeight(1023)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.LPUnits = pool.BalanceRune
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = pool.LPBalanceRune
 
 	version := GetCurrentVersion()
 	asgardVault := GetRandomVault()
@@ -382,7 +382,7 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSl
 	expectedVaultTotalReserve := reserve.Add(cosmos.NewUint(common.One).QuoUint64(2))
 	pool, err := helper.keeper.GetPool(helper.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	poolBNB := common.SafeSub(pool.BalanceAsset, cosmos.NewUint(common.One).Add(BNBGasFeeSingleton[0].Amount))
+	poolBNB := common.SafeSub(pool.LPBalanceAsset, cosmos.NewUint(common.One).Add(BNBGasFeeSingleton[0].Amount))
 
 	// given the outbound tx doesn't have relevant OservedTxVoter in system , thus it should be slashed with 1.5 * the full amount of assets
 	outMsg := NewMsgRefundTx(tx, tx.Tx.ID, helper.nodeAccount.NodeAddress)
@@ -396,6 +396,6 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSl
 	c.Assert(newReserve.Equal(expectedVaultTotalReserve), Equals, true)
 	pool, err = helper.keeper.GetPool(helper.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Assert(pool.BalanceRune.Equal(cosmos.NewUint(10149940373)), Equals, true, Commentf("%d/%d", pool.BalanceRune.Uint64(), cosmos.NewUint(10149884125).Uint64()))
-	c.Assert(pool.BalanceAsset.Equal(poolBNB), Equals, true, Commentf("%s/%s", pool.BalanceAsset, poolBNB))
+	c.Assert(pool.LPBalanceRune.Equal(cosmos.NewUint(10149940373)), Equals, true, Commentf("%d/%d", pool.LPBalanceRune.Uint64(), cosmos.NewUint(10149884125).Uint64()))
+	c.Assert(pool.LPBalanceAsset.Equal(poolBNB), Equals, true, Commentf("%s/%s", pool.LPBalanceAsset, poolBNB))
 }

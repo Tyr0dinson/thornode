@@ -369,8 +369,8 @@ type TestCalcKeeper struct {
 func (k *TestCalcKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (types.Pool, error) {
 	pool := NewPool()
 	pool.Asset = asset
-	pool.BalanceRune = cosmos.NewUint(90527581399649)
-	pool.BalanceAsset = cosmos.NewUint(1402011488988)
+	pool.LPBalanceRune = cosmos.NewUint(90527581399649)
+	pool.LPBalanceAsset = cosmos.NewUint(1402011488988)
 	return pool, nil
 }
 

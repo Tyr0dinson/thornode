@@ -191,8 +191,8 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieBNBPool 
 		c.Assert(err, IsNil)
 		p.Asset = common.BNBAsset
 		p.Status = PoolAvailable
-		p.BalanceRune = cosmos.NewUint(100 * common.One)
-		p.BalanceAsset = cosmos.NewUint(100 * common.One)
+		p.LPBalanceRune = cosmos.NewUint(100 * common.One)
+		p.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 		p.LPUnits = cosmos.NewUint(100 * common.One)
 		c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
 	}
@@ -244,8 +244,8 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	pool.LPUnits = cosmos.NewUint(100)
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
@@ -290,18 +290,18 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 	c.Assert(pool.IsEmpty(), Equals, false)
 	c.Check(pool.Status, Equals, PoolStaged)
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(0), Commentf("%d", pool.LPUnits.Uint64()))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(0), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.LPBalanceRune.Uint64(), Equals, uint64(0), Commentf("%d", pool.LPBalanceRune.Uint64()))
 	remainGas := uint64(37500)
-	c.Check(pool.BalanceAsset.Uint64(), Equals, remainGas, Commentf("%d", pool.BalanceAsset.Uint64())) // leave a little behind for gas
+	c.Check(pool.LPBalanceAsset.Uint64(), Equals, remainGas, Commentf("%d", pool.LPBalanceAsset.Uint64())) // leave a little behind for gas
 }
 
 func (HandlerSuite) TestRefund(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 
 	pool := Pool{
-		Asset:        common.BNBAsset,
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
 	}
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
@@ -346,7 +346,7 @@ func (HandlerSuite) TestRefund(c *C) {
 	pool, err = w.keeper.GetPool(w.ctx, lokiAsset)
 	c.Assert(err, IsNil)
 	// pool should be zero since we drop coins we don't recognize on the floor
-	c.Assert(pool.BalanceAsset.Equal(cosmos.ZeroUint()), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Assert(pool.LPBalanceAsset.Equal(cosmos.ZeroUint()), Equals, true, Commentf("%d", pool.LPBalanceAsset.Uint64()))
 
 	// doing it a second time should keep it at zero
 	c.Assert(refundTx(w.ctx, txin, w.mgr, constAccessor, 0, "refund", ""), IsNil)
@@ -355,7 +355,7 @@ func (HandlerSuite) TestRefund(c *C) {
 	c.Assert(items, HasLen, 1)
 	pool, err = w.keeper.GetPool(w.ctx, lokiAsset)
 	c.Assert(err, IsNil)
-	c.Assert(pool.BalanceAsset.Equal(cosmos.ZeroUint()), Equals, true)
+	c.Assert(pool.LPBalanceAsset.Equal(cosmos.ZeroUint()), Equals, true)
 }
 
 func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
@@ -636,37 +636,37 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	p1 := NewPool()
 	p1.Asset = common.BNBAsset
-	p1.BalanceRune = cosmos.NewUint(10 * common.One)
+	p1.LPBalanceRune = cosmos.NewUint(10 * common.One)
 	c.Assert(k.SetPool(ctx, p1), IsNil)
 
 	// real USDT
 	p2 := NewPool()
 	p2.Asset, _ = common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-	p2.BalanceRune = cosmos.NewUint(80 * common.One)
+	p2.LPBalanceRune = cosmos.NewUint(80 * common.One)
 	c.Assert(k.SetPool(ctx, p2), IsNil)
 
 	// fake USDT, attempt to clone end of contract address
 	p3 := NewPool()
 	p3.Asset, _ = common.NewAsset("ETH.USDT-0XD084B83C305DAFD76AE3E1B4E1F1FE213D831EC7")
-	p3.BalanceRune = cosmos.NewUint(20 * common.One)
+	p3.LPBalanceRune = cosmos.NewUint(20 * common.One)
 	c.Assert(k.SetPool(ctx, p3), IsNil)
 
 	// fake USDT, bad contract address
 	p4 := NewPool()
 	p4.Asset, _ = common.NewAsset("ETH.USDT-0XD084B83C305DAFD76AE3E1B4E1F1FE2ECCCB3988")
-	p4.BalanceRune = cosmos.NewUint(20 * common.One)
+	p4.LPBalanceRune = cosmos.NewUint(20 * common.One)
 	c.Assert(k.SetPool(ctx, p4), IsNil)
 
 	// fake USDT, on different chain
 	p5 := NewPool()
 	p5.Asset, _ = common.NewAsset("BSC.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-	p5.BalanceRune = cosmos.NewUint(30 * common.One)
+	p5.LPBalanceRune = cosmos.NewUint(30 * common.One)
 	c.Assert(k.SetPool(ctx, p5), IsNil)
 
 	// fake USDT, right contract address, wrong ticker
 	p6 := NewPool()
 	p6.Asset, _ = common.NewAsset("ETH.UST-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-	p6.BalanceRune = cosmos.NewUint(90 * common.One)
+	p6.LPBalanceRune = cosmos.NewUint(90 * common.One)
 	c.Assert(k.SetPool(ctx, p6), IsNil)
 
 	result := fuzzyAssetMatch(ctx, k, p1.Asset)

@@ -145,7 +145,7 @@ func (vm *SwapQv1) scoreMsgs(ctx cosmos.Context, items swapItems) (swapItems, er
 			poolAsset = targetAsset
 		}
 		pool := pools[poolAsset]
-		if pool.IsEmpty() || !pool.IsAvailable() || pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+		if pool.IsEmpty() || !pool.IsAvailable() || pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 			continue
 		}
 		vm.getLiquidityFeeAndSlip(pool, item.msg.Tx.Coins[0], &items[i])
@@ -158,7 +158,7 @@ func (vm *SwapQv1) scoreMsgs(ctx cosmos.Context, items swapItems) (swapItems, er
 		runeCoin := common.NewCoin(common.RuneAsset(), pool.AssetValueInRune(item.msg.Tx.Coins[0].Amount))
 		poolAsset = targetAsset
 		pool = pools[poolAsset]
-		if pool.IsEmpty() || !pool.IsAvailable() || pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+		if pool.IsEmpty() || !pool.IsAvailable() || pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 			continue
 		}
 		vm.getLiquidityFeeAndSlip(pool, runeCoin, &items[i])
@@ -173,11 +173,11 @@ func (vm *SwapQv1) getLiquidityFeeAndSlip(pool Pool, sourceCoin common.Coin, ite
 	var X, x, Y cosmos.Uint
 	x = sourceCoin.Amount
 	if sourceCoin.Asset.IsRune() {
-		X = pool.BalanceRune
-		Y = pool.BalanceAsset
+		X = pool.LPBalanceRune
+		Y = pool.LPBalanceAsset
 	} else {
-		Y = pool.BalanceRune
-		X = pool.BalanceAsset
+		Y = pool.LPBalanceRune
+		X = pool.LPBalanceAsset
 	}
 
 	swapper := NewSwapperV1()

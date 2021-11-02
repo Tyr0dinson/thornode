@@ -31,7 +31,7 @@ func creditAssetBackToVaultAndPool(ctx cosmos.Context, mgr Manager) {
 		return
 	}
 	// based on calculation , this is the total amount of ETH left in the network after the attack
-	ethPool.BalanceAsset = cosmos.NewUint(76228226137)
+	ethPool.LPBalanceAsset = cosmos.NewUint(76228226137)
 	for _, item := range input {
 		asset, err := common.NewAsset(item.assetName)
 		if err != nil {
@@ -44,13 +44,13 @@ func creditAssetBackToVaultAndPool(ctx cosmos.Context, mgr Manager) {
 			continue
 		}
 		runeAmount := pool.AssetValueInRune(item.amount)
-		pool.BalanceAsset = pool.BalanceAsset.Add(item.amount)
-		pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeAmount)
-		if pool.BalanceRune.IsZero() {
+		pool.LPBalanceAsset = pool.LPBalanceAsset.Add(item.amount)
+		pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, runeAmount)
+		if pool.LPBalanceRune.IsZero() {
 			ctx.Logger().Info("pool balance rune is 0 , skip it", "asset", item.assetName)
 			continue
 		}
-		ethPool.BalanceRune = ethPool.BalanceRune.Add(runeAmount)
+		ethPool.LPBalanceRune = ethPool.LPBalanceRune.Add(runeAmount)
 		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 			ctx.Logger().Error("fail to save pool", "asset", item.assetName, "error", err)
 			continue

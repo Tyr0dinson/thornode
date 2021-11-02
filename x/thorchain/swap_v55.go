@@ -263,11 +263,11 @@ func (s *SwapperV55) swapOne(ctx cosmos.Context,
 
 	// Get our X, x, Y values
 	if source.IsRune() {
-		X = pool.BalanceRune
-		Y = pool.BalanceAsset
+		X = pool.LPBalanceRune
+		Y = pool.LPBalanceAsset
 	} else {
-		Y = pool.BalanceRune
-		X = pool.BalanceAsset
+		Y = pool.LPBalanceRune
+		X = pool.LPBalanceAsset
 	}
 	x = amount
 
@@ -305,28 +305,28 @@ func (s *SwapperV55) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
 	}
 
-	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
 
 	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
 		// we're doing a synth swap
 		if source.IsSyntheticAsset() {
 			// our source is a pegged asset, burn it all
-			pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
+			pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, emitAssets)
 			// inbound synth asset can't be burned here , as the final swap might fail and in that case , it will need to refund customer
 			s.coinsToBurn = append(s.coinsToBurn, tx.Coins...)
 		} else {
-			pool.BalanceRune = pool.BalanceRune.Add(x)
+			pool.LPBalanceRune = pool.LPBalanceRune.Add(x)
 		}
 	} else {
 		if source.IsRune() {
-			pool.BalanceRune = X.Add(x)
-			pool.BalanceAsset = common.SafeSub(Y, emitAssets)
+			pool.LPBalanceRune = X.Add(x)
+			pool.LPBalanceAsset = common.SafeSub(Y, emitAssets)
 		} else {
-			pool.BalanceAsset = X.Add(x)
-			pool.BalanceRune = common.SafeSub(Y, emitAssets)
+			pool.LPBalanceAsset = X.Add(x)
+			pool.LPBalanceRune = common.SafeSub(Y, emitAssets)
 		}
 	}
-	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
+	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
 
 	// add the new pool to the cache
 	s.pools[pool.Asset] = pool

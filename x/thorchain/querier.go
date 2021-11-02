@@ -702,8 +702,8 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		PendingInboundRune  cosmos.Uint  `json:"pending_inbound_rune"`
 		PendingInboundAsset cosmos.Uint  `json:"pending_inbound_asset"`
 	}{
-		BalanceRune:         pool.BalanceRune,
-		BalanceAsset:        pool.BalanceAsset,
+		BalanceRune:         pool.LPBalanceRune,
+		BalanceAsset:        pool.LPBalanceAsset,
 		Asset:               pool.Asset,
 		LPUnits:             pool.LPUnits,
 		PoolUnits:           pool.GetPoolUnits(),
@@ -754,8 +754,8 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		pool.CalcUnits(ver, synthSupply)
 
 		p := pp{
-			BalanceRune:         pool.BalanceRune,
-			BalanceAsset:        pool.BalanceAsset,
+			BalanceRune:         pool.LPBalanceRune,
+			BalanceAsset:        pool.LPBalanceAsset,
 			Asset:               pool.Asset,
 			LPUnits:             pool.LPUnits,
 			PoolUnits:           pool.GetPoolUnits(),

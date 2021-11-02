@@ -220,8 +220,8 @@ func (vm *NetworkMgrV1) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor 
 						if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
 							return fmt.Errorf("fail to transfer RUNE from reserve to asgard,err:%w", err)
 						}
-						p.BalanceRune = p.BalanceRune.Add(runeAmt)
-						p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
+						p.LPBalanceRune = p.LPBalanceRune.Add(runeAmt)
+						p.LPBalanceAsset = common.SafeSub(p.LPBalanceAsset, coin.Amount)
 						if err := vm.k.SetPool(ctx, p); err != nil {
 							return fmt.Errorf("fail to save pool: %w", err)
 						}
@@ -680,7 +680,7 @@ func (vm *NetworkMgrV1) UpdateNetwork(ctx cosmos.Context, constAccessor constant
 			}
 			amt := cosmos.ZeroUint()
 			if totalLiquidityFees.IsZero() {
-				amt = common.GetShare(pool.BalanceRune, totalProvidedLiquidity, totalPoolRewards)
+				amt = common.GetShare(pool.LPBalanceRune, totalProvidedLiquidity, totalPoolRewards)
 			} else {
 				fees, err := vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
 				if err != nil {
@@ -708,7 +708,7 @@ func (vm *NetworkMgrV1) UpdateNetwork(ctx cosmos.Context, constAccessor constant
 			if err != nil {
 				return fmt.Errorf("fail to get liquidity fees for pool(%s): %w", pool.Asset, err)
 			}
-			if pool.BalanceRune.IsZero() || poolFees.IsZero() { // Safety checks
+			if pool.LPBalanceRune.IsZero() || poolFees.IsZero() { // Safety checks
 				continue
 			}
 			poolDeficit := vm.calcPoolDeficit(lpDeficit, totalLiquidityFees, poolFees)
@@ -717,10 +717,10 @@ func (vm *NetworkMgrV1) UpdateNetwork(ctx cosmos.Context, constAccessor constant
 				ctx.Logger().Error("fail to transfer funds from asgard to bond", "error", err)
 				return fmt.Errorf("fail to transfer funds from asgard to bond: %w", err)
 			}
-			if poolDeficit.GT(pool.BalanceRune) {
-				poolDeficit = pool.BalanceRune
+			if poolDeficit.GT(pool.LPBalanceRune) {
+				poolDeficit = pool.LPBalanceRune
 			}
-			pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeficit)
+			pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, poolDeficit)
 			network.BondRewardRune = network.BondRewardRune.Add(poolDeficit)
 			if err := vm.k.SetPool(ctx, pool); err != nil {
 				return fmt.Errorf("fail to set pool: %w", err)
@@ -756,8 +756,8 @@ func (vm *NetworkMgrV1) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Pools
 		if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &pool); err != nil {
 			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to unmarhsl pool: %w", err)
 		}
-		if !pool.BalanceRune.IsZero() {
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.BalanceRune)
+		if !pool.LPBalanceRune.IsZero() {
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.LPBalanceRune)
 			pools = append(pools, pool)
 		}
 	}
@@ -782,7 +782,7 @@ func (vm *NetworkMgrV1) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.
 		if reward.IsZero() {
 			continue
 		}
-		pools[i].BalanceRune = pools[i].BalanceRune.Add(reward)
+		pools[i].LPBalanceRune = pools[i].LPBalanceRune.Add(reward)
 		if err := vm.k.SetPool(ctx, pools[i]); err != nil {
 			return fmt.Errorf("fail to set pool: %w", err)
 		}

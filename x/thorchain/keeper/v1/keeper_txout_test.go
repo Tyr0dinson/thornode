@@ -26,8 +26,8 @@ func (KeeperTxOutSuite) TestKeeperTxOut(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceRune = cosmos.NewUint(92419747020392)
-	pool.BalanceAsset = cosmos.NewUint(1402011488988)
+	pool.LPBalanceRune = cosmos.NewUint(92419747020392)
+	pool.LPBalanceAsset = cosmos.NewUint(1402011488988)
 	k.SetPool(ctx, pool)
 
 	txOut1, err := k.GetTxOut(ctx, 1)

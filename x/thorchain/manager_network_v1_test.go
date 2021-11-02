@@ -189,14 +189,14 @@ func (s *NetworkManagerV1TestSuite) TestRagnarokChain(c *C) {
 
 	btcPool := NewPool()
 	btcPool.Asset = common.BTCAsset
-	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.LPBalanceAsset = cosmos.NewUint(10 * common.One)
 	btcPool.LPUnits = cosmos.NewUint(1600)
 
 	bnbPool := NewPool()
 	bnbPool.Asset = common.BNBAsset
-	bnbPool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	bnbPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	bnbPool.LPBalanceRune = cosmos.NewUint(1000 * common.One)
+	bnbPool.LPBalanceAsset = cosmos.NewUint(10 * common.One)
 	bnbPool.LPUnits = cosmos.NewUint(1600)
 
 	addr := GetRandomRUNEAddress()
@@ -304,8 +304,8 @@ func (s *NetworkManagerV1TestSuite) TestUpdateNetwork(c *C) {
 
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(common.One * 100)
-	p.BalanceAsset = cosmos.NewUint(common.One * 100)
+	p.LPBalanceRune = cosmos.NewUint(common.One * 100)
+	p.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 	p.Status = PoolAvailable
 	c.Assert(helper.SetPool(ctx, p), IsNil)
 	// no active node , thus no bond
@@ -540,14 +540,14 @@ func (*NetworkManagerV1TestSuite) TestGetTotalLiquidityRune(c *C) {
 	vaultMgr := newNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(common.One * 100)
-	p.BalanceAsset = cosmos.NewUint(common.One * 100)
+	p.LPBalanceRune = cosmos.NewUint(common.One * 100)
+	p.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 	p.Status = PoolAvailable
 	c.Assert(helper.SetPool(ctx, p), IsNil)
 	pools, totalLiquidity, err := vaultMgr.getTotalProvidedLiquidityRune(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(pools, HasLen, 1)
-	c.Assert(totalLiquidity.Equal(p.BalanceRune), Equals, true)
+	c.Assert(totalLiquidity.Equal(p.LPBalanceRune), Equals, true)
 }
 
 func (*NetworkManagerV1TestSuite) TestPayPoolRewards(c *C) {
@@ -557,8 +557,8 @@ func (*NetworkManagerV1TestSuite) TestPayPoolRewards(c *C) {
 	vaultMgr := newNetworkMgrV1(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(common.One * 100)
-	p.BalanceAsset = cosmos.NewUint(common.One * 100)
+	p.LPBalanceRune = cosmos.NewUint(common.One * 100)
+	p.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 	p.Status = PoolAvailable
 	c.Assert(helper.SetPool(ctx, p), IsNil)
 	vaultMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(100 * common.One)}, Pools{p})

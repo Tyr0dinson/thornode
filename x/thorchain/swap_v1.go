@@ -252,11 +252,11 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 
 	// Get our X, x, Y values
 	if source.IsRune() {
-		X = pool.BalanceRune
-		Y = pool.BalanceAsset
+		X = pool.LPBalanceRune
+		Y = pool.LPBalanceAsset
 	} else {
-		Y = pool.BalanceRune
-		X = pool.BalanceAsset
+		Y = pool.LPBalanceRune
+		X = pool.LPBalanceAsset
 	}
 	x = amount
 
@@ -294,7 +294,7 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
 	}
 
-	ctx.Logger().Info("Pre-Pool", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset)
+	ctx.Logger().Info("Pre-Pool", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset)
 
 	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
 		// we're doing a synth swap
@@ -302,7 +302,7 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 			// our source is a pegged asset, burn it all
 			totalSynthSupply := keeper.GetTotalSupply(ctx, source)
 			minusSynthUnits := common.GetShare(x, totalSynthSupply, pool.SynthUnits)
-			pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
+			pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, emitAssets)
 			pool.SynthUnits = common.SafeSub(pool.SynthUnits, minusSynthUnits)
 			pool.LPUnits = common.SafeSub(pool.LPUnits, minusSynthUnits)
 			swapEvt.SynthUnits = minusSynthUnits
@@ -312,25 +312,25 @@ func (s *SwapperV1) swapOne(ctx cosmos.Context,
 			// our source is assumed to be rune
 			// mint synth units so that LPs don't get access to the extra rune in the pool.
 			// the minting of the synths themselves is handled in the txout manager
-			newPoolUnits, synthUnits, err := calculatePoolUnitsV1(pool.LPUnits, pool.BalanceRune, pool.BalanceAsset, x, cosmos.ZeroUint())
+			newPoolUnits, synthUnits, err := calculatePoolUnitsV1(pool.LPUnits, pool.LPBalanceRune, pool.LPBalanceAsset, x, cosmos.ZeroUint())
 			if err != nil {
 				return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to calculate synth unit")
 			}
 			pool.LPUnits = newPoolUnits
 			pool.SynthUnits = pool.SynthUnits.Add(synthUnits)
-			pool.BalanceRune = pool.BalanceRune.Add(x)
+			pool.LPBalanceRune = pool.LPBalanceRune.Add(x)
 			swapEvt.SynthUnits = synthUnits
 		}
 	} else {
 		if source.IsRune() {
-			pool.BalanceRune = X.Add(x)
-			pool.BalanceAsset = common.SafeSub(Y, emitAssets)
+			pool.LPBalanceRune = X.Add(x)
+			pool.LPBalanceAsset = common.SafeSub(Y, emitAssets)
 		} else {
-			pool.BalanceAsset = X.Add(x)
-			pool.BalanceRune = common.SafeSub(Y, emitAssets)
+			pool.LPBalanceAsset = X.Add(x)
+			pool.LPBalanceRune = common.SafeSub(Y, emitAssets)
 		}
 	}
-	ctx.Logger().Info("post-swap", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset, "user get", emitAssets)
+	ctx.Logger().Info("post-swap", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset, "user get", emitAssets)
 
 	// add the new pool to the cache
 	s.pools[pool.Asset] = pool

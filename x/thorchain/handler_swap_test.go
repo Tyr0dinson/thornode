@@ -109,8 +109,8 @@ func (s *HandlerSwapSuite) TestValidation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	pools := make(map[common.Asset]Pool, 0)
 	pools[pool.Asset] = pool
 	keeper := &TestSwapHandleKeeper{
@@ -183,8 +183,8 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(result, IsNil)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 	// fund is not enough to pay for transaction fee
 	_, err = handler.handle(ctx, *msg)
@@ -206,8 +206,8 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	tCanAsset, err := common.NewAsset("BNB.TCAN-014")
 	c.Assert(err, IsNil)
 	poolTCAN.Asset = tCanAsset
-	poolTCAN.BalanceAsset = cosmos.NewUint(334850000)
-	poolTCAN.BalanceRune = cosmos.NewUint(2349500000)
+	poolTCAN.LPBalanceAsset = cosmos.NewUint(334850000)
+	poolTCAN.LPBalanceRune = cosmos.NewUint(2349500000)
 	c.Assert(keeper.SetPool(ctx, poolTCAN), IsNil)
 	bnbAddr := GetRandomBNBAddress()
 	m, err := ParseMemo("swap:BNB.BNB:" + bnbAddr.String() + ":121893238")
@@ -261,16 +261,16 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 
 	poolTCAN := NewPool()
 	tCanAsset, err := common.NewAsset("BNB.TCAN-014")
 	c.Assert(err, IsNil)
 	poolTCAN.Asset = tCanAsset
-	poolTCAN.BalanceAsset = cosmos.NewUint(334850000)
-	poolTCAN.BalanceRune = cosmos.NewUint(2349500000)
+	poolTCAN.LPBalanceAsset = cosmos.NewUint(334850000)
+	poolTCAN.LPBalanceRune = cosmos.NewUint(2349500000)
 	c.Assert(keeper.SetPool(ctx, poolTCAN), IsNil)
 
 	signerBNBAddr := GetRandomBNBAddress()

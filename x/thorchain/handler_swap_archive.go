@@ -123,7 +123,7 @@ func (h SwapHandler) validateV56(ctx cosmos.Context, msg MsgSwap) error {
 		if err != nil {
 			return ErrInternal(err, "fail to get pool")
 		}
-		coverage := int64(synthSupply.Quo(pool.BalanceAsset).MulUint64(MaxWithdrawBasisPoints).Uint64())
+		coverage := int64(synthSupply.Quo(pool.LPBalanceAsset).MulUint64(MaxWithdrawBasisPoints).Uint64())
 		if coverage > maxSynths {
 			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}
@@ -191,7 +191,7 @@ func (h SwapHandler) validateV58(ctx cosmos.Context, msg MsgSwap) error {
 		if err != nil {
 			return ErrInternal(err, "fail to get pool")
 		}
-		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset).Uint64())
+		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.LPBalanceAsset).Uint64())
 		if coverage > maxSynths {
 			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
 		}

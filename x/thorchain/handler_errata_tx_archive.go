@@ -95,14 +95,14 @@ func (h ErrataTxHandler) handleV1(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.
 	// subtract amounts from pool balances
 	runeCoin := tx.Coins.GetCoin(common.RuneAsset())
 	assetCoin := tx.Coins.GetCoin(memo.GetAsset())
-	if runeCoin.Amount.GT(pool.BalanceRune) {
-		runeCoin.Amount = pool.BalanceRune
+	if runeCoin.Amount.GT(pool.LPBalanceRune) {
+		runeCoin.Amount = pool.LPBalanceRune
 	}
-	if assetCoin.Amount.GT(pool.BalanceAsset) {
-		assetCoin.Amount = pool.BalanceAsset
+	if assetCoin.Amount.GT(pool.LPBalanceAsset) {
+		assetCoin.Amount = pool.LPBalanceAsset
 	}
-	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
-	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
+	pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, runeCoin.Amount)
+	pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, assetCoin.Amount)
 	if memo.IsType(TxAdd) {
 		lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, memo.GetAsset(), tx.FromAddress)
 		if err != nil {
@@ -225,14 +225,14 @@ func (h ErrataTxHandler) handleV42(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 	// subtract amounts from pool balances
 	runeCoin := tx.Coins.GetCoin(common.RuneAsset())
 	assetCoin := tx.Coins.GetCoin(memo.GetAsset())
-	if runeCoin.Amount.GT(pool.BalanceRune) {
-		runeCoin.Amount = pool.BalanceRune
+	if runeCoin.Amount.GT(pool.LPBalanceRune) {
+		runeCoin.Amount = pool.LPBalanceRune
 	}
-	if assetCoin.Amount.GT(pool.BalanceAsset) {
-		assetCoin.Amount = pool.BalanceAsset
+	if assetCoin.Amount.GT(pool.LPBalanceAsset) {
+		assetCoin.Amount = pool.LPBalanceAsset
 	}
-	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
-	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
+	pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, runeCoin.Amount)
+	pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, assetCoin.Amount)
 	if memo.IsType(TxAdd) {
 		lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, memo.GetAsset(), tx.FromAddress)
 		if err != nil {
@@ -370,14 +370,14 @@ func (h ErrataTxHandler) handleV45(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 	}
 
 	// subtract amounts from pool balances
-	if runeCoin.Amount.GT(pool.BalanceRune) {
-		runeCoin.Amount = pool.BalanceRune
+	if runeCoin.Amount.GT(pool.LPBalanceRune) {
+		runeCoin.Amount = pool.LPBalanceRune
 	}
-	if assetCoin.Amount.GT(pool.BalanceAsset) {
-		assetCoin.Amount = pool.BalanceAsset
+	if assetCoin.Amount.GT(pool.LPBalanceAsset) {
+		assetCoin.Amount = pool.LPBalanceAsset
 	}
-	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
-	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
+	pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, runeCoin.Amount)
+	pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, assetCoin.Amount)
 	if memo.IsType(TxAdd) {
 		lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, tx.FromAddress)
 		if err != nil {
@@ -479,8 +479,8 @@ func (h ErrataTxHandler) processErrataOutboundTxV1(ctx cosmos.Context, msg MsgEr
 					return nil, fmt.Errorf("fail to get pool(%s): %w", coin.Asset, err)
 				}
 				runeValue := p.AssetValueInRune(coin.Amount)
-				p.BalanceRune = p.BalanceRune.Add(runeValue)
-				p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
+				p.LPBalanceRune = p.LPBalanceRune.Add(runeValue)
+				p.LPBalanceAsset = common.SafeSub(p.LPBalanceAsset, coin.Amount)
 				if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
 					common.NewCoin(common.RuneAsset(), runeValue),
 				}); err != nil {
@@ -608,8 +608,8 @@ func (h ErrataTxHandler) processErrataOutboundTxV42(ctx cosmos.Context, msg MsgE
 					return nil, fmt.Errorf("fail to get pool(%s): %w", coin.Asset, err)
 				}
 				runeValue := p.AssetValueInRune(coin.Amount)
-				p.BalanceRune = p.BalanceRune.Add(runeValue)
-				p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
+				p.LPBalanceRune = p.LPBalanceRune.Add(runeValue)
+				p.LPBalanceAsset = common.SafeSub(p.LPBalanceAsset, coin.Amount)
 				if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
 					common.NewCoin(common.RuneAsset(), runeValue),
 				}); err != nil {
@@ -735,8 +735,8 @@ func (h ErrataTxHandler) processErrataOutboundTxV58(ctx cosmos.Context, msg MsgE
 					return nil, fmt.Errorf("fail to get pool(%s): %w", coin.Asset, err)
 				}
 				runeValue := p.AssetValueInRune(coin.Amount)
-				p.BalanceRune = p.BalanceRune.Add(runeValue)
-				p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
+				p.LPBalanceRune = p.LPBalanceRune.Add(runeValue)
+				p.LPBalanceAsset = common.SafeSub(p.LPBalanceAsset, coin.Amount)
 				if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
 					common.NewCoin(common.RuneAsset(), runeValue),
 				}); err != nil {

@@ -81,7 +81,7 @@ func refundTxV1(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor co
 			return fmt.Errorf("fail to get pool: %w", err)
 		}
 
-		if coin.Asset.IsRune() || !pool.BalanceRune.IsZero() {
+		if coin.Asset.IsRune() || !pool.LPBalanceRune.IsZero() {
 			toi := TxOutItem{
 				Chain:       coin.Asset.GetChain(),
 				InHash:      tx.Tx.ID,
@@ -155,7 +155,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor c
 			return fmt.Errorf("fail to get pool: %w", err)
 		}
 
-		if coin.Asset.IsRune() || !pool.BalanceRune.IsZero() {
+		if coin.Asset.IsRune() || !pool.LPBalanceRune.IsZero() {
 			toi := TxOutItem{
 				Chain:       coin.Asset.GetChain(),
 				InHash:      tx.Tx.ID,
@@ -275,8 +275,8 @@ func subsidizePoolWithSlashBondV1(ctx cosmos.Context, ygg Vault, yggTotalStolen,
 		if err != nil {
 			return err
 		}
-		pool.BalanceRune = pool.BalanceRune.Add(f.subsidiseRune)
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, f.stolenAsset)
+		pool.LPBalanceRune = pool.LPBalanceRune.Add(f.subsidiseRune)
+		pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, f.stolenAsset)
 
 		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 			return fmt.Errorf("fail to save pool: %w", err)
@@ -339,8 +339,8 @@ func subsidizePoolWithSlashBondV46(ctx cosmos.Context, ygg Vault, yggTotalStolen
 		if err != nil {
 			return err
 		}
-		pool.BalanceRune = pool.BalanceRune.Add(f.subsidiseRune)
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, f.stolenAsset)
+		pool.LPBalanceRune = pool.LPBalanceRune.Add(f.subsidiseRune)
+		pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, f.stolenAsset)
 
 		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 			return fmt.Errorf("fail to save pool: %w", err)
@@ -653,7 +653,7 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 
 	// quick func to check the validity of a pool
 	valid_pool := func(pool Pool) bool {
-		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() || pool.BalanceRune.LT(minRuneDepth) {
+		if pool.LPBalanceAsset.IsZero() || pool.LPBalanceRune.IsZero() || pool.LPBalanceRune.LT(minRuneDepth) {
 			return false
 		}
 		return true
@@ -697,7 +697,7 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 					}
 				}
 			}
-			if pool.BalanceRune.LT(choppingBlock.BalanceRune) || choppingBlock.IsEmpty() {
+			if pool.LPBalanceRune.LT(choppingBlock.LPBalanceRune) || choppingBlock.IsEmpty() {
 				// omit pools that are gas assets from being on the chopping
 				// block, removing these pool requires a chain ragnarok, and
 				// cannot be handled individually
@@ -708,11 +708,11 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 		case PoolStaged:
 			// deduct staged pool rune fee
 			fee := cosmos.NewUint(uint64(stagedPoolCost))
-			if fee.GT(pool.BalanceRune) {
-				fee = pool.BalanceRune
+			if fee.GT(pool.LPBalanceRune) {
+				fee = pool.LPBalanceRune
 			}
 			if !fee.IsZero() {
-				pool.BalanceRune = common.SafeSub(pool.BalanceRune, fee)
+				pool.LPBalanceRune = common.SafeSub(pool.LPBalanceRune, fee)
 				if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 					ctx.Logger().Error("fail to save pool", "pool", pool.Asset, "err", err)
 				}
@@ -731,7 +731,7 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 			// the process of being created (race condition). We can safely
 			// assume, if a pool has asset, but no rune, it should be
 			// abandoned.
-			if pool.BalanceRune.IsZero() && !pool.BalanceAsset.IsZero() {
+			if pool.LPBalanceRune.IsZero() && !pool.LPBalanceAsset.IsZero() {
 				// the staged pool no longer has any rune, abandon the pool
 				// and liquidity provider, and burn the asset (via zero'ing
 				// the vaults for the asset, and churning away from the
@@ -752,7 +752,7 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 				removeAssetFromVault(ctx, pool.Asset, mgr)
 
 			} else {
-				if valid_pool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
+				if valid_pool(pool) && onDeck.LPBalanceRune.LT(pool.LPBalanceRune) {
 					onDeck = pool
 				}
 			}
@@ -763,7 +763,7 @@ func cyclePoolsV1(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stage
 		// if we've hit our max available pools, and the onDeck pool is less
 		// than the chopping block pool, then we do make no changes, by
 		// resetting the variables
-		if onDeck.BalanceRune.LTE(choppingBlock.BalanceRune) {
+		if onDeck.LPBalanceRune.LTE(choppingBlock.LPBalanceRune) {
 			onDeck = NewPool()        // reset
 			choppingBlock = NewPool() // reset
 		}
@@ -1216,8 +1216,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		labels := []metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())}
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "balance", "synth"}, telem(synthSupply), labels)
-		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "balance", "rune"}, telem(pool.BalanceRune), labels)
-		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "balance", "asset"}, telem(pool.BalanceAsset), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "balance", "rune"}, telem(pool.LPBalanceRune), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "balance", "asset"}, telem(pool.LPBalanceAsset), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "pending", "rune"}, telem(pool.PendingInboundRune), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "pending", "asset"}, telem(pool.PendingInboundAsset), labels)
 
@@ -1227,8 +1227,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 
 		// pricing
 		price := float32(0)
-		if !pool.BalanceAsset.IsZero() {
-			price = runeUSDPrice * telem(pool.BalanceRune) / telem(pool.BalanceAsset)
+		if !pool.LPBalanceAsset.IsZero() {
+			price = runeUSDPrice * telem(pool.LPBalanceRune) / telem(pool.LPBalanceAsset)
 		}
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "price", "usd"}, price, labels)
 	}

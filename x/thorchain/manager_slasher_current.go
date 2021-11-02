@@ -383,13 +383,13 @@ func (s *SlasherV72) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 				continue
 			}
 			coinAmount := coin.Amount
-			if coinAmount.GT(pool.BalanceAsset) {
-				coinAmount = pool.BalanceAsset
+			if coinAmount.GT(pool.LPBalanceAsset) {
+				coinAmount = pool.LPBalanceAsset
 			}
 			runeValue := pool.AssetValueInRune(coinAmount)
 			totalSlashAmountInRune = runeValue.MulUint64(3).QuoUint64(2)
-			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, coinAmount)
-			pool.BalanceRune = pool.BalanceRune.Add(runeValue)
+			pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, coinAmount)
+			pool.LPBalanceRune = pool.LPBalanceRune.Add(runeValue)
 			if err := s.keeper.SetPool(ctx, pool); err != nil {
 				ctx.Logger().Error("fail to save pool for slash", "asset", coin.Asset, "error", err)
 				continue

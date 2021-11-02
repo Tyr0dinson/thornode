@@ -477,11 +477,11 @@ func (WithdrawSuiteV47) TestWithdrawPendingRuneOrAsset(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
 	ctx, mgr := setupManagerForTest(c)
 	pool := Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.NewUint(200 * common.One),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.NewUint(200 * common.One),
+		Status:         PoolAvailable,
 	}
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	lp := LiquidityProvider{

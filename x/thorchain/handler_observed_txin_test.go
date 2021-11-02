@@ -88,9 +88,9 @@ func (s *HandlerObservedTxInSuite) TestFailure(c *C) {
 
 	keeper := &TestObservedTxInFailureKeeper{
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200),
-			BalanceAsset: cosmos.NewUint(300),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200),
+			LPBalanceAsset: cosmos.NewUint(300),
 		},
 	}
 	mgr := NewDummyMgrWithKeeper(keeper)
@@ -226,9 +226,9 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 		},
 		vault: vault,
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200),
-			BalanceAsset: cosmos.NewUint(300),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200),
+			LPBalanceAsset: cosmos.NewUint(300),
 		},
 		yggExists: true,
 	}
@@ -355,9 +355,9 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200),
-			BalanceAsset: cosmos.NewUint(300),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200),
+			LPBalanceAsset: cosmos.NewUint(300),
 		},
 		yggExists: true,
 	}
@@ -415,9 +415,9 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 		voter: NewObservedTxVoter(tx.Tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200),
-			BalanceAsset: cosmos.NewUint(300),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200),
+			LPBalanceAsset: cosmos.NewUint(300),
 		},
 		yggExists: true,
 		txOut:     txout,
@@ -502,8 +502,8 @@ func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestH
 	c.Assert(helper.SetVault(ctx, vault), IsNil)
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(100 * common.One)
-	p.BalanceAsset = cosmos.NewUint(100 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	p.Status = PoolAvailable
 	helper.Keeper.SetPool(ctx, p)
 	return NewMsgObservedTxIn(ObservedTxs{

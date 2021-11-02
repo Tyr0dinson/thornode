@@ -605,11 +605,11 @@ func (h AddLiquidityHandler) addLiquidityV1(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info("Pre-Pool ", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset)
+	ctx.Logger().Info("Pre-Pool ", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset)
 	ctx.Logger().Info("Adding Liquidity ", "rune amount", addRuneAmount, "asset amount", addAssetAmount)
 
-	balanceRune := pool.BalanceRune
-	balanceAsset := pool.BalanceAsset
+	balanceRune := pool.LPBalanceRune
+	balanceAsset := pool.LPBalanceAsset
 
 	oldPoolUnits := pool.LPUnits
 	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, addRuneAmount, addAssetAmount)
@@ -621,10 +621,10 @@ func (h AddLiquidityHandler) addLiquidityV1(ctx cosmos.Context,
 	poolRune := balanceRune.Add(addRuneAmount)
 	poolAsset := balanceAsset.Add(addAssetAmount)
 	pool.LPUnits = newPoolUnits
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info("Post-Pool", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset)
-	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+	pool.LPBalanceRune = poolRune
+	pool.LPBalanceAsset = poolAsset
+	ctx.Logger().Info("Post-Pool", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset)
+	if pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
 	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
@@ -638,8 +638,8 @@ func (h AddLiquidityHandler) addLiquidityV1(ctx cosmos.Context,
 	}
 
 	su.Units = su.Units.Add(liquidityUnits)
-	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.BalanceRune))
-	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.BalanceAsset))
+	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.LPBalanceRune))
+	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.LPBalanceAsset))
 	h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 
 	evt := NewEventAddLiquidity(asset, liquidityUnits, runeAddr, addRuneAmount, addAssetAmount, runeTxID, assetTxID, assetAddr)
@@ -751,11 +751,11 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info("Pre-Pool", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset)
+	ctx.Logger().Info("Pre-Pool", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset)
 	ctx.Logger().Info("Adding Liquidity", "rune amount", pendingRuneAmt, "asset amount", pendingAssetAmt)
 
-	balanceRune := pool.BalanceRune
-	balanceAsset := pool.BalanceAsset
+	balanceRune := pool.LPBalanceRune
+	balanceAsset := pool.LPBalanceAsset
 
 	oldPoolUnits := pool.LPUnits
 	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
@@ -767,10 +767,10 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = newPoolUnits
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info("Post-Pool", "rune balance", pool.BalanceRune, "asset balance", pool.BalanceAsset)
-	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+	pool.LPBalanceRune = poolRune
+	pool.LPBalanceAsset = poolAsset
+	ctx.Logger().Info("Post-Pool", "rune balance", pool.LPBalanceRune, "asset balance", pool.LPBalanceAsset)
+	if pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
 	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
@@ -784,8 +784,8 @@ func (h AddLiquidityHandler) addLiquidityV46(ctx cosmos.Context,
 	}
 
 	su.Units = su.Units.Add(liquidityUnits)
-	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.BalanceRune))
-	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.BalanceAsset))
+	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.LPBalanceRune))
+	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.LPUnits, pool.LPBalanceAsset))
 	h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 
 	evt := NewEventAddLiquidity(asset, liquidityUnits, runeAddr, pendingRuneAmt, pendingAssetAmt, runeTxID, assetTxID, assetAddr)
@@ -900,11 +900,11 @@ func (h AddLiquidityHandler) addLiquidityV55(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits)
 	ctx.Logger().Info("adding liquidity", "rune", addRuneAmount, "asset", addAssetAmount)
 
-	balanceRune := pool.BalanceRune
-	balanceAsset := pool.BalanceAsset
+	balanceRune := pool.LPBalanceRune
+	balanceAsset := pool.LPBalanceAsset
 
 	oldPoolUnits := pool.GetPoolUnits()
 	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
@@ -916,10 +916,10 @@ func (h AddLiquidityHandler) addLiquidityV55(ctx cosmos.Context,
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
-	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+	pool.LPBalanceRune = poolRune
+	pool.LPBalanceAsset = poolAsset
+	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
+	if pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
 	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
@@ -933,8 +933,8 @@ func (h AddLiquidityHandler) addLiquidityV55(ctx cosmos.Context,
 	}
 
 	su.Units = su.Units.Add(liquidityUnits)
-	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.GetPoolUnits(), pool.BalanceRune))
-	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.GetPoolUnits(), pool.BalanceAsset))
+	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetShare(liquidityUnits, pool.GetPoolUnits(), pool.LPBalanceRune))
+	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetShare(liquidityUnits, pool.GetPoolUnits(), pool.LPBalanceAsset))
 	h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 
 	evt := NewEventAddLiquidity(asset, liquidityUnits, runeAddr, pendingRuneAmt, pendingAssetAmt, runeTxID, assetTxID, assetAddr)
@@ -1049,11 +1049,11 @@ func (h AddLiquidityHandler) addLiquidityV63(ctx cosmos.Context,
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
 
-	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits)
+	ctx.Logger().Info("pre add liquidity", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits)
 	ctx.Logger().Info("adding liquidity", "rune", addRuneAmount, "asset", addAssetAmount)
 
-	balanceRune := pool.BalanceRune
-	balanceAsset := pool.BalanceAsset
+	balanceRune := pool.LPBalanceRune
+	balanceAsset := pool.LPBalanceAsset
 
 	oldPoolUnits := pool.GetPoolUnits()
 	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
@@ -1064,10 +1064,10 @@ func (h AddLiquidityHandler) addLiquidityV63(ctx cosmos.Context,
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
-	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
-	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+	pool.LPBalanceRune = poolRune
+	pool.LPBalanceAsset = poolAsset
+	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.LPBalanceRune, "asset", pool.LPBalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
+	if pool.LPBalanceRune.IsZero() || pool.LPBalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
 	if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
@@ -1081,8 +1081,8 @@ func (h AddLiquidityHandler) addLiquidityV63(ctx cosmos.Context,
 	}
 
 	su.Units = su.Units.Add(liquidityUnits)
-	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetSafeShare(liquidityUnits, pool.GetPoolUnits(), pool.BalanceRune))
-	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetSafeShare(liquidityUnits, pool.GetPoolUnits(), pool.BalanceAsset))
+	su.RuneDepositValue = su.RuneDepositValue.Add(common.GetSafeShare(liquidityUnits, pool.GetPoolUnits(), pool.LPBalanceRune))
+	su.AssetDepositValue = su.AssetDepositValue.Add(common.GetSafeShare(liquidityUnits, pool.GetPoolUnits(), pool.LPBalanceAsset))
 	h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 
 	evt := NewEventAddLiquidity(asset, liquidityUnits, runeAddr, pendingRuneAmt, pendingAssetAmt, runeTxID, assetTxID, assetAddr)

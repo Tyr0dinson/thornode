@@ -92,8 +92,8 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	// Create Pools
 	pool1 := NewPool()
 	pool1.Asset = common.BNBAsset
-	pool1.BalanceRune = cosmos.NewUint(common.One * 100)
-	pool1.BalanceAsset = cosmos.NewUint(common.One * 100)
+	pool1.LPBalanceRune = cosmos.NewUint(common.One * 100)
+	pool1.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 	c.Assert(k.SetPool(ctx, pool1), IsNil)
 
 	// Create three vaults

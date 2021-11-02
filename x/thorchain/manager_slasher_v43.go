@@ -402,15 +402,15 @@ func (s *SlasherV43) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 				ctx.Logger().Error("cannot slash for an empty pool", "asset", coin.Asset)
 				continue
 			}
-			if slashAmount.GT(pool.BalanceAsset) {
-				slashAmount = pool.BalanceAsset
+			if slashAmount.GT(pool.LPBalanceAsset) {
+				slashAmount = pool.LPBalanceAsset
 			}
 			runeValue := pool.AssetValueInRune(slashAmount).MulUint64(3).QuoUint64(2)
 			if runeValue.GT(na.Bond) {
 				runeValue = na.Bond
 			}
-			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, slashAmount)
-			pool.BalanceRune = pool.BalanceRune.Add(runeValue)
+			pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, slashAmount)
+			pool.LPBalanceRune = pool.LPBalanceRune.Add(runeValue)
 			na.Bond = common.SafeSub(na.Bond, runeValue)
 
 			tx := common.Tx{}

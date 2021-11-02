@@ -34,8 +34,8 @@ func withdrawV72(ctx cosmos.Context, version semver.Version, msg MsgWithdrawLiqu
 
 	}
 
-	poolRune := pool.BalanceRune
-	poolAsset := pool.BalanceAsset
+	poolRune := pool.LPBalanceRune
+	poolAsset := pool.LPBalanceAsset
 	originalLiquidityProviderUnits := lp.Units
 	fLiquidityProviderUnit := lp.Units
 	if lp.Units.IsZero() {
@@ -136,10 +136,10 @@ func withdrawV72(ctx cosmos.Context, version semver.Version, msg MsgWithdrawLiqu
 	ctx.Logger().Info("client withdraw", "RUNE", withdrawRune, "asset", withDrawAsset, "units left", unitAfter)
 	// update pool
 	pool.LPUnits = common.SafeSub(pool.LPUnits, common.SafeSub(fLiquidityProviderUnit, unitAfter))
-	pool.BalanceRune = common.SafeSub(poolRune, withdrawRune)
-	pool.BalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
+	pool.LPBalanceRune = common.SafeSub(poolRune, withdrawRune)
+	pool.LPBalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
 
-	ctx.Logger().Info("pool after withdraw", "pool unit", pool.GetPoolUnits(), "balance RUNE", pool.BalanceRune, "balance asset", pool.BalanceAsset)
+	ctx.Logger().Info("pool after withdraw", "pool unit", pool.GetPoolUnits(), "balance RUNE", pool.LPBalanceRune, "balance asset", pool.LPBalanceAsset)
 
 	lp.LastWithdrawHeight = common.BlockHeight(ctx)
 	maxPts := cosmos.NewUint(uint64(MaxWithdrawBasisPoints))
@@ -153,7 +153,7 @@ func withdrawV72(ctx cosmos.Context, version semver.Version, msg MsgWithdrawLiqu
 	}
 
 	// Create a pool event if THORNode have no rune or assets
-	if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+	if pool.LPBalanceAsset.IsZero() || pool.LPBalanceRune.IsZero() {
 		poolEvt := NewEventPool(pool.Asset, PoolStaged)
 		if err := manager.EventMgr().EmitEvent(ctx, poolEvt); nil != err {
 			ctx.Logger().Error("fail to emit pool event", "error", err)

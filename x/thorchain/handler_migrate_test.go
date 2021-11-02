@@ -168,8 +168,8 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(100 * common.One)
 	retireVault.Membership = []string{

@@ -79,9 +79,9 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	// check pool is now empty
 	pool, err = keeper.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Check(pool.BalanceRune.IsZero(), Equals, true)
+	c.Check(pool.LPBalanceRune.IsZero(), Equals, true)
 	remainGas := uint64(37500)
-	c.Check(pool.BalanceAsset.Uint64(), Equals, remainGas) // leave a little behind for gas
+	c.Check(pool.LPBalanceAsset.Uint64(), Equals, remainGas) // leave a little behind for gas
 	c.Check(pool.LPUnits.IsZero(), Equals, true)
 
 	// liquidity provider for user1, again
@@ -96,8 +96,8 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	// check pool is NOT empty
 	pool, err = keeper.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Check(pool.BalanceRune.Equal(cosmos.NewUint(200*common.One)), Equals, true)
-	c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(20000000000+remainGas)), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Check(pool.LPBalanceRune.Equal(cosmos.NewUint(200*common.One)), Equals, true)
+	c.Check(pool.LPBalanceAsset.Equal(cosmos.NewUint(20000000000+remainGas)), Equals, true, Commentf("%d", pool.LPBalanceAsset.Uint64()))
 	c.Check(pool.LPUnits.IsZero(), Equals, false)
 }
 
@@ -117,11 +117,11 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		TransactionFeeRate: 37500,
 	}), IsNil)
 	c.Assert(mgr.Keeper().SetPool(ctx, Pool{
-		BalanceRune:  cosmos.NewUint(common.One),
-		BalanceAsset: cosmos.NewUint(common.One),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.NewUint(common.One),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(common.One),
+		LPBalanceAsset: cosmos.NewUint(common.One),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.NewUint(common.One),
+		Status:         PoolAvailable,
 	}), IsNil)
 	addresses := make([]cosmos.AccAddress, 4)
 	var existingValidators []string
@@ -346,10 +346,10 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 		ygg.PubKey = na.PubKeySet.Secp256k1
 		ygg.Type = YggdrasilVault
 		ygg.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.BNBAsset, bnbPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.RuneAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(boltAsset, boltPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.RuneAsset(), bnbPool.LPBalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BNBAsset, bnbPool.LPBalanceAsset.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.RuneAsset(), boltPool.LPBalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(boltAsset, boltPool.LPBalanceAsset.QuoUint64(uint64(bonderCount))),
 		})
 		c.Assert(mgr.Keeper().SetVault(ctx, ygg), IsNil)
 	}
@@ -489,10 +489,10 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 		ygg.PubKey = na.PubKeySet.Secp256k1
 		ygg.Type = YggdrasilVault
 		ygg.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.BNBAsset, bnbPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.RuneAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(boltAsset, boltPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.RuneAsset(), bnbPool.LPBalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BNBAsset, bnbPool.LPBalanceAsset.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.RuneAsset(), boltPool.LPBalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(boltAsset, boltPool.LPBalanceAsset.QuoUint64(uint64(bonderCount))),
 		})
 		c.Assert(mgr.Keeper().SetVault(ctx, ygg), IsNil)
 

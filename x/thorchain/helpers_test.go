@@ -76,8 +76,8 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	c.Assert(subsidizePoolWithSlashBond(ctx, ygg, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), mgr), IsNil)
 	poolBNB := NewPool()
 	poolBNB.Asset = common.BNBAsset
-	poolBNB.BalanceRune = cosmos.NewUint(100 * common.One)
-	poolBNB.BalanceAsset = cosmos.NewUint(100 * common.One)
+	poolBNB.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	poolBNB.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	poolBNB.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, poolBNB), IsNil)
 
@@ -85,15 +85,15 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	tCanAsset, err := common.NewAsset("BNB.TCAN-014")
 	c.Assert(err, IsNil)
 	poolTCAN.Asset = tCanAsset
-	poolTCAN.BalanceRune = cosmos.NewUint(200 * common.One)
-	poolTCAN.BalanceAsset = cosmos.NewUint(200 * common.One)
+	poolTCAN.LPBalanceRune = cosmos.NewUint(200 * common.One)
+	poolTCAN.LPBalanceAsset = cosmos.NewUint(200 * common.One)
 	poolTCAN.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, poolTCAN), IsNil)
 
 	poolBTC := NewPool()
 	poolBTC.Asset = common.BTCAsset
-	poolBTC.BalanceAsset = cosmos.NewUint(300 * common.One)
-	poolBTC.BalanceRune = cosmos.NewUint(300 * common.One)
+	poolBTC.LPBalanceAsset = cosmos.NewUint(300 * common.One)
+	poolBTC.LPBalanceRune = cosmos.NewUint(300 * common.One)
 	poolBTC.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, poolBTC), IsNil)
 	ygg.Type = YggdrasilVault
@@ -114,26 +114,26 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	totalRuneLeft = common.SafeSub(totalRuneLeft, totalRuneStolen)
 
 	amountBNBForBNBPool := slashAmt.Mul(poolBNB.AssetValueInRune(cosmos.NewUint(common.One))).Quo(totalRuneLeft)
-	runeBNB := poolBNB.BalanceRune.Add(amountBNBForBNBPool)
-	bnbPoolAsset := poolBNB.BalanceAsset.Sub(cosmos.NewUint(common.One))
+	runeBNB := poolBNB.LPBalanceRune.Add(amountBNBForBNBPool)
+	bnbPoolAsset := poolBNB.LPBalanceAsset.Sub(cosmos.NewUint(common.One))
 	poolBNB, err = mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Assert(poolBNB.BalanceRune.Equal(runeBNB), Equals, true)
-	c.Assert(poolBNB.BalanceAsset.Equal(bnbPoolAsset), Equals, true)
+	c.Assert(poolBNB.LPBalanceRune.Equal(runeBNB), Equals, true)
+	c.Assert(poolBNB.LPBalanceAsset.Equal(bnbPoolAsset), Equals, true)
 	amountRuneForTCANPool := slashAmt.Mul(poolTCAN.AssetValueInRune(cosmos.NewUint(common.One).QuoUint64(2))).Quo(totalRuneLeft)
-	runeTCAN := poolTCAN.BalanceRune.Add(amountRuneForTCANPool)
-	tcanPoolAsset := poolTCAN.BalanceAsset.Sub(cosmos.NewUint(common.One).QuoUint64(2))
+	runeTCAN := poolTCAN.LPBalanceRune.Add(amountRuneForTCANPool)
+	tcanPoolAsset := poolTCAN.LPBalanceAsset.Sub(cosmos.NewUint(common.One).QuoUint64(2))
 	poolTCAN, err = mgr.Keeper().GetPool(ctx, tCanAsset)
 	c.Assert(err, IsNil)
-	c.Assert(poolTCAN.BalanceRune.Equal(runeTCAN), Equals, true)
-	c.Assert(poolTCAN.BalanceAsset.Equal(tcanPoolAsset), Equals, true)
+	c.Assert(poolTCAN.LPBalanceRune.Equal(runeTCAN), Equals, true)
+	c.Assert(poolTCAN.LPBalanceAsset.Equal(tcanPoolAsset), Equals, true)
 	amountRuneForBTCPool := slashAmt.Mul(poolBTC.AssetValueInRune(cosmos.NewUint(common.One).QuoUint64(4))).Quo(totalRuneLeft)
-	runeBTC := poolBTC.BalanceRune.Add(amountRuneForBTCPool)
-	btcPoolAsset := poolBTC.BalanceAsset.Sub(cosmos.NewUint(common.One).QuoUint64(4))
+	runeBTC := poolBTC.LPBalanceRune.Add(amountRuneForBTCPool)
+	btcPoolAsset := poolBTC.LPBalanceAsset.Sub(cosmos.NewUint(common.One).QuoUint64(4))
 	poolBTC, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
-	c.Assert(poolBTC.BalanceRune.Equal(runeBTC), Equals, true)
-	c.Assert(poolBTC.BalanceAsset.Equal(btcPoolAsset), Equals, true)
+	c.Assert(poolBTC.LPBalanceRune.Equal(runeBTC), Equals, true)
+	c.Assert(poolBTC.LPBalanceAsset.Equal(btcPoolAsset), Equals, true)
 
 	ygg1 := GetRandomVault()
 	ygg1.Type = YggdrasilVault
@@ -146,15 +146,15 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	slashAmt = cosmos.NewUint(100 * common.One)
 	c.Assert(subsidizePoolWithSlashBond(ctx, ygg1, totalRuneLeft, slashAmt, mgr), IsNil)
 	amountRuneForTCANPool = slashAmt.Mul(poolTCAN.AssetValueInRune(cosmos.NewUint(common.One * 2))).Quo(totalRuneLeft)
-	runeTCAN = poolTCAN.BalanceRune.Add(amountRuneForTCANPool)
+	runeTCAN = poolTCAN.LPBalanceRune.Add(amountRuneForTCANPool)
 	poolTCAN, err = mgr.Keeper().GetPool(ctx, tCanAsset)
 	c.Assert(err, IsNil)
-	c.Assert(poolTCAN.BalanceRune.Equal(runeTCAN), Equals, true)
+	c.Assert(poolTCAN.LPBalanceRune.Equal(runeTCAN), Equals, true)
 	amountRuneForBTCPool = slashAmt.Mul(poolBTC.AssetValueInRune(cosmos.NewUint(common.One * 4))).Quo(totalRuneLeft)
-	runeBTC = poolBTC.BalanceRune.Add(amountRuneForBTCPool)
+	runeBTC = poolBTC.LPBalanceRune.Add(amountRuneForBTCPool)
 	poolBTC, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
-	c.Assert(poolBTC.BalanceRune.Equal(runeBTC), Equals, true)
+	c.Assert(poolBTC.LPBalanceRune.Equal(runeBTC), Equals, true)
 
 	ygg2 := GetRandomVault()
 	ygg2.Type = YggdrasilVault
@@ -217,9 +217,9 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 
 	// when ygg asset in RUNE is more then bond , thorchain should slash the node account with all their bond
 	keeper1.pool = Pool{
-		Asset:        common.BNBAsset,
-		BalanceRune:  cosmos.NewUint(1024 * common.One),
-		BalanceAsset: cosmos.NewUint(167 * common.One),
+		Asset:          common.BNBAsset,
+		LPBalanceRune:  cosmos.NewUint(1024 * common.One),
+		LPBalanceAsset: cosmos.NewUint(167 * common.One),
 	}
 	mgr.K = keeper1
 	c.Assert(refundBond(ctx, tx, cosmos.ZeroUint(), &na, mgr), IsNil)
@@ -243,9 +243,9 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 	}
 	keeper := &TestRefundBondKeeper{
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(23789 * common.One),
-			BalanceAsset: cosmos.NewUint(167 * common.One),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(23789 * common.One),
+			LPBalanceAsset: cosmos.NewUint(167 * common.One),
 		},
 		ygg:    ygg,
 		vaults: Vaults{GetRandomVault()},
@@ -264,9 +264,9 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 	p, err := keeper.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	expectedPoolRune := cosmos.NewUint(23789 * common.One).Sub(cosmos.NewUint(3946 * common.One)).Add(slashAmt)
-	c.Assert(p.BalanceRune.Equal(expectedPoolRune), Equals, true, Commentf("expect %s however we got %s", expectedPoolRune, p.BalanceRune))
+	c.Assert(p.LPBalanceRune.Equal(expectedPoolRune), Equals, true, Commentf("expect %s however we got %s", expectedPoolRune, p.LPBalanceRune))
 	expectedPoolBNB := cosmos.NewUint(167 * common.One).Sub(cosmos.NewUint(27 * common.One))
-	c.Assert(p.BalanceAsset.Equal(expectedPoolBNB), Equals, true, Commentf("expected BNB in pool %s , however we got %s", expectedPoolBNB, p.BalanceAsset))
+	c.Assert(p.LPBalanceAsset.Equal(expectedPoolBNB), Equals, true, Commentf("expected BNB in pool %s , however we got %s", expectedPoolBNB, p.LPBalanceAsset))
 }
 
 func (s *HelperSuite) TestEnableNextPool(c *C) {
@@ -277,15 +277,15 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
 	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	pool = NewPool()
 	pool.Asset = common.BTCAsset
 	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(50 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(50 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(50 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(50 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	ethAsset, err := common.NewAsset("ETH.ETH")
@@ -293,8 +293,8 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	pool = NewPool()
 	pool.Asset = ethAsset
 	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(40 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(40 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(40 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(40 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	xmrAsset, err := common.NewAsset("XMR.XMR")
@@ -302,8 +302,8 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	pool = NewPool()
 	pool.Asset = xmrAsset
 	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(40 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(0 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(40 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(0 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	// usdAsset
@@ -312,8 +312,8 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	pool = NewPool()
 	pool.Asset = usdAsset
 	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(140 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(0 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(140 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(0 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	// should enable BTC
 	c.Assert(cyclePools(ctx, 100, 1, 0, mgr), IsNil)
@@ -330,7 +330,7 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	pool, err = k.GetPool(ctx, xmrAsset)
 	c.Assert(pool.IsEmpty(), Equals, false)
 	c.Check(pool.Status, Equals, PoolStaged)
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(30*common.One))
+	c.Check(pool.LPBalanceRune.Uint64(), Equals, uint64(30*common.One))
 }
 
 func (s *HelperSuite) TestAbandonPool(c *C) {
@@ -341,8 +341,8 @@ func (s *HelperSuite) TestAbandonPool(c *C) {
 	pool := NewPool()
 	pool.Asset = usdAsset
 	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	vault := GetRandomVault()
@@ -369,8 +369,8 @@ func (s *HelperSuite) TestAbandonPool(c *C) {
 
 	// check pool was deleted
 	pool, err = k.GetPool(ctx, usdAsset)
-	c.Assert(pool.BalanceRune.IsZero(), Equals, true)
-	c.Assert(pool.BalanceAsset.IsZero(), Equals, true)
+	c.Assert(pool.LPBalanceRune.IsZero(), Equals, true)
+	c.Assert(pool.LPBalanceAsset.IsZero(), Equals, true)
 
 	// check vault remove pool asset
 	vault, err = k.GetVault(ctx, vault.PubKey)
@@ -396,8 +396,8 @@ func (s *HelperSuite) TestDollarInRune(c *C) {
 	pool := NewPool()
 	pool.Asset = busd
 	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(85515078103667)
-	pool.BalanceAsset = cosmos.NewUint(709802235538353)
+	pool.LPBalanceRune = cosmos.NewUint(85515078103667)
+	pool.LPBalanceAsset = cosmos.NewUint(709802235538353)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	runeUSDPrice := telem(DollarInRune(ctx, mgr))
@@ -465,15 +465,15 @@ func newAddGasFeeTestHelper(c *C) addGasFeeTestHelper {
 	mgr.K = keeper
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	poolBTC := NewPool()
 	poolBTC.Asset = common.BTCAsset
-	poolBTC.BalanceAsset = cosmos.NewUint(100 * common.One)
-	poolBTC.BalanceRune = cosmos.NewUint(100 * common.One)
+	poolBTC.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	poolBTC.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	poolBTC.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, poolBTC), IsNil)
 

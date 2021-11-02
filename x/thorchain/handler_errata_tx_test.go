@@ -111,10 +111,10 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 			Height: 1024,
 		},
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			LPUnits:      totalUnits,
-			BalanceRune:  cosmos.NewUint(100 * common.One),
-			BalanceAsset: cosmos.NewUint(100 * common.One),
+			Asset:          common.BNBAsset,
+			LPUnits:        totalUnits,
+			LPBalanceRune:  cosmos.NewUint(100 * common.One),
+			LPBalanceAsset: cosmos.NewUint(100 * common.One),
 		},
 		lps: LiquidityProviders{
 			{
@@ -137,8 +137,8 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 	msg := NewMsgErrataTx(txID, common.BNBChain, na.NodeAddress)
 	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	c.Check(keeper.pool.BalanceRune.Equal(cosmos.NewUint(70*common.One)), Equals, true)
-	c.Check(keeper.pool.BalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(keeper.pool.LPBalanceRune.Equal(cosmos.NewUint(70*common.One)), Equals, true)
+	c.Check(keeper.pool.LPBalanceAsset.Equal(cosmos.NewUint(100*common.One)), Equals, true)
 	c.Check(keeper.lps[0].Units.IsZero(), Equals, true, Commentf("%d", keeper.lps[0].Units.Uint64()))
 	c.Check(keeper.lps[0].LastAddHeight, Equals, int64(18))
 }
@@ -419,8 +419,8 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				helper.failGetLiquidityProvider = true
 				pool := NewPool()
 				pool.Asset = common.BTCAsset
-				pool.BalanceRune = cosmos.NewUint(common.One * 100)
-				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
+				pool.LPBalanceRune = cosmos.NewUint(common.One * 100)
+				pool.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
 				helper.Keeper.SetPool(ctx, pool)
 				voter := ObservedTxVoter{
@@ -449,8 +449,8 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				helper.failSetPool = true
 				pool := NewPool()
 				pool.Asset = common.BTCAsset
-				pool.BalanceRune = cosmos.NewUint(common.One * 100)
-				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
+				pool.LPBalanceRune = cosmos.NewUint(common.One * 100)
+				pool.LPBalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
 				helper.Keeper.SetPool(ctx, pool)
 				voter := ObservedTxVoter{
@@ -561,8 +561,8 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	// With POOL , but no txin voter
 	pool := NewPool()
 	pool.Asset = common.LTCAsset
-	pool.BalanceAsset = cosmos.NewUint(1024 * common.One)
-	pool.BalanceRune = cosmos.NewUint(1024 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(1024 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(1024 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
 	result, err = handler.processErrataOutboundTxV42(ctx, *msg)

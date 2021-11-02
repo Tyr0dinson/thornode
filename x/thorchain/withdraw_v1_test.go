@@ -50,11 +50,11 @@ func (k *WithdrawTestKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (ty
 			return val.(types.Pool), nil
 		}
 		return types.Pool{
-			BalanceRune:  cosmos.NewUint(100).MulUint64(common.One),
-			BalanceAsset: cosmos.NewUint(100).MulUint64(common.One),
-			LPUnits:      cosmos.NewUint(100).MulUint64(common.One),
-			Status:       PoolAvailable,
-			Asset:        asset,
+			LPBalanceRune:  cosmos.NewUint(100).MulUint64(common.One),
+			LPBalanceAsset: cosmos.NewUint(100).MulUint64(common.One),
+			LPUnits:        cosmos.NewUint(100).MulUint64(common.One),
+			Status:         PoolAvailable,
+			Asset:          asset,
 		}, nil
 	}
 }
@@ -549,11 +549,11 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
 	ctx, mgr := setupManagerForTest(c)
 	pool := Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.NewUint(200 * common.One),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.NewUint(200 * common.One),
+		Status:         PoolAvailable,
 	}
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	lp := LiquidityProvider{
@@ -614,12 +614,12 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddress common.Address) keeper.Keeper {
 	store := NewWithdrawTestKeeper(k)
 	pool := Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.NewUint(100 * common.One),
-		SynthUnits:   cosmos.ZeroUint(),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.NewUint(100 * common.One),
+		SynthUnits:     cosmos.ZeroUint(),
+		Status:         PoolAvailable,
 	}
 	c.Assert(store.SetPool(ctx, pool), IsNil)
 	lp := LiquidityProvider{
@@ -643,12 +643,12 @@ func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddres
 func getWithdrawTestKeeper2(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddress common.Address) keeper.Keeper {
 	store := NewWithdrawTestKeeper(k)
 	pool := Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.NewUint(200 * common.One),
-		SynthUnits:   cosmos.ZeroUint(),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.NewUint(200 * common.One),
+		SynthUnits:     cosmos.ZeroUint(),
+		Status:         PoolAvailable,
 	}
 	c.Assert(store.SetPool(ctx, pool), IsNil)
 	lp := LiquidityProvider{

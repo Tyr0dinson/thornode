@@ -308,7 +308,7 @@ func (ymgr YggMgrV65) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, total
 	// calculate total liquidity provided rune in our pools
 	totalLiquidityRune := cosmos.ZeroUint()
 	for _, pool := range pools {
-		totalLiquidityRune = totalLiquidityRune.Add(pool.BalanceRune)
+		totalLiquidityRune = totalLiquidityRune.Add(pool.LPBalanceRune)
 	}
 	if totalLiquidityRune.IsZero() {
 		// if nothing is liquidity provided, no coins should be issued
@@ -337,8 +337,8 @@ func (ymgr YggMgrV65) calcTargetYggCoins(pools []Pool, ygg Vault, yggBond, total
 		if !pool.IsAvailable() {
 			continue
 		}
-		runeAmt := common.GetSafeShare(targetRune, totalLiquidityRune, pool.BalanceRune)
-		assetAmt := common.GetSafeShare(targetRune, totalLiquidityRune, pool.BalanceAsset)
+		runeAmt := common.GetSafeShare(targetRune, totalLiquidityRune, pool.LPBalanceRune)
+		assetAmt := common.GetSafeShare(targetRune, totalLiquidityRune, pool.LPBalanceAsset)
 		// add rune amt (not asset since the two are considered to be equal)
 		// in a single pool X, the value of 1% asset X in RUNE ,equals the 1% RUNE in the same pool
 		yggCoin := ygg.GetCoin(pool.Asset)

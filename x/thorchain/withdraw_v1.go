@@ -57,8 +57,8 @@ func withdrawV1(ctx cosmos.Context, version semver.Version, msg MsgWithdrawLiqui
 	}
 
 	poolUnits := pool.LPUnits
-	poolRune := pool.BalanceRune
-	poolAsset := pool.BalanceAsset
+	poolRune := pool.LPBalanceRune
+	poolAsset := pool.LPBalanceAsset
 	fLiquidityProviderUnit := lp.Units
 	if lp.Units.IsZero() {
 		if !lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero() {
@@ -157,18 +157,18 @@ func withdrawV1(ctx cosmos.Context, version semver.Version, msg MsgWithdrawLiqui
 	ctx.Logger().Info("client withdraw", "RUNE", withdrawRune, "asset", withDrawAsset, "units left", unitAfter)
 	// update pool
 	pool.LPUnits = common.SafeSub(poolUnits, fLiquidityProviderUnit).Add(unitAfter)
-	pool.BalanceRune = common.SafeSub(poolRune, withdrawRune)
-	pool.BalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
+	pool.LPBalanceRune = common.SafeSub(poolRune, withdrawRune)
+	pool.LPBalanceAsset = common.SafeSub(poolAsset, withDrawAsset)
 
-	ctx.Logger().Info("pool after withdraw", "pool unit", pool.LPUnits, "balance RUNE", pool.BalanceRune, "balance asset", pool.BalanceAsset)
+	ctx.Logger().Info("pool after withdraw", "pool unit", pool.LPUnits, "balance RUNE", pool.LPBalanceRune, "balance asset", pool.LPBalanceAsset)
 
 	lp.LastWithdrawHeight = common.BlockHeight(ctx)
-	lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetShare(common.SafeSub(lp.Units, unitAfter), pool.LPUnits, pool.BalanceRune))
-	lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetShare(common.SafeSub(lp.Units, unitAfter), pool.LPUnits, pool.BalanceAsset))
+	lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetShare(common.SafeSub(lp.Units, unitAfter), pool.LPUnits, pool.LPBalanceRune))
+	lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetShare(common.SafeSub(lp.Units, unitAfter), pool.LPUnits, pool.LPBalanceAsset))
 	lp.Units = unitAfter
 
 	// Create a pool event if THORNode have no rune or assets
-	if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+	if pool.LPBalanceAsset.IsZero() || pool.LPBalanceRune.IsZero() {
 		poolEvt := NewEventPool(pool.Asset, PoolStaged)
 		if err := manager.EventMgr().EmitEvent(ctx, poolEvt); nil != err {
 			ctx.Logger().Error("fail to emit pool event", "error", err)
@@ -213,8 +213,8 @@ func calcImpLossV1(lp LiquidityProvider, withdrawBasisPoints cosmos.Uint, protec
 	unitsToClaim := common.GetShare(withdrawBasisPoints, cosmos.NewUint(10000), lp.Units)
 	A0 := lp.AssetDepositValue
 	R0 := lp.RuneDepositValue
-	A1 := common.GetShare(unitsToClaim, pool.LPUnits, pool.BalanceAsset)
-	R1 := common.GetShare(unitsToClaim, pool.LPUnits, pool.BalanceRune)
+	A1 := common.GetShare(unitsToClaim, pool.LPUnits, pool.LPBalanceAsset)
+	R1 := common.GetShare(unitsToClaim, pool.LPUnits, pool.LPBalanceRune)
 	P1 := R1.Quo(A1)
 	coverage := common.SafeSub(A0, A1).Mul(P1).Add(common.SafeSub(R0, R1))
 	// taking protection basis points, calculate how much of the coverage the user actually receives

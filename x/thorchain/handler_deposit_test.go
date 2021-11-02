@@ -63,8 +63,8 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 	c.Assert(err, IsNil)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	msg := NewMsgDeposit(coins, "ADD:BNB.BNB", addr)

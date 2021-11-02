@@ -29,13 +29,13 @@ func (s SwapQueueV58Suite) TestScoreMsgs(c *C) {
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceRune = cosmos.NewUint(143166 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(143166 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	pool = NewPool()
 	pool.Asset = common.BTCAsset
-	pool.BalanceRune = cosmos.NewUint(73708333 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(73708333 * common.One)
+	pool.LPBalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
 	queue := newSwapQv47(k)

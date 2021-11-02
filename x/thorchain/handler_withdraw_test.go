@@ -38,11 +38,11 @@ func (mfp *MockWithdrawKeeper) GetPool(_ cosmos.Context, _ common.Asset) (Pool, 
 	}
 	if mfp.suspendedPool {
 		return Pool{
-			BalanceRune:  cosmos.ZeroUint(),
-			BalanceAsset: cosmos.ZeroUint(),
-			Asset:        common.BNBAsset,
-			LPUnits:      cosmos.ZeroUint(),
-			Status:       PoolSuspended,
+			LPBalanceRune:  cosmos.ZeroUint(),
+			LPBalanceAsset: cosmos.ZeroUint(),
+			Asset:          common.BNBAsset,
+			LPUnits:        cosmos.ZeroUint(),
+			Status:         PoolSuspended,
 		}, nil
 	}
 	return mfp.currentPool, nil
@@ -90,8 +90,8 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 		keeper:            keeper,
 		activeNodeAccount: activeNodeAccount,
 		currentPool: Pool{
-			BalanceRune:         cosmos.ZeroUint(),
-			BalanceAsset:        cosmos.ZeroUint(),
+			LPBalanceRune:       cosmos.ZeroUint(),
+			LPBalanceAsset:      cosmos.ZeroUint(),
 			Asset:               common.BNBAsset,
 			LPUnits:             cosmos.ZeroUint(),
 			SynthUnits:          cosmos.ZeroUint(),
@@ -142,8 +142,8 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	constAccessor := constants.GetConstantValues(ver)
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
-	pool.BalanceAsset = cosmos.ZeroUint()
-	pool.BalanceRune = cosmos.ZeroUint()
+	pool.LPBalanceAsset = cosmos.ZeroUint()
+	pool.LPBalanceRune = cosmos.ZeroUint()
 	pool.Status = PoolAvailable
 	keeper.SetPool(ctx, pool)
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
@@ -264,11 +264,11 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_mockFailScenarios(c *C) {
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	ctx, k := setupKeeperForTest(c)
 	currentPool := Pool{
-		BalanceRune:  cosmos.ZeroUint(),
-		BalanceAsset: cosmos.ZeroUint(),
-		Asset:        common.BNBAsset,
-		LPUnits:      cosmos.ZeroUint(),
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.ZeroUint(),
+		LPBalanceAsset: cosmos.ZeroUint(),
+		Asset:          common.BNBAsset,
+		LPUnits:        cosmos.ZeroUint(),
+		Status:         PoolAvailable,
 	}
 	lp := LiquidityProvider{
 		Units:        cosmos.ZeroUint(),

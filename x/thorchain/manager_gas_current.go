@@ -103,7 +103,7 @@ func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain, asset common.
 		ctx.Logger().Error("fail to get pool", "asset", asset, "error", err)
 		return transactionFee
 	}
-	if pool.BalanceAsset.Equal(cosmos.ZeroUint()) || pool.BalanceRune.Equal(cosmos.ZeroUint()) {
+	if pool.LPBalanceAsset.Equal(cosmos.ZeroUint()) || pool.LPBalanceRune.Equal(cosmos.ZeroUint()) {
 		return transactionFee
 	}
 
@@ -118,7 +118,7 @@ func (gm *GasMgrV1) GetFee(ctx cosmos.Context, chain common.Chain, asset common.
 		ctx.Logger().Error("fail to get pool", "asset", asset, "error", err)
 		return transactionFee
 	}
-	if pool.BalanceAsset.Equal(cosmos.ZeroUint()) || pool.BalanceRune.Equal(cosmos.ZeroUint()) {
+	if pool.LPBalanceAsset.Equal(cosmos.ZeroUint()) || pool.LPBalanceRune.Equal(cosmos.ZeroUint()) {
 		return transactionFee
 	}
 	return pool.RuneValueInAsset(fee)
@@ -135,7 +135,7 @@ func (gm *GasMgrV1) getRuneInAssetValue(ctx cosmos.Context, transactionFee cosmo
 		ctx.Logger().Error("fail to get pool", "asset", asset, "error", err)
 		return transactionFee
 	}
-	if pool.BalanceAsset.Equal(cosmos.ZeroUint()) || pool.BalanceRune.Equal(cosmos.ZeroUint()) {
+	if pool.LPBalanceAsset.Equal(cosmos.ZeroUint()) || pool.LPBalanceRune.Equal(cosmos.ZeroUint()) {
 		return transactionFee
 	}
 
@@ -237,13 +237,13 @@ func (gm *GasMgrV1) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
+			pool.LPBalanceRune = pool.LPBalanceRune.Add(runeGas) // Add to the pool
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
 			// no rune is added to the pool, sorry LPs!
 			runeGas = cosmos.ZeroUint()
 		}
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gas.Amount)
+		pool.LPBalanceAsset = common.SafeSub(pool.LPBalanceAsset, gas.Amount)
 
 		if err := keeper.SetPool(ctx, pool); err != nil {
 			ctx.Logger().Error("fail to set pool", "pool", gas.Asset, "error", err)

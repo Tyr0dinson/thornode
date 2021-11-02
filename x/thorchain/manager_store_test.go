@@ -27,7 +27,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV55(c *C) {
 	migrateStoreV55(ctx, mgr)
 	newPool, err := keeper.GetPool(ctx, assetToAdjust)
 	c.Assert(err, IsNil)
-	c.Assert(newPool.BalanceAsset.Equal(cosmos.NewUint(900000000)), Equals, true)
+	c.Assert(newPool.LPBalanceAsset.Equal(cosmos.NewUint(900000000)), Equals, true)
 }
 func (s *StoreManagerTestSuite) TestMigrateStoreV58(c *C) {
 	SetupConfigForTest()
@@ -338,8 +338,8 @@ func (s *StoreManagerTestSuite) TestCreditBackToVaultAndPool(c *C) {
 		c.Assert(err, IsNil)
 		pool.Asset = asset
 		pool.Status = PoolAvailable
-		pool.BalanceAsset = item[0]
-		pool.BalanceRune = item[1]
+		pool.LPBalanceAsset = item[0]
+		pool.LPBalanceRune = item[1]
 		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	}
 	creditAssetBackToVaultAndPool(ctx, mgr)
@@ -349,8 +349,8 @@ func (s *StoreManagerTestSuite) TestCreditBackToVaultAndPool(c *C) {
 	c.Assert(vaultAfter.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(43465695171)), Equals, true)
 	ethPoolAfter, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
-	c.Assert(ethPoolAfter.BalanceAsset.Equal(cosmos.NewUint(76228226137)), Equals, true)
-	c.Assert(ethPoolAfter.BalanceRune.GT(cosmos.NewUint(70306321826847)), Equals, true)
+	c.Assert(ethPoolAfter.LPBalanceAsset.Equal(cosmos.NewUint(76228226137)), Equals, true)
+	c.Assert(ethPoolAfter.LPBalanceRune.GT(cosmos.NewUint(70306321826847)), Equals, true)
 }
 
 func (s *StoreManagerTestSuite) TestMigrateStoreV61(c *C) {
@@ -740,8 +740,8 @@ func (s *StoreManagerTestSuite) TestRefundBinanceTx(c *C) {
 		p := NewPool()
 		p.Asset = asset
 		p.Status = PoolAvailable
-		p.BalanceAsset = cosmos.NewUint(common.One)
-		p.BalanceRune = cosmos.NewUint(common.One)
+		p.LPBalanceAsset = cosmos.NewUint(common.One)
+		p.LPBalanceRune = cosmos.NewUint(common.One)
 		c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
 	}
 	// create all tx voter

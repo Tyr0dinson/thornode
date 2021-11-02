@@ -59,10 +59,10 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 	fee = gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	c.Assert(fee.Uint64(), Equals, defaultTxFee)
 	c.Assert(k.SetPool(ctx, Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BNBAsset,
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BNBAsset,
+		Status:         PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	c.Assert(fee.Uint64(), Equals, bnbSingleTxFee.Uint64()*3, Commentf("%d vs %d", fee.Uint64(), bnbSingleTxFee.Uint64()*3))
@@ -73,10 +73,10 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 	fee = gasMgr.GetFee(ctx, common.BTCChain, common.RuneAsset())
 	c.Assert(fee.Uint64(), Equals, defaultTxFee)
 	c.Assert(k.SetPool(ctx, Pool{
-		BalanceRune:  cosmos.NewUint(100 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BTCAsset,
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(100 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BTCAsset,
+		Status:         PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain, common.RuneAsset())
 	c.Assert(fee.Uint64(), Equals, uint64(70*50*3))
@@ -87,10 +87,10 @@ func (GasManagerTestSuite) TestGetFee(c *C) {
 
 	// change the pool balance
 	c.Assert(k.SetPool(ctx, Pool{
-		BalanceRune:  cosmos.NewUint(500 * common.One),
-		BalanceAsset: cosmos.NewUint(100 * common.One),
-		Asset:        common.BTCAsset,
-		Status:       PoolAvailable,
+		LPBalanceRune:  cosmos.NewUint(500 * common.One),
+		LPBalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:          common.BTCAsset,
+		Status:         PoolAvailable,
 	}), IsNil)
 	synthAssetFee := gasMgr.GetFee(ctx, common.THORChain, sBTC)
 	c.Assert(synthAssetFee.Uint64(), Equals, uint64(400000))
@@ -154,8 +154,8 @@ func (GasManagerTestSuite) TestDifferentValidations(c *C) {
 	helper.failSetPool = true
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceAsset = cosmos.NewUint(common.One * 100)
-	p.BalanceRune = cosmos.NewUint(common.One * 100)
+	p.LPBalanceAsset = cosmos.NewUint(common.One * 100)
+	p.LPBalanceRune = cosmos.NewUint(common.One * 100)
 	p.Status = PoolAvailable
 	c.Assert(helper.Keeper.SetPool(ctx, p), IsNil)
 	gasMgr.AddGasAsset(common.Gas{

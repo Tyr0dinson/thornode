@@ -174,9 +174,9 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200),
-			BalanceAsset: cosmos.NewUint(300),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200),
+			LPBalanceAsset: cosmos.NewUint(300),
 		},
 		yggExists: true,
 		ygg:       ygg,
@@ -231,9 +231,9 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFunds(c *C) {
 		nas:   NodeAccounts{na},
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		pool: Pool{
-			Asset:        common.BNBAsset,
-			BalanceRune:  cosmos.NewUint(200 * common.One),
-			BalanceAsset: cosmos.NewUint(300 * common.One),
+			Asset:          common.BNBAsset,
+			LPBalanceRune:  cosmos.NewUint(200 * common.One),
+			LPBalanceAsset: cosmos.NewUint(300 * common.One),
 		},
 		yggExists: true,
 		ygg:       ygg,
@@ -326,8 +326,8 @@ func setupAnObservedTxOut(ctx cosmos.Context, helper *HandlerObservedTxOutTestHe
 	c.Assert(helper.SetVault(ctx, vault), IsNil)
 	p := NewPool()
 	p.Asset = common.BNBAsset
-	p.BalanceRune = cosmos.NewUint(100 * common.One)
-	p.BalanceAsset = cosmos.NewUint(100 * common.One)
+	p.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	p.LPBalanceAsset = cosmos.NewUint(100 * common.One)
 	p.Status = PoolAvailable
 	helper.Keeper.SetPool(ctx, p)
 	return NewMsgObservedTxOut(txs, activeNodeAccount.NodeAddress)

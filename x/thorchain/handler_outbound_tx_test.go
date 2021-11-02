@@ -183,9 +183,9 @@ func newOutboundTxHandlerTestHelper(c *C) outboundTxHandlerTestHelper {
 	ctx = ctx.WithBlockHeight(1023)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.LPUnits = pool.BalanceRune
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = pool.LPBalanceRune
 
 	version := GetCurrentVersion()
 	asgardVault := GetRandomVault()
@@ -441,7 +441,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerInvalidObservedTxVoterShou
 	expectedVaultTotalReserve := reserve.Add(cosmos.NewUint(common.One).QuoUint64(2))
 	pool, err := helper.keeper.GetPool(helper.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	poolBNB := common.SafeSub(pool.BalanceAsset, cosmos.NewUint(common.One).Add(BNBGasFeeSingleton[0].Amount))
+	poolBNB := common.SafeSub(pool.LPBalanceAsset, cosmos.NewUint(common.One).Add(BNBGasFeeSingleton[0].Amount))
 
 	// given the outbound tx doesn't have relevant OservedTxVoter in system ,
 	// thus it should be slashed with 1.5 * the full amount of assets
@@ -456,8 +456,8 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerInvalidObservedTxVoterShou
 	c.Assert(newReserve.Equal(expectedVaultTotalReserve), Equals, true)
 	pool, err = helper.keeper.GetPool(helper.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	c.Assert(pool.BalanceRune.Equal(cosmos.NewUint(10149940373)), Equals, true, Commentf("%d/%s", pool.BalanceRune.Uint64(), cosmos.NewUint(10149884125)))
-	c.Assert(pool.BalanceAsset.Equal(poolBNB), Equals, true, Commentf("%d/%d", pool.BalanceAsset.Uint64(), poolBNB.Uint64()))
+	c.Assert(pool.LPBalanceRune.Equal(cosmos.NewUint(10149940373)), Equals, true, Commentf("%d/%s", pool.LPBalanceRune.Uint64(), cosmos.NewUint(10149884125)))
+	c.Assert(pool.LPBalanceAsset.Equal(poolBNB), Equals, true, Commentf("%d/%d", pool.LPBalanceAsset.Uint64(), poolBNB.Uint64()))
 }
 
 func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerETHChainSpendTooMuchGasShouldSlash(c *C) {
@@ -465,9 +465,9 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerETHChainSpendTooMuchGasSho
 	handler := NewOutboundTxHandler(helper.mgr)
 	pool := NewPool()
 	pool.Asset = common.ETHAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.LPUnits = pool.BalanceRune
+	pool.LPBalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPBalanceRune = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = pool.LPBalanceRune
 	c.Assert(helper.keeper.SetPool(helper.ctx, pool), IsNil)
 	fromAddr, err := helper.yggVault.PubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)

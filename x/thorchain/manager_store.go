@@ -98,7 +98,7 @@ func migrateStoreV56(ctx cosmos.Context, mgr Manager) {
 	}
 	runePool := cosmos.ZeroUint()
 	for _, p := range pools {
-		runePool = runePool.Add(p.BalanceRune)
+		runePool = runePool.Add(p.LPBalanceRune)
 	}
 
 	runeMod := mgr.Keeper().GetRuneBalanceOfModule(ctx, AsgardName)
@@ -147,7 +147,7 @@ func migrateStoreV55(ctx cosmos.Context, mgr Manager) {
 		ctx.Logger().Error("fail to get pool", "error", err)
 		return
 	}
-	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(900000000))
+	pool.LPBalanceAsset = pool.LPBalanceAsset.Add(cosmos.NewUint(900000000))
 	if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 		ctx.Logger().Error("fail to save pool", "error", err)
 	}
@@ -891,7 +891,7 @@ func migrateStoreV70Pools(ctx cosmos.Context, mgr Manager) {
 		if p.IsEmpty() {
 			continue
 		}
-		p.BalanceAsset = common.SafeSub(p.BalanceAsset, item.subtractAmount)
+		p.LPBalanceAsset = common.SafeSub(p.LPBalanceAsset, item.subtractAmount)
 		if err := mgr.Keeper().SetPool(ctx, p); err != nil {
 			ctx.Logger().Error("fail to save pool", "error", err, "asset", item.asset)
 		}
