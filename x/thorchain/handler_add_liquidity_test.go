@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"errors"
+	"fmt"
 
 	. "gopkg.in/check.v1"
 
@@ -675,4 +676,119 @@ func (HandlerAddLiquiditySuite) TestAssetOnlyProvidedLiquidity(c *C) {
 	pool, err := k.GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Assert(pool.LPUnits.Uint64(), Equals, uint64(12500000000), Commentf("%d", pool.LPUnits.Uint64()))
+}
+
+func (HandlerAddLiquiditySuite) TestAdhoc(c *C) {
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	// first LP
+	newPoolUnits, lpUnits, err := calculatePoolUnitsV1(cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.NewUint(common.One*100), cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	fmt.Println("new pool units:", newPoolUnits.String())
+	fmt.Println("lp units:", lpUnits)
+	lp := LiquidityProvider{
+		Units:             lpUnits,
+		RuneDepositValue:  cosmos.NewUint(common.One * 100),
+		AssetDepositValue: cosmos.NewUint(1 * common.One),
+	}
+	pool.LPUnits = newPoolUnits
+	pool.BalanceRune = cosmos.NewUint(common.One * 100)
+	pool.BalanceAsset = cosmos.NewUint(1 * common.One)
+	// second LP
+	newPoolUnits, lpUnits, err = calculatePoolUnitsV1(newPoolUnits, pool.BalanceRune, pool.BalanceAsset, cosmos.NewUint(1*common.One), cosmos.NewUint(common.One*2))
+	c.Assert(err, IsNil)
+	fmt.Println("new pool units:", newPoolUnits.String())
+	fmt.Println("lp units:", lpUnits)
+
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(common.One * 2))
+	pool.BalanceRune = pool.BalanceRune.Add(cosmos.NewUint(1 * common.One))
+	pool.LPUnits = newPoolUnits
+
+	lp1 := LiquidityProvider{
+		Units:             lpUnits,
+		RuneDepositValue:  common.GetSafeShare(lpUnits, pool.GetPoolUnits(), pool.BalanceRune),
+		AssetDepositValue: common.GetSafeShare(lpUnits, pool.GetPoolUnits(), pool.BalanceAsset),
+	}
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(2 * common.One))
+	// LP1 withdraw
+	implProtectionRuneAmount, depositValue, redeemValue := calcImpLossV63(lp1, cosmos.NewUint(10000), 10000, pool)
+	fmt.Println("imp rune:", implProtectionRuneAmount.String())
+	fmt.Println("deposit value:", depositValue.String())
+	fmt.Println("redeem value:", redeemValue.String())
+
+	withdrawRune, withDrawAsset, unitAfter, err := calculateWithdrawV72(pool.GetPoolUnits(), pool.BalanceRune, pool.BalanceAsset, lp1.Units, cosmos.ZeroUint(), cosmos.NewUint(10000), common.EmptyAsset)
+	c.Assert(err, IsNil)
+	fmt.Println("withdraw rune:", withdrawRune.String())
+	fmt.Println("withdraw asset:", withDrawAsset.String())
+	fmt.Println("units after:", unitAfter)
+	pool.BalanceRune = common.SafeSub(pool.BalanceRune, withdrawRune)
+	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, withDrawAsset)
+	pool.LPUnits = common.SafeSub(pool.LPUnits, lp1.Units)
+
+	// add lp 3
+	// second LP
+	newPoolUnits, lpUnits, err = calculatePoolUnitsV1(newPoolUnits, pool.BalanceRune, pool.BalanceAsset, cosmos.NewUint(1*common.One), cosmos.NewUint(common.One*10))
+	c.Assert(err, IsNil)
+	fmt.Println("new pool units:", newPoolUnits.String())
+	fmt.Println("lp units:", lpUnits)
+
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(common.One * 10))
+	pool.BalanceRune = pool.BalanceRune.Add(cosmos.NewUint(1 * common.One))
+	pool.LPUnits = newPoolUnits
+
+	lp2 := LiquidityProvider{
+		Units:             lpUnits,
+		RuneDepositValue:  common.GetSafeShare(lpUnits, pool.GetPoolUnits(), pool.BalanceRune),
+		AssetDepositValue: common.GetSafeShare(lpUnits, pool.GetPoolUnits(), pool.BalanceAsset),
+	}
+	pool.BalanceAsset = pool.BalanceAsset.Add(cosmos.NewUint(2 * common.One))
+	// lp 0 withdraw
+	implProtectionRuneAmount, depositValue, redeemValue = calcImpLossV63(lp, cosmos.NewUint(10000), 10000, pool)
+	fmt.Println("imp rune:", implProtectionRuneAmount.String())
+	fmt.Println("deposit value:", depositValue.String())
+	fmt.Println("redeem value:", redeemValue.String())
+
+	withdrawRune, withDrawAsset, unitAfter, err = calculateWithdrawV72(pool.GetPoolUnits(), pool.BalanceRune, pool.BalanceAsset, lp.Units, cosmos.ZeroUint(), cosmos.NewUint(10000), common.EmptyAsset)
+	c.Assert(err, IsNil)
+	fmt.Println("withdraw rune:", withdrawRune.String())
+	fmt.Println("withdraw asset:", withDrawAsset.String())
+	fmt.Println("units after:", unitAfter)
+
+	// lp 2 withdraw
+	implProtectionRuneAmount, depositValue, redeemValue = calcImpLossV63(lp2, cosmos.NewUint(10000), 10000, pool)
+	fmt.Println("imp rune:", implProtectionRuneAmount.String())
+	fmt.Println("deposit value:", depositValue.String())
+	fmt.Println("redeem value:", redeemValue.String())
+
+	withdrawRune, withDrawAsset, unitAfter, err = calculateWithdrawV72(pool.GetPoolUnits(), pool.BalanceRune, pool.BalanceAsset, lp2.Units, cosmos.ZeroUint(), cosmos.NewUint(10000), common.EmptyAsset)
+	c.Assert(err, IsNil)
+	fmt.Println("withdraw rune:", withdrawRune.String())
+	fmt.Println("withdraw asset:", withDrawAsset.String())
+	fmt.Println("units after:", unitAfter)
+
+}
+func (HandlerAddLiquiditySuite) TestGetIMPRune(c *C) {
+	pool := NewPool()
+	pool.BalanceRune = cosmos.NewUint(139081682487633)
+	pool.BalanceAsset = cosmos.NewUint(5448004011082059)
+	pool.LPUnits = cosmos.NewUint(28349716883731)
+	pool.PendingInboundRune = cosmos.NewUint(293281806542)
+	pool.PendingInboundAsset = cosmos.NewUint(11527358644313)
+	lp := LiquidityProvider{
+		Asset:              common.BTCAsset,
+		RuneAddress:        common.Address("thor1e38n9c9l3h56gwfwazu6xds32u9ajdapukv65w"),
+		AssetAddress:       common.Address("0x69539c1c678dfd26e626f109149b7cebdd5e4768"),
+		LastAddHeight:      1281179,
+		LastWithdrawHeight: 1303444,
+		Units:              cosmos.NewUint(6432250000000),
+		PendingRune:        cosmos.ZeroUint(),
+		PendingAsset:       cosmos.ZeroUint(),
+		PendingTxID:        "",
+		RuneDepositValue:   cosmos.ZeroUint(),
+		AssetDepositValue:  cosmos.NewUint(6473096182889007),
+	}
+	implProtectionRuneAmount, depositValue, redeemValue := calcImpLossV63(lp, cosmos.NewUint(10000), 10000, pool)
+	fmt.Println("imp rune:", implProtectionRuneAmount.String())
+	fmt.Println("deposit value:", depositValue.String())
+	fmt.Println("redeem value:", redeemValue.String())
 }
