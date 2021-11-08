@@ -52,6 +52,7 @@ func NewConstantValue010() *ConstantVals {
 			TNSFeeOnSale:                  1000,               // fee for TNS sale in basis points
 			TNSFeePerBlock:                20,                 // per block cost for TNS, in rune
 			PermittedSolvencyGap:          100,                // the setting is in basis points
+			MinimumVaultNodeBond:          10_000_00000000,    // minimum bond in RUNE for a vault node to be active (10k RUNE)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

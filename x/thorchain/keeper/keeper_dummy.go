@@ -168,7 +168,15 @@ func (k KVStoreDummy) ListValidatorsByStatus(_ cosmos.Context, _ NodeStatus) (No
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) ListNodeAccountsByStatus(_ cosmos.Context, _ NodeStatus) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
 func (k KVStoreDummy) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ListActiveNodeAccounts(_ cosmos.Context) (NodeAccounts, error) {
 	return nil, kaboom
 }
 

@@ -12,6 +12,7 @@ enum VaultType {
   UnknownVault = 0;
   AsgardVault = 1;
   YggdrasilVault = 2;
+  ValkyrieVault = 3;
 }
 
 enum VaultStatus {
@@ -34,4 +35,5 @@ message Vault {
   int64 outbound_tx_count = 10;
   repeated int64 pending_tx_block_heights = 11;
   repeated types.ChainContract routers = 22 [(gogoproto.nullable) = false];
+  common.Asset asset = 12;
 }
