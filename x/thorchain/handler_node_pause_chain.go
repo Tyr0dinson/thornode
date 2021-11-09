@@ -95,11 +95,7 @@ func (h NodePauseChainHandler) handleV1(ctx cosmos.Context, msg MsgNodePauseChai
 		return err
 	}
 
-	blocks, err := h.mgr.Keeper().GetMimir(ctx, constants.NodePauseChainBlocks.String())
-	if blocks < 0 || err != nil {
-		blocks = h.mgr.GetConstants().GetInt64Value(constants.NodePauseChainBlocks)
-	}
-
+	blocks := h.mgr.GetConstantInt64(ctx, constants.NodePauseChainBlocks)
 	if msg.Value > 0 { // node intends to pause chain
 		if pauseHeight > common.BlockHeight(ctx) { // chain is paused
 			pauseHeight += blocks

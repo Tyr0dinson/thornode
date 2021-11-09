@@ -329,6 +329,7 @@ func (k KVStoreDummy) RemoveSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ i
 func (k KVStoreDummy) GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ int) (MsgSwap, error) {
 	return MsgSwap{}, kaboom
 }
+func (k KVStoreDummy) HasMimir(_ cosmos.Context, key string) bool           { return false }
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
 func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64)   {}
 func (k KVStoreDummy) DeleteMimir(_ cosmos.Context, key string) error       { return kaboom }

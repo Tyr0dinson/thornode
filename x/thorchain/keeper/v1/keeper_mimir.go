@@ -45,6 +45,15 @@ func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {
 	return nil
 }
 
+func (k KVStore) HasMimir(ctx cosmos.Context, key string) bool {
+	if k.haveKraken(ctx) {
+		return false
+	}
+	record := int64(-1)
+	ok, _ := k.getInt64(ctx, k.GetKey(ctx, prefixMimir, key), &record)
+	return ok
+}
+
 func (k KVStore) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64 {
 	record := int64(-1)
 	_, _ = k.getInt64(ctx, k.GetKey(ctx, prefixNodePauseChain, acc.String()), &record)

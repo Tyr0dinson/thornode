@@ -97,10 +97,7 @@ func (h AddLiquidityHandler) validateV68(ctx cosmos.Context, msg MsgAddLiquidity
 	}
 	totalLiquidityRUNE = totalLiquidityRUNE.Add(msg.RuneAmount)
 	totalLiquidityRUNE = totalLiquidityRUNE.Add(pool.AssetValueInRune(msg.AssetAmount))
-	maximumLiquidityRune, err := h.mgr.Keeper().GetMimir(ctx, constants.MaximumLiquidityRune.String())
-	if maximumLiquidityRune < 0 || err != nil {
-		maximumLiquidityRune = h.mgr.GetConstants().GetInt64Value(constants.MaximumLiquidityRune)
-	}
+	maximumLiquidityRune := h.mgr.GetConstantInt64(ctx, constants.MaximumLiquidityRune)
 	if maximumLiquidityRune > 0 {
 		if totalLiquidityRUNE.GT(cosmos.NewUint(uint64(maximumLiquidityRune))) {
 			return errAddLiquidityRUNEOverLimit

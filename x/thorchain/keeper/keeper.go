@@ -221,6 +221,7 @@ type KeeperSwapQueue interface {
 }
 
 type KeeperMimir interface {
+	HasMimir(_ cosmos.Context, key string) bool
 	GetMimir(_ cosmos.Context, key string) (int64, error)
 	SetMimir(_ cosmos.Context, key string, value int64)
 	GetMimirIterator(ctx cosmos.Context) cosmos.Iterator

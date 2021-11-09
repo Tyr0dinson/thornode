@@ -112,10 +112,7 @@ func (h LeaveHandler) handleV46(ctx cosmos.Context, msg MsgLeave) error {
 			}
 		}
 	} else {
-		bondLockPeriod, err := h.mgr.Keeper().GetMimir(ctx, constants.BondLockupPeriod.String())
-		if err != nil || bondLockPeriod < 0 {
-			bondLockPeriod = h.mgr.GetConstants().GetInt64Value(constants.BondLockupPeriod)
-		}
+		bondLockPeriod := h.mgr.GetConstantInt64(ctx, constants.BondLockupPeriod)
 		if common.BlockHeight(ctx)-nodeAcc.StatusSince < bondLockPeriod {
 			return fmt.Errorf("node can not unbond before %d", nodeAcc.StatusSince+bondLockPeriod)
 		}

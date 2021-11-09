@@ -68,10 +68,7 @@ func (h IPAddressHandler) validateV1(ctx cosmos.Context, msg MsgSetIPAddress) er
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
 	}
 
-	cost, err := h.mgr.Keeper().GetMimir(ctx, constants.NativeTransactionFee.String())
-	if err != nil || cost < 0 {
-		cost = h.mgr.GetConstants().GetInt64Value(constants.NativeTransactionFee)
-	}
+	cost := h.mgr.GetConstantInt64(ctx, constants.NativeTransactionFee)
 	if nodeAccount.Bond.LT(cosmos.NewUint(uint64(cost))) {
 		return cosmos.ErrUnauthorized("not enough bond")
 	}

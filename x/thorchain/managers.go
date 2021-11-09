@@ -28,6 +28,7 @@ var ErrNotEnoughToPayFee = errors.New("not enough asset to pay for fees")
 // Manager is an interface to define all the required methods
 type Manager interface {
 	GetConstants() constants.ConstantValues
+	GetConstantInt64(_ cosmos.Context, _ constants.ConstantName) int64
 	GetVersion() semver.Version
 	Keeper() keeper.Keeper
 	GasMgr() GasManager
@@ -158,6 +159,17 @@ func (mgr *Mgrs) GetVersion() semver.Version {
 
 func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 	return mgr.ConstAccessor
+}
+
+func (mgr *Mgrs) GetConstantInt64(ctx cosmos.Context, name constants.ConstantName) int64 {
+	if mgr.Keeper().HasMimir(ctx, name.String()) {
+		val, err := mgr.Keeper().GetMimir(ctx, name.String())
+		if err != nil {
+			return mgr.GetConstants().GetInt64Value(name)
+		}
+		return val
+	}
+	return mgr.GetConstants().GetInt64Value(name)
 }
 
 // BeginBlock detect whether there are new version available, if it is available then create a new version of Mgr

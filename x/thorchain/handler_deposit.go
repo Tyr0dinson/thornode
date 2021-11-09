@@ -89,10 +89,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		return nil, fmt.Errorf("mimir has halted THORChain transactions")
 	}
 
-	nativeTxFee, err := h.mgr.Keeper().GetMimir(ctx, constants.NativeTransactionFee.String())
-	if err != nil || nativeTxFee < 0 {
-		nativeTxFee = h.mgr.GetConstants().GetInt64Value(constants.NativeTransactionFee)
-	}
+	nativeTxFee := h.mgr.GetConstantInt64(ctx, constants.NativeTransactionFee)
 	gas := common.NewCoin(common.RuneNative, cosmos.NewUint(uint64(nativeTxFee)))
 	gasFee, err := gas.Native()
 	if err != nil {

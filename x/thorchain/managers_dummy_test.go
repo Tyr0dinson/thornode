@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
@@ -53,13 +54,24 @@ func NewDummyMgr() *DummyMgr {
 
 func (m DummyMgr) GetVersion() semver.Version             { return GetCurrentVersion() }
 func (m DummyMgr) GetConstants() constants.ConstantValues { return m.constAccessor }
-func (m DummyMgr) Keeper() keeper.Keeper                  { return m.K }
-func (m DummyMgr) GasMgr() GasManager                     { return m.gasMgr }
-func (m DummyMgr) EventMgr() EventManager                 { return m.eventMgr }
-func (m DummyMgr) TxOutStore() TxOutStore                 { return m.txOutStore }
-func (m DummyMgr) VaultMgr() NetworkManager               { return m.vaultMgr }
-func (m DummyMgr) ValidatorMgr() ValidatorManager         { return m.validatorMgr }
-func (m DummyMgr) ObMgr() ObserverManager                 { return m.obMgr }
-func (m DummyMgr) SwapQ() SwapQueue                       { return m.swapQ }
-func (m DummyMgr) Slasher() Slasher                       { return m.slasher }
-func (m DummyMgr) YggManager() YggManager                 { return m.yggManager }
+func (m DummyMgr) GetConstantInt64(ctx cosmos.Context, name constants.ConstantName) int64 {
+	if m.Keeper().HasMimir(ctx, name.String()) {
+		val, err := m.Keeper().GetMimir(ctx, name.String())
+		if err != nil {
+			return m.GetConstants().GetInt64Value(name)
+		}
+		return val
+	}
+	return m.GetConstants().GetInt64Value(name)
+
+}
+func (m DummyMgr) Keeper() keeper.Keeper          { return m.K }
+func (m DummyMgr) GasMgr() GasManager             { return m.gasMgr }
+func (m DummyMgr) EventMgr() EventManager         { return m.eventMgr }
+func (m DummyMgr) TxOutStore() TxOutStore         { return m.txOutStore }
+func (m DummyMgr) VaultMgr() NetworkManager       { return m.vaultMgr }
+func (m DummyMgr) ValidatorMgr() ValidatorManager { return m.validatorMgr }
+func (m DummyMgr) ObMgr() ObserverManager         { return m.obMgr }
+func (m DummyMgr) SwapQ() SwapQueue               { return m.swapQ }
+func (m DummyMgr) Slasher() Slasher               { return m.slasher }
+func (m DummyMgr) YggManager() YggManager         { return m.yggManager }

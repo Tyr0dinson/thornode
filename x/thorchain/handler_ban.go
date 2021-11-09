@@ -109,10 +109,7 @@ func (h BanHandler) handleV1(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, er
 
 	if !voter.HasSigned(msg.Signer) && voter.BlockHeight == 0 {
 		// take 0.1% of the minimum bond, and put it into the reserve
-		minBond, err := h.mgr.Keeper().GetMimir(ctx, constants.MinimumBondInRune.String())
-		if minBond < 0 || err != nil {
-			minBond = h.mgr.GetConstants().GetInt64Value(constants.MinimumBondInRune)
-		}
+		minBond := h.mgr.GetConstantInt64(ctx, constants.MinimumBondInRune)
 		slashAmount := cosmos.NewUint(uint64(minBond)).QuoUint64(1000)
 		if slashAmount.GT(banner.Bond) {
 			slashAmount = banner.Bond
