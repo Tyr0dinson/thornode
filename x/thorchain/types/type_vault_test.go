@@ -68,6 +68,7 @@ func (s *VaultSuite) TestVault(c *C) {
 	c.Check(vault1.IsType(VaultType_YggdrasilVault), Equals, false)
 	c.Check(vault1.IsAsgard(), Equals, true)
 	c.Check(vault1.IsYggdrasil(), Equals, false)
+	c.Check(vault1.IsValkyrie(), Equals, false)
 	c.Check(vault1.Contains(pk), Equals, true)
 	vault1.UpdateStatus(VaultStatus_RetiringVault, 10000)
 	c.Check(vault1.CoinLength(), Equals, 0)

@@ -27,6 +27,7 @@ const (
 	// Vaults
 	AsgardVault    = types.VaultType_AsgardVault
 	YggdrasilVault = types.VaultType_YggdrasilVault
+	ValkyrieVault  = types.VaultType_ValkyrieVault
 	UnknownVault   = types.VaultType_UnknownVault
 	ActiveVault    = types.VaultStatus_ActiveVault
 	InactiveVault  = types.VaultStatus_InactiveVault
@@ -180,6 +181,7 @@ var (
 	NewRagnarokMemo        = mem.NewRagnarokMemo
 	NewYggdrasilReturn     = mem.NewYggdrasilReturn
 	NewYggdrasilFund       = mem.NewYggdrasilFund
+	NewValkyrieFundMemo    = mem.NewValkyrieFundMemo
 	NewMigrateMemo         = mem.NewMigrateMemo
 )
 

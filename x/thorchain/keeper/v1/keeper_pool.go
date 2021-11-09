@@ -52,6 +52,24 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 	return pools, nil
 }
 
+// GetPoolsByStatus returns all pools with the given status
+func (k KVStore) GetPoolsByStatus(ctx cosmos.Context, status PoolStatus) (Pools, error) {
+	var pools Pools
+	iterator := k.GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		err := k.Cdc().UnmarshalBinaryBare(iterator.Value(), &pool)
+		if err != nil {
+			return nil, dbError(ctx, "Unmarsahl: pool", err)
+		}
+		if pool.Status == status {
+			pools = append(pools, pool)
+		}
+	}
+	return pools, nil
+}
+
 // GetPool get the entire Pool metadata struct based on given asset
 func (k KVStore) GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error) {
 	if asset.IsSyntheticAsset() {

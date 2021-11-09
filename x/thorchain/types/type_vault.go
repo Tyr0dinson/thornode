@@ -67,6 +67,11 @@ func (m Vault) IsYggdrasil() bool {
 	return m.IsType(VaultType_YggdrasilVault)
 }
 
+// IsValkyrie returns true when vault is ValkyrieVault
+func (m Vault) IsValkyrie() bool {
+	return m.IsType(VaultType_ValkyrieVault)
+}
+
 // IsEmpty returns true when the vault pubkey is empty
 func (m Vault) IsEmpty() bool {
 	return m.PubKey.IsEmpty()

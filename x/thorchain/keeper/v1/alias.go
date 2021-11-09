@@ -72,6 +72,7 @@ type (
 	MsgSwap                  = types.MsgSwap
 	Pool                     = types.Pool
 	Pools                    = types.Pools
+	PoolStatus               = types.PoolStatus
 	LiquidityProvider        = types.LiquidityProvider
 	ObservedTxs              = types.ObservedTxs
 	ObservedTxVoter          = types.ObservedTxVoter
