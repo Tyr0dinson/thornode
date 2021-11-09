@@ -66,7 +66,10 @@ const (
 	TNSFeeOnSale
 	TNSFeePerBlock
 	PermittedSolvencyGap
+	ValkyrieFundLimit
+	ValkyrieFundRetry
 	MinimumVaultNodeBond
+	MaximumNumberOfVaultNodes
 )
 
 var nameToString = map[ConstantName]string{
@@ -126,7 +129,10 @@ var nameToString = map[ConstantName]string{
 	TNSFeeOnSale:                  "TNSFeeOnSale",
 	TNSFeePerBlock:                "TNSFeePerBlock",
 	PermittedSolvencyGap:          "PermittedSolvencyGap",
+	ValkyrieFundLimit:             "ValkyrieFundLimit",
+	ValkyrieFundRetry:             "ValkyrieFundRetry",
 	MinimumVaultNodeBond:          "MinimumVaultNodeBond",
+	MaximumNumberOfVaultNodes:     "MaximumNumberOfVaultNodes",
 }
 
 // String implement fmt.stringer

@@ -77,6 +77,23 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	return nodeAccounts, nil
 }
 
+// ListVaultNodesByStatus - get a list of vault node accounts with the given status
+func (k KVStore) ListVaultNodesByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	nodeAccounts := make(NodeAccounts, 0)
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		}
+		if na.Type == NodeTypeVault && na.Status == status {
+			nodeAccounts = append(nodeAccounts, na)
+		}
+	}
+	return nodeAccounts, nil
+}
+
 // ListNodeAccountsByStatus - get a list of all node accounts with the given status
 func (k KVStore) ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
@@ -97,6 +114,11 @@ func (k KVStore) ListNodeAccountsByStatus(ctx cosmos.Context, status NodeStatus)
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
+}
+
+// ListActiveValidators - get a list of active vault node accounts
+func (k KVStore) ListActiveVaultNodes(ctx cosmos.Context) (NodeAccounts, error) {
+	return k.ListVaultNodesByStatus(ctx, NodeActive)
 }
 
 // ListActiveNodeAccounts - get a list of all active node accounts

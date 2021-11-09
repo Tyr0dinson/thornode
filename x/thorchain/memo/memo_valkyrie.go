@@ -21,7 +21,7 @@ func (m ValkyrieFundMemo) GetBlockHeight() int64 {
 
 func NewValkyrieFundMemo(blockHeight int64) ValkyrieFundMemo {
 	return ValkyrieFundMemo{
-		MemoBase:    MemoBase{TxType: TxYggdrasilFund},
+		MemoBase:    MemoBase{TxType: TxValkyrieFund},
 		BlockHeight: blockHeight,
 	}
 }
@@ -41,7 +41,7 @@ func (m ValkyrieReturnMemo) GetBlockHeight() int64 {
 
 func NewValkyrieReturnMemo(blockHeight int64) ValkyrieReturnMemo {
 	return ValkyrieReturnMemo{
-		MemoBase:    MemoBase{TxType: TxYggdrasilReturn},
+		MemoBase:    MemoBase{TxType: TxValkyrieReturn},
 		BlockHeight: blockHeight,
 	}
 }

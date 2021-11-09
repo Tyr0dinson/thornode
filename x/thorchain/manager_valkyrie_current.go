@@ -12,7 +12,11 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// ValkyrieMgrV65 is an implementation of ValkyrieManager
+const (
+	MimirStopFundValkyrie = `StopFundValkyrie`
+)
+
+// ValkyrieMgrV74 is an implementation of ValkyrieManager
 type ValkyrieMgrV74 struct {
 	keeper keeper.Keeper
 }
@@ -25,6 +29,13 @@ func newValkyrieMgrV74(keeper keeper.Keeper) *ValkyrieMgrV74 {
 }
 
 func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues, na NodeAccount) error {
+
+	stopFundValkyrie, err := mgr.Keeper().GetMimir(ctx, MimirStopFundValkyrie)
+	if err == nil && stopFundValkyrie > 0 {
+		ctx.Logger().Info("Valkyrie funding has been stopped by the Mimir setting")
+		return nil
+	}
+
 	if na.Type != NodeTypeVault {
 		return nil
 	}
@@ -38,6 +49,19 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 			return fmt.Errorf("fail to get valkyrie vault: %w", err)
 		}
 
+		// Check if max Vault Nodes has been reached
+		activeVaultNodes, err := vmgr.keeper.ListActiveVaultNodes(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get active vault nodes: %w", err)
+		}
+		maxVaultNodes, err := vmgr.keeper.GetMimir(ctx, constants.MaximumNumberOfVaultNodes.String())
+		if err != nil || maxVaultNodes < 0 {
+			maxVaultNodes = constAccessor.GetInt64Value(constants.MaximumNumberOfVaultNodes)
+		}
+		if len(activeVaultNodes) >= int(maxVaultNodes) {
+			return fmt.Errorf("Can't create Valkyrie Vault, system limit has been reached")
+		}
+
 		// get what chain asgard currently support
 		asgards, err := vmgr.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 		if err != nil {
@@ -49,6 +73,7 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 		supportChains := asgards[0].GetChains()
 
 		valkyrie = NewVault(common.BlockHeight(ctx), ActiveVault, ValkyrieVault, na.PubKeySet.Secp256k1, supportChains.Strings(), vmgr.keeper.GetChainContracts(ctx, supportChains))
+		valkyrie.Asset = &common.EmptyAsset
 		valkyrie.Membership = append(valkyrie.Membership, na.PubKeySet.Secp256k1.String())
 
 		if err := vmgr.keeper.SetVault(ctx, valkyrie); err != nil {
@@ -60,8 +85,8 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 		return nil
 	}
 
-	// Valkyrie Vault hasn't been assigned an asset
-	if valkyrie.Asset == nil {
+	// Valkyrie Vault hasn't been assigned an asset, or the vault is empty
+	if valkyrie.Asset.IsEmpty() || valkyrie.GetCoin(*valkyrie.Asset).Amount.IsZero() {
 
 		activePools, err := vmgr.keeper.GetPoolsByStatus(ctx, types.PoolStatus_Available)
 
@@ -92,7 +117,7 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 
 		// TODO: request funds back
 
-		valkyrie.Asset = nil
+		valkyrie.Asset = &common.EmptyAsset
 		if err := vmgr.keeper.SetVault(ctx, valkyrie); err != nil {
 			return fmt.Errorf("failed to set valkyrie vault: %w", err)
 		}
@@ -230,7 +255,7 @@ func (vmgr ValkyrieMgrV74) calcAssetForValkyrieVault(ctx cosmos.Context, activeP
 		return common.Asset{}, fmt.Errorf("failed to get active Asgard vaults: %w", err)
 	}
 
-	vaultAsset := common.Asset{}
+	vaultAsset := common.EmptyAsset
 	highestAssetValueInRune := cosmos.ZeroUint()
 
 	for _, pool := range activePools {
@@ -251,10 +276,8 @@ func (vmgr ValkyrieMgrV74) calcAssetForValkyrieVault(ctx cosmos.Context, activeP
 }
 
 // Valkyrie Vaults should be funded with 25% the value of their bonded RUNE for their assigned pool
-// If they have less than 25%, top them up
-func (vmgr ValkyrieMgrV74) calcTargetValkyrieCoin(pool Pool, vault Vault, vaultBond cosmos.Uint) (common.Coin, error) {
-
-	var coin common.Coin
+// If they have less than 12.5%, top them up
+func (vmgr ValkyrieMgrV74) calcTargetValkyrieCoin(pool Pool, vault Vault, vaultBond cosmos.Uint) (coin common.Coin, err error) {
 
 	// Don't send Valkyrie Vault
 	if !pool.IsAvailable() {
@@ -267,8 +290,8 @@ func (vmgr ValkyrieMgrV74) calcTargetValkyrieCoin(pool Pool, vault Vault, vaultB
 
 	vaultAssetInRune := pool.AssetValueInRune(vaultAsset.Amount)
 
-	// Vault needs to be topped up
-	if vaultAssetInRune.LT(targetRune) {
+	// Vault has less than 12.5% its bond value in asset, needs to be topped up
+	if vaultAssetInRune.LT(targetRune.QuoUint64(2)) {
 		topUpAmountInRune := common.SafeSub(targetRune, vaultAssetInRune)
 		topUpAmountInAsset := pool.RuneValueInAsset(topUpAmountInRune)
 

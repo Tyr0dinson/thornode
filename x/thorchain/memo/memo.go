@@ -25,6 +25,8 @@ const (
 	TxLeave
 	TxYggdrasilFund
 	TxYggdrasilReturn
+	TxValkyrieFund
+	TxValkyrieReturn
 	TxReserve
 	TxRefund
 	TxMigrate
@@ -52,6 +54,8 @@ var stringToTxTypeMap = map[string]TxType{
 	"leave":       TxLeave,
 	"yggdrasil+":  TxYggdrasilFund,
 	"yggdrasil-":  TxYggdrasilReturn,
+	"valkyrie+":   TxValkyrieFund,
+	"valkyrie-":   TxValkyrieReturn,
 	"reserve":     TxReserve,
 	"refund":      TxRefund,
 	"migrate":     TxMigrate,
@@ -76,6 +80,8 @@ var txToStringMap = map[TxType]string{
 	TxLeave:           "leave",
 	TxYggdrasilFund:   "yggdrasil+",
 	TxYggdrasilReturn: "yggdrasil-",
+	TxValkyrieFund:    "valkyrie+",
+	TxValkyrieReturn:  "valkyrie-",
 	TxReserve:         "reserve",
 	TxMigrate:         "migrate",
 	TxRagnarok:        "ragnarok",

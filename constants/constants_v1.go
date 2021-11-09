@@ -52,7 +52,10 @@ func NewConstantValue010() *ConstantVals {
 			TNSFeeOnSale:                  1000,               // fee for TNS sale in basis points
 			TNSFeePerBlock:                20,                 // per block cost for TNS, in rune
 			PermittedSolvencyGap:          100,                // the setting is in basis points
+			ValkyrieFundLimit:             50,                 // percentage of the amount of funds a valkyrie vault is allowed to have
+			ValkyrieFundRetry:             1000,               // number of blocks before retrying to fund a valkyrie vault
 			MinimumVaultNodeBond:          10_000_00000000,    // minimum bond in RUNE for a vault node to be active (10k RUNE)
+			MaximumNumberOfVaultNodes:     100,                // maximum number of vault nodes that can exist in the network
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
