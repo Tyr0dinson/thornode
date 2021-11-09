@@ -63,6 +63,7 @@ func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn)
 }
 
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+	ctx.CacheContext()
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.67.0")) {
 		return h.handleV67(ctx, msg)

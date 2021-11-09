@@ -35,12 +35,13 @@ func (h WithdrawLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos
 		ctx.Logger().Error("MsgWithdrawLiquidity failed validation", "error", err)
 		return nil, err
 	}
-
-	result, err := h.handle(ctx, *msg)
+	cacheCtx, writeCache := ctx.CacheContext()
+	result, err := h.handle(cacheCtx, *msg)
 	if err != nil {
 		ctx.Logger().Error("fail to process msg withdraw", "error", err)
 		return nil, err
 	}
+	writeCache()
 	return result, err
 }
 
