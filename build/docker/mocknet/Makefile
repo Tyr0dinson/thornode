@@ -53,3 +53,6 @@ export-mocknet-validator:
 
 hard-fork-mocknet-validator:
 	IMAGE=${IMAGE} TAG=mocknet NET=mocknet docker-compose -f ${path}../components/validator.yml -f ${path}../components/validator.${uname_S}.yml run thornode sh -c "/docker/scripts/hard-fork.sh"
+
+rollback-mocknet-validator:
+	IMAGE=${IMAGE} TAG=mocknet NET=mocknet docker-compose -f ${path}../components/validator.yml -f ${path}../components/validator.${uname_S}.yml run thornode rollback"

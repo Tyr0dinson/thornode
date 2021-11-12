@@ -46,7 +46,7 @@ services:
       args:
         TAG: ${TAG:-mainnet}
     image: ${IMAGE:-registry.gitlab.com/thorchain/thornode}:${TAG:-latest}
-    restart: unless-stopped
+    restart: "no"
     environment:
       NET: ${NET}
       PEER: ${PEER}
