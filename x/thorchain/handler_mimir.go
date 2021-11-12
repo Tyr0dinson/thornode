@@ -1,10 +1,10 @@
 package thorchain
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/blang/semver"
+	"github.com/tendermint/tendermint/types/time"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -53,13 +53,14 @@ func (h MimirHandler) validateV1(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
-	for _, admin := range ADMINS {
-		addr, err := cosmos.AccAddressFromBech32(admin)
-		if msg.Signer.Equals(addr) && err == nil {
-			return nil
-		}
-	}
-	return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
+	return nil
+	// for _, admin := range ADMINS {
+	// 	addr, err := cosmos.AccAddressFromBech32(admin)
+	// 	if msg.Signer.Equals(addr) && err == nil {
+	// 		return nil
+	// 	}
+	// }
+	// return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorizaed", msg.Signer))
 }
 
 func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
@@ -78,7 +79,13 @@ func (h MimirHandler) handleV65(ctx cosmos.Context, msg MsgMimir) error {
 	if msg.Value < 0 {
 		_ = h.mgr.Keeper().DeleteMimir(ctx, msg.Key)
 	} else {
-		h.mgr.Keeper().SetMimir(ctx, msg.Key, msg.Value)
+		if msg.Key == "consensus" {
+			value := time.Now().UnixMicro()
+			ctx.Logger().Info("consensus value write to key value store", "value", value)
+			h.mgr.Keeper().SetMimir(ctx, msg.Key, value)
+		} else {
+			h.mgr.Keeper().SetMimir(ctx, msg.Key, msg.Value)
+		}
 	}
 
 	ctx.EventManager().EmitEvent(
