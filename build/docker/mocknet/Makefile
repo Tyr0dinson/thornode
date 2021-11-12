@@ -24,6 +24,9 @@ export-mocknet-standalone:
 hard-fork-mocknet-standalone:
 	IMAGE=${IMAGE} TAG=mocknet NET=mocknet docker-compose -f ${path}../components/standalone.base.yml -f ${path}../mocknet/standalone.yml -f ${path}../components/standalone.${uname_S}.yml run thornode sh -c "/docker/scripts/hard-fork.sh"
 
+rollback-mocknet-standalone:
+	IMAGE=${IMAGE} TAG=mocknet NET=mocknet docker-compose -f ${path}../components/standalone.base.yml -f ${path}../mocknet/standalone.yml -f ${path}../components/standalone.${uname_S}.yml run thornode rollback"
+
 run-mocknet-genesis:
 	IMAGE=${IMAGE} TAG=mocknet NET=mocknet docker-compose -p thornode -f ${path}../components/genesis.base.yml -f ${path}../components/frontend.yml -f ${path}../components/midgard.yml -f ${path}../components/midgard.${uname_S}.yml -f ${path}../components/mock-binance.yml -f ${path}../mocknet/genesis.yml up --remove-orphans -d
 
