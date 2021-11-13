@@ -18,6 +18,7 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/snapshots"
 	"github.com/cosmos/cosmos-sdk/store"
+	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
@@ -27,6 +28,7 @@ import (
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
+	tmcmds "github.com/tendermint/tendermint/cmd/tendermint/commands"
 	tmcli "github.com/tendermint/tendermint/libs/cli"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
@@ -79,6 +81,7 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		tmcli.NewCompletionCmd(rootCmd, true),
 		debug.Cmd(),
 		GetEd25519Keys(),
+		thorchainRollbackCommand(),
 	)
 
 	server.AddCommands(rootCmd, app.DefaultNodeHome(appName), newApp, createSimappAndExport, addModuleInitFlags)
@@ -166,6 +169,50 @@ func txCommand() *cobra.Command {
 	return cmd
 }
 
+func thorchainRollbackCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "rollback",
+		Short:              "Rollback THORChain state 1 block",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serverCtx := server.GetServerContextFromCmd(cmd)
+			config := serverCtx.Config
+
+			homeDir, _ := cmd.Flags().GetString(flags.FlagHome)
+			config.SetRoot(homeDir)
+
+			if _, err := os.Stat(config.GenesisFile()); os.IsNotExist(err) {
+				return err
+			}
+
+			db, err := openDB(config.RootDir)
+			if err != nil {
+				return err
+			}
+
+			// rollback tendermint
+			height, hash, err := tmcmds.RollbackState(config)
+			if err != nil {
+				return fmt.Errorf("failed to rollback state: %w", err)
+			}
+			serverCtx.Logger.Info("Tendermint rollback", "hash", string(hash), "height", height)
+
+			// rollback cosmos
+			store := rootmulti.NewStore(db)
+			info, err := rootmulti.GetCommitInfo(db, height)
+			if err != nil {
+				return fmt.Errorf("failed to get commit info: %w", err)
+			}
+			rootmulti.FlushMetadata(db, height, info, []int64{height + 1})
+			// store.SetPruneHeights([]int64{lastCommitID.Version})
+			store.PruneStores()
+			// serverCtx.Logger.Info("Cosmos rollback", "hash", commitID.Hash, "height", commitID.Version)
+			return nil
+		},
+	}
+	return cmd
+}
+
 func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts servertypes.AppOptions) servertypes.Application {
 	var cache sdk.MultiStorePersistentCache
 
@@ -225,4 +272,9 @@ func createSimappAndExport(
 	}
 
 	return a.ExportAppStateAndValidators(forZeroHeight, jailWhiteList)
+}
+
+func openDB(rootDir string) (dbm.DB, error) {
+	dataDir := filepath.Join(rootDir, "data")
+	return sdk.NewLevelDB("application", dataDir)
 }
