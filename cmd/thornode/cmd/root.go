@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,8 @@ import (
 	"github.com/spf13/cobra"
 	tmcli "github.com/tendermint/tendermint/libs/cli"
 	"github.com/tendermint/tendermint/libs/log"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmtypes "github.com/tendermint/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 
 	"gitlab.com/thorchain/thornode/app"
@@ -225,4 +228,59 @@ func createSimappAndExport(
 	}
 
 	return a.ExportAppStateAndValidators(forZeroHeight, jailWhiteList)
+}
+func openDB(rootDir string) (dbm.DB, error) {
+	dataDir := filepath.Join(rootDir, "data")
+	return sdk.NewLevelDB("application", dataDir)
+}
+
+// ExportCmd dumps app state to JSON.
+func ExportCmd(appExporter servertypes.AppExporter, defaultNodeHome string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export state to JSON",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serverCtx := server.GetServerContextFromCmd(cmd)
+			config := serverCtx.Config
+
+			homeDir, _ := cmd.Flags().GetString(flags.FlagHome)
+			config.SetRoot(homeDir)
+
+			if _, err := os.Stat(config.GenesisFile()); os.IsNotExist(err) {
+				return err
+			}
+
+			db, err := openDB(config.RootDir)
+			if err != nil {
+				return err
+			}
+
+			if appExporter == nil {
+				if _, err := fmt.Fprintln(os.Stderr, "WARNING: App exporter not defined. Returning genesis file."); err != nil {
+					return err
+				}
+
+				genesis, err := ioutil.ReadFile(config.GenesisFile())
+				if err != nil {
+					return err
+				}
+
+				fmt.Println(string(genesis))
+				return nil
+			}
+
+			// exported, err := appExporter(serverCtx.Logger, db, traceWriter, height, forZeroHeight, jailAllowedAddrs, serverCtx.Viper)
+			// if err != nil {
+			// 	return fmt.Errorf("error exporting state: %v", err)
+			// }
+
+			return nil
+		},
+	}
+	cmd.SetOut(cmd.OutOrStdout())
+	cmd.SetErr(cmd.ErrOrStderr())
+	cmd.Flags().String(flags.FlagHome, defaultNodeHome, "The application home directory")
+	cmd.Flags().Int64(flags.FlagHeight, -1, "Export state from a particular height (-1 means latest height)")
+
+	return cmd
 }
