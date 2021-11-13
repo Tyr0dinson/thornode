@@ -204,7 +204,7 @@ func thorchainRollbackCommand() *cobra.Command {
 				return fmt.Errorf("failed to get commit info: %w", err)
 			}
 			rootmulti.FlushMetadata(db, height, info, []int64{height + 1})
-			// store.SetPruneHeights([]int64{lastCommitID.Version})
+			store.SetPruneHeights([]int64{height + 1})
 			store.PruneStores()
 			// serverCtx.Logger.Info("Cosmos rollback", "hash", commitID.Hash, "height", commitID.Version)
 			return nil
@@ -273,7 +273,14 @@ func createSimappAndExport(
 
 	return a.ExportAppStateAndValidators(forZeroHeight, jailWhiteList)
 }
-
+func createAppAndRollback(
+	logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts servertypes.AppOptions,
+) error {
+	encCfg := app.MakeEncodingConfig() // Ideally, we would reuse the one created by NewRootCmd.
+	encCfg.Marshaler = codec.NewProtoCodec(encCfg.InterfaceRegistry)
+	a := app.New(appName, logger, db, traceStore, true, map[int64]bool{}, cast.ToString(appOpts.Get(flags.FlagHome)), uint(1), encCfg, false)
+	return a.RollbackOneBlock()
+}
 func openDB(rootDir string) (dbm.DB, error) {
 	dataDir := filepath.Join(rootDir, "data")
 	return sdk.NewLevelDB("application", dataDir)

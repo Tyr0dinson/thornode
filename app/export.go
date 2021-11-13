@@ -2,8 +2,10 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 
+	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
@@ -98,4 +100,24 @@ func (app *THORChainApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAd
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+func (app *THORChainApp) RollbackOneBlock() error {
+	ctx := app.NewContext(true, tmproto.Header{Height: app.LastBlockHeight()})
+	store, ok := ctx.MultiStore().(*rootmulti.Store)
+	if !ok {
+		return fmt.Errorf("invalid store")
+	}
+	lastCommitID := store.LastCommitID()
+	ctx.Logger().Info("last commit id", "hash", lastCommitID.Hash, "version", lastCommitID.Version)
+	if lastCommitID.Version <= 1 {
+		return nil
+	}
+
+	if err := store.LoadVersion(lastCommitID.Version - 1); err != nil {
+		return fmt.Errorf("fail to load previous version,err: %w", err)
+	}
+	store.SetPruneHeights([]int64{lastCommitID.Version})
+	store.PruneStores()
+
+	return nil
 }
