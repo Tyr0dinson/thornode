@@ -33,7 +33,7 @@ clean-fullnode:
 	@mkdir -p ~/.thornode/fullnode
 
 stop:
-	BUILD_FLAG="" docker-compose -p thornode -f ${path}../components/standalone.base.yml down --remove-orphans
+	BUILD_FLAG="" docker-compose -p thornode -f ${path}../components/standalone.base.yml down
 
 run-validator:
 	docker-compose -f validator.yml --project-name validator up --force-recreate -d
