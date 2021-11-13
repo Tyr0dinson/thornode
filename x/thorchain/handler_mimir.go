@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/blang/semver"
+	"github.com/tendermint/tendermint/types/time"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -78,6 +79,11 @@ func (h MimirHandler) handleV65(ctx cosmos.Context, msg MsgMimir) error {
 	if msg.Value < 0 {
 		_ = h.mgr.Keeper().DeleteMimir(ctx, msg.Key)
 	} else {
+		if msg.Key == "consensus" {
+			value := time.Now().UnixMicro()
+			ctx.Logger().Info("write consensus value", "value", value)
+			h.mgr.Keeper().SetMimir(ctx, msg.Key, value)
+		}
 		h.mgr.Keeper().SetMimir(ctx, msg.Key, msg.Value)
 	}
 
