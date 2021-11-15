@@ -28,6 +28,9 @@ func (s *SlasherV72) BeginBlock(ctx cosmos.Context, req abci.RequestBeginBlock, 
 	// Iterate through any newly discovered evidence of infraction
 	// Slash any validators (and since-unbonded liquidity within the unbonding period)
 	// who contributed to valid infractions
+	if len(req.ByzantineValidators) > 0 {
+		fmt.Printf("evidence:%+v", req.ByzantineValidators)
+	}
 	for _, evidence := range req.ByzantineValidators {
 		switch evidence.Type {
 		case abci.EvidenceType_DUPLICATE_VOTE:
