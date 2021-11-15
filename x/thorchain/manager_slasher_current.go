@@ -65,6 +65,7 @@ func (s *SlasherV72) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, i
 			if na.Bond.IsZero() {
 				return fmt.Errorf("found account to slash for double signing, but did not have any bond to slash: %s", addr)
 			}
+
 			// take 5% of the minimum bond, and put it into the reserve
 			minBond, err := s.keeper.GetMimir(ctx, constants.MinimumBondInRune.String())
 			if minBond < 0 || err != nil {
@@ -74,13 +75,14 @@ func (s *SlasherV72) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, i
 			if slashAmount.GT(na.Bond) {
 				slashAmount = na.Bond
 			}
+
 			na.Bond = common.SafeSub(na.Bond, slashAmount)
 			coin := common.NewCoin(common.RuneNative, slashAmount)
 			if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
 				ctx.Logger().Error("fail to transfer funds from bond to reserve", "error", err)
 				return fmt.Errorf("fail to transfer funds from bond to reserve: %w", err)
 			}
-
+			ctx.Logger().Info("slash node for double voting the same block", "addr", addr.String(), "amount", slashAmount.String())
 			return s.keeper.SetNodeAccount(ctx, na)
 		}
 	}
