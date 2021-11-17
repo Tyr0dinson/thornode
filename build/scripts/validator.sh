@@ -79,6 +79,9 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 5
     done
 
+   # use external IP if available
+   [ -n "$EXTERNAL_IP" ] && external_address "$EXTERNAL_IP" "$NET"
+
     sleep 10 # wait for thorchain to commit a block
     # set node version
     until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-version --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id thorchain --yes; do
@@ -96,11 +99,11 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
 
 else
   # update seeds tendermint config if available
-  if [ "$PEER" != "none" ]; then
-    # add persistent peer tendermint config
-    NODE_ID=$(fetch_node_id $PEER)
-    peer_list "$NODE_ID" "$PEER"
-  fi
+#  if [ "$PEER" != "none" ]; then
+#    # add persistent peer tendermint config
+#    NODE_ID=$(fetch_node_id $PEER)
+#    peer_list "$NODE_ID" "$PEER"
+#  fi
 
   if [ "$SEEDS" != "none" ]; then
     # add seeds tendermint config
