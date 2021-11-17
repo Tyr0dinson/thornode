@@ -26,10 +26,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
 
   if [ "$PEER" != "none" ]; then
     fetch_genesis $PEER
-
-    # add persistent peer tendermint config
-    NODE_ID=$(fetch_node_id $PEER)
-    peer_list "$NODE_ID" "$PEER"
   fi
 
   if [ "$SEEDS" != "none" ]; then
