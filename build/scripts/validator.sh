@@ -10,7 +10,7 @@ PEER_API="${PEER_API:=$PEER}" # the hostname of a seed node API if different
 SIGNER_NAME="${SIGNER_NAME:=thorchain}"
 SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
 BINANCE=${BINANCE:=$PEER:26660}
-NETWORK=${NETWORK:=thorchain}
+CHAIN_ID=${CHAIN_ID:=thorchain}
 
 if [ ! -f ~/.thornode/config/genesis.json ]; then
   echo "Setting THORNode as Validator node"
@@ -32,7 +32,7 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
     fetch_genesis_from_seeds $SEEDS
 
     # add seeds tendermint config
-    seeds_list $SEEDS $NETWORK
+    seeds_list $SEEDS $CHAIN_ID
   fi
 
   # enable telemetry through prometheus metrics endpoint
@@ -76,8 +76,8 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 5
     done
 
-   # use external IP if available
-   [ -n "$EXTERNAL_IP" ] && external_address "$EXTERNAL_IP" "$NET"
+    # use external IP if available
+    [ -n "$EXTERNAL_IP" ] && external_address "$EXTERNAL_IP" "$NET"
 
     sleep 10 # wait for thorchain to commit a block
     # set node version
@@ -98,7 +98,7 @@ else
 
   if [ "$SEEDS" != "none" ]; then
     # add seeds tendermint config
-    seeds_list $SEEDS $NETWORK
+    seeds_list $SEEDS $CHAIN_ID
   fi
 fi
 
