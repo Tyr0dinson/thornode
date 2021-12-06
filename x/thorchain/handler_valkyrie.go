@@ -29,12 +29,12 @@ func (h ValkyrieHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 		return nil, errInvalidMessage
 	}
 	if err := h.validate(ctx, *msg); err != nil {
-		ctx.Logger().Error("MsgYggdrasil failed validation", "error", err)
+		ctx.Logger().Error("MsgValkyrie failed validation", "error", err)
 		return nil, err
 	}
 	result, err := h.handle(ctx, *msg)
 	if err != nil {
-		ctx.Logger().Error("failed to process MsgYggdrasil", "error", err)
+		ctx.Logger().Error("failed to process MsgValkyrie", "error", err)
 		return nil, err
 	}
 	return result, nil
@@ -65,7 +65,7 @@ func (h ValkyrieHandler) handleValkyrieFundV1(ctx cosmos.Context, msg MsgValkyri
 	switch vault.Type {
 	case AsgardVault:
 		ctx.EventManager().EmitEvent(
-			cosmos.NewEvent("asgard_fund_yggdrasil",
+			cosmos.NewEvent("asgard_fund_valkyrie",
 				cosmos.NewAttribute("pubkey", vault.PubKey.String()),
 				cosmos.NewAttribute("coins", msg.Coins.String()),
 				cosmos.NewAttribute("tx", msg.Tx.ID.String())))
@@ -178,7 +178,7 @@ func (h ValkyrieHandler) handleV1(ctx cosmos.Context, msg MsgValkyrie) (*cosmos.
 
 	vault, err := h.mgr.Keeper().GetVault(ctx, msg.PubKey)
 	if err != nil && !errors.Is(err, kvTypes.ErrVaultNotFound) {
-		return nil, fmt.Errorf("fail to get yggdrasil: %w", err)
+		return nil, fmt.Errorf("fail to get valkyrie: %w", err)
 	}
 	if vault.IsType(UnknownVault) {
 		vault.Status = ActiveVault
@@ -196,7 +196,7 @@ func (h ValkyrieHandler) handleV1(ctx cosmos.Context, msg MsgValkyrie) (*cosmos.
 }
 
 func (h ValkyrieHandler) handleValkyrieReturnV1(ctx cosmos.Context, msg MsgValkyrie, vault Vault) (*cosmos.Result, error) {
-	// observe an outbound tx from yggdrasil vault
+	// observe an outbound tx from valkyrie vault
 	switch vault.Type {
 	case ValkyrieVault:
 		asgardVaults, err := h.mgr.Keeper().GetAsgardVaults(ctx)
@@ -221,10 +221,10 @@ func (h ValkyrieHandler) handleValkyrieReturnV1(ctx cosmos.Context, msg MsgValky
 		}
 
 		if !isAsgardReceipient {
-			ctx.Logger().Info("yggdrasil send fund to none asgard address")
+			ctx.Logger().Info("valkyrie vault sending funds to invalid Asgard address")
 			// not sending to asgard , slash the node account
 			if err := h.slashV1(ctx, msg.PubKey, msg.Tx.Coins); err != nil {
-				return nil, ErrInternal(err, "fail to slash account for sending fund to a none asgard vault using yggdrasil-")
+				return nil, ErrInternal(err, "fail to slash account for sending funds to an invalid asgard vault using valkyrie-")
 			}
 		}
 
