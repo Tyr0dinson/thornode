@@ -40,6 +40,11 @@ func (ManagersTestSuite) TestManagers(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)
 
+	vaultNodeManager, err := GetVaultNodeManager(mgr.Keeper(), ver, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(vaultNodeManager, IsNil)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)
+
 	observerMgr, err := GetObserverManager(ver)
 	c.Assert(observerMgr, IsNil)
 	c.Assert(err, NotNil)
@@ -57,6 +62,11 @@ func (ManagersTestSuite) TestManagers(c *C) {
 
 	yggMgr, err := GetYggManager(mgr.Keeper(), ver)
 	c.Assert(yggMgr, IsNil)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)
+
+	valkyrieManager, err := GetValkyrieManager(mgr.Keeper(), ver)
+	c.Assert(valkyrieManager, IsNil)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, errInvalidVersion), Equals, true)
 }

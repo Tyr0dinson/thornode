@@ -14,6 +14,7 @@ type DummyMgr struct {
 	txOutStore    TxOutStore
 	vaultMgr      NetworkManager
 	validatorMgr  ValidatorManager
+	vaultNodeMgr  VaultNodeManager
 	obMgr         ObserverManager
 	swapQ         SwapQueue
 	slasher       Slasher
@@ -29,6 +30,7 @@ func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
 		txOutStore:    NewTxStoreDummy(),
 		vaultMgr:      NewVaultMgrDummy(),
 		validatorMgr:  NewValidatorDummyMgr(),
+		vaultNodeMgr:  NewVaultNodeDummyMgr(),
 		obMgr:         NewDummyObserverManager(),
 		slasher:       NewDummySlasher(),
 		yggManager:    NewDummyYggManger(),
@@ -63,3 +65,4 @@ func (m DummyMgr) ObMgr() ObserverManager                 { return m.obMgr }
 func (m DummyMgr) SwapQ() SwapQueue                       { return m.swapQ }
 func (m DummyMgr) Slasher() Slasher                       { return m.slasher }
 func (m DummyMgr) YggManager() YggManager                 { return m.yggManager }
+func (m DummyMgr) VaultNodeMgr() VaultNodeManager         { return m.vaultNodeMgr }

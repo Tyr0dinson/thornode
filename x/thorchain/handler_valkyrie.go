@@ -204,15 +204,15 @@ func (h ValkyrieHandler) handleValkyrieReturnV1(ctx cosmos.Context, msg MsgValky
 			return nil, ErrInternal(err, "unable to get asgard vaults")
 		}
 		vaults := Vaults{}
-		var contracts []ChainContract
+		// var contracts []ChainContract
 		for _, v := range asgardVaults {
 			// make sure vaults have both active asgard vault , and also retiring asgard vault
 			if v.Status == ActiveVault || v.Status == RetiringVault {
 				vaults = append(vaults, v)
 			}
-			if v.Status == ActiveVault {
-				contracts = v.Routers
-			}
+			// if v.Status == ActiveVault {
+			// 	contracts = v.Routers
+			// }
 		}
 
 		isAsgardReceipient, err := vaults.HasAddress(msg.Tx.Chain, msg.Tx.ToAddress)
