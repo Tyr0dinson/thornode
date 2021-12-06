@@ -28,13 +28,28 @@ func newValkyrieMgrV74(keeper keeper.Keeper) *ValkyrieMgrV74 {
 	}
 }
 
-func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues, na NodeAccount) error {
+func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
+	// Check if we have triggered the ragnarok protocol
+	ragnarokHeight, err := vmgr.keeper.GetRagnarokBlockHeight(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get ragnarok height: %w", err)
+	}
+	if ragnarokHeight > 0 {
+		return nil
+	}
 
 	stopFundValkyrie, err := mgr.Keeper().GetMimir(ctx, MimirStopFundValkyrie)
 	if err == nil && stopFundValkyrie > 0 {
 		ctx.Logger().Info("Valkyrie funding has been stopped by the Mimir setting")
 		return nil
 	}
+
+	nodeAccs, err := vmgr.keeper.ListActiveVaultNodes(ctx)
+	// We don't want to check all Valkyrie Vault every time THORNode run this
+	// function. So THORNode use modulus to determine which Valkyrie THORNode should process. This
+	// should behave as a "round robin" approach checking one Valkyrie per block.
+	// With 1000 Valkyrie vaults, THORNode should check each vault every 83.3 minutes.
+	na := nodeAccs[common.BlockHeight(ctx)%int64(len(nodeAccs))]
 
 	if na.Type != NodeTypeVault {
 		return nil

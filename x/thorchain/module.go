@@ -248,6 +248,11 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		ctx.Logger().Error("unable to fund yggdrasil", "error", err)
 	}
 
+	// Fill up Valkyrie vaults
+	if err := am.mgr.ValkyrieManager().Fund(ctx, am.mgr, constantValues); err != nil {
+		ctx.Logger().Error("unable to fund valkyrie vault", "error", err)
+	}
+
 	if err := am.mgr.TxOutStore().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process txout endblock", "error", err)
 	}

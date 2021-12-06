@@ -136,6 +136,7 @@ var (
 	NewVault                       = types.NewVault
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgYggdrasil                = types.NewMsgYggdrasil
+	NewMsgValkyrie                 = types.NewMsgValkyrie
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
 	NewMsgUnBond                   = types.NewMsgUnBond
@@ -181,6 +182,7 @@ var (
 	NewRagnarokMemo        = mem.NewRagnarokMemo
 	NewYggdrasilReturn     = mem.NewYggdrasilReturn
 	NewYggdrasilFund       = mem.NewYggdrasilFund
+	NewValkyrieReturnMemo  = mem.NewValkyrieReturnMemo
 	NewValkyrieFundMemo    = mem.NewValkyrieFundMemo
 	NewMigrateMemo         = mem.NewMigrateMemo
 )
@@ -211,6 +213,7 @@ type (
 	MsgLeave                       = types.MsgLeave
 	MsgReserveContributor          = types.MsgReserveContributor
 	MsgYggdrasil                   = types.MsgYggdrasil
+	MsgValkyrie                    = types.MsgValkyrie
 	MsgObservedTxIn                = types.MsgObservedTxIn
 	MsgObservedTxOut               = types.MsgObservedTxOut
 	MsgTssPool                     = types.MsgTssPool
@@ -298,6 +301,8 @@ type (
 	LeaveMemo             = mem.LeaveMemo
 	YggdrasilFundMemo     = mem.YggdrasilFundMemo
 	YggdrasilReturnMemo   = mem.YggdrasilReturnMemo
+	ValkyrieFundMemo      = mem.ValkyrieFundMemo
+	ValkyrieReturnMemo    = mem.ValkyrieReturnMemo
 	ReserveMemo           = mem.ReserveMemo
 	SwitchMemo            = mem.SwitchMemo
 	NoOpMemo              = mem.NoOpMemo

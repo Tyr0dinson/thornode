@@ -305,6 +305,10 @@ func processOneTxInV1(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, s
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), true, tx.Tx.Coins, signer)
 	case YggdrasilReturnMemo:
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), false, tx.Tx.Coins, signer)
+	case ValkyrieFundMemo:
+		newMsg = NewMsgValkyrie(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), true, tx.Tx.Coins, signer)
+	case ValkyrieReturnMemo:
+		newMsg = NewMsgValkyrie(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), false, tx.Tx.Coins, signer)
 	case ReserveMemo:
 		res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins.GetCoin(common.RuneAsset()).Amount)
 		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)

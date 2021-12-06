@@ -35,6 +35,7 @@ type Manager interface {
 	TxOutStore() TxOutStore
 	VaultMgr() NetworkManager
 	ValidatorMgr() ValidatorManager
+	VaultNodeMgr() VaultNodeManager
 	ObMgr() ObserverManager
 	SwapQ() SwapQueue
 	Slasher() Slasher
@@ -90,6 +91,11 @@ type ValidatorManager interface {
 	NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error)
 }
 
+// VaultNodeManager manages the network's vault nodes
+type VaultNodeManager interface {
+	RequestValkyrieReturn(ctx cosmos.Context, node NodeAccount, mgr Manager, constAccessor constants.ConstantValues) error
+}
+
 // NetworkManager interface define the contract of Vault Manager
 type NetworkManager interface {
 	TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error
@@ -115,24 +121,31 @@ type Slasher interface {
 	DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress)
 }
 
-// YggManager define method to fund yggdrasil
+// YggManager define method to fund Yggdrasil vaults
 type YggManager interface {
+	Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error
+}
+
+// ValkyrieManager defines a method to fund Valkyrie vaults
+type ValkyrieManager interface {
 	Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error
 }
 
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
-	CurrentVersion semver.Version
-	gasMgr         GasManager
-	eventMgr       EventManager
-	txOutStore     TxOutStore
-	networkMgr     NetworkManager
-	validatorMgr   ValidatorManager
-	obMgr          ObserverManager
-	swapQ          SwapQueue
-	slasher        Slasher
-	yggManager     YggManager
-	ConstAccessor  constants.ConstantValues
+	CurrentVersion  semver.Version
+	gasMgr          GasManager
+	eventMgr        EventManager
+	txOutStore      TxOutStore
+	networkMgr      NetworkManager
+	validatorMgr    ValidatorManager
+	vaultNodeMgr    VaultNodeManager
+	obMgr           ObserverManager
+	swapQ           SwapQueue
+	slasher         Slasher
+	yggManager      YggManager
+	valkyrieManager ValkyrieManager
+	ConstAccessor   constants.ConstantValues
 
 	K             keeper.Keeper
 	cdc           codec.BinaryMarshaler
@@ -210,13 +223,19 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 
 	mgr.slasher, err = GetSlasher(mgr.K, v, mgr.eventMgr)
 	if err != nil {
-		return fmt.Errorf("fail to create swap queue: %w", err)
+		return fmt.Errorf("fail to create slasher: %w", err)
 	}
 
 	mgr.yggManager, err = GetYggManager(mgr.K, v)
 	if err != nil {
-		return fmt.Errorf("fail to create swap queue: %w", err)
+		return fmt.Errorf("fail to create ygg manager: %w", err)
 	}
+
+	mgr.valkyrieManager, err = GetValkyrieManager(mgr.K, v)
+	if err != nil {
+		return fmt.Errorf("fail to create valkyrie manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -238,6 +257,9 @@ func (mgr *Mgrs) VaultMgr() NetworkManager { return mgr.networkMgr }
 // ValidatorMgr return an implementation of ValidatorManager
 func (mgr *Mgrs) ValidatorMgr() ValidatorManager { return mgr.validatorMgr }
 
+// VaultNodeManager returns an implementation of VaultNodeManager
+func (mgr *Mgrs) VaultNodeManager() VaultNodeManager { return mgr.vaultNodeMgr }
+
 // ObMgr return an implementation of ObserverManager
 func (mgr *Mgrs) ObMgr() ObserverManager { return mgr.obMgr }
 
@@ -249,6 +271,9 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 
 // YggManager return an implementation of YggManager
 func (mgr *Mgrs) YggManager() YggManager { return mgr.yggManager }
+
+// ValkyrieManager returns an implementation of ValkyrieManager, which manages the network's Valkyrie vaults
+func (mgr *Mgrs) ValkyrieManager() ValkyrieManager { return mgr.valkyrieManager }
 
 // GetKeeper return Keeper
 func GetKeeper(version semver.Version, cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
@@ -340,6 +365,14 @@ func GetValidatorManager(keeper keeper.Keeper, version semver.Version, vaultMgr 
 	return nil, errInvalidVersion
 }
 
+// GetVaultNodeManager creates a new instance of VaultNodeManager
+func GetVaultNodeManager(keeper keeper.Keeper, version semver.Version, vaultMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (VaultNodeManager, error) {
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return newVaultNodeMgrV74(keeper, vaultMgr, txOutStore, eventMgr), nil
+	}
+	return nil, errInvalidVersion
+}
+
 // GetObserverManager return an instance that implements ObserverManager interface
 // when there is no version can match the given semver , it will return nil
 func GetObserverManager(version semver.Version) (ObserverManager, error) {
@@ -401,6 +434,13 @@ func GetYggManager(keeper keeper.Keeper, version semver.Version) (YggManager, er
 		return newYggMgrV45(keeper), nil
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return newYggMgrV1(keeper), nil
+	}
+	return nil, errInvalidVersion
+}
+
+func GetValkyrieManager(keeper keeper.Keeper, version semver.Version) (ValkyrieManager, error) {
+	if version.GTE(semver.MustParse("0.1.0")) {
+		return newValkyrieMgrV74(keeper), nil
 	}
 	return nil, errInvalidVersion
 }
