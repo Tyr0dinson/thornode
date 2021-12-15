@@ -1391,6 +1391,8 @@ func migrateStoreV77(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("fail to save pool", "error", err, "asset", asset)
 			continue
 		}
+		// add pool balance change event , so as midgard will be able to handle the change correctly
+		emitPoolBalanceChangedEvent(ctx, NewPoolMod(asset, cosmos.ZeroUint(), false, item.amount, true), "donation", mgr)
 		asgard.AddFunds(common.NewCoins(common.NewCoin(asset, item.amount)))
 	}
 	if err := mgr.Keeper().SetVault(ctx, asgard); err != nil {
