@@ -161,7 +161,7 @@ func (h UnBondHandler) handleV1(ctx cosmos.Context, msg MsgUnBond) error {
 	if isMemberOfRetiringVault {
 		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
 	}
-	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
+	if err := refundBond(ctx, msg.TxIn, na.NodeAddress, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
 	}
 
@@ -203,7 +203,7 @@ func (h UnBondHandler) handleV46(ctx cosmos.Context, msg MsgUnBond) error {
 	if isMemberOfRetiringVault {
 		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
 	}
-	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
+	if err := refundBond(ctx, msg.TxIn, na.NodeAddress, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
 	}
 
@@ -302,7 +302,7 @@ func (h UnBondHandler) handleV55(ctx cosmos.Context, msg MsgUnBond) error {
 	if isMemberOfRetiringVault {
 		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
 	}
-	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
+	if err := refundBond(ctx, msg.TxIn, na.NodeAddress, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
 	}
 
@@ -402,7 +402,7 @@ func (h UnBondHandler) handleV76(ctx cosmos.Context, msg MsgUnBond) error {
 	if isMemberOfRetiringVault {
 		return ErrInternal(err, "fail to unbond, still part of the retiring vault")
 	}
-	if err := refundBond(ctx, msg.TxIn, msg.Amount, &na, h.mgr); err != nil {
+	if err := refundBond(ctx, msg.TxIn, na.NodeAddress, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
 	}
 
