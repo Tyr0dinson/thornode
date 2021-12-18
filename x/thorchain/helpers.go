@@ -298,6 +298,10 @@ func refundBondV77(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", nodeAcc.NodeAddress))
 	}
 
+	// enforce node operator fee
+	// TODO: allow a node to change this while node is in standby. Should also
+	// have a "cool down" period where the node cannot churn in for a while to
+	// enure bond providers don't get rug pulled of their rewards.
 	defaultNodeOperatorFee, err := mgr.Keeper().GetMimir(ctx, constants.NodeOperatorFee.String())
 	if defaultNodeOperatorFee <= 0 || err != nil {
 		defaultNodeOperatorFee = mgr.GetConstants().GetInt64Value(constants.NodeOperatorFee)
