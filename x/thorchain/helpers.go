@@ -333,7 +333,7 @@ func refundBondV77(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *N
 	bp.Adjust(nodeAcc.Bond) // redistribute node bond amoungst bond providers
 	provider := bp.Get(fromAddress)
 
-	if !provider.Bond.IsZero() {
+	if !provider.IsEmpty() && !provider.Bond.IsZero() {
 		if amt.GT(provider.Bond) {
 			amt = provider.Bond
 		}
@@ -346,10 +346,15 @@ func refundBondV77(ctx cosmos.Context, tx common.Tx, amt cosmos.Uint, nodeAcc *N
 		bp.Unbond(amt, provider.BondAddress)
 		nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, amt)
 
+		toAddress, err := common.NewAddress(provider.BondAddress.String())
+		if err != nil {
+			return fmt.Errorf("fail to parse bond address: %w", err)
+		}
+
 		// refund bond
 		txOutItem := TxOutItem{
 			Chain:      common.RuneAsset().Chain,
-			ToAddress:  tx.FromAddress,
+			ToAddress:  toAddress,
 			InHash:     tx.ID,
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			ModuleName: BondName,
