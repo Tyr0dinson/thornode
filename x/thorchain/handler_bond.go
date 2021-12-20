@@ -49,14 +49,14 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.78.0")) {
-		return h.validate78(ctx, msg)
+		return h.validateV78(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h BondHandler) validate78(ctx cosmos.Context, msg MsgBond) error {
+func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (h BondHandler) validate78(ctx cosmos.Context, msg MsgBond) error {
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", msg.BondAddress))
 	}
-	if !bp.Has(from) {
+	if !bp.Has(from) && !from.Equals(msg.NodeAddress) {
 		return cosmos.ErrUnknownRequest("bond address is not valid for node account")
 	}
 
@@ -108,8 +108,8 @@ func (h BondHandler) validate78(ctx cosmos.Context, msg MsgBond) error {
 
 func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.77.0")) {
-		return h.handleV77(ctx, msg)
+	if version.GTE(semver.MustParse("0.78.0")) {
+		return h.handleV78(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.68.0")) {
 		return h.handleV68(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
@@ -120,7 +120,7 @@ func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	return errBadVersion
 }
 
-func (h BondHandler) handleV77(ctx cosmos.Context, msg MsgBond) error {
+func (h BondHandler) handleV78(ctx cosmos.Context, msg MsgBond) error {
 	// THORNode will not have pub keys at the moment, so have to leave it empty
 	emptyPubKeySet := common.PubKeySet{
 		Secp256k1: common.EmptyPubKey,
