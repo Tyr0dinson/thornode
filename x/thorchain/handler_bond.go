@@ -69,11 +69,10 @@ func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	if nodeAccount.Status == NodeActive || nodeAccount.Status == NodeReady {
-		return ErrInternal(err, "cannot add bond while node is active or ready status")
+		return ErrInternal(err, fmt.Sprintf("node account is active or ready status(%s)", msg.NodeAddress))
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
-
 	maxBond, err := h.mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
 	if maxBond > 0 && err == nil {
 		maxValidatorBond := cosmos.NewUint(uint64(maxBond))
@@ -84,6 +83,10 @@ func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
 
 	if !msg.BondAddress.IsChain(common.THORChain) {
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("bonding address is NOT a THORChain address: %s", msg.BondAddress.String()))
+	}
+
+	if msg.BondAddress.Equals(nodeAccount.BondAddress) {
+		return nil
 	}
 
 	if nodeAccount.BondAddress.IsEmpty() {
@@ -99,7 +102,7 @@ func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", msg.BondAddress))
 	}
-	if !bp.Has(from) && !from.Equals(msg.NodeAddress) {
+	if !bp.Has(from) {
 		return cosmos.ErrUnknownRequest("bond address is not valid for node account")
 	}
 
@@ -121,18 +124,18 @@ func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 }
 
 func (h BondHandler) handleV78(ctx cosmos.Context, msg MsgBond) error {
-	// THORNode will not have pub keys at the moment, so have to leave it empty
-	emptyPubKeySet := common.PubKeySet{
-		Secp256k1: common.EmptyPubKey,
-		Ed25519:   common.EmptyPubKey,
-	}
-
 	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
+	fmt.Printf("MSG: %+v\n", msg)
 
 	if nodeAccount.Status == NodeUnknown {
+		// THORNode will not have pub keys at the moment, so have to leave it empty
+		emptyPubKeySet := common.PubKeySet{
+			Secp256k1: common.EmptyPubKey,
+			Ed25519:   common.EmptyPubKey,
+		}
 		// white list the given bep address
 		nodeAccount = NewNodeAccount(msg.NodeAddress, NodeWhiteListed, emptyPubKeySet, "", cosmos.ZeroUint(), msg.BondAddress, common.BlockHeight(ctx))
 		ctx.EventManager().EmitEvent(
@@ -142,6 +145,7 @@ func (h BondHandler) handleV78(ctx cosmos.Context, msg MsgBond) error {
 	}
 	originalBond := nodeAccount.Bond
 	nodeAccount.Bond = nodeAccount.Bond.Add(msg.Bond)
+	fmt.Printf("Bond: %d --> %d\n", originalBond.Uint64(), nodeAccount.Bond.Uint64())
 
 	acct := h.mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
 
