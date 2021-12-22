@@ -211,6 +211,5 @@ func (h BondHandler) handleV78(ctx cosmos.Context, msg MsgBond) error {
 		return cosmos.Wrapf(errFailSaveEvent, "fail to emit bond event: %w", err)
 	}
 
-	fmt.Println("done.")
 	return nil
 }
