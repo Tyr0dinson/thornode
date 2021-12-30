@@ -280,8 +280,8 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 // GetTxOutStore will return an implementation of the txout store that
 func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
-	if version.GTE(semver.MustParse("0.77.0")) {
-		return newTxOutStorageV77(keeper, constAccessor, eventMgr, gasManager), nil
+	if version.GTE(semver.MustParse("0.78.0")) {
+		return newTxOutStorageV78(keeper, constAccessor, eventMgr, gasManager), nil
 	} else if version.GTE(semver.MustParse("0.75.0")) {
 		return newTxOutStorageV75(keeper, constAccessor, eventMgr, gasManager), nil
 	} else if version.GTE(semver.MustParse("0.72.0")) {
