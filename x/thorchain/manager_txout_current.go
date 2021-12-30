@@ -248,7 +248,6 @@ func (tos *TxOutStorageV78) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 		toi.ToAddress = newBCHAddress
 	}
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	// transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
 	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
 	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 	if err != nil {
