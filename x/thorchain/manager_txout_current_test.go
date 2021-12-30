@@ -445,7 +445,7 @@ func (s TxOutStoreV78Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000000)),
 		MaxGas: common.Gas{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(7700)),
+			common.NewCoin(common.BNBAsset, cosmos.NewUint(7500)),
 		},
 	}
 	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1)
