@@ -48,15 +48,15 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.78.0")) {
-		return h.validateV78(ctx, msg)
+	if version.GTE(semver.MustParse("0.79.0")) {
+		return h.validateV79(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
+func (h BondHandler) validateV79(ctx cosmos.Context, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -111,8 +111,8 @@ func (h BondHandler) validateV78(ctx cosmos.Context, msg MsgBond) error {
 
 func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.78.0")) {
-		return h.handleV78(ctx, msg)
+	if version.GTE(semver.MustParse("0.79.0")) {
+		return h.handleV79(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.68.0")) {
 		return h.handleV68(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.47.0")) {
@@ -123,7 +123,7 @@ func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	return errBadVersion
 }
 
-func (h BondHandler) handleV78(ctx cosmos.Context, msg MsgBond) error {
+func (h BondHandler) handleV79(ctx cosmos.Context, msg MsgBond) error {
 	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
