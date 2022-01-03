@@ -70,6 +70,7 @@ const (
 	ValkyrieFundRetry
 	MinimumVaultNodeBond
 	MaximumNumberOfVaultNodes
+	ValidatorMaxRewardRatio
 )
 
 var nameToString = map[ConstantName]string{
@@ -133,6 +134,7 @@ var nameToString = map[ConstantName]string{
 	ValkyrieFundRetry:             "ValkyrieFundRetry",
 	MinimumVaultNodeBond:          "MinimumVaultNodeBond",
 	MaximumNumberOfVaultNodes:     "MaximumNumberOfVaultNodes",
+	ValidatorMaxRewardRatio:       "ValidatorMaxRewardRatio",
 }
 
 // String implement fmt.stringer

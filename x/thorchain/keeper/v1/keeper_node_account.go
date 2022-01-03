@@ -153,6 +153,7 @@ func (k KVStore) GetMinJoinVersion(ctx cosmos.Context) semver.Version {
 			}
 		}
 		// assume all versions are backward compatible
+		// analyze-ignore(map-iteration)
 		for k, v := range vCount {
 			if v.version.LT(na.GetVersion()) {
 				v.count = v.count + 1
@@ -163,6 +164,7 @@ func (k KVStore) GetMinJoinVersion(ctx cosmos.Context) semver.Version {
 	totalCount := len(nodes)
 	version := semver.Version{}
 
+	// analyze-ignore(map-iteration)
 	for _, info := range vCount {
 		// skip those version that doesn't have majority
 		if !HasSuperMajority(info.count, totalCount) {
@@ -203,6 +205,7 @@ func (k KVStore) GetMinJoinVersionV1(ctx cosmos.Context) semver.Version {
 			}
 		}
 		// assume all versions are backward compatible
+		// analyze-ignore(map-iteration)
 		for k, v := range vCount {
 			if v.version.LT(na.GetVersion()) {
 				v.count = v.count + 1
@@ -213,6 +216,7 @@ func (k KVStore) GetMinJoinVersionV1(ctx cosmos.Context) semver.Version {
 	totalCount := len(nodes)
 	version := semver.Version{}
 
+	// analyze-ignore(map-iteration)
 	for _, info := range vCount {
 		// skip those version that doesn't have majority
 		if !HasSuperMajority(info.count, totalCount) {

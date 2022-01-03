@@ -56,6 +56,7 @@ func NewConstantValue010() *ConstantVals {
 			ValkyrieFundRetry:             1000,               // number of blocks before retrying to fund a valkyrie vault
 			MinimumVaultNodeBond:          10_000_00000000,    // minimum bond in RUNE for a vault node to be active (10k RUNE)
 			MaximumNumberOfVaultNodes:     100,                // maximum number of vault nodes that can exist in the network
+			ValidatorMaxRewardRatio:       1,                  // the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

@@ -5,6 +5,7 @@ set -o pipefail
 PORT_P2P=26656
 PORT_RPC=26657
 [ "$NET" = "mainnet" ] && PORT_P2P=27146 && PORT_RPC=27147
+[ "$NET" = "stagenet" ] && PORT_P2P=27146 && PORT_RPC=27147
 
 # adds an account node into the genesis file
 add_node_account() {
@@ -94,7 +95,7 @@ init_chain() {
   export IFS=","
 
   echo "Init chain"
-  thornode init local --chain-id thorchain
+  thornode init local --chain-id "$CHAIN_ID"
   echo "$SIGNER_PASSWD" | thornode keys list --keyring-backend file
 
   for user in "$@"; do # iterate over our list of comma separated users "alice,jack"
@@ -122,7 +123,7 @@ seeds_list() {
   OLD_IFS=$IFS
   IFS=","
   SEED_LIST=""
-  for SEED in "$@"; do
+  for SEED in $1; do
     NODE_ID=$(curl -sL --fail -m 10 "$SEED:$PORT_RPC/status" | jq -r .result.node_info.id) || continue
     NETWORK=$(curl -sL --fail -m 10 "$SEED:$PORT_RPC/status" | jq -r .result.node_info.network) || continue
     # make sure the seeds are on the same network
