@@ -270,7 +270,7 @@ func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Ke
 }
 
 func processOneTxInV1(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	memo, err := ParseMemo(tx.Tx.Memo)
+	memo, err := ParseMemo(keeper.Version(), tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
@@ -321,8 +321,9 @@ func processOneTxInV1(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, s
 	}
 	return newMsg, newMsg.ValidateBasic()
 }
+
 func processOneTxInV46(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	memo, err := ParseMemo(tx.Tx.Memo)
+	memo, err := ParseMemo(keeper.Version(), tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
