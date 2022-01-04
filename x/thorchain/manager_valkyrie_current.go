@@ -16,19 +16,19 @@ const (
 	MimirStopFundValkyrie = `StopFundValkyrie`
 )
 
-// ValkyrieMgrV74 is an implementation of ValkyrieManager
-type ValkyrieMgrV74 struct {
+// ValkyrieMgrV79 is an implementation of ValkyrieManager
+type ValkyrieMgrV79 struct {
 	keeper keeper.Keeper
 }
 
-// newValkyrieMgrV74 create a new instance of ValkyrieMgrV74 which implement ValkyrieManager interface
-func newValkyrieMgrV74(keeper keeper.Keeper) *ValkyrieMgrV74 {
-	return &ValkyrieMgrV74{
+// newValkyrieMgrV79 create a new instance of ValkyrieMgrV79 which implement ValkyrieManager interface
+func newValkyrieMgrV79(keeper keeper.Keeper) *ValkyrieMgrV79 {
+	return &ValkyrieMgrV79{
 		keeper: keeper,
 	}
 }
 
-func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
+func (vmgr ValkyrieMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
 	// Check if we have triggered the ragnarok protocol
 	ragnarokHeight, err := vmgr.keeper.GetRagnarokBlockHeight(ctx)
 	if err != nil {
@@ -169,7 +169,7 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 	return nil
 }
 
-func (vmgr ValkyrieMgrV74) sendCoinToValkyrie(ctx cosmos.Context, coinToSend common.Coin, valkyrie Vault, mgr Manager, constAccessor constants.ConstantValues) (int, error) {
+func (vmgr ValkyrieMgrV79) sendCoinToValkyrie(ctx cosmos.Context, coinToSend common.Coin, valkyrie Vault, mgr Manager, constAccessor constants.ConstantValues) (int, error) {
 
 	var count int
 	var coins common.Coins
@@ -261,7 +261,7 @@ func (vmgr ValkyrieMgrV74) sendCoinToValkyrie(ctx cosmos.Context, coinToSend com
 // new contract , once that happen and detected by THORChain, Valkyrie vault's smart contract will be updated to the new address
 // if there are different , means Valkyrie didn't transfer their fund from old control to new one
 // thus asgard should not send Valkyrie fund for the chain
-func (vmgr ValkyrieMgrV74) shouldFundValkyrie(ctx cosmos.Context, asgard, valkyrie Vault, chain common.Chain) bool {
+func (vmgr ValkyrieMgrV79) shouldFundValkyrie(ctx cosmos.Context, asgard, valkyrie Vault, chain common.Chain) bool {
 	asgardContract := asgard.GetContract(chain)
 	if asgardContract.IsEmpty() {
 		// the request chain doesn't support contract
@@ -276,7 +276,7 @@ func (vmgr ValkyrieMgrV74) shouldFundValkyrie(ctx cosmos.Context, asgard, valkyr
 
 // Iterate through all Asgards and find which asset is most abundant priced in RUNE
 // The ValkyrieVault will be assigned this asset and be sent 25% of its bond value in this asset
-func (vmgr ValkyrieMgrV74) calcAssetForValkyrieVault(ctx cosmos.Context, activePools []Pool) (common.Asset, error) {
+func (vmgr ValkyrieMgrV79) calcAssetForValkyrieVault(ctx cosmos.Context, activePools []Pool) (common.Asset, error) {
 
 	activeAsgardVaults, err := vmgr.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -305,7 +305,7 @@ func (vmgr ValkyrieMgrV74) calcAssetForValkyrieVault(ctx cosmos.Context, activeP
 
 // Valkyrie Vaults should be funded with 25% the value of their bonded RUNE for their assigned pool
 // If they have less than 12.5%, top them up
-func (vmgr ValkyrieMgrV74) calcTargetValkyrieCoin(pool Pool, vault Vault, vaultBond cosmos.Uint) (coin common.Coin, err error) {
+func (vmgr ValkyrieMgrV79) calcTargetValkyrieCoin(pool Pool, vault Vault, vaultBond cosmos.Uint) (coin common.Coin, err error) {
 
 	// Don't send Valkyrie Vault
 	if !pool.IsAvailable() {

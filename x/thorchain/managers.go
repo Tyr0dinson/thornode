@@ -387,7 +387,7 @@ func GetValidatorManager(keeper keeper.Keeper, version semver.Version, vaultMgr 
 // GetVaultNodeManager creates a new instance of VaultNodeManager
 func GetVaultNodeManager(keeper keeper.Keeper, version semver.Version, vaultMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (VaultNodeManager, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return newVaultNodeMgrV74(keeper, vaultMgr, txOutStore, eventMgr), nil
+		return newVaultNodeMgrV79(keeper, vaultMgr, txOutStore, eventMgr), nil
 	}
 	return nil, errInvalidVersion
 }
@@ -461,7 +461,7 @@ func GetYggManager(keeper keeper.Keeper, version semver.Version) (YggManager, er
 
 func GetValkyrieManager(keeper keeper.Keeper, version semver.Version) (ValkyrieManager, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return newValkyrieMgrV74(keeper), nil
+		return newValkyrieMgrV79(keeper), nil
 	}
 	return nil, errInvalidVersion
 }

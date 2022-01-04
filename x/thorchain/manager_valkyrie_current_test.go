@@ -8,15 +8,15 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type ValkyrieManagerV74Suite struct{}
+type ValkyrieManagerV79Suite struct{}
 
-var _ = Suite(&ValkyrieManagerV74Suite{})
+var _ = Suite(&ValkyrieManagerV79Suite{})
 
-func (s *ValkyrieManagerV74Suite) SetUpSuite(_ *C) {
+func (s *ValkyrieManagerV79Suite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
-func (s ValkyrieManagerV74Suite) TestFund(c *C) {
+func (s ValkyrieManagerV79Suite) TestFund(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -28,7 +28,7 @@ func (s ValkyrieManagerV74Suite) TestFund(c *C) {
 
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
-	vmgr := newValkyrieMgrV74(k)
+	vmgr := newValkyrieMgrV79(k)
 
 	vaultNa := GetRandomVaultNode(NodeActive)
 	vaultNa.Bond = cosmos.NewUint(common.One * 1000000)
@@ -51,7 +51,7 @@ func (s ValkyrieManagerV74Suite) TestFund(c *C) {
 	c.Assert(valkVault.IsValkyrie(), Equals, true)
 }
 
-func (s ValkyrieManagerV74Suite) TestCalcAssetForValkyrieVault(c *C) {
+func (s ValkyrieManagerV79Suite) TestCalcAssetForValkyrieVault(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -61,7 +61,7 @@ func (s ValkyrieManagerV74Suite) TestCalcAssetForValkyrieVault(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(5000*common.One)),
 	}
 	c.Assert(k.SetVault(ctx, vault), IsNil)
-	vmgr := newValkyrieMgrV74(k)
+	vmgr := newValkyrieMgrV79(k)
 
 	// Set up pools
 	var pools []Pool

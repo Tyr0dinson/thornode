@@ -9,8 +9,8 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-// vaultNodeMgrV74 manages vault nodes, sets them active, and requests funds back from their Valkyrie Vault
-type vaultNodeMgrV74 struct {
+// vaultNodeMgrV79 manages vault nodes, sets them active, and requests funds back from their Valkyrie Vault
+type vaultNodeMgrV79 struct {
 	k          keeper.Keeper
 	vaultMgr   NetworkManager
 	txOutStore TxOutStore
@@ -18,8 +18,8 @@ type vaultNodeMgrV74 struct {
 }
 
 // vaultNodeMgrV56 create a new instance of vaultNodeMgr
-func newVaultNodeMgrV74(k keeper.Keeper, vaultMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) *vaultNodeMgrV74 {
-	return &vaultNodeMgrV74{
+func newVaultNodeMgrV79(k keeper.Keeper, vaultMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) *vaultNodeMgrV79 {
+	return &vaultNodeMgrV79{
 		k:          k,
 		vaultMgr:   vaultMgr,
 		txOutStore: txOutStore,
@@ -28,7 +28,7 @@ func newVaultNodeMgrV74(k keeper.Keeper, vaultMgr NetworkManager, txOutStore TxO
 }
 
 // RequestValkyrieReturn requests the Vault Node to return funds from its Valkyrie Vault
-func (vm *vaultNodeMgrV74) RequestValkyrieReturn(ctx cosmos.Context, node NodeAccount, mgr Manager, constAccessor constants.ConstantValues) error {
+func (vm *vaultNodeMgrV79) RequestValkyrieReturn(ctx cosmos.Context, node NodeAccount, mgr Manager, constAccessor constants.ConstantValues) error {
 	if !vm.k.VaultExists(ctx, node.PubKeySet.Secp256k1) {
 		return nil
 	}
