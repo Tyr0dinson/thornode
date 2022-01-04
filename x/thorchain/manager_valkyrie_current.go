@@ -45,6 +45,11 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 	}
 
 	nodeAccs, err := vmgr.keeper.ListActiveVaultNodes(ctx)
+	if err != nil {
+		ctx.Logger().Info("Failed to get active Vault Nodes")
+		return nil
+	}
+
 	// We don't want to check all Valkyrie Vault every time THORNode run this
 	// function. So THORNode use modulus to determine which Valkyrie THORNode should process. This
 	// should behave as a "round robin" approach checking one Valkyrie per block.
@@ -141,6 +146,9 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 	}
 
 	sendCoin, err := vmgr.calcTargetValkyrieCoin(vaultPool, valkyrie, na.Bond)
+	if err != nil {
+		return err
+	}
 
 	count, err := vmgr.sendCoinToValkyrie(ctx, sendCoin, valkyrie, mgr, constAccessor)
 	if err != nil {
