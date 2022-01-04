@@ -50,6 +50,11 @@ func (vmgr ValkyrieMgrV74) Fund(ctx cosmos.Context, mgr Manager, constAccessor c
 		return nil
 	}
 
+	if len(nodeAccs) == 0 {
+		ctx.Logger().Info("No active Vault Nodes, skip funding")
+		return nil
+	}
+
 	// We don't want to check all Valkyrie Vault every time THORNode run this
 	// function. So THORNode use modulus to determine which Valkyrie THORNode should process. This
 	// should behave as a "round robin" approach checking one Valkyrie per block.
