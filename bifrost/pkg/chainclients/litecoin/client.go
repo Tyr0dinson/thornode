@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/ltcsuite/ltcd/btcec"
 	"github.com/ltcsuite/ltcd/btcjson"
@@ -340,7 +341,7 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 		c.logger.Err(err).Msgf("fail to save block meta to storage,block height(%d)", blockHeight)
 	}
 	// update the signer cache
-	m, err := mem.ParseMemo(txIn.Memo)
+	m, err := mem.ParseMemo(semver.MustParse("99999999999.0.0"), txIn.Memo)
 	if err != nil {
 		c.logger.Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
 		return
@@ -766,7 +767,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) 
 	if len([]byte(memo)) > constants.MaxMemoSize {
 		return types.TxInItem{}, fmt.Errorf("memo (%s) longer than max allow length(%d)", memo, constants.MaxMemoSize)
 	}
-	m, err := mem.ParseMemo(memo)
+	m, err := mem.ParseMemo(semver.MustParse("99999999999.0.0"), memo)
 	if err != nil {
 		c.logger.Debug().Msgf("fail to parse memo: %s,err : %s", memo, err)
 	}
