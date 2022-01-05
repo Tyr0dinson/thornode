@@ -8,14 +8,14 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type GasManagerTestSuiteV75 struct{}
+type GasManagerTestSuiteV79 struct{}
 
-var _ = Suite(&GasManagerTestSuiteV75{})
+var _ = Suite(&GasManagerTestSuiteV79{})
 
-func (GasManagerTestSuiteV75) TestGasManagerV75(c *C) {
+func (GasManagerTestSuiteV79) TestGasManagerV79(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV75(constAccessor, k)
+	gasMgr := newGasMgrV79(constAccessor, k)
 	gasEvent := gasMgr.gasEvent
 	c.Assert(gasMgr, NotNil)
 	gasMgr.BeginBlock()
@@ -45,10 +45,10 @@ func (GasManagerTestSuiteV75) TestGasManagerV75(c *C) {
 	gasMgr.EndBlock(ctx, k, eventMgr)
 }
 
-func (GasManagerTestSuiteV75) TestGetFee(c *C) {
+func (GasManagerTestSuiteV79) TestGetFee(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV75(constAccessor, k)
+	gasMgr := newGasMgrV79(constAccessor, k)
 	fee := gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	defaultTxFee := uint64(constAccessor.GetInt64Value(constants.OutboundTransactionFee))
 	// when there is no network fee available, it should just get from the constants
@@ -92,13 +92,13 @@ func (GasManagerTestSuiteV75) TestGetFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	synthAssetFee := gasMgr.GetFee(ctx, common.THORChain, sBTC)
-	c.Assert(synthAssetFee.Uint64(), Equals, uint64(400000))
+	c.Assert(synthAssetFee.Uint64(), Equals, uint64(400016))
 }
 
-func (GasManagerTestSuiteV75) TestDifferentValidations(c *C) {
+func (GasManagerTestSuiteV79) TestDifferentValidations(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV75(constAccessor, k)
+	gasMgr := newGasMgrV79(constAccessor, k)
 	gasMgr.BeginBlock()
 	helper := newGasManagerTestHelper(k)
 	eventMgr := newEventMgrV1()
