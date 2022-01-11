@@ -50,6 +50,8 @@ func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.79.0")) {
 		return h.validateV79(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.78.0")) {
+		return h.validateV78(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
