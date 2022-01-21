@@ -68,7 +68,7 @@ func (m Pool) Valid() error {
 	return nil
 }
 
-func (m *Pool) GetPoolUnits() cosmos.Uint {
+func (m Pool) GetPoolUnits() cosmos.Uint {
 	return m.LPUnits.Add(m.SynthUnits)
 }
 
