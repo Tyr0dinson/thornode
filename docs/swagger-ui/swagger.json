@@ -3,7 +3,7 @@
     "info": {
         "title": "THORChain API",
         "version": "",
-        "description": "This documentation outlines the API for THORChain.\n\nNOTE: This document is a **work in progress**."
+        "description": "This documentation outlines the API for THORChain. Add `?height={blockheight}` to the end of a query to return data for a specific block height (only works up until a hardfork height). \n\nNOTE: This document is a **work in progress**."
     },
     "paths": {
         "/thorchain/ping": {
