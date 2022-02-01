@@ -259,8 +259,8 @@ func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault)
 
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.79.0")) {
-		return refundBondV79(ctx, tx, acc, amt, nodeAcc, mgr)
+	if version.GTE(semver.MustParse("0.80.0")) {
+		return refundBondV80(ctx, tx, acc, amt, nodeAcc, mgr)
 	} else if version.GTE(semver.MustParse("0.76.0")) {
 		return refundBondV76(ctx, tx, amt, nodeAcc, mgr)
 	} else if version.GTE(semver.MustParse("0.46.0")) {
@@ -271,7 +271,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 	return errBadVersion
 }
 
-func refundBondV79(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+func refundBondV80(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive || nodeAcc.Status == NodeReady {
 		ctx.Logger().Info("node unable to unbond, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1, "status", nodeAcc.Status)
 		return nil
