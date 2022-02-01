@@ -161,10 +161,6 @@ func (h BondHandler) handleV79(ctx cosmos.Context, msg MsgBond) error {
 		msg.Bond = common.SafeSub(msg.Bond, cosmos.NewUint(common.One))
 	}
 
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
-		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
-	}
-
 	bp, err := h.mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
@@ -202,6 +198,10 @@ func (h BondHandler) handleV79(ctx cosmos.Context, msg MsgBond) error {
 	}
 	if bp.Has(from) {
 		bp.Bond(msg.Bond, from)
+	}
+
+	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
 	}
 
 	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
