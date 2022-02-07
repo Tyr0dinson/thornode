@@ -119,6 +119,7 @@ func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
+
 	return nil
 }
 

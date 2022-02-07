@@ -13,7 +13,7 @@ const MaxAffiliateFeeBasisPoints = 1_000
 var _ cosmos.Msg = &MsgSwap{}
 
 // NewMsgSwap is a constructor function for MsgSwap
-func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, tradeTarget cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, signer cosmos.AccAddress) *MsgSwap {
+func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, tradeTarget cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, agg string, signer cosmos.AccAddress) *MsgSwap {
 	return &MsgSwap{
 		Tx:                   tx,
 		TargetAsset:          target,
@@ -22,6 +22,7 @@ func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, t
 		AffiliateAddress:     affAddr,
 		AffiliateBasisPoints: affPts,
 		Signer:               signer,
+		Aggregator:           agg,
 	}
 }
 
