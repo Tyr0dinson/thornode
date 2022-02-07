@@ -42,13 +42,15 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.65.0")) {
+	if version.GTE(semver.MustParse("0.81.0")) {
+		return h.validateV81(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.65.0")) {
 		return h.validateV65(ctx, msg)
 	}
 	return errInvalidVersion
 }
 
-func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
