@@ -120,6 +120,17 @@ func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
+	if len(msg.Aggregator) > 1 {
+		// validate that a referenced dex aggregator is legit
+		addr, err := FetchDexAggregator(h.mgr.GetVersion(), target.Chain, msg.Aggregator)
+		if err != nil {
+			return err
+		}
+		if addr.IsEmpty() {
+			return fmt.Errorf("aggregator address is empty")
+		}
+	}
+
 	return nil
 }
 
