@@ -185,7 +185,6 @@ var (
 	NewYggdrasilFund       = mem.NewYggdrasilFund
 	NewMigrateMemo         = mem.NewMigrateMemo
 
-	// Aggregator
 	FetchDexAggregator = aggregators.FetchDexAggregator
 )
 
