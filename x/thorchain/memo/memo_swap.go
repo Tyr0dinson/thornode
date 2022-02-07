@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
@@ -15,25 +16,29 @@ type SwapMemo struct {
 	SlipLimit            cosmos.Uint
 	AffiliateAddress     common.Address
 	AffiliateBasisPoints cosmos.Uint
+	DexAggregation       string
 }
 
 func (m SwapMemo) GetDestination() common.Address       { return m.Destination }
 func (m SwapMemo) GetSlipLimit() cosmos.Uint            { return m.SlipLimit }
 func (m SwapMemo) GetAffiliateAddress() common.Address  { return m.AffiliateAddress }
 func (m SwapMemo) GetAffiliateBasisPoints() cosmos.Uint { return m.AffiliateBasisPoints }
+func (m SwapMemo) DexAggregator() string                { return m.DexAggregation }
 
-func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint) SwapMemo {
+func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg string) SwapMemo {
 	return SwapMemo{
 		MemoBase:             MemoBase{TxType: TxSwap, Asset: asset},
 		Destination:          dest,
 		SlipLimit:            slip,
 		AffiliateAddress:     affAddr,
 		AffiliateBasisPoints: affPts,
+		DexAggregation:       dexAgg,
 	}
 }
 
 func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (SwapMemo, error) {
 	var err error
+	dexAgg := ""
 	if len(parts) < 2 {
 		return SwapMemo{}, fmt.Errorf("not enough parameters")
 	}
@@ -78,5 +83,10 @@ func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset,
 		}
 		affPts = cosmos.NewUint(pts)
 	}
-	return NewSwapMemo(asset, destination, slip, affAddr, affPts), nil
+
+	if strings.HasPrefix(parts[0], "=") && len(parts[0]) > 1 {
+		dexAgg = parts[0][1:len(parts[0])]
+	}
+
+	return NewSwapMemo(asset, destination, slip, affAddr, affPts, dexAgg), nil
 }
