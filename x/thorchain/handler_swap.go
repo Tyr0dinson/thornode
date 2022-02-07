@@ -158,6 +158,15 @@ func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
 	}
 
+	dexAgg := common.NoAddress
+	if len(msg.Aggregator) > 1 {
+		// validate that a referenced dex aggregator is legit
+		dexAgg, err = FetchDexAggregator(h.mgr.GetVersion(), msg.TargetAsset.Chain, msg.Aggregator)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	swapper := newSwapperV81()
 	_, _, swapErr := swapper.swap(
 		ctx,
@@ -166,6 +175,7 @@ func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		msg.TargetAsset,
 		msg.Destination,
 		msg.TradeTarget,
+		dexAgg,
 		transactionFee,
 		synthVirtualDepthMult,
 		h.mgr)

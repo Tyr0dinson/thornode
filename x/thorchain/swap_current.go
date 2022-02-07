@@ -65,6 +65,7 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	target common.Asset,
 	destination common.Address,
 	swapTarget cosmos.Uint,
+	dexAgg common.Address,
 	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
@@ -99,6 +100,13 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	}
 	if source.Equals(target) {
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
+	}
+
+	aggAsset := ""
+	if !dexAgg.IsEmpty() {
+		// override the target asset to target chain gas asset
+		aggAsset = target.String()
+		target = target.Chain.GetGasAsset()
 	}
 
 	isDoubleSwap := !source.IsRune() && !target.IsRune()
@@ -144,10 +152,12 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	}
 
 	toi := TxOutItem{
-		Chain:     target.GetChain(),
-		InHash:    tx.ID,
-		ToAddress: destination,
-		Coin:      common.NewCoin(target, assetAmount),
+		Chain:           target.GetChain(),
+		InHash:          tx.ID,
+		ToAddress:       destination,
+		Coin:            common.NewCoin(target, assetAmount),
+		Aggregator:      dexAgg,
+		AggregatorAsset: aggAsset,
 	}
 	// let the txout manager mint our outbound asset if it is a synthetic asset
 	if toi.Chain.IsTHORChain() && toi.Coin.Asset.IsSyntheticAsset() {
