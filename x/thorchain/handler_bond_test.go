@@ -38,6 +38,40 @@ func (k *TestBondKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress
 
 var _ = Suite(&HandlerBondSuite{})
 
+func (HandlerBondSuite) TestBondHandler_ValidateActive(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+
+	vault := GetRandomVault()
+	vault.Status = RetiringVault
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	handler := NewBondHandler(NewDummyMgrWithKeeper(k))
+
+	txIn := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBNBAddress(),
+		GetRandomBNBAddress(),
+		common.Coins{
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One)),
+		},
+		BNBGasFeeSingleton,
+		"bond",
+	)
+	msg := NewMsgBond(txIn, activeNodeAccount.NodeAddress, cosmos.NewUint(10*common.One), activeNodeAccount.BondAddress, nil, activeNodeAccount.NodeAddress)
+
+	// happy path
+	c.Assert(handler.validate(ctx, *msg), IsNil)
+
+	vault.Status = ActiveVault
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// unhappy path
+	c.Assert(handler.validate(ctx, *msg), NotNil)
+}
+
 func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	ctx, k1 := setupKeeperForTest(c)
 
@@ -170,19 +204,19 @@ func (HandlerBondSuite) TestBondProvider_Validate(c *C) {
 	additionalBondAddress := GetRandomBech32Addr()
 
 	errCheck := func(c *C, err error, str string) {
-		c.Check(strings.Contains(err.Error(), str), Equals, true, Commentf("%w", err))
+		c.Check(strings.Contains(err.Error(), str), Equals, true, Commentf("expected:%s , real err:%w", str, err))
 	}
 
 	// TEST VALIDATION //
 	// happy path
-	msg := NewMsgBond(txIn, standbyNA, amt, standbyNAAddress, additionalBondAddress, activeNA)
+	msg := NewMsgBond(txIn, standbyNA, amt, standbyNAAddress, additionalBondAddress, standbyNA)
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
 	// try to bond while node account is active
 	msg = NewMsgBond(txIn, activeNA, amt, activeNAAddress, nil, activeNA)
 	err = handler.validate(ctx, *msg)
-	errCheck(c, err, "node account is active or ready status")
+	errCheck(c, err, "cannot add bond while the network is not churning")
 
 	// try to bond with a bnb address
 	msg = NewMsgBond(txIn, standbyNA, amt, GetRandomBNBAddress(), nil, activeNA)

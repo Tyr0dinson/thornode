@@ -49,16 +49,16 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.80.0")) {
-		return h.validateV80(ctx, msg)
+		return h.validate80(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.78.0")) {
-		return h.validateV78(ctx, msg)
+		return h.validate78(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.1.0")) {
 		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h BondHandler) validateV80(ctx cosmos.Context, msg MsgBond) error {
+func (h BondHandler) validate80(ctx cosmos.Context, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -70,8 +70,27 @@ func (h BondHandler) validateV80(ctx cosmos.Context, msg MsgBond) error {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
 
-	if nodeAccount.Status == NodeActive || nodeAccount.Status == NodeReady {
-		return ErrInternal(err, fmt.Sprintf("node account is active or ready status(%s)", msg.NodeAddress))
+	if nodeAccount.Status == NodeReady {
+		return ErrInternal(err, "cannot add bond while node is ready status")
+	}
+
+	if nodeAccount.Status == NodeActive {
+		validatorMaxRewardRatio, err := h.mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
+		if validatorMaxRewardRatio < 0 || err != nil {
+			validatorMaxRewardRatio = h.mgr.GetConstants().GetInt64Value(constants.ValidatorMaxRewardRatio)
+		}
+
+		if validatorMaxRewardRatio > 1 {
+			retiring, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+			if err != nil {
+				return err
+			}
+
+			if len(retiring) == 0 {
+				return ErrInternal(err, "cannot add bond while the network is not churning")
+			}
+
+		}
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)

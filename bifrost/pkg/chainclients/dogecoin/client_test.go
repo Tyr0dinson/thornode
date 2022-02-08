@@ -1,6 +1,7 @@
 package dogecoin
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -140,6 +141,9 @@ func (s *DogecoinSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
+		} else if req.RequestURI == "/thorchain/mimir/key/MaxUTXOsToSpend" {
+			_, err := rw.Write([]byte(`-1`))
+			c.Assert(err, IsNil)
 		}
 	}))
 	cfg.ChainHost = s.server.Listener.Addr().String()
@@ -175,6 +179,23 @@ func (s *DogecoinSuite) TestGetBlock(c *C) {
 }
 
 func (s *DogecoinSuite) TestFetchTxs(c *C) {
+	globalTxQueue := make(chan types.TxIn)
+	globalErrataQueue := make(chan types.ErrataBlock)
+	globalSolvencyCheckerQueue := make(chan types.Solvency)
+	s.client.Start(globalTxQueue, globalErrataQueue, globalSolvencyCheckerQueue)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-globalTxQueue:
+			case <-globalErrataQueue:
+			case <-globalSolvencyCheckerQueue:
+				c.Log("receive solvency report")
+			}
+		}
+	}()
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.DOGEChain)
@@ -186,6 +207,8 @@ func (s *DogecoinSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Coins.EqualsEx(common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(407250300))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(1108335500))}), Equals, true)
 	c.Assert(len(txs.TxArray), Equals, 1)
+	s.client.Stop()
+	cancel()
 }
 
 func (s *DogecoinSuite) TestGetSender(c *C) {
@@ -628,13 +651,13 @@ func (s *DogecoinSuite) TestGetHeight(c *C) {
 }
 
 func (s *DogecoinSuite) TestGetAccount(c *C) {
-	acct, err := s.client.GetAccount("tthorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcycgtrnv")
+	acct, err := s.client.GetAccount("tthorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcycgtrnv", nil)
 	c.Assert(err, IsNil)
 	c.Assert(acct.AccountNumber, Equals, int64(0))
 	c.Assert(acct.Sequence, Equals, int64(0))
 	c.Assert(acct.Coins[0].Amount.Uint64(), Equals, uint64(2502000000))
 
-	acct1, err := s.client.GetAccount("")
+	acct1, err := s.client.GetAccount("", nil)
 	c.Assert(err, NotNil)
 	c.Assert(acct1.AccountNumber, Equals, int64(0))
 	c.Assert(acct1.Sequence, Equals, int64(0))

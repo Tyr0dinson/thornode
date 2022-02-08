@@ -374,7 +374,11 @@ func refundBondV80(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 		// which means the real slashed RUNE could be the bond they have before slash
 		slashRune = bondBeforeSlash
 	}
-
+	if nodeAcc.RequestedToLeave {
+		// when node already request to leave , it can't come back , here means the node already unbond
+		// so set the node to disabled status
+		nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+	}
 	if err := mgr.Keeper().SetNodeAccount(ctx, *nodeAcc); err != nil {
 		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
 		return err
@@ -731,7 +735,6 @@ func isTradingHaltV1(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 		return false
 	}
 	return isChainTradingHalted(ctx, mgr, targetChain)
-
 }
 
 func isTradingHaltV63(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
@@ -833,6 +836,7 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 	}
 	return false
 }
+
 func isChainHaltedV1(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	mimirKey := fmt.Sprintf("Halt%sChain", chain)
 	haltChain, err := mgr.Keeper().GetMimir(ctx, mimirKey)
@@ -1037,7 +1041,6 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	// emit vault metrics
 	asgards, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
-
 	}
 	for _, vault := range append(asgards, yggs...) {
 		if vault.Status != ActiveVault && vault.Status != RetiringVault {

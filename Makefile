@@ -1,5 +1,5 @@
 include Makefile.cicd
-.PHONY: build test tools export healthcheck
+.PHONY: build test tools export healthcheck run-mocknet reset-mocknet logs-mocknet
 
 module = gitlab.com/thorchain/thornode
 GOBIN?=${GOPATH}/bin
@@ -24,10 +24,6 @@ BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG}
 TEST_BUILD_FLAGS :=  -tags mocknet
 
 BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
-
-# variables default for healthcheck against full stack in docker
-CHAIN_API?=localhost:1317
-MIDGARD_API?=localhost:8080
 
 all: lint install
 
@@ -65,34 +61,30 @@ test-watch: clear
 	@gow -c test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
 format:
-	@gofumpt -w .
+	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -w
 
 lint-pre: protob
-	@gofumpt -d cmd x bifrost common constants tools # for display
-	@test -z "$(shell gofumpt -l cmd x bifrost common constants tools)" # cause error
+	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -d
+	@test -z "$(shell git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -l)"
 	@go mod verify
 
 lint-handlers:
 	@./scripts/lint-handlers.bash
 
-lint-erc20-token-list:
+lint-erc20s:
 	@./scripts/lint-erc20s.bash
 
-lint: lint-pre lint-managers
-	@golangci-lint run --skip-files ".*\\.pb\\.go$$"
-
-lint-verbose: lint-pre lint-managers
-	golangci-lint run -v --skip-files ".*\\.pb\\.go$$"
-
-start-daemon:
-	thord start --log_level "main:info,state:debug,*:error"
-
-start-rest:
-	thorcli rest-server
+lint: lint-pre lint-handlers lint-erc20s
+	@go run tools/analyze/main.go ./common/... ./constants/... ./x/...
+ifdef CI_PROJECT_ID
+	trunk check --no-progress --monitor=false --upstream origin/develop
+else
+	trunk check --upstream origin/develop
+endif
 
 clean:
 	rm -rf ~/.thor*
-	rm -f ${GOBIN}/{generate,thorcli,thord,bifrost}
+	rm -f ${GOBIN}/{generate,thornode,bifrost}
 
 .envrc: install
 	@generate -t MASTER > .envrc
@@ -105,12 +97,19 @@ extract: tools
 tss:
 	go get gitlab.com/thorchain/tss/go-tss
 
-export:
-	thord export
-
 pull:
 	docker pull ${IMAGE}:mocknet
 	docker pull registry.gitlab.com/thorchain/midgard
 	docker pull registry.gitlab.com/thorchain/bepswap/bepswap-web-ui
 	docker pull registry.gitlab.com/thorchain/bepswap/mock-binance
 	docker pull registry.gitlab.com/thorchain/ethereum-mock
+
+run-mocknet:
+	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
+
+reset-mocknet:
+	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
+	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
+
+logs-mocknet:
+	docker compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost

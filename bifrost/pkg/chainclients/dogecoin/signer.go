@@ -88,6 +88,7 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 func (c *Client) isYggdrasil(key common.PubKey) bool {
 	return key.Equals(c.nodePubKey)
 }
+
 func (c *Client) getMaximumUtxosToSpend() int64 {
 	const mimirMaxUTXOsToSpend = `MaxUTXOsToSpend`
 	utxosToSpend, err := c.bridge.GetMimir(mimirMaxUTXOsToSpend)
@@ -126,6 +127,7 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey, total float64) ([]btcjson.
 	minUTXOAmt := dogutil.Amount(minSpendableUTXOAmountSats).ToBTC()
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
+			c.logger.Info().Msgf("invalid UTXO , can't spent it")
 			continue
 		}
 		isSelfTx := c.isSelfTransaction(item.TxID)
@@ -333,9 +335,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, err
 		if err != nil {
 			return nil, fmt.Errorf("fail to parse memo: %w", err)
 		}
-		if memo.GetType() == mem.TxYggdrasilReturn {
+		if memo.GetType() == mem.TxYggdrasilReturn || memo.GetType() == mem.TxConsolidate {
 			gap := gasAmtSats
-			c.logger.Info().Msgf("yggdrasil return asset , need gas: %d", gap)
+			c.logger.Info().Msgf("yggdrasil return asset or consolidate tx, need gas: %d", gap)
 			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
 		}
 	}
@@ -490,7 +492,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 func (c *Client) consolidateUTXOs() {
 	defer func() {
 		c.wg.Done()
-		c.consolidateInProgress = false
+		c.consolidateInProgress.Store(false)
 	}()
 
 	nodeStatus, err := c.bridge.FetchNodeStatus()
@@ -509,6 +511,10 @@ func (c *Client) consolidateUTXOs() {
 	}
 	utxosToSpend := c.getMaximumUtxosToSpend()
 	for _, vault := range vaults {
+		if !vault.Contains(c.nodePubKey) {
+			// Not part of this vault , don't need to consolidate UTXOs for this Vault
+			continue
+		}
 		// the amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
 		utxos, err := c.getUtxoToSpend(vault.PubKey, 0.01)
 		if err != nil {
@@ -543,7 +549,7 @@ func (c *Client) consolidateUTXOs() {
 			Coins: common.Coins{
 				common.NewCoin(common.DOGEAsset, cosmos.NewUint(uint64(amt))),
 			},
-			Memo:    "consolidate",
+			Memo:    mem.NewConsolidateMemo().String(),
 			MaxGas:  nil,
 			GasRate: int64(feeRate),
 		}
