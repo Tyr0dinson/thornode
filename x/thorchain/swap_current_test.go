@@ -373,6 +373,14 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		if item.expectedErr == nil {
 			c.Assert(err, IsNil)
 			c.Assert(evts, HasLen, item.events)
+
+			// ensure aggregator is NOT included in txns
+			items, err := mgr.txOutStore.GetOutboundItems(ctx)
+			c.Assert(err, IsNil)
+			for _, item := range items {
+				c.Check(item.Aggregator.IsEmpty(), Equals, true)
+				c.Check(item.AggregatorAsset, Equals, "")
+			}
 		} else {
 			c.Assert(err, NotNil, Commentf("Expected: %s, got nil", item.expectedErr.Error()))
 			c.Assert(err.Error(), Equals, item.expectedErr.Error())
@@ -387,6 +395,42 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 func QuoUint(num types.Uint, denom types.Uint) types.Dec {
 	res := cosmos.NewDecFromBigInt(num.BigInt()).Quo(cosmos.NewDecFromBigInt(denom.BigInt()))
 	return res
+}
+
+func (s *SwapV81Suite) TestAggregator(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(34 * common.One)
+	pool.LPUnits = pool.BalanceRune
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	addr := GetRandomTHORAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		addr,
+		addr,
+		common.NewCoins(
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One)),
+		),
+		BNBGasFeeSingleton,
+		"",
+	)
+	tx.Chain = common.ETHChain
+
+	bat, err := common.NewAsset("ETH.BAT-0x0D8775F648430679A709E98d2b0Cb6250d2887EF")
+	agg := common.Address("0x69ba883Af416fF5501D54D5e27A1f497fBD97156")
+	toAddr := common.Address("0xdAC17F958D2ee523a2206206994597C13D831ec7")
+	amount, _, err := NewSwapperV81().swap(ctx, mgr.Keeper(), tx, bat, toAddr, cosmos.ZeroUint(), agg, cosmos.NewUint(1000_000), 2, mgr)
+	c.Assert(err, IsNil)
+	c.Check(amount.Uint64(), Equals, uint64(140119487), Commentf("%d", amount.Uint64()))
+
+	items := mgr.txOutStore.GetOutboundItemByToAddress(ctx, toAddr)
+	c.Assert(items, HasLen, 1)
+	c.Check(items[0].Aggregator.Equals(agg), Equals, true)
+	c.Check(items[0].AggregatorAsset, Equals, bat.String())
 }
 
 func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {

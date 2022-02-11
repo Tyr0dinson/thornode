@@ -88,6 +88,13 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		}
 	}
 
+	aggAsset := ""
+	if !dexAgg.IsEmpty() {
+		// override the target asset with target chain gas asset
+		aggAsset = target.String()
+		target = target.Chain.GetGasAsset()
+	}
+
 	if err := s.validatePools(ctx, keeper, source, target); err != nil {
 		if err == errInvalidPoolStatus && source.IsSyntheticAsset() {
 			// the pool is not available, but we can allow synthetic assets to still swap back to rune/asset ok
@@ -100,13 +107,6 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	}
 	if source.Equals(target) {
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
-	}
-
-	aggAsset := ""
-	if !dexAgg.IsEmpty() {
-		// override the target asset to target chain gas asset
-		aggAsset = target.String()
-		target = target.Chain.GetGasAsset()
 	}
 
 	isDoubleSwap := !source.IsRune() && !target.IsRune()

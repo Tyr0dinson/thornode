@@ -141,8 +141,9 @@ func (MsgSwapSuite) TestMsgSwap(c *C) {
 	}
 
 	// happy path
-	m = NewMsgSwap(tx, common.BNBAsset, GetRandomBNBAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", addr)
+	m = NewMsgSwap(tx, common.BNBAsset, GetRandomBNBAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "123", addr)
 	c.Assert(m.ValidateBasicV63(), IsNil)
+	c.Check(m.Aggregator, Equals, "123")
 
 	// test address and synth swapping fails when appropriate
 	m = NewMsgSwap(tx, common.BNBAsset, GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", addr)

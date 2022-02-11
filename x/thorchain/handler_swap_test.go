@@ -42,6 +42,10 @@ func (s *HandlerSwapSuite) TestValidate(c *C) {
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
+	// bad aggregator reference
+	msg.Aggregator = "zzzzzz"
+	c.Assert(handler.validate(ctx, *msg), NotNil)
+
 	// invalid msg
 	msg = &MsgSwap{}
 	err = handler.validate(ctx, *msg)
