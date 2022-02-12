@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/blang/semver"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
@@ -186,7 +185,7 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				continue
 			}
 			scp.logger.Info().Msgf("transfer out: %+v", transferOutEvt)
-			m, err := memo.ParseMemo(semver.MustParse("99999999999.0.0"), transferOutEvt.Memo)
+			m, err := memo.ParseMemo(common.LatestVersion, transferOutEvt.Memo)
 			if err != nil {
 				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferOutEvt.Memo)
 				continue
@@ -235,7 +234,7 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
 				continue
 			}
-			m, err := memo.ParseMemo(semver.MustParse("99999999999.0.0"), transferAllowanceEvt.Memo)
+			m, err := memo.ParseMemo(common.LatestVersion, transferAllowanceEvt.Memo)
 			if err != nil {
 				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferAllowanceEvt.Memo)
 				continue
@@ -278,7 +277,7 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Error().Msg("multiple events in the same transaction , have different memo , ignore")
 				continue
 			}
-			m, err := memo.ParseMemo(semver.MustParse("99999999999.0.0"), transferEvent.Memo)
+			m, err := memo.ParseMemo(common.LatestVersion, transferEvent.Memo)
 			if err != nil {
 				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferEvent.Memo)
 				continue
