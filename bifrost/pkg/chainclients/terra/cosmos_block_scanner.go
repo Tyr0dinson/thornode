@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -38,9 +37,22 @@ import (
 type SolvencyReporter func(int64) error
 
 const (
+	// GasUpdatePeriodBlocks is the block interval at which we report gas fee changes.
 	GasUpdatePeriodBlocks = 10
-	GasMethodAverage      = iota
-	GasMethodSimulate
+
+	// GasPriceFactor is a multiplier applied to the gas amount before dividing by the gas
+	// limit to determine the price, since Cosmos chains can have prices less than 1 which
+	// cannot be stored in a uint. This can be thought of as the reciprocal of the gas
+	// price precision.
+	GasPriceFactor = uint64(1e9)
+
+	// GasLimit is the default gas limit we will use for all outbound transactions.
+	GasLimit = 200000
+
+	// GasCacheTransactions is the number of transactions over which we compute an average
+	// (mean) gas price to use for outbound transactions. Note that only transactions
+	// using the chain fee asset will be considered.
+	GasCacheTransactions = 100
 )
 
 var (
@@ -58,9 +70,7 @@ type CosmosBlockScanner struct {
 	cdc              *codec.ProtoCodec
 	txClient         txtypes.ServiceClient
 	txConfig         client.TxConfig
-	gasMethod        int
-	gasCacheSquares  []ctypes.Int
-	gasCacheNum      int64
+	gasCache         []ctypes.Uint
 	tmService        tmservice.ServiceClient
 	grpc             *grpc.ClientConn
 	bridge           *thorclient.ThorchainBridge
@@ -109,9 +119,7 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 		txClient:         txtypes.NewServiceClient(conn),
 		txConfig:         txConfig,
 		tmService:        tmService,
-		gasMethod:        GasMethodAverage,
-		gasCacheSquares:  make([]ctypes.Int, 0),
-		gasCacheNum:      0,
+		gasCache:         make([]ctypes.Uint, 0),
 		grpc:             conn,
 		bridge:           bridge,
 		solvencyReporter: solvencyReporter,
@@ -151,78 +159,65 @@ func (c *CosmosBlockScanner) GetBlock(height int64) (*tmtypes.Block, error) {
 	return resultBlock.Block, nil
 }
 
-func (c *CosmosBlockScanner) updateGasCache(txs []types.TxInItem) error {
-	// add gas fees for the FeeAsset only
-	for _, tx := range txs {
-		fee := tx.Gas.ToCoins().GetCoin(c.feeAsset)
-		if err := fee.Valid(); err != nil {
-			// gas asset is not preferred fee asset, skip it...
-			continue
-		}
-		c.gasCacheNum++
-		c.gasCacheSquares = append(c.gasCacheSquares, ctypes.Int(fee.Amount).Mul(ctypes.Int(fee.Amount)))
+func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
+	fees := tx.GetFee()
+
+	// only consider transactions that have a single fee
+	if len(fees) != 1 {
+		return
 	}
 
-	return nil
+	// only consider transactions with fee paid in uluna
+	coin, err := fromCosmosToThorchain(fees[0])
+	if err != nil || !coin.Asset.Equals(c.feeAsset) {
+		return
+	}
+
+	// sanity check to ensure fee is non-zero
+	err = coin.Valid()
+	if err != nil {
+		c.logger.Error().Err(err).Interface("fees", fees).Msg("transaction with zero fee")
+		return
+	}
+
+	// divide fee amount by the transaction gas used to determine the price
+	c.gasCache = append(c.gasCache, coin.Amount.Mul(ctypes.NewUint(GasPriceFactor)).Quo(ctypes.NewUint(tx.GetGas())))
+
+	// truncate gas prices older than our max cached transactions
+	if len(c.gasCache) > GasCacheTransactions {
+		c.gasCache = c.gasCache[(len(c.gasCache) - GasCacheTransactions):]
+	}
 }
 
-func (c *CosmosBlockScanner) getAverageFromCache() ctypes.Int {
-	if len(c.gasCacheSquares) == 0 || c.gasCacheNum == 0 {
-		return ctypes.NewInt(0)
+func (c *CosmosBlockScanner) averageGasPrice() ctypes.Uint {
+	sum := ctypes.NewUint(0)
+	for _, val := range c.gasCache {
+		sum = sum.Add(val)
 	}
-
-	sumOfSquares := ctypes.NewInt(0)
-	for _, val := range c.gasCacheSquares {
-		sumOfSquares = sumOfSquares.Add(val)
-	}
-
-	averageSquares := sumOfSquares.Quo(ctypes.NewIntFromBigInt(big.NewInt(c.gasCacheNum)))
-	return ctypes.NewIntFromBigInt(big.NewInt(0).Sqrt(averageSquares.BigInt()))
+	return sum.Quo(ctypes.NewUint(uint64(len(c.gasCache))))
 }
 
 func (c *CosmosBlockScanner) updateGasFees(height int64) error {
-	// post the gas fee over every cache period
+	// post the gas fee over every cache period when we have a full gas cache
+	if height%GasUpdatePeriodBlocks == 0 && len(c.gasCache) == GasCacheTransactions {
+		gasPrice := c.averageGasPrice()
 
-	if height%GasUpdatePeriodBlocks == 0 {
-		var gas common.Coin
-		// Use the SimulateTx method with a dummy tx to calculate appropriate fee
-		if c.gasMethod == GasMethodSimulate {
-			dummyTxb, err := getDummyTxBuilderForSimulate(c.txConfig)
-			if err != nil {
-				return fmt.Errorf("unable to getDummyTxBuilderForSimulate: %w", err)
-			}
-
-			simRes, err := simulateTx(dummyTxb, c.txClient)
-			if err != nil {
-				return fmt.Errorf("unable to SimulateTx: %w", err)
-			}
-
-			gasAsset, exists := GetAssetByThorchainSymbol(c.feeAsset.String())
-			if !exists {
-				return fmt.Errorf("unable to get asset by thorchain symbol: %s", c.feeAsset.Symbol.String())
-			}
-
-			gas, err = fromCosmosToThorchain(ctypes.NewCoin(gasAsset.CosmosDenom, ctypes.NewInt(int64(simRes.GasInfo.GasUsed))))
-			if err != nil {
-				return fmt.Errorf("unable to convert cosmos coins to thorchain: %w", err)
-			}
-		} else if c.gasMethod == GasMethodAverage {
-			gasInt := c.getAverageFromCache()
-			gas = common.NewCoin(c.feeAsset, ctypes.NewUint(gasInt.Uint64()))
-			c.gasCacheSquares = make([]ctypes.Int, 0)
-			c.gasCacheNum = 0
+		// sanity check the price is not zero
+		if gasPrice.Equal(ctypes.NewUint(0)) {
+			err := errors.New("suggested gas price was zero")
+			c.logger.Error().Err(err).Msg(err.Error())
+			return err
 		}
 
-		feeTx, err := c.bridge.PostNetworkFee(height, common.TERRAChain, 1, gas.Amount.Uint64())
+		feeTx, err := c.bridge.PostNetworkFee(height, common.TERRAChain, GasLimit, gasPrice.Uint64())
 		if err != nil {
 			return err
 		}
 		c.logger.Info().
 			Str("tx", feeTx.String()).
-			Int64("amount", gas.Amount.BigInt().Int64()).
+			Uint64("price", gasPrice.Uint64()).
 			Int64("height", height).
 			Msg("sent network fee to THORChain")
-
 	}
 
 	return nil
@@ -251,6 +246,9 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs [][]byte) ([]types.
 
 		memo := tx.(ctypes.TxWithMemo).GetMemo()
 		fees := tx.(ctypes.FeeTx).GetFee()
+
+		// record gas price across all transaction types
+		c.updateGasCache(tx.(ctypes.FeeTx))
 
 		for _, msg := range tx.GetMsgs() {
 			switch msg := msg.(type) {
@@ -322,11 +320,6 @@ func (c *CosmosBlockScanner) FetchTxs(height int64) (types.TxIn, error) {
 		TxArray:  txs,
 		Filtered: false,
 		MemPool:  false,
-	}
-
-	err = c.updateGasCache(txs)
-	if err != nil {
-		c.logger.Err(err).Int64("height", height).Msg("unable to update gas cache")
 	}
 
 	err = c.updateGasFees(height)

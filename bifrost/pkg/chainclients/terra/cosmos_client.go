@@ -339,22 +339,14 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		c.accts.Set(tx.VaultPubKey, meta)
 	}
 
-	var gas ctypes.Coins
-	for _, thorchainCoin := range tx.MaxGas.ToCoins() {
-		if thorchainCoin.Asset.Equals(c.GetChain().GetGasAsset()) {
-			cosmosCoin, err := fromThorchainToCosmos(thorchainCoin)
-			if err != nil {
-				c.logger.Warn().Err(err).Interface("tx", tx).Msg("wasn't able to convert coins that passed whitelist")
-				continue
-			}
-			gas = append(gas, cosmosCoin)
-		}
-	}
-
-	gasRate, err := fromThorchainToCosmos(common.NewCoin(c.GetChain().GetGasAsset(), cosmos.NewUint(uint64(tx.GasRate))))
-	if err != nil {
-		c.logger.Error().Err(err).Interface("tx", tx).Msg("unable to convert gas rate in outbound tx")
-		return nil, fmt.Errorf("unable to convert gas rate in outbound tx: %w", err)
+	fee := ctypes.Coins{
+		ctypes.NewCoin(
+			"uluna",
+			ctypes.NewInt(tx.GasRate).
+				Mul(ctypes.NewInt(GasLimit)).
+				Mul(ctypes.NewInt(100)). // TODO: thorchain to cosmos - is this right?
+				Quo(ctypes.NewInt(int64(GasPriceFactor))),
+		),
 	}
 
 	txBuilder, err := buildUnsigned(
@@ -362,8 +354,7 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		msg,
 		tx.VaultPubKey,
 		tx.Memo,
-		gas,
-		gasRate.Amount.Uint64(),
+		fee,
 		uint64(meta.AccountNumber),
 		uint64(meta.SeqNumber),
 	)
@@ -456,26 +447,19 @@ func (c *CosmosClient) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string,
 		return "", fmt.Errorf("fail to get account info: %w", err)
 	}
 
-	var gas ctypes.Coins
-	for _, thorchainGas := range tx.MaxGas.ToCoins() {
-		if thorchainGas.Asset == c.GetChain().GetGasAsset() {
-			cosmosCoin, err := fromThorchainToCosmos(thorchainGas)
-			if err != nil {
-				c.logger.Warn().Err(err).Interface("tx", tx).Msg("wasn't able to convert coins that passed whitelist")
-				continue
-			}
-			gas = append(gas, cosmosCoin)
-		}
-	}
-	gasRate, err := fromThorchainToCosmos(common.NewCoin(c.GetChain().GetGasAsset(), cosmos.NewUint(uint64(tx.GasRate))))
-	if err != nil {
-		c.logger.Warn().Err(err).Interface("tx", tx).Msg("wasn't able to convert coins that passed whitelist")
-		return "", err
-	}
-
 	out, err := c.processOutboundTx(tx)
 	if err != nil {
 		return "", fmt.Errorf("unable to processOutboundTx for simulateTx: %w", err)
+	}
+
+	fee := ctypes.Coins{
+		ctypes.NewCoin(
+			"uluna",
+			ctypes.NewInt(tx.GasRate).
+				Mul(ctypes.NewInt(GasLimit)).
+				Mul(ctypes.NewInt(100)). // TODO: thorchain to cosmos - is this right?
+				Quo(ctypes.NewInt(int64(GasPriceFactor))),
+		),
 	}
 
 	txb, err := buildUnsigned(
@@ -483,13 +467,12 @@ func (c *CosmosClient) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string,
 		out,
 		tx.VaultPubKey,
 		tx.Memo,
-		gas,
-		gasRate.Amount.Uint64(),
+		fee,
 		uint64(acc.AccountNumber),
 		uint64(acc.Sequence),
 	)
 	if err != nil {
-		return "", fmt.Errorf("unable to buildUnsighed for simulateTx: %w", err)
+		return "", fmt.Errorf("unable to buildUnsigned for simulateTx: %w", err)
 	}
 
 	simRes, err := simulateTx(txb, c.txClient)
