@@ -339,15 +339,25 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		c.accts.Set(tx.VaultPubKey, meta)
 	}
 
-	fee := ctypes.Coins{
-		ctypes.NewCoin(
-			"uluna",
-			ctypes.NewInt(tx.GasRate).
-				Mul(ctypes.NewInt(GasLimit)).
-				Mul(ctypes.NewInt(100)). // TODO: thorchain to cosmos - is this right?
-				Quo(ctypes.NewInt(int64(GasPriceFactor))),
-		),
+	// format the fee (the "MaxGas" set by thornode)
+	gasCoins := tx.MaxGas.ToCoins()
+	if len(gasCoins) != 1 {
+		err = errors.New("exactly one gas coin must be provided")
+		c.logger.Error().Err(err).Interface("fee", gasCoins).Msg(err.Error())
+		return nil, err
 	}
+	if !gasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
+		err = errors.New("gas coin asset must match chain gas asset")
+		c.logger.Error().Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
+		return nil, err
+	}
+	cCoin, err := fromThorchainToCosmos(gasCoins[0])
+	if err != nil {
+		err = errors.New("unable to convert coins that passed whitelist")
+		c.logger.Error().Err(err).Msg(err.Error())
+		return nil, err
+	}
+	fee := ctypes.Coins{cCoin}
 
 	txBuilder, err := buildUnsigned(
 		c.txConfig,
@@ -452,15 +462,25 @@ func (c *CosmosClient) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string,
 		return "", fmt.Errorf("unable to processOutboundTx for simulateTx: %w", err)
 	}
 
-	fee := ctypes.Coins{
-		ctypes.NewCoin(
-			"uluna",
-			ctypes.NewInt(tx.GasRate).
-				Mul(ctypes.NewInt(GasLimit)).
-				Mul(ctypes.NewInt(100)). // TODO: thorchain to cosmos - is this right?
-				Quo(ctypes.NewInt(int64(GasPriceFactor))),
-		),
+	// format the fee (the "MaxGas" set by thornode)
+	gasCoins := tx.MaxGas.ToCoins()
+	if len(gasCoins) != 1 {
+		err = errors.New("exactly one gas coin must be provided")
+		c.logger.Error().Err(err).Interface("fee", gasCoins).Msg(err.Error())
+		return "", err
 	}
+	if !gasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
+		err = errors.New("gas coin asset must match chain gas asset")
+		c.logger.Error().Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
+		return "", err
+	}
+	cCoin, err := fromThorchainToCosmos(gasCoins[0])
+	if err != nil {
+		err = errors.New("unable to convert coins that passed whitelist")
+		c.logger.Error().Err(err).Msg(err.Error())
+		return "", err
+	}
+	fee := ctypes.Coins{cCoin}
 
 	txb, err := buildUnsigned(
 		c.txConfig,

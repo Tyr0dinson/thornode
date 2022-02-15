@@ -41,9 +41,9 @@ const (
 	GasUpdatePeriodBlocks = 10
 
 	// GasPriceFactor is a multiplier applied to the gas amount before dividing by the gas
-	// limit to determine the price, since Cosmos chains can have prices less than 1 which
-	// cannot be stored in a uint. This can be thought of as the reciprocal of the gas
-	// price precision.
+	// limit to determine the gas price, and later used as a divisor on the final fee -
+	// this avoid the integer division going to zero, and can be thought of as the
+	// reciprocal of the gas price precision.
 	GasPriceFactor = uint64(1e9)
 
 	// GasLimit is the default gas limit we will use for all outbound transactions.
@@ -70,11 +70,14 @@ type CosmosBlockScanner struct {
 	cdc              *codec.ProtoCodec
 	txClient         txtypes.ServiceClient
 	txConfig         client.TxConfig
-	gasCache         []ctypes.Uint
 	tmService        tmservice.ServiceClient
 	grpc             *grpc.ClientConn
 	bridge           *thorclient.ThorchainBridge
 	solvencyReporter SolvencyReporter
+
+	// feeCache contains a rolling window of suggested gas fees which are computed as the
+	// gas price paid in each observed transaction multiplied by the default GasLimit.
+	feeCache []ctypes.Uint
 }
 
 // NewCosmosBlockScanner create a new instance of BlockScan
@@ -119,7 +122,7 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 		txClient:         txtypes.NewServiceClient(conn),
 		txConfig:         txConfig,
 		tmService:        tmService,
-		gasCache:         make([]ctypes.Uint, 0),
+		feeCache:         make([]ctypes.Uint, 0),
 		grpc:             conn,
 		bridge:           bridge,
 		solvencyReporter: solvencyReporter,
@@ -180,42 +183,51 @@ func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
 		return
 	}
 
-	// divide fee amount by the transaction gas used to determine the price
-	c.gasCache = append(c.gasCache, coin.Amount.Mul(ctypes.NewUint(GasPriceFactor)).Quo(ctypes.NewUint(tx.GetGas())))
+	// add the fee to our cache
+	amount := coin.Amount.Mul(ctypes.NewUint(GasPriceFactor)) // multiply to handle price < 1
+	price := amount.Quo(ctypes.NewUint(tx.GetGas()))          // divide by gas to get the price
+	fee := price.Mul(ctypes.NewUint(GasLimit))                // tx fee for default gas limit
+	fee = fee.Quo(ctypes.NewUint(GasPriceFactor))             // unroll the multiple
+	c.feeCache = append(c.feeCache, fee)
 
 	// truncate gas prices older than our max cached transactions
-	if len(c.gasCache) > GasCacheTransactions {
-		c.gasCache = c.gasCache[(len(c.gasCache) - GasCacheTransactions):]
+	if len(c.feeCache) > GasCacheTransactions {
+		c.feeCache = c.feeCache[(len(c.feeCache) - GasCacheTransactions):]
 	}
 }
 
-func (c *CosmosBlockScanner) averageGasPrice() ctypes.Uint {
+func (c *CosmosBlockScanner) averageFee() ctypes.Uint {
 	sum := ctypes.NewUint(0)
-	for _, val := range c.gasCache {
+	for _, val := range c.feeCache {
 		sum = sum.Add(val)
 	}
-	return sum.Quo(ctypes.NewUint(uint64(len(c.gasCache))))
+	return sum.Quo(ctypes.NewUint(uint64(len(c.feeCache))))
 }
 
 func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
-	if height%GasUpdatePeriodBlocks == 0 && len(c.gasCache) == GasCacheTransactions {
-		gasPrice := c.averageGasPrice()
+	if height%GasUpdatePeriodBlocks == 0 && len(c.feeCache) == GasCacheTransactions {
+		gasFee := c.averageFee()
 
-		// sanity check the price is not zero
-		if gasPrice.Equal(ctypes.NewUint(0)) {
-			err := errors.New("suggested gas price was zero")
+		// sanity check the fee is not zero
+		if gasFee.Equal(ctypes.NewUint(0)) {
+			err := errors.New("suggested gas fee was zero")
 			c.logger.Error().Err(err).Msg(err.Error())
 			return err
 		}
 
-		feeTx, err := c.bridge.PostNetworkFee(height, common.TERRAChain, GasLimit, gasPrice.Uint64())
+		// NOTE: We post the fee to the network instead of the transaction rate, and set the
+		// transaction size 1 to ensure the MaxGas in the generated TxOut contains the
+		// correct fee. We cannot pass the proper size and rate without a deeper change to
+		// Thornode, as the rate on Cosmos chains is less than 1 and cannot be represented
+		// by the uint. This follows the pattern set in the BNB chain client.
+		feeTx, err := c.bridge.PostNetworkFee(height, common.TERRAChain, 1, gasFee.Uint64())
 		if err != nil {
 			return err
 		}
 		c.logger.Info().
 			Str("tx", feeTx.String()).
-			Uint64("price", gasPrice.Uint64()).
+			Uint64("fee", gasFee.Uint64()).
 			Int64("height", height).
 			Msg("sent network fee to THORChain")
 	}
