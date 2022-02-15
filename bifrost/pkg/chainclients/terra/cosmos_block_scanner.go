@@ -77,6 +77,8 @@ type CosmosBlockScanner struct {
 
 	// feeCache contains a rolling window of suggested gas fees which are computed as the
 	// gas price paid in each observed transaction multiplied by the default GasLimit.
+	// Fees are stored at 100x the values on the observed chain due to compensate for the
+	// difference in base chain decimals (thorchain:1e8, terra:1e6).
 	feeCache []ctypes.Uint
 }
 
