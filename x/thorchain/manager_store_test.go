@@ -1022,3 +1022,38 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV77(c *C) {
 		c.Assert(p.BalanceAsset.Sub(cosmos.NewUint(common.One)).Equal(item.amount), Equals, true)
 	}
 }
+
+func (s *StoreManagerTestSuite) TestMigrationStoreV81(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.NewUint(50 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeWhiteListed)
+	na2.Bond = cosmos.NewUint(3 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	na3 := GetRandomValidatorNode(NodeStandby)
+	na3.Bond = cosmos.NewUint(2 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	na4 := GetRandomValidatorNode(NodeStandby)
+	na4.Bond = cosmos.NewUint(21 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na4), IsNil)
+
+	migrateStoreV81(ctx, mgr)
+	na, err := mgr.Keeper().GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.IsEmpty(), Equals, true)
+	na, err = mgr.Keeper().GetNodeAccount(ctx, na3.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.IsEmpty(), Equals, true)
+
+	na, err = mgr.Keeper().GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.IsEmpty(), Equals, false)
+
+	na, err = mgr.Keeper().GetNodeAccount(ctx, na4.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(na.IsEmpty(), Equals, false)
+}

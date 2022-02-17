@@ -94,6 +94,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV79(ctx, smgr.mgr)
 	case 80:
 		migrateStoreV80(ctx, smgr.mgr)
+	case 81:
+		migrateStoreV81(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -1423,4 +1425,46 @@ func migrateStoreV79(ctx cosmos.Context, mgr *Mgrs) {
 		"7F79C8A600B8064B47C33CDF3388571CE6AF08F1FAC4F23AE62C9EEF0322CBB6",
 		"33D521205BB3915C5D1D8D39EEAAC0E1B1CDE31B0A5318A1796D8D86D55DD67A",
 		"F3901C5206F79BDA26E94EB84384D9CEB91DDBF473368E51AF88A356DB9AB407")
+}
+
+func migrateStoreV81(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v81", "error", err)
+		}
+	}()
+	minAccountBalance := 20 * common.One
+	iterator := mgr.K.GetNodeAccountIterator(ctx)
+	amount := cosmos.ZeroUint()
+	defer iterator.Close()
+	var nodesToPrune NodeAccounts
+	for ; iterator.Valid(); iterator.Next() {
+		var na NodeAccount
+		if err := mgr.K.Cdc().UnmarshalBinaryBare(iterator.Value(), &na); err != nil {
+			ctx.Logger().Error("fail to unmarshal node account", "err", err)
+			continue
+		}
+		// active node , should not be removed
+		if na.IsEmpty() || na.Status == NodeActive {
+			continue
+		}
+		// if node has more than minBond RUNE , it can escape from prune
+		if na.Bond.GT(cosmos.NewUint(uint64(minAccountBalance))) {
+			continue
+		}
+		nodesToPrune = append(nodesToPrune, na)
+		amount = amount.Add(na.Bond)
+	}
+	for _, item := range nodesToPrune {
+		ctx.Logger().Info("remove node account", "node", item.String())
+		if err := mgr.K.RemoveNodeAccount(ctx, item); err != nil {
+			ctx.Logger().Error("fail to remove node account", "err", err)
+		}
+	}
+	// send the amount to reserve
+	if err := mgr.K.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(
+		common.NewCoin(common.RuneNative, amount),
+	)); err != nil {
+		ctx.Logger().Error("fail to send pruned node account's bond to reserve", "amount", amount.String())
+	}
 }
