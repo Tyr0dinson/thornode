@@ -167,7 +167,10 @@ func (vm *validatorMgrV81) pruneNodeAccounts(ctx cosmos.Context, constAccessor c
 	var nodesToPrune NodeAccounts
 	for ; iterator.Valid(); iterator.Next() {
 		var na NodeAccount
-		vm.k.Cdc().MustUnmarshalBinaryBare(iterator.Value(), &na)
+		if err := vm.k.Cdc().UnmarshalBinaryBare(iterator.Value(), &na); err != nil {
+			ctx.Logger().Error("fail to unmarshal node account", "err", err)
+			continue
+		}
 		// active node , should not be removed
 		if na.IsEmpty() || na.Status == NodeActive {
 			continue
@@ -185,7 +188,7 @@ func (vm *validatorMgrV81) pruneNodeAccounts(ctx cosmos.Context, constAccessor c
 			ctx.Logger().Error("fail to remove node account", "err", err)
 		}
 	}
-	// send the amount to
+	// send the amount to reserve
 	if err := vm.k.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(
 		common.NewCoin(common.RuneNative, amount),
 	)); err != nil {
