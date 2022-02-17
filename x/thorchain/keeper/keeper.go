@@ -109,6 +109,7 @@ type KeeperNodeAccount interface {
 	GetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress) (Jail, error)
 	SetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress, height int64, reason string) error
 	ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccAddress) error
+	RemoveNodeAccount(ctx cosmos.Context, na NodeAccount) error
 }
 
 type KeeperObserver interface {

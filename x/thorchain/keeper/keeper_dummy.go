@@ -189,7 +189,9 @@ func (k KVStoreDummy) GetNodeAccountByPubKey(_ cosmos.Context, _ common.PubKey) 
 	return NodeAccount{}, kaboom
 }
 
-func (k KVStoreDummy) SetNodeAccount(_ cosmos.Context, _ NodeAccount) error { return kaboom }
+func (k KVStoreDummy) SetNodeAccount(_ cosmos.Context, _ NodeAccount) error    { return kaboom }
+func (k KVStoreDummy) RemoveNodeAccount(_ cosmos.Context, _ NodeAccount) error { return kaboom }
+
 func (k KVStoreDummy) EnsureNodeKeysUnique(_ cosmos.Context, _ string, _ common.PubKeySet) error {
 	return kaboom
 }

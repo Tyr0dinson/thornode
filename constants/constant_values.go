@@ -68,6 +68,7 @@ const (
 	PermittedSolvencyGap
 	ValidatorMaxRewardRatio
 	PoolDepthForYggFundingMin
+	MinNodeAccountBalance
 )
 
 var nameToString = map[ConstantName]string{
@@ -129,6 +130,7 @@ var nameToString = map[ConstantName]string{
 	PermittedSolvencyGap:          "PermittedSolvencyGap",
 	ValidatorMaxRewardRatio:       "ValidatorMaxRewardRatio",
 	PoolDepthForYggFundingMin:     "PoolDepthForYggFundingMin",
+	MinNodeAccountBalance:         "MinNodeAccountBalance",
 }
 
 // String implement fmt.stringer

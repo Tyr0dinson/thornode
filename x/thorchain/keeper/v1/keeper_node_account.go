@@ -423,3 +423,10 @@ func (k KVStore) ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccA
 	k.setJail(ctx, k.GetKey(ctx, prefixNodeJail, addr.String()), jail)
 	return nil
 }
+
+// RemoveNodeAccount remove the given node account from key value store
+func (k KVStore) RemoveNodeAccount(ctx cosmos.Context, na NodeAccount) error {
+	store := ctx.KVStore(k.storeKey)
+	store.Delete([]byte(k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String())))
+	return nil
+}

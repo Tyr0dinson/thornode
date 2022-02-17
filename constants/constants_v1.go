@@ -54,6 +54,7 @@ func NewConstantValue010() *ConstantVals {
 			PermittedSolvencyGap:          100,                // the setting is in basis points
 			ValidatorMaxRewardRatio:       1,                  // the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 			PoolDepthForYggFundingMin:     500_000_00000000,   // the minimum pool depth in RUNE required for ygg funding
+			MinNodeAccountBalance:         20_00000000,        // Minimum bond to keep node account in the system, bond lower than this will be removed
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
