@@ -77,7 +77,7 @@ lint-erc20s:
 lint: lint-pre lint-handlers lint-erc20s
 	@go run tools/analyze/main.go ./common/... ./constants/... ./x/...
 ifdef CI_PROJECT_ID
-	trunk check --no-progress --monitor=false --upstream origin/develop
+	trunk check --no-progress --monitor=false --upstream origin/chaosnet-multichain
 else
 	trunk check --upstream origin/develop
 endif
