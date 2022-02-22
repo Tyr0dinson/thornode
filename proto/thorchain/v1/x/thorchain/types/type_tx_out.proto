@@ -21,7 +21,7 @@ message TxOutItem {
   string out_hash = 9 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID"];
   string module_name = 10 [json_name="-", (gogoproto.jsontag) = "-"];
   string aggregator = 11 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
-  string aggregator_asset = 12;
+  common.Asset aggregator_asset = 12 [(gogoproto.nullable) = false];
 }
 
 message TxOut {

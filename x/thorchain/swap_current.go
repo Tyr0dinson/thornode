@@ -88,10 +88,10 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		}
 	}
 
-	aggAsset := ""
+	aggAsset := common.EmptyAsset
 	if !dexAgg.IsEmpty() {
 		// override the target asset with target chain gas asset
-		aggAsset = target.String()
+		aggAsset = target
 		target = target.Chain.GetGasAsset()
 	}
 

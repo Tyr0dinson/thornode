@@ -379,7 +379,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			c.Assert(err, IsNil)
 			for _, item := range items {
 				c.Check(item.Aggregator.IsEmpty(), Equals, true)
-				c.Check(item.AggregatorAsset, Equals, "")
+				c.Check(item.AggregatorAsset.IsEmpty(), Equals, true)
 			}
 		} else {
 			c.Assert(err, NotNil, Commentf("Expected: %s, got nil", item.expectedErr.Error()))
@@ -430,7 +430,7 @@ func (s *SwapV81Suite) TestAggregator(c *C) {
 	items := mgr.txOutStore.GetOutboundItemByToAddress(ctx, toAddr)
 	c.Assert(items, HasLen, 1)
 	c.Check(items[0].Aggregator.Equals(agg), Equals, true)
-	c.Check(items[0].AggregatorAsset, Equals, bat.String())
+	c.Check(items[0].AggregatorAsset.String(), Equals, bat.String())
 }
 
 func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {

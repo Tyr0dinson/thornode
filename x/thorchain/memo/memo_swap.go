@@ -16,14 +16,14 @@ type SwapMemo struct {
 	SlipLimit            cosmos.Uint
 	AffiliateAddress     common.Address
 	AffiliateBasisPoints cosmos.Uint
-	DexAggregation       string
+	DexAggregator        string
 }
 
 func (m SwapMemo) GetDestination() common.Address       { return m.Destination }
 func (m SwapMemo) GetSlipLimit() cosmos.Uint            { return m.SlipLimit }
 func (m SwapMemo) GetAffiliateAddress() common.Address  { return m.AffiliateAddress }
 func (m SwapMemo) GetAffiliateBasisPoints() cosmos.Uint { return m.AffiliateBasisPoints }
-func (m SwapMemo) DexAggregator() string                { return m.DexAggregation }
+func (m SwapMemo) GetDexAggregator() string             { return m.DexAggregator }
 
 func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg string) SwapMemo {
 	return SwapMemo{
@@ -32,7 +32,7 @@ func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affA
 		SlipLimit:            slip,
 		AffiliateAddress:     affAddr,
 		AffiliateBasisPoints: affPts,
-		DexAggregation:       dexAgg,
+		DexAggregator:        dexAgg,
 	}
 }
 
@@ -85,7 +85,7 @@ func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset,
 	}
 
 	if strings.HasPrefix(parts[0], "=") && len(parts[0]) > 1 {
-		dexAgg = parts[0][1:len(parts[0])]
+		dexAgg = parts[0][1:]
 	}
 
 	return NewSwapMemo(asset, destination, slip, affAddr, affPts, dexAgg), nil

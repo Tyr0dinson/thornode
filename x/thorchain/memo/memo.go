@@ -168,7 +168,7 @@ type Memo interface {
 	GetTxID() common.TxID
 	GetAccAddress() cosmos.AccAddress
 	GetBlockHeight() int64
-	DexAggregator() string
+	GetDexAggregator() string
 }
 
 type MemoBase struct {
@@ -190,7 +190,7 @@ func (m MemoBase) IsOutbound() bool                 { return m.TxType.IsOutbound
 func (m MemoBase) IsInbound() bool                  { return m.TxType.IsInbound() }
 func (m MemoBase) IsInternal() bool                 { return m.TxType.IsInternal() }
 func (m MemoBase) IsEmpty() bool                    { return m.TxType.IsEmpty() }
-func (m MemoBase) DexAggregator() string            { return "" }
+func (m MemoBase) GetDexAggregator() string         { return "" }
 
 func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 	defer func() {
