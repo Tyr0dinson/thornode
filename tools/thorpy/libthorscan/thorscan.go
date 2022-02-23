@@ -68,6 +68,7 @@ func GetScanBlock() *C.char {
 		}
 	case <-shutdown:
 		close(shutdown)
+		os.Exit(0)
 	}
 	return C.CString(string(jb))
 }
@@ -89,6 +90,7 @@ func GetScanBlockResult() *C.char {
 		}
 	case <-shutdown:
 		close(shutdown)
+		os.Exit(0)
 	}
 	return C.CString(string(jb))
 }
@@ -110,6 +112,7 @@ func GetSubscribeBlock() *C.char {
 		}
 	case <-shutdown:
 		close(shutdown)
+		os.Exit(0)
 	}
 	return C.CString(string(jb))
 }
@@ -131,6 +134,7 @@ func GetSubscribeTx() *C.char {
 		}
 	case <-shutdown:
 		close(shutdown)
+		os.Exit(0)
 	}
 	return C.CString(string(jt))
 }

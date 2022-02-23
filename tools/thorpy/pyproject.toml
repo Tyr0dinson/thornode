@@ -12,6 +12,9 @@ license = {text = "MIT"}
 [project.urls]
 homepage = ""
 
+[project.scripts]
+thorpy = "thorpy:_cli"
+
 [tool]
 [tool.pdm]
 includes = [

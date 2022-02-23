@@ -6,7 +6,8 @@ Things to note:
 
 1. `scan` functions are for processing finite batch jobs with a start and end block
 1. `subscribe` functions are for real time processing via websocket events
-1. If listener functions return a value it will JSON-encoded and dumped to console for one-liner convenience
+1. If listener functions return a value it will be JSON-encoded and dumped to console for one-liner convenience
+1. The `thorpy` CLI is an alias to evaluate the provided arguments within the package scope
 
 See further API documentation here: [docs/thorpy.md](./docs/thorpy.md).
 
@@ -22,40 +23,39 @@ TAG=mainnet make thorpy
 
 ```bash
 # block headers
-python3 -c 'import thorpy; thorpy.subscribe_blocks(lambda b: b["block"]["header"])'
+thorpy 'subscribe_blocks(lambda b: b["block"]["header"])'
 
 # transaction count per block
-python3 -c 'import thorpy; thorpy.subscribe_blocks(lambda b: (b["block"]["header"]["height"], len(b["block"]["data"]["txs"] or [])))'
+thorpy 'subscribe_blocks(lambda b: (b["block"]["header"]["height"], len(b["block"]["data"]["txs"] or [])))'
 
 # confirmed outbounds
-python3 -c 'import thorpy; thorpy.subscribe_block_events(lambda h, e: f"{h}: {e}", types={"outbound"})'
+thorpy 'subscribe_block_events(lambda h, e: f"{h}: {e}", types={"outbound"})'
 
 # all tx events
-python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: e)'
+thorpy 'subscribe_tx_events(lambda h,txh,tx,res,e: e)'
 
 # deposit, withdraw, donate events
-python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: e, types={"add", "withdraw", "add_liquidity"})'
+thorpy 'subscribe_tx_events(lambda h,txh,tx,res,e: e, types={"add", "withdraw", "add_liquidity"})'
 
 # block height and transaction hash for mimir changes
-python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: (h,txh), types={"add", "withdraw", "add_liquidity"})'
+thorpy 'subscribe_tx_events(lambda h,txh,tx,res,e: (h,txh), types={"add", "withdraw", "add_liquidity"})'
 
 # MsgTssKeysignFail messages
-python3 -c 'import thorpy; thorpy.subscribe_msgs(lambda h,txh,m: (m), types={"MsgTssKeysignFail"})'
+thorpy 'subscribe_msgs(lambda h,txh,m: (m), types={"MsgTssKeysignFail"})'
 ```
 
 ### Scan (Historical)
 
 ```bash
 # slash events
-python3 -c 'import thorpy; thorpy.scan_tx_events(4000000, 4100000, lambda h,txr,e: e, types={"slash"})'
+thorpy 'scan_tx_events(4000000, 4100000, lambda h,txr,e: e, types={"slash"})'
 
 # bond cost events
-python3 -c 'import thorpy; thorpy.scan_tx_events(4000000, 4100000, lambda h,txr,e: e if e["bond_type"] == "\u0003", types={"bond"})'
+thorpy 'scan_tx_events(4000000, 4100000, lambda h,txr,e: e if e["bond_type"] == "\u0003", types={"bond"})'
 ```
 
-#### Count Outbound Observations by Chain
-
 ```python
+# count outbound observations by chain
 import collections, json, thorpy
 
 counts = collections.defaultdict(lambda: 0)

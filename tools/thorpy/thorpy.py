@@ -1,9 +1,11 @@
 import base64
 import hashlib
 import json
+import sys
 from typing import Any, Callable, Dict, Optional, Set
 
 from libthorscan import libthorscan as thorscan
+
 
 ########################################################################################
 # Internal Helpers
@@ -358,3 +360,12 @@ def subscribe_msgs(
         _listen(height, txhash, tx)
 
     subscribe_txs(__listen)
+
+
+########################################################################################
+# CLI
+########################################################################################
+
+
+def _cli():
+    eval(" ".join(sys.argv[1:]))
