@@ -11,6 +11,10 @@ vendor
 .vendor-new
 observe
 *balances.json
+__pycache__
+__pypackages__
+tools/thorpy/libthorscan/libthorscan.*
+tools/thorpy/dist
 
 # IDE
 .idea/

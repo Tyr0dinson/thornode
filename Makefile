@@ -27,6 +27,18 @@ BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
 
 all: lint install
 
+build-thorpy:
+	@echo "--> Ensure python dependencies are installed: pip3 install cffi pdm"
+	rm -rf tools/thorpy/thorscan.*
+	go build -o ./tools/thorpy/libthorscan/libthorscan.so ${BUILD_FLAGS} -tags ${TAG} -buildmode=c-archive ./tools/thorpy/libthorscan
+	cd tools/thorpy/libthorscan && \
+		python3 gen.py && \
+		rm libthorscan.c libthorscan.o libthorscan.h libthorscan.so
+	cd tools/thorpy/ && pdm build
+
+thorpy: build-thorpy
+	pip3 install tools/thorpy
+
 protob:
 	@sh scripts/protocgen.sh
 
