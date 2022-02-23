@@ -1,4 +1,4 @@
-# Overview
+# Thorpy
 
 `thorpy` allows for data wrangling of blocks, events, transactions, and Cosmos messages with Python. It relies on a shared object generated from the Golang libraries to handle RPC calls, websocket subscriptions, and protobuf serialization.
 
@@ -10,45 +10,50 @@ Things to note:
 
 See further API documentation here: [docs/thorpy.md](./docs/thorpy.md).
 
-# Install
+## Install
 
 ```bash
 TAG=mainnet make thorpy
 ```
 
-# Examples
+## Examples
 
-## Subscribe (Real Time)
-
-### One Liners
+### Subscribe (Real Time)
 
 ```bash
-# print all events
+# block headers
+python3 -c 'import thorpy; thorpy.subscribe_blocks(lambda b: b["block"]["header"])'
+
+# transaction count per block
+python3 -c 'import thorpy; thorpy.subscribe_blocks(lambda b: (b["block"]["header"]["height"], len(b["block"]["data"]["txs"] or [])))'
+
+# confirmed outbounds
+python3 -c 'import thorpy; thorpy.subscribe_block_events(lambda h, e: f"{h}: {e}", types={"outbound"})'
+
+# all tx events
 python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: e)'
 
-# print deposit, withdraw, donate events
+# deposit, withdraw, donate events
 python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: e, types={"add", "withdraw", "add_liquidity"})'
 
-# print block height and transaction hash for mimir changes
+# block height and transaction hash for mimir changes
 python3 -c 'import thorpy; thorpy.subscribe_tx_events(lambda h,txh,tx,res,e: (h,txh), types={"add", "withdraw", "add_liquidity"})'
 
-# print MsgTssKeysignFail messages
+# MsgTssKeysignFail messages
 python3 -c 'import thorpy; thorpy.subscribe_msgs(lambda h,txh,m: (m), types={"MsgTssKeysignFail"})'
 ```
 
-## Scan (Historical)
-
-### One Liners
+### Scan (Historical)
 
 ```bash
-# dump slash events
+# slash events
 python3 -c 'import thorpy; thorpy.scan_tx_events(4000000, 4100000, lambda h,txr,e: e, types={"slash"})'
 
-# dump bond cost events
+# bond cost events
 python3 -c 'import thorpy; thorpy.scan_tx_events(4000000, 4100000, lambda h,txr,e: e if e["bond_type"] == "\u0003", types={"bond"})'
 ```
 
-### Count Outbound Observations by Chain
+#### Count Outbound Observations by Chain
 
 ```python
 import collections, json, thorpy

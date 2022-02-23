@@ -2,16 +2,10 @@
 
 # <kbd>module</kbd> `libthorscan`
 
+## **Global Variables**
 
-
-
-**Global Variables**
----------------
 - **ffi**
 - **lib**
-
-
-
 
 ---
 

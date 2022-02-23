@@ -4,10 +4,6 @@
 
 # <kbd>module</kbd> `thorpy`
 
-
-
-
-
 ---
 
 <a href="../../tools/thorpy/thorpy.py#L80"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
@@ -22,16 +18,13 @@ scan_blocks(
 )
 ```
 
-Scan blocks from a start height. 
-
-
+Scan blocks from a start height.
 
 **Args:**
- 
- - <b>`start`</b>:  height to start scan 
- - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting the block event (block) 
 
+- <b>`start`</b>: height to start scan
+- <b>`end`</b>: height to end scan
+- <b>`listeners`</b>: listener functions accepting the block event (block)
 
 ---
 
@@ -48,17 +41,14 @@ scan_block_events(
 )
 ```
 
-Scan end block events from a start height. 
-
-
+Scan end block events from a start height.
 
 **Args:**
- 
- - <b>`start`</b>:  height to start scan 
- - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting (height, event) 
- - <b>`types`</b>:  event types to filter 
 
+- <b>`start`</b>: height to start scan
+- <b>`end`</b>: height to end scan
+- <b>`listeners`</b>: listener functions accepting (height, event)
+- <b>`types`</b>: event types to filter
 
 ---
 
@@ -76,18 +66,15 @@ scan_tx_events(
 )
 ```
 
-Scan transaction events from a start height. 
-
-
+Scan transaction events from a start height.
 
 **Args:**
- 
- - <b>`start`</b>:  height to start scan 
- - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting (height, tx_result, event) 
- - <b>`types`</b>:  event types to filter 
- - <b>`actions`</b>:  event actions to filter 
 
+- <b>`start`</b>: height to start scan
+- <b>`end`</b>: height to end scan
+- <b>`listeners`</b>: listener functions accepting (height, tx_result, event)
+- <b>`types`</b>: event types to filter
+- <b>`actions`</b>: event actions to filter
 
 ---
 
@@ -103,16 +90,13 @@ scan_txs(
 )
 ```
 
-Scan transactions from a start height. 
-
-
+Scan transactions from a start height.
 
 **Args:**
- 
- - <b>`start`</b>:  height to start scan 
- - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx) 
 
+- <b>`start`</b>: height to start scan
+- <b>`end`</b>: height to end scan
+- <b>`listeners`</b>: listener functions accepting (height, txhash, tx)
 
 ---
 
@@ -129,17 +113,14 @@ scan_msgs(
 )
 ```
 
-Scan transaction messages from a start height. 
-
-
+Scan transaction messages from a start height.
 
 **Args:**
- 
- - <b>`start`</b>:  height to start scan 
- - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting (height, txhash, msg) 
- - <b>`types`</b>:  message types to filter 
 
+- <b>`start`</b>: height to start scan
+- <b>`end`</b>: height to end scan
+- <b>`listeners`</b>: listener functions accepting (height, txhash, msg)
+- <b>`types`</b>: message types to filter
 
 ---
 
@@ -151,14 +132,11 @@ Scan transaction messages from a start height.
 subscribe_blocks(*listeners: Callable[[Dict[str, Any]], NoneType])
 ```
 
-Subscribe to new blocks. 
-
-
+Subscribe to new blocks.
 
 **Args:**
- 
- - <b>`listeners`</b>:  listener functions accepting the block event (block) 
 
+- <b>`listeners`</b>: listener functions accepting the block event (block)
 
 ---
 
@@ -170,14 +148,11 @@ Subscribe to new blocks.
 subscribe_block_events(*listeners: Callable[[int, Dict[str, Any]], NoneType])
 ```
 
-Subscribe to new end block events. 
-
-
+Subscribe to new end block events.
 
 **Args:**
- 
- - <b>`listeners`</b>:  listener functions accepting (height, event) 
 
+- <b>`listeners`</b>: listener functions accepting (height, event)
 
 ---
 
@@ -191,14 +166,11 @@ subscribe_txs(
 )
 ```
 
-Subscribe to new transactions. 
-
-
+Subscribe to new transactions.
 
 **Args:**
- 
- - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result) 
 
+- <b>`listeners`</b>: listener functions accepting (height, txhash, tx, result)
 
 ---
 
@@ -214,14 +186,11 @@ subscribe_tx_events(
 )
 ```
 
-Subscribe to new tx events. 
-
-
+Subscribe to new tx events.
 
 **Args:**
- 
- - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result, event) 
 
+- <b>`listeners`</b>: listener functions accepting (height, txhash, tx, result, event)
 
 ---
 
@@ -236,17 +205,12 @@ subscribe_msgs(
 )
 ```
 
-Subscribe to new transaction messages. 
-
-
+Subscribe to new transaction messages.
 
 **Args:**
- 
- - <b>`listeners`</b>:  listener functions accepting (height, txhash, msg) 
- - <b>`types`</b>:  message types to filter 
 
-
-
+- <b>`listeners`</b>: listener functions accepting (height, txhash, msg)
+- <b>`types`</b>: message types to filter
 
 ---
 

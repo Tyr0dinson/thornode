@@ -25,11 +25,13 @@ import (
 // -------------------------------------------------------------------------------------
 
 const (
-	// environment keys
+	// ---------- environment keys ----------
+
 	EnvPreFetch    = "PREFETCH"
 	EnvRPCEndpoint = "RPC_ENDPOINT"
 
-	// static configuration
+	// ---------- static configuration ----------
+
 	RPCWebsocketPath = "/websocket"
 )
 
@@ -38,11 +40,13 @@ const (
 // -------------------------------------------------------------------------------------
 
 var (
-	// environment config
+	// ---------- environment config ----------
+
 	PreFetch    = 32
 	RPCEndpoint = "http://rpc-http.ninerealms.com:80" // current tendermint missing tls
 
-	// decoders
+	// ---------- decoders ----------
+
 	DecodeTx     sdktypes.TxDecoder
 	EncodeTx     sdktypes.TxEncoder
 	DecodeTxJSON sdktypes.TxDecoder
@@ -210,7 +214,10 @@ func SubscribeBlocks() <-chan *tendertypes.EventDataNewBlock {
 	out := make(chan *tendertypes.EventDataNewBlock)
 	go func() {
 		for {
-			b := (<-sub).Data.(tendertypes.EventDataNewBlock)
+			b, ok := (<-sub).Data.(tendertypes.EventDataNewBlock)
+			if !ok {
+				log.Fatal().Msg("failed invariant")
+			}
 			out <- &b
 		}
 	}()
@@ -231,7 +238,10 @@ func SubscribeTxs() <-chan *tendertypes.EventDataTx {
 	out := make(chan *tendertypes.EventDataTx)
 	go func() {
 		for {
-			b := (<-sub).Data.(tendertypes.EventDataTx)
+			b, ok := (<-sub).Data.(tendertypes.EventDataTx)
+			if !ok {
+				log.Fatal().Msg("failed invariant")
+			}
 			out <- &b
 		}
 	}()

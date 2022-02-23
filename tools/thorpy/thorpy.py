@@ -1,11 +1,9 @@
-from typing import Any, Dict, Callable, Optional, Set
-
 import base64
 import hashlib
 import json
+from typing import Any, Callable, Dict, Optional, Set
 
 from libthorscan import libthorscan as thorscan
-
 
 ########################################################################################
 # Internal Helpers
@@ -16,8 +14,13 @@ def _print(ret: Optional[str]):
     """
     Print the provided value if it is not None.
     """
-    if ret is not None:
+    if ret is None:
+        return
+
+    if type(ret) == dict:
         print(json.dumps(ret, indent=2))
+    else:
+        print(ret)
 
 
 def _event_dict(event: Dict[str, Any]) -> Dict[str, str]:
@@ -25,6 +28,8 @@ def _event_dict(event: Dict[str, Any]) -> Dict[str, str]:
     Convert base64 encoded key-value pairs into a dictionary.
     """
     e = {"type": event["type"]}
+    if "attributes" not in event:
+        return e
     for a in event["attributes"]:
         if a["value"] is None:
             continue
@@ -254,17 +259,24 @@ def subscribe_blocks(*listeners: Callable[[Dict[str, Any]], Optional[str]]):
             _print(l(b))
 
 
-def subscribe_block_events(*listeners: Callable[[int, Dict[str, Any]], Optional[str]]):
+def subscribe_block_events(
+    *listeners: Callable[[int, Dict[str, Any]], Optional[str]],
+    types: Optional[Set[str]] = None,
+):
     """
     Subscribe to new end block events.
 
     Args:
         listeners: listener functions accepting (height, event)
+        types: event types to filter
     """
 
     def _listen(block):
         for event in block["result_end_block"]["events"]:
             for l in listeners:
+                event = _event_dict(event)
+                if types is not None and event["type"] not in types:
+                    continue
                 _print(l(block["block"]["header"]["height"], _event_dict(event)))
 
     subscribe_blocks(_listen)

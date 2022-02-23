@@ -5,6 +5,9 @@ import (
 	"C"
 	"encoding/base64"
 	"encoding/json"
+	"os"
+	"os/signal"
+	"syscall"
 	"unsafe"
 
 	"github.com/rs/zerolog/log"
@@ -12,11 +15,6 @@ import (
 
 	coretypes "github.com/tendermint/tendermint/rpc/core/types"
 	tendertypes "github.com/tendermint/tendermint/types"
-)
-import (
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 // -------------------------------------------------------------------------------------
