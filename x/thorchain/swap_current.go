@@ -129,7 +129,7 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
 	swapEvents = append(swapEvents, swapEvt)
-	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) {
+	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) && dexAgg.IsEmpty() {
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, swapTarget)
 	}
 	if target.IsRune() {
