@@ -40,11 +40,24 @@ def _event_dict(event: Dict[str, Any]) -> Dict[str, str]:
     return e
 
 
-def _gen_tx_msgs_listen(
+########################################################################################
+# Helpers
+########################################################################################
+
+
+def tx_msgs_listener(
     *listeners: Callable[[int, str, Dict[str, Any]], Optional[str]],
     types: Optional[Set[str]] = None,
-):
-    def _listen(height, txhash, tx):
+) -> Callable[[int, str, Dict[str, Any], Dict[str, Any]], None]:
+    """
+    Returns a transaction listener which executes the provided message listeners.
+
+    Args:
+        listeners: listener functions accepting (height, txhash, msg)
+        types: message types to filter
+    """
+
+    def _listen(height: int, txhash: str, tx: Dict[str, Any], result: Dict[str, Any]):
         for msg in tx["body"]["messages"]:
 
             # simplify the type format
@@ -235,7 +248,7 @@ def scan_msgs(
         listeners: listener functions accepting (height, txhash, msg)
         types: message types to filter
     """
-    scan_txs(start, end, _gen_tx_msgs_listen(*listeners, types=types))
+    scan_txs(start, end, tx_msgs_listener(*listeners, types=types))
 
 
 ########################################################################################
@@ -353,13 +366,7 @@ def subscribe_msgs(
         listeners: listener functions accepting (height, txhash, msg)
         types: message types to filter
     """
-
-    _listen = _gen_tx_msgs_listen(*listeners, types=types)
-
-    def __listen(height, txhash, tx, _):
-        _listen(height, txhash, tx)
-
-    subscribe_txs(__listen)
+    subscribe_txs(tx_msgs_listener(*listeners, types=types))
 
 
 ########################################################################################
