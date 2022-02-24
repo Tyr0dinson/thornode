@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -25,6 +26,8 @@ import (
 // consumer to poll for updates and this allows for the cleanest API contract.
 
 var (
+	mu = &sync.Mutex{}
+
 	scanBlocks       <-chan *coretypes.ResultBlock
 	scanBlockResults <-chan *coretypes.ResultBlockResults
 	subscribeBlocks  <-chan *tendertypes.EventDataNewBlock
@@ -53,6 +56,12 @@ func Free(p unsafe.Pointer) {
 
 //export ScanBlocks
 func ScanBlocks(start C.int) {
+	mu.Lock()
+	defer mu.Unlock()
+	if scanBlocks != nil {
+		log.Fatal().Msg("block scanner can only be started once")
+	}
+	log.Info().Msg("starting block scanner")
 	scanBlocks = thorscan.ScanBlocks(int(start))
 }
 
@@ -75,6 +84,12 @@ func GetScanBlock() *C.char {
 
 //export ScanBlockResults
 func ScanBlockResults(start C.int) {
+	mu.Lock()
+	defer mu.Unlock()
+	if scanBlockResults != nil {
+		log.Fatal().Msg("block result scanner can only be started once")
+	}
+	log.Info().Msg("starting block result scanner")
 	scanBlockResults = thorscan.ScanBlockResults(int(start))
 }
 
@@ -97,6 +112,12 @@ func GetScanBlockResult() *C.char {
 
 //export SubscribeBlocks
 func SubscribeBlocks() {
+	mu.Lock()
+	defer mu.Unlock()
+	if subscribeBlocks != nil {
+		log.Fatal().Msg("block subscription can only be started once")
+	}
+	log.Info().Msg("starting block subscription")
 	subscribeBlocks = thorscan.SubscribeBlocks()
 }
 
@@ -119,6 +140,12 @@ func GetSubscribeBlock() *C.char {
 
 //export SubscribeTxs
 func SubscribeTxs() {
+	mu.Lock()
+	defer mu.Unlock()
+	if subscribeTxs != nil {
+		log.Fatal().Msg("transaction subscription can only be started once")
+	}
+	log.Info().Msg("starting transaction subscription")
 	subscribeTxs = thorscan.SubscribeTxs()
 }
 

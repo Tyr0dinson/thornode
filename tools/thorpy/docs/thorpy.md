@@ -18,10 +18,10 @@
 tx_msgs_listener(
     *listeners: Callable[[int, str, Dict[str, Any]], Optional[str]],
     types: Optional[Set[str]] = None
-) → Callable[[int, str, Dict[str, Any], Dict[str, Any]], NoneType]
+) → Callable[[int, str, Dict[str, Any], Optional[Dict[str, Any]]], NoneType]
 ```
 
-Returns a transaction listener which executes the provided message listeners. 
+Returns a transaction listener which executes provided message listeners. 
 
 
 
@@ -33,7 +33,32 @@ Returns a transaction listener which executes the provided message listeners.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L81"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L78"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+
+## <kbd>function</kbd> `tx_events_listener`
+
+```python
+tx_events_listener(
+    *listeners: Callable[[int, str, Dict[str, Any], Dict[str, Any], Dict[str, str]], Optional[str]],
+    types: Optional[Set[str]] = None,
+    actions: Optional[Set[str]] = None
+) → Callable[[int, str, Dict[str, Any], Optional[Dict[str, Any]]], NoneType]
+```
+
+Returns a transaction listener which executes provided transaction event listeners. 
+
+
+
+**Args:**
+ 
+ - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result, event) 
+ - <b>`types`</b>:  event types to filter 
+ - <b>`actions`</b>:  event actions to filter 
+
+
+---
+
+<a href="../../../tools/thorpy/thorpy.py#L116"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scan_blocks`
 
@@ -58,7 +83,7 @@ Scan blocks from a start height.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L106"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L141"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scan_block_events`
 
@@ -85,7 +110,7 @@ Scan end block events from a start height.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L143"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L178"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scan_txs`
 
@@ -93,7 +118,7 @@ Scan end block events from a start height.
 scan_txs(
     start: int,
     end: int,
-    *listeners: Callable[[int, str, Dict[str, Any], Dict[str, Any]], Optional[str]],
+    *listeners: Callable[[int, str, Dict[str, Any], Optional[Dict[str, Any]]], Optional[str]],
     successful: bool = True,
     failed: bool = True,
     result: bool = False
@@ -111,12 +136,12 @@ Scan transactions from a start height.
  - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result) 
  - <b>`successful`</b>:  scan successful transactions 
  - <b>`failed`</b>:  scan failed transactions 
- - <b>`result`</b>:  include the transaction result 
+ - <b>`result`</b>:  always include the transaction result 
 
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L198"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L243"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scan_tx_events`
 
@@ -124,7 +149,7 @@ Scan transactions from a start height.
 scan_tx_events(
     start: int,
     end: int,
-    *listeners: Callable[[int, Dict[str, Any], Dict[str, str]], Optional[str]],
+    *listeners: Callable[[int, str, Dict[str, Any], Dict[str, Any], Dict[str, str]], Optional[str]],
     types: Optional[Set[str]] = None,
     actions: Optional[Set[str]] = None
 )
@@ -138,14 +163,14 @@ Scan transaction events from a start height.
  
  - <b>`start`</b>:  height to start scan 
  - <b>`end`</b>:  height to end scan 
- - <b>`listeners`</b>:  listener functions accepting (height, tx_result, event) 
+ - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result, event) 
  - <b>`types`</b>:  event types to filter 
  - <b>`actions`</b>:  event actions to filter 
 
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L236"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L270"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `scan_msgs`
 
@@ -172,7 +197,7 @@ Scan transaction messages from a start height.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L259"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L293"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `subscribe_blocks`
 
@@ -191,7 +216,7 @@ Subscribe to new blocks.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L277"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L311"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `subscribe_block_events`
 
@@ -214,7 +239,7 @@ Subscribe to new end block events.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L300"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L334"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `subscribe_txs`
 
@@ -235,7 +260,7 @@ Subscribe to new transactions.
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L331"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L365"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `subscribe_tx_events`
 
@@ -254,11 +279,13 @@ Subscribe to new tx events.
 **Args:**
  
  - <b>`listeners`</b>:  listener functions accepting (height, txhash, tx, result, event) 
+ - <b>`types`</b>:  event types to filter 
+ - <b>`actions`</b>:  event actions to filter 
 
 
 ---
 
-<a href="../../../tools/thorpy/thorpy.py#L358"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
+<a href="../../../tools/thorpy/thorpy.py#L383"><img align="right" style="float:right;" src="https://img.shields.io/badge/-source-cccccc?style=flat-square"></a>
 
 ## <kbd>function</kbd> `subscribe_msgs`
 
