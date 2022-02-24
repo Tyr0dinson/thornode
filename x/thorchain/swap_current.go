@@ -88,10 +88,10 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		}
 	}
 
-	aggAsset := common.EmptyAsset
+	aggTarget := common.NoCoin
 	if !dexAgg.IsEmpty() {
 		// override the target asset with target chain gas asset
-		aggAsset = target
+		aggTarget = common.NewCoin(target, swapTarget)
 		target = target.Chain.GetGasAsset()
 	}
 
@@ -152,12 +152,12 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	}
 
 	toi := TxOutItem{
-		Chain:           target.GetChain(),
-		InHash:          tx.ID,
-		ToAddress:       destination,
-		Coin:            common.NewCoin(target, assetAmount),
-		Aggregator:      dexAgg,
-		AggregatorAsset: aggAsset,
+		Chain:            target.GetChain(),
+		InHash:           tx.ID,
+		ToAddress:        destination,
+		Coin:             common.NewCoin(target, assetAmount),
+		Aggregator:       dexAgg,
+		AggregatorTarget: aggTarget,
 	}
 	// let the txout manager mint our outbound asset if it is a synthetic asset
 	if toi.Chain.IsTHORChain() && toi.Coin.Asset.IsSyntheticAsset() {
