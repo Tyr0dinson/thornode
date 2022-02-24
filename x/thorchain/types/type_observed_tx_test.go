@@ -420,7 +420,6 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	c.Assert(tx1.Equals(tx2), Equals, false)
 	tx2.AggregatorTarget = tx1.AggregatorTarget
 	c.Assert(tx1.Equals(tx2), Equals, true)
-
 }
 
 func (TypeObservedTxSuite) TestObservedTxVote(c *C) {
