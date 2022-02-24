@@ -63,6 +63,18 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if m.FinaliseHeight != tx2.FinaliseHeight {
 		return false
 	}
+	if m.Aggregator != tx2.Aggregator {
+		return false
+	}
+	if m.AggregatorTarget == nil {
+		m.AggregatorTarget = &common.NoCoin
+	}
+	if tx2.AggregatorTarget == nil {
+		tx2.AggregatorTarget = &common.NoCoin
+	}
+	if !m.AggregatorTarget.Equals(*tx2.AggregatorTarget) {
+		return false
+	}
 
 	return true
 }

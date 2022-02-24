@@ -398,6 +398,29 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	for _, item := range inputs {
 		c.Assert(item.tx.Equals(item.tx1), Equals, item.equal)
 	}
+
+	// test aggregator scenarios
+	addr := GetRandomBNBAddress()
+	tx1 := NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: addr, Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, 0)
+	tx2 := NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: addr, Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, 0)
+	c.Assert(tx1.Equals(tx2), Equals, true)
+
+	tx1.Aggregator = GetRandomBNBAddress()
+	c.Assert(tx1.Equals(tx2), Equals, false)
+	tx2.Aggregator = GetRandomBNBAddress()
+	c.Assert(tx1.Equals(tx2), Equals, false)
+	tx2.Aggregator = tx1.Aggregator
+	c.Assert(tx1.Equals(tx2), Equals, true)
+
+	coin := common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One))
+	badCoin := common.NewCoin(common.BNBAsset, cosmos.NewUint(101*common.One))
+	tx1.AggregatorTarget = &coin
+	c.Assert(tx1.Equals(tx2), Equals, false)
+	tx2.AggregatorTarget = &badCoin
+	c.Assert(tx1.Equals(tx2), Equals, false)
+	tx2.AggregatorTarget = tx1.AggregatorTarget
+	c.Assert(tx1.Equals(tx2), Equals, true)
+
 }
 
 func (TypeObservedTxSuite) TestObservedTxVote(c *C) {

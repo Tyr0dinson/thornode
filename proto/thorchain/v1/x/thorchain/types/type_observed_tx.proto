@@ -25,6 +25,8 @@ message ObservedTx {
   string observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   int64 keysign_ms = 7;
   int64 finalise_height = 8;
+  string aggregator = 9 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  common.Coin aggregator_target = 10;
 }
 
 message ObservedTxVoter {
