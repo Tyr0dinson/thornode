@@ -35,6 +35,7 @@ const (
 	RPCWebsocketPath = "/websocket"
 	BlockBuffer      = 8    // necessary to avoid websocket hangup
 	TxBuffer         = 1024 // necessary to avoid websocket hangup
+	WebsocketTimeout = time.Minute
 )
 
 // -------------------------------------------------------------------------------------
@@ -220,11 +221,17 @@ func SubscribeBlocks() <-chan *tendertypes.EventDataNewBlock {
 	out := make(chan *tendertypes.EventDataNewBlock, BlockBuffer)
 	go func() {
 		for {
-			b, ok := (<-sub).Data.(tendertypes.EventDataNewBlock)
-			if !ok {
-				log.Fatal().Msg("failed invariant")
+			timeout := time.After(WebsocketTimeout)
+			select {
+			case <-timeout:
+				log.Fatal().Msg("websocket block read timeout")
+			case e := <-sub:
+				b, ok := e.Data.(tendertypes.EventDataNewBlock)
+				if !ok {
+					log.Fatal().Msg("failed invariant")
+				}
+				out <- &b
 			}
-			out <- &b
 		}
 	}()
 
@@ -244,11 +251,17 @@ func SubscribeTxs() <-chan *tendertypes.EventDataTx {
 	out := make(chan *tendertypes.EventDataTx, TxBuffer)
 	go func() {
 		for {
-			b, ok := (<-sub).Data.(tendertypes.EventDataTx)
-			if !ok {
-				log.Fatal().Msg("failed invariant")
+			timeout := time.After(WebsocketTimeout)
+			select {
+			case <-timeout:
+				log.Fatal().Msg("websocket block read timeout")
+			case e := <-sub:
+				b, ok := e.Data.(tendertypes.EventDataTx)
+				if !ok {
+					log.Fatal().Msg("failed invariant")
+				}
+				out <- &b
 			}
-			out <- &b
 		}
 	}()
 
