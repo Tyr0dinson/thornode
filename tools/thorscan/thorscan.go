@@ -33,6 +33,8 @@ const (
 	// ---------- static configuration ----------
 
 	RPCWebsocketPath = "/websocket"
+	BlockBuffer      = 8    // necessary to avoid websocket hangup
+	TxBuffer         = 1024 // necessary to avoid websocket hangup
 )
 
 // -------------------------------------------------------------------------------------
@@ -102,7 +104,7 @@ func init() {
 }
 
 // -------------------------------------------------------------------------------------
-// Exported
+// Exported - Scanners
 // -------------------------------------------------------------------------------------
 
 func ScanBlocks(start int) <-chan *coretypes.ResultBlock {
@@ -201,6 +203,10 @@ func ScanBlockResults(start int) <-chan *coretypes.ResultBlockResults {
 	return out
 }
 
+// -------------------------------------------------------------------------------------
+// Exported - Subscribers
+// -------------------------------------------------------------------------------------
+
 func SubscribeBlocks() <-chan *tendertypes.EventDataNewBlock {
 	ctx := context.Background()
 
@@ -211,7 +217,7 @@ func SubscribeBlocks() <-chan *tendertypes.EventDataNewBlock {
 	}
 
 	// start routine to extract data from subscription
-	out := make(chan *tendertypes.EventDataNewBlock)
+	out := make(chan *tendertypes.EventDataNewBlock, BlockBuffer)
 	go func() {
 		for {
 			b, ok := (<-sub).Data.(tendertypes.EventDataNewBlock)
@@ -235,7 +241,7 @@ func SubscribeTxs() <-chan *tendertypes.EventDataTx {
 	}
 
 	// start routine to extract data from subscription
-	out := make(chan *tendertypes.EventDataTx)
+	out := make(chan *tendertypes.EventDataTx, TxBuffer)
 	go func() {
 		for {
 			b, ok := (<-sub).Data.(tendertypes.EventDataTx)
