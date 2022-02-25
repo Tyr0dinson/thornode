@@ -14,6 +14,10 @@ See further API documentation here: [docs/thorpy.md](./docs/thorpy.md).
 ## Install
 
 ```bash
+# ensure python dependencies are installed
+pip3 install cffi pdm
+
+# build and install thorpy locally
 TAG=mainnet make thorpy
 ```
 
