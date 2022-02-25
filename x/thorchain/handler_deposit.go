@@ -243,7 +243,10 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 func (h DepositHandler) addSwapV65(ctx cosmos.Context, msg MsgSwap) {
 	amt := cosmos.ZeroUint()
 	swapSourceAsset := msg.Tx.Coins[0].Asset
+
 	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
+
+		// Affiliate fee can be paid out in RUNE or a synthetic asset based on msg.Tx.Coins[0].Asset
 		amt = common.GetSafeShare(
 			msg.AffiliateBasisPoints,
 			cosmos.NewUint(10000),

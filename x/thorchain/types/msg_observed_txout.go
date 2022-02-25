@@ -46,6 +46,11 @@ func (m *MsgObservedTxOut) ValidateBasic() error {
 		if tx.Status != Status_incomplete {
 			return cosmos.ErrUnknownRequest("status must be incomplete")
 		}
+		for _, coin := range tx.Tx.Coins {
+			if coin.IsNative() {
+				return cosmos.ErrUnknownRequest("all coins must NOT be native to THORChain")
+			}
+		}
 	}
 	return nil
 }
