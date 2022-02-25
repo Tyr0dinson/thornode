@@ -63,10 +63,10 @@ thorpy 'scan_txs(4010000, 4100000, lambda h,txh,tx,txr: (txh,txr["gas_used"]), f
 thorpy 'scan_txs(4010000, 4100000, lambda h,txh,tx,txr: (txh,txr), successful=False)'
 
 # slash and leave events
-thorpy 'scan_tx_events(4020000, 4030000, lambda h,txr,e: (h,e), types={"slash", "validator_request_leave"})'
+thorpy 'scan_tx_events(4027000, 4030000, lambda h,txh,tx,txr,e: (h,e), types={"slash", "validator_request_leave"})'
 
 # bond cost events
-thorpy 'scan_tx_events(4000000, 4010000, lambda h,txr,e: e if e["bond_type"] == "\u0003" else None, types={"bond"})'
+thorpy 'scan_tx_events(4000000, 4010000, lambda h,txh,tx,txr,e: e if e["bond_type"] == "\u0003" else None, types={"bond"})'
 ```
 
 ```python
