@@ -36,7 +36,10 @@ def _event_dict(event: Dict[str, Any]) -> Dict[str, str]:
         if a["value"] is None:
             continue
         key = base64.b64decode(a["key"]).decode("utf-8")
-        e[key] = base64.b64decode(a["value"]).decode("utf-8")
+        try:
+            e[key] = base64.b64decode(a["value"]).decode("utf-8")
+        except:
+            e[key] = a["value"]
     return e
 
 
