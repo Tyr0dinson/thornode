@@ -52,7 +52,8 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 	chains map[common.Chain]chainclients.ChainClient,
 	thorchainBridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics, dataPath string,
-	tssKeysignMetricMgr *metrics.TssKeysignMetricMgr) (*Observer, error) {
+	tssKeysignMetricMgr *metrics.TssKeysignMetricMgr,
+) (*Observer, error) {
 	logger := log.Logger.With().Str("module", "observer").Logger()
 	storage, err := NewObserverStorage(dataPath)
 	if err != nil {
@@ -307,7 +308,7 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInItem) (txs []types.TxInItem) {
 	// finds the destination address, and supports THORNames
 	fetchAddr := func(memo string, bridge *thorclient.ThorchainBridge) common.Address {
-		m, err := mem.ParseMemo(memo)
+		m, err := mem.ParseMemo(common.LatestVersion, memo)
 		if err != nil {
 			o.logger.Error().Err(err).Msgf("Unable to parse memo: %s", memo)
 			return common.NoAddress
