@@ -64,6 +64,7 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 		return false
 	}
 	if m.Aggregator != tx2.Aggregator {
+		fmt.Printf("ObservedTx Equals: aggregators do not match!")
 		return false
 	}
 	if m.AggregatorTarget == nil {
@@ -73,6 +74,7 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 		tx2.AggregatorTarget = &common.NoCoin
 	}
 	if !m.AggregatorTarget.Equals(*tx2.AggregatorTarget) {
+		fmt.Printf("ObservedTx Equals: aggregator targets do not match!")
 		return false
 	}
 
