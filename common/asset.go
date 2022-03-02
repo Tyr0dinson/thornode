@@ -34,6 +34,7 @@ var (
 	RuneNative            = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	RuneERC20Asset        = Asset{Chain: ETHChain, Symbol: "RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE", Synth: false}
 	RuneERC20TestnetAsset = Asset{Chain: ETHChain, Symbol: "RUNE-0xd601c6A3a36721320573885A8d8420746dA3d7A0", Ticker: "RUNE", Synth: false}
+	THORUSD               = Asset{Chain: THORChain, Symbol: "USD", Ticker: "USD", Synth: false}
 )
 
 // NewAsset parse the given input into Asset object
@@ -117,10 +118,28 @@ func (a Asset) IsSyntheticAsset() bool {
 	return a.Synth
 }
 
+// Get derived asset of asset
+func (a Asset) GetDerivedAsset() Asset {
+	return Asset{
+		Chain:  THORChain,
+		Symbol: a.Symbol,
+		Ticker: a.Ticker,
+		Synth:  false,
+	}
+}
+
+// Check if asset is a derived asset
+func (a Asset) IsDerivedAsset() bool {
+	return !a.Synth && a.Chain.IsTHORChain() && !a.IsRune()
+}
+
 // Native return native asset, only relevant on THORChain
 func (a Asset) Native() string {
 	if a.IsRune() {
 		return "rune"
+	}
+	if a.Equals(THORUSD) {
+		return "usd"
 	}
 	return strings.ToLower(a.String())
 }

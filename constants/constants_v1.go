@@ -19,6 +19,9 @@ func NewConstantValue010() *ConstantVals {
 			MinimumNodesForBFT:             4,                  // Minimum node count to keep network running. Below this, Ragnarök is performed.
 			DesiredValidatorSet:            100,                // desire validator set
 			AsgardSize:                     40,                 // desired node operators in an asgard vault
+			DerivedDepthBasisPts:           10_000,             // Basis points to increase/decrease derived pool depth (10k == 1x)
+			MaxAnchorSlip:                  1500,               // basis points of rune depth to trigger pausing a derived virtual pool
+			MaxAnchorBlocks:                300,                // max blocks to accumulate swap slips in anchor pools
 			FundMigrationInterval:          360,                // number of blocks THORNode will attempt to move funds from a retiring vault to an active one
 			ChurnInterval:                  43200,              // How many blocks THORNode try to rotate validators
 			ChurnRetryInterval:             720,                // How many blocks until we retry a churn (only if we haven't had a successful churn in ChurnInterval blocks

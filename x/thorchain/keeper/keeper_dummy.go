@@ -35,6 +35,10 @@ func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, key stri
 func (k KVStoreDummy) GetStoreVersion(ctx cosmos.Context) int64      { return 1 }
 func (k KVStoreDummy) SetStoreVersion(ctx cosmos.Context, ver int64) {}
 
+func (k KVStoreDummy) GetUSDBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
 func (k KVStoreDummy) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
@@ -270,6 +274,18 @@ func (k KVStoreDummy) GetTotalLiquidityFees(_ cosmos.Context, _ uint64) (cosmos.
 }
 
 func (k KVStoreDummy) GetPoolLiquidityFees(_ cosmos.Context, _ uint64, _ common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) AddToSwapSlip(ctx cosmos.Context, asset common.Asset, amt cosmos.Uint) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RollupSwapSlip(ctx cosmos.Context, blockCount int64, _ common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetPoolSwapSlip(ctx cosmos.Context, height int64, asset common.Asset) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
 }
 

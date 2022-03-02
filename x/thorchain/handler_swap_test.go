@@ -100,6 +100,10 @@ func (k *TestSwapHandleKeeper) AddToLiquidityFees(_ cosmos.Context, _ common.Ass
 	return nil
 }
 
+func (k *TestSwapHandleKeeper) AddToSwapSlip(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) error {
+	return nil
+}
+
 func (k *TestSwapHandleKeeper) GetTotalSupply(_ cosmos.Context, _ common.Asset) cosmos.Uint {
 	return k.synthSupply
 }

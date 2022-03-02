@@ -61,15 +61,16 @@ func (vm *NetworkMgrV76) processGenesisSetup(ctx cosmos.Context) error {
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
-	} else {
+	} else { // nolint
 		// Trigger a keygen ceremony
-		err := vm.TriggerKeygen(ctx, active)
-		if err != nil {
+		if err := vm.TriggerKeygen(ctx, active); err != nil {
 			return fmt.Errorf("fail to trigger a keygen: %w", err)
 		}
 	}
 	return nil
 }
+
+func (vm *NetworkMgrV76) BeginBlock(ctx cosmos.Context, mgr Manager) error { return nil }
 
 // EndBlock move funds from retiring asgard vaults
 func (vm *NetworkMgrV76) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
@@ -535,6 +536,9 @@ func (vm *NetworkMgrV76) ragnarokChain(ctx cosmos.Context, chain common.Chain, n
 		ctx.Logger().Error("can't get active nodes", "error", err)
 		return err
 	}
+	if chain.IsTHORChain() {
+		return fmt.Errorf("can't ragnarok THORChain")
+	}
 	if len(nas) == 0 {
 		return fmt.Errorf("can't find any active nodes")
 	}
@@ -760,6 +764,11 @@ func (vm *NetworkMgrV76) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Pool
 		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to unmarhsl pool: %w", err)
 		}
+
+		if pool.Asset.Chain.IsTHORChain() {
+			continue
+		}
+
 		if !pool.BalanceRune.IsZero() {
 			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.BalanceRune)
 			pools = append(pools, pool)

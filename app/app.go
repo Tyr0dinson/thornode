@@ -94,6 +94,7 @@ var (
 		thorchain.AsgardName:           {},
 		thorchain.BondName:             {},
 		thorchain.ReserveName:          {},
+		thorchain.USDName:              {},
 	}
 
 	// module accounts that are allowed to receive tokens

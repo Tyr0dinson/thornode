@@ -8,10 +8,9 @@ import (
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/constants"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )

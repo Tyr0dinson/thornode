@@ -465,8 +465,8 @@ func (s *HelperSuite) TestDollarInRune(c *C) {
 	pool.BalanceAsset = cosmos.NewUint(709802235538353)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	runeUSDPrice := telem(DollarInRune(ctx, mgr))
-	c.Assert(runeUSDPrice, Equals, float32(0.12047733))
+	runeUSDPrice := telem(DollarInRune(ctx, mgr).QuoUint64(1e9))
+	c.Assert(runeUSDPrice, Equals, float32(8.300317))
 }
 
 func (s *HelperSuite) TestTelem(c *C) {

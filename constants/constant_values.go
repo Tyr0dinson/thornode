@@ -25,6 +25,9 @@ const (
 	MinimumNodesForBFT
 	DesiredValidatorSet
 	AsgardSize
+	DerivedDepthBasisPts
+	MaxAnchorSlip
+	MaxAnchorBlocks
 	ChurnInterval
 	ChurnRetryInterval
 	ValidatorsChangeWindow
@@ -93,6 +96,9 @@ var nameToString = map[ConstantName]string{
 	MinimumNodesForBFT:             "MinimumNodesForBFT",
 	DesiredValidatorSet:            "DesiredValidatorSet",
 	AsgardSize:                     "AsgardSize",
+	DerivedDepthBasisPts:           "DerivedDepthBasisPts",
+	MaxAnchorSlip:                  "MaxAnchorSlip",
+	MaxAnchorBlocks:                "MaxAnchorBlocks",
 	ChurnInterval:                  "ChurnInterval",
 	ChurnRetryInterval:             "ChurnRetryInterval",
 	ValidatorsChangeWindow:         "ValidatorsChangeWindow",

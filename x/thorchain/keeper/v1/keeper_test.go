@@ -90,6 +90,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		ReserveName:                    {},
 		AsgardName:                     {},
 		BondName:                       {authtypes.Staking},
+		USDName:                        {},
 	}
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keys[paramstypes.StoreKey], tkeyParams)

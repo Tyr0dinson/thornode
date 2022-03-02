@@ -18,6 +18,7 @@ type Keeper interface {
 	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
 	SetStoreVersion(ctx cosmos.Context, ver int64)
+	GetUSDBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
 	SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coins) error
 	SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coins) error
@@ -44,6 +45,7 @@ type Keeper interface {
 	KeeperObservedTx
 	KeeperTxOut
 	KeeperLiquidityFees
+	KeeperSwapSlip
 	KeeperVault
 	KeeperReserveContributors
 	KeeperNetwork
@@ -141,6 +143,13 @@ type KeeperLiquidityFees interface {
 	AddToLiquidityFees(ctx cosmos.Context, asset common.Asset, fee cosmos.Uint) error
 	GetTotalLiquidityFees(ctx cosmos.Context, height uint64) (cosmos.Uint, error)
 	GetPoolLiquidityFees(ctx cosmos.Context, height uint64, asset common.Asset) (cosmos.Uint, error)
+}
+
+// nolint
+type KeeperSwapSlip interface {
+	AddToSwapSlip(ctx cosmos.Context, asset common.Asset, amt cosmos.Uint) error
+	RollupSwapSlip(ctx cosmos.Context, blockCount int64, _ common.Asset) (cosmos.Uint, error)
+	GetPoolSwapSlip(ctx cosmos.Context, height int64, asset common.Asset) (cosmos.Uint, error)
 }
 
 type KeeperVault interface {

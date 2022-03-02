@@ -85,13 +85,15 @@ func (h WithdrawLiquidityHandler) validateV80(ctx cosmos.Context, msg MsgWithdra
 
 func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.75.0")) {
+	if version.GTE(semver.MustParse("1.88.0")) {
+		return h.handleV88(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.75.0")) {
 		return h.handleV75(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
-func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
+func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
@@ -121,6 +123,10 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 			ToAddress: lp.AssetAddress,
 			Coin:      common.NewCoin(msg.Asset, assetAmount),
 			Memo:      memo,
+		}
+		// if the outbound asset is THOR.USD send from USDName instead of AsgardName module
+		if msg.Asset.Equals(common.THORUSD) {
+			toi.ModuleName = USDName
 		}
 		if !gasAsset.IsZero() {
 			// TODO: chain specific logic should be in a single location

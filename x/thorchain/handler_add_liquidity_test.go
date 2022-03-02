@@ -694,3 +694,75 @@ func (HandlerAddLiquiditySuite) TestAssetOnlyProvidedLiquidity(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(pool.LPUnits.Uint64(), Equals, uint64(12500000000), Commentf("%d", pool.LPUnits.Uint64()))
 }
+
+func (HandlerAddLiquiditySuite) TestAddTHORUSDNoLPs(c *C) {
+	// there is an odd case where its possible in a virtual pool to have a
+	// balance asset of non-zero BUT have no LPs yet. Testing this edge case.
+	ctx, k := setupKeeperForTest(c)
+	txID := GetRandomTxHash()
+
+	c.Assert(k.SetPool(ctx, Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(10 * common.One),
+		Asset:        common.THORUSD,
+		LPUnits:      cosmos.ZeroUint(),
+		SynthUnits:   cosmos.ZeroUint(),
+		Status:       PoolAvailable,
+	}), IsNil)
+
+	coin := common.NewCoin(common.THORUSD, cosmos.NewUint(35*common.One))
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, USDName, common.NewCoins(coin)), IsNil)
+
+	addr := GetRandomTHORAddress()
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
+	err := h.addLiquidity(ctx, common.THORUSD, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), common.NoAddress, addr, txID, false, constAccessor)
+	c.Assert(err, IsNil)
+
+	su, err := k.GetLiquidityProvider(ctx, common.THORUSD, addr)
+	c.Assert(err, IsNil)
+	c.Assert(su.Units.Uint64(), Equals, uint64(10000000000), Commentf("%d", su.Units.Uint64()))
+
+	pool, err := k.GetPool(ctx, common.THORUSD)
+	c.Assert(err, IsNil)
+	// ensure balance did NOT change
+	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(100*common.One), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Assert(pool.BalanceAsset.Uint64(), Equals, uint64(10*common.One), Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Assert(pool.LPUnits.Uint64(), Equals, uint64(10000000000), Commentf("%d", pool.LPUnits.Uint64()))
+}
+
+func (HandlerAddLiquiditySuite) TestAddTHORUSD(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	txID := GetRandomTxHash()
+
+	c.Assert(k.SetPool(ctx, Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(10 * common.One),
+		Asset:        common.THORUSD,
+		LPUnits:      cosmos.NewUint(10000),
+		SynthUnits:   cosmos.ZeroUint(),
+		Status:       PoolAvailable,
+	}), IsNil)
+
+	coin := common.NewCoin(common.THORUSD, cosmos.NewUint(35*common.One))
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, USDName, common.NewCoins(coin)), IsNil)
+
+	addr := GetRandomTHORAddress()
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
+	err := h.addLiquidity(ctx, common.THORUSD, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), common.NoAddress, addr, txID, false, constAccessor)
+	c.Assert(err, IsNil)
+
+	su, err := k.GetLiquidityProvider(ctx, common.THORUSD, addr)
+	c.Assert(err, IsNil)
+	c.Assert(su.Units.Uint64(), Equals, uint64(3703), Commentf("%d", su.Units.Uint64()))
+
+	pool, err := k.GetPool(ctx, common.THORUSD)
+	c.Assert(err, IsNil)
+	// ensure balance did NOT change
+	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(100*common.One), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Assert(pool.BalanceAsset.Uint64(), Equals, uint64(10*common.One), Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Assert(pool.LPUnits.Uint64(), Equals, uint64(13703), Commentf("%d", pool.LPUnits.Uint64()))
+}

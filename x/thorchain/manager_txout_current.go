@@ -415,8 +415,15 @@ func (tos *TxOutStorageV88) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 								ModuleName,
 								common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
 								ctx.Logger().Error("fail to move synth asset fee from asgard to Module", "error", err)
-							} else if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
-								ctx.Logger().Error("fail to burn synth asset", "error", err)
+							} else {
+								if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
+									ctx.Logger().Error("fail to burn synth asset", "error", err)
+								} else {
+									burnEvt := NewEventMintBurn(BurnSupplyType, outputs[i].Coin.Asset.Native(), assetFee, "burn_synth_fee")
+									if err := tos.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
+										ctx.Logger().Error("fail to emit burn event", "error", err)
+									}
+								}
 							}
 						}
 					}
@@ -657,6 +664,10 @@ func (tos *TxOutStorageV88) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 	if toi.ModuleName == ModuleName {
 		if err := tos.keeper.MintToModule(ctx, toi.ModuleName, toi.Coin); err != nil {
 			return fmt.Errorf("fail to mint coins during txout: %w", err)
+		}
+		mintEvt := NewEventMintBurn(MintSupplyType, toi.Coin.Asset.Native(), toi.Coin.Amount, "native_tx_out")
+		if err := tos.eventMgr.EmitEvent(ctx, mintEvt); err != nil {
+			ctx.Logger().Error("fail to emit mint event", "error", err)
 		}
 	}
 

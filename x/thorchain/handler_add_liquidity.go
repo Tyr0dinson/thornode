@@ -48,13 +48,16 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.76.0")) {
+	// nolint
+	if version.GTE(semver.MustParse("1.88.0")) {
+		return h.validateV88(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.76.0")) {
 		return h.validateV76(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h AddLiquidityHandler) validateV76(ctx cosmos.Context, msg MsgAddLiquidity) error {
+func (h AddLiquidityHandler) validateV88(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		ctx.Logger().Error(err.Error())
 		return errAddLiquidityFailValidation
@@ -85,7 +88,24 @@ func (h AddLiquidityHandler) validateV76(ctx cosmos.Context, msg MsgAddLiquidity
 		return fmt.Errorf("unable to add liquidity while chain has paused LP actions")
 	}
 
+	if msg.Asset.Chain.IsTHORChain() {
+		if (!msg.AssetAddress.IsEmpty() && !msg.RuneAddress.IsEmpty()) && msg.AssetAddress.Equals(msg.RuneAddress) {
+			return fmt.Errorf("asset address and rune address must be the same for native asset pools")
+		}
+		if isVirtualPool(h.mgr.GetVersion(), msg.Asset) {
+			if !msg.RuneAmount.IsZero() {
+				return fmt.Errorf("cannot deposit rune into THOR.USD pool")
+			}
+		}
+	}
+
 	ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
+	// if the pool is THORChain (ie THOR.USD), no need ot check economic
+	// security
+	if msg.Asset.Chain.IsTHORChain() || !ensureLiquidityNoLargerThanBond {
+		return nil
+	}
+
 	// the following  only applicable for chaosnet
 	totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)
 	if err != nil {
@@ -109,9 +129,6 @@ func (h AddLiquidityHandler) validateV76(ctx cosmos.Context, msg MsgAddLiquidity
 		}
 	}
 
-	if !ensureLiquidityNoLargerThanBond {
-		return nil
-	}
 	totalBondRune, err := h.getTotalActiveBond(ctx)
 	if err != nil {
 		return ErrInternal(err, "fail to get total bond RUNE")
@@ -126,13 +143,16 @@ func (h AddLiquidityHandler) validateV76(ctx cosmos.Context, msg MsgAddLiquidity
 
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.63.0")) {
+	// nolint
+	if version.GTE(semver.MustParse("1.88.0")) {
+		return h.handleV88(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.63.0")) {
 		return h.handleV63(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h AddLiquidityHandler) handleV63(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+func (h AddLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
 	if err != nil {
 		return ErrInternal(err, "fail to get pool")
@@ -170,11 +190,13 @@ func (h AddLiquidityHandler) handleV63(ctx cosmos.Context, msg MsgAddLiquidity) 
 	// figure out if we need to stage the funds and wait for a follow on
 	// transaction to commit all funds atomically
 	stage := false
-	if !msg.AssetAddress.IsEmpty() && msg.AssetAmount.IsZero() {
-		stage = true
-	}
-	if !msg.RuneAddress.IsEmpty() && msg.RuneAmount.IsZero() {
-		stage = true
+	if !msg.Asset.Chain.IsTHORChain() {
+		if !msg.AssetAddress.IsEmpty() && msg.AssetAmount.IsZero() {
+			stage = true
+		}
+		if !msg.RuneAddress.IsEmpty() && msg.RuneAmount.IsZero() {
+			stage = true
+		}
 	}
 
 	if msg.AffiliateBasisPoints.IsZero() {
@@ -314,13 +336,16 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	constAccessor constants.ConstantValues,
 ) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.79.0")) {
+	// nolint
+	if version.GTE(semver.MustParse("1.88.0")) {
+		return h.addLiquidityV88(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
+	} else if version.GTE(semver.MustParse("0.79.0")) {
 		return h.addLiquidityV79(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
 	}
 	return errBadVersion
 }
 
-func (h AddLiquidityHandler) addLiquidityV79(ctx cosmos.Context,
+func (h AddLiquidityHandler) addLiquidityV88(ctx cosmos.Context,
 	asset common.Asset,
 	addRuneAmount, addAssetAmount cosmos.Uint,
 	runeAddr, assetAddr common.Address,
@@ -333,13 +358,14 @@ func (h AddLiquidityHandler) addLiquidityV79(ctx cosmos.Context,
 		return fmt.Errorf("add liquidity message fail validation: %w", err)
 	}
 
+	isVirtual := isVirtualPool(h.mgr.GetVersion(), asset)
+
 	pool, err := h.mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
 	}
-	ver := h.mgr.Keeper().GetLowestActiveVersion(ctx)
 	synthSupply := h.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-	originalUnits := pool.CalcUnits(ver, synthSupply)
+	originalUnits := pool.CalcUnits(h.mgr.GetVersion(), synthSupply)
 
 	// if THORNode have no balance, set the default pool status
 	if originalUnits.IsZero() {
@@ -371,16 +397,24 @@ func (h AddLiquidityHandler) addLiquidityV79(ctx cosmos.Context,
 			}
 		}
 
-		// ensure input addresses match LP position addresses
-		if !runeAddr.Equals(su.RuneAddress) {
-			return errAddLiquidityMismatchAddr
-		}
-		if !assetAddr.Equals(su.AssetAddress) {
-			return errAddLiquidityMismatchAddr
+		if isVirtual {
+			// new SU, by default, places the thor address to the rune address,
+			// but here we want it to be on the asset address only
+			su.AssetAddress = assetAddr
+			su.RuneAddress = common.NoAddress // no rune to add/withdraw
+		} else {
+
+			// ensure input addresses match LP position addresses
+			if !runeAddr.Equals(su.RuneAddress) {
+				return errAddLiquidityMismatchAddr
+			}
+			if !assetAddr.Equals(su.AssetAddress) {
+				return errAddLiquidityMismatchAddr
+			}
 		}
 	}
 
-	if !assetAddr.IsEmpty() && !su.AssetAddress.Equals(assetAddr) {
+	if !assetAddr.IsEmpty() && !su.AssetAddress.Equals(assetAddr) && !isVirtual {
 		// mismatch of asset addresses from what is known to the address
 		// given. Refund it.
 		return errAddLiquidityMismatchAddr
@@ -444,8 +478,18 @@ func (h AddLiquidityHandler) addLiquidityV79(ctx cosmos.Context,
 	balanceRune := pool.BalanceRune
 	balanceAsset := pool.BalanceAsset
 
+	if isVirtual {
+		// overwrite pool balances as it is a virtual pool
+		balanceRune = cosmos.OneUint() // need set to 1 so that math calculations work
+		balanceAsset = h.mgr.Keeper().GetUSDBalanceOfModule(ctx, USDName)
+	}
+
 	oldPoolUnits := pool.GetPoolUnits()
 	newPoolUnits, liquidityUnits, err := calculatePoolUnitsV1(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
+	if isVirtual && newPoolUnits.IsZero() && liquidityUnits.IsZero() {
+		newPoolUnits = pendingAssetAmt
+		liquidityUnits = pendingAssetAmt
+	}
 	if err != nil {
 		return ErrInternal(err, "fail to calculate pool unit")
 	}
@@ -453,8 +497,11 @@ func (h AddLiquidityHandler) addLiquidityV79(ctx cosmos.Context,
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
-	pool.BalanceRune = poolRune
-	pool.BalanceAsset = poolAsset
+	// don't actually update pool balances if THOR.USD, its a virtual pool
+	if !isVirtual {
+		pool.BalanceRune = poolRune
+		pool.BalanceAsset = poolAsset
+	}
 	ctx.Logger().Info("post add liquidity", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "LP units", pool.LPUnits, "synth units", pool.SynthUnits, "add liquidity units", liquidityUnits)
 	if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
@@ -516,7 +563,17 @@ func (h AddLiquidityHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.U
 		if p.Status == PoolSuspended {
 			continue
 		}
+		if p.Asset.Chain.IsTHORChain() {
+			continue
+		}
 		total = total.Add(p.BalanceRune)
 	}
 	return total, nil
+}
+
+func isVirtualPool(ver semver.Version, asset common.Asset) bool {
+	if ver.GTE(semver.MustParse("0.1.0")) {
+		return asset.Equals(common.THORUSD)
+	}
+	return false
 }

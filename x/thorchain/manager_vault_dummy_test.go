@@ -15,6 +15,8 @@ func NewVaultMgrDummy() *VaultMgrDummy {
 	return &VaultMgrDummy{}
 }
 
+func (vm *VaultMgrDummy) BeginBlock(ctx cosmos.Context, mgr Manager) error { return nil }
+
 func (vm *VaultMgrDummy) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
 	return nil
 }

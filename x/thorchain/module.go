@@ -175,6 +175,10 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	}
 	am.mgr.GasMgr().BeginBlock()
 
+	if err := am.mgr.VaultMgr().BeginBlock(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to begin network manager", "error", err)
+	}
+
 	constantValues := constants.GetConstantValues(version)
 	if constantValues == nil {
 		ctx.Logger().Error("constants is not available", "version", version)

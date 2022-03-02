@@ -449,9 +449,6 @@ func fetchConfigInt64(ctx cosmos.Context, mgr Manager, key constants.ConstantNam
 	val, err := mgr.Keeper().GetMimir(ctx, key.String())
 	if val < 0 || err != nil {
 		val = mgr.GetConstants().GetInt64Value(key)
-		if err != nil {
-			ctx.Logger().Error("fail to fetch mimir value", "key", key.String(), "error", err)
-		}
 	}
 	return val
 }
@@ -501,6 +498,10 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 		var pool Pool
 		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return err
+		}
+
+		if pool.Asset.Chain.IsTHORChain() {
+			continue
 		}
 
 		switch pool.Status {
@@ -859,6 +860,16 @@ func isLPPausedV1(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 	return false
 }
 
+func usdAssets(version semver.Version) []common.Asset {
+	if version.GTE(semver.MustParse("0.1.0")) {
+		busd, _ := common.NewAsset("BNB.BUSD-BD1")
+		usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+		usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+		return []common.Asset{busd, usdc, usdt}
+	}
+	return nil
+}
+
 // gets the amount of rune that is equal to 1 USD
 func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 	// check for mimir override
@@ -867,13 +878,14 @@ func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 		return cosmos.NewUint(uint64(dollarInRune))
 	}
 
-	busd, _ := common.NewAsset("BNB.BUSD-BD1")
-	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
-	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-	usdAssets := []common.Asset{busd, usdc, usdt}
+	usdAssets := usdAssets(mgr.GetVersion())
 
-	usd := make([]cosmos.Uint, 0)
-	for _, asset := range usdAssets {
+	return anchorMedian(ctx, mgr, usdAssets)
+}
+
+func anchorMedian(ctx cosmos.Context, mgr Manager, assets []common.Asset) cosmos.Uint {
+	p := make([]cosmos.Uint, 0)
+	for _, asset := range assets {
 		if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, asset.Chain) {
 			continue
 		}
@@ -885,31 +897,37 @@ func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 		if pool.Status != PoolAvailable {
 			continue
 		}
-		value := pool.AssetValueInRune(cosmos.NewUint(common.One))
+		value := pool.RuneValueInAsset(cosmos.NewUint(1e9 * common.One))
 		if !value.IsZero() {
-			usd = append(usd, value)
+			p = append(p, value)
 		}
 	}
+	return median(p)
+}
 
-	if len(usd) == 0 {
+func median(vals []cosmos.Uint) cosmos.Uint {
+	switch len(vals) {
+	case 0:
 		return cosmos.ZeroUint()
+	case 1:
+		return vals[0]
 	}
 
-	sort.SliceStable(usd, func(i, j int) bool {
-		return usd[i].Uint64() < usd[j].Uint64()
+	sort.SliceStable(vals, func(i, j int) bool {
+		return vals[i].Uint64() < vals[j].Uint64()
 	})
 
 	// calculate median of our USD figures
 	var median cosmos.Uint
-	if len(usd)%2 > 0 {
+	if len(vals)%2 > 0 {
 		// odd number of figures in our slice. Take the middle figure. Since
 		// slices start with an index of zero, just need to length divide by two.
-		medianSpot := len(usd) / 2
-		median = usd[medianSpot]
+		medianSpot := len(vals) / 2
+		median = vals[medianSpot]
 	} else {
 		// even number of figures in our slice. Average the middle two figures.
-		pt1 := usd[len(usd)/2-1]
-		pt2 := usd[len(usd)/2]
+		pt1 := vals[len(vals)/2-1]
+		pt2 := vals[len(vals)/2]
 		median = pt1.Add(pt2).QuoUint64(2)
 	}
 	return median
@@ -998,7 +1016,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// get 1 RUNE price in USD
-	runeUSDPrice := 1 / telem(DollarInRune(ctx, mgr))
+	runeUSDPrice := telem(DollarInRune(ctx, mgr).QuoUint64(1e9))
 	telemetry.SetGauge(runeUSDPrice, "thornode", "price", "usd", "thor", "rune")
 
 	// emit pool metrics

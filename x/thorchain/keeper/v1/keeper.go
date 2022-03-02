@@ -30,6 +30,7 @@ const (
 	prefixTxOut                  kvTypes.DbPrefix = "txout/"
 	prefixTotalLiquidityFee      kvTypes.DbPrefix = "total_liquidity_fee/"
 	prefixPoolLiquidityFee       kvTypes.DbPrefix = "pool_liquidity_fee/"
+	prefixPoolSwapSlip           kvTypes.DbPrefix = "pool_swap_slip/"
 	prefixLiquidityProvider      kvTypes.DbPrefix = "lp/"
 	prefixLastChainHeight        kvTypes.DbPrefix = "last_chain_height/"
 	prefixLastSignedHeight       kvTypes.DbPrefix = "last_signed_height/"
@@ -260,6 +261,13 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 func (k KVStore) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
 	addr := k.accountKeeper.GetModuleAddress(moduleName)
 	coin := k.coinKeeper.GetBalance(ctx, addr, common.RuneNative.Native())
+	return cosmos.NewUintFromBigInt(coin.Amount.BigInt())
+}
+
+// GetUSDBalanceOfModule get the RUNE balance
+func (k KVStore) GetUSDBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
+	addr := k.accountKeeper.GetModuleAddress(moduleName)
+	coin := k.coinKeeper.GetBalance(ctx, addr, common.THORUSD.Native())
 	return cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 }
 

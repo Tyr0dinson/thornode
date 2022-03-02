@@ -12,6 +12,7 @@ const (
 	ReserveName      = types.ReserveName
 	AsgardName       = types.AsgardName
 	BondName         = types.BondName
+	USDName          = types.USDName
 	RouterKey        = types.RouterKey
 	StoreKey         = types.StoreKey
 	DefaultCodespace = types.DefaultCodespace
@@ -56,6 +57,10 @@ const (
 	// Bond type
 	AddPendingLiquidity      = types.PendingLiquidityType_add
 	WithdrawPendingLiquidity = types.PendingLiquidityType_withdraw
+
+	// Mint/Burn type
+	MintSupplyType = types.MintBurnSupplyType_mint
+	BurnSupplyType = types.MintBurnSupplyType_burn
 
 	// Memos
 	TxSwap            = mem.TxSwap
@@ -126,6 +131,7 @@ var (
 	NewEventPoolBalanceChanged     = types.NewEventPoolBalanceChanged
 	NewEventPendingLiquidity       = types.NewEventPendingLiquidity
 	NewEventTHORName               = types.NewEventTHORName
+	NewEventMintBurn               = types.NewEventMintBurn
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx

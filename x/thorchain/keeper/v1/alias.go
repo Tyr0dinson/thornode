@@ -9,6 +9,7 @@ const (
 	ReserveName = types.ReserveName
 	AsgardName  = types.AsgardName
 	BondName    = types.BondName
+	USDName     = types.USDName
 	StoreKey    = types.StoreKey
 
 	// Vaults
