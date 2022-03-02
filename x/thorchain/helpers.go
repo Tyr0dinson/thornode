@@ -347,9 +347,6 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, slashRune)
 	bp.Adjust(nodeAcc.Bond) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
-	if !provider.IsEmpty() && provider.Bond.IsZero() {
-		return fmt.Errorf("provider %s doesn't have any bond left", acc.String())
-	}
 	if !provider.IsEmpty() && !provider.Bond.IsZero() {
 		if amt.GT(provider.Bond) {
 			amt = provider.Bond
@@ -379,13 +376,13 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
+		nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, amt)
 	} else {
 		// if it get into here that means the node account doesn't have any bond left after slash.
 		// which means the real slashed RUNE could be the bond they have before slash
 		slashRune = bondBeforeSlash
 	}
 
-	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, amt)
 	if nodeAcc.RequestedToLeave {
 		// when node already request to leave , it can't come back , here means the node already unbond
 		// so set the node to disabled status
