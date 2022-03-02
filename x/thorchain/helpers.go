@@ -347,7 +347,9 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, slashRune)
 	bp.Adjust(nodeAcc.Bond) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
-
+	if !provider.IsEmpty() && provider.Bond.IsZero() {
+		return fmt.Errorf("provider %s doesn't have any bond left", acc.String())
+	}
 	if !provider.IsEmpty() && !provider.Bond.IsZero() {
 		if amt.GT(provider.Bond) {
 			amt = provider.Bond
