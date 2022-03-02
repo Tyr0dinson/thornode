@@ -152,6 +152,10 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 			}}`))
 				c.Assert(err, IsNil)
 			}
+			if rpcRequest.Method == "eth_blockNumber" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
+				c.Assert(err, IsNil)
+			}
 			if rpcRequest.Method == "eth_getBlockByNumber" {
 				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{
 				"difficulty": "0x31962a3fc82b",
@@ -288,7 +292,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	c.Check(e2.GetChain(), Equals, common.ETHChain)
 	height, err := e2.GetHeight()
 	c.Assert(err, IsNil)
-	c.Check(height, Equals, int64(7))
+	c.Check(height, Equals, int64(6))
 	gasPrice := e2.GetGasPrice()
 	c.Check(gasPrice.Uint64(), Equals, uint64(0))
 

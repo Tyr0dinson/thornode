@@ -49,6 +49,7 @@ const (
 	defaultDecimals        = 18 // on ETH , consolidate all decimals to 18, in Wei
 	tenGwei                = 10000000000
 	gasCacheBlocks         = 20
+	blockLag               = 1
 )
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
@@ -159,11 +160,11 @@ func (e *ETHScanner) getContext() (context.Context, context.CancelFunc) {
 func (e *ETHScanner) GetHeight() (int64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	block, err := e.client.BlockByNumber(ctx, nil)
+	height, err := e.client.BlockNumber(ctx)
 	if err != nil {
 		return -1, fmt.Errorf("fail to get block height: %w", err)
 	}
-	return block.Number().Int64(), nil
+	return int64(height) - blockLag, nil
 }
 
 // FetchMemPool get tx from mempool
