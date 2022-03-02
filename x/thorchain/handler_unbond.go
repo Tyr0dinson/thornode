@@ -129,10 +129,13 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
-
-	ygg, err := h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
-	if err != nil {
-		return err
+	ygg := Vault{}
+	if h.mgr.Keeper().VaultExists(ctx, na.PubKeySet.Secp256k1) {
+		var err error
+		ygg, err = h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
+		if err != nil {
+			return err
+		}
 	}
 
 	if ygg.HasFunds() {
