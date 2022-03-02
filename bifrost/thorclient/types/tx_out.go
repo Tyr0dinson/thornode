@@ -74,8 +74,8 @@ type TxArrayItem struct {
 	GasRate          int64          `json:"gas_rate,omitempty"`
 	InHash           common.TxID    `json:"in_hash,omitempty"`
 	OutHash          common.TxID    `json:"out_hash,omitempty"`
-	Aggregator       comm.Address   `json:"aggregator,omitempty"`
-	AggregatorTarget comm.Coin      `json:"aggregator_target,omitempty"`
+	Aggregator       common.Address `json:"aggregator,omitempty"`
+	AggregatorTarget common.Coin    `json:"aggregator_target,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem
