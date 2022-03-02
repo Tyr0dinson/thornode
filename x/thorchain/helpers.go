@@ -317,13 +317,13 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	}
 	bp.NodeOperatorFee = cosmos.NewUint(uint64(defaultNodeOperatorFee))
 
+	bondAddress, err := nodeAcc.BondAddress.AccAddress()
+	if err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", nodeAcc.BondAddress))
+	}
 	// backfil bond provider information (passive migration code)
 	if len(bp.Providers) == 0 {
 		// no providers yet, add node operator bond address to the bond provider list
-		bondAddress, err := nodeAcc.BondAddress.AccAddress()
-		if err != nil {
-			return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", nodeAcc.BondAddress))
-		}
 		p := NewBondProvider(bondAddress)
 		p.Bond = nodeAcc.Bond
 		bp.Providers = append(bp.Providers, p)
@@ -345,7 +345,7 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	}
 	bondBeforeSlash := nodeAcc.Bond
 	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, slashRune)
-	bp.Adjust(nodeAcc.Bond) // redistribute node bond amongst bond providers
+	bp.Adjust(nodeAcc.Bond, bondAddress) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
 	if !provider.IsEmpty() && !provider.Bond.IsZero() {
 		if amt.GT(provider.Bond) {

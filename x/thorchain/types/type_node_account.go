@@ -299,7 +299,7 @@ func (bp *BondProviders) Remove(acc cosmos.AccAddress) bool {
 }
 
 // realigns the bond providers relative to the node bond
-func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
+func (bp *BondProviders) Adjust(nodeBond cosmos.Uint, bondAddr cosmos.AccAddress) {
 	totalBond := cosmos.ZeroUint()
 	for _, provider := range bp.Providers {
 		totalBond = totalBond.Add(provider.Bond)
@@ -321,7 +321,7 @@ func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
 	for i := range bp.Providers {
 		bond := bp.Providers[i].Bond
 		bp.Providers[i].Bond = common.GetSafeShare(bond, totalBond, nodeBond)
-		if bp.Providers[i].BondAddress.Equals(bp.NodeAddress) {
+		if bp.Providers[i].BondAddress.Equals(bondAddr) {
 			bp.Providers[i].Bond = bp.Providers[i].Bond.Add(fee)
 		}
 	}

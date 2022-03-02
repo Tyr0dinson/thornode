@@ -203,7 +203,7 @@ func (s *NodeAccountSuite) TestBondProviders(c *C) {
 	bp.Bond(cosmos.NewUint(100000), acc2)
 	bp.Bond(cosmos.NewUint(50000), acc3)
 
-	bp.Adjust(cosmos.NewUint(500000))
+	bp.Adjust(cosmos.NewUint(500000), acc1)
 	c.Check(bp.Get(acc1).Bond.Uint64(), Equals, uint64(336667))
 	c.Check(bp.Get(acc2).Bond.Uint64(), Equals, uint64(108889))
 	c.Check(bp.Get(acc3).Bond.Uint64(), Equals, uint64(54444))
@@ -216,7 +216,7 @@ func (s *NodeAccountSuite) TestBondProviders(c *C) {
 	bp.Bond(cosmos.NewUint(100000), acc2)
 	bp.Bond(cosmos.NewUint(50000), acc3)
 
-	bp.Adjust(cosmos.NewUint(500000))
+	bp.Adjust(cosmos.NewUint(500000), GetRandomBech32Addr())
 	c.Check(bp.Get(acc1).Bond.Uint64(), Equals, uint64(333333))
 	c.Check(bp.Get(acc2).Bond.Uint64(), Equals, uint64(111111))
 	c.Check(bp.Get(acc3).Bond.Uint64(), Equals, uint64(55556))

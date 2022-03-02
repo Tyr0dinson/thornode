@@ -487,7 +487,11 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	if err != nil {
 		return nil, fmt.Errorf("fail to get bond providers: %w", err)
 	}
-	bp.Adjust(nodeAcc.Bond)
+	bondAddr, err := nodeAcc.BondAddress.AccAddress()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node account bond address")
+	}
+	bp.Adjust(nodeAcc.Bond, bondAddr)
 
 	result := NewQueryNodeAccount(nodeAcc)
 	result.SlashPoints = slashPts
@@ -632,8 +636,14 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		result[i].BondProviders, err = mgr.Keeper().GetBondProviders(ctx, result[i].NodeAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
+			continue
 		}
-		result[i].BondProviders.Adjust(result[i].Bond)
+		bondAddr, err := result[i].BondAddress.AccAddress()
+		if err != nil {
+			ctx.Logger().Error("fail to get bond address", "error", err)
+			continue
+		}
+		result[i].BondProviders.Adjust(result[i].Bond, bondAddr)
 	}
 
 	res, err := json.MarshalIndent(result, "", "	")
