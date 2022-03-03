@@ -110,16 +110,15 @@ func (h CommonOutboundTxHandler) handleV85(ctx cosmos.Context, tx ObservedTx, in
 			// outbound tx hash correctly given every tx item will only have
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
-
-			ctx.Logger().Info("Common Outbound Aggregator: (%s) \n%+v\n%+v", tx.Aggregator.Equals(txOutItem.Aggregator), tx.Aggregator, txOutItem.Aggregator)
-			ctx.Logger().Info("Common Outbound AggregatorTarget: (%s) \n%+v\n%+v", tx.AggregatorTarget.Equals(txOutItem.AggregatorTarget), tx.AggregatorTarget, txOutItem.AggregatorTarget)
-
+			if txOutItem.AggregatorTarget == nil {
+				txOutItem.AggregatorTarget = &common.NoCoin
+			}
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
 				tx.Aggregator.Equals(txOutItem.Aggregator) &&
-				tx.AggregatorTarget.Equals(txOutItem.AggregatorTarget) &&
+				tx.AggregatorTarget.Equals(*txOutItem.AggregatorTarget) &&
 				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
