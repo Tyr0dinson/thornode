@@ -80,13 +80,14 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor c
 
 		if coin.Asset.IsRune() || !pool.BalanceRune.IsZero() {
 			toi := TxOutItem{
-				Chain:       coin.Asset.GetChain(),
-				InHash:      tx.Tx.ID,
-				ToAddress:   tx.Tx.FromAddress,
-				VaultPubKey: tx.ObservedPubKey,
-				Coin:        coin,
-				Memo:        NewRefundMemo(tx.Tx.ID).String(),
-				ModuleName:  nativeRuneModuleName,
+				Chain:            coin.Asset.GetChain(),
+				InHash:           tx.Tx.ID,
+				ToAddress:        tx.Tx.FromAddress,
+				VaultPubKey:      tx.ObservedPubKey,
+				Coin:             coin,
+				Memo:             NewRefundMemo(tx.Tx.ID).String(),
+				ModuleName:       nativeRuneModuleName,
+				AggregatorTarget: nil,
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
