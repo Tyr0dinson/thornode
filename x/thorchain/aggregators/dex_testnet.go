@@ -13,11 +13,13 @@ func DexAggregators(version semver.Version) []Aggregator {
 	if version.GTE(semver.MustParse("0.1.0")) {
 		return []Aggregator{
 			// uniswap v2
-			{common.ETHChain, common.Address(`0x69ba883Af416fF5501D54D5e27A1f497fBD97156`)},
+			{common.ETHChain, common.Address(`0x942c6dA485FD6cEf255853ef83a149d43A73F18a`)},
 			// uniswap v3
-			{common.ETHChain, common.Address(`0x3b7DbdD635B99cEa39D3d95Dbd0217F05e55B212`)},
+			{common.ETHChain, common.Address(`0x7236D46c894Be8Af0C6b26Dd97608E396Db0f339`)},
 			// sushiswap
 			{common.ETHChain, common.Address(`0x7fD9bd7A2Cab44820DD2874859E461640F04542D`)},
+			// THORSwap Faucet
+			{common.ETHChain, common.Address(`0x83b0c5136790dDf6cA8D3fb3d220C757e0a91fBe`)},
 		}
 	}
 	return nil

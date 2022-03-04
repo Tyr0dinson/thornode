@@ -42,13 +42,13 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.81.0")) {
-		return h.validateV81(ctx, msg)
+	if version.GTE(semver.MustParse("0.82.0")) {
+		return h.validateV82(ctx, msg)
 	}
 	return errInvalidVersion
 }
 
-func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV82(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
@@ -135,13 +135,13 @@ func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
 func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.81.0")) {
-		return h.handleV81(ctx, msg)
+	if version.GTE(semver.MustParse("0.82.0")) {
+		return h.handleV82(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
-func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV82(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
 	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)

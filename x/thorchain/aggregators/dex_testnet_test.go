@@ -15,9 +15,9 @@ func (s *DexAggregatorTestnetSuite) TestDexAggregators(c *C) {
 	ver := semver.MustParse("9999.0.0")
 
 	// happy path
-	addr, err := FetchDexAggregator(ver, common.ETHChain, "156")
+	addr, err := FetchDexAggregator(ver, common.ETHChain, "42D")
 	c.Assert(err, IsNil)
-	c.Check(addr.String(), Equals, "0x69ba883Af416fF5501D54D5e27A1f497fBD97156")
+	c.Check(addr.String(), Equals, "0x7fD9bd7A2Cab44820DD2874859E461640F04542D")
 
 	// unhappy path
 	_, err = FetchDexAggregator(ver, common.BTCChain, "156")
