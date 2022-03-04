@@ -533,6 +533,7 @@ func (tos *TxOutStorageV85) addToBlockOut(ctx cosmos.Context, mgr Manager, item 
 	telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "out_txn"}, float32(1), labels)
 
 	ctx.Logger().Error("Outbound TX", "item", item)
+	item.AggregatorTarget = nil
 	return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
 }
 
