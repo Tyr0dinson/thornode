@@ -88,14 +88,12 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		}
 	}
 
-	aggTarget := &common.NoCoin
+	var aggTarget *common.Coin
 	if !dexAgg.IsEmpty() {
 		// override the target asset with target chain gas asset
 		targetCoin := common.NewCoin(target, swapTarget)
 		aggTarget = &targetCoin
 		target = target.Chain.GetGasAsset()
-	} else {
-		aggTarget = nil
 	}
 
 	if err := s.validatePools(ctx, keeper, source, target); err != nil {
