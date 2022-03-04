@@ -379,7 +379,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			c.Assert(err, IsNil)
 			for _, item := range items {
 				c.Check(item.Aggregator.IsEmpty(), Equals, true)
-				c.Check(item.AggregatorTarget.IsEmpty(), Equals, true)
+				c.Check(item.AggregatorTarget, IsNil)
 			}
 		} else {
 			c.Assert(err, NotNil, Commentf("Expected: %s, got nil", item.expectedErr.Error()))

@@ -94,6 +94,8 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		targetCoin := common.NewCoin(target, swapTarget)
 		aggTarget = &targetCoin
 		target = target.Chain.GetGasAsset()
+	} else {
+		aggTarget = nil
 	}
 
 	if err := s.validatePools(ctx, keeper, source, target); err != nil {
