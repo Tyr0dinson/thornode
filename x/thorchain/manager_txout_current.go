@@ -225,9 +225,6 @@ func (tos *TxOutStorageV85) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	if toi.Memo == "" {
 		toi.Memo = NewOutboundMemo(toi.InHash).String()
 	}
-	if toi.AggregatorTarget != nil && toi.AggregatorTarget.Asset.IsEmpty() {
-		toi.AggregatorTarget = nil
-	}
 	// Ensure the InHash is set
 	if toi.InHash.IsEmpty() {
 		toi.InHash = common.BlankTxID
@@ -532,8 +529,6 @@ func (tos *TxOutStorageV85) addToBlockOut(ctx cosmos.Context, mgr Manager, item 
 	}
 	telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "out_txn"}, float32(1), labels)
 
-	ctx.Logger().Error("Outbound TX!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-	item.AggregatorTarget = nil
 	return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
 }
 

@@ -29,7 +29,6 @@ func (b *ThorchainBridge) GetKeysign(blockHeight int64, pk string) (types.TxOut,
 		return types.TxOut{}, fmt.Errorf("failed to get tx from a block height: %w", err)
 	}
 	var query QueryKeysign
-	fmt.Printf("BODY: %s\n", string(body))
 	if err := json.Unmarshal(body, &query); err != nil {
 		return types.TxOut{}, fmt.Errorf("failed to unmarshal TxOut: %w", err)
 	}

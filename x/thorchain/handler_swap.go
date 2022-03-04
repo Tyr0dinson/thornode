@@ -118,7 +118,7 @@ func (h SwapHandler) validateV81(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
-	if len(msg.Aggregator) > 1 {
+	if len(msg.Aggregator) > 0 {
 		// validate that a referenced dex aggregator is legit
 		addr, err := FetchDexAggregator(h.mgr.GetVersion(), target.Chain, msg.Aggregator)
 		if err != nil {
@@ -157,7 +157,7 @@ func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	}
 
 	dexAgg := common.NoAddress
-	if len(msg.Aggregator) > 1 {
+	if len(msg.Aggregator) > 0 {
 		// validate that a referenced dex aggregator is legit
 		dexAgg, err = FetchDexAggregator(h.mgr.GetVersion(), msg.TargetAsset.Chain, msg.Aggregator)
 		if err != nil {
