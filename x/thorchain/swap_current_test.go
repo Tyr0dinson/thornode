@@ -15,11 +15,11 @@ import (
 	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-type SwapV81Suite struct{}
+type SwapV82Suite struct{}
 
-var _ = Suite(&SwapV81Suite{})
+var _ = Suite(&SwapV82Suite{})
 
-func (s *SwapV81Suite) SetUpSuite(c *C) {
+func (s *SwapV82Suite) SetUpSuite(c *C) {
 	err := os.Setenv("NET", "other")
 	c.Assert(err, IsNil)
 	SetupConfigForTest()
@@ -155,7 +155,7 @@ func (k *TestSwapKeeper) MintToModule(ctx cosmos.Context, module string, coin co
 	return nil
 }
 
-func (s *SwapV81Suite) TestSwap(c *C) {
+func (s *SwapV82Suite) TestSwap(c *C) {
 	poolStorage := &TestSwapKeeper{}
 	inputs := []struct {
 		name          string
@@ -369,7 +369,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		mgr.K = poolStorage
 		mgr.txOutStore = NewTxStoreDummy()
 
-		amount, evts, err := newSwapperV81().swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, common.NoAddress, cosmos.NewUint(1000_000), 2, mgr)
+		amount, evts, err := newSwapperV82().swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, common.NoAddress, cosmos.NewUint(1000_000), 2, mgr)
 		if item.expectedErr == nil {
 			c.Assert(err, IsNil)
 			c.Assert(evts, HasLen, item.events)
@@ -397,7 +397,7 @@ func QuoUint(num types.Uint, denom types.Uint) types.Dec {
 	return res
 }
 
-func (s *SwapV81Suite) TestAggregator(c *C) {
+func (s *SwapV82Suite) TestAggregator(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	pool := NewPool()
@@ -424,7 +424,7 @@ func (s *SwapV81Suite) TestAggregator(c *C) {
 	agg := common.Address("0x69ba883Af416fF5501D54D5e27A1f497fBD97156")
 	toAddr := common.Address("0xdAC17F958D2ee523a2206206994597C13D831ec7")
 	swapTarget := cosmos.NewUint(405)
-	amount, _, err := newSwapperV81().swap(ctx, mgr.Keeper(), tx, bat, toAddr, swapTarget, agg, cosmos.NewUint(1000_000), 2, mgr)
+	amount, _, err := newSwapperV82().swap(ctx, mgr.Keeper(), tx, bat, toAddr, swapTarget, agg, cosmos.NewUint(1000_000), 2, mgr)
 	c.Assert(err, IsNil)
 	c.Check(amount.Uint64(), Equals, uint64(140119487), Commentf("%d", amount.Uint64()))
 
@@ -435,7 +435,7 @@ func (s *SwapV81Suite) TestAggregator(c *C) {
 	c.Check(items[0].AggregatorTarget.Amount.Equal(swapTarget), Equals, true)
 }
 
-func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
+func (s *SwapV82Suite) TestSynthSwap_RuneSynthRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
@@ -590,7 +590,7 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 	}
 }
 
-func (s *SwapV81Suite) TestSynthSwap_AssetSynth(c *C) {
+func (s *SwapV82Suite) TestSynthSwap_AssetSynth(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	pool := NewPool()
 	pool.Asset = common.BNBAsset

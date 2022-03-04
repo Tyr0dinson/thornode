@@ -165,7 +165,7 @@ func (h SwapHandler) handleV82(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		}
 	}
 
-	swapper := newSwapperV81()
+	swapper := newSwapperV82()
 	_, _, swapErr := swapper.swap(
 		ctx,
 		h.mgr.Keeper(),
