@@ -37,7 +37,7 @@ func (fd THORChainFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 		switch msg.(type) {
 		case *types.MsgSend, *types.MsgDeposit:
 			for _, signer := range msg.GetSigners() {
-				if fd.bankKeeper.HasBalance(ctx, signer, runeFee) {
+				if !fd.bankKeeper.HasBalance(ctx, signer, runeFee) {
 					return ctx, fmt.Errorf("account: %s doesn't have enough to pay for RUNE transaction fee", signer.String())
 				}
 			}
