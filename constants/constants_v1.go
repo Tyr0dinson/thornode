@@ -58,6 +58,11 @@ func NewConstantValue010() *ConstantVals {
 			MaxSynthPerPoolDepth:               1700,               // percentage (in basis points) of how many synths are allowed relative to pool depth of the related pool
 			MinSlashPointsForBadValidator:      100,                // The minimum slash point
 			FullImpLossProtectionBlocks:        1440000,            // number of blocks before a liquidity provider gets 100% impermanent loss protection
+			MinCR:                              100,                // Minimum collateralization ratio
+			MaxCR:                              600,                // Maximum collateralization ratio
+			PauseLoans:                         1,                  // pause opening new loans and repaying loans
+			LoanRepaymentMaturity:              0,                  // number of blocks before loan has reached maturity and can be repaid
+			CRPoolMultiplier:                   10_000,             // CR calculates from this basis points multipler of the pool depth
 			MinTxOutVolumeThreshold:            1000_00000000,      // total txout volume (in rune) a block needs to have to slow outbound transactions
 			TxOutDelayRate:                     25_00000000,        // outbound rune per block rate for scheduled transactions (excluding native assets)
 			TxOutDelayMax:                      17280,              // max number of blocks a transaction can be delayed

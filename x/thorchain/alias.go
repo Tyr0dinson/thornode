@@ -83,6 +83,7 @@ const (
 	TxLeave           = mem.TxLeave
 	TxWithdraw        = mem.TxWithdraw
 	TxTHORName        = mem.TxTHORName
+	TxLoanRepayment   = mem.TxLoanRepayment
 )
 
 var (
@@ -94,6 +95,8 @@ var (
 	NewBanVoter                    = types.NewBanVoter
 	NewErrataTxVoter               = types.NewErrataTxVoter
 	NewObservedTxVoter             = types.NewObservedTxVoter
+	NewMsgLoanOpen                 = types.NewMsgLoanOpen
+	NewMsgLoanRepayment            = types.NewMsgLoanRepayment
 	NewMsgMimir                    = types.NewMsgMimir
 	NewMsgNodePauseChain           = types.NewMsgNodePauseChain
 	NewMsgDeposit                  = types.NewMsgDeposit
@@ -140,6 +143,8 @@ var (
 	NewEventPendingLiquidity       = types.NewEventPendingLiquidity
 	NewEventTHORName               = types.NewEventTHORName
 	NewEventMintBurn               = types.NewEventMintBurn
+	NewEventLoanOpen               = types.NewEventLoanOpen
+	NewEventLoanRepayment          = types.NewEventLoanRepayment
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
@@ -174,6 +179,7 @@ var (
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
 	NewNetworkFee                  = types.NewNetworkFee
 	NewTHORName                    = types.NewTHORName
+	NewLoan                        = types.NewLoan
 	GetPoolStatus                  = types.GetPoolStatus
 	GetRandomVault                 = types.GetRandomVault
 	GetRandomYggVault              = types.GetRandomYggVault
@@ -251,6 +257,8 @@ type (
 	MsgNetworkFee                  = types.MsgNetworkFee
 	MsgManageTHORName              = types.MsgManageTHORName
 	MsgSolvency                    = types.MsgSolvency
+	MsgLoanOpen                    = types.MsgLoanOpen
+	MsgLoanRepayment               = types.MsgLoanRepayment
 	QueryVersion                   = types.QueryVersion
 	QueryQueue                     = types.QueryQueue
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck
@@ -292,6 +300,8 @@ type (
 	EventRewards                   = types.EventRewards
 	EventErrata                    = types.EventErrata
 	EventReserve                   = types.EventReserve
+	EventLoanOpen                  = types.EventLoanOpen
+	EventLoanRepayment             = types.EventLoanRepayment
 	PoolAmt                        = types.PoolAmt
 	PoolMod                        = types.PoolMod
 	PoolMods                       = types.PoolMods
@@ -349,6 +359,9 @@ type (
 
 	// Proto
 	ProtoStrings = types.ProtoStrings
+
+	LoanOpenMemo      = mem.LoanOpenMemo
+	LoanRepaymentMemo = mem.LoanRepaymentMemo
 )
 
 var _ codec.ProtoMarshaler = &types.LiquidityProvider{}

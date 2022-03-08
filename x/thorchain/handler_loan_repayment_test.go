@@ -1,0 +1,143 @@
+package thorchain
+
+import (
+	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	. "gopkg.in/check.v1"
+)
+
+type HandlerLoanRepaymentSuite struct{}
+
+var _ = Suite(&HandlerLoanRepaymentSuite{})
+
+func (s *HandlerLoanRepaymentSuite) TestLoanValidate(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BNBAsset
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	pool = NewPool()
+	pool.Asset = common.BTCAsset
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	owner := GetRandomBNBAddress()
+	signer := GetRandomBech32Addr()
+
+	loan := NewLoan(owner, common.BNBAsset, 0)
+	loan.DebtUp = cosmos.NewUint(10 * common.One)
+	mgr.Keeper().SetLoan(ctx, loan)
+
+	handler := NewLoanRepaymentHandler(mgr)
+
+	// happy path
+	msg := NewMsgLoanRepayment(owner, common.BNBAsset, common.NewCoin(common.TOR, cosmos.NewUint(10*common.One)), signer)
+	c.Check(handler.validate(ctx.WithBlockHeight(14400000), *msg), IsNil)
+
+	// unhappy path: loan hasn't matured
+	loan.LastOpenHeight = 10000
+	mgr.Keeper().SetLoan(ctx, loan)
+	c.Check(handler.validate(ctx, *msg), NotNil)
+
+	// unhappy path: no debt
+	loan.DebtUp = cosmos.ZeroUint()
+	loan.LastOpenHeight = 0
+	mgr.Keeper().SetLoan(ctx, loan)
+	c.Check(handler.validate(ctx, *msg), NotNil)
+
+	// unhappy path: loan paused
+	loan.DebtUp = cosmos.NewUint(10 * common.One)
+	mgr.Keeper().SetLoan(ctx, loan)
+	mgr.Keeper().SetMimir(ctx, "PauseLoans", 1)
+	c.Check(handler.validate(ctx.WithBlockHeight(14400000), *msg), NotNil)
+}
+
+func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithTOR(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.LPUnits = cosmos.NewUint(346168413758888)
+	pool.BalanceAsset = cosmos.NewUint(64394417894)
+	pool.BalanceRune = cosmos.NewUint(523467094850166)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	signer := GetRandomBech32Addr()
+	owner, _ := common.NewAddress("bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
+
+	// mint TOR to burn later
+	coin := common.NewCoin(common.TOR, cosmos.NewUint(1000*common.One))
+	err := mgr.Keeper().MintToModule(ctx, ModuleName, coin)
+	c.Assert(err, IsNil)
+	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(coin))
+	c.Assert(err, IsNil)
+
+	loan := NewLoan(owner, common.BTCAsset, 0)
+	loan.CollateralUp = cosmos.NewUint(1e8)
+	loan.DebtUp = cosmos.NewUint(10 * common.One)
+	mgr.Keeper().SetLoan(ctx, loan)
+	mgr.Keeper().SetTotalCollateral(ctx, common.BTCAsset, loan.CollateralUp)
+
+	handler := NewLoanRepaymentHandler(mgr)
+
+	// happy path
+	msg := NewMsgLoanRepayment(owner, common.BTCAsset, common.NewCoin(common.TOR, cosmos.NewUint(5*common.One)), signer)
+	c.Check(handler.handle(ctx, *msg), IsNil)
+
+	loan, err = mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
+	c.Assert(err, IsNil)
+	c.Check(loan.DebtDown.Uint64(), Equals, uint64(5*common.One), Commentf("%d", loan.DebtDown.Uint64()))
+	c.Check(loan.CollateralDown.Uint64(), Equals, uint64(1e8/2), Commentf("%d", loan.CollateralDown.Uint64()))
+
+	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(totalCollateral.Uint64(), Equals, common.SafeSub(loan.CollateralUp, loan.CollateralDown).Uint64())
+}
+
+func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(83830778633)
+	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	tor := NewPool()
+	tor.Asset = common.TOR
+	tor.Status = PoolAvailable
+	tor.BalanceRune = cosmos.NewUint(433267688964312)
+	tor.BalanceAsset = cosmos.NewUint(314031308608965)
+	c.Assert(mgr.Keeper().SetPool(ctx, tor), IsNil)
+
+	vault := GetRandomVault()
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// mint TOR to burn later
+	coin := common.NewCoin(common.TOR, cosmos.NewUint(1000*common.One))
+	err := mgr.Keeper().MintToModule(ctx, ModuleName, coin)
+	c.Assert(err, IsNil)
+	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(coin))
+	c.Assert(err, IsNil)
+
+	owner, _ := common.NewAddress("bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
+	signer := GetRandomBech32Addr()
+
+	loan := NewLoan(owner, common.BTCAsset, ctx.BlockHeight())
+	loan.CollateralUp = cosmos.NewUint(1e8)
+	loan.DebtUp = cosmos.NewUint(10_000 * common.One)
+	mgr.Keeper().SetLoan(ctx, loan)
+
+	handler := NewLoanRepaymentHandler(mgr)
+
+	// happy path
+	msg := NewMsgLoanRepayment(owner, common.BTCAsset, common.NewCoin(common.BTCAsset, cosmos.NewUint(1e8/2)), signer)
+	ctx = ctx.WithBlockHeight(2 * 1440000)
+	c.Check(handler.handle(ctx, *msg), IsNil)
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+
+	loan, err = mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
+	c.Assert(err, IsNil)
+	c.Check(loan.DebtDown.Uint64(), Equals, uint64(440233604542), Commentf("%d", loan.DebtDown.Uint64()))
+	c.Check(loan.CollateralDown.Uint64(), Equals, uint64(44023360), Commentf("%d", loan.CollateralDown.Uint64()))
+}

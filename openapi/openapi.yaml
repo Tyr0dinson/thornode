@@ -947,6 +947,7 @@ components:
         - savers_units
         - synth_mint_paused
         - synth_supply_remaining
+        - loan_collateral
       properties:
         balance_rune:
           type: string
@@ -1002,6 +1003,10 @@ components:
           type: string
           example: "123456"
           description: the amount of synth supply remaining before the current max supply is reached
+        loan_collateral:
+          type: string
+          example: "123456"
+          description: the amount of collateral collects for loans
 
     LiquidityProviderSummary:
       type: object

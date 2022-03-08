@@ -162,6 +162,8 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.103.0")):
+		return h.handleV103(ctx, msg)
 	case version.GTE(semver.MustParse("1.99.0")):
 		return h.handleV99(ctx, msg)
 	case version.GTE(semver.MustParse("1.98.0")):
@@ -179,7 +181,7 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	}
 }
 
-func (h SwapHandler) handleV99(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV103(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
 	// Don't change msg.Destination here; this line was introduced to avoid people from swapping mainnet asset,
 	// but using testnet address.
@@ -241,7 +243,8 @@ func (h SwapHandler) handleV99(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
 		return nil, err
 	}
-	if mem.IsType(TxAdd) {
+	switch mem.GetType() {
+	case TxAdd:
 		m, ok := mem.(AddLiquidityMemo)
 		if !ok {
 			return nil, fmt.Errorf("fail to cast add liquidity memo")
@@ -259,8 +262,22 @@ func (h SwapHandler) handleV99(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
 			return nil, err
 		}
+	case TxLoanRepayment:
+		m, ok := mem.(LoanRepaymentMemo)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast loan repayment memo")
+		}
+		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
+		msg, err := getMsgLoanRepaymentFromMemo(m, common.NewCoin(common.TOR, emit), msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		repayLoanHandler := NewLoanRepaymentHandler(h.mgr)
+		_, err = repayLoanHandler.Run(ctx, msg) // fire and forget
+		if err != nil {
+			ctx.Logger().Error("swap handler failed to repay loan", "error", err)
+		}
 	}
-
 	return &cosmos.Result{}, nil
 }
 

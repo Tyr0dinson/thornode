@@ -78,6 +78,11 @@ const (
 	TNSRegisterFee
 	TNSFeeOnSale
 	TNSFeePerBlock
+	MinCR
+	MaxCR
+	PauseLoans
+	LoanRepaymentMaturity
+	CRPoolMultiplier
 	PermittedSolvencyGap
 	NodeOperatorFee
 	ValidatorMaxRewardRatio
@@ -187,6 +192,11 @@ var nameToString = map[ConstantName]string{
 	ILPCutoff:                          "ILPCutoff",
 	ChurnMigrateRounds:                 "ChurnMigrateRounds",
 	MaxAffiliateFeeBasisPoints:         "MaxAffiliateFeeBasisPoints",
+	MinCR:                              "MinCR",
+	MaxCR:                              "MaxCR",
+	PauseLoans:                         "PauseLoans",
+	LoanRepaymentMaturity:              "LoanRepaymentMaturity",
+	CRPoolMultiplier:                   "CRPoolMultiplier",
 }
 
 // String implement fmt.stringer
