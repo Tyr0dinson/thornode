@@ -6,26 +6,27 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// THORCHainFeeDecorator ensure the sender has enough RUNE balance to pay for transaction fee
-type THORCHainFeeDecorator struct {
+// THORChainFeeDecorator ensure the sender has enough RUNE balance to pay for transaction fee
+type THORChainFeeDecorator struct {
 	ak         ante.AccountKeeper
 	bankKeeper bankkeeper.ViewKeeper
 }
 
 // NewTHORCHainFeeDecorator create a new instance of THORChainFeeDecorator
-func NewTHORCHainFeeDecorator(ak ante.AccountKeeper, bk bankkeeper.ViewKeeper) THORCHainFeeDecorator {
-	return THORCHainFeeDecorator{
+func NewTHORCHainFeeDecorator(ak ante.AccountKeeper, bk bankkeeper.ViewKeeper) THORChainFeeDecorator {
+	return THORChainFeeDecorator{
 		ak:         ak,
 		bankKeeper: bk,
 	}
 }
 
-func (fd THORCHainFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
+func (fd THORChainFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
 	// Hard coded here , as this one doesn't have access to constants
 	runeFee, err := common.NewCoin(common.RuneNative, cosmos.NewUint(2_000000)).Native()
 	if err != nil {
