@@ -28,6 +28,11 @@ DOGE_DISABLED="${DOGE_DISABLED:=false}"
 BCH_HOST="${BCH_HOST:=bitcoin-cash:18443}"
 BCH_START_BLOCK_HEIGHT="${BCH_START_BLOCK_HEIGHT:=0}"
 
+# Haven chain config
+XHV_HOST="${XHV_HOST:=http://haven:27750}"
+XHV_WALLET_HOST="${XHV_WALLET_HOST:=http://haven-wallet:6061/json_rpc}"
+XHV_START_BLOCK_HEIGHT="${XHV_START_BLOCK_HEIGHT:=0}"
+
 DB_PATH="${DB_PATH:=/var/data}"
 CHAIN_API="${CHAIN_API:=127.0.0.1:1317}"
 CHAIN_RPC="${CHAIN_RPC:=127.0.0.1:26657}"
@@ -216,6 +221,29 @@ echo "{
           \"start_block_height\": $ETH_START_BLOCK_HEIGHT,
           \"db_path\": \"$OBSERVER_PATH\"
         }
+      },
+      {
+        \"chain_id\": \"XHV\",
+        \"rpc_host\": \"$XHV_HOST\",
+        \"wallet_rpc_host\": \"$XHV_WALLET_HOST\",
+        \"username\": \"$RPC_USER\",
+        \"password\": \"$RPC_PASSWD\",
+        \"http_post_mode\": 1,
+        \"disable_tls\": 1,
+        \"block_scanner\": {
+          \"rpc_host\": \"$XHV_HOST\",
+          \"enforce_block_height\": false,
+          \"block_scan_processors\": 1,
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
+          \"block_retry_interval\": \"10s\",
+          \"chain_id\": \"XHV\",
+          \"http_request_timeout\": \"30s\",
+          \"http_request_read_timeout\": \"30s\",
+          \"http_request_write_timeout\": \"30s\",
+          \"max_http_request_retry\": 10,
+          \"start_block_height\": $XHV_START_BLOCK_HEIGHT,
+          \"db_path\": \"$OBSERVER_PATH\"
+        }
       }
     ],
     \"tss\": {
@@ -223,7 +251,8 @@ echo "{
         \"rendezvous\": \"asgard\",
         \"external_ip\": \"$EXTERNAL_IP\",
         \"p2p_port\": 5040,
-        \"info_address\": \":6040\"
+        \"info_address\": \":6040\",
+        \"info_address_mn\": \":5030\"
     },
     \"signer\": {
       \"signer_db_path\": \"$SIGNER_PATH\",

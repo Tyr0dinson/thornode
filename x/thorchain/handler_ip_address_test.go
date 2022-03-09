@@ -39,7 +39,6 @@ func (k *TestIPAddresslKeeper) GetNetwork(ctx cosmos.Context) (Network, error) {
 func (k *TestIPAddresslKeeper) SetNetwork(ctx cosmos.Context, data Network) error {
 	return nil
 }
-
 func (k *TestIPAddresslKeeper) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
 	return nil
 }

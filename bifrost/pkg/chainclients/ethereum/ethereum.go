@@ -23,7 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 
-	tssp "gitlab.com/thorchain/tss/go-tss/tss"
+	tssp "github.com/akildemir/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -43,6 +43,8 @@ const (
 	maxGasLimit          = 200000
 	ethBlockRewardAndFee = 3 * 1e18
 )
+
+var blockReward *big.Int = big.NewInt(2e18) // in Wei
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
 type Client struct {

@@ -17,6 +17,7 @@ services:
     profiles:
       - _
     restart: unless-stopped
+    image: registry.gitlab.com/thorchain/thornode:mocknet
     build:
       context: ../..
       dockerfile: ./build/docker/Dockerfile
@@ -221,6 +222,34 @@ services:
     ports:
       - 18332:18332
     entrypoint: "/scripts/entrypoint-mock.sh"
+
+  # ------------------------------ haven ------------------------------
+
+  haven:
+    profiles:
+      - mocknet
+    image: haven-core:latest
+    restart: unless-stopped
+    volumes:
+      - "./mocknet:/mocknet"
+    ports:
+      - 27750:27750
+    environment:
+      BLOCK_TIME: ${BLOCK_TIME:-1}
+    command: /mocknet/init-haven.sh
+
+  # ------------------------------ haven-wallet ------------------------------
+
+  haven-wallet:
+    profiles:
+      - mocknet
+    image: haven-core:latest
+    restart: unless-stopped
+    volumes:
+      - "./mocknet:/mocknet"
+    ports:
+      - 6061:6061
+    command: /mocknet/init-haven-wallet.sh
 
   # ------------------------------ ethereum ------------------------------
 

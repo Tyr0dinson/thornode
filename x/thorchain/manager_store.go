@@ -146,7 +146,6 @@ func migrateStoreV56(ctx cosmos.Context, mgr Manager) {
 		}
 	}
 }
-
 func migrateStoreV55(ctx cosmos.Context, mgr Manager) {
 	assetToAdjust, err := common.NewAsset("BNB.USDT-6D8")
 	if err != nil {
@@ -182,7 +181,6 @@ func migrateStoreV49(ctx cosmos.Context, mgr Manager) {
 	}
 	mgr.Keeper().SetLiquidityProvider(ctx, lp)
 }
-
 func migrateStoreV46(ctx cosmos.Context, mgr Manager) {
 	// housekeeping, deleting unused mimir settings
 	_ = mgr.Keeper().DeleteMimir(ctx, "SIGNINGTRANSACTIONPERIOD")
@@ -240,7 +238,6 @@ func migrateStoreV46(ctx cosmos.Context, mgr Manager) {
 		ctx.Logger().Error("fail to save vault", "error", err)
 	}
 }
-
 func migrateStoreV43(ctx cosmos.Context, mgr Manager) {
 	// housekeeping, deleting unused mimir settings
 	_ = mgr.Keeper().DeleteMimir(ctx, "NEWPOOLCYCLE")
@@ -304,7 +301,6 @@ func migrateStoreV42(ctx cosmos.Context, mgr Manager) {
 		}
 	}
 }
-
 func migrateStoreV58Refund(ctx cosmos.Context, mgr *Mgrs) {
 	if err := mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to initialise block", "error", err)
@@ -547,7 +543,6 @@ func migrateStoreV59(ctx cosmos.Context, mgr Manager) {
 		}
 	}
 }
-
 func migrateStoreV60(ctx cosmos.Context, mgr Manager) {
 	// remove all the outbound transactions that caused by the attack transaction
 	removeTransactions(ctx, mgr,

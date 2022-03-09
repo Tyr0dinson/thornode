@@ -20,7 +20,6 @@ func (s CommonSuite) TestGetShare(c *C) {
 	share := GetShare(part, total, alloc)
 	c.Assert(share.Equal(cosmos.NewUint(149013)), Equals, true)
 }
-
 func (s CommonSuite) TestGetSafeShare(c *C) {
 	part := cosmos.NewUint(14950659000000000)
 	total := cosmos.NewUint(50165561086)

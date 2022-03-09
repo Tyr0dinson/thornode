@@ -80,3 +80,7 @@ func (k *MockThorchainKeyManager) RemoteSign(msg []byte, poolPubKey string) ([]b
 	}
 	return nil, nil, nil
 }
+
+func (k *MockThorchainKeyManager) RemoteSignMn(msg []byte, poolPubKey string, rpcAddress string) (string, string, error) {
+	return "", "", nil
+}

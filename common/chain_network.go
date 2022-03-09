@@ -41,6 +41,5 @@ func (net ChainNetwork) SoftEquals(net2 ChainNetwork) bool {
 	if net != MainNet && net2 != MainNet {
 		return true
 	}
-
 	return false
 }

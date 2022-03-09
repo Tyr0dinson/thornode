@@ -12,6 +12,7 @@ import (
 	eth "github.com/ethereum/go-ethereum/common"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
+	moneroBase58 "github.com/haven-protocol-org/monero-go-utils/base58"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -100,7 +101,25 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	// Check for xhv chain
+	if isValidXHVAddress(address) {
+		return Address(address), nil
+	}
+
 	return NoAddress, fmt.Errorf("address format not supported: %s", address)
+}
+
+func isValidXHVAddress(addr string) bool {
+	validPrefixes := [9]string{"hvx", "hvi", "hvs", "hvt", "hvti", "hvts", "hvsa", "hvsi", "hvss"}
+	for _, prefix := range validPrefixes {
+		if strings.HasPrefix(addr, prefix) {
+			_, data := moneroBase58.DecodeAddr(addr)
+			if len(data) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
@@ -293,13 +312,15 @@ func (addr Address) IsChain(chain Chain) bool {
 			return true
 		}
 		return false
+	case XHVChain:
+		return isValidXHVAddress(string(addr))
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
 }
 
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain} {
+	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, XHVChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -414,6 +435,14 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		_, err = dogutil.DecodeAddress(addr.String(), &dogchaincfg.RegressionNetParams)
 		if err == nil {
 			return MockNet
+		}
+	case XHVChain:
+		if strings.HasPrefix(addr.String(), "hvx") {
+			return MainNet
+		} else if strings.HasPrefix(addr.String(), "hvsa") {
+			return StageNet
+		} else {
+			return TestNet
 		}
 	}
 	return MockNet

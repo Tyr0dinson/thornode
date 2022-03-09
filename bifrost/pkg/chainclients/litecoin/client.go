@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	tssp "github.com/akildemir/go-tss/tss"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/ltcsuite/ltcd/btcec"
 	"github.com/ltcsuite/ltcd/btcjson"
@@ -23,7 +24,6 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
-	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -649,7 +649,6 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	}
 	return txIn, nil
 }
-
 func (c *Client) canDeleteBlock(blockMeta *BlockMeta) bool {
 	if blockMeta == nil {
 		return true
@@ -662,7 +661,6 @@ func (c *Client) canDeleteBlock(blockMeta *BlockMeta) bool {
 	}
 	return true
 }
-
 func (c *Client) updateNetworkInfo() {
 	networkInfo, err := c.client.GetNetworkInfo()
 	if err != nil {
@@ -686,7 +684,6 @@ func (c *Client) getHighestFeeRate() uint64 {
 	}
 	return feeRate
 }
-
 func (c *Client) sendNetworkFee(height int64) error {
 	result, err := c.client.GetBlockStats(height, nil)
 	if err != nil {
@@ -753,7 +750,6 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		return len(addresses) == 1 && requireSigs == 1
 	}
 }
-
 func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	for _, vin := range tx.Vin {
 		if vin.Sequence < (0xffffffff - 1) {
@@ -762,7 +758,6 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	}
 	return false
 }
-
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) (types.TxInItem, error) {
 	if c.ignoreTx(tx) {
 		c.logger.Debug().Int64("height", height).Str("tx", tx.Hash).Msg("ignore tx not matching format")

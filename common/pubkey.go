@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -22,6 +23,8 @@ import (
 	eth "github.com/ethereum/go-ethereum/crypto"
 	"github.com/tendermint/tendermint/crypto"
 
+	moneroBase58 "github.com/haven-protocol-org/monero-go-utils/base58"
+	moneroCrypto "github.com/haven-protocol-org/monero-go-utils/crypto"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -195,6 +198,84 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		return NewAddress(addr.String())
+	case DOGEChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
+		var net *dogchaincfg.Params
+		switch chainNetwork {
+		case MockNet:
+			net = &dogchaincfg.RegressionNetParams
+		case TestNet:
+			net = &dogchaincfg.TestNet3Params
+		case MainNet:
+			net = &dogchaincfg.MainNetParams
+		}
+		addr, err := dogutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
+		return NewAddress(addr.String())
+	case BCHChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
+		var net *bchchaincfg.Params
+		switch chainNetwork {
+		case MockNet:
+			net = &bchchaincfg.RegressionNetParams
+		case TestNet:
+			net = &bchchaincfg.TestNet3Params
+		case MainNet:
+			net = &bchchaincfg.MainNetParams
+		}
+		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
+		return NewAddress(addr.String())
+	case XHVChain:
+		var cnData [64]byte
+		var privViewKey [32]byte
+		var pubSpendKey [32]byte
+
+		// get the crytonotedata
+		data, err := hex.DecodeString(string(pubKey))
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to decode the crytonotedata, err:%w", err)
+		}
+		copy(cnData[:], data)
+
+		// split into privViewKey and pubSpendKey
+		copy(privViewKey[:], cnData[:32])
+		copy(pubSpendKey[:], cnData[32:])
+
+		// get the pubViewKey
+		var pubViewKey [32]byte
+		moneroCrypto.PublicFromSecret(&pubViewKey, &privViewKey)
+
+		// generate the walletAddr
+		var addData []byte
+		addData = append(addData, pubSpendKey[:]...)
+		addData = append(addData, pubViewKey[:]...)
+		chainNetwork := GetCurrentChainNetwork()
+		var tag uint64
+		switch chainNetwork {
+		case MockNet, TestNet:
+			// Haven testnet tag(hvt)
+			tag = 0x59f4
+		case StageNet:
+			// Haven stagenet tag(hvsa)
+			tag = 0x239974
+		case MainNet:
+			// Haven mainnet tag(hvx)
+			tag = 0x05af4
+		}
+		walletAddr := moneroBase58.EncodeAddr(tag, addData)
+
+		return NewAddress(walletAddr)
 	}
 
 	return NoAddress, nil

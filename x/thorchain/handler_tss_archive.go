@@ -34,7 +34,7 @@ func (h TssHandler) validateV68(ctx cosmos.Context, msg MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, "", msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -116,7 +116,7 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Result
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(common.BlockHeight(ctx), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(common.BlockHeight(ctx), InitVault, vaultType, voter.PoolPubKey, "", chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
 			vault.Membership = voter.PubKeys
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -234,7 +234,6 @@ func (h TssHandler) handleV1(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Result
 
 	return &cosmos.Result{}, nil
 }
-
 func (h TssHandler) handleV68(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", h.mgr.GetVersion())
 	if !msg.Blame.IsEmpty() {
@@ -293,7 +292,7 @@ func (h TssHandler) handleV68(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Resul
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(common.BlockHeight(ctx), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(common.BlockHeight(ctx), InitVault, vaultType, voter.PoolPubKey, "", chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
 			vault.Membership = voter.PubKeys
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {

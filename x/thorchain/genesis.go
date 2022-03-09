@@ -269,7 +269,6 @@ func getLiquidityProviders(ctx cosmos.Context, k keeper.Keeper, asset common.Ass
 	}
 	return liquidityProviders
 }
-
 func getValidPools(ctx cosmos.Context, k keeper.Keeper) Pools {
 	var pools Pools
 	iterator := k.GetPoolIterator(ctx)

@@ -863,7 +863,6 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 	}
 	return false
 }
-
 func isChainHaltedV1(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	mimirKey := fmt.Sprintf("Halt%sChain", chain)
 	haltChain, err := mgr.Keeper().GetMimir(ctx, mimirKey)

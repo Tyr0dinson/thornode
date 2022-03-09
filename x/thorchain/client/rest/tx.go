@@ -35,7 +35,6 @@ func hasNilAmountInBaseRequestValid(req rest.BaseReq) bool {
 	}
 	return false
 }
-
 func newDepositHandler(cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req deposit
@@ -113,14 +112,15 @@ func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 }
 
 type newTssPool struct {
-	BaseReq      rest.BaseReq     `json:"base_req"`
-	InputPubKeys []string         `json:"input_pubkeys"`
-	KeygenType   types.KeygenType `json:"keygen_type"`
-	Height       int64            `json:"height"`
-	Blame        types.Blame      `json:"blame"`
-	PoolPubKey   common.PubKey    `json:"pool_pub_key"`
-	Chains       []string         `json:"chains"`
-	KeygenTime   int64            `json:"keygen_time"`
+	BaseReq        rest.BaseReq     `json:"base_req"`
+	InputPubKeys   []string         `json:"input_pubkeys"`
+	KeygenType     types.KeygenType `json:"keygen_type"`
+	Height         int64            `json:"height"`
+	Blame          types.Blame      `json:"blame"`
+	PoolPubKey     common.PubKey    `json:"pool_pub_key"`
+	Chains         []string         `json:"chains"`
+	KeygenTime     int64            `json:"keygen_time"`
+	CryptonoteData string           `json:"cryptonote_data"`
 }
 
 func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
@@ -146,7 +146,7 @@ func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		msg, err := types.NewMsgTssPool(req.InputPubKeys, req.PoolPubKey, req.KeygenType, req.Height, req.Blame, req.Chains, addr, req.KeygenTime)
+		msg, err := types.NewMsgTssPool(req.InputPubKeys, req.PoolPubKey, req.CryptonoteData, req.KeygenType, req.Height, req.Blame, req.Chains, addr, req.KeygenTime)
 		if err != nil {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 			return

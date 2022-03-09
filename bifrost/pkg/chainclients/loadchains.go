@@ -1,9 +1,11 @@
 package chainclients
 
 import (
+	"github.com/akildemir/go-tss/tss"
 	"github.com/rs/zerolog/log"
+
+	mnTss "github.com/akildemir/moneroTss/tss"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/dogecoin"
-	"gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -11,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/bitcoin"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/bitcoincash"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/haven"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/litecoin"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -21,11 +24,11 @@ import (
 func LoadChains(thorKeys *thorclient.Keys,
 	cfg []config.ChainConfiguration,
 	server *tss.TssServer,
+	mnServer *mnTss.TssServer,
 	thorchainBridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubKeyValidator pubkeymanager.PubKeyValidator,
-	poolMgr thorclient.PoolManager,
-) map[common.Chain]ChainClient {
+	poolMgr thorclient.PoolManager) map[common.Chain]ChainClient {
 	logger := log.Logger.With().Str("module", "bifrost").Logger()
 	chains := make(map[common.Chain]ChainClient, 0)
 
@@ -79,8 +82,16 @@ func LoadChains(thorKeys *thorclient.Keys,
 				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
 				continue
 			}
+
 			pubKeyValidator.RegisterCallback(doge.RegisterPublicKey)
 			chains[common.DOGEChain] = doge
+		case common.XHVChain:
+			xhv, err := haven.NewClient(thorKeys, chain, mnServer, thorchainBridge, pubKeyValidator, poolMgr, m)
+			if err != nil {
+				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
+				continue
+			}
+			chains[common.XHVChain] = xhv
 		default:
 			continue
 		}

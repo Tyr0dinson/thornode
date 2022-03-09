@@ -20,6 +20,7 @@ var (
 	LTCChain   = Chain("LTC")
 	BCHChain   = Chain("BCH")
 	DOGEChain  = Chain("DOGE")
+	XHVChain   = Chain("XHV")
 	THORChain  = Chain("THOR")
 	TERRAChain = Chain("TERRA")
 
@@ -90,6 +91,8 @@ func (c Chain) GetSigningAlgo() SigninAlgo {
 	switch c {
 	case BNBChain, ETHChain, BTCChain, THORChain:
 		return SigningAlgoSecp256k1
+	case XHVChain:
+		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
 	}
@@ -112,6 +115,8 @@ func (c Chain) GetGasAsset() Asset {
 		return DOGEAsset
 	case ETHChain:
 		return ETHAsset
+	case XHVChain:
+		return XHVAsset
 	default:
 		return EmptyAsset
 	}
@@ -155,6 +160,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
+		case XHVChain:
+			return "hvt"
 		}
 	case TestNet:
 		switch c {
@@ -171,8 +178,10 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.TestNet4Params.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.TestNet3Params.Bech32HRPSegwit
+		case XHVChain:
+			return "hvt"
 		}
-	case MainNet, StageNet:
+	case StageNet:
 		switch c {
 		case BNBChain:
 			return btypes.ProdNetwork.Bech32Prefixes()
@@ -186,6 +195,25 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.MainNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.MainNetParams.Bech32HRPSegwit
+		case XHVChain:
+			return "hvsa"
+		}
+	case MainNet:
+		switch c {
+		case BNBChain:
+			return btypes.ProdNetwork.Bech32Prefixes()
+		case ETHChain:
+			return "0x"
+		case THORChain:
+			return types.GetConfig().GetBech32AccountAddrPrefix()
+		case BTCChain:
+			return chaincfg.MainNetParams.Bech32HRPSegwit
+		case LTCChain:
+			return ltcchaincfg.MainNetParams.Bech32HRPSegwit
+		case DOGEChain:
+			return dogchaincfg.MainNetParams.Bech32HRPSegwit
+		case XHVChain:
+			return "hvx"
 		}
 	}
 	return ""

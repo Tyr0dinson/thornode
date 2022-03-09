@@ -49,6 +49,7 @@ const (
 	AsgardVault              = "/thorchain/vaults/asgard"
 	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
+	TxEndPoint               = "/thorchain/tx/%s"
 	RagnarokEndpoint         = "/thorchain/ragnarok"
 	MimirEndpoint            = "/thorchain/mimir"
 	ChainVersionEndpoint     = "/thorchain/version"
@@ -260,8 +261,8 @@ func (b *ThorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 }
 
 // GetKeygenStdTx get keygen tx from params
-func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (sdk.Msg, error) {
-	return stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
+func (b *ThorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, cnData string, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (sdk.Msg, error) {
+	return stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, cnData, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
 }
 
 // GetObservationsStdTx get observations tx from txIns
@@ -279,6 +280,8 @@ func (b *ThorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) ([]cosm
 			chain = tx.Tx.Coins[0].Asset.Chain
 		}
 
+		// this ObservedPubKey is still cnData for the cryptonote chains. and will ber till txin is in
+		// the thornode and thornode replaces cndata with actual pubkey
 		obAddr, err := tx.ObservedPubKey.GetAddress(chain)
 		if err != nil {
 			return nil, err
@@ -422,6 +425,25 @@ func (b *ThorchainBridge) GetAsgards() (stypes.Vaults, error) {
 	return vaults, nil
 }
 
+// GetAsgards retrieve given tx from thorchain. Returns empty txin item without error if tx was not found.
+func (b *ThorchainBridge) GetTx(txId string) (types.TxInItem, error) {
+	result, s, err := b.getWithPath(fmt.Sprintf(TxEndPoint, txId))
+	if err != nil {
+		return types.TxInItem{}, fmt.Errorf("fail to get tx from thorchain: %w", err)
+	}
+	if s == http.StatusNotFound {
+		return types.TxInItem{}, nil
+	}
+	if s != http.StatusOK {
+		return types.TxInItem{}, fmt.Errorf("http Error: %d", s)
+	}
+	var txIn types.TxInItem
+	if err := json.Unmarshal(result, &txIn); err != nil {
+		return types.TxInItem{}, fmt.Errorf("fail to unmarshal tx from json: %w", err)
+	}
+	return txIn, nil
+}
+
 // GetPubKeys retrieve asgard vaults and yggdrasil vaults , and it's relevant smart contracts
 func (b *ThorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	buf, s, err := b.getWithPath(PubKeysEndpoint)
@@ -438,8 +460,9 @@ func (b *ThorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	var addressPairs []PubKeyContractAddressPair
 	for _, v := range append(result.Asgard, result.Yggdrasil...) {
 		kp := PubKeyContractAddressPair{
-			PubKey:    v.PubKey,
-			Contracts: make(map[common.Chain]common.Address),
+			PubKey:         v.PubKey,
+			Contracts:      make(map[common.Chain]common.Address),
+			CryptonoteData: v.CryptonoteData,
 		}
 		for _, item := range v.Routers {
 			kp.Contracts[item.Chain] = item.Router
@@ -536,8 +559,9 @@ func (b *ThorchainBridge) GetMimir(key string) (int64, error) {
 
 // PubKeyContractAddressPair is an entry to map pubkey and contract addresses
 type PubKeyContractAddressPair struct {
-	PubKey    common.PubKey
-	Contracts map[common.Chain]common.Address
+	PubKey         common.PubKey
+	Contracts      map[common.Chain]common.Address
+	CryptonoteData string
 }
 
 // GetContractAddress retrieve the contract address from asgard

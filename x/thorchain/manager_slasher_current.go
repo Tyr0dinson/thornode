@@ -452,7 +452,6 @@ func (s *SlasherV75) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 			}
 			ctx.Logger().Info("slash node account", "node address", na.NodeAddress.String(), "amount", slashAmountRune.String(), "total slash amount", totalSlashAmountInRune)
 			na.Bond = common.SafeSub(na.Bond, slashAmountRune)
-
 			tx := common.Tx{}
 			tx.ID = common.BlankTxID
 			tx.FromAddress = na.BondAddress

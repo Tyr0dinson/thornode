@@ -274,7 +274,6 @@ func (vm *validatorMgrV80) EndBlock(ctx cosmos.Context, mgr Manager, constAccess
 		na.UpdateStatus(NodeActive, height)
 		na.LeaveScore = 0
 		na.RequestedToLeave = false
-
 		vm.k.ResetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
 			ctx.Logger().Error("fail to save node account", "error", err)
@@ -939,7 +938,12 @@ func (vm *validatorMgrV80) RequestYggReturn(ctx cosmos.Context, node NodeAccount
 			ctx.Logger().Info("there is not fund for chain, no need for yggdrasil return", "chain", chain)
 			continue
 		}
-		toAddr, err := vault.PubKey.GetAddress(chain)
+		var toAddr common.Address
+		if chain == common.XHVChain {
+			toAddr, err = common.PubKey(vault.CryptonoteData).GetAddress(chain)
+		} else {
+			toAddr, err = vault.PubKey.GetAddress(chain)
+		}
 		if err != nil {
 			return err
 		}

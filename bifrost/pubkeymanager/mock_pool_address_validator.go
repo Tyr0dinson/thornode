@@ -79,3 +79,11 @@ func (mpa *MockPoolAddressValidator) GetContracts(chain common.Chain) []common.A
 func (mpa *MockPoolAddressValidator) GetContract(chain common.Chain, pk common.PubKey) common.Address {
 	return common.NoAddress
 }
+
+func (mpa *MockPoolAddressValidator) GetCnData(chain common.Chain, pk common.PubKey) string {
+	return ""
+}
+
+func (mpa *MockPoolAddressValidator) UpdateCnDataOfPubKey(chain common.Chain, pk common.PubKey, cnData string) {
+	return
+}

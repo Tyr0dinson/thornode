@@ -522,7 +522,6 @@ func (TypeObservedTxSuite) TestObservedTxGetConsensus(c *C) {
 	c.Assert(tx.IsEmpty(), Equals, false)
 	c.Assert(tx.Equals(obTx1), Equals, true)
 }
-
 func (TypeObservedTxSuite) TestNewGetConsensusTx(c *C) {
 	txID := GetRandomTxHash()
 	acc1 := GetRandomBech32Addr()

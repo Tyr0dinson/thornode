@@ -98,7 +98,7 @@ extract: tools
 
 # updates our tss dependency
 tss:
-	go get gitlab.com/thorchain/tss/go-tss
+	go get github.com/akildemir/go-tss
 
 pull:
 	docker pull ${IMAGE}:mocknet
@@ -109,6 +109,9 @@ pull:
 
 run-mocknet:
 	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
+
+build-mocknet:
+	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
 
 reset-mocknet:
 	docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v

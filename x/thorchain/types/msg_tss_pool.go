@@ -12,21 +12,22 @@ import (
 )
 
 // NewMsgTssPool is a constructor function for MsgTssPool
-func NewMsgTssPool(pks []string, poolpk common.PubKey, KeygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) (*MsgTssPool, error) {
+func NewMsgTssPool(pks []string, poolpk common.PubKey, cnData string, KeygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) (*MsgTssPool, error) {
 	id, err := getTssID(pks, poolpk, height, bl)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tss id: %w", err)
 	}
 	return &MsgTssPool{
-		ID:         id,
-		PubKeys:    pks,
-		PoolPubKey: poolpk,
-		Height:     height,
-		KeygenType: KeygenType,
-		Blame:      bl,
-		Chains:     chains,
-		Signer:     signer,
-		KeygenTime: keygenTime,
+		ID:             id,
+		PubKeys:        pks,
+		PoolPubKey:     poolpk,
+		Height:         height,
+		KeygenType:     KeygenType,
+		Blame:          bl,
+		Chains:         chains,
+		Signer:         signer,
+		KeygenTime:     keygenTime,
+		CryptonoteData: cnData,
 	}, nil
 }
 
@@ -98,6 +99,15 @@ func (m *MsgTssPool) ValidateBasic() error {
 		if signerAddress.Equals(m.Signer) {
 			isSignerInPubKeys = true
 		}
+		if signerAddress.Equals(m.Signer) {
+			isSignerInPubKeys = true
+		}
+	}
+	if !isSignerInPubKeys {
+		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
+	}
+	if !isSignerInPubKeys {
+		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
 	}
 	if !isSignerInPubKeys {
 		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
@@ -111,6 +121,10 @@ func (m *MsgTssPool) ValidateBasic() error {
 	// ensure pool pubkey is a valid bech32 pubkey
 	if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	// ensure that cn data is either empty or 128 charecter
+	if len(m.CryptonoteData) != 0 && len(m.CryptonoteData) != 128 { // 64 byte is 128 charecter as a hex string
+		return cosmos.ErrUnknownRequest("Cryptonote data must be either empty or 128 charecter hex string (64byte)")
 	}
 	chains := m.GetChains()
 	if len(chains) != len(m.Chains) {

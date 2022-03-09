@@ -307,7 +307,6 @@ func (s *DogecoinSignerSuite) TestSignTxWithTSS(c *C) {
 		InHash:  "",
 		OutHash: "",
 	}
-
 	thorKeyManager := &tss.MockThorchainKeyManager{}
 	s.client.ksWrapper, err = NewKeySignWrapper(s.client.privateKey, thorKeyManager)
 	txHash := "66d2d6b5eb564972c59e4797683a1225a02515a41119f0a8919381236b63e948"

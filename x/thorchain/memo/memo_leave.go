@@ -28,6 +28,5 @@ func ParseLeaveMemo(parts []string) (LeaveMemo, error) {
 	if err != nil {
 		return LeaveMemo{}, fmt.Errorf("%s is an invalid thorchain address: %w", parts[1], err)
 	}
-
 	return NewLeaveMemo(addr), nil
 }

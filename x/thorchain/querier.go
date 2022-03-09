@@ -180,6 +180,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		PendingTxBlockHeights: v.PendingTxBlockHeights,
 		Routers:               v.Routers,
 		Addresses:             getVaultChainAddress(ctx, v),
+		CryptonoteData:        v.CryptonoteData,
 	}
 	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
@@ -218,6 +219,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				PendingTxBlockHeights: vault.PendingTxBlockHeights,
 				Routers:               vault.Routers,
 				Addresses:             getVaultChainAddress(ctx, vault),
+				CryptonoteData:        vault.CryptonoteData,
 			})
 		}
 	}
@@ -235,7 +237,13 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	var result []QueryChainAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		var addr common.Address
+		var err error
+		if c == common.XHVChain {
+			addr, err = common.PubKey(vault.CryptonoteData).GetAddress(c)
+		} else {
+			addr, err = vault.PubKey.GetAddress(c)
+		}
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue
@@ -305,6 +313,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Bond:                  na.Bond,
 			TotalValue:            totalValue,
 			Addresses:             getVaultChainAddress(ctx, vault),
+			CryptonoteData:        vault.CryptonoteData,
 		}
 	}
 
@@ -338,15 +347,17 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 			if !na.Bond.IsZero() {
 				resp.Yggdrasil = append(resp.Yggdrasil, QueryVaultPubKeyContract{
-					PubKey:  vault.PubKey,
-					Routers: vault.Routers,
+					PubKey:         vault.PubKey,
+					Routers:        vault.Routers,
+					CryptonoteData: vault.CryptonoteData,
 				})
 			}
 		} else if vault.IsAsgard() {
 			if vault.Status == ActiveVault || vault.Status == RetiringVault {
 				resp.Asgard = append(resp.Asgard, QueryVaultPubKeyContract{
-					PubKey:  vault.PubKey,
-					Routers: vault.Routers,
+					PubKey:         vault.PubKey,
+					Routers:        vault.Routers,
+					CryptonoteData: vault.CryptonoteData,
 				})
 			}
 		}
@@ -424,7 +435,12 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		if chain == common.THORChain {
 			continue
 		}
-		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		var vaultAddress common.Address
+		if chain == common.XHVChain {
+			vaultAddress, err = common.PubKey(vault.CryptonoteData).GetAddress(chain)
+		} else {
+			vaultAddress, err = vault.PubKey.GetAddress(chain)
+		}
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
@@ -1157,7 +1173,6 @@ func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr 
 	}
 	return res, nil
 }
-
 func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	if len(path) == 0 && len(path[0]) == 0 {
 		return nil, fmt.Errorf("no mimir key")

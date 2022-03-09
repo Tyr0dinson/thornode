@@ -55,7 +55,6 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	}
 	return getHandlerMappingV1(mgr)
 }
-
 func getHandlerMappingV1(mgr Manager) map[string]MsgHandler {
 	m := make(map[string]MsgHandler)
 	// consensus handlers
@@ -72,6 +71,7 @@ func getHandlerMappingV1(mgr Manager) map[string]MsgHandler {
 	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(mgr)
 	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
+	m[MsgSetCryptonoteData{}.Type()] = NewCryptonoteDataHandler(mgr)
 
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
@@ -128,11 +128,16 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	m[MsgSetNodeKeys{}.Type()] = NewSetNodeKeysHandler(mgr)
 	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
+	m[MsgSetCryptonoteData{}.Type()] = NewCryptonoteDataHandler(mgr)
 	m[MsgNodePauseChain{}.Type()] = NewNodePauseChainHandler(mgr)
 
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
+	// TODO: uncomment this line once THORNames is deployed (post version
+	// 0.57.0). If this is done, gas is paid with deposit handler, so we'll
+	// need to charge for gas, but not twice
+	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	return m
 }
 

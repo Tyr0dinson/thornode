@@ -12,15 +12,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	golog "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-peerstore/addr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
 
-	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/tss"
+	"github.com/akildemir/go-tss/common"
+	"github.com/akildemir/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -33,6 +35,14 @@ import (
 	"gitlab.com/thorchain/thornode/cmd"
 	tcommon "gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+
+	mnTssCommon "github.com/akildemir/moneroTss/common"
+	"github.com/akildemir/moneroTss/conversion"
+	moneroP2P "github.com/akildemir/moneroTss/p2p"
+	mnTss "github.com/akildemir/moneroTss/tss"
+
+	"github.com/akildemir/go-tss/p2p"
+	"github.com/akildemir/go-tss/storage"
 )
 
 // THORNode define version / revision here , so THORNode could inject the version from CI pipeline if THORNode want to
@@ -120,11 +130,35 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
 	}
 	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
+
+	// set up tss comms
+	stateManager, err := storage.NewFileStateMgr(app.DefaultNodeHome(""))
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to create file state manager")
+	}
+	var bootstrapPeersfinal addr.AddrList
+	savedPeers, err := stateManager.RetrieveP2PAddresses()
+	if err != nil {
+		bootstrapPeersfinal = bootstrapPeers
+	} else {
+		bootstrapPeersfinal = append(savedPeers, bootstrapPeers...)
+	}
+	comm, err := p2p.NewCommunication(cfg.TSS.Rendezvous, bootstrapPeersfinal, cfg.TSS.P2PPort, cfg.TSS.ExternalIP)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to create communication layer")
+	}
+	priKeyRawBytes, err := conversion.GetPriKeyRawBytes(tmPrivateKey)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to get private key")
+	}
+	if err := comm.Start(priKeyRawBytes); nil != err {
+		log.Fatal().Err(err).Msg("fail to start p2p network")
+	}
+
+	// set up TSS signing
 	tssIns, err := tss.NewTss(
-		bootstrapPeers,
-		cfg.TSS.P2PPort,
+		comm,
 		tmPrivateKey,
-		cfg.TSS.Rendezvous,
 		app.DefaultNodeHome(""),
 		common.TssConfig{
 			EnableMonitor:   true,
@@ -134,21 +168,50 @@ func main() {
 			PreParamTimeout: 5 * time.Minute,
 		},
 		getLocalPreParam(*tssPreParam),
-		cfg.TSS.ExternalIP,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create tss instance")
 	}
-
 	if err := tssIns.Start(); err != nil {
 		log.Err(err).Msg("fail to start tss instance")
 	}
 
+	// set up monero TSS signing
+	mnTssIns, err := mnTss.NewTss(
+		(*moneroP2P.Communication)(unsafe.Pointer(comm)),
+		tmPrivateKey,
+		app.DefaultNodeHome(""),
+		mnTssCommon.TssConfig{
+			EnableMonitor:   true,
+			KeyGenTimeout:   240 * time.Second, // must be shorter than cosntants.JailTimeKeygen
+			KeySignTimeout:  180 * time.Second, // must be shorter than constants.JailTimeKeysign
+			PartyTimeout:    30 * time.Second,
+			PreParamTimeout: 5 * time.Minute,
+		},
+		getLocalPreParam(*tssPreParam),
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to create monero tss instance")
+	}
+	if err := mnTssIns.Start(); err != nil {
+		log.Err(err).Msg("fail to start monero tss instance")
+	}
+
+	// start tss healt server
 	healthServer := NewHealthServer(cfg.TSS.InfoAddress, tssIns)
 	go func() {
 		defer log.Info().Msg("health server exit")
 		if err := healthServer.Start(); err != nil {
 			log.Error().Err(err).Msg("fail to start health server")
+		}
+	}()
+
+	// start monero tss health server
+	healthServerMn := NewMnHealthServer(cfg.TSS.InfoAddressMn, mnTssIns)
+	go func() {
+		defer log.Info().Msg("healthMn server exit")
+		if err := healthServerMn.Start(); err != nil {
+			log.Error().Err(err).Msg("fail to start healthMn server")
 		}
 	}()
 	if len(cfg.Chains) == 0 {
@@ -175,13 +238,22 @@ func main() {
 		}
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
-	chains := chainclients.LoadChains(k, cfg.Chains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
+	chains := chainclients.LoadChains(k, cfg.Chains, tssIns, mnTssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
 	if len(chains) == 0 {
 		log.Fatal().Msg("fail to load any chains")
 	}
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
+
+	// grap the xhv/monero wallet rpc host
+	var xhvwalletHost string
+	for _, chain := range cfg.Chains {
+		if chain.ChainID == tcommon.XHVChain {
+			xhvwalletHost = chain.WalletRPCHost
+		}
+	}
+
 	// start signer
-	sign, err := signer.NewSigner(cfg.Signer, thorchainBridge, k, pubkeyMgr, tssIns, chains, m, tssKeysignMetricMgr)
+	sign, err := signer.NewSigner(cfg.Signer, thorchainBridge, k, pubkeyMgr, tssIns, mnTssIns, chains, m, tssKeysignMetricMgr, xhvwalletHost)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create instance of signer")
 	}
@@ -214,8 +286,12 @@ func main() {
 	}
 	// stop go tss
 	tssIns.Stop()
+	mnTssIns.Stop()
 	if err := healthServer.Stop(); err != nil {
 		log.Fatal().Err(err).Msg("fail to stop health server")
+	}
+	if err := healthServerMn.Stop(); err != nil {
+		log.Fatal().Err(err).Msg("fail to stop healthMn server")
 	}
 }
 

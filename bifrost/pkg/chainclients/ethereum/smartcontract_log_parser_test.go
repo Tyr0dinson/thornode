@@ -79,7 +79,6 @@ func (t *SmartContractLogParserTestSuite) getDepositEvent(smartContractAddr stri
 		Data: depositData,
 	}
 }
-
 func (t *SmartContractLogParserTestSuite) getTransferOutEvent(smartContractAddr, vault, to, asset string, amount *big.Int, memo string) *etypes.Log {
 	evt, err := t.abi.EventByID(ecommon.HexToHash(transferOutEvent))
 	if err != nil {
@@ -99,7 +98,6 @@ func (t *SmartContractLogParserTestSuite) getTransferOutEvent(smartContractAddr,
 		Data: transferOutData,
 	}
 }
-
 func (t *SmartContractLogParserTestSuite) getTransferAllowanceEvent(smartContractAddr, vault, to, asset string, amount *big.Int, memo string) *etypes.Log {
 	evt, err := t.abi.EventByID(ecommon.HexToHash(transferAllowanceEvent))
 	if err != nil {
@@ -119,7 +117,6 @@ func (t *SmartContractLogParserTestSuite) getTransferAllowanceEvent(smartContrac
 		Data: transferAllowanceData,
 	}
 }
-
 func (t *SmartContractLogParserTestSuite) getVaultTransferEvent(smartContractAddr, oldVault, newVault string, coins []RouterCoin, memo string) *etypes.Log {
 	evt, err := t.abi.EventByID(ecommon.HexToHash(vaultTransferEvent))
 	if err != nil {
@@ -286,7 +283,6 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 		common.NewCoin(tknAsset, cosmos.NewUint(2048000)),
 	)), Equals, true)
 }
-
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C) {
 	vaultABI, _, err := getContractABI()
 	c.Assert(err, IsNil)
@@ -445,7 +441,6 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(102400)),
 	)), Equals, true)
 }
-
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *C) {
 	vaultABI, _, err := getContractABI()
 	c.Assert(err, IsNil)
@@ -593,7 +588,6 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 		common.NewCoin(tknAsset, cosmos.NewUint(1024000)),
 	)), Equals, true)
 }
-
 func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	vaultABI, _, err := getContractABI()
 	c.Assert(err, IsNil)

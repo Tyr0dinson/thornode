@@ -259,12 +259,14 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 	if p, ok := s.pools.Get(asset); ok {
 		// Get our pool from the cache
 		pool = p
+		ctx.Logger().Info("Got the pool From store", "Balance Asset", pool.BalanceAsset, "Balance Rune", pool.BalanceRune, "asset", asset, "pool asset", pool.Asset)
 	} else {
 		// Get our pool from the KVStore
 		pool, err = keeper.GetPool(ctx, asset)
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
 		}
+		ctx.Logger().Info("Got the pool From store", "Balance Asset", pool.BalanceAsset, "Balance Rune", pool.BalanceRune, "asset", asset, "pool asset", pool.Asset)
 		ver := keeper.GetLowestActiveVersion(ctx)
 		synthSupply := keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(ver, synthSupply)
@@ -286,6 +288,8 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 		X = X.MulUint64(uint64(synthVirtualDepthMult))
 		Y = Y.MulUint64(uint64(synthVirtualDepthMult))
 	}
+
+	ctx.Logger().Info("Pool Asset Balances", "Balance X", X, "Balance Y", Y, "x", x)
 
 	// check our X,x,Y values are valid
 	if x.IsZero() {
