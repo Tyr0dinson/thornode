@@ -18,8 +18,8 @@ type THORChainFeeDecorator struct {
 	bankKeeper bankkeeper.ViewKeeper
 }
 
-// NewTHORCHainFeeDecorator create a new instance of THORChainFeeDecorator
-func NewTHORCHainFeeDecorator(ak ante.AccountKeeper, bk bankkeeper.ViewKeeper) THORChainFeeDecorator {
+// NewTHORChainFeeDecorator create a new instance of THORChainFeeDecorator
+func NewTHORChainFeeDecorator(ak ante.AccountKeeper, bk bankkeeper.ViewKeeper) THORChainFeeDecorator {
 	return THORChainFeeDecorator{
 		ak:         ak,
 		bankKeeper: bk,
