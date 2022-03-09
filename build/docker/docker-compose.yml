@@ -228,7 +228,7 @@ services:
   haven:
     profiles:
       - mocknet
-    image: haven-core:latest
+    image: registry.gitlab.com/thorchain/devops/haven-core:latest
     restart: unless-stopped
     volumes:
       - "./mocknet:/mocknet"
