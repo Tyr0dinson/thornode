@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"github.com/blang/semver"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
@@ -55,6 +56,7 @@ func NewDummyMgr() *DummyMgr {
 func (m DummyMgr) GetVersion() semver.Version             { return GetCurrentVersion() }
 func (m DummyMgr) GetConstants() constants.ConstantValues { return m.constAccessor }
 func (m DummyMgr) Keeper() keeper.Keeper                  { return m.K }
+func (m DummyMgr) StakingKeeper() stakingkeeper.Keeper    { return stakingkeeper.Keeper{} }
 func (m DummyMgr) GasMgr() GasManager                     { return m.gasMgr }
 func (m DummyMgr) EventMgr() EventManager                 { return m.eventMgr }
 func (m DummyMgr) TxOutStore() TxOutStore                 { return m.txOutStore }

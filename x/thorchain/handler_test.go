@@ -15,6 +15,8 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/tendermint/tendermint/libs/log"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
@@ -66,12 +68,14 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
+	keyStake := cosmos.NewKVStoreKey(stakingtypes.StoreKey)
 	keyParams := cosmos.NewKVStoreKey(paramstypes.StoreKey)
 	tkeyParams := cosmos.NewTransientStoreKey(paramstypes.TStoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyStake, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyParams, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
@@ -86,16 +90,23 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
-		ModuleName:  {authtypes.Minter, authtypes.Burner},
-		AsgardName:  {},
-		BondName:    {},
-		ReserveName: {},
+		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
+		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
+		ModuleName:                     {authtypes.Minter, authtypes.Burner},
+		AsgardName:                     {},
+		BondName:                       {},
+		ReserveName:                    {},
 	})
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
+
+	sk := stakingkeeper.NewKeeper(
+		marshaler, keyStake, ak, bk, pk.Subspace(stakingtypes.ModuleName),
+	)
+
 	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
@@ -112,7 +123,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		TransactionFeeRate: 6423600,
 	}), IsNil)
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, marshaler, bk, ak, keyThorchain)
+	mgr := NewManagers(k, marshaler, bk, ak, sk, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	return ctx, mgr

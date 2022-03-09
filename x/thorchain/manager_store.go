@@ -2,9 +2,12 @@ package thorchain
 
 import (
 	"fmt"
+	"time"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // StoreManager define the method as the entry point for store upgrade
@@ -118,4 +121,15 @@ func migrateStoreV87(ctx cosmos.Context, mgr *Mgrs) {
 			return
 		}
 	}
+}
+
+func migrateStoreV84(ctx cosmos.Context, mgr *Mgrs) {
+	stakeParams := stakingtypes.Params{
+		UnbondingTime:     48 * time.Hour,
+		MaxValidators:     250,
+		MaxEntries:        10,
+		HistoricalEntries: 10000,
+		BondDenom:         "thor",
+	}
+	mgr.StakingKeeper().SetParams(ctx, stakeParams)
 }

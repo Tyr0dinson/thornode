@@ -8,6 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto"
 
@@ -30,6 +31,7 @@ type Manager interface {
 	GetConstants() constants.ConstantValues
 	GetVersion() semver.Version
 	Keeper() keeper.Keeper
+	StakingKeeper() stakingkeeper.Keeper
 	GasMgr() GasManager
 	EventMgr() EventManager
 	TxOutStore() TxOutStore
@@ -138,16 +140,18 @@ type Mgrs struct {
 	cdc           codec.BinaryCodec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
+	stakingKeeper stakingkeeper.Keeper
 	storeKey      cosmos.StoreKey
 }
 
 // NewManagers  create a new Manager
-func NewManagers(keeper keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
+func NewManagers(keeper keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, stakingKeeper stakingkeeper.Keeper, storeKey cosmos.StoreKey) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
 		cdc:           cdc,
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
+		stakingKeeper: stakingKeeper,
 		storeKey:      storeKey,
 	}
 }
@@ -219,6 +223,9 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	}
 	return nil
 }
+
+// Keeper return Keeper
+func (mgr *Mgrs) StakingKeeper() stakingkeeper.Keeper { return mgr.stakingKeeper }
 
 // Keeper return Keeper
 func (mgr *Mgrs) Keeper() keeper.Keeper { return mgr.K }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -12,6 +13,8 @@ import (
 	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
@@ -99,14 +102,14 @@ type AppModule struct {
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
+func NewAppModule(k keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, stakingKeeper stakingkeeper.Keeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
 	kb, err := cosmos.GetKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
 	if err != nil {
 		panic(err)
 	}
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
-		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey),
+		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, stakingKeeper, storeKey),
 		keybaseStore:     kb,
 		telemetryEnabled: telemetryEnabled,
 	}
@@ -168,6 +171,33 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	if err := smgr.Iterator(ctx); err != nil {
 		os.Exit(10) // halt the chain if unsuccessful
 	}
+
+	// /////////////////////////////////////////////////////////////////
+	// set historical info for cosmos staking. This is utilized by IBC
+	if version.GTE(semver.MustParse("1.84.0")) {
+		header := ctx.BlockHeader()
+		validators := make([]stakingtypes.Validator, 0)
+		nas, err := am.mgr.Keeper().ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("fail to get active validators in begin block", "err", err)
+		}
+		for _, na := range nas {
+			pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
+			if err != nil {
+				ctx.Logger().Error("fail to parse consensus public key", "key", na.ValidatorConsPubKey, "error", err)
+				continue
+			}
+			caddr := sdk.ValAddress(pk.Address())
+			val, ok := am.mgr.StakingKeeper().GetValidator(ctx, caddr)
+			if !ok {
+				continue
+			}
+			validators = append(validators, val)
+		}
+		hist := stakingtypes.NewHistoricalInfo(header, validators, am.mgr.StakingKeeper().PowerReduction(ctx))
+		am.mgr.StakingKeeper().SetHistoricalInfo(ctx, common.BlockHeight(ctx), &hist)
+	}
+	// /////////////////////////////////////////////////////////////////
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 	if err := am.mgr.BeginBlock(ctx); err != nil {
