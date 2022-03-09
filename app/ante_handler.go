@@ -30,7 +30,7 @@ func NewAnteHandler(
 		ante.NewDeductFeeDecorator(ak, bankKeeper),
 		ante.NewSigGasConsumeDecorator(ak, sigGasConsumer),
 		ante.NewSigVerificationDecorator(ak, signModeHandler),
-		NewTHORCHainFeeDecorator(ak, bankKeeper),
+		NewTHORChainFeeDecorator(ak, bankKeeper),
 		ante.NewIncrementSequenceDecorator(ak),
 	)
 }

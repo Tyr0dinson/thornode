@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -32,13 +33,12 @@ func (fd THORChainFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 	if err != nil {
 		return ctx, fmt.Errorf("fail to create native RUNE fee,err:%w", err)
 	}
-
 	for _, msg := range tx.GetMsgs() {
 		switch msg.(type) {
 		case *types.MsgSend, *types.MsgDeposit:
 			for _, signer := range msg.GetSigners() {
 				if !fd.bankKeeper.HasBalance(ctx, signer, runeFee) {
-					return ctx, fmt.Errorf("account: %s doesn't have enough to pay for RUNE transaction fee", signer.String())
+					return ctx, sdkerrors.Wrapf(sdkerrors.ErrInsufficientFee, "account: %s doesn't have enough to pay for RUNE transaction fee", signer.String())
 				}
 			}
 		}
