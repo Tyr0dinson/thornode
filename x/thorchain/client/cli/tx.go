@@ -1,21 +1,15 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io"
-	"os/user"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/crypto"
-	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -23,13 +17,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 
 	moneroCrypto "github.com/haven-protocol-org/monero-go-utils/crypto"
-	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
-)
-
-const (
-	// folder name for thorchain thorcli
-	thorchainCliFolderName = `.thornode`
 )
 
 func GetTxCmd() *cobra.Command {
@@ -298,45 +286,30 @@ func GetCmdSetNodeKeys() *cobra.Command {
 // GetCmdSetCryptonoteKeys command to add a cryotonote keys
 func GetCmdSetCryptonoteKeys() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set-cryptonote-keys  [signerName] [password]",
+		Use:   "set-cryptonote-keys",
 		Short: "set cryptonote keys, the account use to sign this tx has to be whitelist first",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
 				return err
 			}
 
-			signerName := args[0]
-			password := args[1]
-
-			buf := bytes.NewBufferString(password)
-			// the library used by keyring is using ReadLine , which expect a new line
-			buf.WriteByte('\n')
-			kb, err := getKeybase("", buf)
-			if err != nil {
-				return fmt.Errorf("fail to getKeybase(): %w", err)
-			}
-			privKeyArmor, err := kb.ExportPrivKeyArmor(signerName, password)
+			kb := keyring.NewUnsafe(clientCtx.Keyring)
+			privKey, err := kb.UnsafeExportPrivKeyHex(clientCtx.GetFromName())
 			if err != nil {
 				return err
 			}
-			priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, password)
-			if err != nil {
-				return fmt.Errorf("fail to unarmor private key: %w", err)
-			}
-
-			log.Logger.Log().Msgf("set-cryptonote-keys retrived priv Key = % s", hex.EncodeToString(priKey.Bytes()))
 
 			// get the priv spend key
 			h := moneroCrypto.NewHash()
 			var keyHash [32]byte
-			h.Write(priKey.Bytes())
+			h.Write([]byte(privKey))
 			h.Sum(keyHash[:0])
 			var privSpendKey [32]byte
 			moneroCrypto.SecretFromSeed(&privSpendKey, &keyHash)
 			if !moneroCrypto.CheckSecret(&privSpendKey) {
-				return fmt.Errorf("ed25519PrivKey is invalid! key = %s", hex.EncodeToString(privSpendKey[:]))
+				return fmt.Errorf("ed25519 PrivKey is invalid, key: %s", hex.EncodeToString(privSpendKey[:]))
 			}
 
 			// generate cryonote priv/pub keys
@@ -359,18 +332,4 @@ func GetCmdSetCryptonoteKeys() *cobra.Command {
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
-}
-
-// getKeybase will create an instance of Keybase
-func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
-	cliDir := thorchainHome
-	if len(thorchainHome) == 0 {
-		usr, err := user.Current()
-		if err != nil {
-			return nil, fmt.Errorf("fail to get current user,err:%w", err)
-		}
-		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
-	}
-
-	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader)
 }
