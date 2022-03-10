@@ -323,7 +323,7 @@ func GetCmdSetCryptonoteKeys() *cobra.Command {
 			moneroCrypto.PublicFromSecret(&pubSpendKey, &privSpendKey)
 			moneroCrypto.ViewFromSpend(&privViewdKey, &privSpendKey)
 
-			// generate crytonote data to be publishedsdfs
+			// generate crytonote data to be published
 			var addData []byte
 			addData = append(addData, privViewdKey[:]...)
 			addData = append(addData, pubSpendKey[:]...)
