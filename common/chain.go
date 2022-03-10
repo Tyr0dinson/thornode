@@ -161,7 +161,7 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case XHVChain:
-			return "hvt"
+			return "hvx"
 		}
 	case TestNet:
 		switch c {

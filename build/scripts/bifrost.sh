@@ -29,9 +29,10 @@ BCH_HOST="${BCH_HOST:=bitcoin-cash:18443}"
 BCH_START_BLOCK_HEIGHT="${BCH_START_BLOCK_HEIGHT:=0}"
 
 # Haven chain config
-XHV_HOST="${XHV_HOST:=http://haven:27750}"
+XHV_HOST="${XHV_HOST:=http://haven:17750}"
 XHV_WALLET_HOST="${XHV_WALLET_HOST:=http://haven-wallet:6061/json_rpc}"
 XHV_START_BLOCK_HEIGHT="${XHV_START_BLOCK_HEIGHT:=0}"
+XHV_DISABLED="${XHV_DISABLED:=false}"
 
 DB_PATH="${DB_PATH:=/var/data}"
 CHAIN_API="${CHAIN_API:=127.0.0.1:1317}"
@@ -230,6 +231,7 @@ echo "{
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"disabled\": $XHV_DISABLED,
         \"block_scanner\": {
           \"rpc_host\": \"$XHV_HOST\",
           \"enforce_block_height\": false,

@@ -438,7 +438,7 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 	case XHVChain:
 		if strings.HasPrefix(addr.String(), "hvx") {
-			return MainNet
+			return currentNetwork
 		} else if strings.HasPrefix(addr.String(), "hvsa") {
 			return StageNet
 		} else {

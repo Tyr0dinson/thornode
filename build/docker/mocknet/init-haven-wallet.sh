@@ -8,10 +8,10 @@ HAVEN_ADDRESS="hvta8RELT6TbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUt
 start_mining () {
   curl http://haven:27750/start_mining -d "{\"do_background_mining\":false, \"ignore_battery\":true, \"miner_address\":\"${HAVEN_ADDRESS}\", \"threads_count\":1}" -H 'Content-Type: application/json'
 }
-until start_mining; do
-  echo "Wait for daemon to be ready..."
-  sleep 1
-done
+# until start_mining; do
+#   echo "Wait for daemon to be ready..."
+#   sleep 1
+# done
 
 # Start the wallet RPC server
-haven-wallet-rpc --daemon-address http://haven:27750 --testnet --rpc-bind-ip 0.0.0.0 --rpc-bind-port 6061 --confirm-external-bind --disable-rpc-login --wallet-dir /wallet
+haven-wallet-rpc --daemon-address http://haven:17750 --rpc-bind-ip 0.0.0.0 --rpc-bind-port 6061 --confirm-external-bind --disable-rpc-login --wallet-dir /wallet

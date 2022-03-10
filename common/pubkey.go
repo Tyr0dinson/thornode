@@ -198,44 +198,6 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		return NewAddress(addr.String())
-	case DOGEChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
-		if err != nil {
-			return NoAddress, err
-		}
-		var net *dogchaincfg.Params
-		switch chainNetwork {
-		case MockNet:
-			net = &dogchaincfg.RegressionNetParams
-		case TestNet:
-			net = &dogchaincfg.TestNet3Params
-		case MainNet:
-			net = &dogchaincfg.MainNetParams
-		}
-		addr, err := dogutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
-		if err != nil {
-			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
-		}
-		return NewAddress(addr.String())
-	case BCHChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
-		if err != nil {
-			return NoAddress, err
-		}
-		var net *bchchaincfg.Params
-		switch chainNetwork {
-		case MockNet:
-			net = &bchchaincfg.RegressionNetParams
-		case TestNet:
-			net = &bchchaincfg.TestNet3Params
-		case MainNet:
-			net = &bchchaincfg.MainNetParams
-		}
-		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
-		if err != nil {
-			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
-		}
-		return NewAddress(addr.String())
 	case XHVChain:
 		var cnData [64]byte
 		var privViewKey [32]byte
@@ -263,7 +225,10 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		chainNetwork := GetCurrentChainNetwork()
 		var tag uint64
 		switch chainNetwork {
-		case MockNet, TestNet:
+		case MockNet:
+			// Haven mainnet tag(hvx)
+			tag = 0x05af4
+		case TestNet:
 			// Haven testnet tag(hvt)
 			tag = 0x59f4
 		case StageNet:

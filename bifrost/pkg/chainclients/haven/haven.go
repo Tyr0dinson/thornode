@@ -15,6 +15,7 @@ import (
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
+	"go.uber.org/atomic"
 
 	tssp "github.com/akildemir/moneroTss/tss"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -57,7 +58,7 @@ type Client struct {
 	asgardPassword        string
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
-	consolidateInProgress bool
+	consolidateInProgress *atomic.Bool
 	supportedAssets       []string
 	tssKm                 *tss.KeySign
 	client                wallet.Client
@@ -191,22 +192,23 @@ func NewClient(
 	}
 
 	c := &Client{
-		logger:           log.Logger.With().Str("module", "haven").Logger(),
-		cfg:              cfg,
-		bridge:           bridge,
-		pkm:              pkm,
-		poolMgr:          poolMgr,
-		nodePubKey:       thorPubkey,
-		walletAddr:       walletAddr,
-		memPoolLock:      &sync.Mutex{},
-		signedTxOutLock:  &sync.Mutex{},
-		wg:               &sync.WaitGroup{},
-		client:           client,
-		tssKm:            tssKm,
-		supportedAssets:  []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
-		asgardPassword:   hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
-		processedMemPool: make(map[string]bool),
-		signedTxOut:      make(map[string]TxOutWitness),
+		logger:                log.Logger.With().Str("module", "haven").Logger(),
+		cfg:                   cfg,
+		bridge:                bridge,
+		pkm:                   pkm,
+		poolMgr:               poolMgr,
+		nodePubKey:            thorPubkey,
+		walletAddr:            walletAddr,
+		memPoolLock:           &sync.Mutex{},
+		signedTxOutLock:       &sync.Mutex{},
+		wg:                    &sync.WaitGroup{},
+		client:                client,
+		tssKm:                 tssKm,
+		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
+		asgardPassword:        hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
+		processedMemPool:      make(map[string]bool),
+		consolidateInProgress: atomic.NewBool(false),
+		signedTxOut:           make(map[string]TxOutWitness),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -629,10 +631,11 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-	if !c.consolidateInProgress {
+	if !c.consolidateInProgress.Load() {
 		// try to consolidate UTXOs
 		c.wg.Add(1)
-		go c.consolidateUTXOs()
+		c.consolidateInProgress.Store(true)
+		// go c.consolidateUTXOs()
 	}
 	return txIn, nil
 }
@@ -913,7 +916,7 @@ func (c *Client) extractTxs(block Block) (types.TxIn, error) {
 			continue
 		}
 		if txInItem.IsEmpty() {
-			c.logger.Info().Msgf("Ignoring Tx with empty TxInItem: %s", tx.Hash)
+			c.logger.Info().Msgf("ignoring Tx with empty TxInItem: %s", tx.Hash)
 			continue
 		}
 
@@ -941,7 +944,7 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 	// get tx public key
 	var txPubKey [32]byte
 	if len(parsedTxExtra[1]) != 1 {
-		c.logger.Info().Msg("Ignoring a Tx wit more than one tx key")
+		c.logger.Info().Msg("ignoring a tx with more than one tx key")
 		return types.TxInItem{}, nil
 	}
 	copy(txPubKey[:], parsedTxExtra[1][0][0:32])
@@ -949,10 +952,11 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 	// get the output
 	output, err := c.getOutput(tx, &txPubKey)
 	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("error Decrypting Tx Output: %w", err)
+		return types.TxInItem{}, fmt.Errorf("error decrypting tx output: %w", err)
 	}
 	if output == (TxVout{}) {
 		// we couldn't decode any output from this tx. Which means we don't own any anyway.
+		c.logger.Info().Msg("ignoring a tx we don't own")
 		return types.TxInItem{}, nil
 	}
 	fee := tx.Rct_Signatures.TxnFee
@@ -971,6 +975,7 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 	if val, ok := parsedTxExtra[0x18]; ok {
 		memoStr = string(val[0])
 	} else {
+		c.logger.Info().Msg("ignoring a tx we could not parse the memo")
 		return types.TxInItem{}, nil
 	}
 
@@ -980,7 +985,7 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 		return types.TxInItem{}, fmt.Errorf("ignoring a tx with invalid memo: %w", err)
 	}
 
-	// retrive the sender address
+	// retrieve the sender address
 	var sender string
 	if memo.GetType() == mem.TxAdd || memo.GetType() == mem.TxSwap {
 		sender = memo.GetSender().String()
@@ -1014,18 +1019,23 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 	// get all vaults keys and check for outputs
 	pubkeys, err := c.bridge.GetPubKeys()
 	if err != nil {
-		return TxVout{}, fmt.Errorf("FAiled to get the asgard vaults: %w", err)
+		return TxVout{}, fmt.Errorf("failed to get the asgard vaults: %w", err)
 	}
 	for _, pk := range pubkeys {
 		if len(pk.CryptonoteData) == 0 {
+			c.logger.Info().Msg("the vault cryptonote data is empty")
 			continue
 		}
+
+		c.logger.Info().Msgf("the vault pk is %s cryptonote data is %s", pk.PubKey, pk.CryptonoteData)
 
 		// get the privViewKey and pubSpendKey of the vault
 		privViewKey, pubSpendKey, err := c.decodeCnData(pk.CryptonoteData)
 		if err != nil {
 			return TxVout{}, fmt.Errorf("error decoding cryotonote data for vault: %s : %w", pk.PubKey, err)
 		}
+
+		c.logger.Info().Msgf("the vault private key is %s pub spendkey data is %s", string(privViewKey[:]), string(pubSpendKey[:]))
 
 		sharedSecretYgg, err := crypto.GenerateKeyDerivation(txPubKey, &privViewKey)
 		if err != nil {
@@ -1049,16 +1059,17 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 				copy(targetKey[:], targetRaw)
 				assetType = vout.Target.asset_type
 			} else {
-				c.logger.Info().Msgf("Invalid tx output found! Skipping..")
+				c.logger.Info().Msgf("invalid tx output found! skipping..")
 				continue
 			}
 
 			// derive the spent key
 			derivedPublicSpendKeyYgg, err := crypto.SubSecretFromTarget((*sharedSecretYgg)[:], uint64(ind), &targetKey)
 			if err != nil {
-				return TxVout{}, fmt.Errorf("error Deriving Ygg Public Spend Key: %w", err)
+				return TxVout{}, fmt.Errorf("error deriving ygg public spend Key: %w", err)
 			}
 
+			c.logger.Info().Msgf("the vault derived pub key is %s pub spendkey data is %s", string(derivedPublicSpendKeyYgg[:]), string(pubSpendKey[:]))
 			found := false
 			if *derivedPublicSpendKeyYgg == pubSpendKey {
 				found = true
@@ -1090,15 +1101,16 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 							ind:     ind,
 						}, nil
 					} else {
-						c.logger.Info().Msgf("Invalid commitment for ouptut = %d  of tx %s skipiing..", ind, tx.Hash)
+						c.logger.Info().Msgf("invalid commitment for ouptut = %d  of tx %s skipiing..", ind, tx.Hash)
 					}
 				} else {
-					c.logger.Info().Msgf("Calculation of the commitment failed for output index = %d of tx %s skipiing..", ind, tx.Hash)
+					c.logger.Info().Msgf("calculation of the commitment failed for output index = %d of tx %s skipping..", ind, tx.Hash)
 				}
 			}
 		}
 	}
 
+	c.logger.Info().Msgf("returning empty tx vout")
 	return TxVout{}, nil
 }
 
@@ -1466,7 +1478,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 func (c *Client) consolidateUTXOs() {
 	defer func() {
 		c.wg.Done()
-		c.consolidateInProgress = false
+		c.consolidateInProgress.Store(false)
 	}()
 	nodeStatus, err := c.bridge.FetchNodeStatus()
 	if err != nil {
