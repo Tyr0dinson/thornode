@@ -956,7 +956,6 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 	}
 	if output == (TxVout{}) {
 		// we couldn't decode any output from this tx. Which means we don't own any anyway.
-		c.logger.Info().Msg("ignoring a tx we don't own")
 		return types.TxInItem{}, nil
 	}
 	fee := tx.Rct_Signatures.TxnFee
@@ -1027,19 +1026,15 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 			continue
 		}
 
-		c.logger.Info().Msgf("the vault pk is %s cryptonote data is %s", pk.PubKey, pk.CryptonoteData)
-
 		// get the privViewKey and pubSpendKey of the vault
 		privViewKey, pubSpendKey, err := c.decodeCnData(pk.CryptonoteData)
 		if err != nil {
 			return TxVout{}, fmt.Errorf("error decoding cryotonote data for vault: %s : %w", pk.PubKey, err)
 		}
 
-		c.logger.Info().Msgf("the vault private key is %s pub spendkey data is %s", string(privViewKey[:]), string(pubSpendKey[:]))
-
 		sharedSecretYgg, err := crypto.GenerateKeyDerivation(txPubKey, &privViewKey)
 		if err != nil {
-			return TxVout{}, fmt.Errorf("error Creating Shared Secret: %w", err)
+			return TxVout{}, fmt.Errorf("error creating shared secret: %w", err)
 		}
 
 		for ind, vout := range tx.Vout {
@@ -1059,7 +1054,7 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 				copy(targetKey[:], targetRaw)
 				assetType = vout.Target.asset_type
 			} else {
-				c.logger.Info().Msgf("invalid tx output found! skipping..")
+				c.logger.Info().Msgf("invalid tx output found, skipping..")
 				continue
 			}
 
@@ -1069,7 +1064,6 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 				return TxVout{}, fmt.Errorf("error deriving ygg public spend Key: %w", err)
 			}
 
-			c.logger.Info().Msgf("the vault derived pub key is %s pub spendkey data is %s", string(derivedPublicSpendKeyYgg[:]), string(pubSpendKey[:]))
 			found := false
 			if *derivedPublicSpendKeyYgg == pubSpendKey {
 				found = true

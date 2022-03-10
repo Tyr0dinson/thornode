@@ -16,8 +16,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 
-	"github.com/rs/zerolog/log"
-
 	moneroCrypto "github.com/haven-protocol-org/monero-go-utils/crypto"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -303,12 +301,15 @@ func GetCmdSetCryptonoteKeys() *cobra.Command {
 				return err
 			}
 
-			log.Logger.Log().Msgf("set-cryptonote-keys for address %s with priv key = %s", clientCtx.GetFromAddress(), privKey)
+			privKeyB, err := hex.DecodeString(privKey)
+			if err != nil {
+				return fmt.Errorf("fail to decode priv key string to bytes: %w", err)
+			}
 
 			// get the priv spend key
 			h := moneroCrypto.NewHash()
 			var keyHash [32]byte
-			h.Write([]byte(privKey))
+			h.Write(privKeyB)
 			h.Sum(keyHash[:0])
 			var privSpendKey [32]byte
 			moneroCrypto.SecretFromSeed(&privSpendKey, &keyHash)
