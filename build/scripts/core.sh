@@ -259,6 +259,5 @@ create_thor_user() {
       SIGNER_SEED_PHRASE=$(echo "$RESULT" | jq -r '.mnemonic')
     fi
   fi
-  echo "SEED $SIGNER_SEED_PHRASE"
   NODE_PUB_KEY_ED25519=$(printf "%s\n%s\n" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE" | thornode ed25519)
 }
