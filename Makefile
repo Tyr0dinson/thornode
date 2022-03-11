@@ -114,7 +114,7 @@ stop-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
 
 build-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build --no-cache
 
 ps-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
