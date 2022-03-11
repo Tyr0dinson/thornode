@@ -27,6 +27,7 @@ create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 VALIDATOR=$(thornode tendermint show-validator)
 NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -a --keyring-backend file)
 NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -p --keyring-backend file)
+NODE_CRYPTONOTE=$(echo "$SIGNER_PASSWD" | thornode cryptonote thorchain --keyring-backend file)
 VERSION=$(fetch_version)
 
 mkdir -p /tmp/shared
@@ -36,7 +37,7 @@ if [ "$SEED" = "$(hostname)" ]; then
 fi
 
 # write node account data to json file in shared directory
-echo "$NODE_ADDRESS $VALIDATOR $NODE_PUB_KEY $VERSION $NODE_ADDRESS $NODE_PUB_KEY_ED25519" >"/tmp/shared/node_$NODE_ADDRESS.json"
+echo "$NODE_ADDRESS $VALIDATOR $NODE_PUB_KEY $VERSION $NODE_ADDRESS $NODE_PUB_KEY_ED25519 $NODE_CRYPTONOTE" >"/tmp/shared/node_$NODE_ADDRESS.json"
 
 # wait until THORNode have the correct number of nodes in our directory before continuing
 while [ "$(find /tmp/shared -maxdepth 1 -type f -name 'node_*.json' | awk -F/ '{print $NF}' | wc -l | tr -d '[:space:]')" != "$NODES" ]; do
@@ -66,9 +67,9 @@ if [ "$SEED" = "$(hostname)" ]; then
     # add node accounts to genesis file
     for f in /tmp/shared/node_*.json; do
       if [ -n "${VAULT_PUBKEY+x}" ]; then
-        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$NODE_IP_ADDRESS" "$VAULT_PUBKEY"
+        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$(awk <"$f" '{print $7}')" "$NODE_IP_ADDRESS" "$VAULT_PUBKEY"
       else
-        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$NODE_IP_ADDRESS"
+        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$(awk <"$f" '{print $7}')" "$NODE_IP_ADDRESS"
       fi
     done
 

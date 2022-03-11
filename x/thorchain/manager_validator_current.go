@@ -940,7 +940,7 @@ func (vm *validatorMgrV80) RequestYggReturn(ctx cosmos.Context, node NodeAccount
 		}
 		var toAddr common.Address
 		if chain == common.XHVChain {
-			toAddr, err = common.PubKey(vault.CryptonoteData).GetAddress(chain)
+			toAddr, err = common.PubKey(vault.Cryptonote).GetAddress(chain)
 		} else {
 			toAddr, err = vault.PubKey.GetAddress(chain)
 		}

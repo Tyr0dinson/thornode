@@ -180,7 +180,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		PendingTxBlockHeights: v.PendingTxBlockHeights,
 		Routers:               v.Routers,
 		Addresses:             getVaultChainAddress(ctx, v),
-		CryptonoteData:        v.CryptonoteData,
+		Cryptonote:        v.Cryptonote,
 	}
 	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
@@ -219,7 +219,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				PendingTxBlockHeights: vault.PendingTxBlockHeights,
 				Routers:               vault.Routers,
 				Addresses:             getVaultChainAddress(ctx, vault),
-				CryptonoteData:        vault.CryptonoteData,
+				Cryptonote:        vault.Cryptonote,
 			})
 		}
 	}
@@ -240,7 +240,7 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 		var addr common.Address
 		var err error
 		if c == common.XHVChain {
-			addr, err = common.PubKey(vault.CryptonoteData).GetAddress(c)
+			addr, err = common.PubKey(vault.Cryptonote).GetAddress(c)
 		} else {
 			addr, err = vault.PubKey.GetAddress(c)
 		}
@@ -313,7 +313,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Bond:                  na.Bond,
 			TotalValue:            totalValue,
 			Addresses:             getVaultChainAddress(ctx, vault),
-			CryptonoteData:        vault.CryptonoteData,
+			Cryptonote:        vault.Cryptonote,
 		}
 	}
 
@@ -349,7 +349,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				resp.Yggdrasil = append(resp.Yggdrasil, QueryVaultPubKeyContract{
 					PubKey:         vault.PubKey,
 					Routers:        vault.Routers,
-					CryptonoteData: vault.CryptonoteData,
+					Cryptonote: vault.Cryptonote,
 				})
 			}
 		} else if vault.IsAsgard() {
@@ -357,7 +357,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				resp.Asgard = append(resp.Asgard, QueryVaultPubKeyContract{
 					PubKey:         vault.PubKey,
 					Routers:        vault.Routers,
-					CryptonoteData: vault.CryptonoteData,
+					Cryptonote: vault.Cryptonote,
 				})
 			}
 		}
@@ -437,7 +437,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		}
 		var vaultAddress common.Address
 		if chain == common.XHVChain {
-			vaultAddress, err = common.PubKey(vault.CryptonoteData).GetAddress(chain)
+			vaultAddress, err = common.PubKey(vault.Cryptonote).GetAddress(chain)
 		} else {
 			vaultAddress, err = vault.PubKey.GetAddress(chain)
 		}

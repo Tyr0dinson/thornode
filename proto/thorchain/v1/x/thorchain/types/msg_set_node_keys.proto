@@ -9,5 +9,6 @@ import "gogoproto/gogo.proto";
 message MsgSetNodeKeys {
   common.PubKeySet pub_key_set_set = 1 [(gogoproto.nullable) = false];
   string validator_cons_pub_key = 2;
-  bytes signer = 3  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  string cryptonote = 3;
+  bytes signer = 4  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

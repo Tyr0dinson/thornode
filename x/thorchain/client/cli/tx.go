@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,14 +8,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/spf13/cobra"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 
-	moneroCrypto "github.com/haven-protocol-org/monero-go-utils/crypto"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -37,7 +34,6 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(GetCmdNodeResumeChain())
 	cmd.AddCommand(GetCmdDeposit())
 	cmd.AddCommand(GetCmdSend())
-	cmd.AddCommand(GetCmdSetCryptonoteKeys())
 	for _, subCmd := range cmd.Commands() {
 		flags.AddTxFlagsToCmd(subCmd)
 	}
@@ -247,9 +243,9 @@ func GetCmdSetVersion() *cobra.Command {
 // GetCmdSetNodeKeys command to add a node keys
 func GetCmdSetNodeKeys() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set-node-keys  [secp256k1] [ed25519] [validator_consensus_pub_key]",
+		Use:   "set-node-keys  [secp256k1] [ed25519] [validator_consensus_pub_key] [cryptonote]",
 		Short: "set node keys, the account use to sign this tx has to be whitelist first",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
@@ -273,63 +269,7 @@ func GetCmdSetNodeKeys() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("fail to convert public key to string: %w", err)
 			}
-			msg := types.NewMsgSetNodeKeys(pk, validatorConsPubKeyStr, clientCtx.GetFromAddress())
-			err = msg.ValidateBasic()
-			if err != nil {
-				return err
-			}
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
-		},
-	}
-}
-
-// GetCmdSetCryptonoteKeys command to add a cryotonote keys
-func GetCmdSetCryptonoteKeys() *cobra.Command {
-	return &cobra.Command{
-		Use:   "set-cryptonote-keys",
-		Short: "set cryptonote keys, the account use to sign this tx has to be whitelist first",
-		Args:  cobra.ExactArgs(0),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
-			if err != nil {
-				return err
-			}
-
-			kb := keyring.NewUnsafe(clientCtx.Keyring)
-			privKey, err := kb.UnsafeExportPrivKeyHex(clientCtx.GetFromName())
-			if err != nil {
-				return err
-			}
-
-			privKeyB, err := hex.DecodeString(privKey)
-			if err != nil {
-				return fmt.Errorf("fail to decode priv key string to bytes: %w", err)
-			}
-
-			// get the priv spend key
-			h := moneroCrypto.NewHash()
-			var keyHash [32]byte
-			h.Write(privKeyB)
-			h.Sum(keyHash[:0])
-			var privSpendKey [32]byte
-			moneroCrypto.SecretFromSeed(&privSpendKey, &keyHash)
-			if !moneroCrypto.CheckSecret(&privSpendKey) {
-				return fmt.Errorf("ed25519 PrivKey is invalid, key: %s", hex.EncodeToString(privSpendKey[:]))
-			}
-
-			// generate cryonote priv/pub keys
-			var privViewdKey [32]byte
-			var pubSpendKey [32]byte
-			moneroCrypto.PublicFromSecret(&pubSpendKey, &privSpendKey)
-			moneroCrypto.ViewFromSpend(&privViewdKey, &privSpendKey)
-
-			// generate crytonote data to be published
-			var addData []byte
-			addData = append(addData, privViewdKey[:]...)
-			addData = append(addData, pubSpendKey[:]...)
-			cryonoteData := hex.EncodeToString(addData)
-
-			msg := types.NewMsgSetCryptonoteData(cryonoteData, clientCtx.GetFromAddress())
+			msg := types.NewMsgSetNodeKeys(pk, validatorConsPubKeyStr, args[3], clientCtx.GetFromAddress())
 			err = msg.ValidateBasic()
 			if err != nil {
 				return err

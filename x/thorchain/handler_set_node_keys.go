@@ -123,6 +123,7 @@ func (h SetNodeKeysHandler) handleV57(ctx cosmos.Context, msg MsgSetNodeKeys) (*
 	nodeAccount.PubKeySet = msg.PubKeySetSet
 	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
 	nodeAccount.ValidatorConsPubKey = msg.ValidatorConsPubKey
+	nodeAccount.Cryptonote = msg.Cryptonote
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return nil, fmt.Errorf("fail to save node account: %w", err)
 	}

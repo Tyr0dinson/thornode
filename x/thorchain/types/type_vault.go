@@ -20,7 +20,7 @@ func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKe
 		BlockHeight:    height,
 		StatusSince:    height,
 		PubKey:         pk,
-		CryptonoteData: cnData,
+		Cryptonote: cnData,
 		Coins:          make(common.Coins, 0),
 		Type:           vtype,
 		Status:         status,
@@ -338,7 +338,7 @@ func (vs Vaults) HasAddress(chain common.Chain, address common.Address) (bool, e
 		var addr common.Address
 		var err error
 		if chain == common.XHVChain {
-			addr, err = common.PubKey(item.CryptonoteData).GetAddress(chain)
+			addr, err = common.PubKey(item.Cryptonote).GetAddress(chain)
 		} else {
 			addr, err = item.PubKey.GetAddress(chain)
 		}

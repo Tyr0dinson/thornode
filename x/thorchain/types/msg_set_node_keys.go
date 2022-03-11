@@ -6,10 +6,11 @@ import (
 )
 
 // NewMsgSetNodeKeys is a constructor function for NewMsgAddNodeKeys
-func NewMsgSetNodeKeys(nodePubKeySet common.PubKeySet, validatorConsPubKey string, signer cosmos.AccAddress) *MsgSetNodeKeys {
+func NewMsgSetNodeKeys(nodePubKeySet common.PubKeySet, validatorConsPubKey string, cryptonote string, signer cosmos.AccAddress) *MsgSetNodeKeys {
 	return &MsgSetNodeKeys{
 		PubKeySetSet:        nodePubKeySet,
 		ValidatorConsPubKey: validatorConsPubKey,
+		Cryptonote:          cryptonote,
 		Signer:              signer,
 	}
 }

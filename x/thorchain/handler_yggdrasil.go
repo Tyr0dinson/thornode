@@ -127,7 +127,7 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil) (*cosmo
 				var addr common.Address
 				var err error
 				if msg.Tx.Chain == common.XHVChain {
-					addr, err = common.PubKey(v.CryptonoteData).GetAddress(msg.Tx.Chain)
+					addr, err = common.PubKey(v.Cryptonote).GetAddress(msg.Tx.Chain)
 				} else {
 					addr, err = v.PubKey.GetAddress(msg.Tx.Chain)
 				}
@@ -159,7 +159,7 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil) (*cosmo
 				return nil, cosmos.ErrUnknownRequest(err.Error())
 			}
 
-			fromAddress, _ = common.PubKey(vault.CryptonoteData).GetAddress(tx.Chain)
+			fromAddress, _ = common.PubKey(vault.Cryptonote).GetAddress(tx.Chain)
 		} else {
 			fromAddress, _ = tx.VaultPubKey.GetAddress(tx.Chain)
 		}

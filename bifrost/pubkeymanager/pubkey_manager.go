@@ -43,7 +43,7 @@ type pubKeyInfo struct {
 	Contracts      map[common.Chain]common.Address
 	Signer         bool
 	NodeAccount    bool
-	CryptonoteData string
+	Cryptonote string
 }
 
 // PubKeyManager manager an always up to date pubkeys , which implement PubKeyValidator interface
@@ -103,7 +103,7 @@ func (pkm *PubKeyManager) updateContractAddressesAndCnDta(pairs []thorclient.Pub
 		for idx, item := range pkm.pubkeys {
 			if item.PubKey == pair.PubKey {
 				pkm.pubkeys[idx].Contracts = pair.Contracts
-				pkm.pubkeys[idx].CryptonoteData = pair.CryptonoteData
+				pkm.pubkeys[idx].Cryptonote = pair.Cryptonote
 			}
 		}
 	}
@@ -183,7 +183,7 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
 			Signer:         signer,
 			NodeAccount:    false,
 			Contracts:      map[common.Chain]common.Address{},
-			CryptonoteData: "",
+			Cryptonote: "",
 		})
 		pkm.fireCallback(pk)
 	}
@@ -208,7 +208,7 @@ func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 			Signer:         true,
 			NodeAccount:    true,
 			Contracts:      map[common.Chain]common.Address{},
-			CryptonoteData: "",
+			Cryptonote: "",
 		})
 		// a new pubkey get added , fire callback
 		pkm.fireCallback(pk)
@@ -307,7 +307,7 @@ func (pkm *PubKeyManager) IsValidPoolAddress(addr string, chain common.Chain) (b
 		var ok bool
 		var cpi common.ChainPoolInfo
 		if chain == common.XHVChain {
-			ok, cpi = matchAddress(addr, chain, common.PubKey(pk.CryptonoteData))
+			ok, cpi = matchAddress(addr, chain, common.PubKey(pk.Cryptonote))
 		} else {
 			ok, cpi = matchAddress(addr, chain, pk.PubKey)
 		}
@@ -378,10 +378,10 @@ func (pkm *PubKeyManager) GetCnData(chain common.Chain, pubKey common.PubKey) st
 		if !pk.PubKey.Equals(pubKey) {
 			continue
 		}
-		if len(pk.CryptonoteData) == 0 {
+		if len(pk.Cryptonote) == 0 {
 			continue
 		}
-		result = pk.CryptonoteData
+		result = pk.Cryptonote
 		break
 	}
 	return result
@@ -391,7 +391,7 @@ func (pkm *PubKeyManager) GetCnData(chain common.Chain, pubKey common.PubKey) st
 func (pkm *PubKeyManager) UpdateCnDataOfPubKey(chain common.Chain, pk common.PubKey, cnData string) {
 	for idx, pubkey := range pkm.pubkeys {
 		if pk.Equals(pubkey.PubKey) {
-			pkm.pubkeys[idx].CryptonoteData = cnData
+			pkm.pubkeys[idx].Cryptonote = cnData
 		}
 	}
 }

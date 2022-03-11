@@ -186,7 +186,7 @@ func (tos *TxOutStorageV81) discoverOutbounds(ctx cosmos.Context, transactionFee
 		var fromAddr common.Address
 		var err error
 		if toi.Chain == common.XHVChain {
-			fromAddr, err = common.PubKey(vault.CryptonoteData).GetAddress(toi.Chain)
+			fromAddr, err = common.PubKey(vault.Cryptonote).GetAddress(toi.Chain)
 		} else {
 			fromAddr, err = vault.PubKey.GetAddress(toi.Chain)
 		}

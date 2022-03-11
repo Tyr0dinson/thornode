@@ -261,7 +261,7 @@ func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 
 			var to common.Address
 			if coin.Asset.GetChain() == common.XHVChain {
-				to, err = common.PubKey(ygg.CryptonoteData).GetAddress(coin.Asset.GetChain())
+				to, err = common.PubKey(ygg.Cryptonote).GetAddress(coin.Asset.GetChain())
 			} else {
 				to, err = ygg.PubKey.GetAddress(coin.Asset.GetChain())
 			}

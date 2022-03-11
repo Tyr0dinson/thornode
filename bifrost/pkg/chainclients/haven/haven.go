@@ -136,7 +136,7 @@ func NewClient(
 	// generate wallet address
 	walletAddr, err := generateWalletAddress(&havenPrivSpendKey, &havenPrivViewKey)
 	if err != nil {
-		return nil, fmt.Errorf("fail to generatre a haven wallet address: %+v", err)
+		return nil, fmt.Errorf("fail to generate a haven wallet address: %+v", err)
 	}
 
 	// try to generate a haven wallet
@@ -156,7 +156,7 @@ func NewClient(
 				Password: cfg.Password,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("fail to generatre a haven wallet, wallet already exist but can't login with the given password: %+v", err)
+				return nil, fmt.Errorf("fail to generate a haven wallet %s, wallet already exist but can't login with the given password: %+v", walletAddr.String(), err)
 			}
 
 			// verify the addresses match
@@ -164,10 +164,10 @@ func NewClient(
 				AccountIndex: 0,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("fail to generatre a haven wallet, wallet already exist but can't get the address: %+v", err)
+				return nil, fmt.Errorf("fail to generate a haven wallet, wallet already exist but can't get the address: %+v", err)
 			}
 			if addr.Address != walletAddr.String() {
-				return nil, fmt.Errorf("fail to generatre a haven wallet, wallet already exist but has different address than bifrost: %+v", err)
+				return nil, fmt.Errorf("fail to generate a haven wallet, wallet already exist but has different address than bifrost: %+v", err)
 			}
 
 			// close the wallet
@@ -176,12 +176,10 @@ func NewClient(
 				return nil, fmt.Errorf("fail to close logged in wallet: %+v", err)
 			}
 		} else {
-			return nil, fmt.Errorf("fail to generatre a haven wallet: %+v", err)
+			return nil, fmt.Errorf("fail to generate a haven wallet: %+v", err)
 		}
-	} else {
-		if len(walletResp.Address) == 0 {
-			return nil, fmt.Errorf("unexpected error when generating the haven wallet: %s", walletResp.Info)
-		}
+	} else if len(walletResp.Address) == 0 {
+		return nil, fmt.Errorf("unexpected error when generating the haven wallet: %s", walletResp.Info)
 	}
 
 	if pkm == nil {
@@ -523,7 +521,7 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	}
 
 	for _, v := range vaults {
-		addr, err := common.PubKey(v.CryptonoteData).GetAddress(common.XHVChain)
+		addr, err := common.PubKey(v.Cryptonote).GetAddress(common.XHVChain)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get address")
 			continue
@@ -1021,13 +1019,13 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 		return TxVout{}, fmt.Errorf("failed to get the asgard vaults: %w", err)
 	}
 	for _, pk := range pubkeys {
-		if len(pk.CryptonoteData) == 0 {
+		if len(pk.Cryptonote) == 0 {
 			c.logger.Info().Msg("the vault cryptonote data is empty")
 			continue
 		}
 
 		// get the privViewKey and pubSpendKey of the vault
-		privViewKey, pubSpendKey, err := c.decodeCnData(pk.CryptonoteData)
+		privViewKey, pubSpendKey, err := c.decodeCnData(pk.Cryptonote)
 		if err != nil {
 			return TxVout{}, fmt.Errorf("error decoding cryotonote data for vault: %s : %w", pk.PubKey, err)
 		}
@@ -1086,7 +1084,7 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 					copy(C[:], Craw)
 					if crypto.EqualKeys(C, Ctmp) {
 						// we can ignnore the error because we know cn data is legit at this point.
-						addr, _ := c.getAddrFromCndata(pk.CryptonoteData)
+						addr, _ := c.getAddrFromCndata(pk.Cryptonote)
 						// We can just skip the rest of the outputs and return here because we expect we only own 1 output
 						return TxVout{
 							Address: addr.String(),
@@ -1507,9 +1505,9 @@ func (c *Client) consolidateUTXOs() {
 			for _, item := range utxos {
 				total += item.Amount
 			}
-			addr, err := common.PubKey(vault.CryptonoteData).GetAddress(common.XHVChain)
+			addr, err := common.PubKey(vault.Cryptonote).GetAddress(common.XHVChain)
 			if err != nil {
-				c.logger.Err(err).Msgf("fail to get XHV address for cn data: %s", vault.CryptonoteData)
+				c.logger.Err(err).Msgf("fail to get XHV address for cn data: %s", vault.Cryptonote)
 				continue
 			}
 

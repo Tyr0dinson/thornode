@@ -56,7 +56,7 @@ func (vm *NetworkMgrV76) processGenesisSetup(ctx cosmos.Context) error {
 			common.DOGEChain,
 			common.XHVChain,
 		}
-		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, "", supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
+		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, string(active[0].Cryptonote), supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
 		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
@@ -165,7 +165,7 @@ func (vm *NetworkMgrV76) EndBlock(ctx cosmos.Context, mgr Manager, constAccessor
 				var addr common.Address
 				var err error
 				if coin.Asset.GetChain() == common.XHVChain {
-					addr, err = common.PubKey(target.CryptonoteData).GetAddress(coin.Asset.GetChain())
+					addr, err = common.PubKey(target.Cryptonote).GetAddress(coin.Asset.GetChain())
 				} else {
 					addr, err = target.PubKey.GetAddress(coin.Asset.GetChain())
 				}
@@ -485,7 +485,7 @@ func (vm *NetworkMgrV76) RecallChainFunds(ctx cosmos.Context, chain common.Chain
 	}
 	var toAddr common.Address
 	if chain == common.XHVChain {
-		toAddr, err = common.PubKey(vault.CryptonoteData).GetAddress(chain)
+		toAddr, err = common.PubKey(vault.Cryptonote).GetAddress(chain)
 	} else {
 		toAddr, err = vault.PubKey.GetAddress(chain)
 	}

@@ -11,7 +11,7 @@ import (
 
 	tssp "github.com/akildemir/go-tss/tss"
 	mnTssp "github.com/akildemir/moneroTss/tss"
-	moneroCryptoBase58 "github.com/haven-protocol-org/monero-go-utils/base58"
+	monerocryptoBase58 "github.com/haven-protocol-org/monero-go-utils/base58"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -311,7 +311,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 				var cryptonoteData string
 				if len(poolAddress) > 0 && len(viewKey) > 0 {
 					// generate the cryotonote data and set it on pubKeyMg
-					_, data := moneroCryptoBase58.DecodeAddr(poolAddress)
+					_, data := monerocryptoBase58.DecodeAddr(poolAddress)
 					pubSpendKey := data[:32]
 					privViewKey, err := hex.DecodeString(viewKey)
 					if err != nil {

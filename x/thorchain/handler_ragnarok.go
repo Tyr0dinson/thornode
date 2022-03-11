@@ -105,7 +105,7 @@ func (h RagnarokHandler) handleV65(ctx cosmos.Context, msg MsgRagnarok) (*cosmos
 					return nil, cosmos.ErrUnknownRequest(err.Error())
 				}
 
-				fromAddress, _ = common.PubKey(vault.CryptonoteData).GetAddress(tx.Chain)
+				fromAddress, _ = common.PubKey(vault.Cryptonote).GetAddress(tx.Chain)
 			} else {
 				fromAddress, _ = tx.VaultPubKey.GetAddress(tx.Chain)
 			}

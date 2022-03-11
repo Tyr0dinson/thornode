@@ -27,7 +27,7 @@ func NewMsgTssPool(pks []string, poolpk common.PubKey, cnData string, KeygenType
 		Chains:         chains,
 		Signer:         signer,
 		KeygenTime:     keygenTime,
-		CryptonoteData: cnData,
+		Cryptonote: cnData,
 	}, nil
 }
 
@@ -123,7 +123,7 @@ func (m *MsgTssPool) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	// ensure that cn data is either empty or 128 charecter
-	if len(m.CryptonoteData) != 0 && len(m.CryptonoteData) != 128 { // 64 byte is 128 charecter as a hex string
+	if len(m.Cryptonote) != 0 && len(m.Cryptonote) != 128 { // 64 byte is 128 charecter as a hex string
 		return cosmos.ErrUnknownRequest("Cryptonote data must be either empty or 128 charecter hex string (64byte)")
 	}
 	chains := m.GetChains()

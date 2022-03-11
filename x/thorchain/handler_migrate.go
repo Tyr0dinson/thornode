@@ -94,7 +94,7 @@ func (h MigrateHandler) handleV1(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Re
 				return nil, cosmos.ErrUnknownRequest(err.Error())
 			}
 
-			fromAddress, _ = common.PubKey(vault.CryptonoteData).GetAddress(tx.Chain)
+			fromAddress, _ = common.PubKey(vault.Cryptonote).GetAddress(tx.Chain)
 		} else {
 			fromAddress, _ = tx.VaultPubKey.GetAddress(tx.Chain)
 		}

@@ -462,7 +462,7 @@ func (b *ThorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 		kp := PubKeyContractAddressPair{
 			PubKey:         v.PubKey,
 			Contracts:      make(map[common.Chain]common.Address),
-			CryptonoteData: v.CryptonoteData,
+			Cryptonote: v.Cryptonote,
 		}
 		for _, item := range v.Routers {
 			kp.Contracts[item.Chain] = item.Router
@@ -561,7 +561,7 @@ func (b *ThorchainBridge) GetMimir(key string) (int64, error) {
 type PubKeyContractAddressPair struct {
 	PubKey         common.PubKey
 	Contracts      map[common.Chain]common.Address
-	CryptonoteData string
+	Cryptonote string
 }
 
 // GetContractAddress retrieve the contract address from asgard
