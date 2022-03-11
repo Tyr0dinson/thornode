@@ -12,7 +12,7 @@ import (
 	eth "github.com/ethereum/go-ethereum/common"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
-	moneroBase58 "github.com/haven-protocol-org/monero-go-utils/base58"
+	monerobase58 "github.com/haven-protocol-org/monero-go-utils/base58"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -113,7 +113,7 @@ func isValidXHVAddress(addr string) bool {
 	validPrefixes := [9]string{"hvx", "hvi", "hvs", "hvt", "hvti", "hvts", "hvsa", "hvsi", "hvss"}
 	for _, prefix := range validPrefixes {
 		if strings.HasPrefix(addr, prefix) {
-			_, data := moneroBase58.DecodeAddr(addr)
+			_, data := monerobase58.DecodeAddr(addr)
 			if len(data) > 0 {
 				return true
 			}
