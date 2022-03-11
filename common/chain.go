@@ -129,6 +129,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case TERRAChain:
 		return 6
+	case XHVChain:
+		return 12
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
