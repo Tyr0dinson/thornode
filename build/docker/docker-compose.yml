@@ -243,12 +243,15 @@ services:
   haven-wallet:
     profiles:
       - mocknet
+      - validator
     image: registry.gitlab.com/thorchain/devops/haven-core:latest
     restart: unless-stopped
     volumes:
       - "./mocknet:/mocknet"
     ports:
       - 6061:6061
+    environment:
+      XHV_DAEMON_ADDRESS: ${XHV_DAEMON_ADDRESS:-http://haven:17750}
     command: /mocknet/init-haven-wallet.sh
 
   # ------------------------------ ethereum ------------------------------

@@ -2,7 +2,7 @@
 
 set -o pipefail
 
-MASTER_ADDR="${HVX_MASTER_ADDR:=hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg}"
+MASTER_ADDR="${XHV_MASTER_ADDR:=hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg}"
 BLOCK_TIME=${BLOCK_TIME:=1}
 
 # Start the daemon
