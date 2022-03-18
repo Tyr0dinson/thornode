@@ -247,8 +247,8 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(err.Error(), Equals, fmt.Sprintf("target asset can't be %s", msgSwap2.TargetAsset.String()))
 	c.Assert(result, IsNil)
 }
-func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 
+func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	handler := NewSwapHandler(mgr)
@@ -283,6 +283,7 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 	c.Assert(res, IsNil)
 	c.Assert(err, NotNil)
 }
+
 func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	keeper := &TestSwapHandleKeeper{
