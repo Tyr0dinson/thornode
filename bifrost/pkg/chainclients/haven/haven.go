@@ -79,18 +79,21 @@ type TxOutWitness struct {
 	Coin     common.Coin
 	Reciever string
 	Sender   string
-	memo     string
+	Memo     string
 	Asset    common.Asset
+	Vault    ttypes.VaultType
+	Signed   bool
 }
 
 // BlockCacheSize the number of block meta that get store in storage.
 const (
+	DecimalDiff        = uint64(10000) // haven has 12 atomic units and thorchain uses 8. This is the 4 difference.
 	BlockCacheSize     = 144
 	MaxAsgardAddresses = 100
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 1000 here , as most of time it will spend 1 input, have 3 output
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
-	AverageFeeRate        = 314016568 // atomic units
+	AverageFeeRate        = uint64(314016568) / DecimalDiff // atomic units
 	maxUTXOsToSpend       = 10
 )
 
@@ -283,37 +286,57 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 }
 
 func (c *Client) loginToLocalWallet() error {
+
+	if c.isYggLoggedIn.Load() {
+		return nil // we alreay logged in to ygg
+	}
+
 	c.clientLock.Lock()
 	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
 		Filename: c.walletAddr.String(),
 		Password: c.cfg.Password,
 	})
+	if err == nil {
+		c.isYggLoggedIn.Store(true)
+	}
+
 	return err
 }
 
 func (c *Client) loginToAsgardWallet() error {
+
+	if !c.isYggLoggedIn.Load() {
+		return nil // we alreay logged in to asgard
+	}
+
 	c.clientLock.Lock()
 	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
 		Filename: c.nodePubKey.String() + ".mo",
 		Password: c.asgardPassword,
 	})
+	if err == nil {
+		c.isYggLoggedIn.Store(false)
+	}
+
 	return err
+}
+
+func (c *Client) restoreStateToAsgardWallet() {
+	c.isYggLoggedIn.Store(true) // to force it to actualy login
+	err := c.loginToAsgardWallet()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to restore state to asgard wallet")
+	}
 }
 
 func (c *Client) loginToWallet(pkey common.PubKey) error {
 	if c.isYggdrasil(pkey) {
-
-		if c.isYggLoggedIn.Load() {
-			return nil // we alreay logged in to ygg
-		}
-
 		err := c.loginToLocalWallet()
 		if err != nil {
 			return err
 		}
-		c.isYggLoggedIn.Store(true)
 	} else {
 		nodeStatus, err := c.bridge.FetchNodeStatus()
 		if err != nil {
@@ -323,15 +346,10 @@ func (c *Client) loginToWallet(pkey common.PubKey) error {
 			return fmt.Errorf("node is not active. No asgard wallet avaible.")
 		}
 
-		if !c.isYggLoggedIn.Load() {
-			return nil // we alreay logged in to asgard
-		}
-
 		err = c.loginToAsgardWallet()
 		if err != nil {
 			return err
 		}
-		c.isYggLoggedIn.Store(false)
 	}
 	return nil
 }
@@ -370,7 +388,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 			if err != nil {
 				return acct, fmt.Errorf("fail tconstruct asset: %w", err)
 			}
-			coins = append(coins, common.NewCoin(a, cosmos.NewUint(uint64(resp.Balance))))
+			coins = append(coins, common.NewCoin(a, cosmos.NewUint(uint64(resp.Balance)/DecimalDiff)))
 		}
 	}
 
@@ -855,8 +873,16 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 		// check if we can verifty the txIn if we are not the sender
 		verified := false
-		if w.Sender != c.walletAddr.String() {
+		if (w.Vault == ttypes.VaultType_YggdrasilVault && w.Sender != c.walletAddr.String()) ||
+			(w.Vault == ttypes.VaultType_AsgardVault && !w.Signed) {
+
 			// someone else signed this outoing
+			if w.Vault == ttypes.VaultType_YggdrasilVault {
+				c.loginToWallet(c.nodePubKey) // login to ygg
+			} else {
+				c.loginToWallet("") // login to asgard. Anything other than nodePubKey will login to asgard.
+			}
+
 			c.clientLock.Lock()
 			respCheck, err := c.client.CheckTxKey(&wallet.RequestCheckTxKey{
 				TxID:    txInItem.Tx,
@@ -877,17 +903,18 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 			}
 		}
 
-		if w.Sender == c.walletAddr.String() || verified {
+		if (w.Vault == ttypes.VaultType_YggdrasilVault && w.Sender == c.walletAddr.String()) ||
+			(w.Vault == ttypes.VaultType_AsgardVault && w.Signed) || verified {
 			txInItem = types.TxInItem{
 				BlockHeight: height,
 				Tx:          w.TxID,
 				TxKey:       w.TxKey,
-				Memo:        w.memo,
+				Memo:        w.Memo,
 				Sender:      w.Sender,
 				To:          w.Reciever,
 				Coins:       []common.Coin{w.Coin},
 				Gas: common.Gas{
-					common.NewCoin(w.Coin.Asset, cosmos.NewUint(tx.Rct_Signatures.TxnFee)),
+					common.NewCoin(w.Coin.Asset, cosmos.NewUint(tx.Rct_Signatures.TxnFee/DecimalDiff)),
 				},
 			}
 		}
@@ -948,6 +975,13 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 
 	txInTem := c.processOutgoing(tx, height, inBlock)
 	if !txInTem.IsEmpty() {
+		where := ""
+		if inBlock {
+			where = "block"
+		} else {
+			where = "pool"
+		}
+		c.logger.Info().Msgf("We found tx with hash %s that we sent in the %s. Sending withness from cache.", txInTem.Tx, where)
 		return txInTem, nil
 	}
 
@@ -982,7 +1016,7 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 		return types.TxInItem{}, fmt.Errorf("ignoring a tx with invalid asset type: %w", err)
 	}
 	coins := common.Coins{
-		common.NewCoin(asset, cosmos.NewUint(output.Amount)),
+		common.NewCoin(asset, cosmos.NewUint(output.Amount/DecimalDiff)),
 	}
 
 	// get the memo
@@ -1250,7 +1284,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	if len(tx.Coins) != 1 {
 		return nil, fmt.Errorf("can't sing tx: Haven doesn't support sending multiple asset types in a single transaction")
 	}
-	amount := tx.Coins[0].Amount.Uint64()
+	amount := tx.Coins[0].Amount.Uint64() * DecimalDiff
 	outputAsset := tx.Coins[0].Asset.Ticker.String()
 
 	dst := wallet.Destination{
@@ -1269,6 +1303,8 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	var txID string
 	var txKey string
 	var res []byte
+	sign := false
+	var vaultType ttypes.VaultType = ttypes.VaultType_YggdrasilVault
 	if c.isYggdrasil(tx.VaultPubKey) {
 		// we are the one who signing this tx.
 		c.logger.Info().Msgf("Creating an outbound tx Amount: %d %s for %s", amount, outputAsset, tx.ToAddress.String())
@@ -1298,16 +1334,19 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("fail to get asgards : %w", err)
 		}
-		sign := false
 		for _, v := range vaults {
-			member := false
-			for _, m := range v.Membership {
-				if m == c.nodePubKey.String() {
-					member = true
+			if v.PubKey == tx.VaultPubKey {
+				vaultType = ttypes.VaultType_AsgardVault
+				member := false
+				for _, m := range v.Membership {
+					if m == c.nodePubKey.String() {
+						member = true
+					}
 				}
-			}
-			if v.PubKey == tx.VaultPubKey && member {
-				sign = true
+				if member {
+					sign = true
+					break
+				}
 			}
 		}
 		if sign {
@@ -1323,7 +1362,9 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			}
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
-			// as well check whether it is legit or not.
+			// as well check whether it is legit or not. But It closes the wallet afterwards so login back in
+			// to preserve the state of wallet login logic.
+			c.restoreStateToAsgardWallet()
 		}
 	}
 
@@ -1336,7 +1377,9 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		Coin:     tx.Coins[0],
 		Reciever: tx.ToAddress.String(),
 		Sender:   vaultAddr.String(),
-		memo:     tx.Memo,
+		Memo:     tx.Memo,
+		Vault:    vaultType,
+		Signed:   sign,
 	}
 	c.signedTxOut[tx.Hash()] = wtx
 
@@ -1373,11 +1416,9 @@ func (c *Client) BroadcastTx(txOut types.TxOutItem, payload []byte) (string, err
 	}()
 
 	// broadcast tx if we signed it. If it we did tss, it already broadcasted.
-	if c.isYggdrasil(txOut.VaultPubKey) {
-		resp := SendRawTransaction(hex.EncodeToString(payload))
-		if resp.Status != "OK" {
-			return "", fmt.Errorf("fail to broadcast transaction to chain: %s", resp.Reason)
-		}
+	resp := SendRawTransaction(hex.EncodeToString(payload))
+	if resp.Status != "OK" {
+		return "", fmt.Errorf("fail to broadcast transaction to chain: %s", resp.Reason)
 	}
 
 	// save tx id to block meta in case we need to errata later
@@ -1542,7 +1583,7 @@ func (c *Client) consolidateUTXOs() {
 				ToAddress:   addr,
 				VaultPubKey: vault.PubKey,
 				Coins: common.Coins{
-					common.NewCoin(asset, cosmos.NewUint(uint64(total))),
+					common.NewCoin(asset, cosmos.NewUint(uint64(total)/DecimalDiff)),
 				},
 				Memo:    mem.NewConsolidateMemo().String(),
 				MaxGas:  nil,

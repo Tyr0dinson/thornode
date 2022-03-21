@@ -17,15 +17,15 @@ type Vaults []Vault
 // NewVault create a new instance of vault
 func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKey, cnData string, chains []string, routers []ChainContract) Vault {
 	return Vault{
-		BlockHeight:    height,
-		StatusSince:    height,
-		PubKey:         pk,
-		Cryptonote: cnData,
-		Coins:          make(common.Coins, 0),
-		Type:           vtype,
-		Status:         status,
-		Chains:         chains,
-		Routers:        routers,
+		BlockHeight: height,
+		StatusSince: height,
+		PubKey:      pk,
+		Cryptonote:  cnData,
+		Coins:       make(common.Coins, 0),
+		Type:        vtype,
+		Status:      status,
+		Chains:      chains,
+		Routers:     routers,
 	}
 }
 

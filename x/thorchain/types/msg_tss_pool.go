@@ -18,15 +18,15 @@ func NewMsgTssPool(pks []string, poolpk common.PubKey, cnData string, KeygenType
 		return nil, fmt.Errorf("fail to get tss id: %w", err)
 	}
 	return &MsgTssPool{
-		ID:             id,
-		PubKeys:        pks,
-		PoolPubKey:     poolpk,
-		Height:         height,
-		KeygenType:     KeygenType,
-		Blame:          bl,
-		Chains:         chains,
-		Signer:         signer,
-		KeygenTime:     keygenTime,
+		ID:         id,
+		PubKeys:    pks,
+		PoolPubKey: poolpk,
+		Height:     height,
+		KeygenType: KeygenType,
+		Blame:      bl,
+		Chains:     chains,
+		Signer:     signer,
+		KeygenTime: keygenTime,
 		Cryptonote: cnData,
 	}, nil
 }

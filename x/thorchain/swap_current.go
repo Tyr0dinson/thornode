@@ -238,7 +238,10 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 	if asset.IsSyntheticAsset() {
 		asset = asset.GetLayer1Asset()
 	}
-
+	// 100 0000 0000
+	// 297 8400 5502
+	// 300 2270 2737
+	// 3   1401 6568
 	swapEvt := NewEventSwap(
 		asset,
 		swapTarget,
