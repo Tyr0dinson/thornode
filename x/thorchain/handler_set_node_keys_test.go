@@ -67,7 +67,7 @@ func (s *HandlerSetNodeKeysSuite) TestValidate(c *C) {
 	consensPubKey := GetRandomBech32ConsensusPubKey()
 	pubKeys := GetRandomPubKeySet()
 
-	msg := NewMsgSetNodeKeys(pubKeys, consensPubKey, signer)
+	msg := NewMsgSetNodeKeys(pubKeys, consensPubKey, "", signer)
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 	result, err := handler.Run(ctx, msg)
@@ -81,20 +81,20 @@ func (s *HandlerSetNodeKeysSuite) TestValidate(c *C) {
 
 	// cannot set node keys for active account
 	keeper.na.Status = NodeActive
-	msg = NewMsgSetNodeKeys(pubKeys, consensPubKey, keeper.na.NodeAddress)
+	msg = NewMsgSetNodeKeys(pubKeys, consensPubKey, "", keeper.na.NodeAddress)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
 
 	// cannot set node keys for disabled account
 	keeper.na.Status = NodeDisabled
-	msg = NewMsgSetNodeKeys(pubKeys, consensPubKey, keeper.na.NodeAddress)
+	msg = NewMsgSetNodeKeys(pubKeys, consensPubKey, "", keeper.na.NodeAddress)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
 
 	// cannot set node keys when duplicate
 	keeper.na.Status = NodeStandby
 	keeper.ensure = fmt.Errorf("duplicate keys")
-	msg = NewMsgSetNodeKeys(keeper.na.PubKeySet, consensPubKey, keeper.na.NodeAddress)
+	msg = NewMsgSetNodeKeys(keeper.na.PubKeySet, consensPubKey, "", keeper.na.NodeAddress)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, ErrorMatches, "duplicate keys")
 	keeper.ensure = nil
@@ -176,7 +176,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 	pubKeys := GetRandomPubKeySet()
 	emptyPubKeySet := common.PubKeySet{}
 
-	msgNodeKeys := NewMsgSetNodeKeys(pubKeys, bepConsPubKey, signer)
+	msgNodeKeys := NewMsgSetNodeKeys(pubKeys, bepConsPubKey, "", signer)
 
 	bond := cosmos.NewUint(common.One * 100)
 	nodeAccount := NewNodeAccount(signer, NodeActive, emptyPubKeySet, "", bond, bondAddr, common.BlockHeight(ctx))
@@ -205,7 +205,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 			name: "fail to get node account should return an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *TestSetNodeKeysHandleKeeper) cosmos.Msg {
 				helper.failGetNodeAccount = true
-				return NewMsgSetNodeKeys(GetRandomPubKeySet(), GetRandomBech32ConsensusPubKey(), GetRandomBech32Addr())
+				return NewMsgSetNodeKeys(GetRandomPubKeySet(), GetRandomBech32ConsensusPubKey(), "", GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *TestSetNodeKeysHandleKeeper, name string) {
 				c.Check(result, IsNil, Commentf(name))
@@ -216,7 +216,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 		{
 			name: "node account is empty should return an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *TestSetNodeKeysHandleKeeper) cosmos.Msg {
-				return NewMsgSetNodeKeys(GetRandomPubKeySet(), GetRandomBech32ConsensusPubKey(), GetRandomBech32Addr())
+				return NewMsgSetNodeKeys(GetRandomPubKeySet(), GetRandomBech32ConsensusPubKey(), "", GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *TestSetNodeKeysHandleKeeper, name string) {
 				c.Check(result, IsNil, Commentf(name))
@@ -230,7 +230,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 				nodeAcct := GetRandomValidatorNode(NodeWhiteListed)
 				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAcct), IsNil)
 				helper.failSetNodeAccount = true
-				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, nodeAcct.NodeAddress)
+				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, "", nodeAcct.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *TestSetNodeKeysHandleKeeper, name string) {
 				c.Check(result, IsNil, Commentf(name))
@@ -243,7 +243,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 				nodeAcct := GetRandomValidatorNode(NodeWhiteListed)
 				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAcct), IsNil)
 				helper.failGetNetwork = true
-				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, nodeAcct.NodeAddress)
+				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, "", nodeAcct.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *TestSetNodeKeysHandleKeeper, name string) {
 				c.Check(result, IsNil, Commentf(name))
@@ -257,7 +257,7 @@ func (s *HandlerSetNodeKeysSuite) TestHandle(c *C) {
 				nodeAcct := GetRandomValidatorNode(NodeWhiteListed)
 				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAcct), IsNil)
 				helper.failSetNetwork = true
-				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, nodeAcct.NodeAddress)
+				return NewMsgSetNodeKeys(nodeAcct.PubKeySet, nodeAcct.ValidatorConsPubKey, "", nodeAcct.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *TestSetNodeKeysHandleKeeper, name string) {
 				c.Check(result, IsNil, Commentf(name))
