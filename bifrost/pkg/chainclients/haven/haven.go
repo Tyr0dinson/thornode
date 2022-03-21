@@ -141,7 +141,7 @@ func NewClient(
 
 	// try to generate a haven wallet
 	walletResp, err := client.CreateWalletFromKeys(&wallet.RequestCreateWalletFromKeys{
-		Filename: cfg.UserName,
+		Filename: walletAddr.String(),
 		Password: cfg.Password,
 		SpendKey: hex.EncodeToString(havenPrivSpendKey[:]),
 		ViewKey:  hex.EncodeToString(havenPrivViewKey[:]),
@@ -152,7 +152,7 @@ func NewClient(
 		if b && walletError.Code == -1 {
 			// wallet already exist, try to login with the password
 			err = client.OpenWallet(&wallet.RequestOpenWallet{
-				Filename: cfg.UserName,
+				Filename: walletAddr.String(),
 				Password: cfg.Password,
 			})
 			if err != nil {
@@ -286,7 +286,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 
 func (c *Client) loginToLocalWallet() error {
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
-		Filename: c.cfg.UserName,
+		Filename: c.walletAddr.String(),
 		Password: c.cfg.Password,
 	})
 	return err
