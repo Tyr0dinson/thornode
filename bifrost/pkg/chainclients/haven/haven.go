@@ -51,6 +51,7 @@ type Client struct {
 	blockMetaAccessor     BlockMetaAccessor
 	bridge                *thorclient.ThorchainBridge
 	wg                    *sync.WaitGroup
+	wgSigning             *sync.WaitGroup
 	globalErrataQueue     chan<- types.ErrataBlock
 	globalSolvencyQueue   chan<- types.Solvency
 	asgardAddresses       []common.Address
@@ -200,13 +201,14 @@ func NewClient(
 		signedTxOutLock:       &sync.Mutex{},
 		clientLock:            &sync.Mutex{},
 		wg:                    &sync.WaitGroup{},
+		wgSigning:             &sync.WaitGroup{},
 		client:                client,
 		tssKm:                 tssKm,
 		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
 		asgardPassword:        hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
 		processedMemPool:      make(map[string]bool),
 		consolidateInProgress: atomic.NewBool(false),
-		isYggLoggedIn:         atomic.NewBool(true), // we loged in to local allet above
+		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
 	}
 
@@ -659,6 +661,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if err := c.sendNetworkFee(height); err != nil {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
+
+	// wait for signig to finish if in progress
+	c.wgSigning.Wait()
+
 	if err := c.reportSolvency(height); err != nil {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
@@ -1249,6 +1255,10 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 
 // SignTx is going to generate the outbound transaction, and also sign it
 func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, error) {
+	c.wgSigning.Add(1)
+	defer func() {
+		c.wgSigning.Done()
+	}()
 
 	// check if the chain is correct
 	if !tx.Chain.Equals(common.XHVChain) {
