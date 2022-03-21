@@ -44,6 +44,7 @@ type Client struct {
 	memPoolLock           *sync.Mutex
 	signedTxOut           map[string]TxOutWitness
 	signedTxOutLock       *sync.Mutex
+	clientLock            *sync.Mutex
 	lastMemPoolScan       time.Time
 	currentBlockHeight    int64
 	blockScanner          *blockscanner.BlockScanner
@@ -59,6 +60,7 @@ type Client struct {
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
 	consolidateInProgress *atomic.Bool
+	isYggLoggedIn         *atomic.Bool
 	supportedAssets       []string
 	tssKm                 *tss.KeySign
 	client                wallet.Client
@@ -169,12 +171,6 @@ func NewClient(
 			if addr.Address != walletAddr.String() {
 				return nil, fmt.Errorf("fail to generate a haven wallet, wallet already exist but has different address than bifrost: %+v", err)
 			}
-
-			// close the wallet
-			err = client.CloseWallet()
-			if err != nil {
-				return nil, fmt.Errorf("fail to close logged in wallet: %+v", err)
-			}
 		} else {
 			return nil, fmt.Errorf("fail to generate a haven wallet: %+v", err)
 		}
@@ -199,6 +195,7 @@ func NewClient(
 		walletAddr:            walletAddr,
 		memPoolLock:           &sync.Mutex{},
 		signedTxOutLock:       &sync.Mutex{},
+		clientLock:            &sync.Mutex{},
 		wg:                    &sync.WaitGroup{},
 		client:                client,
 		tssKm:                 tssKm,
@@ -206,6 +203,7 @@ func NewClient(
 		asgardPassword:        hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
 		processedMemPool:      make(map[string]bool),
 		consolidateInProgress: atomic.NewBool(false),
+		isYggLoggedIn:         atomic.NewBool(true), // we loged in to local allet above
 		signedTxOut:           make(map[string]TxOutWitness),
 	}
 
@@ -285,6 +283,8 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 }
 
 func (c *Client) loginToLocalWallet() error {
+	c.clientLock.Lock()
+	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
 		Filename: c.walletAddr.String(),
 		Password: c.cfg.Password,
@@ -293,6 +293,8 @@ func (c *Client) loginToLocalWallet() error {
 }
 
 func (c *Client) loginToAsgardWallet() error {
+	c.clientLock.Lock()
+	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
 		Filename: c.nodePubKey.String() + ".mo",
 		Password: c.asgardPassword,
@@ -302,15 +304,34 @@ func (c *Client) loginToAsgardWallet() error {
 
 func (c *Client) loginToWallet(pkey common.PubKey) error {
 	if c.isYggdrasil(pkey) {
+
+		if c.isYggLoggedIn.Load() {
+			return nil // we alreay logged in to ygg
+		}
+
 		err := c.loginToLocalWallet()
 		if err != nil {
 			return err
 		}
+		c.isYggLoggedIn.Store(true)
 	} else {
-		err := c.loginToAsgardWallet()
+		nodeStatus, err := c.bridge.FetchNodeStatus()
 		if err != nil {
 			return err
 		}
+		if nodeStatus != ttypes.NodeStatus_Active {
+			return fmt.Errorf("node is not active. No asgard wallet avaible.")
+		}
+
+		if !c.isYggLoggedIn.Load() {
+			return nil // we alreay logged in to asgard
+		}
+
+		err = c.loginToAsgardWallet()
+		if err != nil {
+			return err
+		}
+		c.isYggLoggedIn.Store(false)
 	}
 	return nil
 }
@@ -334,6 +355,8 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 
 	// get the spendable balance of each asset
 	var coins []common.Coin
+	c.clientLock.Lock()
+	defer c.clientLock.Unlock()
 	for _, asset := range c.supportedAssets {
 		resp, err := c.client.GetBalance(&wallet.RequestGetBalance{
 			AccountIndex: 0,
@@ -349,13 +372,6 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 			}
 			coins = append(coins, common.NewCoin(a, cosmos.NewUint(uint64(resp.Balance))))
 		}
-	}
-
-	// we should always close the wallet after usage since there will be only one rpc server running
-	// and some other wallet(multisig asgard for example) might always want to login
-	err = c.client.CloseWallet()
-	if err != nil {
-		return acct, fmt.Errorf("fail to close the wallet: %w", err)
 	}
 
 	// return a new Account with the total amount spendable.
@@ -841,11 +857,13 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 		verified := false
 		if w.Sender != c.walletAddr.String() {
 			// someone else signed this outoing
+			c.clientLock.Lock()
 			respCheck, err := c.client.CheckTxKey(&wallet.RequestCheckTxKey{
 				TxID:    txInItem.Tx,
 				TxKey:   txInItem.TxKey,
 				Address: w.Reciever, // it is important to take this from our own cache because sender might change it.
 			})
+			c.clientLock.Unlock()
 			if err != nil {
 				c.logger.Error().Msgf("error checking for txkey for tx %s, err: %v", tx.Hash, err)
 				break
@@ -1261,15 +1279,12 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		}
 
 		// sign tx
+		c.clientLock.Lock()
 		signedTx, err := c.client.Transfer(&t)
 		if err != nil {
 			return nil, fmt.Errorf("fail to make a outgoing transaction: %w", err)
 		}
-
-		// logout the wallet
-		if err = c.client.CloseWallet(); err != nil {
-			return nil, fmt.Errorf("fail to close the wallet: %w", err)
-		}
+		c.clientLock.Unlock()
 
 		res, err = hex.DecodeString(signedTx.TxBlob)
 		if err != nil {
@@ -1405,9 +1420,11 @@ func (c *Client) getUTXOs(pkey common.PubKey, assetTye string) ([]wallet.Transfe
 	}
 
 	// get the all non-spent outs
+	c.clientLock.Lock()
 	res, err := c.client.IncomingTransfers(&wallet.RequestIncomingTransfers{
 		TransferType: "available", // get only unspent outputs
 	})
+	c.clientLock.Unlock()
 	if err != nil {
 		return nil, err
 	}
