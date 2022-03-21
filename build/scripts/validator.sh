@@ -61,10 +61,11 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
     sleep 10 # wait for thorchain to commit a block , otherwise it get the wrong sequence number
 
     NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend=file)
+    NODE_CRYPTONOTE=$(echo "$SIGNER_PASSWD" | thornode cryptonote thorchain --keyring-backend file)
     VALIDATOR=$(thornode tendermint show-validator)
 
     # set node keys
-    until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
+    until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" "$NODE_CRYPTONOTE" --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
       sleep 5
     done
 
