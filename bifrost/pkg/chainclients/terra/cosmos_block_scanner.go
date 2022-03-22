@@ -22,7 +22,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/tendermint/crypto/tmhash"
 	tmtypes "github.com/tendermint/tendermint/proto/tendermint/types"
-	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -52,7 +52,7 @@ const (
 	// GasCacheTransactions is the number of transactions over which we compute an average
 	// (mean) gas price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
-	GasCacheTransactions = 100
+	GasCacheTransactions = 10
 )
 
 var (
