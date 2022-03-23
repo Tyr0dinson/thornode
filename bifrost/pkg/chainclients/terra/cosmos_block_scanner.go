@@ -317,7 +317,7 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs [][]byte) ([]types.
 		if blockResults.TxsResults[i].Code != 0 {
 			c.logger.Warn().Str("txhash", hash).Int64("height", height).Msg("inbound tx has non-zero response code, ignoring...")
 			if c.signerCacheManager != nil {
-				c.signerCacheManager.HasSigned(hash)
+				c.signerCacheManager.RemoveSigned(hash)
 				failedTx := c.getTxInFromFailedTransaction(hash, tx, blockResults.TxsResults[i], height)
 				txIn = append(txIn, failedTx...)
 			}
@@ -427,7 +427,7 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 ) []stypes.TxInItem {
 	var txIn []stypes.TxInItem
 
-	if blockResult.Code == 1 {
+	if blockResult.Code == 0 {
 		c.logger.Error().Str("hash", hash).Msg("success transaction should not get into getTxInFromFailedTransaction")
 		return []stypes.TxInItem{}
 	}
