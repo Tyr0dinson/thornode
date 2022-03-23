@@ -269,12 +269,12 @@ func (c *CosmosClient) GetAccountByAddress(address string, _ *big.Int) (common.A
 	if err != nil {
 		return common.Account{}, err
 	}
-	ba := acc.GetAccount().GetCachedValue().(atypes.BaseAccount)
-	// ba := new(atypes.BaseAccount)
-	// err = ba.Unmarshal(acc.GetAccount().Value)
-	// if err != nil {
-	// 	return common.Account{}, err
-	// }
+
+	ba := new(atypes.BaseAccount)
+	err = ba.Unmarshal(acc.GetAccount().Value)
+	if err != nil {
+		return common.Account{}, err
+	}
 
 	return common.Account{
 		Sequence:      int64(ba.Sequence),
