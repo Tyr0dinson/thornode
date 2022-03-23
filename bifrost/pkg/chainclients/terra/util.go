@@ -1,7 +1,6 @@
 package terra
 
 import (
-	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -14,10 +13,11 @@ import (
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	grpc "google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // buildUnsigned takes a MsgSend and other parameters and returns a txBuilder
@@ -119,7 +119,7 @@ func fromThorchainToCosmos(coin common.Coin) (cosmos.Coin, error) {
 func getGRPCConn(host string) (*grpc.ClientConn, error) {
 	url, err := url.Parse(host)
 	if err != nil {
-		return &grpc.ClientConn{}, errors.New("unable to parse RPCHost")
+		return &grpc.ClientConn{}, fmt.Errorf("unable to parse RPCHost,err: %w", err)
 	}
 	host, _, _ = net.SplitHostPort(url.Host)
 	// CHANGEME: all Cosmos GRPC should be on port 9090. Update this if your chain uses something use else.

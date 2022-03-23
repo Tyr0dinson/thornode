@@ -51,6 +51,7 @@ import (
 var CosmosSuccessCodes = map[uint32]bool{
 	errortypes.SuccessABCICode:                true,
 	errortypes.ErrTxInMempoolCache.ABCICode(): true,
+	errortypes.ErrWrongSequence.ABCICode():    true,
 }
 
 // CosmosClient is a structure to sign and broadcast tx to Cosmos chain used by signer mostly
@@ -115,7 +116,7 @@ func NewCosmosClient(
 
 	grpcConn, err := getGRPCConn(cfg.RPCHost)
 	if err != nil {
-		return nil, errors.New("fail to create grpc connection")
+		return nil, fmt.Errorf("fail to create grpc connection,err: %w", err)
 	}
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
@@ -268,12 +269,12 @@ func (c *CosmosClient) GetAccountByAddress(address string, _ *big.Int) (common.A
 	if err != nil {
 		return common.Account{}, err
 	}
-
-	ba := new(atypes.BaseAccount)
-	err = ba.Unmarshal(acc.GetAccount().Value)
-	if err != nil {
-		return common.Account{}, err
-	}
+	ba := acc.GetAccount().GetCachedValue().(atypes.BaseAccount)
+	// ba := new(atypes.BaseAccount)
+	// err = ba.Unmarshal(acc.GetAccount().Value)
+	// if err != nil {
+	// 	return common.Account{}, err
+	// }
 
 	return common.Account{
 		Sequence:      int64(ba.Sequence),
@@ -520,6 +521,7 @@ func (c *CosmosClient) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string,
 	if err := c.signerCacheManager.SetSigned(tx.CacheHash(), broadcastRes.TxResponse.TxHash); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache")
 	}
+	c.logger.Info().Msgf("broadcast TERRA transaction %+v successfully,hash:%v", tx, broadcastRes)
 	return broadcastRes.TxResponse.TxHash, nil
 }
 
