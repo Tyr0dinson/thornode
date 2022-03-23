@@ -444,6 +444,7 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 
 			tx := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
 			if tx != nil {
+				tx.Coins = common.NewCoins(common.NewCoin(c.cfg.ChainID.GetGasAsset(), ctypes.NewUint(1)))
 				txIn = append(txIn, *tx)
 			}
 
