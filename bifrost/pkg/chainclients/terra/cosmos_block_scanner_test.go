@@ -17,6 +17,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra/wasm"
+	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
 
@@ -170,9 +171,13 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	cfg := config.BlockScannerConfiguration{ChainID: common.TERRAChain}
 	mockRPC := NewMockTmServiceClient()
 
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+
 	blockScanner := CosmosBlockScanner{
 		cfg:       cfg,
 		tmService: mockRPC,
+		pubkeyMgr: pubkeyMgr,
 	}
 
 	block, err := blockScanner.GetBlock(1)

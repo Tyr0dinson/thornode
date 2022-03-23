@@ -317,19 +317,21 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs [][]byte) ([]types.
 		if blockResults.TxsResults[i].Code != 0 {
 			c.logger.Warn().Str("txhash", hash).Int64("height", height).Msg("inbound tx has non-zero response code, ignoring...")
 			if c.signerCacheManager != nil {
-				c.signerCacheManager.RemoveSigned(hash)
 				failedTx := c.getTxInFromFailedTransaction(hash, tx, blockResults.TxsResults[i], height)
 				txIn = append(txIn, failedTx...)
+				c.signerCacheManager.RemoveSigned(hash)
 			}
 			continue
 		}
 
 		for _, msg := range tx.GetMsgs() {
 			if msg, isMsgSend := msg.(*btypes.MsgSend); isMsgSend {
-				tx := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
-				if txIn != nil {
-					txIn = append(txIn, *tx)
+				tx, err := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
+				if err != nil {
+					c.logger.Warn().Err(err).Interface("msg", msg).Str("txhash", hash).Int64("height", height).Msg("unable to getTxInFromMsgSend")
+					continue
 				}
+				txIn = append(txIn, tx)
 			}
 		}
 
@@ -376,7 +378,7 @@ func (c *CosmosBlockScanner) getTxInFromMsgSend(
 	memo string,
 	msg *btypes.MsgSend,
 	fees ctypes.Coins,
-) *stypes.TxInItem {
+) (stypes.TxInItem, error) {
 	// Convert cosmos coins to thorchain coins (taking into account asset decimal precision)
 	coins := common.Coins{}
 	for _, coin := range msg.Amount {
@@ -390,7 +392,7 @@ func (c *CosmosBlockScanner) getTxInFromMsgSend(
 
 	// Ignore the tx when no coins exist
 	if coins.IsEmpty() {
-		return nil
+		return stypes.TxInItem{}, errors.New("coins are empty")
 	}
 
 	// Convert cosmos gas to thorchain coins (taking into account gas asset decimal precision)
@@ -404,7 +406,7 @@ func (c *CosmosBlockScanner) getTxInFromMsgSend(
 		gasFees = append(gasFees, cCoin)
 	}
 
-	return &types.TxInItem{
+	return types.TxInItem{
 		Tx:          txHash,
 		BlockHeight: height,
 		Memo:        memo,
@@ -412,7 +414,7 @@ func (c *CosmosBlockScanner) getTxInFromMsgSend(
 		To:          msg.ToAddress,
 		Coins:       coins,
 		Gas:         gasFees,
-	}
+	}, nil
 }
 
 // getTxInFromFailedTransaction when a transaction failed due to out of gas, this method will check whether the transaction is an outbound
@@ -439,15 +441,16 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 		if msg, isMsgSend := msg.(*btypes.MsgSend); isMsgSend {
 			ok, cif := c.pubkeyMgr.IsValidPoolAddress(msg.FromAddress, common.TERRAChain)
 			if !ok || cif.IsEmpty() {
-				return nil
+				continue
 			}
 
-			tx := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
-			if tx != nil {
-				tx.Coins = common.NewCoins(common.NewCoin(c.cfg.ChainID.GetGasAsset(), ctypes.NewUint(1)))
-				txIn = append(txIn, *tx)
+			tx, err := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
+			if err != nil {
+				c.logger.Warn().Err(err).Interface("msg", msg).Str("txhash", hash).Int64("height", height).Msg("unable to getTxInFromMsgSend")
+				continue
 			}
-
+			tx.Coins = common.NewCoins(common.NewCoin(c.cfg.ChainID.GetGasAsset(), ctypes.NewUint(1)))
+			txIn = append(txIn, tx)
 		}
 	}
 	return txIn
