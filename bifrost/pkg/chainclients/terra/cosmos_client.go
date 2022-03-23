@@ -37,6 +37,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
+	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -81,6 +82,7 @@ func NewCosmosClient(
 	server *tssp.TssServer,
 	thorchainBridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*CosmosClient, error) {
 	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 
@@ -159,12 +161,20 @@ func NewCosmosClient(
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
 
+	signerCacheManager, err := signercache.NewSignerCacheManager(c.storage.GetInternalDb())
+	if err != nil {
+		return nil, fmt.Errorf("fail to create signer cache manager")
+	}
+	c.signerCacheManager = signerCacheManager
+
 	c.cosmosScanner, err = NewCosmosBlockScanner(
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,
 		m,
 		c.ReportSolvency,
+		signerCacheManager,
+		pubkeyMgr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cosmos scanner: %w", err)
@@ -174,12 +184,6 @@ func NewCosmosClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create block scanner: %w", err)
 	}
-
-	signerCacheManager, err := signercache.NewSignerCacheManager(c.storage.GetInternalDb())
-	if err != nil {
-		return nil, fmt.Errorf("fail to create signer cache manager")
-	}
-	c.signerCacheManager = signerCacheManager
 
 	return c, nil
 }

@@ -84,7 +84,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 			chains[common.DOGEChain] = doge
 		default:
 		case common.TERRAChain:
-			terra, err := terra.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
+			terra, err := terra.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator)
 			if err != nil {
 				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
 				continue

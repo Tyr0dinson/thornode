@@ -21,6 +21,7 @@ import (
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
@@ -128,6 +129,8 @@ func (s *CosmosTestSuite) TestGetAddress(c *C) {
 }
 
 func (s *CosmosTestSuite) TestProcessOutboundTx(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 	}))
 
@@ -138,7 +141,7 @@ func (s *CosmosTestSuite) TestProcessOutboundTx(c *C) {
 			RPCHost:          server.URL,
 			StartBlockHeight: 1, // avoids querying thorchain for block height
 		},
-	}, nil, s.bridge, s.m)
+	}, nil, s.bridge, s.m, pubkeyMgr)
 	c.Assert(err, IsNil)
 
 	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqda0q2avvxnferqasee42lu5492jlc4zvf6u264famvg9dywgq2kz0zaecw")

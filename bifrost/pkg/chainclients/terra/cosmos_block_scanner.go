@@ -20,6 +20,7 @@ import (
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto/tmhash"
 	tmtypes "github.com/tendermint/tendermint/proto/tendermint/types"
 	grpc "google.golang.org/grpc"
@@ -27,9 +28,12 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra/wasm"
+	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
+	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 )
 
@@ -64,16 +68,18 @@ var (
 
 // CosmosBlockScanner is to scan the blocks
 type CosmosBlockScanner struct {
-	cfg              config.BlockScannerConfiguration
-	logger           zerolog.Logger
-	db               blockscanner.ScannerStorage
-	cdc              *codec.ProtoCodec
-	txConfig         client.TxConfig
-	txService        *rpcclient.HTTP
-	tmService        tmservice.ServiceClient
-	grpc             *grpc.ClientConn
-	bridge           *thorclient.ThorchainBridge
-	solvencyReporter SolvencyReporter
+	cfg                config.BlockScannerConfiguration
+	logger             zerolog.Logger
+	db                 blockscanner.ScannerStorage
+	cdc                *codec.ProtoCodec
+	txConfig           client.TxConfig
+	txService          *rpcclient.HTTP
+	tmService          tmservice.ServiceClient
+	grpc               *grpc.ClientConn
+	bridge             *thorclient.ThorchainBridge
+	solvencyReporter   SolvencyReporter
+	signerCacheManager *signercache.CacheManager
+	pubkeyMgr          pubkeymanager.PubKeyValidator
 
 	// feeCache contains a rolling window of suggested gas fees which are computed as the
 	// gas price paid in each observed transaction multiplied by the default GasLimit.
@@ -89,6 +95,8 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 	bridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	solvencyReporter SolvencyReporter,
+	signerCacheManager *signercache.CacheManager,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*CosmosBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
@@ -130,18 +138,19 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 	}
 
 	return &CosmosBlockScanner{
-		cfg:              cfg,
-		logger:           logger,
-		db:               scanStorage,
-		cdc:              cdc,
-		txConfig:         txConfig,
-		txService:        rpcClient,
-		tmService:        tmService,
-		feeCache:         make([]ctypes.Uint, 0),
-		lastFee:          ctypes.NewUint(0),
-		grpc:             grpcConn,
-		bridge:           bridge,
-		solvencyReporter: solvencyReporter,
+		cfg:                cfg,
+		logger:             logger,
+		db:                 scanStorage,
+		cdc:                cdc,
+		txConfig:           txConfig,
+		txService:          rpcClient,
+		tmService:          tmService,
+		feeCache:           make([]ctypes.Uint, 0),
+		lastFee:            ctypes.NewUint(0),
+		grpc:               grpcConn,
+		bridge:             bridge,
+		solvencyReporter:   solvencyReporter,
+		signerCacheManager: signerCacheManager,
 	}, nil
 }
 
@@ -305,50 +314,22 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs [][]byte) ([]types.
 		memo := tx.(ctypes.TxWithMemo).GetMemo()
 		c.updateGasCache(tx.(ctypes.FeeTx))
 
+		if blockResults.TxsResults[i].Code != 0 {
+			c.logger.Warn().Str("txhash", hash).Int64("height", height).Msg("inbound tx has non-zero response code, ignoring...")
+			if c.signerCacheManager != nil {
+				c.signerCacheManager.HasSigned(hash)
+				failedTx := c.getTxInFromFailedTransaction(hash, tx, blockResults.TxsResults[i], height)
+				txIn = append(txIn, failedTx...)
+			}
+			continue
+		}
+
 		for _, msg := range tx.GetMsgs() {
 			if msg, isMsgSend := msg.(*btypes.MsgSend); isMsgSend {
-				// Transaction contains a relevant MsgSend, check if the transaction was successful...
-				if blockResults.TxsResults[i].Code != 0 {
-					c.logger.Warn().Str("txhash", hash).Int64("height", height).Msg("inbound tx has non-zero response code, ignoring...")
-					continue
+				tx := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
+				if txIn != nil {
+					txIn = append(txIn, *tx)
 				}
-
-				// Convert cosmos coins to thorchain coins (taking into account asset decimal precision)
-				coins := common.Coins{}
-				for _, coin := range msg.Amount {
-					cCoin, err := fromCosmosToThorchain(coin)
-					if err != nil {
-						c.logger.Debug().Err(err).Interface("coins", c).Msg("unable to convert coin, not whitelisted. skipping...")
-						continue
-					}
-					coins = append(coins, cCoin)
-				}
-
-				// Ignore the tx when no coins exist
-				if coins.IsEmpty() {
-					continue
-				}
-
-				// Convert cosmos gas to thorchain coins (taking into account gas asset decimal precision)
-				gasFees := common.Gas{}
-				for _, fee := range fees {
-					cCoin, err := fromCosmosToThorchain(fee)
-					if err != nil {
-						c.logger.Debug().Err(err).Interface("fees", fees).Msg("unable to convert coin, not whitelisted. skipping...")
-						continue
-					}
-					gasFees = append(gasFees, cCoin)
-				}
-
-				txIn = append(txIn, types.TxInItem{
-					Tx:          hash,
-					BlockHeight: height,
-					Memo:        memo,
-					Sender:      msg.FromAddress,
-					To:          msg.ToAddress,
-					Coins:       coins,
-					Gas:         gasFees,
-				})
 			}
 		}
 
@@ -386,4 +367,87 @@ func (c *CosmosBlockScanner) FetchTxs(height int64) (types.TxIn, error) {
 	}
 
 	return txIn, nil
+}
+
+// getTxInFromMsg
+func (c *CosmosBlockScanner) getTxInFromMsgSend(
+	txHash string,
+	height int64,
+	memo string,
+	msg *btypes.MsgSend,
+	fees ctypes.Coins,
+) *stypes.TxInItem {
+	// Convert cosmos coins to thorchain coins (taking into account asset decimal precision)
+	coins := common.Coins{}
+	for _, coin := range msg.Amount {
+		cCoin, err := fromCosmosToThorchain(coin)
+		if err != nil {
+			c.logger.Debug().Err(err).Interface("coins", c).Msg("unable to convert coin, not whitelisted. skipping...")
+			continue
+		}
+		coins = append(coins, cCoin)
+	}
+
+	// Ignore the tx when no coins exist
+	if coins.IsEmpty() {
+		return nil
+	}
+
+	// Convert cosmos gas to thorchain coins (taking into account gas asset decimal precision)
+	gasFees := common.Gas{}
+	for _, fee := range fees {
+		cCoin, err := fromCosmosToThorchain(fee)
+		if err != nil {
+			c.logger.Debug().Err(err).Interface("fees", fees).Msg("unable to convert coin, not whitelisted. skipping...")
+			continue
+		}
+		gasFees = append(gasFees, cCoin)
+	}
+
+	return &types.TxInItem{
+		Tx:          txHash,
+		BlockHeight: height,
+		Memo:        memo,
+		Sender:      msg.FromAddress,
+		To:          msg.ToAddress,
+		Coins:       coins,
+		Gas:         gasFees,
+	}
+}
+
+// getTxInFromFailedTransaction when a transaction failed due to out of gas, this method will check whether the transaction is an outbound
+// it fake a txInItem if the failed transaction is an outbound , and report it back to THORNode , thus the gas fee can be subsidised
+// need to know that this will also cause the yggdrasil / asgard that send out the outbound to be slashed 1.5x gas
+// it is for security purpose
+func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
+	hash string,
+	tx ctypes.Tx,
+	blockResult *abci.ResponseDeliverTx,
+	height int64,
+) []stypes.TxInItem {
+	var txIn []stypes.TxInItem
+
+	if blockResult.Code == 1 {
+		c.logger.Error().Str("hash", hash).Msg("success transaction should not get into getTxInFromFailedTransaction")
+		return []stypes.TxInItem{}
+	}
+
+	fees := tx.(ctypes.FeeTx).GetFee()
+	memo := tx.(ctypes.TxWithMemo).GetMemo()
+
+	for _, msg := range tx.GetMsgs() {
+		if msg, isMsgSend := msg.(*btypes.MsgSend); isMsgSend {
+			ok, cif := c.pubkeyMgr.IsValidPoolAddress(msg.FromAddress, common.TERRAChain)
+			if !ok || cif.IsEmpty() {
+				return nil
+			}
+
+			tx := c.getTxInFromMsgSend(hash, height, memo, msg, fees)
+			if tx != nil {
+				txIn = append(txIn, *tx)
+			}
+
+		}
+	}
+	return txIn
 }
