@@ -52,6 +52,7 @@ func (HandlerBondSuite) TestBondHandler_ValidateActive(c *C) {
 
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{
@@ -90,6 +91,7 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	minimumBondInRune := constAccessor.GetInt64Value(constants.MinimumBondInRune)
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomTHORAddress(),
 		GetRandomTHORAddress(),
 		common.Coins{
@@ -134,6 +136,7 @@ func (HandlerBondSuite) TestBondHandlerFailValidation(c *C) {
 	minimumBondInRune := constAccessor.GetInt64Value(constants.MinimumBondInRune)
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomTHORAddress(),
 		GetRandomTHORAddress(),
 		common.Coins{

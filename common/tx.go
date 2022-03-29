@@ -77,7 +77,7 @@ func GetRagnarokTx(chain Chain, fromAddr, toAddr Address) Tx {
 }
 
 // NewTx create a new instance of Tx based on the input information
-func NewTx(txID TxID, from, to Address, coins Coins, gas Gas, memo string) Tx {
+func NewTx(txID TxID, txKey string, from, to Address, coins Coins, gas Gas, memo string) Tx {
 	var chain Chain
 	for _, coin := range coins {
 		chain = coin.Asset.GetChain()
@@ -85,6 +85,7 @@ func NewTx(txID TxID, from, to Address, coins Coins, gas Gas, memo string) Tx {
 	}
 	return Tx{
 		ID:          txID,
+		TxKey:       txKey,
 		Chain:       chain,
 		FromAddress: from,
 		ToAddress:   to,

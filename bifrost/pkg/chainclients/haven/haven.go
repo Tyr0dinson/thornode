@@ -1,6 +1,7 @@
 package haven
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,7 +52,6 @@ type Client struct {
 	blockMetaAccessor     BlockMetaAccessor
 	bridge                *thorclient.ThorchainBridge
 	wg                    *sync.WaitGroup
-	wgSigning             *sync.WaitGroup
 	globalErrataQueue     chan<- types.ErrataBlock
 	globalSolvencyQueue   chan<- types.Solvency
 	asgardAddresses       []common.Address
@@ -61,6 +61,7 @@ type Client struct {
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
 	consolidateInProgress *atomic.Bool
+	signingInProgress     *atomic.Bool
 	isYggLoggedIn         *atomic.Bool
 	supportedAssets       []string
 	tssKm                 *tss.KeySign
@@ -201,13 +202,13 @@ func NewClient(
 		signedTxOutLock:       &sync.Mutex{},
 		clientLock:            &sync.Mutex{},
 		wg:                    &sync.WaitGroup{},
-		wgSigning:             &sync.WaitGroup{},
 		client:                client,
 		tssKm:                 tssKm,
 		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
 		asgardPassword:        hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
 		processedMemPool:      make(map[string]bool),
 		consolidateInProgress: atomic.NewBool(false),
+		signingInProgress:     atomic.NewBool(false),
 		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
 	}
@@ -243,6 +244,7 @@ func (c *Client) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan ty
 	c.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.blockScanner.Start(globalTxsQueue)
+	go c.scanTxOuts()
 }
 
 // Stop stops the block scanner
@@ -334,6 +336,12 @@ func (c *Client) restoreStateToAsgardWallet() {
 }
 
 func (c *Client) loginToWallet(pkey common.PubKey) error {
+
+	if c.signingInProgress.Load() {
+		// cant change the wallet while signing is in progress
+		return fmt.Errorf("cant login to wallet. Signing is in progress")
+	}
+
 	if c.isYggdrasil(pkey) {
 		err := c.loginToLocalWallet()
 		if err != nil {
@@ -345,7 +353,7 @@ func (c *Client) loginToWallet(pkey common.PubKey) error {
 			return err
 		}
 		if nodeStatus != ttypes.NodeStatus_Active {
-			return fmt.Errorf("node is not active. No asgard wallet avaible.")
+			return fmt.Errorf("node is not active. No asgard wallet avaible")
 		}
 
 		err = c.loginToAsgardWallet()
@@ -662,9 +670,6 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
 
-	// wait for signig to finish if in progress
-	c.wgSigning.Wait()
-
 	if err := c.reportSolvency(height); err != nil {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
@@ -839,6 +844,98 @@ func (c *Client) confirmTx(txHash string) bool {
 	return false
 }
 
+func (c *Client) isFromAsgardAndMember(pk common.PubKey) (bool, bool, error) {
+	isAsgard := false
+	isMember := false
+	// get the vaults
+	vaults, err := c.bridge.GetAsgards()
+	if err != nil {
+		return isAsgard, isMember, fmt.Errorf("fail to get asgards : %w", err)
+	}
+	for _, v := range vaults {
+		if v.PubKey == pk {
+			isAsgard = true
+			for _, m := range v.Membership {
+				if m == c.nodePubKey.String() {
+					isMember = true
+					break
+				}
+			}
+		}
+	}
+
+	return isAsgard, isMember, nil
+}
+
+func (c *Client) getTxOutHash(tx ttypes.TxOutItem) string {
+	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.VaultPubKey, tx.Coin, tx.Memo, tx.InHash)
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+}
+
+func (c *Client) scanTxOuts() {
+
+	// save to be sent from FetchTxs()
+	for {
+
+		outs, err := c.bridge.GetOutboundTxs()
+		if err != nil {
+			c.logger.Err(err).Msg("fail to get outbound txs from thorchain")
+		}
+
+		if len(outs) > 0 {
+
+			for _, o := range outs {
+				if o.Chain != common.XHVChain {
+					continue
+				}
+
+				// skip if we already have a witness saved for this out item.
+				hash := c.getTxOutHash(o)
+				c.signedTxOutLock.Lock()
+				if _, ok := c.signedTxOut[hash]; ok {
+					c.logger.Info().Msgf("We already have a tx witness with hash: %s", hash)
+					c.signedTxOutLock.Unlock()
+					continue
+				}
+
+				var vaultType ttypes.VaultType = ttypes.VaultType_YggdrasilVault
+				isAsgard, isMember, err := c.isFromAsgardAndMember(o.VaultPubKey)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to get asgard info")
+					continue
+				}
+				if isAsgard {
+					vaultType = ttypes.VaultType_AsgardVault
+				}
+
+				// get the walletAddr for tx vault Pubkey
+				vaultAddr, err := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, o.VaultPubKey))
+				if err != nil {
+					c.logger.Err(err).Msg("fail to get vaut adddress from tx vaultPubKey")
+					continue
+				}
+
+				wtx := TxOutWitness{
+					TxID:     "",
+					TxKey:    "",
+					Coin:     o.Coin,
+					Reciever: o.ToAddress.String(),
+					Sender:   vaultAddr.String(),
+					Memo:     o.Memo,
+					Vault:    vaultType,
+					Signed:   isAsgard && isMember,
+				}
+				c.signedTxOutLock.Lock()
+				c.signedTxOut[hash] = wtx
+				c.signedTxOutLock.Unlock()
+				c.logger.Info().Msgf("We saved a witness with hash: %s", hash)
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.TxInItem {
 	c.signedTxOutLock.Lock()
 	defer c.signedTxOutLock.Unlock()
@@ -851,21 +948,22 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 		if len(w.TxID) == 0 {
 			// query tc to get the txkey for this tx
-			txInItem, err := c.bridge.GetTx(tx.Hash)
+			observedTx, err := c.bridge.GetTx(tx.Hash)
 			if err != nil {
 				c.logger.Error().Msgf("error getting witness tx from thorhcain: %w", err)
 				continue
 			}
-			if txInItem.IsEmpty() {
+			if observedTx.IsEmpty() {
 				// this is expected here till the node that signed the
 				// outgoing tx send it is witness to thorhcain.
 				continue
 			}
+			tx := observedTx.Tx
 
 			// check whether this witness is for this tx
-			if txInItem.Sender == w.Sender && txInItem.To == w.Reciever && txInItem.Coins[0].Equals(w.Coin) {
-				w.TxID = txInItem.Tx
-				w.TxKey = txInItem.TxKey
+			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Reciever && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
+				w.TxID = tx.ID.String()
+				w.TxKey = tx.TxKey
 				c.signedTxOut[h] = w
 			} else {
 				continue
@@ -873,7 +971,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 		}
 
 		// check whether this witness is for this tx
-		if w.TxID != tx.Hash {
+		if w.TxID != tx.Hash || len(w.TxKey) == 0 {
 			continue
 		}
 
@@ -891,8 +989,8 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 			c.clientLock.Lock()
 			respCheck, err := c.client.CheckTxKey(&wallet.RequestCheckTxKey{
-				TxID:    txInItem.Tx,
-				TxKey:   txInItem.TxKey,
+				TxID:    w.TxID,
+				TxKey:   w.TxKey,
 				Address: w.Reciever, // it is important to take this from our own cache because sender might change it.
 			})
 			c.clientLock.Unlock()
@@ -900,12 +998,14 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				c.logger.Error().Msgf("error checking for txkey for tx %s, err: %v", tx.Hash, err)
 				break
 			}
+			c.logger.Info().Msgf("Got txkey resp from wallet. Amout: %s %s", respCheck.ReceivedAmounts[0], respCheck.ReceivedAssets[0])
 
 			// we expect that address to recieve only 1 asset type, thus lenght of ReceivedAmounts should be 1
 			if len(respCheck.ReceivedAmounts) == 1 && len(respCheck.ReceivedAssets) == 1 &&
 				respCheck.ReceivedAmounts[0] == w.Coin.Amount.Uint64() &&
 				respCheck.ReceivedAssets[0] == w.Coin.Asset.Ticker.String() {
 				verified = true
+				c.logger.Info().Msgf("We were able to verify the witness tx. Sending to Thorhcain")
 			}
 		}
 
@@ -1255,10 +1355,8 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 
 // SignTx is going to generate the outbound transaction, and also sign it
 func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, error) {
-	c.wgSigning.Add(1)
-	defer func() {
-		c.wgSigning.Done()
-	}()
+	c.signingInProgress.Store(true)
+	defer c.signingInProgress.Store(false)
 
 	// check if the chain is correct
 	if !tx.Chain.Equals(common.XHVChain) {
@@ -1324,6 +1422,36 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			return nil, fmt.Errorf("fail to login to wallet: %w", err)
 		}
 
+		// because the monero wallet has high possibility to report incorrect balance when it is just opened,
+		// we need to see 3 confirmations of the balance
+		counter := 0
+		totalConfirmed := 0
+		for ; counter < 10; counter++ {
+			time.Sleep(time.Second * 2)
+			balance, err := c.client.GetBalance(&wallet.RequestGetBalance{
+				AccountIndex: 0,
+				AssetType:    outputAsset,
+			})
+			if err != nil {
+				c.logger.Error().Err(err).Msg("fail to get the balance of the wallet")
+				return nil, err
+			}
+
+			// it fail still lack of fund as the fee is not added here
+			if balance.UnlockedBalance > amount {
+				c.logger.Info().Msgf("unlock balance is %d confirming %d", balance.UnlockedBalance, totalConfirmed)
+				totalConfirmed += 1
+				if totalConfirmed >= 3 {
+					break
+				}
+			} else {
+				c.logger.Warn().Msgf("unlock balance %d is not enough, the wallet end may be slow", balance.UnlockedBalance)
+			}
+		}
+		if counter >= 10 {
+			return nil, errors.New("not enough fund in wallet after 10 trial, failing")
+		}
+
 		// sign tx
 		c.clientLock.Lock()
 		signedTx, err := c.client.Transfer(&t)
@@ -1339,27 +1467,21 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		txID = signedTx.TxHash
 		txKey = signedTx.TxKey
 	} else {
-		// check whether we need to taker part in this signing or not
-		vaults, err := c.bridge.GetAsgards()
+
+		isAsgard, isMember, err := c.isFromAsgardAndMember(tx.VaultPubKey)
 		if err != nil {
-			return nil, fmt.Errorf("fail to get asgards : %w", err)
+			return nil, err
 		}
-		for _, v := range vaults {
-			if v.PubKey == tx.VaultPubKey {
-				vaultType = ttypes.VaultType_AsgardVault
-				member := false
-				for _, m := range v.Membership {
-					if m == c.nodePubKey.String() {
-						member = true
-					}
-				}
-				if member {
-					sign = true
-					break
-				}
-			}
+
+		if isAsgard {
+			vaultType = ttypes.VaultType_AsgardVault
 		}
-		if sign {
+
+		if isAsgard && isMember {
+			sign = true
+			// close the asgard wallet if open
+			c.client.CloseWallet()
+
 			c.logger.Info().Msgf("Creating an outbound from asgard tx Amount: %d %s for %s", amount, outputAsset, tx.ToAddress.String())
 			// tss sign
 			msg, err := json.Marshal(t)
@@ -1392,6 +1514,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		Signed:   sign,
 	}
 	c.signedTxOut[tx.Hash()] = wtx
+	c.logger.Info().Msgf("We saved a witness with hash: %s", tx.Hash())
 
 	return res, nil
 }

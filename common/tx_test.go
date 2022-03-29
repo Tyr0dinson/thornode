@@ -30,6 +30,7 @@ func (s TxSuite) TestTx(c *C) {
 	c.Assert(err, IsNil)
 	tx := NewTx(
 		id,
+		"",
 		Address("bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6"),
 		Address("bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6"),
 		Coins{NewCoin(BNBAsset, cosmos.NewUint(5*One))},

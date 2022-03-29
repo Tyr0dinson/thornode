@@ -348,6 +348,7 @@ func (s *SlashingV1Suite) TestNodeSignSlashErrors(c *C) {
 		na := GetRandomValidatorNode(NodeActive)
 		inTx := common.NewTx(
 			GetRandomTxHash(),
+			"",
 			GetRandomBNBAddress(),
 			GetRandomBNBAddress(),
 			common.Coins{
@@ -402,6 +403,7 @@ func (s *SlashingV1Suite) TestNotSigningSlash(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	inTx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{

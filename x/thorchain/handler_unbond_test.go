@@ -130,6 +130,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		standbyNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{
@@ -222,6 +223,7 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		activeNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{
@@ -311,6 +313,7 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
 	txIn := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		standbyNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{

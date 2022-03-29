@@ -74,7 +74,7 @@ func (r *RouterUpgradeController) withdrawUSDT(ctx cosmos.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to get current asgard address, err: %w", err)
 	}
-	tx := common.NewTx(txID, usdtHolder, currentAsgardAddr, common.Coins{
+	tx := common.NewTx(txID, "", usdtHolder, currentAsgardAddr, common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
 	}, common.Gas{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),

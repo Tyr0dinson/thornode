@@ -20,6 +20,7 @@ func (MsgSwapSuite) TestMsgSwap(c *C) {
 
 	tx := common.NewTx(
 		txID,
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{
@@ -127,6 +128,7 @@ func (MsgSwapSuite) TestMsgSwap(c *C) {
 	for _, item := range inputs {
 		tx := common.NewTx(
 			item.requestTxHash,
+			"",
 			item.requester,
 			GetRandomBNBAddress(),
 			common.Coins{

@@ -73,7 +73,7 @@ func (h DepositHandler) handleV1(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Re
 		}
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -210,7 +210,7 @@ func (h DepositHandler) handleV46(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		}
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -347,7 +347,7 @@ func (h DepositHandler) handleV47(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		}
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -484,7 +484,7 @@ func (h DepositHandler) handleV58(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		}
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -631,7 +631,7 @@ func (h DepositHandler) handleV61(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		}
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -779,7 +779,7 @@ func (h DepositHandler) handleV63(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		return nil, fmt.Errorf("fail to get to address: %w", err)
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -931,7 +931,7 @@ func (h DepositHandler) handleV64(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		return nil, fmt.Errorf("fail to get to address: %w", err)
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo
@@ -1083,7 +1083,7 @@ func (h DepositHandler) handleV65(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		return nil, fmt.Errorf("fail to get to address: %w", err)
 	}
 
-	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
+	tx := common.NewTx(txID, "", from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
 	tx.Chain = common.THORChain
 
 	// construct msg from memo

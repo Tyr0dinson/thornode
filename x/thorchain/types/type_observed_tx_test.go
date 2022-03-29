@@ -292,6 +292,7 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{

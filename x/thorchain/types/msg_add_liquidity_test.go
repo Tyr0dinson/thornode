@@ -20,6 +20,7 @@ func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 	c.Check(txID.IsEmpty(), Equals, false)
 	tx := common.NewTx(
 		txID,
+		"",
 		runeAddress,
 		GetRandomRUNEAddress(),
 		common.Coins{
@@ -81,6 +82,7 @@ func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 	for i, item := range inputs {
 		tx := common.NewTx(
 			item.txHash,
+			"",
 			GetRandomRUNEAddress(),
 			GetRandomBNBAddress(),
 			common.Coins{

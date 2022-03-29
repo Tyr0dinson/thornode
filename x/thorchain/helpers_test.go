@@ -680,14 +680,14 @@ func (s *HelperSuite) TestEmitPoolStageCostEvent(c *C) {
 func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	txID := GetRandomTxHash()
-	tx := common.NewTx(txID, GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
+	tx := common.NewTx(txID, "", GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "swap:BNB.BNB:"+GetRandomBNBAddress().String())
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
 	m, err := getMsgSwapFromMemo(memo.(SwapMemo), NewObservedTx(tx, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
-	txAddLiquidity := common.NewTx(txID, GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
+	txAddLiquidity := common.NewTx(txID, "", GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "add:BTC.BTC:"+GetRandomTHORAddress().String())
 	memoAddExternal, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txAddLiquidity.Memo)
@@ -696,7 +696,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		NewObservedTx(txAddLiquidity, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)),
 		GetRandomBech32Addr())
 
-	txAddRUNE := common.NewTx(txID, GetRandomTHORAddress(), GetRandomTHORAddress(), common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(100))), common.Gas{
+	txAddRUNE := common.NewTx(txID, "", GetRandomTHORAddress(), GetRandomTHORAddress(), common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.RuneNative, cosmos.NewUint(100)),
 	}, "add:BTC.BTC:"+GetRandomBTCAddress().String())
 	memoAddRUNE, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txAddRUNE.Memo)
@@ -719,14 +719,14 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 			},
 		},
 	})
-	txWithThorname := common.NewTx(txID, GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
+	txWithThorname := common.NewTx(txID, "", GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "swap:BNB.BNB:testtest")
 	memoWithThorname, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txWithThorname.Memo)
 	mWithThorname, err := getMsgSwapFromMemo(memoWithThorname.(SwapMemo), NewObservedTx(txWithThorname, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
-	txSynth := common.NewTx(txID, GetRandomTHORAddress(), GetRandomTHORAddress(),
+	txSynth := common.NewTx(txID, "", GetRandomTHORAddress(), GetRandomTHORAddress(),
 		common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(100))),
 		common.Gas{common.NewCoin(common.BNBAsset, cosmos.NewUint(100))},
 		"swap:ETH.ETH:"+GetRandomTHORAddress().String())

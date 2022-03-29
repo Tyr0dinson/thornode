@@ -81,6 +81,7 @@ func GetRandomObservedTx() ObservedTx {
 func GetRandomTx() common.Tx {
 	return common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.BNBAsset, cosmos.OneUint())},

@@ -66,7 +66,7 @@ require (
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
 	github.com/akildemir/go-tss v0.0.0-20220126130913-a9ff9196373b // indirect
-	github.com/akildemir/moneroTss v0.0.0-20220210140850-325b39d0a9fc // indirect
+	github.com/akildemir/moneroTss v0.0.0-20220328094429-0de2308403c5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
@@ -108,6 +108,7 @@ require (
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/google/gopacket v1.1.18 // indirect
 	github.com/gorilla/handlers v1.5.1 // indirect
+	github.com/gorilla/rpc v1.2.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.2 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
@@ -130,7 +131,6 @@ require (
 	github.com/ipfs/go-ipns v0.0.2 // indirect
 	github.com/ipfs/go-log/v2 v2.1.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
-	github.com/gorilla/rpc v1.2.0 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect

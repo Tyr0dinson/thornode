@@ -30,6 +30,7 @@ func (s *HandlerSwapSuite) TestValidate(c *C) {
 	observerAddr := keeper.activeNodeAccount.NodeAddress
 	tx := common.NewTx(
 		txID,
+		"",
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
@@ -128,6 +129,7 @@ func (s *HandlerSwapSuite) TestValidation(c *C) {
 	observerAddr := keeper.activeNodeAccount.NodeAddress
 	tx := common.NewTx(
 		txID,
+		"",
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
@@ -169,6 +171,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	// no pool
 	tx := common.NewTx(
 		txID,
+		"",
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
@@ -190,7 +193,8 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, NotNil)
 
-	tx = common.NewTx(txID, signerBNBAddr, signerBNBAddr,
+	tx = common.NewTx(txID,
+		"", signerBNBAddr, signerBNBAddr,
 		common.Coins{
 			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
 		},
@@ -213,7 +217,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	m, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+bnbAddr.String()+":121893238")
 	c.Assert(err, IsNil)
 	txIn := NewObservedTx(
-		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
+		common.NewTx(GetRandomTxHash(), "", signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
 				common.NewCoin(tCanAsset, cosmos.NewUint(20000000)),
 			},
@@ -279,7 +283,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	// double swap - happy path
 	m, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+signerBNBAddr.String())
 	txIn := NewObservedTx(
-		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
+		common.NewTx(GetRandomTxHash(), "", signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
 				common.NewCoin(tCanAsset, cosmos.NewUint(20000000)),
 			},
@@ -306,7 +310,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	testnetBNBAddr := GetRandomBNBAddress()
 	m1, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+testnetBNBAddr.String())
 	txIn1 := NewObservedTx(
-		common.NewTx(GetRandomTxHash(), signerBNBAddr, GetRandomBNBAddress(),
+		common.NewTx(GetRandomTxHash(), "", signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
 				common.NewCoin(tCanAsset, cosmos.NewUint(100000)),
 			},

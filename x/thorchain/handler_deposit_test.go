@@ -172,6 +172,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	handler := NewDepositHandler(mgr)
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomTHORAddress(),
 		GetRandomTHORAddress(),
 		common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))},
@@ -217,6 +218,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	c.Assert(err, IsNil)
 	tx1 := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomTHORAddress(),
 		GetRandomTHORAddress(),
 		common.Coins{common.NewCoin(synthAsset, cosmos.NewUint(common.One))},

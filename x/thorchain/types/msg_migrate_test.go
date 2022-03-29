@@ -17,6 +17,7 @@ func (MsgMigrateSuite) TestMsgMigrateSuite(c *C) {
 	acc1 := GetRandomBech32Addr()
 	tx := NewObservedTx(common.NewTx(
 		txID,
+		"",
 		bnb,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.BNBAsset, cosmos.OneUint())},
@@ -62,6 +63,7 @@ func (MsgMigrateSuite) TestMsgMigrateSuite(c *C) {
 	for _, item := range inputs {
 		tx := NewObservedTx(common.NewTx(
 			item.txID,
+			"",
 			item.sender,
 			GetRandomBNBAddress(),
 			common.Coins{common.NewCoin(common.BNBAsset, cosmos.OneUint())},

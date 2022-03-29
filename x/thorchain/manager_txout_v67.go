@@ -582,6 +582,7 @@ func (tos *TxOutStorageV67) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 
 	tx := common.NewTx(
 		common.BlankTxID,
+		"",
 		from,
 		toi.ToAddress,
 		common.Coins{toi.Coin},

@@ -32,6 +32,7 @@ func (PoolTestSuite) TestPool(c *C) {
 
 	tx := common.NewTx(
 		txID,
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{

@@ -499,7 +499,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	c.Assert(result, IsNil)
 
 	observedPubKey := GetRandomPubKey()
-	tx := common.NewTx(txID, GetRandomLTCAddress(), GetRandomLTCAddress(),
+	tx := common.NewTx(txID, "", GetRandomLTCAddress(), GetRandomLTCAddress(),
 		common.Coins{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(102400000)),
 		},
@@ -576,7 +576,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	txInbound := common.NewTx(txInID, GetRandomLTCAddress(), GetRandomLTCAddress(),
+	txInbound := common.NewTx(txInID, "", GetRandomLTCAddress(), GetRandomLTCAddress(),
 		common.Coins{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(102400000)),
 		},
@@ -655,7 +655,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	txID1 := GetRandomTxHash()
 	internalMigrationTx := NewMsgErrataTx(txID1, common.LTCChain, node1.NodeAddress)
 
-	migrateTx := common.NewTx(txID1,
+	migrateTx := common.NewTx(txID1, "",
 		GetRandomLTCAddress(),
 		GetRandomLTCAddress(),
 		common.Coins{

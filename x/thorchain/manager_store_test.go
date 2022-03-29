@@ -113,6 +113,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV58Refund(c *C) {
 	inTxID, err := common.NewTxID("6232075D4C63A69CDC8B65157A1737CBC4C1DA979BAA7E6F8B6B9F20A38388CA")
 	c.Assert(err, IsNil)
 	tx := common.NewTx(inTxID,
+		"",
 		"thor1vtklmng59728j5mzx0n0an4sek4kdcctxcgapk",
 		"thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0",
 		common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(12200000000))),
@@ -139,6 +140,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV58Refund(c *C) {
 	inTxID1, err := common.NewTxID("05A7C2FD035FEC62BB957465BC80970177EBD80605138B7C4709333F118E7338")
 	c.Assert(err, IsNil)
 	tx1 := common.NewTx(inTxID1,
+		"",
 		"thor1dw4mztad7dxqx2aw3jlyatjdqcf30z3lzpjl3u",
 		"thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0",
 		common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(34000000))),
@@ -203,6 +205,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 	inTxID, err := common.NewTxID("BC68035CE2C8A2C549604FF7DB59E07931F39040758B138190338FA697338DB3")
 	c.Assert(err, IsNil)
 	tx := common.NewTx(inTxID,
+		"",
 		"0x3a196410a0f5facd08fd7880a4b8551cd085c031",
 		"0xf56cBa49337A624E94042e325Ad6Bc864436E370",
 		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))),
@@ -238,6 +241,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 	inTxID1, err := common.NewTxID("5DA19C1C5C2F6BBDF9D4FB0E6FF16A0DF6D6D7FE1F8E95CA755E5B3C6AADA458")
 	c.Assert(err, IsNil)
 	tx1 := common.NewTx(inTxID1,
+		"",
 		"0x3a196410a0f5facd08fd7880a4b8551cd085c031",
 		"0xf56cBa49337A624E94042e325Ad6Bc864436E370",
 		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))),
@@ -272,6 +276,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 	inTxID2, err := common.NewTxID("D58D1EF6D6E49EB99D0524128C16115893396FD05877EF4856FCE474B5BA09A7")
 	c.Assert(err, IsNil)
 	tx2 := common.NewTx(inTxID2,
+		"",
 		"0x3a196410a0f5facd08fd7880a4b8551cd085c031",
 		"0xf56cBa49337A624E94042e325Ad6Bc864436E370",
 		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(150005145000))),
@@ -758,7 +763,7 @@ func (s *StoreManagerTestSuite) TestRefundBinanceTx(c *C) {
 		asset, err := common.NewAsset(item.asset)
 		c.Assert(err, IsNil)
 		coin := common.NewCoin(asset, cosmos.NewUint(uint64(item.amount*common.One)))
-		tx := NewObservedTx(common.NewTx(hash, fromAddr, addr, common.NewCoins(coin),
+		tx := NewObservedTx(common.NewTx(hash, "", fromAddr, addr, common.NewCoins(coin),
 			BNBGasFeeSingleton, "swap:BNB.BNB:bnb137xvx6ceqpxe34xr46y3ax350fr2q4zymw5l94"), common.BlockHeight(ctx), pubKey, common.BlockHeight(ctx))
 		voter := NewObservedTxVoter(hash, []ObservedTx{tx})
 		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
@@ -786,7 +791,7 @@ func (s *StoreManagerTestSuite) TestRefundBinanceTx(c *C) {
 		asset, err := common.NewAsset(item.asset)
 		c.Assert(err, IsNil)
 		coin := common.NewCoin(asset, cosmos.NewUint(uint64(item.amount*common.One)))
-		tx := NewObservedTx(common.NewTx(hash, fromAddr, addr, common.NewCoins(coin),
+		tx := NewObservedTx(common.NewTx(hash, "", fromAddr, addr, common.NewCoins(coin),
 			BNBGasFeeSingleton, NewRefundMemo(hash).String()), common.BlockHeight(ctx), pubKey, common.BlockHeight(ctx))
 		refundMsg := types.NewMsgRefundTx(tx, hash, GetRandomBech32Addr())
 		result, err := refundHandler.handle(ctx, *refundMsg)

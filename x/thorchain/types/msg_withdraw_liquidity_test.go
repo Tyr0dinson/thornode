@@ -15,6 +15,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 	txID := GetRandomTxHash()
 	tx := common.NewTx(
 		txID,
+		"",
 		GetRandomBNBAddress(),
 		GetRandomBNBAddress(),
 		common.Coins{

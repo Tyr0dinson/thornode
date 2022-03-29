@@ -105,6 +105,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 	addTxHash := GetRandomTxHash()
 	tx := common.NewTx(
 		addTxHash,
+		"",
 		runeAddr,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*5))},
@@ -171,6 +172,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNe
 	addTxHash := GetRandomTxHash()
 	tx := common.NewTx(
 		addTxHash,
+		"",
 		runeAddr,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*5))},
@@ -208,6 +210,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 	bnbSynthAsset, _ := common.NewAsset("BNB/BNB")
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		GetRandomRUNEAddress(),
 		GetRandomRUNEAddress(),
 		common.Coins{common.NewCoin(bnbSynthAsset, cosmos.NewUint(common.One*5))},
@@ -343,6 +346,7 @@ func (s *HandlerAddLiquiditySuite) TestHandlerAddLiquidityFailScenario(c *C) {
 		addTxHash := GetRandomTxHash()
 		tx := common.NewTx(
 			addTxHash,
+			"",
 			runeAddr,
 			GetRandomBNBAddress(),
 			common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*5))},

@@ -32,6 +32,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_NotActiveNodeLeave(c *C) {
 	txID := GetRandomTxHash()
 	tx := common.NewTx(
 		txID,
+		"",
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
@@ -56,6 +57,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_ActiveNodeLeave(c *C) {
 	txID := GetRandomTxHash()
 	tx := common.NewTx(
 		txID,
+		"",
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
@@ -90,6 +92,7 @@ func (HandlerLeaveSuite) TestLeaveJail(c *C) {
 	txID := GetRandomTxHash()
 	tx := common.NewTx(
 		txID,
+		"",
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
