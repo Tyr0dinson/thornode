@@ -19,10 +19,10 @@ func init() {
 		JailTimeKeygen:            10,
 		JailTimeKeysign:           10,
 		AsgardSize:                6,
-		MinimumNodesForYggdrasil:  4,
+		MinimumNodesForYggdrasil:  2,
 		MinTxOutVolumeThreshold:   2000000_00000000,
 		TxOutDelayRate:            2000000_00000000,
-		PoolDepthForYggFundingMin: 500_000_00000000,
+		PoolDepthForYggFundingMin: 50_00000000,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,
