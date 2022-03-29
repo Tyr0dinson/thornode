@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,7 +57,6 @@ type Client struct {
 	asgardAddresses       []common.Address
 	nodePubKey            common.PubKey
 	lastAsgard            time.Time
-	txOutInterval         time.Duration
 	asgardPassword        string
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
@@ -192,22 +190,6 @@ func NewClient(
 		return nil, errors.New("pool manager is nil")
 	}
 
-	// set the interval of txout scans
-	var txOutInterval time.Duration
-	blockTime := os.Getenv("BLOCK_TIME")
-	log.Logger.Info().Msgf("Blcok time is: %s", blockTime)
-	if strings.HasSuffix(blockTime, "s") {
-		blockTime, err := strconv.Atoi(strings.TrimSuffix(blockTime, "s"))
-		if err != nil {
-			log.Logger.Err(err).Msg("cant parse the block time, setting txOut scan interval to default 1 seconds")
-			txOutInterval = 1 * time.Second
-		} else {
-			txOutInterval = time.Duration(blockTime / 3)
-		}
-	} else {
-		txOutInterval = 5 * time.Second
-	}
-
 	c := &Client{
 		logger:                log.Logger.With().Str("module", "haven").Logger(),
 		cfg:                   cfg,
@@ -220,7 +202,6 @@ func NewClient(
 		signedTxOutLock:       &sync.Mutex{},
 		clientLock:            &sync.Mutex{},
 		wg:                    &sync.WaitGroup{},
-		txOutInterval:         txOutInterval,
 		client:                client,
 		tssKm:                 tssKm,
 		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
@@ -950,7 +931,7 @@ func (c *Client) scanTxOuts() {
 			}
 		}
 
-		time.Sleep(c.txOutInterval)
+		time.Sleep(2 * time.Second)
 	}
 }
 
