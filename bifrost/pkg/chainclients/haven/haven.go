@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +58,7 @@ type Client struct {
 	asgardAddresses       []common.Address
 	nodePubKey            common.PubKey
 	lastAsgard            time.Time
+	txOutInterval         time.Duration
 	asgardPassword        string
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
@@ -190,6 +192,22 @@ func NewClient(
 		return nil, errors.New("pool manager is nil")
 	}
 
+	// set the interval of txout scans
+	var txOutInterval time.Duration
+	blockTime := os.Getenv("BLOCK_TIME")
+	log.Logger.Info().Msgf("Blcok time is: %s", blockTime)
+	if strings.HasSuffix(blockTime, "s") {
+		blockTime, err := strconv.Atoi(strings.TrimSuffix(blockTime, "s"))
+		if err != nil {
+			log.Logger.Err(err).Msg("cant parse the block time, setting txOut scan interval to default 1 seconds")
+			txOutInterval = 1 * time.Second
+		} else {
+			txOutInterval = time.Duration(blockTime / 3)
+		}
+	} else {
+		txOutInterval = 5 * time.Second
+	}
+
 	c := &Client{
 		logger:                log.Logger.With().Str("module", "haven").Logger(),
 		cfg:                   cfg,
@@ -202,6 +220,7 @@ func NewClient(
 		signedTxOutLock:       &sync.Mutex{},
 		clientLock:            &sync.Mutex{},
 		wg:                    &sync.WaitGroup{},
+		txOutInterval:         txOutInterval,
 		client:                client,
 		tssKm:                 tssKm,
 		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
@@ -893,7 +912,6 @@ func (c *Client) scanTxOuts() {
 				hash := c.getTxOutHash(o)
 				c.signedTxOutLock.Lock()
 				if _, ok := c.signedTxOut[hash]; ok {
-					c.logger.Info().Msgf("We already have a tx witness with hash: %s", hash)
 					c.signedTxOutLock.Unlock()
 					continue
 				}
@@ -929,11 +947,10 @@ func (c *Client) scanTxOuts() {
 				c.signedTxOutLock.Lock()
 				c.signedTxOut[hash] = wtx
 				c.signedTxOutLock.Unlock()
-				c.logger.Info().Msgf("We saved a witness with hash: %s", hash)
 			}
 		}
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(c.txOutInterval)
 	}
 }
 
@@ -1493,7 +1510,6 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			if err != nil {
 				return nil, err
 			}
-			c.logger.Info().Msgf("RemoteSignMn() returned with id: %s and key: %s", txID, txKey)
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
 			// as well check whether it is legit or not. But It closes the wallet afterwards so login back in
@@ -1503,7 +1519,6 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	}
 
 	// save to be sent from FetchTxs()
-	c.logger.Info().Msgf("saving witness..")
 	c.signedTxOutLock.Lock()
 	defer c.signedTxOutLock.Unlock()
 	wtx := TxOutWitness{
@@ -1517,7 +1532,6 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		Signed:   sign,
 	}
 	c.signedTxOut[tx.Hash()] = wtx
-	c.logger.Info().Msgf("We saved a witness with hash: %s", tx.Hash())
 
 	return res, nil
 }
