@@ -897,6 +897,7 @@ func (c *Client) scanTxOuts() {
 					c.signedTxOutLock.Unlock()
 					continue
 				}
+				c.signedTxOutLock.Unlock()
 
 				var vaultType ttypes.VaultType = ttypes.VaultType_YggdrasilVault
 				isAsgard, isMember, err := c.isFromAsgardAndMember(o.VaultPubKey)
