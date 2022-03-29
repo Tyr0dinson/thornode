@@ -932,7 +932,7 @@ func (c *Client) scanTxOuts() {
 			}
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -1492,6 +1492,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			if err != nil {
 				return nil, err
 			}
+			c.logger.Info().Msgf("RemoteSignMn() returned with id: %s and key: %s", txID, txKey)
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
 			// as well check whether it is legit or not. But It closes the wallet afterwards so login back in
@@ -1501,6 +1502,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	}
 
 	// save to be sent from FetchTxs()
+	c.logger.Info().Msgf("saving witness..")
 	c.signedTxOutLock.Lock()
 	defer c.signedTxOutLock.Unlock()
 	wtx := TxOutWitness{
