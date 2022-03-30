@@ -431,6 +431,7 @@ func (b *ThorchainBridge) GetTx(txId string) ([]stypes.ObservedTx, error) {
 	result, s, err := b.getWithPath(fmt.Sprintf(TxSignersEndPoint, txId))
 	if err != nil {
 		if s == http.StatusNotFound { // this is expected.
+			b.logger.Info().Msgf("cant find tx with id: %s", txId)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("fail to get tx from thorchain: %w", err)
@@ -445,6 +446,7 @@ func (b *ThorchainBridge) GetTx(txId string) ([]stypes.ObservedTx, error) {
 	if err := json.Unmarshal(result, &txIn); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal tx from json: %w", err)
 	}
+	b.logger.Info().Msgf("return observed txs of len: %d for txid: %s", len(txIn.Txs), txId)
 	return txIn.Txs, nil
 }
 
