@@ -867,8 +867,10 @@ func (c *Client) isFromAsgardAndMember(pk common.PubKey) (bool, bool, error) {
 	return isAsgard, isMember, nil
 }
 
+// getTxOutHash has to return exactly the same hash hash
 func (c *Client) getTxOutHash(tx ttypes.TxOutItem) string {
-	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.VaultPubKey, tx.Coin, tx.Memo, tx.InHash)
+	coins := common.NewCoins(tx.Coin)
+	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.VaultPubKey, coins, tx.Memo, tx.InHash)
 	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
 }
 
@@ -977,7 +979,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 		}
 
 		// check whether this witness is for this tx
-		if w.TxID != tx.Hash || len(w.TxKey) == 0 {
+		if w.TxID != strings.ToUpper(tx.Hash) || len(w.TxKey) == 0 {
 			c.logger.Info().Msgf("witness doesnt have id or key skipping..")
 			continue
 		}
@@ -1033,9 +1035,9 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 					common.NewCoin(w.Coin.Asset, cosmos.NewUint(tx.Rct_Signatures.TxnFee/DecimalDiff)),
 				},
 			}
+			txOutHash = h
+			break
 		}
-		txOutHash = h
-		break
 	}
 
 	// dont delete the witness if the tx is still in the mempool
@@ -1523,6 +1525,11 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		Vault:    vaultType,
 		Signed:   sign,
 	}
+
+	if _, ok := c.signedTxOut[tx.Hash()]; ok {
+		c.logger.Info().Msgf("We already have a txout saved with id: %s, overwriting..", tx.Hash())
+	}
+
 	c.signedTxOut[tx.Hash()] = wtx
 
 	return res, nil
