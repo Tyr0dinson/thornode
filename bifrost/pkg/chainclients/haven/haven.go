@@ -968,7 +968,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 			// check whether this witness is for this tx
 			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Reciever && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
-				w.TxID = tx.ID.String()
+				w.TxID = strings.ToLower(tx.ID.String())
 				w.TxKey = tx.TxKey
 				c.signedTxOut[h] = w
 				c.logger.Info().Msgf("Tx and witness match!!! assigned txid: %s and key: %s to witness: %s", tx.ID.String(), tx.TxKey, h)
@@ -979,7 +979,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 		}
 
 		// check whether this witness is for this tx
-		if w.TxID != strings.ToUpper(tx.Hash) || len(w.TxKey) == 0 {
+		if w.TxID != tx.Hash || len(w.TxKey) == 0 {
 			c.logger.Info().Msgf("witness doesnt have id or key skipping..")
 			continue
 		}
