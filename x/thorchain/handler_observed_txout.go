@@ -138,7 +138,6 @@ func (h ObservedTxOutHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxOut
 				}
 
 				// if we found the right vault, assign its pubKey to tx ObservedPubKey
-				ctx.Logger().Info("TxOut xhv info", "vault.Cryptonote", vault.Cryptonote, "vault.PubKey", vault.PubKey, "tx.ObservedPubKey.String()", tx.ObservedPubKey.String())
 				if vault.Cryptonote == tx.ObservedPubKey.String() {
 					tx.ObservedPubKey = vault.PubKey
 					break
@@ -147,7 +146,6 @@ func (h ObservedTxOutHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxOut
 		}
 
 		// check we are sending from a valid vault
-		ctx.Logger().Info("checking tx Observed Pubkey", "observed pub key", tx.ObservedPubKey)
 		if !h.mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
 			ctx.Logger().Info("Not valid Observed Pubkey", tx.ObservedPubKey)
 			continue

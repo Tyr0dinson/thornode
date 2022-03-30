@@ -45,6 +45,7 @@ type Client struct {
 	memPoolLock           *sync.Mutex
 	signedTxOut           map[string]TxOutWitness
 	signedTxOutLock       *sync.Mutex
+	signedTxOutDelete     map[string]int64
 	clientLock            *sync.Mutex
 	lastMemPoolScan       time.Time
 	currentBlockHeight    int64
@@ -211,6 +212,7 @@ func NewClient(
 		signingInProgress:     atomic.NewBool(false),
 		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
+		signedTxOutDelete:     make(map[string]int64),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -930,7 +932,6 @@ func (c *Client) scanTxOuts() {
 				c.signedTxOutLock.Lock()
 				c.signedTxOut[hash] = wtx
 				c.signedTxOutLock.Unlock()
-				c.logger.Info().Msgf("saved txout item with hash: %s memo: %s to: %s", hash, o.Memo, o.ToAddress.String())
 			}
 		}
 
@@ -942,6 +943,14 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 	c.signedTxOutLock.Lock()
 	defer c.signedTxOutLock.Unlock()
 
+	// delete the old signed txOuts
+	for k, v := range c.signedTxOutDelete {
+		if height >= v {
+			delete(c.signedTxOut, k)
+			delete(c.signedTxOutDelete, k) // this operation is surprisingly safe in golang. :).
+		}
+	}
+
 	var txInItem types.TxInItem
 	var txOutHash string
 
@@ -949,7 +958,6 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 	for h, w := range c.signedTxOut {
 		c.logger.Info().Msgf("checking for withness: %s for tx: %s", h, tx.Hash)
 		if len(w.TxID) == 0 {
-			c.logger.Info().Msgf("witness doesnt have txid")
 			// query tc to get the txkey for this tx
 			observedTxs, err := c.bridge.GetTx(tx.Hash)
 			if err != nil {
@@ -957,30 +965,24 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				continue
 			}
 			if observedTxs == nil {
-				c.logger.Info().Msgf("there is no observed tx for witness, skipping for now..")
 				// this is expected here till the node that signed the
 				// outgoing tx send it is witness to thorhcain.
 				continue
 			}
 			tx := observedTxs[0].Tx
-			c.logger.Info().Msgf("Got an observed tx for withness. frAddr: %s toAddr: %s amount:%d memo=%s", tx.FromAddress.String(), tx.ToAddress.String(), tx.Coins[0].Amount.Uint64(), tx.Memo)
-			c.logger.Info().Msgf("Witness info: frAddr: %s toAddr: %s amount:%d memo=%s", w.Sender, w.Reciever, w.Coin.Amount.Uint64(), w.Memo)
 
 			// check whether this witness is for this tx
 			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Reciever && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
 				w.TxID = strings.ToLower(tx.ID.String())
 				w.TxKey = tx.TxKey
 				c.signedTxOut[h] = w
-				c.logger.Info().Msgf("Tx and witness match!!! assigned txid: %s and key: %s to witness: %s", tx.ID.String(), tx.TxKey, h)
 			} else {
-				c.logger.Info().Msgf("Wintess and tx doesnt math skipping..")
 				continue
 			}
 		}
 
 		// check whether this witness is for this tx
 		if w.TxID != tx.Hash || len(w.TxKey) == 0 {
-			c.logger.Info().Msgf("witness doesnt have id or key skipping..")
 			continue
 		}
 
@@ -988,7 +990,6 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 		verified := false
 		if (w.Vault == ttypes.VaultType_YggdrasilVault && w.Sender != c.walletAddr.String()) ||
 			(w.Vault == ttypes.VaultType_AsgardVault && !w.Signed) {
-			c.logger.Info().Msgf("Someone else signed this tx, tryin to verify..")
 			// someone else signed this outoing
 			if w.Vault == ttypes.VaultType_YggdrasilVault {
 				c.loginToWallet(c.nodePubKey) // login to ygg
@@ -1007,7 +1008,6 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				c.logger.Error().Msgf("error checking for txkey for tx %s, err: %v", tx.Hash, err)
 				break
 			}
-			c.logger.Info().Msgf("Got txkey resp from wallet. Amout: %s %s", respCheck.ReceivedAmounts[0], respCheck.ReceivedAssets[0])
 
 			// we expect that address to recieve only 1 asset type, thus lenght of ReceivedAmounts should be 1
 			if len(respCheck.ReceivedAmounts) == 1 && len(respCheck.ReceivedAssets) == 1 &&
@@ -1015,14 +1015,11 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				respCheck.ReceivedAssets[0] == w.Coin.Asset.Ticker.String() {
 				verified = true
 				c.logger.Info().Msgf("We were able to verify the witness tx. Sending to Thorhcain")
-			} else {
-				c.logger.Info().Msgf("We were NOT able to verify the witness tx")
 			}
 		}
 
 		if (w.Vault == ttypes.VaultType_YggdrasilVault && w.Sender == c.walletAddr.String()) ||
 			(w.Vault == ttypes.VaultType_AsgardVault && w.Signed) || verified {
-			c.logger.Info().Msgf("Populating txIn item for withness %s", h)
 			txInItem = types.TxInItem{
 				BlockHeight: height,
 				Tx:          w.TxID,
@@ -1041,9 +1038,11 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 	}
 
 	// dont delete the witness if the tx is still in the mempool
-	// we will need the same thing when the tx is in a block
+	// we will need the same witness when the tx is in a block.
+	// save and delete it in the next block since, it might get re-saved in scanTxOuts()
+	// since it takes a while thornode to remove it from endpoint.
 	if !txInItem.IsEmpty() && inBlock {
-		delete(c.signedTxOut, txOutHash)
+		c.signedTxOutDelete[txOutHash] = height + 1
 	}
 
 	return txInItem
@@ -1525,11 +1524,8 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		Vault:    vaultType,
 		Signed:   sign,
 	}
-
-	if _, ok := c.signedTxOut[tx.Hash()]; ok {
-		c.logger.Info().Msgf("We already have a txout saved with id: %s, overwriting..", tx.Hash())
-	}
-
+	// this intentionally overwrites the version of witness we get in from scanTxOuts()
+	// to add it the tx key and the id.
 	c.signedTxOut[tx.Hash()] = wtx
 
 	return res, nil
