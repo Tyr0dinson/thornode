@@ -49,7 +49,7 @@ const (
 	AsgardVault              = "/thorchain/vaults/asgard"
 	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
-	TxEndPoint               = "/thorchain/tx/%s"
+	TxSignersEndPoint        = "/thorchain/tx/%s/signers"
 	OutBoundTxsEndPoint      = "/thorchain/queue/outbound"
 	RagnarokEndpoint         = "/thorchain/ragnarok"
 	MimirEndpoint            = "/thorchain/mimir"
@@ -427,25 +427,25 @@ func (b *ThorchainBridge) GetAsgards() (stypes.Vaults, error) {
 }
 
 // GetTx retrieve given tx from thorchain. Returns empty txin item without error if tx was not found.
-func (b *ThorchainBridge) GetTx(txId string) (stypes.ObservedTx, error) {
-	result, s, err := b.getWithPath(fmt.Sprintf(TxEndPoint, txId))
+func (b *ThorchainBridge) GetTx(txId string) ([]stypes.ObservedTx, error) {
+	result, s, err := b.getWithPath(fmt.Sprintf(TxSignersEndPoint, txId))
 	if err != nil {
 		if s == http.StatusNotFound { // this is expected.
-			return stypes.ObservedTx{}, nil
+			return nil, nil
 		}
-		return stypes.ObservedTx{}, fmt.Errorf("fail to get tx from thorchain: %w", err)
+		return nil, fmt.Errorf("fail to get tx from thorchain: %w", err)
 	}
 	if s != http.StatusOK {
-		return stypes.ObservedTx{}, fmt.Errorf("http Error: %d", s)
+		return nil, fmt.Errorf("http Error: %d", s)
 	}
 	type getResult struct {
-		ObservedTx stypes.ObservedTx `json:"observed_tx"`
+		Txs []stypes.ObservedTx `json:"txs"`
 	}
 	var txIn getResult
 	if err := json.Unmarshal(result, &txIn); err != nil {
-		return stypes.ObservedTx{}, fmt.Errorf("fail to unmarshal tx from json: %w", err)
+		return nil, fmt.Errorf("fail to unmarshal tx from json: %w", err)
 	}
-	return txIn.ObservedTx, nil
+	return txIn.Txs, nil
 }
 
 // GetOutboundTxs retrieve given all outbound txs from thorchain. Returns empty txin item without error if tx was not found.

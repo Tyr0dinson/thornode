@@ -947,17 +947,17 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 		if len(w.TxID) == 0 {
 			// query tc to get the txkey for this tx
-			observedTx, err := c.bridge.GetTx(tx.Hash)
+			observedTxs, err := c.bridge.GetTx(tx.Hash)
 			if err != nil {
 				c.logger.Error().Msgf("error getting witness tx from thorhcain: %w", err)
 				continue
 			}
-			if observedTx.IsEmpty() {
+			if observedTxs == nil {
 				// this is expected here till the node that signed the
 				// outgoing tx send it is witness to thorhcain.
 				continue
 			}
-			tx := observedTx.Tx
+			tx := observedTxs[0].Tx
 
 			// check whether this witness is for this tx
 			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Reciever && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
