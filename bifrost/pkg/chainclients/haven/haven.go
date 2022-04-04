@@ -680,7 +680,7 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		// try to consolidate UTXOs
 		c.wg.Add(1)
 		c.consolidateInProgress.Store(true)
-		// go c.consolidateUTXOs()
+		go c.consolidateUTXOs()
 	}
 	return txIn, nil
 }
@@ -1596,10 +1596,16 @@ func (c *Client) reportSolvency(blockHeight int64) error {
 	return nil
 }
 
-// getUTXOs send a request to wallet-rpc
-func (c *Client) getUTXOs(pkey common.PubKey, assetTye string) ([]wallet.TransferDetail, error) {
+// isYggdrasil - when the pubkey and node pubkey is the same that means it is signing from yggdrasil
+func (c *Client) isYggdrasil(key common.PubKey) bool {
+	return key.Equals(c.nodePubKey)
+}
 
-	err := c.loginToWallet(pkey)
+// getAllUtxos go through all the block meta in the local storage, it will spend all UTXOs in  block that might be evicted from local storage soon
+// it also try to spend enough UTXOs that can add up to more than the given total
+func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.TransferDetail, error) {
+
+	err := c.loginToWallet(pubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1614,31 +1620,15 @@ func (c *Client) getUTXOs(pkey common.PubKey, assetTye string) ([]wallet.Transfe
 		return nil, err
 	}
 
-	// filter by asset type and unlocked
-	var tds []wallet.TransferDetail
-	for _, td := range res.Transfers {
-		if td.AssetType == assetTye && !td.Frozen && td.Unlocked {
-			tds = append(tds, td)
-		}
-	}
-
-	return tds, nil
-}
-
-// isYggdrasil - when the pubkey and node pubkey is the same that means it is signing from yggdrasil
-func (c *Client) isYggdrasil(key common.PubKey) bool {
-	return key.Equals(c.nodePubKey)
-}
-
-// getAllUtxos go through all the block meta in the local storage, it will spend all UTXOs in  block that might be evicted from local storage soon
-// it also try to spend enough UTXOs that can add up to more than the given total
-func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.TransferDetail, error) {
 	var result = make(map[string][]wallet.TransferDetail)
 	for _, asset := range c.supportedAssets {
 
-		utxos, err := c.getUTXOs(pubKey, asset)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get UTXOs: %w", err)
+		// filter by asset type and unlocked
+		var utxos []wallet.TransferDetail
+		for _, td := range res.Transfers {
+			if td.AssetType == asset && !td.Frozen && td.Unlocked {
+				utxos = append(utxos, td)
+			}
 		}
 
 		// spend UTXO older to younger
@@ -1703,18 +1693,21 @@ func (c *Client) consolidateUTXOs() {
 			if int64(len(utxos)) < utxosToSpend {
 				continue
 			}
+
 			var total uint64 = 0
 			for _, item := range utxos {
 				total += item.Amount
 			}
+			// subtract the fee from total input amount so that wallet doesnt try
+			// to include another output to get the fee.
+			feeRate := (AverageFeeRate * DecimalDiff) * uint64(2)
+			total -= feeRate
+
 			addr, err := common.PubKey(vault.Cryptonote).GetAddress(common.XHVChain)
 			if err != nil {
 				c.logger.Err(err).Msgf("fail to get XHV address for cn data: %s", vault.Cryptonote)
 				continue
 			}
-
-			// THORChain usually pay 1.5 of the last observed fee rate
-			feeRate := AverageFeeRate
 
 			asset, err := common.NewAsset("XHV." + a)
 			if err != nil {
@@ -1731,7 +1724,7 @@ func (c *Client) consolidateUTXOs() {
 				},
 				Memo:    mem.NewConsolidateMemo().String(),
 				MaxGas:  nil,
-				GasRate: int64(feeRate),
+				GasRate: int64(AverageFeeRate * 2),
 			}
 			height, err := c.bridge.GetBlockHeight()
 			if err != nil {
@@ -1747,15 +1740,15 @@ func (c *Client) consolidateUTXOs() {
 				// this will happen for asgard txs since tss already submits them.
 				c.logger.Info().Msgf("broadcast consolidate tx successfully")
 				continue
+			} else {
+				txID, err := c.BroadcastTx(txOutItem, rawTx)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to broadcast consolidate tx")
+					continue
+				}
+				c.logger.Info().Msgf("broadcast consolidate tx successfully,hash:%s", txID)
 			}
-			txID, err := c.BroadcastTx(txOutItem, rawTx)
-			if err != nil {
-				c.logger.Err(err).Msg("fail to broadcast consolidate tx")
-				continue
-			}
-			c.logger.Info().Msgf("broadcast consolidate tx successfully,hash:%s", txID)
 		}
-
 	}
 }
 
