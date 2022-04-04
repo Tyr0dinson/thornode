@@ -42,10 +42,10 @@ type Client struct {
 	cfg                   config.ChainConfiguration
 	walletAddr            common.Address
 	processedMemPool      map[string]bool
-	memPoolLock           *sync.Mutex
 	signedTxOut           map[string]TxOutWitness
-	signedTxOutLock       *sync.Mutex
 	signedTxOutDelete     map[string]int64
+	memPoolLock           *sync.Mutex
+	signedTxOutLock       *sync.Mutex
 	clientLock            *sync.Mutex
 	lastMemPoolScan       time.Time
 	currentBlockHeight    int64
@@ -64,6 +64,7 @@ type Client struct {
 	consolidateInProgress *atomic.Bool
 	signingInProgress     *atomic.Bool
 	isYggLoggedIn         *atomic.Bool
+	stopScanTxOuts        *atomic.Bool
 	supportedAssets       []string
 	tssKm                 *tss.KeySign
 	client                wallet.Client
@@ -210,6 +211,7 @@ func NewClient(
 		processedMemPool:      make(map[string]bool),
 		consolidateInProgress: atomic.NewBool(false),
 		signingInProgress:     atomic.NewBool(false),
+		stopScanTxOuts:        atomic.NewBool(false),
 		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
 		signedTxOutDelete:     make(map[string]int64),
@@ -253,6 +255,7 @@ func (c *Client) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan ty
 func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	c.tssKm.Stop()
+	c.stopScanTxOuts.Store(true)
 	// wait for consolidate utxo to exit
 	c.wg.Wait()
 }
@@ -676,11 +679,15 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-	if !c.consolidateInProgress.Load() {
-		// try to consolidate UTXOs
-		c.wg.Add(1)
-		c.consolidateInProgress.Store(true)
-		go c.consolidateUTXOs()
+	// do consolidation every 5 block
+	// to give wallet some time realize that it actually consolidated.
+	if height%5 == 0 {
+		if !c.consolidateInProgress.Load() {
+			// try to consolidate UTXOs
+			c.wg.Add(1)
+			c.consolidateInProgress.Store(true)
+			go c.consolidateUTXOs()
+		}
 	}
 	return txIn, nil
 }
@@ -933,6 +940,10 @@ func (c *Client) scanTxOuts() {
 				c.signedTxOut[hash] = wtx
 				c.signedTxOutLock.Unlock()
 			}
+		}
+
+		if c.stopScanTxOuts.Load() {
+			break
 		}
 
 		time.Sleep(2 * time.Second)
@@ -1499,14 +1510,15 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 				return nil, err
 			}
 			txKey, txID, err = c.tssKm.RemoteSignMn(msg, tx.VaultPubKey.String(), c.cfg.WalletRPCHost)
+			// TSS closes the wallet afterwards so login back in
+			// to preserve the state of wallet login logic.
+			c.restoreStateToAsgardWallet()
 			if err != nil {
 				return nil, err
 			}
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
-			// as well check whether it is legit or not. But It closes the wallet afterwards so login back in
-			// to preserve the state of wallet login logic.
-			c.restoreStateToAsgardWallet()
+			// as well check whether it is legit or not.
 		}
 	}
 
