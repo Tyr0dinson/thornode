@@ -956,7 +956,6 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 	// check for outgoing txs that we submitted
 	for h, w := range c.signedTxOut {
-		c.logger.Info().Msgf("checking for withness: %s for tx: %s", h, tx.Hash)
 		if len(w.TxID) == 0 {
 			// query tc to get the txkey for this tx
 			observedTxs, err := c.bridge.GetTx(tx.Hash)
