@@ -58,6 +58,7 @@ type Client struct {
 	asgardAddresses       []common.Address
 	nodePubKey            common.PubKey
 	lastAsgard            time.Time
+	lastConsolidateHeight *atomic.Int64
 	asgardPassword        string
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
@@ -215,6 +216,7 @@ func NewClient(
 		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
 		signedTxOutDelete:     make(map[string]int64),
+		lastConsolidateHeight: atomic.NewInt64(0),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -679,14 +681,13 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-	// do consolidation every 5 block
-	// to give wallet some time realize that it actually consolidated.
-	if height%5 == 0 {
+	// give wallet some time realize that it actually consolidated.
+	if height > c.lastConsolidateHeight.Load()+10 {
 		if !c.consolidateInProgress.Load() {
 			// try to consolidate UTXOs
 			c.wg.Add(1)
 			c.consolidateInProgress.Store(true)
-			go c.consolidateUTXOs()
+			go c.consolidateUTXOs(height)
 		}
 	}
 	return txIn, nil
@@ -1624,6 +1625,12 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.Trans
 
 	// get the all non-spent outs
 	c.clientLock.Lock()
+
+	// refresh before checking for ouputs
+	// we dont care what this returns, the next call is
+	// what we want.
+	c.client.Refresh(&wallet.RequestRefresh{})
+
 	res, err := c.client.IncomingTransfers(&wallet.RequestIncomingTransfers{
 		TransferType: "available", // get only unspent outputs
 	})
@@ -1671,7 +1678,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 }
 
 // consolidateUTXOs only required when there is a new block
-func (c *Client) consolidateUTXOs() {
+func (c *Client) consolidateUTXOs(height int64) {
 	defer func() {
 		c.wg.Done()
 		c.consolidateInProgress.Store(false)
@@ -1748,6 +1755,7 @@ func (c *Client) consolidateUTXOs() {
 				c.logger.Err(err).Msg("fail to sign consolidate txout item")
 				continue
 			}
+			c.lastConsolidateHeight.Store(height)
 			if len(rawTx) == 0 {
 				// this will happen for asgard txs since tss already submits them.
 				c.logger.Info().Msgf("broadcast consolidate tx successfully")
