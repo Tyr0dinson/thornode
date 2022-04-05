@@ -44,7 +44,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			requester:     "tester",
 			destination:   "whatever",
 			returnAmount:  cosmos.ZeroUint(),
-			expectedErr:   errors.New("Denom cannot be empty"),
+			expectedErr:   errors.New("denom cannot be empty"),
 		},
 		{
 			name:          "empty-target",
@@ -77,7 +77,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			requester:     "tester",
 			destination:   "whatever",
 			returnAmount:  cosmos.ZeroUint(),
-			expectedErr:   errors.New("Amount cannot be zero"),
+			expectedErr:   errors.New("amount cannot be zero"),
 		},
 		{
 			name:          "empty-requester",
@@ -282,7 +282,7 @@ func (s *SwapV81Suite) TestSynthSwap(c *C) {
 	c.Assert(err, IsNil)
 	pool.CalcUnits(mgr.GetVersion(), mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset()))
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(34*common.One))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(116098000000), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(116098000041), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(111100000000), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.SynthUnits.Uint64(), Equals, uint64(2442772720), Commentf("%d", pool.SynthUnits.Uint64()))
 	coin := common.NewCoin(common.BNBAsset.GetSyntheticAsset(), amount)
@@ -297,7 +297,7 @@ func (s *SwapV81Suite) TestSynthSwap(c *C) {
 	c.Assert(err, IsNil)
 	mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(34*common.One))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(121096000000), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(121096000069), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(111100000000), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.SynthUnits.Uint64(), Equals, uint64(4996424545), Commentf("%d", pool.SynthUnits.Uint64()))
 	coin = common.NewCoin(common.BNBAsset.GetSyntheticAsset(), amount)
@@ -308,12 +308,12 @@ func (s *SwapV81Suite) TestSynthSwap(c *C) {
 	tx.Coins = common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(146354579)))
 	amount, _, err = newSwapperV81().swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 	c.Assert(err, IsNil)
-	c.Check(amount.Uint64(), Equals, uint64(4995294812), Commentf("%d", amount.Uint64()))
+	c.Check(amount.Uint64(), Equals, uint64(4995294815), Commentf("%d", amount.Uint64()))
 	pool, err = mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(34*common.One))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(116100705188), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(116100705254), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(111100000000), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.SynthUnits.Uint64(), Equals, uint64(10227829216), Commentf("%d", pool.SynthUnits.Uint64()))
 
@@ -322,12 +322,12 @@ func (s *SwapV81Suite) TestSynthSwap(c *C) {
 	tx.Coins = common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), totalSupply))
 	amount, _, err = newSwapperV81().swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 	c.Assert(err, IsNil)
-	c.Check(amount.Uint64(), Equals, uint64(12905575651), Commentf("%d", amount.Uint64()))
+	c.Check(amount.Uint64(), Equals, uint64(12905575659), Commentf("%d", amount.Uint64()))
 	pool, err = mgr.Keeper().GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(34*common.One))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(103195129537), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(103195129595), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(111100000000), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.SynthUnits.Uint64(), Equals, uint64(7441614333), Commentf("%d", pool.SynthUnits.Uint64()))
 
@@ -350,7 +350,7 @@ func (s *SwapV81Suite) TestSynthSwap(c *C) {
 	c.Assert(err, IsNil)
 	mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(84*common.One))
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(103193129537), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(103193129638), Commentf("%d", pool.BalanceRune.Uint64()))
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(111100000000), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.SynthUnits.Uint64(), Equals, uint64(7441614333), Commentf("%d", pool.SynthUnits.Uint64()))
 
