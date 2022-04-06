@@ -140,7 +140,7 @@ func (k *TestSwapKeeper) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (
 			TransactionFeeRate: 1_00000000,
 		}, nil
 	}
-	return NetworkFee{}, kaboom
+	return NetworkFee{}, errKaboom
 }
 
 func (k *TestSwapKeeper) SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coins) error {
@@ -392,7 +392,7 @@ func (s *SwapV87Suite) TestSwap(c *C) {
 	}
 }
 
-func QuoUint(num types.Uint, denom types.Uint) types.Dec {
+func QuoUint(num, denom types.Uint) types.Dec {
 	res := cosmos.NewDecFromBigInt(num.BigInt()).Quo(cosmos.NewDecFromBigInt(denom.BigInt()))
 	return res
 }
