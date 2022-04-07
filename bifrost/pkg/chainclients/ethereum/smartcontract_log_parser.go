@@ -10,6 +10,7 @@ import (
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -132,6 +133,28 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 	event := vaultTransferAllowanceEvent{}
 	if err := scp.unpackVaultLog(&event, TransferAllowanceEventName, log); err != nil {
 		return event, fmt.Errorf("fail to parse transfer allowance event")
+	}
+	return event, nil
+}
+
+// THORChainRouterTransferOutAndCall represents a TransferOutAndCall event raised by the THORChainRouter contract.
+type THORChainRouterTransferOutAndCall struct {
+	Vault        common.Address
+	Target       common.Address
+	Asset        common.Address
+	Amount       *big.Int
+	FinalAsset   common.Address
+	To           common.Address
+	AmountOutMin *big.Int
+	Memo         string
+}
+
+// ParseTransferOutAndCall is a log parse operation binding the contract event 0xbda904e26adea40cc083dc36e80fde1641dfdd8b9a035c44022a43e713f73d36.
+func (scp *SmartContractLogParser) ParseTransferOutAndCall(log etypes.Log) (*THORChainRouterTransferOutAndCall, error) {
+	const TransferOutAndCallEventName = "TransferOutAndCall"
+	event := new(THORChainRouterTransferOutAndCall)
+	if err := scp.unpackVaultLog(event, TransferOutAndCallEventName, log); err != nil {
+		return nil, err
 	}
 	return event, nil
 }
@@ -307,6 +330,47 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			}
 			txInItem.Coins = totalCoins
 			isVaultTransfer = true
+		case transferOutAndCallEvent:
+			transferOutAndCall, err := scp.ParseTransferOutAndCall(*item)
+			if err != nil {
+				scp.logger.Err(err).Msg("fail to parse transferOutAndCall event")
+				continue
+			}
+			scp.logger.Info().Msgf("transferOutAndCall: %+v", transferOutAndCall)
+			m, err := memo.ParseMemo(common.LatestVersion, transferOutAndCall.Memo)
+			if err != nil {
+				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferOutAndCall.Memo)
+				continue
+			}
+			if !m.IsType(memo.TxOutbound) {
+				scp.logger.Error().Msgf("%s is not an outbound memo", transferOutAndCall.Memo)
+				continue
+			}
+			txInItem.To = transferOutAndCall.To.String()
+			txInItem.Memo = transferOutAndCall.Memo
+			txInItem.Sender = transferOutAndCall.Vault.String()
+			txInItem.Aggregator = transferOutAndCall.Target.String()
+			ethAsset, err := scp.assetResolver(transferOutAndCall.Asset.String())
+			if err != nil {
+				scp.logger.Err(err).Msg("fail to get asset from token address")
+				continue
+			}
+			if ethAsset.IsEmpty() {
+				continue
+			}
+			decimals := scp.decimalResolver(transferOutAndCall.Asset.String())
+			txInItem.Coins = common.Coins{
+				common.NewCoin(ethAsset, scp.amtConverter(transferOutAndCall.Asset.String(), transferOutAndCall.Amount)).WithDecimals(decimals),
+			}
+			finalAsset, err := scp.assetResolver(transferOutAndCall.FinalAsset.String())
+			if err != nil {
+				scp.logger.Err(err).Msg("fail to get final asset from token address")
+				continue
+			}
+			if ethAsset.IsEmpty() {
+				continue
+			}
+			txInItem.AggregatorTarget = common.NewCoin(finalAsset, cosmos.NewUintFromBigInt(transferOutAndCall.AmountOutMin))
 		}
 		if earlyExit {
 			break

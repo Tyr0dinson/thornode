@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 
@@ -412,11 +413,22 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	hasRouterUpdated := false
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
-		data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
-		if err != nil {
-			return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
+		if tx.Aggregator.IsEmpty() {
+			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
+			if err != nil {
+				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
+			}
+		} else {
+			assetAddr := getTokenAddressFromAsset(tx.AggregatorTarget.Asset)
+			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(assetAddr), dest, tx.AggregatorTarget.Amount.BigInt(), tx.Memo)
+			if err != nil {
+				return nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
+			}
 		}
 	case mem.TxMigrate, mem.TxYggdrasilFund:
+		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTarget.IsEmpty() {
+			return nil, fmt.Errorf("migration / yggdrasil+ can't use aggregator")
+		}
 		if IsETH(tokenAddr) {
 			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 			if err != nil {
@@ -433,6 +445,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 			}
 		}
 	case mem.TxYggdrasilReturn:
+		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTarget.IsEmpty() {
+			return nil, fmt.Errorf("yggdrasil- can't use aggregator")
+		}
 		newSmartContractAddr := c.getSmartContractByAddress(tx.ToAddress)
 		if newSmartContractAddr.IsEmpty() {
 			return nil, fmt.Errorf("fail to get new smart contract address")

@@ -30,6 +30,8 @@ type TxInItem struct {
 	Coins               common.Coins  `json:"coins"`
 	Gas                 common.Gas    `json:"gas"`
 	ObservedVaultPubKey common.PubKey `json:"observed_vault_pub_key"`
+	Aggregator          string        `json:"aggregator"`
+	AggregatorTarget    common.Coin   `json:"aggregator_target"`
 }
 type TxInStatus byte
 
