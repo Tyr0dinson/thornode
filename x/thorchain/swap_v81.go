@@ -6,6 +6,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -198,10 +199,8 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	if !s.coinsToBurn.IsEmpty() {
 		if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, s.coinsToBurn); err != nil {
 			ctx.Logger().Error("fail to move coins during swap", "error", err)
-		} else {
-			if err := keeper.BurnFromModule(ctx, ModuleName, s.coinsToBurn[0]); err != nil {
-				ctx.Logger().Error("fail to burn coins during swap", "error", err)
-			}
+		} else if err := keeper.BurnFromModule(ctx, ModuleName, s.coinsToBurn[0]); err != nil {
+			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		}
 	}
 

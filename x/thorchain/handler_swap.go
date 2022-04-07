@@ -142,7 +142,6 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 		return h.handleV87(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.81.0")) {
 		return h.handleV81(ctx, msg)
-
 	}
 	return nil, errBadVersion
 }
