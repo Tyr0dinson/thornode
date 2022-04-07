@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
@@ -549,6 +550,12 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 			item.ObservedVaultPubKey,
 			item.BlockHeight+txIn.ConfirmationRequired)
 		tx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
+		aggregatorAddr, err := common.NewAddress(item.Aggregator)
+		if err != nil {
+			o.logger.Error().Msgf("fail to parse aggregator address,err: %s", err)
+		}
+		tx.Aggregator = aggregatorAddr
+		tx.AggregatorTarget = &item.AggregatorTarget
 		txs = append(txs, tx)
 	}
 	return txs, nil
