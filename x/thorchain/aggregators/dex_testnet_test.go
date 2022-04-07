@@ -1,9 +1,9 @@
 package aggregators
 
 import (
+	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
-	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 )
 
@@ -15,9 +15,9 @@ func (s *DexAggregatorTestnetSuite) TestDexAggregators(c *C) {
 	ver := semver.MustParse("9999.0.0")
 
 	// happy path
-	addr, err := FetchDexAggregator(ver, common.ETHChain, "42D")
+	addr, err := FetchDexAggregator(ver, common.ETHChain, "3848")
 	c.Assert(err, IsNil)
-	c.Check(addr.String(), Equals, "0x7fD9bd7A2Cab44820DD2874859E461640F04542D")
+	c.Check(addr.String(), Equals, "0x69800327b38A4CeF30367Dec3f64c2f2386f3848")
 
 	// unhappy path
 	_, err = FetchDexAggregator(ver, common.BTCChain, "156")
