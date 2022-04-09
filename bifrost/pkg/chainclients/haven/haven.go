@@ -48,7 +48,7 @@ type Client struct {
 	signedTxOutLock       *sync.Mutex
 	clientLock            *sync.Mutex
 	lastMemPoolScan       time.Time
-	currentBlockHeight    int64
+	currentBlockHeight    *atomic.Int64
 	blockScanner          *blockscanner.BlockScanner
 	blockMetaAccessor     BlockMetaAccessor
 	bridge                *thorclient.ThorchainBridge
@@ -99,7 +99,7 @@ const (
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
 	AverageFeeRate        = uint64(314016568) / DecimalDiff // atomic units
-	maxUTXOsToSpend       = 10
+	maxUTXOsToSpend       = 20
 )
 
 // NewClient generates a new Client
@@ -200,7 +200,7 @@ func NewClient(
 		pkm:                   pkm,
 		poolMgr:               poolMgr,
 		nodePubKey:            thorPubkey,
-		walletAddr:            walletAddr,
+		walletAddr:            common.Address(walletResp.Address),
 		memPoolLock:           &sync.Mutex{},
 		signedTxOutLock:       &sync.Mutex{},
 		clientLock:            &sync.Mutex{},
@@ -217,6 +217,7 @@ func NewClient(
 		signedTxOut:           make(map[string]TxOutWitness),
 		signedTxOutDelete:     make(map[string]int64),
 		lastConsolidateHeight: atomic.NewInt64(0),
+		currentBlockHeight:    atomic.NewInt64(0),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -278,7 +279,7 @@ func (c *Client) GetHeight() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to get height: %+v", err)
 	}
-	return int64(height), nil
+	return height, nil
 }
 
 // GetAddress return current local haven vault address
@@ -533,7 +534,7 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 	blockHeight := txIn.TxArray[0].BlockHeight
 	confirm := txIn.ConfirmationRequired
 	// every tx in txIn already have at least 1 confirmation
-	return (c.currentBlockHeight - blockHeight) >= confirm
+	return (c.currentBlockHeight.Load() - blockHeight) >= confirm
 }
 
 // OnObservedTxIn gets called from observer when we have a valid observation
@@ -626,8 +627,8 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if block.Block_Header.Hash == "" && block.Block_Header.Prev_Hash == "" {
 		return txIn, fmt.Errorf("fail to get block: %w", err)
 	}
-	c.currentBlockHeight = height
-	c.logger.Info().Int64("block height", c.currentBlockHeight).Msg("fetch txs")
+	c.currentBlockHeight.Store(height)
+	c.logger.Info().Int64("block height", c.currentBlockHeight.Load()).Msg("fetch txs")
 	reScannedTxs, err := c.processReorg(block)
 	if err != nil {
 		c.logger.Err(err).Msg("fail to process bitcoin re-org")
@@ -810,13 +811,13 @@ func (c *Client) txInThePool(txHash *string) bool {
 	// get pool txs
 	poolTxs, err := GetPoolTxs()
 	if err != nil {
-		c.logger.Err(err).Msgf("fail to get pool txs result: %w", err)
+		c.logger.Err(err).Msgf("fail to get pool txs")
 		return false
 	}
 
 	// check if the tx is in the pool.
 	for _, tx := range poolTxs {
-		if tx == *txHash {
+		if tx.Hash == *txHash {
 			return true
 		}
 	}
@@ -972,7 +973,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 			// query tc to get the txkey for this tx
 			observedTxs, err := c.bridge.GetTx(tx.Hash)
 			if err != nil {
-				c.logger.Error().Msgf("error getting witness tx from thorhcain: %w", err)
+				c.logger.Err(err).Msg("error getting witness tx from thorhcain")
 				continue
 			}
 			if observedTxs == nil {
@@ -1136,7 +1137,7 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 		// we couldn't decode any output from this tx. Which means we don't own any anyway.
 		return types.TxInItem{}, nil
 	}
-	fee := tx.Rct_Signatures.TxnFee
+	fee := tx.Rct_Signatures.TxnFee / DecimalDiff
 
 	// get the coins
 	asset, err := common.NewAsset("XHV." + output.Asset)
@@ -1194,20 +1195,20 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 
 	// get all vaults keys and check for outputs
-	pubkeys, err := c.bridge.GetPubKeys()
+	asgards, err := c.bridge.GetAsgards()
 	if err != nil {
 		return TxVout{}, fmt.Errorf("failed to get the asgard vaults: %w", err)
 	}
-	for _, pk := range pubkeys {
-		if len(pk.Cryptonote) == 0 {
+	for _, asgard := range asgards {
+		if len(asgard.Cryptonote) == 0 {
 			c.logger.Info().Msg("the vault cryptonote data is empty")
 			continue
 		}
 
 		// get the privViewKey and pubSpendKey of the vault
-		privViewKey, pubSpendKey, err := c.decodeCnData(pk.Cryptonote)
+		privViewKey, pubSpendKey, err := c.decodeCnData(asgard.Cryptonote)
 		if err != nil {
-			return TxVout{}, fmt.Errorf("error decoding cryotonote data for vault: %s : %w", pk.PubKey, err)
+			return TxVout{}, fmt.Errorf("error decoding cryotonote data for vault: %s : %w", asgard.PubKey, err)
 		}
 
 		sharedSecretYgg, err := crypto.GenerateKeyDerivation(txPubKey, &privViewKey)
@@ -1245,7 +1246,7 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 			found := false
 			if *derivedPublicSpendKeyYgg == pubSpendKey {
 				found = true
-				c.logger.Info().Msgf("found an output belongs to vault = %s", pk.PubKey)
+				c.logger.Info().Msgf("found an output belongs to vault = %s", asgard.PubKey)
 			}
 
 			if found {
@@ -1264,7 +1265,7 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 					copy(C[:], Craw)
 					if crypto.EqualKeys(C, Ctmp) {
 						// we can ignnore the error because we know cn data is legit at this point.
-						addr, _ := c.getAddrFromCndata(pk.Cryptonote)
+						addr, _ := c.getAddrFromCndata(asgard.Cryptonote)
 						// We can just skip the rest of the outputs and return here because we expect we only own 1 output
 						return TxVout{
 							Address: addr.String(),
@@ -1338,7 +1339,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 }
 
 func (c *Client) getMemPool(height int64) (types.TxIn, error) {
-	hashes, err := GetPoolTxs()
+	txs, err := GetPoolTxs()
 	if err != nil {
 		return types.TxIn{}, fmt.Errorf("fail to get tx hashes from mempool: %w", err)
 	}
@@ -1346,22 +1347,16 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		Chain:   c.GetChain(),
 		MemPool: true,
 	}
-	for _, h := range hashes {
+	for _, tx := range txs {
 		// this hash had been processed before , ignore it
-		if !c.tryAddToMemPoolCache(h) {
-			c.logger.Debug().Msgf("%s had been processed , ignore", h)
+		if !c.tryAddToMemPoolCache(tx.Hash) {
+			c.logger.Debug().Msgf("%s had been processed , ignore", tx.Hash)
 			continue
 		}
 
-		c.logger.Debug().Msgf("process hash %s", h)
-		var txHashes = make([]string, 0)
-		txHashes = append(txHashes, h)
-		txs, err := GetTxes(txHashes)
-		if err != nil {
-			return types.TxIn{}, fmt.Errorf("fail to get raw transaction verbose with hash(%s): %w", h, err)
-		}
+		c.logger.Debug().Msgf("process hash %s", tx.Hash)
 		inBlock := false
-		txInItem, err := c.getTxIn(&(txs[0]), height, inBlock)
+		txInItem, err := c.getTxIn(&tx, height, inBlock)
 		if err != nil {
 			c.logger.Error().Err(err).Msg("fail to get TxInItem")
 			continue
@@ -1553,6 +1548,9 @@ func (c *Client) BroadcastTx(txOut types.TxOutItem, payload []byte) (string, err
 	if len(txHash) == 0 {
 		return "", fmt.Errorf("can't broadcast a tx without tx hash")
 	}
+	if len(payload) == 0 {
+		return "", fmt.Errorf("can't broadcast an empty tx")
+	}
 
 	// get the block meta
 	height, err := GetChainHeight()
@@ -1572,10 +1570,11 @@ func (c *Client) BroadcastTx(txOut types.TxOutItem, payload []byte) (string, err
 		}
 	}()
 
-	// broadcast tx if we signed it. If it we did tss, it already broadcasted.
+	// broadcast tx if we signed it. If it we did tss, it already broadcasted
+	// and BroadcastTx should not be called anyways since payload will be empty in that case.
 	resp := SendRawTransaction(hex.EncodeToString(payload))
 	if resp.Status != "OK" {
-		return "", fmt.Errorf("fail to broadcast transaction to chain: %s", resp.Reason)
+		return "", fmt.Errorf("fail to broadcast transaction to XHV chain: %s", resp.Reason)
 	}
 
 	// save tx id to block meta in case we need to errata later
@@ -1665,18 +1664,6 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.Trans
 	return result, nil
 }
 
-func (c *Client) getMaximumUtxosToSpend() int64 {
-	const mimirMaxUTXOsToSpend = `MaxUTXOsToSpend`
-	utxosToSpend, err := c.bridge.GetMimir(mimirMaxUTXOsToSpend)
-	if err != nil {
-		c.logger.Err(err).Msg("fail to get MaxUTXOsToSpend")
-	}
-	if utxosToSpend <= 0 {
-		utxosToSpend = maxUTXOsToSpend
-	}
-	return utxosToSpend
-}
-
 // consolidateUTXOs only required when there is a new block
 func (c *Client) consolidateUTXOs(height int64) {
 	defer func() {
@@ -1697,7 +1684,7 @@ func (c *Client) consolidateUTXOs(height int64) {
 		c.logger.Err(err).Msg("fail to get current asgards")
 		return
 	}
-	utxosToSpend := c.getMaximumUtxosToSpend()
+
 	for _, vault := range vaults {
 
 		utxoMap, err := c.getUtxoToSpend(vault.PubKey)
@@ -1709,7 +1696,7 @@ func (c *Client) consolidateUTXOs(height int64) {
 		for a, utxos := range utxoMap {
 
 			// doesn't have enough UTXOs , don't need to consolidate
-			if int64(len(utxos)) < utxosToSpend {
+			if int64(len(utxos)) < maxUTXOsToSpend {
 				continue
 			}
 

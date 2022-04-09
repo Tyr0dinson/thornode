@@ -39,11 +39,11 @@ type PubKeyValidator interface {
 
 // pubKeyInfo is a struct to store pubkey information  in memory
 type pubKeyInfo struct {
-	PubKey         common.PubKey
-	Contracts      map[common.Chain]common.Address
-	Signer         bool
-	NodeAccount    bool
-	Cryptonote string
+	PubKey      common.PubKey
+	Contracts   map[common.Chain]common.Address
+	Signer      bool
+	NodeAccount bool
+	Cryptonote  string
 }
 
 // PubKeyManager manager an always up to date pubkeys , which implement PubKeyValidator interface
@@ -179,11 +179,11 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
 	} else {
 		// pubkey doesn't exist yet, append it...
 		pkm.pubkeys = append(pkm.pubkeys, pubKeyInfo{
-			PubKey:         pk,
-			Signer:         signer,
-			NodeAccount:    false,
-			Contracts:      map[common.Chain]common.Address{},
-			Cryptonote: "",
+			PubKey:      pk,
+			Signer:      signer,
+			NodeAccount: false,
+			Contracts:   map[common.Chain]common.Address{},
+			Cryptonote:  "",
 		})
 		pkm.fireCallback(pk)
 	}
@@ -204,11 +204,11 @@ func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 
 	if !pkm.hasPubKeyNoLock(pk) {
 		pkm.pubkeys = append(pkm.pubkeys, pubKeyInfo{
-			PubKey:         pk,
-			Signer:         true,
-			NodeAccount:    true,
-			Contracts:      map[common.Chain]common.Address{},
-			Cryptonote: "",
+			PubKey:      pk,
+			Signer:      true,
+			NodeAccount: true,
+			Contracts:   map[common.Chain]common.Address{},
+			Cryptonote:  "",
 		})
 		// a new pubkey get added , fire callback
 		pkm.fireCallback(pk)

@@ -189,9 +189,7 @@ func GetChainHeight() (int64, error) {
 		return 0, fmt.Errorf("failed to get chain height: %+v", err)
 	}
 
-	// daemon returns the height that is currently in process
-	// What we actually need is the last height
-	return chainInfo.Height - 1, nil
+	return chainInfo.Height, nil
 }
 
 func GetBlock(height int64) (Block, error) {
@@ -243,18 +241,14 @@ func GetTxes(txes []string) ([]RawTx, error) {
 		return nil, fmt.Errorf("getTxes() Reading response Error: %+v", err)
 	}
 
-	type Tx struct {
-		Block_Height int64
-		Tx_Hash      string
-	}
-
-	type GetTxResult struct {
+	txResult := struct {
 		Status      string
 		Txs_As_Json []string
-		Txs         []Tx
-	}
-
-	var txResult GetTxResult
+		Txs         []struct {
+			Block_Height int64
+			Tx_Hash      string
+		}
+	}{}
 	var rawTxs []RawTx
 
 	// parse the returned resutl
@@ -278,7 +272,7 @@ func GetTxes(txes []string) ([]RawTx, error) {
 	return rawTxs, err
 }
 
-func GetPoolTxs() ([]string, error) {
+func GetPoolTxs() ([]RawTx, error) {
 
 	resp, err := http.Get(DaemonHost + "/get_transaction_pool")
 	if err != nil {
@@ -291,15 +285,13 @@ func GetPoolTxs() ([]string, error) {
 		return nil, fmt.Errorf("getPoolTxs() Reading response Error: %+v", err)
 	}
 
-	type Tx struct {
-		Id_Hash string
-	}
-
-	type getPoolTxs struct {
-		Transactions []Tx
-	}
-
-	var result getPoolTxs
+	result := struct {
+		Transactions []struct {
+			Hash   string `json:"id_hash"`
+			AsJson string `json:"as_json"`
+		} `json:"transactions"`
+	}{}
+	var rawTxs []RawTx
 
 	// parse the returned resutl
 	err = json.Unmarshal(body, &result)
@@ -307,12 +299,19 @@ func GetPoolTxs() ([]string, error) {
 		return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
 	}
 
-	var txs = make([]string, 0)
+	// parse the txs
 	for _, tx := range result.Transactions {
-		txs = append(txs, tx.Id_Hash)
+		var rawTx RawTx
+		err = json.Unmarshal([]byte(tx.AsJson), &rawTx)
+		if err != nil {
+			return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
+		}
+		rawTx.Hash = tx.Hash
+		rawTx.Block_Height = 0 // they are in pool, so dont have block height
+		rawTxs = append(rawTxs, rawTx)
 	}
 
-	return txs, nil
+	return rawTxs, nil
 }
 
 func SendRawTransaction(txHash string) BroadcastTxResponse {

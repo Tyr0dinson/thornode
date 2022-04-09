@@ -1,0 +1,66 @@
+{
+    "id": "0",
+    "jsonrpc": "2.0",
+    "result": {
+        "blob": "1313a8f2ba92064a9e3624db9266435b576847df3c1748ac25bdf3a5d87ac3ed3def319cdb436900000000e0577689090000005020f31e0000000040074cfd36010000d01a5f01000000000000000000000000b0677584d900000080fd9d56c9050000d0bc9aa7d500000090919b17b2000000000000000000000000000000000000000000000000000000905c05d769040000005c5a480c040000002e09812a0400000095ce5da304000029b94e620000000077b317b8c9dee726eb28f433dbb76e1835bea050e74a08d521a25ce1ce3a62d07bfb7688115dd522e09e5bfcbc7b7fa6faf15bdd689579648ec9833bcc289b080601ff480299f7f09cd7cc0702447d761dfadd6aeb2ac4cfc8c2fb9bed4e57a71bd81fa3ccb66ce0074ff3d9e498e6cdd9983302552cfe32530f3df6eb75eeb2f6fbc380c768d98d625d68a7973193949458f30a45011bbc996e6ce3a6a2d5a3d0540fb3f5b42f71f1fa3ac3903ce5224f0391db92c102010001e18c0e5960b889d19ca2d8c42cc0da2f685e8b5956893cf885a8dee021165c5900028401840100000001a6413fe6e76ea529351dbd8bdf0ebc38344a43a14a4973fa1d11b048ad9fd330",
+        "block_header": {
+            "block_size": 1828,
+            "block_weight": 1828,
+            "cumulative_difficulty": 73,
+            "cumulative_difficulty_top64": 0,
+            "depth": 0,
+            "difficulty": 1,
+            "difficulty_top64": 0,
+            "hash": "ca34a34e93cd4b2b5e8a38f6e117b1679aeb5ccc500d11190a1dd51a519f7f2c",
+            "height": 72,
+            "long_term_weight": 1828,
+            "major_version": 19,
+            "miner_tx_hash": "c547a1f970e7c5f0caa1e16910f0df53a40719f0606a0915f797f60449cda1d7",
+            "minor_version": 19,
+            "nonce": 0,
+            "num_txes": 1,
+            "orphan_status": false,
+            "pow_hash": "",
+            "prev_hash": "4a9e3624db9266435b576847df3c1748ac25bdf3a5d87ac3ed3def319cdb4369",
+            "pricing_record": {
+                "signature": "77b317b8c9dee726eb28f433dbb76e1835bea050e74a08d521a25ce1ce3a62d07bfb7688115dd522e09e5bfcbc7b7fa6faf15bdd689579648ec9833bcc289b08",
+                "timestamp": 1649326377,
+                "unused1": 4450800000000,
+                "unused2": 4580600000000,
+                "unused3": 5099700000000,
+                "xAG": 40960940000,
+                "xAU": 519250000,
+                "xAUD": 1335689480000,
+                "xBTC": 23010000,
+                "xCAD": 0,
+                "xCHF": 934230190000,
+                "xCNY": 6362299760000,
+                "xEUR": 917639970000,
+                "xGBP": 764900250000,
+                "xJPY": 0,
+                "xNOK": 0,
+                "xNZD": 0,
+                "xUSD": 4852625530000
+            },
+            "reward": 35180057177777,
+            "rewards": [
+                {
+                    "amount": 33421080148889,
+                    "asset_type": "XHV"
+                }
+            ],
+            "timestamp": 1649326376,
+            "wide_cumulative_difficulty": "0x49",
+            "wide_difficulty": "0x1"
+        },
+        "credits": 0,
+        "json": "{\n  \"major_version\": 19, \n  \"minor_version\": 19, \n  \"timestamp\": 1649326376, \n  \"prev_id\": \"4a9e3624db9266435b576847df3c1748ac25bdf3a5d87ac3ed3def319cdb4369\", \n  \"nonce\": 0, \n  \"pricing_record\": \"e0577689090000005020f31e0000000040074cfd36010000d01a5f01000000000000000000000000b0677584d900000080fd9d56c9050000d0bc9aa7d500000090919b17b2000000000000000000000000000000000000000000000000000000905c05d769040000005c5a480c040000002e09812a0400000095ce5da304000029b94e620000000077b317b8c9dee726eb28f433dbb76e1835bea050e74a08d521a25ce1ce3a62d07bfb7688115dd522e09e5bfcbc7b7fa6faf15bdd689579648ec9833bcc289b08\", \n  \"miner_tx\": {\n    \"version\": 6, \n    \"vin\": [ {\n        \"gen\": {\n          \"height\": 72\n        }\n      }\n    ], \n    \"vout\": [ {\n        \"amount\": 33421080148889, \n        \"target\": {\n          \"key\": \"447d761dfadd6aeb2ac4cfc8c2fb9bed4e57a71bd81fa3ccb66ce0074ff3d9e4\"\n        }\n      }, {\n        \"amount\": 1758977028888, \n        \"target\": {\n          \"key\": \"552cfe32530f3df6eb75eeb2f6fbc380c768d98d625d68a7973193949458f30a\"\n        }\n      }\n    ], \n    \"extra\": [ 1, 27, 188, 153, 110, 108, 227, 166, 162, 213, 163, 208, 84, 15, 179, 245, 180, 47, 113, 241, 250, 58, 195, 144, 60, 229, 34, 79, 3, 145, 219, 146, 193, 2, 1, 0, 1, 225, 140, 14, 89, 96, 184, 137, 209, 156, 162, 216, 196, 44, 192, 218, 47, 104, 94, 139, 89, 86, 137, 60, 248, 133, 168, 222, 224, 33, 22, 92, 89\n    ], \n    \"pricing_record_height\": 0, \n    \"output_unlock_times\": [ 132, 132\n    ], \n    \"amount_burnt\": 0, \n    \"amount_minted\": 0, \n    \"rct_signatures\": {\n      \"type\": 0\n    }\n  }, \n  \"tx_hashes\": [ \"a6413fe6e76ea529351dbd8bdf0ebc38344a43a14a4973fa1d11b048ad9fd330\"\n  ]\n}",
+        "miner_tx_hash": "c547a1f970e7c5f0caa1e16910f0df53a40719f0606a0915f797f60449cda1d7",
+        "status": "OK",
+        "top_hash": "",
+        "tx_hashes": [
+            "a6413fe6e76ea529351dbd8bdf0ebc38344a43a14a4973fa1d11b048ad9fd330"
+        ],
+        "untrusted": false
+    }
+}
