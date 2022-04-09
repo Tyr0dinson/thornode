@@ -89,6 +89,9 @@ func (scp *SmartContractLogParser) parseVaultTransfer(log etypes.Log) (routerVau
 }
 
 func (scp *SmartContractLogParser) unpackVaultLog(out interface{}, event string, log etypes.Log) error {
+	if log.Topics[0] != scp.vaultABI.Events[event].ID {
+		return fmt.Errorf("event signature mismatch")
+	}
 	if len(log.Data) > 0 {
 		if err := scp.vaultABI.UnpackIntoInterface(out, event, log.Data); err != nil {
 			return fmt.Errorf("fail to parse event: %w", err)
@@ -139,12 +142,12 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 
 // THORChainRouterTransferOutAndCall represents a TransferOutAndCall event raised by the THORChainRouter contract.
 type THORChainRouterTransferOutAndCall struct {
-	Vault        common.Address
-	Target       common.Address
-	Asset        common.Address
+	Vault        ecommon.Address
+	Target       ecommon.Address
+	Asset        ecommon.Address
 	Amount       *big.Int
-	FinalAsset   common.Address
-	To           common.Address
+	FinalAsset   ecommon.Address
+	To           ecommon.Address
 	AmountOutMin *big.Int
 	Memo         string
 }
@@ -346,10 +349,6 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Error().Msgf("%s is not an outbound memo", transferOutAndCall.Memo)
 				continue
 			}
-			txInItem.To = transferOutAndCall.To.String()
-			txInItem.Memo = transferOutAndCall.Memo
-			txInItem.Sender = transferOutAndCall.Vault.String()
-			txInItem.Aggregator = transferOutAndCall.Target.String()
 			ethAsset, err := scp.assetResolver(transferOutAndCall.Asset.String())
 			if err != nil {
 				scp.logger.Err(err).Msg("fail to get asset from token address")
@@ -362,6 +361,7 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.Coins{
 				common.NewCoin(ethAsset, scp.amtConverter(transferOutAndCall.Asset.String(), transferOutAndCall.Amount)).WithDecimals(decimals),
 			}
+
 			finalAsset, err := scp.assetResolver(transferOutAndCall.FinalAsset.String())
 			if err != nil {
 				scp.logger.Err(err).Msg("fail to get final asset from token address")
@@ -370,6 +370,11 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			if ethAsset.IsEmpty() {
 				continue
 			}
+			txInItem.To = transferOutAndCall.To.String()
+			txInItem.Memo = transferOutAndCall.Memo
+			txInItem.Sender = transferOutAndCall.Vault.String()
+			txInItem.Aggregator = transferOutAndCall.Target.String()
+
 			txInItem.AggregatorTarget = common.NewCoin(finalAsset, cosmos.NewUintFromBigInt(transferOutAndCall.AmountOutMin))
 		}
 		if earlyExit {
