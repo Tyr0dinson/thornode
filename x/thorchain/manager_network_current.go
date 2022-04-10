@@ -679,7 +679,7 @@ func (vm *NetworkMgrV87) UpdateNetwork(ctx cosmos.Context, constAccessor constan
 		var rewardPools []Pool
 		// Pool Rewards are based on Fee Share
 		for _, pool := range pools {
-			if !pool.IsAvailable() {
+			if !pool.IsAvailable() || isChainTradingHalted(ctx, mgr, pool.Asset.Chain) || isChainHalted(ctx, mgr, pool.Asset.Chain) {
 				continue
 			}
 			amt := cosmos.ZeroUint()
