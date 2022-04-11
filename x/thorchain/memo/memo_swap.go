@@ -17,7 +17,7 @@ type SwapMemo struct {
 	AffiliateBasisPoints cosmos.Uint
 	DexAggregator        string
 	DexTargetAddress     string
-	DexTargetLimit       cosmos.Uint
+	DexTargetLimit       *cosmos.Uint
 }
 
 func (m SwapMemo) GetDestination() common.Address       { return m.Destination }
@@ -26,12 +26,12 @@ func (m SwapMemo) GetAffiliateAddress() common.Address  { return m.AffiliateAddr
 func (m SwapMemo) GetAffiliateBasisPoints() cosmos.Uint { return m.AffiliateBasisPoints }
 func (m SwapMemo) GetDexAggregator() string             { return m.DexAggregator }
 func (m SwapMemo) GetDexTargetAddress() string          { return m.DexTargetAddress }
-func (m SwapMemo) GetDexTargetLimit() *cosmos.Uint      { return &m.DexTargetLimit }
+func (m SwapMemo) GetDexTargetLimit() *cosmos.Uint      { return m.DexTargetLimit }
 
 func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint,
 	dexAgg, dexTargetAddress string,
 	dexTargetLimit cosmos.Uint) SwapMemo {
-	return SwapMemo{
+	swapMemo := SwapMemo{
 		MemoBase:             MemoBase{TxType: TxSwap, Asset: asset},
 		Destination:          dest,
 		SlipLimit:            slip,
@@ -39,8 +39,11 @@ func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affA
 		AffiliateBasisPoints: affPts,
 		DexAggregator:        dexAgg,
 		DexTargetAddress:     dexTargetAddress,
-		DexTargetLimit:       dexTargetLimit,
 	}
+	if !dexTargetLimit.IsZero() {
+		swapMemo.DexTargetLimit = &dexTargetLimit
+	}
+	return swapMemo
 }
 
 func ParseSwapMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (SwapMemo, error) {
