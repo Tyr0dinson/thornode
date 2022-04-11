@@ -539,12 +539,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				if tx.Aggregator.IsEmpty() {
 					gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 					c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
-				} else if estimatedGas > maxGasLimit {
-					// the estimated gas unit is more than the maximum , so bring down the gas rate
-					maximumGasToPay := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
-					gasRate = big.NewInt(1).Div(maximumGasToPay, big.NewInt(int64(estimatedGas)))
 				} else {
-					estimatedGas = maxGasLimit // pay the maximum
+					if estimatedGas > maxGasLimit {
+						// the estimated gas unit is more than the maximum , so bring down the gas rate
+						maximumGasToPay := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
+						gasRate = big.NewInt(1).Div(maximumGasToPay, big.NewInt(int64(estimatedGas)))
+					} else {
+						estimatedGas = maxGasLimit // pay the maximum
+					}
 				}
 			}
 		} else {

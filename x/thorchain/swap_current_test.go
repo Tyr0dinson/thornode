@@ -421,6 +421,7 @@ func (s *SwapV87Suite) TestAggregator(c *C) {
 	tx.Chain = common.ETHChain
 
 	bat, err := common.NewAsset("ETH.ETH")
+	c.Assert(err, IsNil)
 	agg := common.Address("0x69ba883Af416fF5501D54D5e27A1f497fBD97156")
 	toAddr := common.Address("0xdAC17F958D2ee523a2206206994597C13D831ec7")
 	swapTarget := cosmos.NewUint(405)

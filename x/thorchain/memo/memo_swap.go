@@ -28,9 +28,7 @@ func (m SwapMemo) GetDexAggregator() string             { return m.DexAggregator
 func (m SwapMemo) GetDexTargetAddress() string          { return m.DexTargetAddress }
 func (m SwapMemo) GetDexTargetLimit() *cosmos.Uint      { return m.DexTargetLimit }
 
-func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint,
-	dexAgg, dexTargetAddress string,
-	dexTargetLimit cosmos.Uint) SwapMemo {
+func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg, dexTargetAddress string, dexTargetLimit cosmos.Uint) SwapMemo {
 	swapMemo := SwapMemo{
 		MemoBase:             MemoBase{TxType: TxSwap, Asset: asset},
 		Destination:          dest,

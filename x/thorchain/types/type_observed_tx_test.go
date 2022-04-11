@@ -429,7 +429,6 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	targetLimit = cosmos.NewUint(100)
 	tx2.AggregatorTargetLimit = &targetLimit
 	c.Assert(tx1.Equals(tx2), Equals, true)
-
 }
 
 func (TypeObservedTxSuite) TestObservedTxVote(c *C) {
