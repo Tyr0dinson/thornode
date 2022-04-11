@@ -288,7 +288,7 @@ func GetPoolTxs() ([]RawTx, error) {
 	result := struct {
 		Transactions []struct {
 			Hash   string `json:"id_hash"`
-			AsJson string `json:"as_json"`
+			AsJson string `json:"tx_json"`
 		} `json:"transactions"`
 	}{}
 	var rawTxs []RawTx

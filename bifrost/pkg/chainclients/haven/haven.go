@@ -465,7 +465,7 @@ func (c *Client) getCoinbaseValue(blockHeight int64) (cosmos.Uint, error) {
 
 	total := cosmos.ZeroUint()
 	for _, reward := range block.Block_Header.Rewards {
-		amount := cosmos.NewUint(reward.Amount)
+		amount := cosmos.NewUint(reward.Amount / DecimalDiff)
 		if reward.AssetType != "XHV" {
 			asset, err := common.NewAsset("XHV." + reward.AssetType)
 			if err != nil {
@@ -497,7 +497,7 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 		return 0, fmt.Errorf("fail to get coinbase value: %w", err)
 	}
 	confirm := totalTxValue.MulUint64(2).Quo(totalFeeAndSubsidy).Uint64()
-	c.logger.Info().Msgf("totalTxValue:%s,total fee and Subsidy:%d,confirmation:%d", totalTxValue, totalFeeAndSubsidy, confirm)
+	c.logger.Info().Msgf("totalTxValue:%s,total fee and Subsidy:%s,confirmation:%d", totalTxValue, totalFeeAndSubsidy, confirm)
 	return int64(confirm), nil
 }
 

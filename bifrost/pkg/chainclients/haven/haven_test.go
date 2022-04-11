@@ -3,7 +3,6 @@ package haven
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -134,7 +133,6 @@ func (s *HavenSuite) SetUpTest(c *C) {
 		} else if req.RequestURI == "/get_transactions" {
 			httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_txs.json")
 		} else if req.RequestURI == "/get_transaction_pool" {
-			fmt.Printf("REturning getpoll")
 			httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_pool.json")
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/node/") {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
@@ -269,7 +267,7 @@ func (s *HavenSuite) TestGetOutput(c *C) {
 
 	// set the tx pubkey
 	var txPubKey [32]byte
-	asByte, err := hex.DecodeString("15e1e505019c5cfa4afa4cd65dec3bc93334bc887e64eca6b3803ae3cc09cd07")
+	asByte, err := hex.DecodeString("c105d0cd55cd52f6c2648aadb5ac7bbcfc963158bcc443a192035306d7aaafe6")
 	c.Assert(err, IsNil)
 	copy(txPubKey[:], asByte[0:32])
 
@@ -456,7 +454,7 @@ func (s *HavenSuite) TestGetConfirmationCount(c *C) {
 				Sender:      "hvxy6hvEBNw8FT8fS9ay1dd111bqwbwnAEVtTbJkNcnaP19yfDPr2TQBFmyN96xubhFb3ddTjFaokWMast17eRkA1jBW1yEvjh",
 				To:          "hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg",
 				Coins: common.Coins{
-					common.NewCoin(common.XHVAsset, cosmos.NewUint(22345600)),
+					common.NewCoin(common.XHVAsset, cosmos.NewUint(1700000000)),
 				},
 				Memo:                "MEMO",
 				ObservedVaultPubKey: pkey,
@@ -476,7 +474,7 @@ func (s *HavenSuite) TestGetConfirmationCount(c *C) {
 				Sender:      "hvxy6hvEBNw8FT8fS9ay1dd111bqwbwnAEVtTbJkNcnaP19yfDPr2TQBFmyN96xubhFb3ddTjFaokWMast17eRkA1jBW1yEvjh",
 				To:          "hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg",
 				Coins: common.Coins{
-					common.NewCoin(common.XHVAsset, cosmos.NewUint(123456000)),
+					common.NewCoin(common.XHVAsset, cosmos.NewUint(11000000000)),
 				},
 				Memo:                "MEMO",
 				ObservedVaultPubKey: pkey,
