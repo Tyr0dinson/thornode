@@ -136,6 +136,13 @@ func GetRandomTERRAAddress() common.Address {
 	return terra
 }
 
+// GetRandomETHAddress get a random ETH address for test purpose
+func GetRandomETHAddress() common.Address {
+	pKey := GetRandomPubKey()
+	addr, _ := pKey.GetAddress(common.ETHChain)
+	return addr
+}
+
 func GetRandomBTCAddress() common.Address {
 	pubKey := GetRandomPubKey()
 	addr, _ := pubKey.GetAddress(common.BTCChain)

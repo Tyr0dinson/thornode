@@ -550,12 +550,9 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 			item.ObservedVaultPubKey,
 			item.BlockHeight+txIn.ConfirmationRequired)
 		tx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
-		aggregatorAddr, err := common.NewAddress(item.Aggregator)
-		if err != nil {
-			o.logger.Error().Msgf("fail to parse aggregator address,err: %s", err)
-		}
-		tx.Aggregator = aggregatorAddr
-		tx.AggregatorTarget = &item.AggregatorTarget
+		tx.Aggregator = item.Aggregator
+		tx.AggregatorTarget = item.AggregatorTarget
+		tx.AggregatorTargetLimit = item.AggregatorTargetLimit
 		txs = append(txs, tx)
 	}
 	return txs, nil

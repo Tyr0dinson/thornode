@@ -6,6 +6,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -66,6 +67,8 @@ func (s *SwapperV87) swap(ctx cosmos.Context,
 	destination common.Address,
 	swapTarget cosmos.Uint,
 	dexAgg common.Address,
+	dexAggTargetAsset common.Address,
+	dexAggLimit *cosmos.Uint,
 	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
@@ -86,14 +89,6 @@ func (s *SwapperV87) swap(ctx cosmos.Context,
 		if mintHeight > 0 && common.BlockHeight(ctx) > mintHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}
-	}
-
-	var aggTarget *common.Coin
-	if !dexAgg.IsEmpty() {
-		// override the target asset with target chain gas asset
-		targetCoin := common.NewCoin(target, swapTarget)
-		aggTarget = &targetCoin
-		target = target.Chain.GetGasAsset()
 	}
 
 	if err := s.validatePools(ctx, keeper, source, target); err != nil {
@@ -153,12 +148,13 @@ func (s *SwapperV87) swap(ctx cosmos.Context,
 	}
 
 	toi := TxOutItem{
-		Chain:            target.GetChain(),
-		InHash:           tx.ID,
-		ToAddress:        destination,
-		Coin:             common.NewCoin(target, assetAmount),
-		Aggregator:       dexAgg,
-		AggregatorTarget: aggTarget,
+		Chain:                 target.GetChain(),
+		InHash:                tx.ID,
+		ToAddress:             destination,
+		Coin:                  common.NewCoin(target, assetAmount),
+		Aggregator:            dexAgg,
+		AggregatorTargetAsset: dexAggTargetAsset,
+		AggregatorTargetLimit: dexAggLimit,
 	}
 	// let the txout manager mint our outbound asset if it is a synthetic asset
 	if toi.Chain.IsTHORChain() && toi.Coin.Asset.IsSyntheticAsset() {

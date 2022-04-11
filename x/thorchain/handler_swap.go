@@ -58,7 +58,6 @@ func (h SwapHandler) validateV87(ctx cosmos.Context, msg MsgSwap) error {
 
 	target := msg.TargetAsset
 	if target.IsSyntheticAsset() {
-
 		// the following  only applicable for chaosnet
 		totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)
 		if err != nil {
@@ -122,6 +121,9 @@ func (h SwapHandler) validateV87(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if len(msg.Aggregator) > 0 {
+		if !msg.TargetAsset.Equals(msg.TargetAsset.Chain.GetGasAsset()) {
+			return fmt.Errorf("target asset (%s) is not gas asset , can't use dex feature", msg.TargetAsset)
+		}
 		// validate that a referenced dex aggregator is legit
 		addr, err := FetchDexAggregator(h.mgr.GetVersion(), target.Chain, msg.Aggregator)
 		if err != nil {
@@ -130,8 +132,19 @@ func (h SwapHandler) validateV87(ctx cosmos.Context, msg MsgSwap) error {
 		if addr.IsEmpty() {
 			return fmt.Errorf("aggregator address is empty")
 		}
+		if len(msg.AggregatorTargetAddress) == 0 {
+			return fmt.Errorf("aggregator target address is empty")
+		}
 	}
-
+	if len(msg.AggregatorTargetAddress) > 0 {
+		aggTargetAddr, err := common.NewAddress(msg.AggregatorTargetAddress)
+		if err != nil {
+			return fmt.Errorf("aggregator target address(%s) is invalid,err: %w", msg.AggregatorTargetAddress, err)
+		}
+		if !aggTargetAddr.IsChain(target.Chain) {
+			return fmt.Errorf("aggregator target address(%s) is not on chain %s", msg.AggregatorTargetAddress, target.Chain)
+		}
+	}
 	return nil
 }
 
@@ -162,11 +175,18 @@ func (h SwapHandler) handleV87(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	}
 
 	dexAgg := common.NoAddress
+	dexAggTargetAsset := common.NoAddress
 	if len(msg.Aggregator) > 0 {
 		// validate that a referenced dex aggregator is legit
 		dexAgg, err = FetchDexAggregator(h.mgr.GetVersion(), msg.TargetAsset.Chain, msg.Aggregator)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if len(msg.AggregatorTargetAddress) > 0 {
+		dexAggTargetAsset, err = common.NewAddress(msg.AggregatorTargetAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse aggregator target asset address, err:%w", err)
 		}
 	}
 
@@ -179,6 +199,8 @@ func (h SwapHandler) handleV87(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		msg.Destination,
 		msg.TradeTarget,
 		dexAgg,
+		dexAggTargetAsset,
+		msg.AggregatorTargetLimit,
 		transactionFee,
 		synthVirtualDepthMult,
 		h.mgr)

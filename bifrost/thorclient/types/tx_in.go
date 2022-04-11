@@ -22,16 +22,17 @@ type TxIn struct {
 }
 
 type TxInItem struct {
-	BlockHeight         int64         `json:"block_height"`
-	Tx                  string        `json:"tx"`
-	Memo                string        `json:"memo"`
-	Sender              string        `json:"sender"`
-	To                  string        `json:"to"` // to adddress
-	Coins               common.Coins  `json:"coins"`
-	Gas                 common.Gas    `json:"gas"`
-	ObservedVaultPubKey common.PubKey `json:"observed_vault_pub_key"`
-	Aggregator          string        `json:"aggregator"`
-	AggregatorTarget    common.Coin   `json:"aggregator_target"`
+	BlockHeight           int64          `json:"block_height"`
+	Tx                    string         `json:"tx"`
+	Memo                  string         `json:"memo"`
+	Sender                string         `json:"sender"`
+	To                    string         `json:"to"` // to adddress
+	Coins                 common.Coins   `json:"coins"`
+	Gas                   common.Gas     `json:"gas"`
+	ObservedVaultPubKey   common.PubKey  `json:"observed_vault_pub_key"`
+	Aggregator            common.Address `json:"aggregator"`
+	AggregatorTarget      common.Address `json:"aggregator_target"`
+	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit"`
 }
 type TxInStatus byte
 

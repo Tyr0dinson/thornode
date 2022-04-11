@@ -361,21 +361,28 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.Coins{
 				common.NewCoin(ethAsset, scp.amtConverter(transferOutAndCall.Asset.String(), transferOutAndCall.Amount)).WithDecimals(decimals),
 			}
-
-			finalAsset, err := scp.assetResolver(transferOutAndCall.FinalAsset.String())
+			aggregatorAddr, err := common.NewAddress(transferOutAndCall.Target.String())
 			if err != nil {
-				scp.logger.Err(err).Msg("fail to get final asset from token address")
+				scp.logger.Err(err).Msg("fail to parse aggregator address")
 				continue
 			}
-			if ethAsset.IsEmpty() {
+			aggregatorTargetAddr, err := common.NewAddress(transferOutAndCall.FinalAsset.String())
+			if err != nil {
+				scp.logger.Err(err).Msg("fail to parse aggregator target address")
 				continue
 			}
+
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()
-			txInItem.Aggregator = transferOutAndCall.Target.String()
-
-			txInItem.AggregatorTarget = common.NewCoin(finalAsset, cosmos.NewUintFromBigInt(transferOutAndCall.AmountOutMin))
+			txInItem.Aggregator = aggregatorAddr
+			txInItem.AggregatorTarget = aggregatorTargetAddr
+			if transferOutAndCall.AmountOutMin != nil {
+				limit := cosmos.NewUintFromBigInt(transferOutAndCall.AmountOutMin)
+				if !limit.IsZero() {
+					txInItem.AggregatorTargetLimit = &limit
+				}
+			}
 		}
 		if earlyExit {
 			break

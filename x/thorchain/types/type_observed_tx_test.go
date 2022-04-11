@@ -412,14 +412,24 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	tx2.Aggregator = tx1.Aggregator
 	c.Assert(tx1.Equals(tx2), Equals, true)
 
-	coin := common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One))
-	badCoin := common.NewCoin(common.BNBAsset, cosmos.NewUint(101*common.One))
-	tx1.AggregatorTarget = &coin
+	tx1.AggregatorTarget = GetRandomETHAddress()
 	c.Assert(tx1.Equals(tx2), Equals, false)
-	tx2.AggregatorTarget = &badCoin
+	tx2.AggregatorTarget = GetRandomETHAddress()
 	c.Assert(tx1.Equals(tx2), Equals, false)
 	tx2.AggregatorTarget = tx1.AggregatorTarget
 	c.Assert(tx1.Equals(tx2), Equals, true)
+
+	targetLimit := cosmos.NewUint(100)
+	tx1.AggregatorTargetLimit = &targetLimit
+	c.Assert(tx1.Equals(tx2), Equals, false)
+	targetLimit = cosmos.NewUint(200)
+	tx1.AggregatorTargetLimit = &targetLimit
+	c.Assert(tx1.Equals(tx2), Equals, false)
+
+	targetLimit = cosmos.NewUint(100)
+	tx2.AggregatorTargetLimit = &targetLimit
+	c.Assert(tx1.Equals(tx2), Equals, true)
+
 }
 
 func (TypeObservedTxSuite) TestObservedTxVote(c *C) {

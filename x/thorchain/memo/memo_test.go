@@ -29,11 +29,6 @@ func (s *MemoSuite) TestTxType(c *C) {
 		c.Check(tx, Equals, trans)
 		c.Check(tx.IsEmpty(), Equals, false)
 	}
-
-	tx, err := StringToTxType("=123")
-	c.Assert(err, IsNil)
-	c.Check(tx, Equals, TxSwap)
-	c.Check(tx.IsEmpty(), Equals, false)
 }
 
 func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
@@ -89,13 +84,15 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.GetDexAggregator(), Equals, "")
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "=123:"+common.RuneAsset().String()+":bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:")
+	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6::::123:0x2354234523452345:1234444")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
 	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6")
 	c.Check(memo.GetSlipLimit().Equal(cosmos.ZeroUint()), Equals, true)
 	c.Check(memo.GetDexAggregator(), Equals, "123")
+	c.Check(memo.GetDexTargetAddress(), Equals, "0x2354234523452345")
+	c.Check(memo.GetDexTargetLimit().Equal(cosmos.NewUint(1234444)), Equals, true)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "OUT:MUKVQILIHIAUSEOVAXBFEZAJKYHFJYHRUUYGQJZGFYBYVXCXYNEMUOAIQKFQLLCX")
 	c.Assert(err, IsNil)

@@ -58,10 +58,6 @@ func (h CommonOutboundTxHandler) handleV85(ctx cosmos.Context, tx ObservedTx, in
 	voter.AddOutTx(tx.Tx)
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
-	if tx.AggregatorTarget == nil {
-		tx.AggregatorTarget = &common.NoCoin
-	}
-
 	// complete events
 	if voter.IsDone() {
 		for _, item := range voter.OutTxs {
@@ -110,15 +106,13 @@ func (h CommonOutboundTxHandler) handleV85(ctx cosmos.Context, tx ObservedTx, in
 			// outbound tx hash correctly given every tx item will only have
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
-			if txOutItem.AggregatorTarget == nil {
-				txOutItem.AggregatorTarget = &common.NoCoin
-			}
+
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
 				tx.Aggregator.Equals(txOutItem.Aggregator) &&
-				tx.AggregatorTarget.Equals(*txOutItem.AggregatorTarget) &&
+				tx.AggregatorTarget.Equals(txOutItem.AggregatorTargetAsset) &&
 				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})

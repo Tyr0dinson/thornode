@@ -66,16 +66,19 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if m.Aggregator != tx2.Aggregator {
 		return false
 	}
-	if m.AggregatorTarget == nil {
-		m.AggregatorTarget = &common.NoCoin
-	}
-	if tx2.AggregatorTarget == nil {
-		tx2.AggregatorTarget = &common.NoCoin
-	}
-	if !m.AggregatorTarget.Equals(*tx2.AggregatorTarget) {
+	if m.AggregatorTarget != tx2.AggregatorTarget {
 		return false
 	}
-
+	emptyAmt := cosmos.ZeroUint()
+	if m.AggregatorTargetLimit == nil {
+		m.AggregatorTargetLimit = &emptyAmt
+	}
+	if tx2.AggregatorTargetLimit == nil {
+		tx2.AggregatorTargetLimit = &emptyAmt
+	}
+	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
+		return false
+	}
 	return true
 }
 

@@ -26,7 +26,8 @@ message ObservedTx {
   int64 keysign_ms = 7;
   int64 finalise_height = 8;
   string aggregator = 9 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
-  common.Coin aggregator_target = 10;
+  string aggregator_target = 10 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string aggregator_target_limit = 11 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = true];
 }
 
 message ObservedTxVoter {
