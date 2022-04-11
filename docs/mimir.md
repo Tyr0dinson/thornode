@@ -39,7 +39,8 @@
 ## Chain Management
 
 `HaltChainGlobal`: Pause all chains (chain clients)
-`Halt<chain>Chain`: Pause a specific blockchain
+`Halt<chain>Chain`: Pause a specific blockchain via mimir or detected double-spend
+`SolvencyHalt<chain>Chain`: Solvency checker auto halts chain. Chain will be auto un-halted once solvency is regained
 `NodePauseChainGlobal`: Inidividual node controlled means to pause all chains
 `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
 
@@ -70,6 +71,7 @@
 `DesiredValidatorSet`: Max number of validators
 `FundMigrationInterval`: Number of blocks between attempts to migrate funds between asgard vaults during a migration
 `NumberOfNewNodesPerChurn`: Number of targeted additional nodes added to the validator set each churn
+`MaxNodeToChurnOutForLowVersion`: Max number of validators to churn out for low version each churn
 
 ## Economics
 
@@ -84,6 +86,8 @@
 
 `DollarInRune`: Manual override of amount of rune in a dollar. Used for metrics data collection
 `THORNames`: Enable/Disable THORNames
+`TNSRegisterFee`: TNS registration fee of new names
+`TNSFeePerBlock`: TNS cost per block to retain ownership of a name
 `ArtificialRagnarokBlockHeight`: Triggers a chain shutodwn and ragnarok
 `NativeTransactionFee`: The rune fee for a native transaction (gas cost in 1e8 notation)
 

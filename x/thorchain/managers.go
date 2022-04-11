@@ -278,7 +278,7 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 // GetTxOutStore will return an implementation of the txout store that
 func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
-	if version.GTE(semver.MustParse("1.85.0")) {
+	if version.GTE(semver.MustParse("1.85.0")) { // nolint
 		return newTxOutStorageV85(keeper, constAccessor, eventMgr, gasManager), nil
 	} else if version.GTE(semver.MustParse("1.84.0")) {
 		return newTxOutStorageV84(keeper, constAccessor, eventMgr, gasManager), nil
@@ -290,7 +290,9 @@ func GetTxOutStore(keeper keeper.Keeper, version semver.Version, eventMgr EventM
 
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(keeper keeper.Keeper, version semver.Version, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
-	if version.GTE(semver.MustParse("0.76.0")) {
+	if version.GTE(semver.MustParse("1.87.0")) {
+		return newNetworkMgrV87(keeper, txOutStore, eventMgr), nil
+	} else if version.GTE(semver.MustParse("0.76.0")) {
 		return newNetworkMgrV76(keeper, txOutStore, eventMgr), nil
 	}
 	return nil, errInvalidVersion
@@ -298,10 +300,14 @@ func GetNetworkManager(keeper keeper.Keeper, version semver.Version, txOutStore 
 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(keeper keeper.Keeper, version semver.Version, vaultMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
-	if version.GTE(semver.MustParse("1.84.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.87.0")):
+		return newValidatorMgrV87(keeper, vaultMgr, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.84.0")):
 		return newValidatorMgrV84(keeper, vaultMgr, txOutStore, eventMgr), nil
-	} else if version.GTE(semver.MustParse("0.80.0")) {
+	case version.GTE(semver.MustParse("0.80.0")):
 		return newValidatorMgrV80(keeper, vaultMgr, txOutStore, eventMgr), nil
+
 	}
 	return nil, errInvalidVersion
 }
@@ -325,9 +331,12 @@ func GetSwapQueue(keeper keeper.Keeper, version semver.Version) (SwapQueue, erro
 
 // GetSlasher return an implementation of Slasher
 func GetSlasher(keeper keeper.Keeper, version semver.Version, eventMgr EventManager) (Slasher, error) {
-	if version.GTE(semver.MustParse("1.86.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.87.0")):
+		return newSlasherV87(keeper, eventMgr), nil
+	case version.GTE(semver.MustParse("1.86.0")):
 		return newSlasherV86(keeper, eventMgr), nil
-	} else if version.GTE(semver.MustParse("0.75.0")) {
+	case version.GTE(semver.MustParse("0.75.0")):
 		return newSlasherV75(keeper, eventMgr), nil
 	}
 	return nil, errInvalidVersion

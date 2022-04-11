@@ -110,12 +110,15 @@ var (
 	NewEventBond                   = types.NewEventBond
 	NewEventSwitch                 = types.NewEventSwitch
 	NewEventGas                    = types.NewEventGas
+	NewEventSecurity               = types.NewEventSecurity
 	NewEventSlash                  = types.NewEventSlash
 	NewEventSlashPoint             = types.NewEventSlashPoint
 	NewEventReserve                = types.NewEventReserve
 	NewEventErrata                 = types.NewEventErrata
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
+	NewEventSetMimir               = types.NewEventSetMimir
+	NewEventSetNodeMimir           = types.NewEventSetNodeMimir
 	NewEventTssKeygenMetric        = types.NewEventTssKeygenMetric
 	NewEventTssKeysignMetric       = types.NewEventTssKeysignMetric
 	NewEventPoolBalanceChanged     = types.NewEventPoolBalanceChanged

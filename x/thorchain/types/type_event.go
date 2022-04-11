@@ -10,27 +10,30 @@ import (
 
 // all event types support by THORChain
 const (
-	SwapEventType              = `swap`
-	AddLiquidityEventType      = `add_liquidity`
-	WithdrawEventType          = `withdraw`
-	PendingLiquidity           = `pending_liquidity`
-	DonateEventType            = `donate`
-	PoolEventType              = `pool`
-	RewardEventType            = `rewards`
-	RefundEventType            = `refund`
-	BondEventType              = `bond`
-	GasEventType               = `gas`
-	ReserveEventType           = `reserve`
-	SlashEventType             = `slash`
-	ErrataEventType            = `errata`
-	FeeEventType               = `fee`
-	OutboundEventType          = `outbound`
-	TSSKeygenMetricEventType   = `tss_keygen`
-	TSSKeysignMetricEventType  = `tss_keysign`
-	SlashPointEventType        = `slash_points`
+	AddLiquidityEventType      = "add_liquidity"
+	BondEventType              = "bond"
+	DonateEventType            = "donate"
+	ErrataEventType            = "errata"
+	FeeEventType               = "fee"
+	GasEventType               = "gas"
+	OutboundEventType          = "outbound"
+	PendingLiquidity           = "pending_liquidity"
 	PoolBalanceChangeEventType = "pool_balance_change"
+	PoolEventType              = "pool"
+	RefundEventType            = "refund"
+	ReserveEventType           = "reserve"
+	RewardEventType            = "rewards"
+	SecurityEventType          = "security"
+	SetMimirEventType          = "set_mimir"
+	SetNodeMimirEventType      = "set_node_mimir"
+	SlashEventType             = "slash"
+	SlashPointEventType        = "slash_points"
+	SwapEventType              = "swap"
 	SwitchEventType            = "switch"
 	THORNameEventType          = "thorname"
+	TSSKeygenMetricEventType   = "tss_keygen"
+	TSSKeysignMetricEventType  = "tss_keysign"
+	WithdrawEventType          = "withdraw"
 )
 
 // PoolMods a list of pool modifications
@@ -344,6 +347,26 @@ func (m *EventReserve) Events() (cosmos.Events, error) {
 	}, nil
 }
 
+// NewEventSecurity creates a new security event.
+func NewEventSecurity(tx common.Tx, msg string) *EventSecurity {
+	return &EventSecurity{
+		Msg: msg,
+		Tx:  tx,
+	}
+}
+
+// Type returns the security event type.
+func (m *EventSecurity) Type() string {
+	return SecurityEventType
+}
+
+// Events returns the cosmos events for the security event.
+func (m *EventSecurity) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(), cosmos.NewAttribute("msg", m.Msg))
+	evt = evt.AppendAttributes(m.Tx.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
 // NewEventSlash create a new slash event
 func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) *EventSlash {
 	return &EventSlash{
@@ -637,5 +660,51 @@ func (m *EventTHORName) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("fund_amount", m.FundAmt.String()),
 		cosmos.NewAttribute("expire", fmt.Sprintf("%d", m.Expire)),
 		cosmos.NewAttribute("owner", m.Owner.String()))
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventSetMimir create a new instance of EventSetMimir
+func NewEventSetMimir(key, value string) *EventSetMimir {
+	return &EventSetMimir{
+		Key:   key,
+		Value: value,
+	}
+}
+
+// Type return a string which represent the type of this event
+func (m *EventSetMimir) Type() string {
+	return SetMimirEventType
+}
+
+// Events return cosmos sdk events
+func (m *EventSetMimir) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("key", m.Key),
+		cosmos.NewAttribute("value", m.Value),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventSetNodeMimir create a new instance of EventSetNodeMimir
+func NewEventSetNodeMimir(key, value, address string) *EventSetNodeMimir {
+	return &EventSetNodeMimir{
+		Key:     key,
+		Value:   value,
+		Address: address,
+	}
+}
+
+// Type return a string which represent the type of this event
+func (m *EventSetNodeMimir) Type() string {
+	return SetNodeMimirEventType
+}
+
+// Events return cosmos sdk events
+func (m *EventSetNodeMimir) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("key", m.Key),
+		cosmos.NewAttribute("value", m.Value),
+		cosmos.NewAttribute("address", m.Address),
+	)
 	return cosmos.Events{evt}, nil
 }
