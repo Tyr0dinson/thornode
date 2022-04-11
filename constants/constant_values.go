@@ -73,6 +73,7 @@ const (
 	ValidatorMaxRewardRatio
 	PoolDepthForYggFundingMin
 	MaxNodeToChurnOutForLowVersion
+	SwapOutDexIntegrationDisabled
 )
 
 var nameToString = map[ConstantName]string{
@@ -139,6 +140,7 @@ var nameToString = map[ConstantName]string{
 	NodeOperatorFee:                "NodeOperatorFee",
 	PoolDepthForYggFundingMin:      "PoolDepthForYggFundingMin",
 	MaxNodeToChurnOutForLowVersion: "MaxNodeToChurnOutForLowVersion",
+	SwapOutDexIntegrationDisabled:  "SwapOutDexIntegrationDisabled",
 }
 
 // String implement fmt.stringer

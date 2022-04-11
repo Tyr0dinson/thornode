@@ -121,6 +121,10 @@ func (h SwapHandler) validateV87(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if len(msg.Aggregator) > 0 {
+		swapOutDisabled := fetchConfigInt64(ctx, h.mgr, constants.SwapOutDexIntegrationDisabled)
+		if swapOutDisabled > 0 {
+			return fmt.Errorf("swap out dex integration disabled")
+		}
 		if !msg.TargetAsset.Equals(msg.TargetAsset.Chain.GetGasAsset()) {
 			return fmt.Errorf("target asset (%s) is not gas asset , can't use dex feature", msg.TargetAsset)
 		}
