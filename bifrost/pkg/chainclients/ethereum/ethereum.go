@@ -419,14 +419,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 			}
 		} else {
-			assetAddr := getTokenAddressFromAsset(tx.AggregatorTarget.Asset)
-			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(assetAddr), dest, tx.AggregatorTarget.Amount.BigInt(), tx.Memo)
+			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(tx.AggregatorTargetAsset.String()), dest, tx.AggregatorTargetLimit.BigInt(), tx.Memo)
 			if err != nil {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
 			}
 		}
 	case mem.TxMigrate, mem.TxYggdrasilFund:
-		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTarget.IsEmpty() {
+		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTargetAsset.IsEmpty() {
 			return nil, fmt.Errorf("migration / yggdrasil+ can't use aggregator")
 		}
 		if IsETH(tokenAddr) {
@@ -445,7 +444,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 			}
 		}
 	case mem.TxYggdrasilReturn:
-		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTarget.IsEmpty() {
+		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTargetAsset.IsEmpty() {
 			return nil, fmt.Errorf("yggdrasil- can't use aggregator")
 		}
 		newSmartContractAddr := c.getSmartContractByAddress(tx.ToAddress)
