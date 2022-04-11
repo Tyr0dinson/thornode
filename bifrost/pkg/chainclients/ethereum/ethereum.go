@@ -419,7 +419,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 			}
 		} else {
-			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(tx.AggregatorTargetAsset.String()), dest, tx.AggregatorTargetLimit.BigInt(), tx.Memo)
+			targetLimit := tx.AggregatorTargetLimit
+			if targetLimit == nil {
+				zeroLimit := cosmos.ZeroUint()
+				targetLimit = &zeroLimit
+			}
+
+			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(tx.AggregatorTargetAsset.String()), dest, targetLimit.BigInt(), tx.Memo)
 			if err != nil {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
 			}

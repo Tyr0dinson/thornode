@@ -66,6 +66,9 @@ func (tx TxOutItem) Equals(tx2 TxOutItem) bool {
 	if !tx.AggregatorTargetAsset.Equals(tx2.AggregatorTargetAsset) {
 		return false
 	}
+	if tx.AggregatorTargetLimit == nil && tx2.AggregatorTargetLimit == nil {
+		return true
+	}
 	if tx.AggregatorTargetLimit == nil && tx2.AggregatorTargetLimit != nil {
 		return false
 	}
