@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,81 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
+
+type swapItem struct {
+	index int
+	msg   MsgSwap
+	fee   cosmos.Uint
+	slip  cosmos.Uint
+}
+type swapItems []swapItem
+
+func (items swapItems) Sort() swapItems {
+	// sort by liquidity fee , descending
+	byFee := items
+	sort.SliceStable(byFee, func(i, j int) bool {
+		return byFee[i].fee.GT(byFee[j].fee)
+	})
+
+	// sort by slip fee , descending
+	bySlip := items
+	sort.SliceStable(bySlip, func(i, j int) bool {
+		return bySlip[i].slip.GT(bySlip[j].slip)
+	})
+
+	type score struct {
+		msg   MsgSwap
+		score int
+		index int
+	}
+
+	// add liquidity fee score
+	scores := make([]score, len(items))
+	for i, item := range byFee {
+		scores[i] = score{
+			msg:   item.msg,
+			score: i,
+			index: item.index,
+		}
+	}
+
+	// add slip score
+	for i, item := range bySlip {
+		for j, score := range scores {
+			if score.msg.Tx.ID.Equals(item.msg.Tx.ID) && score.index == item.index {
+				scores[j].score += i
+				break
+			}
+		}
+	}
+
+	// This sorted appears to sort twice, but actually the first sort informs
+	// the second. If we have multiple swaps with the same score, it will use
+	// the ID sort to deterministically sort within the same score
+
+	// sort by ID, first
+	sort.SliceStable(scores, func(i, j int) bool {
+		return scores[i].msg.Tx.ID.String() < scores[j].msg.Tx.ID.String()
+	})
+
+	// sort by score, second
+	sort.SliceStable(scores, func(i, j int) bool {
+		return scores[i].score < scores[j].score
+	})
+
+	// sort our items by score
+	sorted := make(swapItems, len(items))
+	for i, score := range scores {
+		for _, item := range items {
+			if item.msg.Tx.ID.Equals(score.msg.Tx.ID) && score.index == item.index {
+				sorted[i] = item
+				break
+			}
+		}
+	}
+
+	return sorted
+}
 
 // SwapQv58 is going to manage the swaps queue
 type SwapQv58 struct {
@@ -23,7 +99,7 @@ func newSwapQv58(k keeper.Keeper) *SwapQv58 {
 }
 
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
-func (vm *SwapQv58) FetchQueue(ctx cosmos.Context) (swapItems, error) {
+func (vm *SwapQv58) FetchQueue(ctx cosmos.Context) (swapItems, error) { // nolint
 	items := make(swapItems, 0)
 	iterator := vm.k.GetSwapQueueIterator(ctx)
 	defer iterator.Close()
@@ -109,7 +185,7 @@ func (vm *SwapQv58) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock int6
 // scoreMsgs - this takes a list of MsgSwap, and converts them to a scored
 // swapItem list
 func (vm *SwapQv58) scoreMsgs(ctx cosmos.Context, items swapItems) (swapItems, error) {
-	pools := make(map[common.Asset]Pool, 0)
+	pools := make(map[common.Asset]Pool)
 	for i, item := range items {
 		// the asset customer send
 		sourceAsset := item.msg.Tx.Coins[0].Asset
@@ -171,7 +247,7 @@ func (vm *SwapQv58) getLiquidityFeeAndSlip(pool Pool, sourceCoin common.Coin, it
 		X = pool.BalanceAsset
 	}
 
-	swapper := NewSwapperV1()
+	swapper := newSwapperV81()
 	fee := swapper.calcLiquidityFee(X, x, Y)
 	if sourceCoin.Asset.IsRune() {
 		fee = pool.AssetValueInRune(fee)

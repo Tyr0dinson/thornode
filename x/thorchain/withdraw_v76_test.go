@@ -36,10 +36,7 @@ func NewWithdrawTestKeeperV76(keeper keeper.Keeper) *WithdrawTestKeeperV76 {
 }
 
 func (k *WithdrawTestKeeperV76) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
-	if asset.Equals(common.Asset{Chain: common.BNBChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"}) {
-		return false
-	}
-	return true
+	return !asset.Equals(common.Asset{Chain: common.BNBChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"})
 }
 
 func (k *WithdrawTestKeeperV76) GetPool(ctx cosmos.Context, asset common.Asset) (types.Pool, error) {
@@ -47,7 +44,7 @@ func (k *WithdrawTestKeeperV76) GetPool(ctx cosmos.Context, asset common.Asset) 
 		return types.Pool{}, nil
 	} else {
 		if val, ok := k.store[asset.String()]; ok {
-			p := val.(types.Pool)
+			p, _ := val.(types.Pool)
 			return p, nil
 		}
 		return types.Pool{
@@ -306,7 +303,7 @@ func (s WithdrawSuiteV76) TestCalculateUnsake(c *C) {
 
 	for _, item := range inputs {
 		c.Logf("name:%s", item.name)
-		withDrawRune, withDrawAsset, unitAfter, err := calculateWithdrawV1(item.poolUnit, item.poolRune, item.poolAsset, item.lpUnit, item.percentage, common.EmptyAsset)
+		withDrawRune, withDrawAsset, unitAfter, err := calculateWithdrawV76(item.poolUnit, item.poolRune, item.poolAsset, item.lpUnit, cosmos.ZeroUint(), item.percentage, common.EmptyAsset)
 		if item.expectedErr == nil {
 			c.Assert(err, IsNil)
 		} else {
@@ -466,11 +463,11 @@ func (WithdrawSuiteV76) TestWithdraw(c *C) {
 		c.Logf("name:%s", tc.name)
 		version := GetCurrentVersion()
 		mgr.K = tc.ps
-		tc.ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+		c.Assert(tc.ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
-		})
+		}), IsNil)
 		r, asset, _, _, _, err := withdrawV76(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
@@ -531,11 +528,11 @@ func (WithdrawSuiteV76) TestWithdrawAsym(c *C) {
 		ctx, mgr := setupManagerForTest(c)
 		ps := getWithdrawTestKeeper2(c, ctx, mgr.Keeper(), runeAddress)
 		mgr.K = ps
-		ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+		c.Assert(ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
-		})
+		}), IsNil)
 		r, asset, _, _, _, err := withdrawV76(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
@@ -634,7 +631,7 @@ func (s *WithdrawSuiteV76) TestWithdrawWithImpermanentLossProtection(c *C) {
 	// add some liquidity
 	// add some liquidity
 	for i := 0; i <= 10; i++ {
-		c.Assert(addHandler.addLiquidityV68(ctx,
+		c.Assert(addHandler.addLiquidity(ctx,
 			common.BTCAsset,
 			cosmos.NewUint(common.One),
 			cosmos.NewUint(common.One),
@@ -645,7 +642,7 @@ func (s *WithdrawSuiteV76) TestWithdrawWithImpermanentLossProtection(c *C) {
 			constantAccessor), IsNil)
 	}
 	lpAddr := GetRandomTHORAddress()
-	c.Assert(addHandler.addLiquidityV68(ctx,
+	c.Assert(addHandler.addLiquidity(ctx,
 		common.BTCAsset,
 		cosmos.NewUint(common.One),
 		cosmos.NewUint(common.One),

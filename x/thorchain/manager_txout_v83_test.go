@@ -19,7 +19,7 @@ func (s TxOutStoreV83Suite) TestAddGasFees(c *C) {
 
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
-	mgr.gasMgr = newGasMgrV1(constAccessor, mgr.Keeper())
+	mgr.gasMgr = newGasMgrV81(constAccessor, mgr.Keeper())
 	err := addGasFees(ctx, mgr, tx)
 	c.Assert(err, IsNil)
 	c.Assert(mgr.GasMgr().GetGas(), HasLen, 1)
@@ -168,6 +168,7 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem(c *C) {
 	c.Assert(result, Equals, true)
 	c.Assert(err, IsNil)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
 	// this should be a mocknet address
 	c.Assert(msgs[0].ToAddress.String(), Equals, "qzg5mkh7rkw3y8kw47l3rrnvhmenvctmd5yg6hxe64")
 }
@@ -250,6 +251,7 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	//  the outbound has been delayed
 	newCtx := w.ctx.WithBlockHeight(4)
 	msgs, err = txOutStore.GetOutboundItems(newCtx)
+	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
@@ -459,8 +461,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 
 func (s TxOutStoreV83Suite) TestcalcTxOutHeight(c *C) {
 	keeper := &TestCalcKeeper{
-		value: make(map[int64]cosmos.Uint, 0),
-		mimir: make(map[string]int64, 0),
+		value: make(map[int64]cosmos.Uint),
+		mimir: make(map[string]int64),
 	}
 
 	keeper.mimir["MinTxOutVolumeThreshold"] = 25_00000000
@@ -477,7 +479,7 @@ func (s TxOutStoreV83Suite) TestcalcTxOutHeight(c *C) {
 
 	ctx, _ := setupManagerForTest(c)
 
-	txout := TxOutStorageV66{keeper: keeper}
+	txout := TxOutStorageV83{keeper: keeper}
 
 	toi := TxOutItem{
 		Coin: common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -592,6 +594,7 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	//  the outbound has been delayed
 	newCtx := w.ctx.WithBlockHeight(4)
 	msgs, err = txOutStore.GetOutboundItems(newCtx)
+	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 2)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))

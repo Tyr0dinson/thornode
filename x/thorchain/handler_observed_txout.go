@@ -66,10 +66,6 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.58.0")) {
 		return h.handleV58(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return h.handleV46(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }
@@ -100,11 +96,9 @@ func (h ObservedTxOutHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVo
 			// tx has consensus now, so decrease the slashing point for all the signers whom voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
 
-		} else {
+		} else if common.BlockHeight(ctx) <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
-			if common.BlockHeight(ctx) <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
-				h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
-			}
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
 	}
 	h.mgr.Keeper().SetObservedTxOutVoter(ctx, voter)

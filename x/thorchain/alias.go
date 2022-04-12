@@ -71,6 +71,7 @@ const (
 	TxUnBond          = mem.TxUnbond
 	TxLeave           = mem.TxLeave
 	TxWithdraw        = mem.TxWithdraw
+	TxTHORName        = mem.TxTHORName
 )
 
 var (
@@ -108,14 +109,17 @@ var (
 	NewEventRefund                 = types.NewEventRefund
 	NewEventBond                   = types.NewEventBond
 	NewEventSwitch                 = types.NewEventSwitch
-	NewEventSwitchV56              = types.NewEventSwitchV56
+	NewEventSwitchV87              = types.NewEventSwitchV87
 	NewEventGas                    = types.NewEventGas
+	NewEventSecurity               = types.NewEventSecurity
 	NewEventSlash                  = types.NewEventSlash
 	NewEventSlashPoint             = types.NewEventSlashPoint
 	NewEventReserve                = types.NewEventReserve
 	NewEventErrata                 = types.NewEventErrata
 	NewEventFee                    = types.NewEventFee
 	NewEventOutbound               = types.NewEventOutbound
+	NewEventSetMimir               = types.NewEventSetMimir
+	NewEventSetNodeMimir           = types.NewEventSetNodeMimir
 	NewEventTssKeygenMetric        = types.NewEventTssKeygenMetric
 	NewEventTssKeysignMetric       = types.NewEventTssKeysignMetric
 	NewEventPoolBalanceChanged     = types.NewEventPoolBalanceChanged

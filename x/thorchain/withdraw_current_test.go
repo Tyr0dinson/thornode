@@ -35,29 +35,25 @@ func NewWithdrawTestKeeperV84(keeper keeper.Keeper) *WithdrawTestKeeperV84 {
 }
 
 func (k *WithdrawTestKeeperV84) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
-	if asset.Equals(common.Asset{Chain: common.BNBChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"}) {
-		return false
-	}
-	return true
+	return !asset.Equals(common.Asset{Chain: common.BNBChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"})
 }
 
 func (k *WithdrawTestKeeperV84) GetPool(ctx cosmos.Context, asset common.Asset) (types.Pool, error) {
 	if asset.Equals(common.Asset{Chain: common.BNBChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"}) {
 		return types.Pool{}, nil
-	} else {
-		if val, ok := k.store[asset.String()]; ok {
-			p := val.(types.Pool)
-			return p, nil
-		}
-		return types.Pool{
-			BalanceRune:  cosmos.NewUint(100).MulUint64(common.One),
-			BalanceAsset: cosmos.NewUint(100).MulUint64(common.One),
-			LPUnits:      cosmos.NewUint(100).MulUint64(common.One),
-			SynthUnits:   cosmos.ZeroUint(),
-			Status:       PoolAvailable,
-			Asset:        asset,
-		}, nil
 	}
+	if val, ok := k.store[asset.String()]; ok {
+		p, _ := val.(types.Pool)
+		return p, nil
+	}
+	return types.Pool{
+		BalanceRune:  cosmos.NewUint(100).MulUint64(common.One),
+		BalanceAsset: cosmos.NewUint(100).MulUint64(common.One),
+		LPUnits:      cosmos.NewUint(100).MulUint64(common.One),
+		SynthUnits:   cosmos.ZeroUint(),
+		Status:       PoolAvailable,
+		Asset:        asset,
+	}, nil
 }
 
 func (k *WithdrawTestKeeperV84) SetPool(ctx cosmos.Context, ps Pool) error {
@@ -465,11 +461,11 @@ func (WithdrawSuiteV84) TestWithdraw(c *C) {
 		c.Logf("name:%s", tc.name)
 		version := GetCurrentVersion()
 		mgr.K = tc.ps
-		tc.ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+		c.Assert(tc.ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
-		})
+		}), IsNil)
 		r, asset, _, _, _, err := withdrawV84(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
@@ -530,11 +526,11 @@ func (WithdrawSuiteV84) TestWithdrawAsym(c *C) {
 		ctx, mgr := setupManagerForTest(c)
 		ps := getWithdrawTestKeeper2(c, ctx, mgr.Keeper(), runeAddress)
 		mgr.K = ps
-		ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
+		c.Assert(ps.SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
 			Chain:              common.BNBChain,
 			TransactionSize:    1,
 			TransactionFeeRate: bnbSingleTxFee.Uint64(),
-		})
+		}), IsNil)
 		r, asset, _, _, _, err := withdrawV84(ctx, version, tc.msg, mgr)
 		if tc.expectedError != nil {
 			c.Assert(err, NotNil)
@@ -633,7 +629,7 @@ func (s *WithdrawSuiteV84) TestWithdrawWithImpermanentLossProtection(c *C) {
 	// add some liquidity
 	// add some liquidity
 	for i := 0; i <= 10; i++ {
-		c.Assert(addHandler.addLiquidityV68(ctx,
+		c.Assert(addHandler.addLiquidity(ctx,
 			common.BTCAsset,
 			cosmos.NewUint(common.One),
 			cosmos.NewUint(common.One),
@@ -644,7 +640,7 @@ func (s *WithdrawSuiteV84) TestWithdrawWithImpermanentLossProtection(c *C) {
 			constantAccessor), IsNil)
 	}
 	lpAddr := GetRandomTHORAddress()
-	c.Assert(addHandler.addLiquidityV68(ctx,
+	c.Assert(addHandler.addLiquidity(ctx,
 		common.BTCAsset,
 		cosmos.NewUint(common.One),
 		cosmos.NewUint(common.One),
@@ -849,4 +845,27 @@ func TestCalcImpLossV84(t *testing.T) {
 			assert.Equal(t1, redeemValue.String(), tc.expectedRedeemValue.String())
 		})
 	}
+}
+
+// this one has an extra liquidity provider already set
+func getWithdrawTestKeeper2(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddress common.Address) keeper.Keeper {
+	store := NewWithdrawTestKeeperV76(k)
+	pool := Pool{
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+		BalanceAsset: cosmos.NewUint(100 * common.One),
+		Asset:        common.BNBAsset,
+		LPUnits:      cosmos.NewUint(200 * common.One),
+		SynthUnits:   cosmos.ZeroUint(),
+		Status:       PoolAvailable,
+	}
+	c.Assert(store.SetPool(ctx, pool), IsNil)
+	lp := LiquidityProvider{
+		Asset:        pool.Asset,
+		RuneAddress:  runeAddress,
+		AssetAddress: runeAddress,
+		Units:        cosmos.NewUint(100 * common.One),
+		PendingRune:  cosmos.ZeroUint(),
+	}
+	store.SetLiquidityProvider(ctx, lp)
+	return store
 }

@@ -19,7 +19,7 @@ func (s TxOutStoreV84Suite) TestAddGasFees(c *C) {
 
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
-	mgr.gasMgr = newGasMgrV1(constAccessor, mgr.Keeper())
+	mgr.gasMgr = newGasMgrV81(constAccessor, mgr.Keeper())
 	err := addGasFees(ctx, mgr, tx)
 	c.Assert(err, IsNil)
 	c.Assert(mgr.GasMgr().GetGas(), HasLen, 1)
@@ -459,8 +459,8 @@ func (s TxOutStoreV84Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 
 func (s TxOutStoreV84Suite) TestcalcTxOutHeight(c *C) {
 	keeper := &TestCalcKeeper{
-		value: make(map[int64]cosmos.Uint, 0),
-		mimir: make(map[string]int64, 0),
+		value: make(map[int64]cosmos.Uint),
+		mimir: make(map[string]int64),
 	}
 
 	keeper.mimir["MinTxOutVolumeThreshold"] = 25_00000000
@@ -477,7 +477,7 @@ func (s TxOutStoreV84Suite) TestcalcTxOutHeight(c *C) {
 
 	ctx, _ := setupManagerForTest(c)
 
-	txout := TxOutStorageV66{keeper: keeper}
+	txout := TxOutStorageV84{keeper: keeper}
 
 	toi := TxOutItem{
 		Coin: common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),

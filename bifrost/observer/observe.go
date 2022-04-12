@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
@@ -311,7 +312,7 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 		m, err := mem.ParseMemo(common.LatestVersion, memo)
 		if err != nil {
 			o.logger.Error().Err(err).Msgf("Unable to parse memo: %s", memo)
-			return common.NoAddress
+			// don't return yet, in case a thorname destination caused the error
 		}
 		if !m.GetDestination().IsEmpty() {
 			return m.GetDestination()
@@ -320,15 +321,18 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 		// could not find an address, check THORNames
 		var raw string
 		parts := strings.Split(memo, ":")
-		switch m.GetType() {
-		case mem.TxAdd:
+		switch m.(type) {
+		case mem.AddLiquidityMemo:
 			if len(parts) > 2 {
 				raw = parts[2]
 			}
-		case mem.TxSwap:
-			if len(parts) > 3 {
-				raw = parts[3]
+		case mem.SwapMemo:
+			if len(parts) > 2 {
+				raw = parts[2]
 			}
+		}
+		if len(raw) == 0 {
+			return common.NoAddress
 		}
 		name, _ := bridge.GetTHORName(raw)
 		return name.GetAlias(common.BNBChain)
@@ -408,7 +412,7 @@ func (o *Observer) filterErrataTx(block types.ErrataBlock) {
 			}
 			if idx != -1 {
 				o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
-				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...)
+				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...) // nolint
 			}
 		}
 	}
@@ -541,7 +545,7 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 		}
 		height := item.BlockHeight
 		if txIn.Finalised {
-			height = height + txIn.ConfirmationRequired
+			height += txIn.ConfirmationRequired
 		}
 		tx := stypes.NewObservedTx(
 			common.NewTx(txID, sender, to, item.Coins.NoneEmpty(), item.Gas, item.Memo),

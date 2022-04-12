@@ -109,6 +109,7 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 			}
 			var rpcRequest RPCRequest
 			err = json.Unmarshal(body, &rpcRequest)
+			c.Assert(err, IsNil)
 			if rpcRequest.Method == "eth_getBalance" {
 				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x3b9aca00"}`))
 				c.Assert(err, IsNil)
@@ -150,6 +151,10 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 				"logs":[],
 				"status":"0x1"
 			}}`))
+				c.Assert(err, IsNil)
+			}
+			if rpcRequest.Method == "eth_blockNumber" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x7"}`))
 				c.Assert(err, IsNil)
 			}
 			if rpcRequest.Method == "eth_getBlockByNumber" {
@@ -244,8 +249,9 @@ func (s *EthereumSuite) TestConvertSigningAmount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -277,8 +283,9 @@ func (s *EthereumSuite) TestClient(c *C) {
 	e2, err2 := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err2, IsNil)
@@ -359,8 +366,9 @@ func (s *EthereumSuite) TestGetAccount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -382,8 +390,9 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -608,8 +617,9 @@ func (s *EthereumSuite) TestGetAsgardAddresses(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -628,8 +638,9 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HttpRequestTimeout: time.Second,
+			StartBlockHeight:    1, // avoids querying thorchain for block height
+			HTTPRequestTimeout:  time.Second,
+			SuggestedFeeVersion: 1,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -640,6 +651,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	}()
 
 	asgardAddresses, err := e.getAsgardAddress()
+	c.Assert(err, IsNil)
 	pubkey := types2.GetRandomPubKey()
 	addr, err := pubkey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)

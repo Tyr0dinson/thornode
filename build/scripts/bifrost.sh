@@ -21,6 +21,7 @@ LTC_DISABLED="${LTC_DISABLED:=false}"
 # Ethereum chain config
 ETH_HOST="${ETH_HOST:=http://ethereum:8545}"
 ETH_START_BLOCK_HEIGHT="${ETH_START_BLOCK_HEIGHT:=0}"
+ETH_SUGGESTED_FEE_VERSION="${ETH_SUGGESTED_FEE_VERSION:=1}"
 
 # Dogecoin chain config
 DOGE_HOST="${DOGE_HOST:=dogecoin:18332}"
@@ -59,24 +60,24 @@ BLOCK_SCANNER_BACKOFF="${BLOCK_SCANNER_BACKOFF:=5s}"
 create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
 if [ -n "$PEER" ]; then
-	OLD_IFS=$IFS
-	IFS=","
-	SEED_LIST=""
-	for SEED in $PEER; do
-		# check if we have a hostname we extract the IP
-		if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
-			SEED=$(host "$SEED" | awk '{print $4}')
-		fi
-		SEED_ID=$(curl -m 10 -sL --fail "http://$SEED:6040/p2pid") || continue
-		SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
-		if [ -z "$SEED_LIST" ]; then
-			SEED_LIST="\"$SEED\""
-		else
-			SEED_LIST="$SEED_LIST,\"$SEED\""
-		fi
-	done
-	IFS=$OLD_IFS
-	PEER=$SEED_LIST
+  OLD_IFS=$IFS
+  IFS=","
+  SEED_LIST=""
+  for SEED in $PEER; do
+    # check if we have a hostname we extract the IP
+    if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+      SEED=$(host "$SEED" | awk '{print $4}')
+    fi
+    SEED_ID=$(curl -m 10 -sL --fail "http://$SEED:6040/p2pid") || continue
+    SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
+    if [ -z "$SEED_LIST" ]; then
+      SEED_LIST="\"$SEED\""
+    else
+      SEED_LIST="$SEED_LIST,\"$SEED\""
+    fi
+  done
+  IFS=$OLD_IFS
+  PEER=$SEED_LIST
 fi
 
 OBSERVER_PATH=$DB_PATH/bifrost/observer/
@@ -252,7 +253,8 @@ echo "{
           \"http_request_write_timeout\": \"30s\",
           \"max_http_request_retry\": 10,
           \"start_block_height\": $ETH_START_BLOCK_HEIGHT,
-          \"db_path\": \"$OBSERVER_PATH\"
+          \"db_path\": \"$OBSERVER_PATH\",
+          \"suggested_fee_version\": $ETH_SUGGESTED_FEE_VERSION
         }
       }
     ],

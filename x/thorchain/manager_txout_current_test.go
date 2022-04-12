@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -19,7 +20,7 @@ func (s TxOutStoreV85Suite) TestAddGasFees(c *C) {
 
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
-	mgr.gasMgr = newGasMgrV1(constAccessor, mgr.Keeper())
+	mgr.gasMgr = newGasMgrV81(constAccessor, mgr.Keeper())
 	err := addGasFees(ctx, mgr, tx)
 	c.Assert(err, IsNil)
 	c.Assert(mgr.GasMgr().GetGas(), HasLen, 1)
@@ -167,7 +168,8 @@ func (s TxOutStoreV85Suite) TestAddOutTxItem(c *C) {
 	result, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item)
 	c.Assert(result, Equals, true)
 	c.Assert(err, IsNil)
-	msgs, _ = txOutStore.GetOutboundItems(w.ctx)
+	msgs, err = txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
 	// this should be a mocknet address
 	c.Assert(msgs[0].ToAddress.String(), Equals, "qzg5mkh7rkw3y8kw47l3rrnvhmenvctmd5yg6hxe64")
 }
@@ -249,7 +251,8 @@ func (s TxOutStoreV85Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	c.Assert(msgs, HasLen, 0)
 	//  the outbound has been delayed
 	newCtx := w.ctx.WithBlockHeight(4)
-	msgs, _ = txOutStore.GetOutboundItems(newCtx)
+	msgs, err = txOutStore.GetOutboundItems(newCtx)
+	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
@@ -457,10 +460,36 @@ func (s TxOutStoreV85Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	c.Assert(msgs[1].VaultPubKey.Equals(acc1.PubKeySet.Secp256k1), Equals, true)
 }
 
+type TestCalcKeeper struct {
+	keeper.KVStoreDummy
+	value map[int64]cosmos.Uint
+	mimir map[string]int64
+}
+
+func (k *TestCalcKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (types.Pool, error) {
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceRune = cosmos.NewUint(90527581399649)
+	pool.BalanceAsset = cosmos.NewUint(1402011488988)
+	return pool, nil
+}
+
+func (k *TestCalcKeeper) GetMimir(ctx cosmos.Context, key string) (int64, error) {
+	return k.mimir[key], nil
+}
+
+func (k *TestCalcKeeper) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, error) {
+	val, ok := k.value[height]
+	if !ok {
+		return cosmos.ZeroUint(), nil
+	}
+	return val, nil
+}
+
 func (s TxOutStoreV85Suite) TestcalcTxOutHeight(c *C) {
 	keeper := &TestCalcKeeper{
-		value: make(map[int64]cosmos.Uint, 0),
-		mimir: make(map[string]int64, 0),
+		value: make(map[int64]cosmos.Uint),
+		mimir: make(map[string]int64),
 	}
 
 	keeper.mimir["MinTxOutVolumeThreshold"] = 25_00000000
@@ -477,7 +506,7 @@ func (s TxOutStoreV85Suite) TestcalcTxOutHeight(c *C) {
 
 	ctx, _ := setupManagerForTest(c)
 
-	txout := TxOutStorageV66{keeper: keeper}
+	txout := TxOutStorageV83{keeper: keeper}
 
 	toi := TxOutItem{
 		Coin: common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -591,7 +620,8 @@ func (s TxOutStoreV85Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	c.Assert(msgs, HasLen, 0)
 	//  the outbound has been delayed
 	newCtx := w.ctx.WithBlockHeight(4)
-	msgs, _ = txOutStore.GetOutboundItems(newCtx)
+	msgs, err = txOutStore.GetOutboundItems(newCtx)
+	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 2)
 	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(7999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))

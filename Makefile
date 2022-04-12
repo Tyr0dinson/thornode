@@ -49,7 +49,7 @@ test-coverage:
 	@go test ${TEST_BUILD_FLAGS} -v -coverprofile coverage.out ${TEST_DIR}
 
 coverage-report: test-coverage
-	@go tool cover -html=cover.txt
+	@go tool cover -html=coverage.out
 
 clear:
 	clear
@@ -67,6 +67,7 @@ format:
 	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -w
 
 lint-pre: protob
+	@./scripts/check-build-env.sh
 	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -d
 	@test -z "$(shell git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -l)"
 	@go mod verify
@@ -74,10 +75,13 @@ lint-pre: protob
 lint-handlers:
 	@./scripts/lint-handlers.bash
 
+lint-managers:
+	@./scripts/lint-managers.bash
+
 lint-erc20s:
 	@./scripts/lint-erc20s.bash
 
-lint: lint-pre lint-handlers lint-erc20s
+lint: lint-pre lint-handlers lint-managers lint-erc20s
 	@go run tools/analyze/main.go ./common/... ./constants/... ./x/...
 ifdef CI_MERGE_REQUEST_TARGET_BRANCH_NAME
 	trunk check --no-progress --monitor=false --upstream origin/$(CI_MERGE_REQUEST_TARGET_BRANCH_NAME)
@@ -85,7 +89,7 @@ else
 ifdef CI_PROJECT_ID
 	trunk check --no-progress --monitor=false --upstream origin/chaosnet-multichain
 else
-	trunk check --upstream origin/develop
+	trunk check --no-fix --upstream origin/develop
 endif
 endif
 

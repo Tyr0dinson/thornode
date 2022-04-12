@@ -30,8 +30,6 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor cons
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.47.0")) {
 		return refundTxV47(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return refundTxV1(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
 	}
 	return errBadVersion
 }
@@ -146,10 +144,6 @@ func subsidizePoolWithSlashBond(ctx cosmos.Context, ygg Vault, yggTotalStolen, s
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.74.0")) {
 		return subsidizePoolWithSlashBondV74(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return subsidizePoolWithSlashBondV46(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return subsidizePoolWithSlashBondV1(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
 	}
 	return errBadVersion
 }
@@ -261,14 +255,6 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.81.0")) {
 		return refundBondV81(ctx, tx, acc, amt, nodeAcc, mgr)
-	} else if version.GTE(semver.MustParse("0.80.0")) {
-		return refundBondV80(ctx, tx, amt, nodeAcc, mgr)
-	} else if version.GTE(semver.MustParse("0.76.0")) {
-		return refundBondV76(ctx, tx, amt, nodeAcc, mgr)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return refundBondV46(ctx, tx, amt, nodeAcc, mgr)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return refundBondV1(ctx, tx, amt, nodeAcc, mgr)
 	}
 	return errBadVersion
 }
@@ -477,8 +463,6 @@ func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedP
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.73.0")) {
 		return cyclePoolsV73(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return cyclePoolsV1(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr)
 	}
 	return errBadVersion
 }
@@ -490,7 +474,7 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 	minRuneDepth := cosmos.NewUint(uint64(minRunePoolDepth))
 
 	// quick func to check the validity of a pool
-	valid_pool := func(pool Pool) bool {
+	validPool := func(pool Pool) bool {
 		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() || pool.BalanceRune.LT(minRuneDepth) {
 			return false
 		}
@@ -498,7 +482,7 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 	}
 
 	// quick func to save a pool status and emit event
-	set_pool := func(pool Pool) error {
+	setPool := func(pool Pool) error {
 		poolEvt := NewEventPool(pool.Asset, pool.Status)
 		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
 			return fmt.Errorf("fail to emit pool event: %w", err)
@@ -526,14 +510,12 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 		case PoolAvailable:
 			// any available pools that have no asset, no rune, or less than
 			// min rune, moves back to staged status
-			if valid_pool(pool) {
+			if validPool(pool) {
 				availblePoolCount += 1
-			} else {
-				if !pool.Asset.IsGasAsset() {
-					pool.Status = PoolStaged
-					if err := set_pool(pool); err != nil {
-						return err
-					}
+			} else if !pool.Asset.IsGasAsset() {
+				pool.Status = PoolStaged
+				if err := setPool(pool); err != nil {
+					return err
 				}
 			}
 			if pool.BalanceRune.LT(choppingBlock.BalanceRune) || choppingBlock.IsEmpty() {
@@ -590,10 +572,8 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 				// remove asset from Vault
 				removeAssetFromVault(ctx, pool.Asset, mgr)
 
-			} else {
-				if valid_pool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
-					onDeck = pool
-				}
+			} else if validPool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
+				onDeck = pool
 			}
 		}
 	}
@@ -614,14 +594,14 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 
 	if !onDeck.IsEmpty() {
 		onDeck.Status = PoolAvailable
-		if err := set_pool(onDeck); err != nil {
+		if err := setPool(onDeck); err != nil {
 			return err
 		}
 	}
 
 	if !choppingBlock.IsEmpty() {
 		choppingBlock.Status = PoolStaged
-		if err := set_pool(choppingBlock); err != nil {
+		if err := setPool(choppingBlock); err != nil {
 			return err
 		}
 	}
@@ -740,56 +720,8 @@ func isTradingHalt(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.65.0")) {
 		return isTradingHaltV65(ctx, msg, mgr)
-	} else if version.GTE(semver.MustParse("0.63.0")) {
-		return isTradingHaltV63(ctx, msg, mgr)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return isTradingHaltV1(ctx, msg, mgr)
 	}
 	return false
-}
-
-func isTradingHaltV1(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
-	if isGlobalTradingHalted(ctx, mgr) {
-		return true
-	}
-	var targetChain common.Chain
-	switch m := msg.(type) {
-	case *MsgSwap:
-		sourceChain := m.Tx.Chain
-		// check the source chain is halted or not
-		if isChainTradingHalted(ctx, mgr, sourceChain) {
-			return true
-		}
-		if m.TargetAsset.IsSyntheticAsset() {
-			targetChain = m.TargetAsset.GetLayer1Asset().Chain
-		} else {
-			targetChain = m.TargetAsset.GetChain()
-		}
-	case *MsgAddLiquidity:
-		targetChain = m.Asset.GetChain()
-	default:
-		return false
-	}
-	return isChainTradingHalted(ctx, mgr, targetChain)
-}
-
-func isTradingHaltV63(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
-	if isGlobalTradingHalted(ctx, mgr) {
-		return true
-	}
-	switch m := msg.(type) {
-	case *MsgSwap:
-		source := common.EmptyChain
-		if len(m.Tx.Coins) > 0 {
-			source = m.Tx.Coins[0].Asset.GetLayer1Asset().Chain
-		}
-		target := m.TargetAsset.GetLayer1Asset().Chain
-		return isChainTradingHalted(ctx, mgr, source) || isChainTradingHalted(ctx, mgr, target)
-	case *MsgAddLiquidity:
-		return isChainTradingHalted(ctx, mgr, m.Asset.Chain)
-	default:
-		return false
-	}
 }
 
 func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
@@ -841,11 +773,45 @@ func isChainTradingHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) b
 
 func isChainHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.65.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.87.0")):
+		return isChainHaltedV87(ctx, mgr, chain)
+	case version.GTE(semver.MustParse("0.65.0")):
 		return isChainHaltedV65(ctx, mgr, chain)
-	} else {
-		return isChainHaltedV1(ctx, mgr, chain)
 	}
+	return false
+}
+
+// isChainHalted check whether the given chain is halt
+// chain halt is different as halt trading , when a chain is halt , there is no observation on the given chain
+// outbound will not be signed and broadcast
+func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
+	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
+	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+		ctx.Logger().Info("global is halt")
+		return true
+	}
+
+	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	if err == nil && haltChain > common.BlockHeight(ctx) {
+		ctx.Logger().Info("node global is halt")
+		return true
+	}
+
+	haltMimirKey := fmt.Sprintf("Halt%sChain", chain)
+	haltChain, err = mgr.Keeper().GetMimir(ctx, haltMimirKey)
+	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+		ctx.Logger().Info("chain is halt via admin or double-spend check", "chain", chain)
+		return true
+	}
+
+	solvencyHaltMimirKey := fmt.Sprintf("SolvencyHalt%sChain", chain)
+	haltChain, err = mgr.Keeper().GetMimir(ctx, solvencyHaltMimirKey)
+	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+		ctx.Logger().Info("chain is halt via solvency check", "chain", chain)
+		return true
+	}
+	return false
 }
 
 // isChainHalted check whether the given chain is halt
@@ -866,16 +832,6 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 
 	mimirKey := fmt.Sprintf("Halt%sChain", chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, mimirKey)
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
-		ctx.Logger().Info("chain is halt", "chain", chain)
-		return true
-	}
-	return false
-}
-
-func isChainHaltedV1(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
-	mimirKey := fmt.Sprintf("Halt%sChain", chain)
-	haltChain, err := mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
 		ctx.Logger().Info("chain is halt", "chain", chain)
 		return true
@@ -1078,9 +1034,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// emit vault metrics
-	asgards, err := mgr.Keeper().GetAsgardVaults(ctx)
-	if err != nil {
-	}
+	asgards, _ := mgr.Keeper().GetAsgardVaults(ctx)
 	for _, vault := range append(asgards, yggs...) {
 		if vault.Status != ActiveVault && vault.Status != RetiringVault {
 			continue
