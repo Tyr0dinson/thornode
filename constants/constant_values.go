@@ -15,6 +15,8 @@ const (
 	BlocksPerYear
 	OutboundTransactionFee
 	NativeTransactionFee
+	KillSwitchStart
+	KillSwitchDuration
 	PoolCycle
 	MinRunePoolDepth
 	MaxAvailablePools
@@ -86,6 +88,8 @@ var nameToString = map[ConstantName]string{
 	MinRunePoolDepth:               "MinRunePoolDepth",
 	MaxAvailablePools:              "MaxAvailablePools",
 	StagedPoolCost:                 "StagedPoolCost",
+	KillSwitchStart:                "KillSwitchStart",
+	KillSwitchDuration:             "KillSwitchDuration",
 	MinimumNodesForYggdrasil:       "MinimumNodesForYggdrasil",
 	MinimumNodesForBFT:             "MinimumNodesForBFT",
 	DesiredValidatorSet:            "DesiredValidatorSet",
