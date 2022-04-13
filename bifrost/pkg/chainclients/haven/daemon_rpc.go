@@ -189,7 +189,7 @@ func GetChainHeight() (int64, error) {
 		return 0, fmt.Errorf("failed to get chain height: %+v", err)
 	}
 
-	return chainInfo.Height, nil
+	return chainInfo.Height - 1, nil
 }
 
 func GetBlock(height int64) (Block, error) {
@@ -223,25 +223,28 @@ func GetBlock(height int64) (Block, error) {
 	return reply.Result, err
 }
 
-func GetTxes(txes []string) ([]RawTx, error) {
+// GetTxes returns the txs for given hashes. If any of the given hashes could not be found on the chain
+// it returns then in the missedTxs variable.
+func GetTxes(txes []string) (rawTxs []RawTx, missedTxs []string, err error) {
 
 	requestBody, err := json.Marshal(map[string]interface{}{"txs_hashes": txes, "decode_as_json": true})
 	if err != nil {
-		return nil, fmt.Errorf("getTxes() Marshaling request Error: %+v", err)
+		return
 	}
 
 	resp, err := http.Post(DaemonHost+"/get_transactions", "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
-		return nil, fmt.Errorf("getTxes() Http Error: %+v", err)
+		return
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("getTxes() Reading response Error: %+v", err)
+		return
 	}
 
 	txResult := struct {
+		Missed_Tx   []string
 		Status      string
 		Txs_As_Json []string
 		Txs         []struct {
@@ -249,27 +252,27 @@ func GetTxes(txes []string) ([]RawTx, error) {
 			Tx_Hash      string
 		}
 	}{}
-	var rawTxs []RawTx
 
 	// parse the returned resutl
 	err = json.Unmarshal(body, &txResult)
 	if err != nil {
-		return nil, fmt.Errorf("getTxes() Unmarshaling Response Error: %+v", err)
+		return
 	}
 
 	// parse each tx in the result and save
 	for ind, jsonTx := range txResult.Txs_As_Json {
 		var rawTx RawTx
-		err := json.Unmarshal([]byte(jsonTx), &rawTx)
+		err = json.Unmarshal([]byte(jsonTx), &rawTx)
 		if err != nil {
-			return nil, fmt.Errorf("getTxes() Unmarshaling Tx Error: %+v", err)
+			return
 		}
 		rawTx.Block_Height = txResult.Txs[ind].Block_Height
 		rawTx.Hash = txResult.Txs[ind].Tx_Hash
 		rawTxs = append(rawTxs, rawTx)
 	}
+	missedTxs = txResult.Missed_Tx
 
-	return rawTxs, err
+	return
 }
 
 func GetPoolTxs() ([]RawTx, error) {

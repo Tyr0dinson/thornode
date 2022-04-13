@@ -834,11 +834,13 @@ func (c *Client) confirmTx(txHash string) bool {
 
 	// then get raw tx and check if it has confirmations or not
 	// if no confirmation and not in mempool then invalid
-	var txHashes = make([]string, 0)
-	txHashes = append(txHashes, txHash)
-	txs, err := GetTxes(txHashes)
+	txs, missedTxs, err := GetTxes([]string{txHash})
 	if err != nil {
 		c.logger.Err(err).Msgf("Error Getting Tx: %s", txHash)
+		return false
+	}
+	// no such tx in the chain
+	if len(missedTxs) > 0 {
 		return false
 	}
 
@@ -948,7 +950,7 @@ func (c *Client) scanTxOuts() {
 			break
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 }
 
@@ -1068,8 +1070,8 @@ func (c *Client) extractTxs(block Block) (types.TxIn, error) {
 		Chain: c.GetChain(),
 	}
 
-	// get txs from daemon
-	txs, err := GetTxes(block.Tx_Hashes)
+	// get txs from daemon, we aren't interested if a given hash can't be found here.
+	txs, _, err := GetTxes(block.Tx_Hashes)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get txs from daemon: %w", err)
 	}
@@ -1165,8 +1167,19 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 
 	// retrieve the sender address
 	var sender string
-	if memo.GetType() == mem.TxAdd || memo.GetType() == mem.TxSwap {
+	if memo.GetType() == mem.TxAdd {
 		sender = memo.GetSender().String()
+	} else {
+		// dummy address
+		chainNetwork := common.GetCurrentChainNetwork()
+		switch chainNetwork {
+		case common.MockNet, common.MainNet:
+			sender = "hvxy6EXfx8fMxuiy71rNXD1DZA1he33dB2VqZKPZFqVtRvE1AUDMo865iY96CwpDMrDF5NcQ6FumH4kTmZej5cRn5scZCjb4r8"
+		case common.TestNet:
+			sender = "hvta8SzCkbTLNFDeJcRL51FrTci7YwGzLGHwJYukhCVAivU43WQVFde9c6n6WmZ8y5fDH3SwajsS5Yy3HUcfFCm63uF1eNspce"
+		case common.StageNet:
+			sender = "hvsaePXufZF2ny3fZ2khsQan33mzeoxyGRMyDWW2KUWZMZFP9pm8cuuQPxNu4XAPZXDo399D2dno9ipGxccoAk3raUcsCf9TBb2"
+		}
 	}
 
 	// all incomings must have a sender. All outgoings + internals should  be filtered in processOutgoing
@@ -1762,16 +1775,19 @@ func (c *Client) consolidateUTXOs(height int64) {
 func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 
 	var parsedTxExtra = make(map[byte][][]byte)
-
-	for ind := 0; ind < len(extra); ind++ {
+	// var ind uint32
+	len := len(extra)
+	c.logger.Info().Msgf("total extyra leng: %d ", len)
+	for ind := 0; ind < len; ind++ {
 
 		if extra[ind] == 0 {
 			// Padding
-			var len = int(extra[ind+1])
-			ind += len
+			ind++
+			ind += int(extra[ind])
 		} else if extra[ind] == 0x01 {
+			c.logger.Info().Msgf("txkey ")
 			// Pubkey - 32 byte key (fixed length)
-			if len(extra)-ind <= 32 {
+			if len-ind <= 32 {
 				return nil, fmt.Errorf("tx pubKey has insufficient length")
 			}
 			var ba = make([]byte, 32)
@@ -1780,42 +1796,42 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			ind += 32
 		} else if extra[ind] == 2 {
 			// Nonce
-			var len = int(extra[ind+1])
-			ind += len
+			ind++
+			ind += int(extra[ind])
 		} else if extra[ind] == 3 {
 			// Merge mining key
 			ind += 40
 		} else if extra[ind] == 4 {
+			c.logger.Info().Msgf("addinital pubkeys ")
 			// Additional pubkeys
-			ind += 32
+			ind++
+			ind += 32 * int(extra[ind])
 		} else if extra[ind] == 0xde {
+			c.logger.Info().Msgf("miner gate ")
 			// miner gate tag
-			var len = int(extra[ind+1])
-			ind += len
+			ind++
+			ind += int(extra[ind])
 		} else if extra[ind] == 0x17 {
 			// Offshore data
-			var length = int(extra[ind+1])
-			if len(extra)-ind <= length {
-				return nil, fmt.Errorf("offshore data has insufficient length")
-			}
-			var ba = make([]byte, length)
-			ba = extra[ind+2 : ind+2+length]
-			parsedTxExtra[0x17] = append(parsedTxExtra[0x17], ba)
-			ind += length
+			c.logger.Info().Msgf("offsorew data ")
+			ind++
+			ind += int(extra[ind])
 		} else if extra[ind] == 0x18 {
 			// Thorchain memo data
-			var length = int(extra[ind+1])
-			if len(extra)-ind <= length {
+			ind++
+			var length = int(extra[ind])
+			c.logger.Info().Msgf("memo len: %d, raw: %d", length, extra[ind])
+			if len-ind <= length {
 				return nil, fmt.Errorf("thorchain memo data has insufficient length")
 			}
 			var ba = make([]byte, length)
-			if length > 127 {
-				ba = extra[ind+3 : ind+3+length]
-			} else {
-				ba = extra[ind+2 : ind+2+length]
-			}
+			ba = extra[ind+2 : ind+2+length]
 			parsedTxExtra[0x18] = append(parsedTxExtra[0x18], ba)
-			ind += length
+			ind += length + 1 // we have 1 extra byte between the actual data an the lenght byte hence (2)
+			c.logger.Info().Msgf("ind after memo len: %d", ind)
+		} else {
+			c.logger.Info().Msgf("err ind: %d char: %d", ind, extra[ind])
+			return nil, fmt.Errorf("unknown tx extra tag. Parse Failed")
 		}
 	}
 

@@ -13,7 +13,7 @@ type AddLiquidityMemo struct {
 	Address              common.Address
 	AffiliateAddress     common.Address
 	AffiliateBasisPoints cosmos.Uint
-	Sender               common.Address
+	Sender               common.Address // only used for hvn/mnr chains
 }
 
 func (m AddLiquidityMemo) GetDestination() common.Address { return m.Address }
@@ -36,34 +36,49 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 	sender := common.NoAddress
 	affPts := cosmos.ZeroUint()
 	if len(parts) >= 3 && len(parts[2]) > 0 {
-		if keeper == nil {
-			addr, err = common.NewAddress(parts[2])
+		if asset.Chain == common.XHVChain {
+			if keeper == nil {
+				// extract then actual dest address
+				// thor address is 44 char fixed-string
+				addr, err = common.NewAddress(parts[2][:44])
+			} else {
+				// if the address isd haven + rune
+				if len(parts[2]) > 100 {
+					addr, err = FetchAddress(ctx, keeper, parts[2][:44], asset.Chain)
+				} else {
+					addr, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+				}
+			}
 		} else {
-			addr, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+			if keeper == nil {
+				addr, err = common.NewAddress(parts[2])
+			} else {
+				addr, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+			}
 		}
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
 	}
 
-	// add support appending the sending address into memo data
-	if len(parts) >= 4 && len(parts[3]) > 0 {
-		sender, err = common.NewAddress(parts[3])
+	// this sender will be populated for only haven/monero chains
+	if asset.Chain == common.XHVChain && len(parts[2]) > 100 {
+		sender, err = common.NewAddress(parts[2][44:])
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
 	}
 
-	if len(parts) > 4 && len(parts[4]) > 0 && len(parts[5]) > 0 {
+	if len(parts) > 4 && len(parts[3]) > 0 && len(parts[4]) > 0 {
 		if keeper == nil {
-			affAddr, err = common.NewAddress(parts[4])
+			affAddr, err = common.NewAddress(parts[3])
 		} else {
-			affAddr, err = FetchAddress(ctx, keeper, parts[4], common.THORChain)
+			affAddr, err = FetchAddress(ctx, keeper, parts[3], common.THORChain)
 		}
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
-		pts, err := strconv.ParseUint(parts[5], 10, 64)
+		pts, err := strconv.ParseUint(parts[4], 10, 64)
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
