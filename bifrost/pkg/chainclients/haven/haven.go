@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,36 +37,34 @@ import (
 
 // Client observes bitcoin chain and allows to sign and broadcast tx
 type Client struct {
-	logger                zerolog.Logger
-	cfg                   config.ChainConfiguration
-	walletAddr            common.Address
-	processedMemPool      map[string]bool
-	signedTxOut           map[string]TxOutWitness
-	signedTxOutDelete     map[string]int64
-	memPoolLock           *sync.Mutex
-	signedTxOutLock       *sync.Mutex
-	clientLock            *sync.Mutex
-	lastMemPoolScan       time.Time
-	currentBlockHeight    *atomic.Int64
-	blockScanner          *blockscanner.BlockScanner
-	blockMetaAccessor     BlockMetaAccessor
-	bridge                *thorclient.ThorchainBridge
-	wg                    *sync.WaitGroup
-	globalErrataQueue     chan<- types.ErrataBlock
-	globalSolvencyQueue   chan<- types.Solvency
-	asgardAddresses       []common.Address
-	nodePubKey            common.PubKey
-	lastAsgard            time.Time
-	asgardPassword        string
-	pkm                   pubkeymanager.PubKeyValidator
-	poolMgr               thorclient.PoolManager
-	consolidateInProgress *atomic.Bool
-	signingInProgress     *atomic.Bool
-	isYggLoggedIn         *atomic.Bool
-	stopScanTxOuts        *atomic.Bool
-	supportedAssets       []string
-	tssKm                 *tss.KeySign
-	client                wallet.Client
+	logger              zerolog.Logger
+	cfg                 config.ChainConfiguration
+	walletAddr          common.Address
+	processedMemPool    map[string]bool
+	signedTxOut         map[string]TxOutWitness
+	signedTxOutDelete   map[string]int64
+	memPoolLock         *sync.Mutex
+	signedTxOutLock     *sync.Mutex
+	clientLock          *sync.Mutex
+	lastMemPoolScan     time.Time
+	currentBlockHeight  *atomic.Int64
+	blockScanner        *blockscanner.BlockScanner
+	blockMetaAccessor   BlockMetaAccessor
+	bridge              *thorclient.ThorchainBridge
+	globalErrataQueue   chan<- types.ErrataBlock
+	globalSolvencyQueue chan<- types.Solvency
+	asgardAddresses     []common.Address
+	nodePubKey          common.PubKey
+	lastAsgard          time.Time
+	asgardPassword      string
+	pkm                 pubkeymanager.PubKeyValidator
+	poolMgr             thorclient.PoolManager
+	signingInProgress   *atomic.Bool
+	isYggLoggedIn       *atomic.Bool
+	stopScanTxOuts      *atomic.Bool
+	supportedAssets     []string
+	tssKm               *tss.KeySign
+	client              wallet.Client
 }
 
 type TxVout struct {
@@ -98,7 +95,6 @@ const (
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
 	AverageFeeRate        = uint64(314016568) / DecimalDiff // atomic units
-	maxUTXOsToSpend       = 20
 )
 
 // NewClient generates a new Client
@@ -193,29 +189,27 @@ func NewClient(
 	}
 
 	c := &Client{
-		logger:                log.Logger.With().Str("module", "haven").Logger(),
-		cfg:                   cfg,
-		bridge:                bridge,
-		pkm:                   pkm,
-		poolMgr:               poolMgr,
-		nodePubKey:            thorPubkey,
-		walletAddr:            common.Address(walletResp.Address),
-		memPoolLock:           &sync.Mutex{},
-		signedTxOutLock:       &sync.Mutex{},
-		clientLock:            &sync.Mutex{},
-		wg:                    &sync.WaitGroup{},
-		client:                client,
-		tssKm:                 tssKm,
-		supportedAssets:       []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
-		asgardPassword:        hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
-		processedMemPool:      make(map[string]bool),
-		consolidateInProgress: atomic.NewBool(false),
-		signingInProgress:     atomic.NewBool(false),
-		stopScanTxOuts:        atomic.NewBool(false),
-		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
-		signedTxOut:           make(map[string]TxOutWitness),
-		signedTxOutDelete:     make(map[string]int64),
-		currentBlockHeight:    atomic.NewInt64(0),
+		logger:             log.Logger.With().Str("module", "haven").Logger(),
+		cfg:                cfg,
+		bridge:             bridge,
+		pkm:                pkm,
+		poolMgr:            poolMgr,
+		nodePubKey:         thorPubkey,
+		walletAddr:         common.Address(walletResp.Address),
+		memPoolLock:        &sync.Mutex{},
+		signedTxOutLock:    &sync.Mutex{},
+		clientLock:         &sync.Mutex{},
+		client:             client,
+		tssKm:              tssKm,
+		supportedAssets:    []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
+		asgardPassword:     hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
+		processedMemPool:   make(map[string]bool),
+		signingInProgress:  atomic.NewBool(false),
+		stopScanTxOuts:     atomic.NewBool(false),
+		isYggLoggedIn:      atomic.NewBool(true), // we logged in to local wallet above
+		signedTxOut:        make(map[string]TxOutWitness),
+		signedTxOutDelete:  make(map[string]int64),
+		currentBlockHeight: atomic.NewInt64(0),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -257,8 +251,6 @@ func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	c.tssKm.Stop()
 	c.stopScanTxOuts.Store(true)
-	// wait for consolidate utxo to exit
-	c.wg.Wait()
 }
 
 // GetConfig - get the chain configuration
@@ -680,12 +672,6 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-	if !c.consolidateInProgress.Load() {
-		// try to consolidate UTXOs
-		c.wg.Add(1)
-		c.consolidateInProgress.Store(true)
-		go c.consolidateUTXOs(height)
-	}
 	return txIn, nil
 }
 
@@ -1621,171 +1607,10 @@ func (c *Client) isYggdrasil(key common.PubKey) bool {
 	return key.Equals(c.nodePubKey)
 }
 
-// getAllUtxos go through all the block meta in the local storage, it will spend all UTXOs in  block that might be evicted from local storage soon
-// it also try to spend enough UTXOs that can add up to more than the given total
-func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.TransferDetail, error) {
-
-	err := c.loginToWallet(pubKey)
-	if err != nil {
-		return nil, err
-	}
-	var result = make(map[string][]wallet.TransferDetail)
-
-	// get the all non-spent outs
-	c.clientLock.Lock()
-	defer c.clientLock.Unlock()
-
-	// refresh before checking for ouputs
-	var refresh *wallet.ResponseRefresh
-	for i := 0; i < 3; i++ {
-		refresh, err = c.client.Refresh(&wallet.RequestRefresh{})
-		if err != nil {
-			return result, fmt.Errorf("error when refresing wallet %w", err)
-		}
-		if refresh.BlocksFetched > 0 {
-			break
-		}
-		c.logger.Info().Msg(" didnt get new blocks, retrying..")
-		time.Sleep(1 * time.Second)
-	}
-	// we need to stop and return here, otherwise if we couldnt get new blocks
-	// wallet-rpc might return wrong "avaible" outputs. For example;
-	// it might still think that 1 spent output in the previous block is still avaible.
-	if refresh.BlocksFetched == 0 {
-		return result, fmt.Errorf("wallet doesnt have new blocks")
-	}
-
-	res, err := c.client.IncomingTransfers(&wallet.RequestIncomingTransfers{
-		TransferType: "available", // get only unspent outputs
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	for _, asset := range c.supportedAssets {
-
-		// filter by asset type and unlocked
-		var utxos []wallet.TransferDetail
-		for _, td := range res.Transfers {
-			if td.AssetType == asset && !td.Frozen && td.Unlocked {
-				utxos = append(utxos, td)
-			}
-		}
-
-		// spend UTXO older to younger
-		sort.SliceStable(utxos, func(i, j int) bool {
-			if utxos[i].BlockHeight < utxos[j].BlockHeight {
-				return true
-			} else if utxos[i].BlockHeight > utxos[j].BlockHeight {
-				return false
-			}
-			return utxos[i].GlobalIndex < utxos[j].GlobalIndex
-		})
-		result[asset] = utxos
-	}
-
-	return result, nil
-}
-
-// consolidateUTXOs only required when there is a new block
-func (c *Client) consolidateUTXOs(height int64) {
-	defer func() {
-		c.wg.Done()
-		c.consolidateInProgress.Store(false)
-	}()
-	nodeStatus, err := c.bridge.FetchNodeStatus()
-	if err != nil {
-		c.logger.Err(err).Msg("fail to get node status")
-		return
-	}
-	if nodeStatus != ttypes.NodeStatus_Active {
-		c.logger.Info().Msgf("node is not active , doesn't need to consolidate utxos")
-		return
-	}
-	vaults, err := c.bridge.GetAsgards()
-	if err != nil {
-		c.logger.Err(err).Msg("fail to get current asgards")
-		return
-	}
-
-	for _, vault := range vaults {
-
-		utxoMap, err := c.getUtxoToSpend(vault.PubKey)
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get utxos to spend")
-			continue
-		}
-
-		for a, utxos := range utxoMap {
-
-			// doesn't have enough UTXOs , don't need to consolidate
-			if int64(len(utxos)) < maxUTXOsToSpend {
-				continue
-			}
-			c.logger.Info().Msgf("have enough UTXOs(%d) for consolidation assset: %s", maxUTXOsToSpend, a)
-
-			// we will spend st least 1 more output then maxUTXOsToSpend/2
-			// because tx fee will be taken from an another output
-			var total uint64 = 0
-			for i := 0; i < maxUTXOsToSpend/2; i++ {
-				total += utxos[i].Amount
-			}
-
-			addr, err := common.PubKey(vault.Cryptonote).GetAddress(common.XHVChain)
-			if err != nil {
-				c.logger.Err(err).Msgf("fail to get XHV address for cn data: %s", vault.Cryptonote)
-				continue
-			}
-
-			asset, err := common.NewAsset("XHV." + a)
-			if err != nil {
-				c.logger.Err(err).Msgf("fail to create the asset: %v", err)
-				continue
-			}
-
-			txOutItem := types.TxOutItem{
-				Chain:       common.XHVChain,
-				ToAddress:   addr,
-				VaultPubKey: vault.PubKey,
-				Coins: common.Coins{
-					common.NewCoin(asset, cosmos.NewUint(uint64(total)/DecimalDiff)),
-				},
-				Memo:    mem.NewConsolidateMemo().String(),
-				MaxGas:  nil,
-				GasRate: int64(AverageFeeRate),
-			}
-			height, err := c.bridge.GetBlockHeight()
-			if err != nil {
-				c.logger.Err(err).Msg("fail to get THORChain block height")
-				continue
-			}
-			rawTx, err := c.SignTx(txOutItem, height)
-			if err != nil {
-				c.logger.Err(err).Msg("fail to sign consolidate txout item")
-				continue
-			}
-			if len(rawTx) == 0 {
-				// this will happen for asgard txs since tss already submits them.
-				c.logger.Info().Msgf("broadcast consolidate tx successfully")
-				continue
-			} else {
-				txID, err := c.BroadcastTx(txOutItem, rawTx)
-				if err != nil {
-					c.logger.Err(err).Msg("fail to broadcast consolidate tx")
-					continue
-				}
-				c.logger.Info().Msgf("broadcast consolidate tx successfully, hash: %s", txID)
-			}
-		}
-	}
-}
-
 func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 
 	var parsedTxExtra = make(map[byte][][]byte)
-	// var ind uint32
 	len := len(extra)
-	c.logger.Info().Msgf("total extyra leng: %d ", len)
 	for ind := 0; ind < len; ind++ {
 
 		if extra[ind] == 0 {
@@ -1793,7 +1618,6 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			ind++
 			ind += int(extra[ind])
 		} else if extra[ind] == 0x01 {
-			c.logger.Info().Msgf("txkey ")
 			// Pubkey - 32 byte key (fixed length)
 			if len-ind <= 32 {
 				return nil, fmt.Errorf("tx pubKey has insufficient length")
@@ -1810,33 +1634,28 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			// Merge mining key
 			ind += 40
 		} else if extra[ind] == 4 {
-			c.logger.Info().Msgf("addinital pubkeys ")
 			// Additional pubkeys
 			ind++
 			ind += 32 * int(extra[ind])
 		} else if extra[ind] == 0xde {
-			c.logger.Info().Msgf("miner gate ")
 			// miner gate tag
 			ind++
 			ind += int(extra[ind])
 		} else if extra[ind] == 0x17 {
 			// Offshore data
-			c.logger.Info().Msgf("offsorew data ")
 			ind++
 			ind += int(extra[ind])
 		} else if extra[ind] == 0x18 {
 			// Thorchain memo data
 			ind++
 			var length = int(extra[ind])
-			c.logger.Info().Msgf("memo len: %d, raw: %d", length, extra[ind])
 			if len-ind <= length {
 				return nil, fmt.Errorf("thorchain memo data has insufficient length")
 			}
 			var ba = make([]byte, length)
 			ba = extra[ind+2 : ind+2+length]
 			parsedTxExtra[0x18] = append(parsedTxExtra[0x18], ba)
-			ind += length + 1 // we have 1 extra byte between the actual data an the lenght byte hence (2)
-			c.logger.Info().Msgf("ind after memo len: %d", ind)
+			ind += length + 1 // we have 1 extra byte between the actual data an the lenght byte hence (ind + 2)
 		} else {
 			c.logger.Info().Msgf("err ind: %d char: %d", ind, extra[ind])
 			return nil, fmt.Errorf("unknown tx extra tag. Parse Failed")

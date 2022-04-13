@@ -297,6 +297,7 @@ func (s *HavenSuite) TestParseTxExtra(c *C) {
 
 	extra, err := s.client.parseTxExtra(tx.Extra)
 	c.Assert(err, IsNil)
+	c.Assert(hex.EncodeToString(extra[0x01][0]), Equals, "c105d0cd55cd52f6c2648aadb5ac7bbcfc963158bcc443a192035306d7aaafe6")
 	c.Assert(string(extra[0x18][0]), Equals, "ADD:XHV.XHV:tthor1z63f3mzwv3g75az80xwmhrawdqcjpaekk0kd54:hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg")
 }
 
