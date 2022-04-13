@@ -58,7 +58,6 @@ type Client struct {
 	asgardAddresses       []common.Address
 	nodePubKey            common.PubKey
 	lastAsgard            time.Time
-	lastConsolidateHeight *atomic.Int64
 	asgardPassword        string
 	pkm                   pubkeymanager.PubKeyValidator
 	poolMgr               thorclient.PoolManager
@@ -216,7 +215,6 @@ func NewClient(
 		isYggLoggedIn:         atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:           make(map[string]TxOutWitness),
 		signedTxOutDelete:     make(map[string]int64),
-		lastConsolidateHeight: atomic.NewInt64(0),
 		currentBlockHeight:    atomic.NewInt64(0),
 	}
 
@@ -682,14 +680,11 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-	// give wallet some time realize that it actually consolidated.
-	if height > c.lastConsolidateHeight.Load()+10 {
-		if !c.consolidateInProgress.Load() {
-			// try to consolidate UTXOs
-			c.wg.Add(1)
-			c.consolidateInProgress.Store(true)
-			go c.consolidateUTXOs(height)
-		}
+	if !c.consolidateInProgress.Load() {
+		// try to consolidate UTXOs
+		c.wg.Add(1)
+		c.consolidateInProgress.Store(true)
+		go c.consolidateUTXOs(height)
 	}
 	return txIn, nil
 }
@@ -1634,24 +1629,39 @@ func (c *Client) getUtxoToSpend(pubKey common.PubKey) (map[string][]wallet.Trans
 	if err != nil {
 		return nil, err
 	}
+	var result = make(map[string][]wallet.TransferDetail)
 
 	// get the all non-spent outs
 	c.clientLock.Lock()
+	defer c.clientLock.Unlock()
 
 	// refresh before checking for ouputs
-	// we dont care what this returns, the next call is
-	// what we want.
-	c.client.Refresh(&wallet.RequestRefresh{})
+	var refresh *wallet.ResponseRefresh
+	for i := 0; i < 3; i++ {
+		refresh, err = c.client.Refresh(&wallet.RequestRefresh{})
+		if err != nil {
+			return result, fmt.Errorf("error when refresing wallet %w", err)
+		}
+		if refresh.BlocksFetched > 0 {
+			break
+		}
+		c.logger.Info().Msg(" didnt get new blocks, retrying..")
+		time.Sleep(1 * time.Second)
+	}
+	// we need to stop and return here, otherwise if we couldnt get new blocks
+	// wallet-rpc might return wrong "avaible" outputs. For example;
+	// it might still think that 1 spent output in the previous block is still avaible.
+	if refresh.BlocksFetched == 0 {
+		return result, fmt.Errorf("wallet doesnt have new blocks")
+	}
 
 	res, err := c.client.IncomingTransfers(&wallet.RequestIncomingTransfers{
 		TransferType: "available", // get only unspent outputs
 	})
-	c.clientLock.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	var result = make(map[string][]wallet.TransferDetail)
 	for _, asset := range c.supportedAssets {
 
 		// filter by asset type and unlocked
@@ -1712,15 +1722,14 @@ func (c *Client) consolidateUTXOs(height int64) {
 			if int64(len(utxos)) < maxUTXOsToSpend {
 				continue
 			}
+			c.logger.Info().Msgf("have enough UTXOs(%d) for consolidation assset: %s", maxUTXOsToSpend, a)
 
+			// we will spend st least 1 more output then maxUTXOsToSpend/2
+			// because tx fee will be taken from an another output
 			var total uint64 = 0
-			for _, item := range utxos {
-				total += item.Amount
+			for i := 0; i < maxUTXOsToSpend/2; i++ {
+				total += utxos[i].Amount
 			}
-			// subtract the fee from total input amount so that wallet doesnt try
-			// to include another output to get the fee.
-			feeRate := (AverageFeeRate * DecimalDiff) * uint64(2)
-			total -= feeRate
 
 			addr, err := common.PubKey(vault.Cryptonote).GetAddress(common.XHVChain)
 			if err != nil {
@@ -1743,7 +1752,7 @@ func (c *Client) consolidateUTXOs(height int64) {
 				},
 				Memo:    mem.NewConsolidateMemo().String(),
 				MaxGas:  nil,
-				GasRate: int64(AverageFeeRate * 2),
+				GasRate: int64(AverageFeeRate),
 			}
 			height, err := c.bridge.GetBlockHeight()
 			if err != nil {
@@ -1755,7 +1764,6 @@ func (c *Client) consolidateUTXOs(height int64) {
 				c.logger.Err(err).Msg("fail to sign consolidate txout item")
 				continue
 			}
-			c.lastConsolidateHeight.Store(height)
 			if len(rawTx) == 0 {
 				// this will happen for asgard txs since tss already submits them.
 				c.logger.Info().Msgf("broadcast consolidate tx successfully")
@@ -1766,7 +1774,7 @@ func (c *Client) consolidateUTXOs(height int64) {
 					c.logger.Err(err).Msg("fail to broadcast consolidate tx")
 					continue
 				}
-				c.logger.Info().Msgf("broadcast consolidate tx successfully,hash:%s", txID)
+				c.logger.Info().Msgf("broadcast consolidate tx successfully, hash: %s", txID)
 			}
 		}
 	}
