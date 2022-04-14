@@ -144,7 +144,6 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 type THORChainRouterTransferOutAndCall struct {
 	Vault        ecommon.Address
 	Target       ecommon.Address
-	Asset        ecommon.Address
 	Amount       *big.Int
 	FinalAsset   ecommon.Address
 	To           ecommon.Address
@@ -349,17 +348,9 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Error().Msgf("%s is not an outbound memo", transferOutAndCall.Memo)
 				continue
 			}
-			ethAsset, err := scp.assetResolver(transferOutAndCall.Asset.String())
-			if err != nil {
-				scp.logger.Err(err).Msg("fail to get asset from token address")
-				continue
-			}
-			if ethAsset.IsEmpty() {
-				continue
-			}
-			decimals := scp.decimalResolver(transferOutAndCall.Asset.String())
+			decimals := scp.decimalResolver(ethToken)
 			txInItem.Coins = common.Coins{
-				common.NewCoin(ethAsset, scp.amtConverter(transferOutAndCall.Asset.String(), transferOutAndCall.Amount)).WithDecimals(decimals),
+				common.NewCoin(common.ETHAsset, scp.amtConverter(ethToken, transferOutAndCall.Amount)).WithDecimals(decimals),
 			}
 			aggregatorAddr, err := common.NewAddress(transferOutAndCall.Target.String())
 			if err != nil {
