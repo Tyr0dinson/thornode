@@ -134,7 +134,7 @@ func (kg *KeyGen) GenerateNewKey(pKeys common.PubKeys) (common.PubKeySet, types.
 	return common.NewPubKeySet(cpk, cpk), blame, nil
 }
 
-func (kg *KeyGen) GenerateNewMnKey(pKeys common.PubKeys, rpcAddress string) (string, string, types.Blame, error) {
+func (kg *KeyGen) GenerateNewMnKey(pKeys common.PubKeys, keygenHeight, rpcAddress string) (string, string, types.Blame, error) {
 	// No need to do key gen
 	if len(pKeys) == 0 {
 		return "", "", types.Blame{}, nil
@@ -144,8 +144,9 @@ func (kg *KeyGen) GenerateNewMnKey(pKeys common.PubKeys, rpcAddress string) (str
 		keys = append(keys, item.String())
 	}
 	keyGenReq := mnTssKeygen.Request{
-		Keys:       keys,
-		RpcAddress: rpcAddress,
+		Keys:         keys,
+		RpcAddress:   rpcAddress,
+		KeygenHeight: keygenHeight,
 	}
 	currentVersion := kg.getVersion()
 	// get current THORChain block height

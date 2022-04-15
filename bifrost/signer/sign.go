@@ -295,7 +295,11 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 				}
 
 				// generate keys for haven/monero
-				poolAddress, viewKey, blame, err := s.tssKeygen.GenerateNewMnKey(keygenReq.GetMembers(), s.xhvWalletHost)
+				poolAddress, viewKey, blame, err := s.tssKeygen.GenerateNewMnKey(
+					keygenReq.GetMembers(),
+					s.xhvWalletHost,
+					strconv.FormatInt(keygenBlock.Height, 10),
+				)
 				if !blame.IsEmpty() {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)
 					s.logger.Error().Err(err).Msg("Blame")
@@ -340,6 +344,16 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, cnDat
 	for name, chain := range s.chains {
 		if !chain.GetConfig().OptToRetire {
 			chains = append(chains, name)
+		}
+	}
+
+	// set the wallet for haven chain
+	if len(cnData) > 0 {
+		i, ok := s.chains[common.XHVChain].(interface {
+			SetAsgardWallet(keygenHeight int64, pk common.PubKey)
+		})
+		if ok {
+			i.SetAsgardWallet(height, poolPk)
 		}
 	}
 
