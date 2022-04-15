@@ -297,8 +297,8 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 				// generate keys for haven/monero
 				poolAddress, viewKey, blame, err := s.tssKeygen.GenerateNewMnKey(
 					keygenReq.GetMembers(),
-					s.xhvWalletHost,
 					strconv.FormatInt(keygenBlock.Height, 10),
+					s.xhvWalletHost,
 				)
 				if !blame.IsEmpty() {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)
