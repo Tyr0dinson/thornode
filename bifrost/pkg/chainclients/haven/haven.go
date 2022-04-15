@@ -201,6 +201,7 @@ func NewClient(
 		memPoolLock:        &sync.Mutex{},
 		signedTxOutLock:    &sync.Mutex{},
 		clientLock:         &sync.Mutex{},
+		asgarNamesLock:     &sync.Mutex{},
 		client:             client,
 		tssKm:              tssKm,
 		supportedAssets:    []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
