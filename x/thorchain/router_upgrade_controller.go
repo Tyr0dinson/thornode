@@ -10,7 +10,6 @@ import (
 
 const (
 	MimirRecallFund      = `MimirRecallFund`
-	MimirWithdrawUSDT    = `MimirWithdrawUSDT`
 	MimirUpgradeContract = `MimirUpgradeContract`
 )
 
