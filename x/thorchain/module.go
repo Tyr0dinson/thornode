@@ -174,7 +174,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 
 	// /////////////////////////////////////////////////////////////////
 	// set historical info for cosmos staking. This is utilized by IBC
-	if version.GTE(semver.MustParse("1.84.0")) {
+	if version.GTE(semver.MustParse("1.88.0")) {
 		header := ctx.BlockHeader()
 		validators := make([]stakingtypes.Validator, 0)
 		nas, err := am.mgr.Keeper().ListActiveValidators(ctx)
