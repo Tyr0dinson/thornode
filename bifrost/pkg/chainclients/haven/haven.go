@@ -324,11 +324,12 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 	})
 	if err != nil {
 		c.logger.Error().Msgf("fail go check for logged in address: %w", err)
-	}
-	// TODO: not a good idea to calculate the address each time.
-	localAddr, _ := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, pk))
-	if adrResp.Address == localAddr.String() {
-		return nil
+	} else {
+		// TODO: not a good idea to calculate the address each time.
+		localAddr, _ := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, pk))
+		if adrResp.Address == localAddr.String() {
+			return nil
+		}
 	}
 
 	// open the wallet if not
