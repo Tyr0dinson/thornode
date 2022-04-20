@@ -61,7 +61,6 @@ type Client struct {
 	pkm                 pubkeymanager.PubKeyValidator
 	poolMgr             thorclient.PoolManager
 	signingInProgress   *atomic.Bool
-	isYggLoggedIn       *atomic.Bool
 	stopScanTxOuts      *atomic.Bool
 	currentBlockHeight  *atomic.Int64
 	supportedAssets     []string
@@ -209,7 +208,6 @@ func NewClient(
 		processedMemPool:   make(map[string]bool),
 		signingInProgress:  atomic.NewBool(false),
 		stopScanTxOuts:     atomic.NewBool(false),
-		isYggLoggedIn:      atomic.NewBool(true), // we logged in to local wallet above
 		signedTxOut:        make(map[string]TxOutWitness),
 		signedTxOutDelete:  make(map[string]int64),
 		asgarNames:         make(map[common.PubKey]string),
@@ -291,52 +289,18 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	return common.Account{}, nil
 }
 
-func (c *Client) loginToLocalWallet() error {
-
-	if c.isYggLoggedIn.Load() {
-		return nil // we alreay logged in to ygg
-	}
-
+func (c *Client) openWallet(walletName, password string) error {
 	c.clientLock.Lock()
 	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
 		Filename: c.walletAddr.String(),
 		Password: c.cfg.Password,
 	})
-	if err == nil {
-		c.isYggLoggedIn.Store(true)
-	}
-
-	return err
-}
-
-func (c *Client) loginToAsgardWallet(pkey common.PubKey) error {
-
-	if !c.isYggLoggedIn.Load() {
-		return nil // we alreay logged in to asgard
-	}
-
-	c.clientLock.Lock()
-	c.asgarNamesLock.Lock()
-	defer c.asgarNamesLock.Unlock()
-	defer c.clientLock.Unlock()
-	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
-		Filename: c.nodePubKey.String() + "-" + c.asgarNames[pkey] + ".mo",
-		Password: c.asgardPassword,
-	})
-	if err == nil {
-		c.isYggLoggedIn.Store(false)
-	}
-
-	return err
-}
-
-func (c *Client) restoreStateToAsgardWallet(pk common.PubKey) {
-	c.isYggLoggedIn.Store(true) // to force it to actualy login
-	err := c.loginToAsgardWallet(pk)
 	if err != nil {
-		c.logger.Err(err).Msg("fail to restore state to asgard wallet")
+		return err
 	}
+
+	return nil
 }
 
 func (c *Client) SetAsgardWallet(keygenHeight int64, pk common.PubKey) {
@@ -345,19 +309,38 @@ func (c *Client) SetAsgardWallet(keygenHeight int64, pk common.PubKey) {
 	c.asgarNames[pk] = strconv.FormatInt(keygenHeight, 10)
 }
 
-func (c *Client) loginToWallet(pkey common.PubKey) error {
+// loginToWallet logs into wallet with a given pubKey. `fromSignTx` must be false
+// for all calls to the function outside of signTx().
+func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 
-	if c.signingInProgress.Load() {
-		// cant change the wallet while signing is in progress
+	// cant login to wallet while signing is in progress
+	if !fromSignTx && c.signingInProgress.Load() {
 		return fmt.Errorf("cant login to wallet. Signing is in progress")
 	}
 
-	if c.isYggdrasil(pkey) {
-		err := c.loginToLocalWallet()
+	// check whether we already logged into the wallet
+	adrResp, err := c.client.GetAddress(&wallet.RequestGetAddress{
+		AccountIndex: 0,
+	})
+	if err != nil {
+		c.logger.Error().Msgf("fail go check for logged in address: %w", err)
+	}
+	// TODO: not a good idea to calculate the address each time.
+	localAddr, _ := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, pk))
+	if adrResp.Address == localAddr.String() {
+		return nil
+	}
+
+	// open the wallet if not
+	if c.isYggdrasil(pk) {
+		err := c.openWallet(c.walletAddr.String(), c.cfg.Password)
 		if err != nil {
 			return err
 		}
+		c.logger.Info().Msgf("Switched wallet to yggrasil %s", c.walletAddr.String())
 	} else {
+
+		// check whether the node is active or not
 		nodeStatus, err := c.bridge.FetchNodeStatus()
 		if err != nil {
 			return err
@@ -366,10 +349,16 @@ func (c *Client) loginToWallet(pkey common.PubKey) error {
 			return fmt.Errorf("node is not active. No asgard wallet avaible")
 		}
 
-		err = c.loginToAsgardWallet(pkey)
+		// get the wallet name
+		c.asgarNamesLock.Lock()
+		defer c.asgarNamesLock.Unlock()
+		asgardWalletName := c.nodePubKey.String() + "-" + c.asgarNames[pk] + ".mo"
+
+		err = c.openWallet(asgardWalletName, c.asgardPassword)
 		if err != nil {
 			return err
 		}
+		c.logger.Info().Msgf("Switched wallet to asgard %s", asgardWalletName)
 	}
 	return nil
 }
@@ -386,7 +375,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 	}
 
 	//login to wallet
-	err := c.loginToWallet(pkey)
+	err := c.loginToWallet(pkey, false)
 	if err != nil {
 		return acct, fmt.Errorf("fail to login to wallet: %w", err)
 	}
@@ -1435,10 +1424,10 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	var vaultType ttypes.VaultType = ttypes.VaultType_YggdrasilVault
 	if c.isYggdrasil(tx.VaultPubKey) {
 		// we are the one who signing this tx.
-		c.logger.Info().Msgf("Creating an outbound tx Amount: %d %s for %s", amount, outputAsset, tx.ToAddress.String())
+		c.logger.Info().Msgf("Creating an outbound tx from yggrasil Amount: %d %s for %s", amount, outputAsset, tx.ToAddress.String())
 
-		// try to login to wallet
-		if err := c.loginToLocalWallet(); err != nil {
+		// try to login wallet
+		if err := c.loginToWallet(tx.VaultPubKey, true); err != nil {
 			return nil, fmt.Errorf("fail to login to wallet: %w", err)
 		}
 
@@ -1468,7 +1457,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 				c.logger.Warn().Msgf("unlock balance %d is not enough, the wallet end may be slow", balance.UnlockedBalance)
 			}
 		}
-		if counter >= 10 {
+		if counter >= 10 && totalConfirmed == 0 {
 			return nil, errors.New("not enough fund in wallet after 10 trial, failing")
 		}
 
@@ -1497,9 +1486,9 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			vaultType = ttypes.VaultType_AsgardVault
 		}
 
-		if isAsgard && isMember {
+		if isMember {
 			sign = true
-			// close the asgard wallet if open
+			// close any open wallet, since MSS will try to login itself.
 			c.clientLock.Lock()
 			c.client.CloseWallet()
 			c.clientLock.Unlock()
@@ -1511,28 +1500,18 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 				return nil, err
 			}
 			txKey, txID, err = c.tssKm.RemoteSignMn(msg, tx.VaultPubKey.String(), keygenHeight, c.cfg.WalletRPCHost)
-			// TSS closes the wallet afterwards so login back in
-			// to preserve the state of wallet login logic.
-			c.restoreStateToAsgardWallet(tx.VaultPubKey)
+			// login back to closed wallet above.
+			c.loginToWallet(tx.VaultPubKey, true)
 			if err != nil {
 				return nil, err
 			}
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
 			// as well check whether it is legit or not.
-
-			// login to new wallet if this was a migrate tx
-			memo, _ = mem.ParseMemo(common.LatestVersion, tx.Memo)
-			if memo.GetType() == mem.TxMigrate {
-				c.restoreStateToAsgardWallet(common.PubKey(tx.ToAddress))
-				c.asgarNamesLock.Lock()
-				delete(c.asgarNames, tx.VaultPubKey) // delete the old wallet login.
-				c.asgarNamesLock.Unlock()
-			}
 		}
 	}
 
-	// save to be sent from FetchTxs()
+	// save to be processed as outgoing
 	c.signedTxOutLock.Lock()
 	defer c.signedTxOutLock.Unlock()
 	wtx := TxOutWitness{
