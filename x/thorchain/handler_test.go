@@ -8,20 +8,32 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/store"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	capabilitykeeper "github.com/cosmos/cosmos-sdk/x/capability/keeper"
+	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v2/modules/apps/transfer/keeper"
+	ibctransfertypes "github.com/cosmos/ibc-go/v2/modules/apps/transfer/types"
+	channelkeeper "github.com/cosmos/ibc-go/v2/modules/core/04-channel/keeper"
+	portkeeper "github.com/cosmos/ibc-go/v2/modules/core/05-port/keeper"
+	porttypes "github.com/cosmos/ibc-go/v2/modules/core/05-port/types"
+	ibchost "github.com/cosmos/ibc-go/v2/modules/core/24-host"
+	ibckeeper "github.com/cosmos/ibc-go/v2/modules/core/keeper"
 	"github.com/tendermint/tendermint/libs/log"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 	. "gopkg.in/check.v1"
 
+	"github.com/cosmos/ibc-go/v2/modules/apps/transfer"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -71,7 +83,9 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	keyStake := cosmos.NewKVStoreKey(stakingtypes.StoreKey)
 	keyParams := cosmos.NewKVStoreKey(paramstypes.StoreKey)
 	tkeyParams := cosmos.NewTransientStoreKey(paramstypes.TStoreKey)
-
+	keys := cosmos.NewKVStoreKeys(
+		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey, paramstypes.StoreKey,
+	)
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db)
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
@@ -87,11 +101,16 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	memKeys := sdk.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
+	capabilityKeeper := capabilitykeeper.NewKeeper(marshaler, keys[capabilitytypes.StoreKey], memKeys[capabilitytypes.MemStoreKey])
+	scopedTransferKeeper := capabilityKeeper.ScopeToModule(ibctransfertypes.ModuleName)
+	scopedIBCKeeper := capabilityKeeper.ScopeToModule(ibchost.ModuleName)
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
+		ibctransfertypes.ModuleName:    {},
 		ModuleName:                     {authtypes.Minter, authtypes.Burner},
 		AsgardName:                     {},
 		BondName:                       {},
@@ -106,6 +125,31 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	sk := stakingkeeper.NewKeeper(
 		marshaler, keyStake, ak, bk, pk.Subspace(stakingtypes.ModuleName),
 	)
+
+	space := pk.Subspace(ibctransfertypes.ModuleName)
+	params := ibctransfertypes.DefaultParams()
+	pair := params.ParamSetPairs()
+	kt := paramstypes.NewKeyTable(pair...)
+	space = space.WithKeyTable(kt)
+
+	ibck := ibckeeper.NewKeeper(marshaler, keys[ibchost.StoreKey], space, sk, upgradekeeper.Keeper{}, scopedIBCKeeper)
+	// space, _ := pk.GetSubspace(ibctransfertypes.ModuleName)
+	ibctransferk := ibctransferkeeper.NewKeeper(
+		marshaler,
+		keys[ibctransfertypes.StoreKey],
+		space,
+		channelkeeper.Keeper{},
+		&portkeeper.Keeper{},
+		ak,
+		bk,
+		scopedTransferKeeper,
+	)
+	transferModule := transfer.NewAppModule(ibctransferk)
+
+	// Create static IBC router, add transfer route, then set and seal it
+	ibcRouter := porttypes.NewRouter()
+	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferModule)
+	ibck.SetRouter(ibcRouter)
 
 	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
@@ -123,7 +167,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		TransactionFeeRate: 6423600,
 	}), IsNil)
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, marshaler, bk, ak, sk, keyThorchain)
+	mgr := NewManagers(k, marshaler, bk, ak, sk, ibctransferk, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
 	return ctx, mgr

@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type HandlerMimirSuite struct{}
@@ -72,4 +73,27 @@ func (s *HandlerMimirSuite) TestHandle(c *C) {
 	val, err = keeper.GetMimir(ctx, "hello")
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(-1))
+}
+
+func (s *HandlerMimirSuite) TestHandleIBC(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	handler := NewMimirHandler(mgr)
+
+	addr, err := cosmos.AccAddressFromBech32(ADMINS[0])
+	c.Assert(err, IsNil)
+
+	msg := NewMsgMimir(constants.IBCSendEnabled.String(), 1, addr)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+	params := mgr.IBCKeeper().GetParams(ctx)
+	c.Check(params.SendEnabled, Equals, false)
+	c.Check(params.ReceiveEnabled, Equals, true)
+
+	msg = NewMsgMimir(constants.IBCRecieveEnabled.String(), 1, addr)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+	params = mgr.IBCKeeper().GetParams(ctx)
+	c.Check(params.SendEnabled, Equals, false)
+	c.Check(params.ReceiveEnabled, Equals, false)
 }

@@ -249,7 +249,7 @@ func New(
 		ibc.NewAppModule(app.IBCKeeper),
 		params.NewAppModule(app.ParamsKeeper),
 		transferModule,
-		thorchain.NewAppModule(app.thorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.StakingKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled),
+		thorchain.NewAppModule(app.thorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.StakingKeeper, app.TransferKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled),
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are

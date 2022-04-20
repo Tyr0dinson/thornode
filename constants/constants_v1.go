@@ -10,6 +10,8 @@ func NewConstantValue010() *ConstantVals {
 			OutboundTransactionFee:         2_000000,           // A 0.02 Rune fee on all swaps and withdrawals
 			NativeTransactionFee:           2_000000,           // A 0.02 Rune fee on all on chain txs
 			PoolCycle:                      43200,              // Make a pool available every 3 days
+			IBCSendEnabled:                 0,                  // enable IBC send
+			IBCRecieveEnabled:              0,                  // enable IBC receive
 			StagedPoolCost:                 10_00000000,        // amount of rune to take from a staged pool on every pool cycle
 			KillSwitchStart:                0,                  // block height to start the kill switch of BEP2/ERC20 old RUNE
 			KillSwitchDuration:             5256000,            // number of blocks until swith no longer works

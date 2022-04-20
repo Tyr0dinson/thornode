@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
+	ibctransfertypes "github.com/cosmos/ibc-go/v2/modules/apps/transfer/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -80,6 +81,8 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	ctx.Logger().Info("handleMsgMimir request", "node", msg.Signer, "key", msg.Key, "value", msg.Value)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.88.0")):
+		return h.handleV88(ctx, msg)
 	case version.GTE(semver.MustParse("1.87.0")):
 		return h.handleV87(ctx, msg)
 	case version.GTE(semver.MustParse("0.81.0")):
@@ -89,7 +92,7 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	return errBadVersion
 }
 
-func (h MimirHandler) handleV87(ctx cosmos.Context, msg MsgMimir) error {
+func (h MimirHandler) handleV88(ctx cosmos.Context, msg MsgMimir) error {
 	if h.isAdmin(msg.Signer) {
 		if msg.Value < 0 {
 			_ = h.mgr.Keeper().DeleteMimir(ctx, msg.Key)
@@ -101,7 +104,6 @@ func (h MimirHandler) handleV87(ctx cosmos.Context, msg MsgMimir) error {
 		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
 			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
-
 	} else {
 		nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)
 		if err != nil {
@@ -146,6 +148,23 @@ func (h MimirHandler) handleV87(ctx cosmos.Context, msg MsgMimir) error {
 		if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
+	}
+
+	switch msg.Key {
+	case constants.IBCSendEnabled.String(), constants.IBCRecieveEnabled.String():
+		ibcSend := fetchConfigInt64(ctx, h.mgr, constants.IBCSendEnabled)
+		ibcRecieve := fetchConfigInt64(ctx, h.mgr, constants.IBCRecieveEnabled)
+
+		enableSend := true
+		if ibcSend > 0 {
+			enableSend = false
+		}
+		enableReceive := true
+		if ibcRecieve > 0 {
+			enableReceive = false
+		}
+		params := ibctransfertypes.NewParams(enableSend, enableReceive)
+		h.mgr.IBCKeeper().SetParams(ctx, params)
 	}
 
 	return nil

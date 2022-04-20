@@ -15,6 +15,8 @@ const (
 	BlocksPerYear
 	OutboundTransactionFee
 	NativeTransactionFee
+	IBCSendEnabled
+	IBCRecieveEnabled
 	KillSwitchStart
 	KillSwitchDuration
 	PoolCycle
@@ -87,6 +89,8 @@ var nameToString = map[ConstantName]string{
 	MinRunePoolDepth:               "MinRunePoolDepth",
 	MaxAvailablePools:              "MaxAvailablePools",
 	StagedPoolCost:                 "StagedPoolCost",
+	IBCSendEnabled:                 "IBCSendEnabled",
+	IBCRecieveEnabled:              "IBCRecieveEnabled",
 	KillSwitchStart:                "KillSwitchStart",
 	KillSwitchDuration:             "KillSwitchDuration",
 	MinimumNodesForYggdrasil:       "MinimumNodesForYggdrasil",
