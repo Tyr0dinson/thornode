@@ -330,7 +330,7 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 	})
 	c.clientLock.Unlock()
 	if err != nil {
-		c.logger.Error().Msgf("fail go check for logged in address: %w", err)
+		c.logger.Error().Msgf("fail go check for logged in address: %", err)
 	} else {
 		// TODO: not a good idea to calculate the address each time.
 		localAddr, _ := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, pk))
