@@ -307,6 +307,7 @@ func (c *Client) SetAsgardWallet(keygenHeight int64, pk common.PubKey) {
 	c.asgarNamesLock.Lock()
 	defer c.asgarNamesLock.Unlock()
 	c.asgarNames[pk] = strconv.FormatInt(keygenHeight, 10)
+	c.logger.Info().Msgf("saved asgard keygen heiggt %s for pk: %s", c.asgarNames[pk], pk.String())
 }
 
 // loginToWallet logs into wallet with a given pubKey. `fromSignTx` must be false
@@ -318,6 +319,8 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 		return fmt.Errorf("cant login to wallet. Signing is in progress")
 	}
 
+	c.logger.Info().Msgf("trying loggin in for pk: %s", pk.String())
+
 	// check whether we already logged into the wallet
 	adrResp, err := c.client.GetAddress(&wallet.RequestGetAddress{
 		AccountIndex: 0,
@@ -328,12 +331,16 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 		// TODO: not a good idea to calculate the address each time.
 		localAddr, _ := c.getAddrFromCndata(c.pkm.GetCnData(common.XHVChain, pk))
 		if adrResp.Address == localAddr.String() {
+			c.logger.Info().Msgf("wallet address %s already logged in for pk", adrResp.Address)
 			return nil
+		} else {
+			c.logger.Info().Msgf("loggeed in wallet address %s doesnt math wiht %s", adrResp.Address, localAddr)
 		}
 	}
 
 	// open the wallet if not
 	if c.isYggdrasil(pk) {
+		c.logger.Info().Msgf("trying open  yggrasil wallet %s with passd: %s", c.walletAddr.String(), c.cfg.Password)
 		err := c.openWallet(c.walletAddr.String(), c.cfg.Password)
 		if err != nil {
 			return err
@@ -354,6 +361,8 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 		c.asgarNamesLock.Lock()
 		defer c.asgarNamesLock.Unlock()
 		asgardWalletName := c.nodePubKey.String() + "-" + c.asgarNames[pk] + ".mo"
+
+		c.logger.Info().Msgf("trying open asgard wallet %s with passd: %s", asgardWalletName, c.asgardPassword)
 
 		err = c.openWallet(asgardWalletName, c.asgardPassword)
 		if err != nil {
