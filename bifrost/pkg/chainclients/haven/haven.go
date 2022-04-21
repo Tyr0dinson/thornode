@@ -181,6 +181,7 @@ func NewClient(
 	} else if len(walletResp.Address) == 0 {
 		return nil, fmt.Errorf("unexpected error when generating the haven wallet: %s", walletResp.Info)
 	}
+	client.CloseWallet()
 
 	if pkm == nil {
 		return nil, errors.New("pubkey manager is nil")
@@ -1670,9 +1671,15 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 				return nil, fmt.Errorf("thorchain memo data has insufficient length")
 			}
 			var ba = make([]byte, length)
-			ba = extra[ind+2 : ind+2+length]
+			if length > 127 {
+				// we have 1 extra byte between the actual data an the lenght byte hence (ind + 2)
+				ba = extra[ind+2 : ind+2+length]
+				ind += length + 1
+			} else {
+				ba = extra[ind+1 : ind+1+length]
+				ind += length
+			}
 			parsedTxExtra[0x18] = append(parsedTxExtra[0x18], ba)
-			ind += length + 1 // we have 1 extra byte between the actual data an the lenght byte hence (ind + 2)
 		} else {
 			c.logger.Info().Msgf("err ind: %d char: %d", ind, extra[ind])
 			return nil, fmt.Errorf("unknown tx extra tag. Parse Failed")
