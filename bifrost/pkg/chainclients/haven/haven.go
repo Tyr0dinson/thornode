@@ -37,35 +37,35 @@ import (
 
 // Client observes bitcoin chain and allows to sign and broadcast tx
 type Client struct {
-	logger              zerolog.Logger
-	cfg                 config.ChainConfiguration
-	walletAddr          common.Address
-	processedMemPool    map[string]bool
-	signedTxOut         map[string]TxOutWitness
-	signedTxOutDelete   map[string]int64
-	asgarNames          map[common.PubKey]string
-	memPoolLock         *sync.Mutex
-	signedTxOutLock     *sync.Mutex
-	clientLock          *sync.Mutex
-	asgarNamesLock      *sync.Mutex
-	lastMemPoolScan     time.Time
-	blockScanner        *blockscanner.BlockScanner
-	blockMetaAccessor   BlockMetaAccessor
-	bridge              *thorclient.ThorchainBridge
-	globalErrataQueue   chan<- types.ErrataBlock
-	globalSolvencyQueue chan<- types.Solvency
-	asgardAddresses     []common.Address
-	nodePubKey          common.PubKey
-	lastAsgard          time.Time
-	asgardPassword      string
-	pkm                 pubkeymanager.PubKeyValidator
-	poolMgr             thorclient.PoolManager
-	signingInProgress   *atomic.Bool
-	stopScanTxOuts      *atomic.Bool
-	currentBlockHeight  *atomic.Int64
-	supportedAssets     []string
-	tssKm               *tss.KeySign
-	client              wallet.Client
+	logger                    zerolog.Logger
+	cfg                       config.ChainConfiguration
+	walletAddr                common.Address
+	processedMemPool          map[string]bool
+	signedTxOut               map[string]TxOutWitness
+	signedTxOutDelete         map[string]int64
+	asgarNames                map[common.PubKey]string
+	memPoolLock               *sync.Mutex
+	signedTxOutLock           *sync.Mutex
+	clientLock                *sync.Mutex
+	asgarNamesLock            *sync.Mutex
+	lastMemPoolScan           time.Time
+	blockScanner              *blockscanner.BlockScanner
+	blockMetaAccessor         BlockMetaAccessor
+	bridge                    *thorclient.ThorchainBridge
+	globalErrataQueue         chan<- types.ErrataBlock
+	globalSolvencyQueue       chan<- types.Solvency
+	asgardAddresses           []common.Address
+	nodePubKey                common.PubKey
+	lastAsgard                time.Time
+	asgardPassword            string
+	pkm                       pubkeymanager.PubKeyValidator
+	poolMgr                   thorclient.PoolManager
+	signingOrKeygenInProgress *atomic.Bool
+	stopScanTxOuts            *atomic.Bool
+	currentBlockHeight        *atomic.Int64
+	supportedAssets           []string
+	tssKm                     *tss.KeySign
+	client                    wallet.Client
 }
 
 type TxVout struct {
@@ -190,28 +190,28 @@ func NewClient(
 	}
 
 	c := &Client{
-		logger:             log.Logger.With().Str("module", "haven").Logger(),
-		cfg:                cfg,
-		bridge:             bridge,
-		pkm:                pkm,
-		poolMgr:            poolMgr,
-		nodePubKey:         thorPubkey,
-		walletAddr:         common.Address(walletResp.Address),
-		memPoolLock:        &sync.Mutex{},
-		signedTxOutLock:    &sync.Mutex{},
-		clientLock:         &sync.Mutex{},
-		asgarNamesLock:     &sync.Mutex{},
-		client:             client,
-		tssKm:              tssKm,
-		supportedAssets:    []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
-		asgardPassword:     hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
-		processedMemPool:   make(map[string]bool),
-		signingInProgress:  atomic.NewBool(false),
-		stopScanTxOuts:     atomic.NewBool(false),
-		signedTxOut:        make(map[string]TxOutWitness),
-		signedTxOutDelete:  make(map[string]int64),
-		asgarNames:         make(map[common.PubKey]string),
-		currentBlockHeight: atomic.NewInt64(0),
+		logger:                    log.Logger.With().Str("module", "haven").Logger(),
+		cfg:                       cfg,
+		bridge:                    bridge,
+		pkm:                       pkm,
+		poolMgr:                   poolMgr,
+		nodePubKey:                thorPubkey,
+		walletAddr:                common.Address(walletResp.Address),
+		memPoolLock:               &sync.Mutex{},
+		signedTxOutLock:           &sync.Mutex{},
+		clientLock:                &sync.Mutex{},
+		asgarNamesLock:            &sync.Mutex{},
+		client:                    client,
+		tssKm:                     tssKm,
+		supportedAssets:           []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
+		asgardPassword:            hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
+		processedMemPool:          make(map[string]bool),
+		signingOrKeygenInProgress: atomic.NewBool(false),
+		stopScanTxOuts:            atomic.NewBool(false),
+		signedTxOut:               make(map[string]TxOutWitness),
+		signedTxOutDelete:         make(map[string]int64),
+		asgarNames:                make(map[common.PubKey]string),
+		currentBlockHeight:        atomic.NewInt64(0),
 	}
 
 	var path string // if not set later, will in memory storage
@@ -310,21 +310,27 @@ func (c *Client) SetAsgardWallet(keygenHeight int64, pk common.PubKey) {
 	c.logger.Info().Msgf("saved asgard keygen heiggt %s for pk: %s", c.asgarNames[pk], pk.String())
 }
 
+func (c *Client) KeygenInProgess(val bool) {
+	c.signingOrKeygenInProgress.Store(val)
+}
+
 // loginToWallet logs into wallet with a given pubKey. `fromSignTx` must be false
 // for all calls to the function outside of signTx().
 func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 
 	// cant login to wallet while signing is in progress
-	if !fromSignTx && c.signingInProgress.Load() {
+	if !fromSignTx && c.signingOrKeygenInProgress.Load() {
 		return fmt.Errorf("cant login to wallet. Signing is in progress")
 	}
 
 	c.logger.Info().Msgf("trying loggin in for pk: %s", pk.String())
 
 	// check whether we already logged into the wallet
+	c.clientLock.Lock()
 	adrResp, err := c.client.GetAddress(&wallet.RequestGetAddress{
 		AccountIndex: 0,
 	})
+	c.clientLock.Unlock()
 	if err != nil {
 		c.logger.Error().Msgf("fail go check for logged in address: %w", err)
 	} else {
@@ -1371,8 +1377,8 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 
 // SignTx is going to generate the outbound transaction, and also sign it
 func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, error) {
-	c.signingInProgress.Store(true)
-	defer c.signingInProgress.Store(false)
+	c.signingOrKeygenInProgress.Store(true)
+	defer c.signingOrKeygenInProgress.Store(false)
 	c.asgarNamesLock.Lock()
 	keygenHeight := c.asgarNames[tx.VaultPubKey]
 	c.asgarNamesLock.Unlock()
@@ -1447,10 +1453,12 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		totalConfirmed := 0
 		for ; counter < 10; counter++ {
 			time.Sleep(time.Second * 2)
+			c.clientLock.Lock()
 			balance, err := c.client.GetBalance(&wallet.RequestGetBalance{
 				AccountIndex: 0,
 				AssetType:    outputAsset,
 			})
+			c.clientLock.Unlock()
 			if err != nil {
 				c.logger.Error().Err(err).Msg("fail to get the balance of the wallet")
 				return nil, err

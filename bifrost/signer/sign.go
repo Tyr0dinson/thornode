@@ -293,6 +293,18 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)
 					s.logger.Error().Err(err).Msg("Blame")
 				}
+				if err != nil {
+					s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
+					s.logger.Error().Err(err).Msg("fail to generate new TSS pubkey")
+				}
+
+				// notify the haven client about keygen
+				i, ok := s.chains[common.XHVChain].(interface {
+					KeygenInProgess(val bool)
+				})
+				if ok {
+					i.KeygenInProgess(true)
+				}
 
 				// generate keys for haven/monero
 				poolAddress, viewKey, blame, err := s.tssKeygen.GenerateNewMnKey(
@@ -300,15 +312,20 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 					strconv.FormatInt(keygenBlock.Height, 10),
 					s.xhvWalletHost,
 				)
+
+				// keygen is done
+				if ok {
+					i.KeygenInProgess(false)
+				}
 				if !blame.IsEmpty() {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)
 					s.logger.Error().Err(err).Msg("Blame")
 				}
-				keygenTime := time.Since(keygenStart).Milliseconds()
 				if err != nil {
 					s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
-					s.logger.Error().Err(err).Msg("fail to generate new pubkey")
+					s.logger.Error().Err(err).Msg("fail to generate new MSS pubkey")
 				}
+				keygenTime := time.Since(keygenStart).Milliseconds()
 				if !pubKey.Secp256k1.IsEmpty() {
 					s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
 				}
