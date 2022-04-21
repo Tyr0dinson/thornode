@@ -128,6 +128,7 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 	maxAnchorBlocks := fetchConfigInt64(ctx, mgr, constants.MaxAnchorBlocks)
 	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
 	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthBasisPts)
+	minDepthPts := fetchConfigInt64(ctx, mgr, constants.DerivedMinDepth)
 
 	for _, asset := range layer1Assets {
 		dPool, err := mgr.Keeper().GetPool(ctx, asset)
@@ -180,7 +181,7 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 
 		slippage := median(slippageCollector)
 
-		if totalRuneDepth.IsZero() || len(availableAnchors) == 0 || slippage.GTE(cosmos.NewUint(uint64(maxAnchorSlip))) {
+		if totalRuneDepth.IsZero() || len(availableAnchors) == 0 {
 			fail(dPool, fmt.Errorf("no anchor pools available"))
 			continue
 		}
@@ -192,12 +193,16 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 			continue
 		}
 
+		minRuneDepth := common.GetShare(cosmos.NewUint(uint64(minDepthPts)), cosmos.NewUint(10000), totalRuneDepth)
 		runeDepth := common.GetShare(cosmos.NewUint(uint64(depthBasisPts)), cosmos.NewUint(10000), totalRuneDepth)
 		// adjust rune depth by median slippage. This is so high volume trading
 		// causes the derived virtual pool to become more shallow making price
 		// manipulation profitability significantly harder
 		reverseSlip := common.SafeSub(cosmos.NewUint(uint64(maxAnchorSlip)), slippage)
 		runeDepth = common.GetShare(reverseSlip, cosmos.NewUint(uint64(maxAnchorSlip)), runeDepth)
+		if runeDepth.LT(minRuneDepth) {
+			runeDepth = minRuneDepth
+		}
 		assetDepth := runeDepth.Mul(price).QuoUint64(uint64(1e9 * common.One))
 
 		dPool.Asset = asset.GetDerivedAsset()

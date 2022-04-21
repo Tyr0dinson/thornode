@@ -484,16 +484,16 @@ func (s *NetworkManagerV88TestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Check(usd.BalanceAsset.Uint64(), Equals, uint64(694261260136726), Commentf("%d", usd.BalanceAsset.Uint64()))
 	c.Check(usd.BalanceRune.Uint64(), Equals, uint64(140620169539027), Commentf("%d", usd.BalanceRune.Uint64()))
 
-	// unhappy path, too much liquidity fees collected in the anchor pools
+	// unhappy path, too much liquidity fees collected in the anchor pools, goes to 1% depth
 	err = mgr.Keeper().AddToSwapSlip(newctx, busd, cosmos.NewUint(10_000))
 	c.Assert(err, IsNil)
 	err = nmgr.spawnDerivedAssets(ctx, mgr)
 	c.Assert(err, IsNil)
 	usd, err = mgr.Keeper().GetPool(ctx, common.THORUSD)
 	c.Assert(err, IsNil)
-	c.Assert(usd.Status.String(), Equals, "Suspended")
-	c.Assert(usd.BalanceAsset.Uint64(), Equals, uint64(694261260136726), Commentf("%d", usd.BalanceAsset.Uint64()))
-	c.Assert(usd.BalanceRune.Uint64(), Equals, uint64(140620169539027), Commentf("%d", usd.BalanceRune.Uint64()))
+	c.Assert(usd.Status.String(), Equals, "Available")
+	c.Assert(usd.BalanceAsset.Uint64(), Equals, uint64(9256816801824), Commentf("%d", usd.BalanceAsset.Uint64()))
+	c.Assert(usd.BalanceRune.Uint64(), Equals, uint64(1874935593854), Commentf("%d", usd.BalanceRune.Uint64()))
 	// ensure layer1 bnb pool is NOT suspended
 	bnbPool, err = mgr.Keeper().GetPool(ctx, busd)
 	c.Assert(err, IsNil)

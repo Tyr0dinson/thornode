@@ -26,6 +26,7 @@ const (
 	DesiredValidatorSet
 	AsgardSize
 	DerivedDepthBasisPts
+	DerivedMinDepth
 	MaxAnchorSlip
 	MaxAnchorBlocks
 	ChurnInterval
@@ -97,6 +98,7 @@ var nameToString = map[ConstantName]string{
 	DesiredValidatorSet:            "DesiredValidatorSet",
 	AsgardSize:                     "AsgardSize",
 	DerivedDepthBasisPts:           "DerivedDepthBasisPts",
+	DerivedMinDepth:                "DerivedMinDepth",
 	MaxAnchorSlip:                  "MaxAnchorSlip",
 	MaxAnchorBlocks:                "MaxAnchorBlocks",
 	ChurnInterval:                  "ChurnInterval",
