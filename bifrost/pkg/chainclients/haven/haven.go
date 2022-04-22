@@ -359,8 +359,8 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 
 		// get the wallet name
 		c.asgarNamesLock.Lock()
-		defer c.asgarNamesLock.Unlock()
 		asgardWalletName := c.nodePubKey.String() + "-" + c.asgarNames[pk] + ".mo"
+		c.asgarNamesLock.Unlock()
 
 		err = c.openWallet(asgardWalletName, c.asgardPassword)
 		if err != nil {
@@ -1412,6 +1412,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 	amount := tx.Coins[0].Amount.Uint64() * DecimalDiff
 	outputAsset := tx.Coins[0].Asset.Ticker.String()
 
+	// set the tx
 	dst := wallet.Destination{
 		Amount:  amount,
 		Address: tx.ToAddress.String(),
@@ -1437,38 +1438,6 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		// try to login wallet
 		if err := c.loginToWallet(tx.VaultPubKey, true); err != nil {
 			return nil, fmt.Errorf("fail to login to wallet: %w", err)
-		}
-
-		// because the monero wallet has high possibility to report incorrect balance when it is just opened,
-		// we need to see 3 confirmations of the balance
-		counter := 0
-		totalConfirmed := 0
-		for ; counter < 10; counter++ {
-			time.Sleep(time.Second * 2)
-			c.clientLock.Lock()
-			balance, err := c.client.GetBalance(&wallet.RequestGetBalance{
-				AccountIndex: 0,
-				AssetType:    outputAsset,
-			})
-			c.clientLock.Unlock()
-			if err != nil {
-				c.logger.Error().Err(err).Msg("fail to get the balance of the wallet")
-				return nil, err
-			}
-
-			// it fail still lack of fund as the fee is not added here
-			if balance.UnlockedBalance > amount {
-				c.logger.Info().Msgf("unlock balance is %d confirming %d", balance.UnlockedBalance, totalConfirmed)
-				totalConfirmed += 1
-				if totalConfirmed >= 3 {
-					break
-				}
-			} else {
-				c.logger.Warn().Msgf("unlock balance %d is not enough, the wallet end may be slow", balance.UnlockedBalance)
-			}
-		}
-		if counter >= 10 && totalConfirmed == 0 {
-			return nil, errors.New("not enough fund in wallet after 10 trial, failing")
 		}
 
 		// sign tx
@@ -1573,7 +1542,7 @@ func (c *Client) BroadcastTx(txOut types.TxOutItem, payload []byte) (string, err
 		}
 	}()
 
-	// broadcast tx if we signed it. If it we did tss, it already broadcasted
+	// broadcast tx if we signed it. If it we did mss, it already broadcasted
 	// and BroadcastTx should not be called anyways since payload will be empty in that case.
 	resp := SendRawTransaction(hex.EncodeToString(payload))
 	if resp.Status != "OK" {
