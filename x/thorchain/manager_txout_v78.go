@@ -6,6 +6,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -41,8 +42,8 @@ func (tos *TxOutStorageV78) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		return err
 	}
 
-	maxGasCache := make(map[common.Chain]common.Coin, 0)
-	gasRateCache := make(map[common.Chain]int64, 0)
+	maxGasCache := make(map[common.Chain]common.Coin)
+	gasRateCache := make(map[common.Chain]int64)
 
 	for i, tx := range txOut.TxArray {
 		// update max gas, take the larger of the current gas, or the last gas used
@@ -409,10 +410,8 @@ func (tos *TxOutStorageV78) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 								ModuleName,
 								common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
 								ctx.Logger().Error("fail to move synth asset fee from asgard to Module", "error", err)
-							} else {
-								if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
-									ctx.Logger().Error("fail to burn synth asset", "error", err)
-								}
+							} else if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
+								ctx.Logger().Error("fail to burn synth asset", "error", err)
 							}
 						}
 					} else {
@@ -496,7 +495,7 @@ func (tos *TxOutStorageV78) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 		}
 	}
 	if !finalRuneFee.IsZero() {
-		if err := tos.keeper.AddFeeToReserve(ctx, finalRuneFee); err != nil {
+		if err := tos.keeper.AddPoolFeeToReserve(ctx, finalRuneFee); err != nil {
 			// Add to reserve
 			ctx.Logger().Error("fail to add fee to reserve", "error", err)
 		}
@@ -714,7 +713,7 @@ func (tos *TxOutStorageV78) collectYggdrasilPools(ctx cosmos.Context, tx Observe
 	}()
 	for ; iterator.Valid(); iterator.Next() {
 		var vault Vault
-		if err := tos.keeper.Cdc().UnmarshalBinaryBare(iterator.Value(), &vault); err != nil {
+		if err := tos.keeper.Cdc().Unmarshal(iterator.Value(), &vault); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
 		if !vault.IsYggdrasil() {

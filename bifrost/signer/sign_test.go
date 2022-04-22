@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
@@ -81,7 +82,7 @@ func (s *SignSuite) SetUpSuite(c *C) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)
-		if strings.HasPrefix(req.RequestURI, "/txs") {
+		if strings.HasPrefix(req.RequestURI, "/txs") { // nolint
 			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "", "result": { "height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}] } }`))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/lastblock/BNB") {
@@ -129,7 +130,6 @@ func (s *SignSuite) SetUpSuite(c *C) {
   "tthorpub1addwnpepqwhnus6xs4208d4ynm05lv493amz3fexfjfx4vptntedd7k0ajlcunlfxxs"
 ]`))
 			c.Assert(err, IsNil)
-		} else {
 		}
 	}))
 
@@ -145,7 +145,7 @@ func (s *SignSuite) SetUpSuite(c *C) {
 	}
 
 	kb := cKeys.NewInMemory()
-	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
+	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 	c.Assert(err, IsNil)
@@ -230,6 +230,9 @@ func (b *MockChainClient) GetAccountByAddress(address string, _ *big.Int) (commo
 
 func (b *MockChainClient) GetPubKey() crypto.PubKey {
 	return nil
+}
+
+func (b *MockChainClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 }
 
 func (b *MockChainClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
@@ -364,5 +367,6 @@ func (s *SignSuite) TestProcess(c *C) {
 	err = sign.Start()
 	c.Assert(err, IsNil)
 	time.Sleep(time.Second * 2)
+	// nolint
 	go sign.Stop()
 }

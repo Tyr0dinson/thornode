@@ -77,6 +77,29 @@ func GetRandomObservedTx() ObservedTx {
 	return NewObservedTx(GetRandomTx(), 33, GetRandomPubKey(), 33)
 }
 
+func GetRandomTxOutItem() TxOutItem {
+	return TxOutItem{
+		Chain:       common.TERRAChain,
+		ToAddress:   GetRandomTERRAAddress(),
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.LUNAAsset, cosmos.NewUint(100000)),
+		Memo:        "OUT:xyz",
+		MaxGas:      common.Gas{common.NewCoin(common.LUNAAsset, cosmos.NewUint(100))},
+		InHash:      GetRandomTxHash(),
+	}
+}
+
+func GetRandomObservedTxVoter() ObservedTxVoter {
+	observedTx := GetRandomObservedTx()
+	return ObservedTxVoter{
+		TxID:    GetRandomTxHash(),
+		Tx:      observedTx,
+		Height:  10,
+		Txs:     ObservedTxs{observedTx},
+		Actions: []TxOutItem{GetRandomTxOutItem()},
+	}
+}
+
 // GetRandomTx
 func GetRandomTx() common.Tx {
 	return common.NewTx(
@@ -127,6 +150,14 @@ func GetRandomBNBAddress() common.Address {
 	str, _ := common.ConvertAndEncode("tbnb", crypto.AddressHash([]byte(name)))
 	bnb, _ := common.NewAddress(str)
 	return bnb
+}
+
+// GetRandomTERRAAddress will just create a random terra address used for test purpose
+func GetRandomTERRAAddress() common.Address {
+	name := common.RandStringBytesMask(10)
+	str, _ := common.ConvertAndEncode("terra", crypto.AddressHash([]byte(name)))
+	terra, _ := common.NewAddress(str)
+	return terra
 }
 
 func GetRandomBTCAddress() common.Address {
@@ -183,7 +214,7 @@ func SetupConfigForTest() {
 	config.SetBech32PrefixForValidator(cmd.Bech32PrefixValAddr, cmd.Bech32PrefixValPub)
 	config.SetBech32PrefixForConsensusNode(cmd.Bech32PrefixConsAddr, cmd.Bech32PrefixConsPub)
 	config.SetCoinType(cmd.THORChainCoinType)
-	config.SetFullFundraiserPath(cmd.THORChainHDPath)
+	config.SetPurpose(cmd.THORChainCoinPurpose)
 	types.SetCoinDenomRegex(func() string {
 		return cmd.DenomRegex
 	})

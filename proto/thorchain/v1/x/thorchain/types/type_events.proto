@@ -122,6 +122,11 @@ message EventReserve {
   common.Tx in_tx = 2 [(gogoproto.nullable) = false];
 }
 
+message EventSecurity {
+  string msg = 1;
+  common.Tx tx = 2 [(gogoproto.nullable) = false];
+}
+
 message EventSlash {
   common.Asset pool = 1 [(gogoproto.nullable) = false];
   repeated PoolAmt slash_amount = 2 [(gogoproto.nullable) = false];
@@ -168,14 +173,18 @@ message EventSwitch {
   bytes to_address = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   string from_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   common.Coin burn = 3 [(gogoproto.nullable) = false];
+  string tx_id = 4 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
 }
 
-message EventSwitchV56 {
+message EventSwitchV87 {
   bytes to_address = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   string from_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   common.Coin burn = 3 [(gogoproto.nullable) = false];
   string tx_id = 4 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
+  string mint = 5 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
 }
+
+
 
 message EventTHORName {
   string name = 1;
@@ -186,3 +195,15 @@ message EventTHORName {
   int64 expire = 6;
   bytes owner = 7 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
+
+message EventSetMimir {
+  string key = 1;
+  string value = 2;
+}
+
+message EventSetNodeMimir {
+  string key = 1;
+  string value = 2;
+  string address = 3;
+}
+

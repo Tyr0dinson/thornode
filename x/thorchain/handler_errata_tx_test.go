@@ -161,42 +161,42 @@ func NewErrataTxHandlerTestHelper(k keeper.Keeper) *ErrataTxHandlerTestHelper {
 
 func (k *ErrataTxHandlerTestHelper) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	if k.failListActiveNodeAccount {
-		return NodeAccounts{}, kaboom
+		return NodeAccounts{}, errKaboom
 	}
 	return k.Keeper.ListActiveValidators(ctx)
 }
 
 func (k *ErrataTxHandlerTestHelper) GetErrataTxVoter(ctx cosmos.Context, txID common.TxID, chain common.Chain) (ErrataTxVoter, error) {
 	if k.failGetErrataTxVoter {
-		return ErrataTxVoter{}, kaboom
+		return ErrataTxVoter{}, errKaboom
 	}
 	return k.Keeper.GetErrataTxVoter(ctx, txID, chain)
 }
 
 func (k *ErrataTxHandlerTestHelper) GetObservedTxInVoter(ctx cosmos.Context, txID common.TxID) (ObservedTxVoter, error) {
 	if k.failGetObserveTxVoter {
-		return ObservedTxVoter{}, kaboom
+		return ObservedTxVoter{}, errKaboom
 	}
 	return k.Keeper.GetObservedTxInVoter(ctx, txID)
 }
 
 func (k *ErrataTxHandlerTestHelper) GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error) {
 	if k.failGetPool {
-		return NewPool(), kaboom
+		return NewPool(), errKaboom
 	}
 	return k.Keeper.GetPool(ctx, asset)
 }
 
 func (k *ErrataTxHandlerTestHelper) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, addr common.Address) (LiquidityProvider, error) {
 	if k.failGetLiquidityProvider {
-		return LiquidityProvider{}, kaboom
+		return LiquidityProvider{}, errKaboom
 	}
 	return k.Keeper.GetLiquidityProvider(ctx, asset, addr)
 }
 
 func (k *ErrataTxHandlerTestHelper) SetPool(ctx cosmos.Context, pool Pool) error {
 	if k.failSetPool {
-		return kaboom
+		return errKaboom
 	}
 	return k.Keeper.SetPool(ctx, pool)
 }
@@ -232,7 +232,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				helper.failListActiveNodeAccount = true
 				return NewMsgErrataTx(GetRandomTxHash(), common.BTCChain, nodeAccount.NodeAddress)
 			},
@@ -246,7 +246,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				helper.failGetErrataTxVoter = true
 				return NewMsgErrataTx(GetRandomTxHash(), common.BTCChain, nodeAccount.NodeAddress)
 			},
@@ -260,7 +260,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				txID := GetRandomTxHash()
 				voter, _ := helper.Keeper.GetErrataTxVoter(ctx, txID, common.BTCChain)
 				voter.Sign(nodeAccount.NodeAddress)
@@ -277,10 +277,10 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				txID := GetRandomTxHash()
 				nodeAcct1 := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAcct1)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAcct1), IsNil)
 				return NewMsgErrataTx(txID, common.BTCChain, nodeAccount.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
@@ -293,7 +293,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				txID := GetRandomTxHash()
 				voter, _ := helper.Keeper.GetErrataTxVoter(ctx, txID, common.BTCChain)
 				voter.BlockHeight = ctx.BlockHeight()
@@ -310,7 +310,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				helper.failGetObserveTxVoter = true
 				return NewMsgErrataTx(GetRandomTxHash(), common.BTCChain, nodeAccount.NodeAddress)
 			},
@@ -324,7 +324,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				return NewMsgErrataTx(GetRandomTxHash(), common.BTCChain, nodeAccount.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
@@ -337,7 +337,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				observedTx := GetRandomObservedTx()
 				voter := ObservedTxVoter{
 					TxID:   observedTx.Tx.ID,
@@ -358,7 +358,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				observedTx := GetRandomObservedTx()
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "withdraw"
@@ -381,7 +381,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				observedTx := GetRandomObservedTx()
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "swap:BNB"
@@ -405,7 +405,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				observedTx := GetRandomObservedTx()
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "add:BTC:" + observedTx.Tx.FromAddress.String()
@@ -422,7 +422,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.BalanceRune = cosmos.NewUint(common.One * 100)
 				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
-				helper.Keeper.SetPool(ctx, pool)
+				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
 				voter := ObservedTxVoter{
 					TxID:   observedTx.Tx.ID,
 					Tx:     observedTx,
@@ -442,7 +442,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 			messageProvider: func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) cosmos.Msg {
 				// add an active node account
 				nodeAccount := GetRandomValidatorNode(NodeActive)
-				helper.SetNodeAccount(ctx, nodeAccount)
+				c.Assert(helper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				observedTx := GetRandomObservedTx()
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "swap:BTC"
@@ -452,7 +452,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.BalanceRune = cosmos.NewUint(common.One * 100)
 				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
-				helper.Keeper.SetPool(ctx, pool)
+				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
 				voter := ObservedTxVoter{
 					TxID:   observedTx.Tx.ID,
 					Tx:     observedTx,
@@ -494,7 +494,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	// fail to get observed tx out voter
 	txID := GetRandomTxHash()
 	msg := NewMsgErrataTx(txID, common.LTCChain, node1.NodeAddress)
-	result, err := handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err := handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
@@ -514,7 +514,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	txOutVoter := NewObservedTxVoter(txID, observedTx)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 	// Tx is empty , it should fail
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
@@ -524,7 +524,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
 	// not outbound tx , it should fail
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
@@ -532,7 +532,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	txInID := GetRandomTxHash()
 	txOutVoter.Tx.Tx.Memo = "OUT:" + txInID.String()
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
@@ -543,14 +543,14 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 		common.BNBChain.String(),
 	}, []ChainContract{})
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
 	// inactive vault , cause it to compensate asgard with reserve
 	asgardVault.UpdateStatus(types.VaultStatus_InactiveVault, 1024)
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	// vault should be set back to retiring
@@ -565,14 +565,14 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	pool.BalanceRune = cosmos.NewUint(1024 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	// yggdrasil vault
 	asgardVault.Type = YggdrasilVault
 
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
@@ -608,13 +608,13 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	newActiveAsgardVault.AddFunds(common.Coins{
 		common.NewCoin(common.LTCAsset, cosmos.NewUint(1024*common.One)),
 	})
-	helper.Keeper.SetVault(ctx, newActiveAsgardVault)
-	helper.Keeper.SaveNetworkFee(ctx, common.LTCChain, NetworkFee{
+	c.Assert(helper.Keeper.SetVault(ctx, newActiveAsgardVault), IsNil)
+	c.Assert(helper.Keeper.SaveNetworkFee(ctx, common.LTCChain, NetworkFee{
 		Chain:              common.LTCChain,
 		TransactionSize:    250,
 		TransactionFeeRate: 10,
-	})
-	result, err = handler.processErrataOutboundTxV42(ctx, *msg)
+	}), IsNil)
+	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	txOut, err := helper.Keeper.GetTxOut(ctx, ctx.BlockHeight())
@@ -689,7 +689,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	c.Assert(txInVoter.GetTx(NodeAccounts{node1, node2, node3}), NotNil)
 	helper.Keeper.SetObservedTxInVoter(ctx, txInVoter)
 
-	result, err := handler.processErrataOutboundTxV42(ctx, *internalMigrationTx)
+	result, err := handler.processErrataOutboundTx(ctx, *internalMigrationTx)
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	v, err := helper.Keeper.GetVault(ctx, retiredPubKey)

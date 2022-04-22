@@ -6,6 +6,7 @@ import (
 
 	mnTss "github.com/akildemir/moneroTss/tss"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/dogecoin"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -30,7 +31,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 	pubKeyValidator pubkeymanager.PubKeyValidator,
 	poolMgr thorclient.PoolManager) map[common.Chain]ChainClient {
 	logger := log.Logger.With().Str("module", "bifrost").Logger()
-	chains := make(map[common.Chain]ChainClient, 0)
+	chains := make(map[common.Chain]ChainClient)
 
 	for _, chain := range cfg {
 		if chain.Disabled {
@@ -85,6 +86,13 @@ func LoadChains(thorKeys *thorclient.Keys,
 
 			pubKeyValidator.RegisterCallback(doge.RegisterPublicKey)
 			chains[common.DOGEChain] = doge
+		case common.TERRAChain:
+			terra, err := terra.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
+			if err != nil {
+				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
+				continue
+			}
+			chains[common.TERRAChain] = terra
 		case common.XHVChain:
 			xhv, err := haven.NewClient(thorKeys, chain, mnServer, thorchainBridge, pubKeyValidator, poolMgr, m)
 			if err != nil {

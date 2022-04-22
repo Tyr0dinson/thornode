@@ -1,5 +1,5 @@
 include Makefile.cicd
-.PHONY: build test tools export healthcheck run-mocknet stop-mocknet build-mocknet ps-mocknet logs-mocknet reset-mocknet
+.PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet ps-mocknet reset-mocknet logs-mocknet
 
 module = gitlab.com/thorchain/thornode
 GOBIN?=${GOPATH}/bin
@@ -49,7 +49,7 @@ test-coverage:
 	@go test ${TEST_BUILD_FLAGS} -v -coverprofile coverage.out ${TEST_DIR}
 
 coverage-report: test-coverage
-	@go tool cover -html=cover.txt
+	@go tool cover -html=coverage.out
 
 clear:
 	clear
@@ -67,6 +67,7 @@ format:
 	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -w
 
 lint-pre: protob
+	@./scripts/check-build-env.sh
 	@git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -d
 	@test -z "$(shell git ls-files '*.go' | grep -v -e 'pb.go$$' -e '^docs/' | xargs gofumpt -l)"
 	@go mod verify
@@ -74,15 +75,22 @@ lint-pre: protob
 lint-handlers:
 	@./scripts/lint-handlers.bash
 
+lint-managers:
+	@./scripts/lint-managers.bash
+
 lint-erc20s:
 	@./scripts/lint-erc20s.bash
 
-lint: lint-pre lint-handlers lint-erc20s
+lint: lint-pre lint-handlers lint-managers lint-erc20s
 	@go run tools/analyze/main.go ./common/... ./constants/... ./x/...
+ifdef CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+	trunk check --no-progress --monitor=false --upstream origin/$(CI_MERGE_REQUEST_TARGET_BRANCH_NAME)
+else
 ifdef CI_PROJECT_ID
 	trunk check --no-progress --monitor=false --upstream origin/develop
 else
-	trunk check --upstream origin/develop
+	trunk check --no-fix --upstream origin/develop
+endif
 endif
 
 clean:
@@ -108,19 +116,19 @@ pull:
 	docker pull registry.gitlab.com/thorchain/ethereum-mock
 
 run-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
 
 stop-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
 
 build-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
 
 ps-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
 
 logs-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
 
 reset-mocknet: stop-mocknet run-mocknet

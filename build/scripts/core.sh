@@ -110,8 +110,9 @@ seeds_list() {
   IFS=","
   SEED_LIST=""
   for SEED in $1; do
-    NODE_ID=$(curl -sL --fail -m 10 "$SEED:$PORT_RPC/status" | jq -r .result.node_info.id) || continue
-    NETWORK=$(curl -sL --fail -m 10 "$SEED:$PORT_RPC/status" | jq -r .result.node_info.network) || continue
+    RESULT=$(curl -sL --fail -m 2 "$SEED:$PORT_RPC/status") || continue
+    NODE_ID=$(echo "$RESULT" | jq -r .result.node_info.id)
+    NETWORK=$(echo "$RESULT" | jq -r .result.node_info.network)
     # make sure the seeds are on the same network
     if [ "$NETWORK" = "$EXPECTED_NETWORK" ]; then
       SEED="$NODE_ID@$SEED:$PORT_P2P"
@@ -143,6 +144,10 @@ enable_telemetry() {
   sed -i -e "s/prometheus = false/prometheus = true/g" ~/.thornode/config/config.toml
   sed -i -e "s/enabled = false/enabled = true/g" ~/.thornode/config/app.toml
   sed -i -e "s/prometheus-retention-time = 0/prometheus-retention-time = 600/g" ~/.thornode/config/app.toml
+}
+
+set_minimum_gas() {
+  sed -i -e 's/minimum-gas-prices = ""/minimum-gas-prices = "0rune"/g' ~/.thornode/config/app.toml
 }
 
 gen_bnb_address() {
@@ -221,9 +226,9 @@ set_node_keys() {
   SIGNER_NAME="$1"
   SIGNER_PASSWD="$2"
   PEER="$3"
-  NODE_PUB_KEY="$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend file)"
+  NODE_PUB_KEY="$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend file | thornode pubkey)"
   NODE_PUB_KEY_ED25519="$(printf "%s\n" "$SIGNER_PASSWD" | thornode ed25519)"
-  VALIDATOR="$(thornode tendermint show-validator)"
+  VALIDATOR="$(thornode tendermint show-validator | thornode pubkey --bech cons)"
   echo "Setting THORNode keys"
   printf "%s\n%s\n" "$SIGNER_PASSWD" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --node "tcp://$PEER:$PORT_RPC" --from "$SIGNER_NAME" --yes
 }

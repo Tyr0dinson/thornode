@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"strings"
 
 	. "gopkg.in/check.v1"
@@ -36,7 +37,7 @@ func (k *TestRefundBondKeeper) GetVault(_ cosmos.Context, pk common.PubKey) (Vau
 	if k.ygg.PubKey.Equals(pk) {
 		return k.ygg, nil
 	}
-	return Vault{}, kaboom
+	return Vault{}, errKaboom
 }
 
 func (k *TestRefundBondKeeper) GetLeastSecure(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) Vault {
@@ -47,7 +48,7 @@ func (k *TestRefundBondKeeper) GetPool(_ cosmos.Context, asset common.Asset) (Po
 	if k.pool.Asset.Equals(asset) {
 		return k.pool, nil
 	}
-	return NewPool(), kaboom
+	return NewPool(), errKaboom
 }
 
 func (k *TestRefundBondKeeper) SetNodeAccount(_ cosmos.Context, na NodeAccount) error {
@@ -60,7 +61,7 @@ func (k *TestRefundBondKeeper) SetPool(_ cosmos.Context, p Pool) error {
 		k.pool = p
 		return nil
 	}
-	return kaboom
+	return errKaboom
 }
 
 func (k *TestRefundBondKeeper) DeleteVault(_ cosmos.Context, key common.PubKey) error {
@@ -178,6 +179,7 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 		common.NewCoin(tCanAsset, cosmos.NewUint(0)),
 	}
 	totalRuneLeft, err = getTotalYggValueInRune(ctx, mgr.Keeper(), ygg2)
+	c.Assert(err, IsNil)
 	slashAmt = cosmos.NewUint(2 * common.One)
 	c.Assert(subsidizePoolWithSlashBond(ctx, ygg2, totalRuneLeft, slashAmt, mgr), IsNil)
 }
@@ -377,16 +379,19 @@ func (s *HelperSuite) TestEnableNextPool(c *C) {
 	// should enable BTC
 	c.Assert(cyclePools(ctx, 100, 1, 0, mgr), IsNil)
 	pool, err = k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
 	c.Check(pool.Status, Equals, PoolAvailable)
 
 	// should enable ETH
 	c.Assert(cyclePools(ctx, 100, 1, 0, mgr), IsNil)
 	pool, err = k.GetPool(ctx, ethAsset)
+	c.Assert(err, IsNil)
 	c.Check(pool.Status, Equals, PoolAvailable)
 
 	// should NOT enable XMR, since it has no assets
 	c.Assert(cyclePools(ctx, 100, 1, 10*common.One, mgr), IsNil)
 	pool, err = k.GetPool(ctx, xmrAsset)
+	c.Assert(err, IsNil)
 	c.Assert(pool.IsEmpty(), Equals, false)
 	c.Check(pool.Status, Equals, PoolStaged)
 	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(30*common.One))
@@ -428,6 +433,7 @@ func (s *HelperSuite) TestAbandonPool(c *C) {
 
 	// check pool was deleted
 	pool, err = k.GetPool(ctx, usdAsset)
+	c.Assert(err, IsNil)
 	c.Assert(pool.BalanceRune.IsZero(), Equals, true)
 	c.Assert(pool.BalanceAsset.IsZero(), Equals, true)
 
@@ -475,7 +481,6 @@ type addGasFeesKeeperHelper struct {
 	errSetNetwork bool
 	errGetPool    bool
 	errSetPool    bool
-	errSetEvent   bool
 }
 
 func newAddGasFeesKeeperHelper(keeper keeper.Keeper) *addGasFeesKeeperHelper {
@@ -486,28 +491,28 @@ func newAddGasFeesKeeperHelper(keeper keeper.Keeper) *addGasFeesKeeperHelper {
 
 func (h *addGasFeesKeeperHelper) GetNetwork(ctx cosmos.Context) (Network, error) {
 	if h.errGetNetwork {
-		return Network{}, kaboom
+		return Network{}, errKaboom
 	}
 	return h.Keeper.GetNetwork(ctx)
 }
 
 func (h *addGasFeesKeeperHelper) SetNetwork(ctx cosmos.Context, data Network) error {
 	if h.errSetNetwork {
-		return kaboom
+		return errKaboom
 	}
 	return h.Keeper.SetNetwork(ctx, data)
 }
 
 func (h *addGasFeesKeeperHelper) SetPool(ctx cosmos.Context, pool Pool) error {
 	if h.errSetPool {
-		return kaboom
+		return errKaboom
 	}
 	return h.Keeper.SetPool(ctx, pool)
 }
 
 func (h *addGasFeesKeeperHelper) GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error) {
 	if h.errGetPool {
-		return Pool{}, kaboom
+		return Pool{}, errKaboom
 	}
 	return h.Keeper.GetPool(ctx, asset)
 }
@@ -542,7 +547,7 @@ func newAddGasFeeTestHelper(c *C) addGasFeeTestHelper {
 	c.Assert(mgr.Keeper().SetVault(ctx, yggVault), IsNil)
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
-	mgr.gasMgr = newGasMgrV1(constAccessor, keeper)
+	mgr.gasMgr = newGasMgrV81(constAccessor, keeper)
 	return addGasFeeTestHelper{
 		ctx: ctx,
 		mgr: mgr,
@@ -684,6 +689,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "swap:BNB.BNB:"+GetRandomBNBAddress().String())
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
+	c.Assert(err, IsNil)
 	m, err := getMsgSwapFromMemo(memo.(SwapMemo), NewObservedTx(tx, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
@@ -691,6 +697,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "add:BTC.BTC:"+GetRandomTHORAddress().String())
 	memoAddExternal, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txAddLiquidity.Memo)
+	c.Assert(err, IsNil)
 	mAddExternal, err := getMsgAddLiquidityFromMemo(ctx,
 		memoAddExternal.(AddLiquidityMemo),
 		NewObservedTx(txAddLiquidity, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)),
@@ -708,11 +715,11 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(err, IsNil)
 
 	mgr.Keeper().SetTHORName(ctx, THORName{
-		"testtest",
-		common.BlockHeight(ctx) + 1024,
-		GetRandomBech32Addr(),
-		common.BNBAsset,
-		[]THORNameAlias{
+		Name:              "testtest",
+		ExpireBlockHeight: common.BlockHeight(ctx) + 1024,
+		Owner:             GetRandomBech32Addr(),
+		PreferredAsset:    common.BNBAsset,
+		Aliases: []THORNameAlias{
 			{
 				Chain:   common.BNBChain,
 				Address: GetRandomBNBAddress(),
@@ -723,6 +730,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
 	}, "swap:BNB.BNB:testtest")
 	memoWithThorname, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txWithThorname.Memo)
+	c.Assert(err, IsNil)
 	mWithThorname, err := getMsgSwapFromMemo(memoWithThorname.(SwapMemo), NewObservedTx(txWithThorname, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
@@ -747,7 +755,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(isTradingHalt(ctx, mAddRUNE, mgr), Equals, true)
 	c.Assert(isTradingHalt(ctx, mWithThorname, mgr), Equals, true)
 	c.Assert(isTradingHalt(ctx, mRedeemSynth, mgr), Equals, true)
-	mgr.Keeper().DeleteMimir(ctx, "HaltTrading")
+	c.Assert(mgr.Keeper().DeleteMimir(ctx, "HaltTrading"), IsNil)
 
 	mgr.Keeper().SetMimir(ctx, "HaltBNBTrading", 1)
 	c.Assert(isTradingHalt(ctx, m, mgr), Equals, true)
@@ -755,7 +763,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(isTradingHalt(ctx, mAddRUNE, mgr), Equals, false)
 	c.Assert(isTradingHalt(ctx, mWithThorname, mgr), Equals, true)
 	c.Assert(isTradingHalt(ctx, mRedeemSynth, mgr), Equals, true)
-	mgr.Keeper().DeleteMimir(ctx, "HaltBNBTrading")
+	c.Assert(mgr.Keeper().DeleteMimir(ctx, "HaltBNBTrading"), IsNil)
 
 	mgr.Keeper().SetMimir(ctx, "HaltBTCTrading", 1)
 	c.Assert(isTradingHalt(ctx, m, mgr), Equals, true)
@@ -763,5 +771,51 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(isTradingHalt(ctx, mAddRUNE, mgr), Equals, true)
 	c.Assert(isTradingHalt(ctx, mWithThorname, mgr), Equals, true)
 	c.Assert(isTradingHalt(ctx, mRedeemSynth, mgr), Equals, false)
-	mgr.Keeper().DeleteMimir(ctx, "HaltBTCTrading")
+	c.Assert(mgr.Keeper().DeleteMimir(ctx, "HaltBTCTrading"), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltBTCChain", 1)
+	c.Assert(isTradingHalt(ctx, m, mgr), Equals, true)
+	c.Assert(isTradingHalt(ctx, mAddExternal, mgr), Equals, true)
+	c.Assert(isTradingHalt(ctx, mAddRUNE, mgr), Equals, true)
+	c.Assert(isTradingHalt(ctx, mWithThorname, mgr), Equals, true)
+	c.Assert(isTradingHalt(ctx, mRedeemSynth, mgr), Equals, false)
+	c.Assert(mgr.Keeper().DeleteMimir(ctx, "SolvencyHaltBTCChain"), IsNil)
+}
+
+func (s *HelperSuite) TestUpdateTxOutGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create ObservedVoter and add a TxOut
+	txVoter := GetRandomObservedTxVoter()
+	txOut := GetRandomTxOutItem()
+	txVoter.Actions = append(txVoter.Actions, txOut)
+	mgr.Keeper().SetObservedTxInVoter(ctx, txVoter)
+
+	// Try to set new gas, should return error as TxOut InHash doesn't match
+	newGas := common.Gas{common.NewCoin(common.LUNAAsset, cosmos.NewUint(2000000))}
+	err := updateTxOutGas(ctx, mgr.K, txOut, newGas)
+	c.Assert(err.Error(), Equals, fmt.Sprintf("Fail to find tx out in ObservedTxVoter %s", txOut.InHash))
+
+	// Update TxOut InHash to match, should update gas
+	txOut.InHash = txVoter.TxID
+	txVoter.Actions[1] = txOut
+	mgr.Keeper().SetObservedTxInVoter(ctx, txVoter)
+
+	// Err should be Nil
+	err = updateTxOutGas(ctx, mgr.K, txOut, newGas)
+	c.Assert(err, IsNil)
+
+	// Keeper should have updated gas of TxOut in Actions
+	txVoter, err = mgr.Keeper().GetObservedTxInVoter(ctx, txVoter.TxID)
+	c.Assert(err, IsNil)
+
+	didUpdate := false
+	for _, item := range txVoter.Actions {
+		if item.Equals(txOut) && item.MaxGas.Equals(newGas) {
+			didUpdate = true
+			break
+		}
+	}
+
+	c.Assert(didUpdate, Equals, true)
 }

@@ -367,6 +367,26 @@ func (s YggdrasilManagerV79Suite) TestAbandonYggdrasil(c *C) {
 	c.Assert(naDisabled.Bond.Equal(cosmos.NewUint(99925014062500)), Equals, true, Commentf("%d != %d", naDisabled.Bond.Uint64(), 99925014062500))
 }
 
+type abandonYggdrasilTestHelper struct {
+	keeper.Keeper
+	failToGetAsgardVaultByStatus bool
+	failToGetNodeAccount         bool
+}
+
+func (a *abandonYggdrasilTestHelper) GetNodeAccountByPubKey(ctx cosmos.Context, pk common.PubKey) (NodeAccount, error) {
+	if a.failToGetNodeAccount {
+		return NodeAccount{}, errKaboom
+	}
+	return a.Keeper.GetNodeAccountByPubKey(ctx, pk)
+}
+
+func (a *abandonYggdrasilTestHelper) GetAsgardVaultsByStatus(ctx cosmos.Context, status VaultStatus) (Vaults, error) {
+	if a.failToGetAsgardVaultByStatus {
+		return Vaults{}, errKaboom
+	}
+	return a.Keeper.GetAsgardVaultsByStatus(ctx, status)
+}
+
 func (s YggdrasilManagerV79Suite) TestAbandonYggdrasilWithDifferentConditions(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	vault := GetRandomVault()

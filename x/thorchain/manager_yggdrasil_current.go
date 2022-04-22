@@ -11,6 +11,8 @@ import (
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 )
 
+var mimirStopFundYggdrasil = `StopFundYggdrasil`
+
 // YggMgrV79 is an implementation of YggManager
 type YggMgrV79 struct {
 	keeper keeper.Keeper
@@ -285,7 +287,7 @@ func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 			if err := mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi); err != nil {
 				return count, err
 			}
-			count += 1
+			count++
 		}
 	}
 
@@ -304,10 +306,7 @@ func (ymgr YggMgrV79) shouldFundYggdrasil(ctx cosmos.Context, asgard, ygg Vault,
 		return true
 	}
 	yggContract := ygg.GetContract(chain)
-	if asgardContract.Router.Equals(yggContract.Router) {
-		return true
-	}
-	return false
+	return asgardContract.Router.Equals(yggContract.Router)
 }
 
 // calcTargetYggCoins - calculate the amount of coins of each pool a yggdrasil
@@ -384,14 +383,14 @@ func (ymgr YggMgrV79) abandonYggdrasilVaults(ctx cosmos.Context, mgr Manager) er
 	if err != nil {
 		return fmt.Errorf("fail to get retiring asgard vaults: %w", err)
 	}
-	allVaults := append(activeVaults, retiringAsgards...)
+	allVaults := append(activeVaults, retiringAsgards...) // nolint
 
 	slasher := mgr.Slasher()
 	vaultIter := ymgr.keeper.GetVaultIterator(ctx)
 	defer vaultIter.Close()
 	for ; vaultIter.Valid(); vaultIter.Next() {
 		var v Vault
-		if err := ymgr.keeper.Cdc().UnmarshalBinaryBare(vaultIter.Value(), &v); err != nil {
+		if err := ymgr.keeper.Cdc().Unmarshal(vaultIter.Value(), &v); err != nil {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			continue
 		}

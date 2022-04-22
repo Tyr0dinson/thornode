@@ -24,9 +24,9 @@ fi
 
 create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
-VALIDATOR=$(thornode tendermint show-validator)
+VALIDATOR=$(thornode tendermint show-validator | thornode pubkey --bech cons)
 NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -a --keyring-backend file)
-NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -p --keyring-backend file)
+NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -p --keyring-backend file | thornode pubkey)
 NODE_CRYPTONOTE=$(echo "$SIGNER_PASSWD" | thornode cryptonote thorchain --keyring-backend file)
 VERSION=$(fetch_version)
 
@@ -82,6 +82,7 @@ if [ "$SEED" = "$(hostname)" ]; then
       echo "Setting up accounts"
       add_account tthor1z63f3mzwv3g75az80xwmhrawdqcjpaekk0kd54 rune 5000000000000
       add_account tthor1wz78qmrkplrdhy37tw0tnvn0tkm5pqd6zdp257 rune 25000000000100
+      add_account tthor18f55frcvknxvcpx2vvpfedvw4l8eutuhku0uj6 rune 25000000000100
       add_account tthor1xwusttz86hqfuk5z7amcgqsg7vp6g8zhsp5lu2 rune 5090000000000
       reserve 22000000000000000
       # deploy eth contract
@@ -103,6 +104,9 @@ if [ "$SEED" = "$(hostname)" ]; then
 
     # enable telemetry through prometheus metrics endpoint
     enable_telemetry
+
+    # set the minimum gas to 0 rune
+    set_minimum_gas
 
     # enable internal traffic as well
     enable_internal_traffic

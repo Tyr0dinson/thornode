@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ var _ = Suite(&DogecoinSignerSuite{})
 
 func (s *DogecoinSignerSuite) SetUpSuite(c *C) {
 	kb := cKeys.NewInMemory()
-	_, _, err := kb.NewMnemonic(bob, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
+	_, _, err := kb.NewMnemonic(bob, cKeys.English, cmd.THORChainHDPath, password, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.keys = thorclient.NewKeysWithKeybase(kb, bob, password)
 }
@@ -80,7 +81,7 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 	}
 
 	s.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		if req.RequestURI == "/thorchain/vaults/tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn/signers" {
+		if req.RequestURI == "/thorchain/vaults/tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn/signers" { // nolint
 			_, err := rw.Write([]byte("[]"))
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/vaults") && strings.HasSuffix(req.RequestURI, "/signers") {
@@ -93,7 +94,10 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 			}{}
 			buf, err := ioutil.ReadAll(req.Body)
 			c.Assert(err, IsNil)
-			json.Unmarshal(buf, &r)
+			if len(buf) == 0 {
+				return
+			}
+			c.Assert(json.Unmarshal(buf, &r), IsNil)
 			defer func() {
 				c.Assert(req.Body.Close(), IsNil)
 			}()
@@ -140,7 +144,9 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 
 func (s *DogecoinSignerSuite) TearDownTest(c *C) {
 	s.server.Close()
-	c.Assert(s.client.blockMetaAccessor.(*LevelDBBlockMetaAccessor).db.Close(), IsNil)
+	acc, ok := s.client.blockMetaAccessor.(*LevelDBBlockMetaAccessor)
+	c.Assert(ok, Equals, true)
+	c.Assert(acc.db.Close(), IsNil)
 }
 
 func (s *DogecoinSignerSuite) TestGetDOGEPrivateKey(c *C) {
@@ -283,7 +289,7 @@ func (s *DogecoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 
-	s.client.blockMetaAccessor.UpsertTransactionFee(0.001, 10)
+	c.Assert(s.client.blockMetaAccessor.UpsertTransactionFee(0.001, 10), IsNil)
 	buf, err = s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
@@ -350,7 +356,7 @@ func (s *DogecoinSignerSuite) TestIsSelfTransaction(c *C) {
 	bm := NewBlockMeta("", 1024, "")
 	hash := "66d2d6b5eb564972c59e4797683a1225a02515a41119f0a8919381236b63e948"
 	bm.AddSelfTransaction(hash)
-	s.client.blockMetaAccessor.SaveBlockMeta(1024, bm)
+	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(1024, bm), IsNil)
 	c.Check(s.client.isSelfTransaction("66d2d6b5eb564972c59e4797683a1225a02515a41119f0a8919381236b63e948"), Equals, true)
 }
 
@@ -368,4 +374,78 @@ func (s *DogecoinSignerSuite) TestEstimateTxSize(c *C) {
 		},
 	})
 	c.Assert(size, Equals, int64(417))
+}
+
+func (s *DogecoinSignerSuite) TestSignAddressPubKeyShouldFail(c *C) {
+	txOutItem := stypes.TxOutItem{
+		Chain:       common.DOGEChain,
+		ToAddress:   "04ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84c",
+		VaultPubKey: "tthorpub1addwnpepqw2k68efthm08f0f5akhjs6fk5j2pze4wkwt4fmnymf9yd463puruhh0lyz",
+		Coins: common.Coins{
+			common.NewCoin(common.DOGEAsset, cosmos.NewUint(10)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		},
+		InHash:  "",
+		OutHash: "",
+	}
+	txHash := "256222fb25a9950479bb26049a2c00e75b89abbb7f0cf646c623b93e942c4c34"
+	blockMeta := NewBlockMeta("000000000000008a0da55afa8432af3b15c225cc7e04d32f0de912702dd9e2ae",
+		100,
+		"0000000000000068f0710c510e94bd29aa624745da43e32a1de887387306bfda")
+	blockMeta.AddCustomerTransaction(txHash)
+	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+	priKeyBuf, err := hex.DecodeString("b404c5ec58116b5f0fe13464a92e46626fc5db130e418cbce98df86ffe9317c5")
+	c.Assert(err, IsNil)
+	pkey, _ := btcec.PrivKeyFromBytes(btcec.S256(), priKeyBuf)
+	c.Assert(pkey, NotNil)
+	ksw, err := NewKeySignWrapper(pkey, s.client.ksWrapper.tssKeyManager)
+	c.Assert(err, IsNil)
+	s.client.privateKey = pkey
+	s.client.ksWrapper = ksw
+	vaultPubKey, err := GetBech32AccountPubKey(pkey)
+	fmt.Println(vaultPubKey)
+	c.Assert(err, IsNil)
+	txOutItem.VaultPubKey = vaultPubKey
+	buf, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(buf, IsNil)
+}
+
+func (s *DogecoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
+	txOutItem := stypes.TxOutItem{
+		Chain:       common.DOGEChain,
+		ToAddress:   "05ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84c",
+		VaultPubKey: "tthorpub1addwnpepqw2k68efthm08f0f5akhjs6fk5j2pze4wkwt4fmnymf9yd463puruhh0lyz",
+		Coins: common.Coins{
+			common.NewCoin(common.DOGEAsset, cosmos.NewUint(10)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.DOGEAsset, cosmos.NewUint(1000)),
+		},
+		InHash:  "",
+		OutHash: "",
+	}
+	txHash := "256222fb25a9950479bb26049a2c00e75b89abbb7f0cf646c623b93e942c4c34"
+	blockMeta := NewBlockMeta("000000000000008a0da55afa8432af3b15c225cc7e04d32f0de912702dd9e2ae",
+		100,
+		"0000000000000068f0710c510e94bd29aa624745da43e32a1de887387306bfda")
+	blockMeta.AddCustomerTransaction(txHash)
+	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+	priKeyBuf, err := hex.DecodeString("b404c5ec58116b5f0fe13464a92e46626fc5db130e418cbce98df86ffe9317c5")
+	c.Assert(err, IsNil)
+	pkey, _ := btcec.PrivKeyFromBytes(btcec.S256(), priKeyBuf)
+	c.Assert(pkey, NotNil)
+	ksw, err := NewKeySignWrapper(pkey, s.client.ksWrapper.tssKeyManager)
+	c.Assert(err, IsNil)
+	s.client.privateKey = pkey
+	s.client.ksWrapper = ksw
+	vaultPubKey, err := GetBech32AccountPubKey(pkey)
+	c.Assert(err, IsNil)
+	txOutItem.VaultPubKey = vaultPubKey
+	// The transaction will not signed, but ignored instead
+	buf, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(buf, IsNil)
 }

@@ -22,9 +22,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	txscript "gitlab.com/thorchain/bifrost/dogd-txscript"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
-	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -33,12 +30,15 @@ import (
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
 // BlockCacheSize the number of block meta that get store in storage.
@@ -224,7 +224,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 // getUTXOs send a request to bitcond RPC endpoint to query all the UTXO
-func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUTXOs(minConfirm, maximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
 	dogeAddress, err := pkey.GetAddress(common.DOGEChain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get DOGE Address for pubkey(%s): %w", pkey, err)
@@ -233,7 +233,7 @@ func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode DOGE address(%s): %w", dogeAddress.String(), err)
 	}
-	return c.client.ListUnspentMinMaxAddresses(minConfirm, MaximumConfirm, []dogutil.Address{
+	return c.client.ListUnspentMinMaxAddresses(minConfirm, maximumConfirm, []dogutil.Address{
 		addr,
 	})
 }
@@ -764,16 +764,38 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 		PreviousHash:  block.PreviousHash,
 		NextHash:      block.NextHash,
 	}
+	maxWorker := c.cfg.ParallelMempoolScan
+	if maxWorker == 0 {
+		// set default worker to 5
+		maxWorker = 5
+	}
+	sem := semaphore.NewWeighted(int64(maxWorker))
+	g, _ := errgroup.WithContext(context.Background())
+	lock := &sync.Mutex{}
 	for _, txID := range block.Tx {
 		txHash, err := chainhash.NewHashFromStr(txID)
 		if err != nil {
 			return &btcjson.GetBlockVerboseTxResult{}, err
 		}
-		tx, err := c.client.GetRawTransactionVerbose(txHash)
-		if err != nil {
-			return &btcjson.GetBlockVerboseTxResult{}, err
-		}
-		blockResult.Tx = append(blockResult.Tx, *tx)
+		g.Go(func() error {
+			ctx := context.TODO()
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return fmt.Errorf("fail to acquire semaphore: %w", err)
+			}
+			defer sem.Release(1)
+			tx, err := c.client.GetRawTransactionVerbose(txHash)
+			if err != nil {
+				return err
+			}
+			lock.Lock()
+			defer lock.Unlock()
+			blockResult.Tx = append(blockResult.Tx, *tx)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		// it failed to scan some of the transactions, return an error , so it will be retried
+		return &blockResult, err
 	}
 	return &blockResult, nil
 }

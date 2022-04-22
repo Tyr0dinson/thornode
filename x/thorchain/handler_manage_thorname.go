@@ -68,7 +68,7 @@ func (h ManageTHORNameHandler) validateV1(ctx cosmos.Context, msg MsgManageTHORN
 	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name)
 
 	if !exists {
-		// thornode doesn't appear to exist, lets validate the name
+		// thorname doesn't appear to exist, let's validate the name
 		if err := h.validateNameV1(msg.Name); err != nil {
 			return err
 		}
@@ -135,17 +135,17 @@ func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORNam
 			return nil, err
 		}
 		var addBlocks int64
-		// regisration fee is for THORChain addresses only
+		// registration fee is for THORChain addresses only
 		if !exists {
 			// minus registration fee
-			registrationFee := h.mgr.GetConstants().GetInt64Value(constants.TNSRegisterFee)
+			registrationFee := fetchConfigInt64(ctx, h.mgr, constants.TNSRegisterFee)
 			msg.Coin.Amount = common.SafeSub(msg.Coin.Amount, cosmos.NewUint(uint64(registrationFee)))
 			registrationFeePaid = cosmos.NewUint(uint64(registrationFee))
 			addBlocks = h.mgr.GetConstants().GetInt64Value(constants.BlocksPerYear) // registration comes with 1 free year
 		}
-		feePerBlock := h.mgr.GetConstants().GetInt64Value(constants.TNSFeePerBlock)
+		feePerBlock := fetchConfigInt64(ctx, h.mgr, constants.TNSFeePerBlock)
 		fundPaid = msg.Coin.Amount
-		addBlocks = addBlocks + (int64(msg.Coin.Amount.Uint64()) / feePerBlock)
+		addBlocks += (int64(msg.Coin.Amount.Uint64()) / feePerBlock)
 		if tn.ExpireBlockHeight < common.BlockHeight(ctx) {
 			tn.ExpireBlockHeight = common.BlockHeight(ctx) + addBlocks
 		} else {

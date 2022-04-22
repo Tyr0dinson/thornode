@@ -94,7 +94,11 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		return NoAddress, err
 	}
 	switch chain {
-	case BNBChain:
+	case BNBChain, TERRAChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
 		str, err := ConvertAndEncode(chain.AddressPrefix(chainNetwork), pk.Address().Bytes())
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to bech32 encode the address, err: %w", err)

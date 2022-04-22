@@ -81,7 +81,7 @@ func (k *TestRagnarokKeeperHappyPath) GetTxOut(ctx cosmos.Context, blockHeight i
 	if k.txout != nil && k.txout.Height == blockHeight {
 		return k.txout, nil
 	}
-	return nil, kaboom
+	return nil, errKaboom
 }
 
 func (k *TestRagnarokKeeperHappyPath) SetTxOut(ctx cosmos.Context, blockOut *TxOut) error {
@@ -89,7 +89,7 @@ func (k *TestRagnarokKeeperHappyPath) SetTxOut(ctx cosmos.Context, blockOut *TxO
 		k.txout = blockOut
 		return nil
 	}
-	return kaboom
+	return errKaboom
 }
 func (k *TestRagnarokKeeperHappyPath) GetVault(_ cosmos.Context, pk common.PubKey) (Vault, error) {
 	if pk.Equals(k.retireVault.PubKey) {
@@ -156,13 +156,13 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 	}, 1, retireVault.PubKey, 1)
 
 	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	_, err = handler.handleV1(ctx, *msgRagnarok)
+	_, err = handler.handle(ctx, *msgRagnarok)
 	c.Assert(err, IsNil)
 	c.Assert(keeper.txout.TxArray[0].OutHash.Equals(tx.Tx.ID), Equals, true)
 
 	// fail to get tx out
 	msgRagnarok1 := NewMsgRagnarok(tx, 1024, keeper.activeNodeAccount.NodeAddress)
-	result, err := handler.handleV1(ctx, *msgRagnarok1)
+	result, err := handler.handle(ctx, *msgRagnarok1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 }
@@ -196,7 +196,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	c.Assert(err, IsNil)
 
 	mgr := NewDummyMgrWithKeeper(keeper)
-	mgr.slasher = newSlasherV1(keeper, NewDummyEventMgr())
+	mgr.slasher = newSlasherV75(keeper, NewDummyEventMgr())
 	handler := NewRagnarokHandler(mgr)
 
 	tx := NewObservedTx(common.Tx{
@@ -212,7 +212,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	}, 1, retireVault.PubKey, 1)
 
 	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	_, err = handler.handleV1(ctx, *msgRagnarok)
+	_, err = handler.handle(ctx, *msgRagnarok)
 	c.Assert(err, IsNil)
 	c.Assert(keeper.activeNodeAccount.Bond.Equal(cosmos.NewUint(9999942214)), Equals, true, Commentf("%d", keeper.activeNodeAccount.Bond.Uint64()))
 }

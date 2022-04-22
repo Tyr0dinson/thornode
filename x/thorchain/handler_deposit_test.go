@@ -46,9 +46,9 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 		constants.NativeTransactionFee: 1000_000,
 	}, map[constants.ConstantName]bool{}, map[constants.ConstantName]string{})
 	activeNode := GetRandomValidatorNode(NodeActive)
-	k.SetNodeAccount(ctx, activeNode)
+	c.Assert(k.SetNodeAccount(ctx, activeNode), IsNil)
 	dummyMgr := NewDummyMgrWithKeeper(k)
-	dummyMgr.gasMgr = newGasMgrV1(constAccessor, k)
+	dummyMgr.gasMgr = newGasMgrV81(constAccessor, k)
 	handler := NewDepositHandler(dummyMgr)
 
 	addr := GetRandomBech32Addr()
@@ -228,8 +228,8 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 		"",
 	)
 
-	mgr.Keeper().MintToModule(ctx, ModuleName, tx1.Coins[0])
-	mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx1.Coins)
+	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, tx1.Coins[0]), IsNil)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx1.Coins), IsNil)
 	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(1000), GetRandomBech32Addr())
 	handler.addSwapV65(ctx, *msg3)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx1.ID, 0)
@@ -240,4 +240,43 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	c.Assert(err, IsNil)
 	acct3 := mgr.Keeper().GetBalance(ctx, affiliateFeeAddr3)
 	c.Assert(acct3.AmountOf(synthAsset.Native()).String(), Equals, strconv.FormatInt(common.One/10, 10))
+}
+
+func (s *HandlerDepositSuite) TestTargetModule(c *C) {
+	fee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(2000000))
+	acctAddr := GetRandomBech32Addr()
+	testCases := []struct {
+		name            string
+		moduleName      string
+		messageProvider func(c *C, ctx cosmos.Context) *MsgDeposit
+		validator       func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, name string, balDelta cosmos.Uint)
+	}{
+		{
+			name:       "thorname coins should go to reserve",
+			moduleName: ReserveName,
+			messageProvider: func(c *C, ctx cosmos.Context) *MsgDeposit {
+				addr := GetRandomRUNEAddress()
+				coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(20_00000000))
+				return NewMsgDeposit(common.Coins{coin}, "name:test:THOR:"+addr.String(), acctAddr)
+			},
+			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, name string, balDelta cosmos.Uint) {
+				c.Check(err, IsNil, Commentf(name))
+				c.Assert(cosmos.NewUint(20_00000000).Add(fee.Amount).String(), Equals, balDelta.String(), Commentf(name))
+			},
+		},
+	}
+	for _, tc := range testCases {
+		ctx, mgr := setupManagerForTest(c)
+		handler := NewDepositHandler(mgr)
+		msg := tc.messageProvider(c, ctx)
+		totalCoins := common.NewCoins(msg.Coins[0])
+		totalCoins.Add(fee)
+		c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, totalCoins[0]), IsNil)
+		c.Assert(mgr.Keeper().SendFromModuleToAccount(ctx, ModuleName, msg.Signer, totalCoins), IsNil)
+		balBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, tc.moduleName)
+		result, err := handler.Run(ctx, msg)
+		balAfter := mgr.Keeper().GetRuneBalanceOfModule(ctx, tc.moduleName)
+		balDelta := balAfter.Sub(balBefore)
+		tc.validator(c, ctx, result, err, tc.name, balDelta)
+	}
 }

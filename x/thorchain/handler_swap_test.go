@@ -53,7 +53,6 @@ type TestSwapHandleKeeper struct {
 	keeper.KVStoreDummy
 	pools             map[common.Asset]Pool
 	activeNodeAccount NodeAccount
-	hasEvent          bool
 	synthSupply       cosmos.Uint
 }
 
@@ -112,7 +111,7 @@ func (s *HandlerSwapSuite) TestValidation(c *C) {
 	pool.Asset = common.BNBAsset
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pools := make(map[common.Asset]Pool, 0)
+	pools := make(map[common.Asset]Pool)
 	pools[pool.Asset] = pool
 	keeper := &TestSwapHandleKeeper{
 		pools:             pools,
@@ -252,6 +251,44 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(result, IsNil)
 }
 
+func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	handler := NewSwapHandler(mgr)
+
+	pool := NewPool()
+	asset, err := common.NewAsset("ETH.AAVE-0X7FC66500C84A76AD7E9C93437BFC5AC33E2DDAE9")
+	c.Assert(err, IsNil)
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	m, err := ParseMemo(mgr.GetVersion(), "=:ETH/AAVE-0X7FC66:thor1x0jkvqdh2hlpeztd5zyyk70n3efx6mhudkmnn2::thor1a427q3v96psuj4fnughdw8glt5r7j38lj7rkp8:100")
+	c.Assert(err, IsNil)
+	swapM, ok := m.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	swapM.Asset = fuzzyAssetMatch(ctx, mgr.K, swapM.Asset)
+	txIn := NewObservedTx(
+		common.NewTx("832B575FC2E92057BE1E1D69277B5AF690ADDF3E98E76FFC67232F846D87CB45", "bnb1psc68r72zlj6uhqyqda6hl8l8028u3c7jnk6lp", "bnb1tsqqch9ak73e44aumfeqda6d2vhusple4ffydk",
+			common.Coins{
+				common.NewCoin(common.BNBAsset, cosmos.NewUint(20000000)),
+			},
+			BNBGasFeeSingleton,
+			"=:ETH/AAVE-0X7FC66:thor1x0jkvqdh2hlpeztd5zyyk70n3efx6mhudkmnn2::thor1a427q3v96psuj4fnughdw8glt5r7j38lj7rkp8:100",
+		),
+		1,
+		GetRandomPubKey(), 1,
+	)
+	observerAddr, err := GetRandomTHORAddress().AccAddress()
+	c.Assert(err, IsNil)
+	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
+	c.Assert(err, IsNil)
+	res, err := handler.Run(ctx, msgSwapFromTxIn)
+	c.Assert(res, IsNil)
+	c.Assert(err, NotNil)
+}
+
 func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	keeper := &TestSwapHandleKeeper{
@@ -282,6 +319,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 
 	// double swap - happy path
 	m, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+signerBNBAddr.String())
+	c.Assert(err, IsNil)
 	txIn := NewObservedTx(
 		common.NewTx(GetRandomTxHash(), "", signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{
@@ -309,6 +347,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	// double swap , RUNE not enough to pay for transaction fee
 	testnetBNBAddr := GetRandomBNBAddress()
 	m1, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+testnetBNBAddr.String())
+	c.Assert(err, IsNil)
 	txIn1 := NewObservedTx(
 		common.NewTx(GetRandomTxHash(), "", signerBNBAddr, GetRandomBNBAddress(),
 			common.Coins{

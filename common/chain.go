@@ -24,11 +24,11 @@ var (
 	THORChain  = Chain("THOR")
 	TERRAChain = Chain("TERRA")
 
-	SigningAlgoSecp256k1 = SigninAlgo("secp256k1")
-	SigningAlgoEd25519   = SigninAlgo("ed25519")
+	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
+	SigningAlgoEd25519   = SigningAlgo("ed25519")
 )
 
-type SigninAlgo string
+type SigningAlgo string
 
 // Chain is an alias of string , represent a block chain
 type Chain string
@@ -87,15 +87,9 @@ func (c Chain) IsBNB() bool {
 }
 
 // GetSigningAlgo get the signing algorithm for the given chain
-func (c Chain) GetSigningAlgo() SigninAlgo {
-	switch c {
-	case BNBChain, ETHChain, BTCChain, THORChain:
-		return SigningAlgoSecp256k1
-	case XHVChain:
-		return SigningAlgoEd25519
-	default:
-		return SigningAlgoSecp256k1
-	}
+func (c Chain) GetSigningAlgo() SigningAlgo {
+	// Only SigningAlgoSecp256k1 is supported for now
+	return SigningAlgoSecp256k1
 }
 
 // GetGasAsset chain's base asset
@@ -117,6 +111,8 @@ func (c Chain) GetGasAsset() Asset {
 		return ETHAsset
 	case XHVChain:
 		return XHVAsset
+	case TERRAChain:
+		return LUNAAsset
 	default:
 		return EmptyAsset
 	}
@@ -151,6 +147,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		switch c {
 		case BNBChain:
 			return btypes.TestNetwork.Bech32Prefixes()
+		case TERRAChain:
+			return "terra"
 		case ETHChain:
 			return "0x"
 		case THORChain:
@@ -169,6 +167,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		switch c {
 		case BNBChain:
 			return btypes.TestNetwork.Bech32Prefixes()
+		case TERRAChain:
+			return "terra"
 		case ETHChain:
 			return "0x"
 		case THORChain:
@@ -187,6 +187,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		switch c {
 		case BNBChain:
 			return btypes.ProdNetwork.Bech32Prefixes()
+		case TERRAChain:
+			return "terra"
 		case ETHChain:
 			return "0x"
 		case THORChain:
