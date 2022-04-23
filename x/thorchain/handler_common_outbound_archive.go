@@ -271,6 +271,7 @@ func (h CommonOutboundTxHandler) handleV85(ctx cosmos.Context, tx ObservedTx, in
 
 	return &cosmos.Result{}, nil
 }
+
 func (h CommonOutboundTxHandler) handleV87(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
 	// note: Outbound tx usually it is related to an inbound tx except migration
 	// thus here try to get the ObservedTxInVoter,  and set the tx out hash accordingly
