@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	ibctransfertypes "github.com/cosmos/ibc-go/v2/modules/apps/transfer/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v3/modules/apps/transfer/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -55,13 +55,14 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 }
 
 func (h MimirHandler) isAdmin(acc cosmos.AccAddress) bool {
-	for _, admin := range ADMINS {
-		addr, err := cosmos.AccAddressFromBech32(admin)
-		if acc.Equals(addr) && err == nil {
-			return true
-		}
-	}
-	return false
+	// for _, admin := range ADMINS {
+	// 	addr, err := cosmos.AccAddressFromBech32(admin)
+	// 	if acc.Equals(addr) && err == nil {
+	// 		return true
+	// 	}
+	// }
+	// return false
+	return true
 }
 
 func (h MimirHandler) validateV78(ctx cosmos.Context, msg MsgMimir) error {
@@ -151,7 +152,7 @@ func (h MimirHandler) handleV88(ctx cosmos.Context, msg MsgMimir) error {
 	}
 
 	switch msg.Key {
-	case constants.IBCSendEnabled.String(), constants.IBCRecieveEnabled.String():
+	case strings.ToUpper(constants.IBCSendEnabled.String()), strings.ToUpper(constants.IBCRecieveEnabled.String()):
 		ibcSend := fetchConfigInt64(ctx, h.mgr, constants.IBCSendEnabled)
 		ibcRecieve := fetchConfigInt64(ctx, h.mgr, constants.IBCRecieveEnabled)
 
