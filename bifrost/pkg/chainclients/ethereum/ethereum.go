@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 
@@ -526,11 +527,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	} else {
-		if estimatedGas > maxGasLimit {
-			// the estimated gas unit is more than the maximum , so bring down the gas rate
-			maximumGasToPay := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
-			gasRate = big.NewInt(1).Div(maximumGasToPay, big.NewInt(int64(estimatedGas)))
+		if estimatedGas < maxGasLimit {
+			estimatedGas = maxGasLimit
 		}
+		// allow transaction to spend up to maxGasLimit
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
 

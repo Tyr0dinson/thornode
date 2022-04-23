@@ -43,6 +43,8 @@ func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, tx ObservedTx) error 
 func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.88.0")):
+		return h.handleV88(ctx, tx, inTxID)
 	case version.GTE(semver.MustParse("1.87.0")):
 		return h.handleV87(ctx, tx, inTxID)
 	case version.GTE(semver.MustParse("1.85.0")):
@@ -53,7 +55,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	return nil, errBadVersion
 }
 
-func (h CommonOutboundTxHandler) handleV87(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
+func (h CommonOutboundTxHandler) handleV88(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
 	// note: Outbound tx usually it is related to an inbound tx except migration
 	// thus here try to get the ObservedTxInVoter,  and set the tx out hash accordingly
 	voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
@@ -154,11 +156,15 @@ func (h CommonOutboundTxHandler) handleV87(ctx cosmos.Context, tx ObservedTx, in
 						}
 					}
 				}
-				if txOutItem.Chain.Equals(common.ETHChain) {
+				// for ETH, if the outbound amount match , but it spend more gas than
+				if txOutItem.Chain.Equals(common.ETHChain) && matchCoin {
 					gasAmount := tx.Tx.Gas.ToCoins().GetCoin(common.ETHAsset).Amount
 					if gasAmount.GTE(cosmos.NewUint(constants.MaxETHGas)) {
 						ctx.Logger().Info("ETH chain transaction spend more than MaxETHGas should be slashed", "gas", gasAmount.String(), "max gas", constants.MaxETHGas)
-						matchCoin = false
+						gap := gasAmount.Sub(txOutItem.MaxGas.ToCoins().GetCoin(common.ETHAsset).Amount)
+						if err := h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, common.NewCoins(common.NewCoin(common.ETHAsset, gap)), h.mgr); err != nil {
+							ctx.Logger().Error("fail to slash vault for extra gas", "error", err)
+						}
 					}
 				}
 
