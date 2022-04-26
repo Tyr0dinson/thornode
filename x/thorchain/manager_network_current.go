@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/armon/go-metrics"
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -148,16 +147,17 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 		totalRuneDepth := cosmos.ZeroUint()
 		availableAnchors := make([]common.Asset, 0)
 		slippageCollector := make([]cosmos.Uint, 0)
-		for _, asset := range anchors {
+		for _, anchorAsset := range anchors {
 			// skip assets where trading isn't occurring (hence price is likely not correct)
-			if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, asset.Chain) {
+			if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, anchorAsset.Chain) {
 				continue
 			}
-			if !mgr.Keeper().PoolExist(ctx, asset) {
+			if !mgr.Keeper().PoolExist(ctx, anchorAsset) {
 				continue
 			}
-			p, err := mgr.Keeper().GetPool(ctx, asset)
+			p, err := mgr.Keeper().GetPool(ctx, anchorAsset)
 			if err != nil {
+				ctx.Logger().Error("failed to get anchor pool", "asset", anchorAsset, "error", err)
 				continue
 			}
 			// skip assets that aren't available (hence price isn't likely to be correct)
@@ -168,14 +168,14 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 				continue
 			}
 
-			slip, err := mgr.Keeper().RollupSwapSlip(ctx, maxAnchorBlocks, asset)
+			slip, err := mgr.Keeper().RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
 			if err != nil {
-				ctx.Logger().Error("failed to rollup swap slip", "asset", asset, "err", err)
+				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
 				continue
 			}
 
 			totalRuneDepth = totalRuneDepth.Add(p.BalanceRune)
-			availableAnchors = append(availableAnchors, asset)
+			availableAnchors = append(availableAnchors, anchorAsset)
 			slippageCollector = append(slippageCollector, slip)
 		}
 
@@ -250,17 +250,7 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 
 func (vm *NetworkMgrV88) getDerivedAnchors(a common.Asset) []common.Asset {
 	version := vm.k.Version()
-	if a.Equals(common.THORUSD) {
-		if version.GTE(semver.MustParse("0.1.0")) {
-			busd, _ := common.NewAsset("BNB.BUSD-BD1")
-			usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
-			usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-			dai, _ := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
-			ust, _ := common.NewAsset("TERRA.UST")
-			return []common.Asset{busd, usdc, usdt, dai, ust}
-		}
-	}
-	return []common.Asset{a}
+	return getDerivedAnchors(version, a)
 }
 
 // EndBlock move funds from retiring asgard vaults
