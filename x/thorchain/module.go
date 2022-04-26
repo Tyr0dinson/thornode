@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -161,7 +162,9 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	}
 
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
-	version := am.mgr.Keeper().GetLowestActiveVersion(ctx)
+	if am.mgr.GetVersion().LT(semver.MustParse("1.89.0")) {
+		_ = am.mgr.Keeper().GetLowestActiveVersion(ctx) // TODO: remove me on fork
+	}
 
 	// Does a kvstore migration
 	smgr := newStoreMgr(am.mgr)
@@ -175,15 +178,9 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	}
 	am.mgr.GasMgr().BeginBlock()
 
-	constantValues := constants.GetConstantValues(version)
-	if constantValues == nil {
-		ctx.Logger().Error("constants is not available", "version", version)
-		return
-	}
+	am.mgr.Slasher().BeginBlock(ctx, req, am.mgr.GetConstants())
 
-	am.mgr.Slasher().BeginBlock(ctx, req, constantValues)
-
-	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, constantValues, existingValidators); err != nil {
+	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr.GetConstants(), existingValidators); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
 }
@@ -191,18 +188,15 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 // EndBlock called when a block get committed
 func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.ValidatorUpdate {
 	ctx.Logger().Debug("End Block", "height", req.Height)
-	version := am.mgr.Keeper().GetLowestActiveVersion(ctx)
-	constantValues := constants.GetConstantValues(version)
-	if constantValues == nil {
-		ctx.Logger().Error("constants is not available", "version", version)
-		return nil
+	if am.mgr.GetVersion().LT(semver.MustParse("1.89.0")) {
+		_ = am.mgr.Keeper().GetLowestActiveVersion(ctx) // TODO: remove me on fork
 	}
 	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 	}
 
 	// slash node accounts for not observing any accepted inbound tx
-	if err := am.mgr.Slasher().LackObserving(ctx, constantValues); err != nil {
+	if err := am.mgr.Slasher().LackObserving(ctx, am.mgr.GetConstants()); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of observing:", "error", err)
 	}
 	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
@@ -211,21 +205,21 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 
 	poolCycle, err := am.mgr.Keeper().GetMimir(ctx, constants.PoolCycle.String())
 	if poolCycle < 0 || err != nil {
-		poolCycle = constantValues.GetInt64Value(constants.PoolCycle)
+		poolCycle = am.mgr.GetConstants().GetInt64Value(constants.PoolCycle)
 	}
 	// Enable a pool every poolCycle
 	if common.BlockHeight(ctx)%poolCycle == 0 && !am.mgr.Keeper().RagnarokInProgress(ctx) {
 		maxAvailablePools, err := am.mgr.Keeper().GetMimir(ctx, constants.MaxAvailablePools.String())
 		if maxAvailablePools < 0 || err != nil {
-			maxAvailablePools = constantValues.GetInt64Value(constants.MaxAvailablePools)
+			maxAvailablePools = am.mgr.GetConstants().GetInt64Value(constants.MaxAvailablePools)
 		}
 		minRunePoolDepth, err := am.mgr.Keeper().GetMimir(ctx, constants.MinRunePoolDepth.String())
 		if minRunePoolDepth < 0 || err != nil {
-			minRunePoolDepth = constantValues.GetInt64Value(constants.MinRunePoolDepth)
+			minRunePoolDepth = am.mgr.GetConstants().GetInt64Value(constants.MinRunePoolDepth)
 		}
 		stagedPoolCost, err := am.mgr.Keeper().GetMimir(ctx, constants.StagedPoolCost.String())
 		if stagedPoolCost < 0 || err != nil {
-			stagedPoolCost = constantValues.GetInt64Value(constants.StagedPoolCost)
+			stagedPoolCost = am.mgr.GetConstants().GetInt64Value(constants.StagedPoolCost)
 		}
 		if err := cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, am.mgr); err != nil {
 			ctx.Logger().Error("Unable to enable a pool", "error", err)
@@ -235,7 +229,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
 
 	// update network data to account for block rewards and reward units
-	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, constantValues, am.mgr.GasMgr(), am.mgr.EventMgr()); err != nil {
+	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, am.mgr.GetConstants(), am.mgr.GasMgr(), am.mgr.EventMgr()); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
 	}
 

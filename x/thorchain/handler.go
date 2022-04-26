@@ -9,7 +9,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -22,10 +21,8 @@ type MsgHandler interface {
 func NewExternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
 		ctx = ctx.WithEventManager(cosmos.NewEventManager())
-		version := mgr.Keeper().GetLowestActiveVersion(ctx)
-		constantValues := constants.GetConstantValues(version)
-		if constantValues == nil {
-			return nil, errConstNotAvailable
+		if mgr.GetVersion().LT(semver.MustParse("1.89.0")) {
+			_ = mgr.Keeper().GetLowestActiveVersion(ctx) // TODO: remove me on fork
 		}
 		handlerMap := getHandlerMapping(mgr)
 		legacyMsg, ok := msg.(legacytx.LegacyMsg)
@@ -85,10 +82,8 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 // NewInternalHandler returns a handler for "thorchain" internal type messages.
 func NewInternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
-		version := mgr.Keeper().GetLowestActiveVersion(ctx)
-		constantValues := constants.GetConstantValues(version)
-		if constantValues == nil {
-			return nil, errConstNotAvailable
+		if mgr.GetVersion().LT(semver.MustParse("1.89.0")) {
+			_ = mgr.Keeper().GetLowestActiveVersion(ctx) // TODO remove me on fork
 		}
 		handlerMap := getInternalHandlerMapping(mgr)
 		legacyMsg, ok := msg.(legacytx.LegacyMsg)
