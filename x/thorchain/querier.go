@@ -12,6 +12,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	types2 "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/tendermint/tendermint/abci/types"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -867,7 +868,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
 		}
 		// ignore pool if no liquidity provider units
-		if pool.LPUnits.IsZero() {
+		if pool.LPUnits.IsZero() && pool.Asset != common.THORUSD {
 			continue
 		}
 

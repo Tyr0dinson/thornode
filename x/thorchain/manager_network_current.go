@@ -6,6 +6,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -118,22 +119,32 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 	}
 
 	// get assets to create derived pools
-	layer1Assets := make([]common.Asset, len(active[0].Chains)+1)
-	layer1Assets[0] = common.THORUSD
-	for i, chain := range active[0].GetChains() {
-		layer1Assets[i+1] = chain.GetGasAsset()
+	var layer1Assets []common.Asset
+	layer1Assets = append(layer1Assets, common.THORUSD)
+	for _, chain := range active[0].GetChains() {
+		if chain.IsTHORChain() {
+			continue
+		}
+		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
-
 	maxAnchorBlocks := fetchConfigInt64(ctx, mgr, constants.MaxAnchorBlocks)
 	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
 	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthBasisPts)
 	minDepthPts := fetchConfigInt64(ctx, mgr, constants.DerivedMinDepth)
-
 	for _, asset := range layer1Assets {
+
 		dPool, err := mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
 			fail(dPool, err)
 			continue
+		}
+
+		if dPool.IsEmpty() {
+			// when gas pool is not ready yet
+			if asset != common.THORUSD {
+				continue
+			}
+			dPool.Asset = asset
 		}
 
 		if depthBasisPts == 0 {
@@ -182,7 +193,7 @@ func (vm *NetworkMgrV88) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) err
 		slippage := median(slippageCollector)
 
 		if totalRuneDepth.IsZero() || len(availableAnchors) == 0 {
-			fail(dPool, fmt.Errorf("no anchor pools available"))
+			fail(dPool, fmt.Errorf("no anchor pools available,asset: %s", asset))
 			continue
 		}
 

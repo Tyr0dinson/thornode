@@ -89,7 +89,7 @@ func (h AddLiquidityHandler) validateV88(ctx cosmos.Context, msg MsgAddLiquidity
 	}
 
 	if msg.Asset.Chain.IsTHORChain() {
-		if (!msg.AssetAddress.IsEmpty() && !msg.RuneAddress.IsEmpty()) && msg.AssetAddress.Equals(msg.RuneAddress) {
+		if (!msg.AssetAddress.IsEmpty() && !msg.RuneAddress.IsEmpty()) && !msg.AssetAddress.Equals(msg.RuneAddress) {
 			return fmt.Errorf("asset address and rune address must be the same for native asset pools")
 		}
 		if isVirtualPool(h.mgr.GetVersion(), msg.Asset) {
