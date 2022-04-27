@@ -407,6 +407,7 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		addr := GetRandomTHORAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
+			"",
 			addr,
 			addr,
 			common.NewCoins(
@@ -487,6 +488,7 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		addr := GetRandomTHORAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
+			"",
 			addr,
 			addr,
 			common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(1*1e8))),

@@ -126,7 +126,7 @@ func (h ObservedTxOutHandler) handleV58(ctx cosmos.Context, msg MsgObservedTxOut
 			for ; iter.Valid(); iter.Next() {
 				// get the vault
 				var vault Vault
-				if err := h.mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
+				if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
 					ctx.Logger().Error("fail to unmarshal vault", "error", err)
 					return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 				}

@@ -270,7 +270,7 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 	c.Assert(ok, Equals, true)
 	swapM.Asset = fuzzyAssetMatch(ctx, mgr.K, swapM.Asset)
 	txIn := NewObservedTx(
-		common.NewTx("832B575FC2E92057BE1E1D69277B5AF690ADDF3E98E76FFC67232F846D87CB45", "bnb1psc68r72zlj6uhqyqda6hl8l8028u3c7jnk6lp", "bnb1tsqqch9ak73e44aumfeqda6d2vhusple4ffydk",
+		common.NewTx("832B575FC2E92057BE1E1D69277B5AF690ADDF3E98E76FFC67232F846D87CB45", "", "bnb1psc68r72zlj6uhqyqda6hl8l8028u3c7jnk6lp", "bnb1tsqqch9ak73e44aumfeqda6d2vhusple4ffydk",
 			common.Coins{
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(20000000)),
 			},
