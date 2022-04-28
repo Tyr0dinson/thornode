@@ -180,7 +180,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		PendingTxBlockHeights: v.PendingTxBlockHeights,
 		Routers:               v.Routers,
 		Addresses:             getVaultChainAddress(ctx, v),
-		Cryptonote:        v.Cryptonote,
+		Cryptonote:            v.Cryptonote,
 	}
 	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
@@ -219,7 +219,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				PendingTxBlockHeights: vault.PendingTxBlockHeights,
 				Routers:               vault.Routers,
 				Addresses:             getVaultChainAddress(ctx, vault),
-				Cryptonote:        vault.Cryptonote,
+				Cryptonote:            vault.Cryptonote,
 			})
 		}
 	}
@@ -313,7 +313,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Bond:                  na.Bond,
 			TotalValue:            totalValue,
 			Addresses:             getVaultChainAddress(ctx, vault),
-			Cryptonote:        vault.Cryptonote,
+			Cryptonote:            vault.Cryptonote,
 		}
 	}
 
@@ -347,16 +347,16 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 			if !na.Bond.IsZero() {
 				resp.Yggdrasil = append(resp.Yggdrasil, QueryVaultPubKeyContract{
-					PubKey:         vault.PubKey,
-					Routers:        vault.Routers,
+					PubKey:     vault.PubKey,
+					Routers:    vault.Routers,
 					Cryptonote: vault.Cryptonote,
 				})
 			}
 		} else if vault.IsAsgard() {
 			if vault.Status == ActiveVault || vault.Status == RetiringVault {
 				resp.Asgard = append(resp.Asgard, QueryVaultPubKeyContract{
-					PubKey:         vault.PubKey,
-					Routers:        vault.Routers,
+					PubKey:     vault.PubKey,
+					Routers:    vault.Routers,
 					Cryptonote: vault.Cryptonote,
 				})
 			}
@@ -1262,6 +1262,7 @@ func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr 
 	}
 	return res, nil
 }
+
 func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	if len(path) == 0 && len(path[0]) == 0 {
 		return nil, fmt.Errorf("no mimir key")

@@ -106,8 +106,8 @@ func NewClient(
 	bridge *thorclient.ThorchainBridge,
 	pkm pubkeymanager.PubKeyValidator,
 	poolMgr thorclient.PoolManager,
-	m *metrics.Metrics) (*Client, error) {
-
+	m *metrics.Metrics,
+) (*Client, error) {
 	// set the daemon address
 	DaemonHost = cfg.RPCHost
 
@@ -317,7 +317,6 @@ func (c *Client) KeygenInProgess(val bool) {
 // loginToWallet logs into wallet with a given pubKey. `fromSignTx` must be false
 // for all calls to the function outside of signTx().
 func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
-
 	// cant login to wallet while signing is in progress
 	if !fromSignTx && c.signingOrKeygenInProgress.Load() {
 		return fmt.Errorf("cant login to wallet. Signing is in progress")
@@ -382,7 +381,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 		return acct, errors.New("pubkey can't be empty")
 	}
 
-	//login to wallet
+	// login to wallet
 	err := c.loginToWallet(pkey, false)
 	if err != nil {
 		return acct, fmt.Errorf("fail to login to wallet: %w", err)
@@ -455,7 +454,6 @@ func (c *Client) getTotalTransactionValue(txIn types.TxIn, excludeFrom []common.
 }
 
 func (c *Client) getCoinbaseValue(blockHeight int64) (cosmos.Uint, error) {
-
 	// get block
 	block, err := GetBlock(blockHeight)
 	if err != nil {
@@ -612,7 +610,6 @@ func (c *Client) isAsgardAddress(addressToCheck string) bool {
 
 // FetchTxs retrieves txs for a block height
 func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
-
 	txIn := types.TxIn{
 		Chain:   common.XHVChain,
 		TxArray: nil,
@@ -878,7 +875,6 @@ func (c *Client) getTxOutHash(tx ttypes.TxOutItem) string {
 }
 
 func (c *Client) scanTxOuts() {
-
 	// save to be sent from FetchTxs()
 	for {
 
@@ -888,7 +884,6 @@ func (c *Client) scanTxOuts() {
 		}
 
 		if len(outs) > 0 {
-
 			for _, o := range outs {
 				if o.Chain != common.XHVChain {
 					continue
@@ -1048,7 +1043,6 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 
 // extractTxs extracts txs from a block to type TxIn
 func (c *Client) extractTxs(block Block) (types.TxIn, error) {
-
 	// prepare the TxIn
 	txIn := types.TxIn{
 		Chain: c.GetChain(),
@@ -1087,7 +1081,7 @@ func (c *Client) extractTxs(block Block) (types.TxIn, error) {
 }
 
 func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem, error) {
-
+	// check whether it is a outgoing tx from us first
 	txInTem := c.processOutgoing(tx, height, inBlock)
 	if !txInTem.IsEmpty() {
 		where := ""
@@ -1190,7 +1184,6 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 }
 
 func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
-
 	// get all vaults keys and check for outputs
 	asgards, err := c.bridge.GetAsgards()
 	if err != nil {
@@ -1512,7 +1505,6 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 
 // BroadcastTx will broadcast the given payload to XHV chain
 func (c *Client) BroadcastTx(txOut types.TxOutItem, payload []byte) (string, error) {
-
 	// get txOut hash
 	c.signedTxOutLock.Lock()
 	txHash := c.signedTxOut[txOut.Hash()].TxID
@@ -1586,11 +1578,9 @@ func (c *Client) isYggdrasil(key common.PubKey) bool {
 }
 
 func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
-
-	var parsedTxExtra = make(map[byte][][]byte)
+	parsedTxExtra := make(map[byte][][]byte)
 	len := len(extra)
 	for ind := 0; ind < len; ind++ {
-
 		if extra[ind] == 0 {
 			// Padding
 			ind++
@@ -1600,8 +1590,7 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			if len-ind <= 32 {
 				return nil, fmt.Errorf("tx pubKey has insufficient length")
 			}
-			var ba = make([]byte, 32)
-			ba = extra[ind+1 : ind+33]
+			ba := extra[ind+1 : ind+33]
 			parsedTxExtra[0x01] = append(parsedTxExtra[0x01], ba)
 			ind += 32
 		} else if extra[ind] == 2 {
@@ -1626,11 +1615,11 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 		} else if extra[ind] == 0x18 {
 			// Thorchain memo data
 			ind++
-			var length = int(extra[ind])
+			length := int(extra[ind])
 			if len-ind <= length {
 				return nil, fmt.Errorf("thorchain memo data has insufficient length")
 			}
-			var ba = make([]byte, length)
+			var ba []byte
 			if length > 127 {
 				// we have 1 extra byte between the actual data an the lenght byte hence (ind + 2)
 				ba = extra[ind+2 : ind+2+length]

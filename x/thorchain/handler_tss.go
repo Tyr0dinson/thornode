@@ -94,6 +94,7 @@ func (h TssHandler) validateV71(ctx cosmos.Context, msg MsgTssPool) error {
 
 	return cosmos.ErrUnauthorized("not authorized")
 }
+
 func (h TssHandler) validateSigner(ctx cosmos.Context, signer cosmos.AccAddress) error {
 	nodeSigner, err := h.mgr.Keeper().GetNodeAccount(ctx, signer)
 	if err != nil {
@@ -115,6 +116,7 @@ func (h TssHandler) validateSigner(ctx cosmos.Context, signer cosmos.AccAddress)
 	}
 	return nil
 }
+
 func (h TssHandler) handle(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgTssPool request", "ID:", msg.ID)
 	version := h.mgr.GetVersion()

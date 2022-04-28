@@ -699,6 +699,7 @@ func (c *Client) canDeleteBlock(blockMeta *BlockMeta) bool {
 	}
 	return true
 }
+
 func (c *Client) updateNetworkInfo() {
 	networkInfo, err := c.client.GetNetworkInfo()
 	if err != nil {
@@ -752,6 +753,7 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	}
 	return c.client.GetBlockVerboseTx(hash)
 }
+
 func (c *Client) isValidUTXO(hexPubKey string) bool {
 	buf, err := hex.DecodeString(hexPubKey)
 	if err != nil {
@@ -771,6 +773,7 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		return len(addresses) == 1 && requireSigs == 1
 	}
 }
+
 func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	for _, vin := range tx.Vin {
 		if vin.Sequence < (0xffffffff - 1) {
@@ -779,6 +782,7 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	}
 	return false
 }
+
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) (types.TxInItem, error) {
 	if c.ignoreTx(tx) {
 		c.logger.Debug().Int64("height", height).Str("tx", tx.Hash).Msg("ignore tx not matching format")
@@ -934,6 +938,7 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult) bool {
 	}
 	return false
 }
+
 func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyResult) []string {
 	addresses := scriptPubKey.Addresses
 	if len(addresses) > 0 {

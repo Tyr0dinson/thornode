@@ -101,7 +101,6 @@ func (s *HavenSuite) SetUpTest(c *C) {
 	}
 
 	s.server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-
 		if req.RequestURI == "/json_rpc" {
 			r := struct {
 				Method string `json:"method"`

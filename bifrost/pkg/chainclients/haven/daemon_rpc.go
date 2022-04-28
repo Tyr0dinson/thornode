@@ -149,10 +149,8 @@ type BroadcastTxResponse struct {
 }
 
 var DaemonHost = ""
-var WalletRPCHost = ""
 
 func getChainInfo() (GetInfoResult, error) {
-
 	var reply GetInfo
 
 	// prepare body
@@ -183,7 +181,6 @@ func getChainInfo() (GetInfoResult, error) {
 
 // GetHeight gets the height of the haven blockchain
 func GetChainHeight() (int64, error) {
-
 	chainInfo, err := getChainInfo()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get chain height: %+v", err)
@@ -193,7 +190,6 @@ func GetChainHeight() (int64, error) {
 }
 
 func GetBlock(height int64) (Block, error) {
-
 	var reply GetBlockResult
 
 	// prepare body
@@ -226,7 +222,6 @@ func GetBlock(height int64) (Block, error) {
 // GetTxes returns the txs for given hashes. If any of the given hashes could not be found on the chain
 // it returns then in the missedTxs variable.
 func GetTxes(txes []string) (rawTxs []RawTx, missedTxs []string, err error) {
-
 	requestBody, err := json.Marshal(map[string]interface{}{"txs_hashes": txes, "decode_as_json": true})
 	if err != nil {
 		return
@@ -276,7 +271,6 @@ func GetTxes(txes []string) (rawTxs []RawTx, missedTxs []string, err error) {
 }
 
 func GetPoolTxs() ([]RawTx, error) {
-
 	resp, err := http.Get(DaemonHost + "/get_transaction_pool")
 	if err != nil {
 		return nil, fmt.Errorf("getPoolTxs() Marshaling request Error: %+v", err)
@@ -318,7 +312,6 @@ func GetPoolTxs() ([]RawTx, error) {
 }
 
 func SendRawTransaction(txHash string) BroadcastTxResponse {
-
 	var reply BroadcastTxResponse
 
 	requestBody, err := json.Marshal(map[string]interface{}{"tx_as_hex": txHash})

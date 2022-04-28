@@ -135,6 +135,7 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 	}
 	return event, nil
 }
+
 func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *types.TxInItem) (bool, error) {
 	if len(logs) == 0 {
 		return false, nil
