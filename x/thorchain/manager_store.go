@@ -61,6 +61,8 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV86(ctx, smgr.mgr)
 	case 87:
 		migrateStoreV87(ctx, smgr.mgr)
+	case 88:
+		migrateStoreV88(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -94,7 +96,10 @@ func migrateStoreV87(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("fail to migrate store to v87", "error", err)
 		}
 	}()
-
+	if err := mgr.BeginBlock(ctx); err != nil {
+		ctx.Logger().Error("fail to initialise manager", "error", err)
+		return
+	}
 	opFee := cosmos.NewUint(uint64(fetchConfigInt64(ctx, mgr, constants.NodeOperatorFee)))
 
 	bonded, err := mgr.Keeper().ListValidatorsWithBond(ctx)

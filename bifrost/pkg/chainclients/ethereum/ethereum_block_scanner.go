@@ -730,7 +730,7 @@ func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain)
 	if includeWhiteList {
-		contractAddresses = append(contractAddresses, whitelistSmartContractAddres...)
+		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
 	}
 	// combine the whitelist smart contract address
 	for _, item := range contractAddresses {

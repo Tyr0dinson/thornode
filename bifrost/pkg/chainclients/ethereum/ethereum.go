@@ -873,6 +873,11 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	if !c.ShouldReportSolvency(ethBlockHeight) {
 		return nil
 	}
+	// when block scanner is not healthy , falling behind , we don't report solvency , unless the request is coming from
+	// auto-unhalt solvency runner
+	if !c.IsBlockScannerHealthy() && ethBlockHeight == c.ethScanner.currentBlockHeight {
+		return nil
+	}
 	asgardVaults, err := c.bridge.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
