@@ -93,7 +93,7 @@ ifdef CI_MERGE_REQUEST_TARGET_BRANCH_NAME
 	trunk check --no-progress --monitor=false --upstream origin/$(CI_MERGE_REQUEST_TARGET_BRANCH_NAME)
 else
 ifdef CI_PROJECT_ID
-	trunk check --no-progress --monitor=false --upstream origin/develop
+	trunk check --no-progress --monitor=false --upstream origin/chaosnet-multichain
 else
 	trunk check --no-fix --upstream origin/develop
 endif
