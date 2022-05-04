@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
@@ -28,9 +29,8 @@ func newStoreMgr(mgr *Mgrs) *StoreMgr {
 // Iterator implement StoreManager interface decide whether it need to upgrade store
 func (smgr *StoreMgr) Iterator(ctx cosmos.Context) error {
 	version := smgr.mgr.GetVersion()
-
 	if version.LT(semver.MustParse("1.89.0")) {
-		_ = smgr.mgr.Keeper().GetLowestActiveVersion(ctx) // TODO remove me on fork
+		version = smgr.mgr.Keeper().GetLowestActiveVersion(ctx) // TODO remove me on fork
 	}
 
 	if version.Major > constants.SWVersion.Major || version.Minor > constants.SWVersion.Minor {

@@ -55,7 +55,9 @@ import (
 	porttypes "github.com/cosmos/ibc-go/v2/modules/core/05-port/types"
 	ibchost "github.com/cosmos/ibc-go/v2/modules/core/24-host"
 	ibckeeper "github.com/cosmos/ibc-go/v2/modules/core/keeper"
+
 	appparams "gitlab.com/thorchain/thornode/app/params"
+
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"

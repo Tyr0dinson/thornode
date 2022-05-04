@@ -46,7 +46,6 @@ var (
 	errInvalidVersion               = fmt.Errorf("bad version")
 	errBadVersion                   = se.Register(DefaultCodespace, CodeBadVersion, errInvalidVersion.Error())
 	errInvalidMessage               = se.Register(DefaultCodespace, CodeInvalidMessage, "invalid message")
-	errConstNotAvailable            = se.Register(DefaultCodespace, CodeConstantsNotAvailable, "constant values not available")
 	errInvalidMemo                  = se.Register(DefaultCodespace, CodeInvalidMemo, "invalid memo")
 	errFailSaveEvent                = se.Register(DefaultCodespace, CodeFailSaveEvent, "fail to save add events")
 	errAddLiquidityFailValidation   = se.Register(DefaultCodespace, CodeAddLiquidityFailValidation, "fail to validate add liquidity")

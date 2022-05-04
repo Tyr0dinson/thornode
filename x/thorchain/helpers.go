@@ -1138,13 +1138,14 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 // Update the ObservedTxVoter so the network can still match the outbound with
 // the observed inbound
 func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
+	version := keeper.GetVersion()
 	if keeper.GetVersion().LT(semver.MustParse("1.89.0")) {
-		_ = keeper.GetLowestActiveVersion(ctx) // TODO remove me on fork
+		version = keeper.GetLowestActiveVersion(ctx) // TODO remove me on fork
 	}
 	switch {
-	case keeper.GetVersion().GTE(semver.MustParse("1.88.0")):
+	case version.GTE(semver.MustParse("1.88.0")):
 		return updateTxOutGasV88(ctx, keeper, txOut, gas)
-	case keeper.GetVersion().GTE(semver.MustParse("0.1.0")):
+	case version.GTE(semver.MustParse("0.1.0")):
 		return updateTxOutGasV1(ctx, keeper, txOut, gas)
 	default:
 		return fmt.Errorf("updateTxOutGas: invalid version")
