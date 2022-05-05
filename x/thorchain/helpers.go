@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 var WhitelistedArbs = []string{ // treasury addresses
@@ -26,15 +27,15 @@ var WhitelistedArbs = []string{ // treasury addresses
 	"ltc1qaa064vvv4d6stgywnf777j6dl8rd3tt93fp6jx",
 }
 
-func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.47.0")) {
-		return refundTxV47(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
+		return refundTxV47(ctx, tx, mgr, refundCode, refundReason, nativeRuneModuleName)
 	}
 	return errBadVersion
 }
 
-func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -142,13 +143,15 @@ func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 
 func subsidizePoolWithSlashBond(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.74.0")) {
+	if version.GTE(semver.MustParse("1.88.0")) {
+		return subsidizePoolWithSlashBondV88(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
+	} else if version.GTE(semver.MustParse("0.74.0")) {
 		return subsidizePoolWithSlashBondV74(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
 	}
 	return errBadVersion
 }
 
-func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
+func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
 	// Thorchain did not slash the node account
 	if slashRuneAmt.IsZero() {
 		return nil
@@ -215,6 +218,14 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 			ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
 			continue
 		}
+
+		// Send the subsidized RUNE from the Bond module to Asgard
+		runeToAsgard := common.NewCoin(common.RuneNative, f.subsidiseRune)
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(runeToAsgard)); err != nil {
+			ctx.Logger().Error("fail to send subsidy from bond to asgard", "error", err)
+			return err
+		}
+
 		poolSlashAmt := []PoolAmt{
 			{
 				Asset:  pool.Asset,
@@ -253,13 +264,17 @@ func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault)
 
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.81.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.88.0")):
+		return refundBondV88(ctx, tx, acc, amt, nodeAcc, mgr)
+	case version.GTE(semver.MustParse("0.81.0")):
 		return refundBondV81(ctx, tx, acc, amt, nodeAcc, mgr)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
@@ -293,17 +308,7 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", nodeAcc.NodeAddress))
 	}
 
-	// enforce node operator fee
-	// TODO: allow a node to change this while node is in standby. Should also
-	// have a "cool down" period where the node cannot churn in for a while to
-	// enure bond providers don't get rug pulled of their rewards.
-	defaultNodeOperatorFee, err := mgr.Keeper().GetMimir(ctx, constants.NodeOperatorFee.String())
-	if defaultNodeOperatorFee <= 0 || err != nil {
-		defaultNodeOperatorFee = mgr.GetConstants().GetInt64Value(constants.NodeOperatorFee)
-	}
-	bp.NodeOperatorFee = cosmos.NewUint(uint64(defaultNodeOperatorFee))
-
-	// backfil bond provider information (passive migration code)
+	// backfill bond provider information (passive migration code)
 	if len(bp.Providers) == 0 {
 		// no providers yet, add node operator bond address to the bond provider list
 		nodeOpBondAddr, err := nodeAcc.BondAddress.AccAddress()
@@ -454,7 +459,9 @@ func fetchConfigInt64(ctx cosmos.Context, mgr Manager, key constants.ConstantNam
 	val, err := mgr.Keeper().GetMimir(ctx, key.String())
 	if val < 0 || err != nil {
 		val = mgr.GetConstants().GetInt64Value(key)
-		ctx.Logger().Error("fail to fetch mimir value", "key", key.String(), "error", err)
+		if err != nil {
+			ctx.Logger().Error("fail to fetch mimir value", "key", key.String(), "error", err)
+		}
 	}
 	return val
 }
@@ -538,7 +545,7 @@ func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stag
 					ctx.Logger().Error("fail to save pool", "pool", pool.Asset, "err", err)
 				}
 
-				if err := mgr.Keeper().AddFeeToReserve(ctx, fee); err != nil {
+				if err := mgr.Keeper().AddPoolFeeToReserve(ctx, fee); err != nil {
 					ctx.Logger().Error("fail to add rune to reserve", "from pool", pool.Asset, "err", err)
 				}
 
@@ -1124,5 +1131,53 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(telem(query.ScheduledOutboundValue), "thornode", "queue", "scheduled", "value", "rune")
 	telemetry.SetGauge(telem(query.ScheduledOutboundValue)*runeUSDPrice, "thornode", "queue", "scheduled", "value", "usd")
 
+	return nil
+}
+
+// In the case where the max gas of the chain of a queued outbound tx has changed
+// Update the ObservedTxVoter so the network can still match the outbound with
+// the observed inbound
+func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
+	version := keeper.GetLowestActiveVersion(ctx)
+	switch {
+	case version.GTE(semver.MustParse("1.88.0")):
+		return updateTxOutGasV88(ctx, keeper, txOut, gas)
+	case version.GTE(semver.MustParse("0.1.0")):
+		return updateTxOutGasV1(ctx, keeper, txOut, gas)
+	default:
+		return fmt.Errorf("updateTxOutGas: invalid version")
+	}
+}
+
+func updateTxOutGasV88(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
+	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
+	// For example , migration , yggdrasil funding etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
+	if txOut.InHash == common.BlankTxID {
+		return nil
+	}
+	voter, err := keeper.GetObservedTxInVoter(ctx, txOut.InHash)
+	if err != nil {
+		return err
+	}
+
+	txOutIndex := -1
+	for i, tx := range voter.Actions {
+		if tx.Equals(txOut) {
+			txOutIndex = i
+			voter.Actions[txOutIndex].MaxGas = gas
+			keeper.SetObservedTxInVoter(ctx, voter)
+			break
+		}
+	}
+
+	if txOutIndex == -1 {
+		return fmt.Errorf("fail to find tx out in ObservedTxVoter %s", txOut.InHash)
+	}
+
+	return nil
+}
+
+// No-op
+func updateTxOutGasV1(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
 	return nil
 }
