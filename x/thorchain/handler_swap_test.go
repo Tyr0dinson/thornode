@@ -435,6 +435,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	swapM, ok = m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	AAVEAsset, err := common.NewAsset("ETH.AAVE-0X7FC66500C84A76AD7E9C93437BFC5AC33E2DDAE9")
+	c.Assert(err, IsNil)
 	swapM.Asset = AAVEAsset
 	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
 	c.Assert(err, IsNil)
