@@ -555,6 +555,9 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
+		if runners.IsVaultSolvency(acct, asgard, c.cosmosScanner.lastFee) && c.IsBlockScannerHealthy() {
+			continue
+		}
 		select {
 		case c.globalSolvencyQueue <- stypes.Solvency{
 			Height: blockHeight,

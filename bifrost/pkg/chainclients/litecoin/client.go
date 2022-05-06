@@ -1153,7 +1153,7 @@ func (c *Client) ReportSolvency(ltcBlockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
-		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*EstimateAverageTxSize*uint64(c.lastFeeRate))) {
+		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*EstimateAverageTxSize*uint64(c.lastFeeRate))) && c.IsBlockScannerHealthy() {
 			// when vault is solvent , don't need to report solvency
 			continue
 		}
