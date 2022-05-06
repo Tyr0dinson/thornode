@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // SolvencyCheckProvider methods that a SolvencyChecker implementation should have
@@ -75,4 +78,30 @@ func SolvencyCheckRunner(chain common.Chain,
 			}
 		}
 	}
+}
+
+// IsVaultSolvency check whether the given vault is solvent or not , if it is not solvent , then it will need to report solvency to thornode
+func IsVaultSolvency(account common.Account, vault types.Vault, currentGasFee cosmos.Uint) bool {
+	logger := log.Logger
+	for _, c := range account.Coins {
+		asgardCoin := vault.GetCoin(c.Asset)
+		// when wallet has more coins or equal exactly as asgard , then the vault is solvent
+		if c.Amount.GTE(asgardCoin.Amount) {
+			continue
+		}
+
+		gap := asgardCoin.Amount.Sub(c.Amount)
+		// thornode allow 10x of MaxGas as the gap
+		if c.Asset.IsGasAsset() && gap.LT(currentGasFee.MulUint64(10)) {
+			continue
+		}
+		logger.Info().
+			Str("asset", c.Asset.String()).
+			Str("asgard amount", asgardCoin.Amount.String()).
+			Str("wallet amount", c.Amount.String()).
+			Str("gap", gap.String()).
+			Msg("insolvent detect")
+		return false
+	}
+	return true
 }

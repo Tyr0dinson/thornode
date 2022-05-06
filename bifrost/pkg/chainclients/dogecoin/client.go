@@ -1223,6 +1223,10 @@ func (c *Client) ReportSolvency(dogeBlockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
+		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*EstimateAverageTxSize*uint64(c.lastFeeRate))) {
+			// when vault is solvent , don't need to report solvency
+			continue
+		}
 		select {
 		case c.globalSolvencyQueue <- types.Solvency{
 			Height: dogeBlockHeight,

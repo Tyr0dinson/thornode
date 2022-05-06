@@ -859,6 +859,10 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
+		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.ethScanner.lastReportedGasPrice)) {
+			// when vault is solvent , don't need to report solvency
+			continue
+		}
 		select {
 		case c.globalSolvencyQueue <- stypes.Solvency{
 			Height: ethBlockHeight,
