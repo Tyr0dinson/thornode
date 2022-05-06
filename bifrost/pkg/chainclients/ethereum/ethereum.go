@@ -859,8 +859,9 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
-		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.ethScanner.lastReportedGasPrice)) {
+		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.ethScanner.lastReportedGasPrice)) && c.IsBlockScannerHealthy() {
 			// when vault is solvent , don't need to report solvency
+			// when block scanner is not healthy , usually that means the chain is halted , in that scenario , we continue to report solvency
 			continue
 		}
 		select {

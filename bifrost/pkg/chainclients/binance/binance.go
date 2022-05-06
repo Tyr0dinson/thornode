@@ -601,7 +601,7 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 			b.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
-		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*uint64(b.bnbScanner.singleFee))) {
+		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*uint64(b.bnbScanner.singleFee))) && b.IsBlockScannerHealthy() {
 			// when vault is solvent , don't need to report solvency
 			continue
 		}

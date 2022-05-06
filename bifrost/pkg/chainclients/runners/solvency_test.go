@@ -11,12 +11,15 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
-	. "gopkg.in/check.v1"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
@@ -160,4 +163,34 @@ func (d *DummySolvencyCheckProvider) ShouldReportSolvency(height int64) bool {
 func (d *DummySolvencyCheckProvider) ReportSolvency(height int64) error {
 	d.ReportSolvencyRun = true
 	return nil
+}
+
+func (s *SolvencyTestSuite) TestIsVaultSolvent(c *C) {
+	vault := types.Vault{
+		BlockHeight: 1,
+		PubKey:      types.GetRandomPubKey(),
+		Coins: common.NewCoins(
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(102400000000)),
+		),
+		Type:   types.VaultType_AsgardVault,
+		Status: types.VaultStatus_ActiveVault,
+	}
+	acct := common.Account{
+		Sequence:      0,
+		AccountNumber: 0,
+		Coins:         common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(102400000000))),
+	}
+	c.Assert(IsVaultSolvency(acct, vault, cosmos.NewUint(0)), Equals, true)
+	acct = common.Account{
+		Sequence:      0,
+		AccountNumber: 0,
+		Coins:         common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(102305000000))),
+	}
+	c.Assert(IsVaultSolvency(acct, vault, cosmos.NewUint(80000*120)), Equals, true)
+	acct = common.Account{
+		Sequence:      0,
+		AccountNumber: 0,
+		Coins:         common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(102205000000))),
+	}
+	c.Assert(IsVaultSolvency(acct, vault, cosmos.NewUint(80000*120)), Equals, false)
 }
