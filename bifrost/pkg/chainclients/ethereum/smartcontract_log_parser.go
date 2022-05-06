@@ -1,6 +1,7 @@
 package ethereum
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -89,8 +90,11 @@ func (scp *SmartContractLogParser) parseVaultTransfer(log etypes.Log) (routerVau
 }
 
 func (scp *SmartContractLogParser) unpackVaultLog(out interface{}, event string, log etypes.Log) error {
+	if len(log.Topics) == 0 {
+		return errors.New("topics field in event log is empty")
+	}
 	if log.Topics[0] != scp.vaultABI.Events[event].ID {
-		return fmt.Errorf("event signature mismatch")
+		return errors.New("event signature mismatch")
 	}
 	if len(log.Data) > 0 {
 		if err := scp.vaultABI.UnpackIntoInterface(out, event, log.Data); err != nil {
@@ -354,12 +358,12 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			}
 			aggregatorAddr, err := common.NewAddress(transferOutAndCall.Target.String())
 			if err != nil {
-				scp.logger.Err(err).Msg("fail to parse aggregator address")
+				scp.logger.Err(err).Str("aggregator_address", transferOutAndCall.Target.String()).Msg("fail to parse aggregator address")
 				continue
 			}
 			aggregatorTargetAddr, err := common.NewAddress(transferOutAndCall.FinalAsset.String())
 			if err != nil {
-				scp.logger.Err(err).Msg("fail to parse aggregator target address")
+				scp.logger.Err(err).Str("final_asset", transferOutAndCall.FinalAsset.String()).Msg("fail to parse aggregator target address")
 				continue
 			}
 
