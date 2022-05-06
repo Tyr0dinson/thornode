@@ -45,7 +45,7 @@ unit-tests:
     when: always
     reports:
       junit: report.xml
-      cobertura: coverage.xml
+      coverage_report: coverage.xml
     paths:
       - coverage*
 
