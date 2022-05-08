@@ -1154,6 +1154,7 @@ func (c *Client) ReportSolvency(ltcBlockHeight int64) error {
 			continue
 		}
 		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*EstimateAverageTxSize*uint64(c.lastFeeRate))) && c.IsBlockScannerHealthy() {
+			c.logger.Info().Msg("vault is solvent , skip solvency message")
 			// when vault is solvent , don't need to report solvency
 			continue
 		}

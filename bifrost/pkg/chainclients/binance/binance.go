@@ -602,6 +602,7 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 			continue
 		}
 		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*uint64(b.bnbScanner.singleFee))) && b.IsBlockScannerHealthy() {
+			b.logger.Info().Msg("vault is solvent , skip solvency message")
 			// when vault is solvent , don't need to report solvency
 			continue
 		}

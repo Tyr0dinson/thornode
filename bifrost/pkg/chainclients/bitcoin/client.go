@@ -672,6 +672,7 @@ func (c *Client) ReportSolvency(bitcoinBlockHeight int64) error {
 		}
 
 		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*EstimateAverageTxSize*uint64(c.lastFeeRate))) && c.IsBlockScannerHealthy() {
+			c.logger.Info().Msg("vault is solvent , skip solvency message")
 			// when vault is solvent , don't need to report solvency
 			continue
 		}

@@ -556,6 +556,7 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 			continue
 		}
 		if runners.IsVaultSolvency(acct, asgard, c.cosmosScanner.lastFee) && c.IsBlockScannerHealthy() {
+			c.logger.Info().Msg("vault is solvent , skip solvency message")
 			continue
 		}
 		select {

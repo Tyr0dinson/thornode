@@ -860,6 +860,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 			continue
 		}
 		if runners.IsVaultSolvency(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.ethScanner.lastReportedGasPrice)) && c.IsBlockScannerHealthy() {
+			c.logger.Info().Msg("vault is solvent , skip solvency message")
 			// when vault is solvent , don't need to report solvency
 			// when block scanner is not healthy , usually that means the chain is halted , in that scenario , we continue to report solvency
 			continue
