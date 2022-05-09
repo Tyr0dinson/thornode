@@ -182,7 +182,7 @@ func (c *Client) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan ty
 	c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue)
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
 // Stop stops the block scanner

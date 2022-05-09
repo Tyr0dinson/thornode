@@ -19,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -102,7 +103,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	// Happy path, shouldn't check solvency if nothing halted (chain clients will report solvency)
 	s.sp.ResetChecks()
 	wg.Add(1)
-	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg)
+	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
 	time.Sleep(time.Second * 6)
 
 	c.Assert(s.sp.ShouldReportSolvencyRan, Equals, false)
@@ -112,7 +113,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	mimirMap["HaltBNBChain"] = 1
 	s.sp.ResetChecks()
 	wg.Add(1)
-	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg)
+	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
 	time.Sleep(time.Second * 6)
 
 	c.Assert(s.sp.ShouldReportSolvencyRan, Equals, false)
@@ -122,7 +123,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	mimirMap["HaltBNBChain"] = 10
 	s.sp.ResetChecks()
 	wg.Add(1)
-	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg)
+	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
 	time.Sleep(time.Second * 6)
 
 	c.Assert(s.sp.ShouldReportSolvencyRan, Equals, true)
@@ -133,7 +134,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	mimirMap["SolvencyHaltBNBChain"] = 1
 	s.sp.ResetChecks()
 	wg.Add(1)
-	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg)
+	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
 	time.Sleep(time.Second * 6)
 
 	c.Assert(s.sp.ShouldReportSolvencyRan, Equals, true)

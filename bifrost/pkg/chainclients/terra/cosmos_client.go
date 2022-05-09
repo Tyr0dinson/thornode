@@ -187,7 +187,7 @@ func (c *CosmosClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue 
 	c.tssKeyManager.Start()
 	c.blockScanner.Start(globalTxsQueue)
 	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
 // Stop Cosmos chain client
