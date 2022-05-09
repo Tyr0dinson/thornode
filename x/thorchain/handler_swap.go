@@ -43,13 +43,16 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.89.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.89.0")):
 		return h.validateV89(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.65.0")) {
+	case version.GTE(semver.MustParse("1.88.1")):
+		return h.validateV88(ctx, msg)
+	case version.GTE(semver.MustParse("0.65.0")):
 		return h.validateV65(ctx, msg)
+	default:
+		return errInvalidVersion
 	}
-
-	return errInvalidVersion
 }
 
 func (h SwapHandler) validateV89(ctx cosmos.Context, msg MsgSwap) error {
@@ -58,6 +61,9 @@ func (h SwapHandler) validateV89(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	target := msg.TargetAsset
+	if isTradingHalt(ctx, &msg, h.mgr) {
+		return errors.New("trading is halted, can't process swap")
+	}
 	if target.IsSyntheticAsset() {
 		// the following  only applicable for chaosnet
 		totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)
