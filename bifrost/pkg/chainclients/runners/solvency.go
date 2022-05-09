@@ -28,6 +28,7 @@ func SolvencyCheckRunner(chain common.Chain,
 	bridge *thorclient.ThorchainBridge,
 	stopper <-chan struct{},
 	wg *sync.WaitGroup,
+	backOffDuration time.Duration,
 ) {
 	logger := log.Logger.With().Str("chain", chain.String()).Logger()
 	logger.Info().Msg("start solvency check runner")
@@ -39,11 +40,14 @@ func SolvencyCheckRunner(chain common.Chain,
 		logger.Error().Msg("solvency checker provider is nil")
 		return
 	}
+	if backOffDuration == 0 {
+		backOffDuration = constants.ThorchainBlockTime
+	}
 	for {
 		select {
 		case <-stopper:
 			return
-		case <-time.After(constants.ThorchainBlockTime):
+		case <-time.After(backOffDuration):
 			// check whether the chain is halted via mimir or not
 			haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", chain))
 			if err != nil {
