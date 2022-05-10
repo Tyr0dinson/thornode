@@ -273,6 +273,21 @@ services:
       XHV_HOST: ${XHV_HOST:-http://haven:17750}
     command: /mocknet/init-haven-wallet.sh
 
+  # ------------------------------ haven-wallet-smoke-test ------------------------------
+
+  haven-wallet-smoke-test:
+    profiles:
+      - smoke-tests
+    image: registry.gitlab.com/thorchain/devops/haven-core:latest
+    restart: unless-stopped
+    volumes:
+      - "./mocknet:/mocknet"
+    ports:
+      - 5051:5051
+    environment:
+      XHV_HOST: ${XHV_HOST:-http://haven:17750}
+    command: /mocknet/init-haven-wallet-smoke.sh
+
   # ------------------------------ ethereum ------------------------------
 
   ethereum:

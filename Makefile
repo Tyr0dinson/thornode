@@ -118,8 +118,14 @@ pull:
 run-mocknet:
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
 
+run-mocknet-smoke:
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard --profile smoke-tests up -d
+
 stop-mocknet:
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
+
+stop-mocknet-smoke:
+	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard --profile smoke-tests down -v
 
 build-mocknet:
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
@@ -132,3 +138,5 @@ logs-mocknet:
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
 
 reset-mocknet: stop-mocknet run-mocknet
+
+reset-mocknet-smoke: stop-mocknet-smoke run-mocknet-smoke
