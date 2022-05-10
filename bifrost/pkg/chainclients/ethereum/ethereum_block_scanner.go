@@ -134,7 +134,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		return nil, fmt.Errorf("fail to load token list,err: %w", err)
 	}
 
-	tokensHelper, err := evm.NewTokensHelper(storage.GetInternalDb(), prefixTokenMeta, common.ETHAsset, defaultDecimals, cfg.HTTPRequestTimeout, whitelistTokens.Tokens, client)
+	tokensHelper, err := evm.NewTokensHelper(storage.GetInternalDb(), prefixTokenMeta, common.ETHAsset, defaultDecimals, cfg.HTTPRequestTimeout, whitelistTokens.Tokens, cfg.RPCHost)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create token helper: %w", err)
 	}

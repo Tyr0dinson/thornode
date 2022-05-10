@@ -50,13 +50,18 @@ func NewTokensHelper(db *leveldb.DB,
 	defaultDecimals uint64,
 	requestTimeout time.Duration,
 	tokenWhitelist []ERC20Token,
-	client *ethclient.Client) (*TokensHelper, error) {
+	rpcHost string) (*TokensHelper, error) {
 
 	tokenDb, _ := NewLevelDBTokenMeta(db, prefixTokenMeta)
 	_, erc20ABI, err := GetContractABI(routerContractABI, erc20ContractABI)
 
 	if err != nil {
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
+	}
+
+	client, err := ethclient.Dial(rpcHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to dial %s rpc host(%s): %w", nativeAsset.Symbol, rpcHost, err)
 	}
 
 	return &TokensHelper{

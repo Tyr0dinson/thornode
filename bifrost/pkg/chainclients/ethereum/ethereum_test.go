@@ -249,6 +249,7 @@ func (s *EthereumSuite) TestConvertSigningAmount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,
@@ -283,6 +284,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	e2, err2 := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,
@@ -366,6 +368,7 @@ func (s *EthereumSuite) TestGetAccount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,
@@ -390,6 +393,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,
@@ -617,6 +621,7 @@ func (s *EthereumSuite) TestGetAsgardAddresses(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,
@@ -638,6 +643,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BlockScannerConfiguration{
+			RPCHost:             "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
 			SuggestedFeeVersion: 1,

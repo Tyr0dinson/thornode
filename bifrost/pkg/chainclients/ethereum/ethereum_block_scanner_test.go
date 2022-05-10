@@ -110,19 +110,19 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("127.0.0.1"), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("127.0.0.1"), storage, big.NewInt(int64(types.Mainnet)), nil, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), nil, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("127.0.0.1"), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, nil, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, nil, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("127.0.0.1"), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 }
@@ -640,7 +640,7 @@ func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
 	solvencyReporter := func(height int64) error {
 		return nil
 	}
-	conf := getConfigForTest("127.0.0.1")
+	conf := getConfigForTest("http://" + server.Listener.Addr().String())
 	conf.SuggestedFeeVersion = 2
 	bs, err := NewETHScanner(conf, storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, IsNil)
