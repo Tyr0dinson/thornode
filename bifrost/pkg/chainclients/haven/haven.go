@@ -387,10 +387,22 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 		return acct, fmt.Errorf("fail to login to wallet: %w", err)
 	}
 
-	// get the spendable balance of each asset
-	var coins []common.Coin
+	// refresh before checking for balance
 	c.clientLock.Lock()
 	defer c.clientLock.Unlock()
+	var refresh *wallet.ResponseRefresh
+	for i := 0; i < 3; i++ {
+		refresh, err = c.client.Refresh(&wallet.RequestRefresh{})
+		if err != nil {
+			return acct, fmt.Errorf("error when refresing wallet %w", err)
+		}
+		if refresh.BlocksFetched > 0 {
+			break
+		}
+	}
+
+	// get the spendable balance of each asset
+	var coins []common.Coin
 	for _, asset := range c.supportedAssets {
 		resp, err := c.client.GetBalance(&wallet.RequestGetBalance{
 			AccountIndex: 0,
