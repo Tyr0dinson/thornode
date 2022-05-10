@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"encoding/json"
@@ -11,24 +11,22 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
 )
 
-const (
-	// prefixTokenMeta declares prefix to use in leveldb to avoid conflicts
-	// #nosec G101 this is just a prefix
-	prefixTokenMeta = `eth-tokenmeta-`
-)
-
 // LevelDBTokenMeta struct
 type LevelDBTokenMeta struct {
-	db *leveldb.DB
+	db              *leveldb.DB
+	prefixTokenMeta string
 }
 
 // NewLevelDBTokenMeta creates a new level db backed TokenMeta
-func NewLevelDBTokenMeta(db *leveldb.DB) (*LevelDBTokenMeta, error) {
-	return &LevelDBTokenMeta{db: db}, nil
+func NewLevelDBTokenMeta(db *leveldb.DB, prefixTokenMeta string) (*LevelDBTokenMeta, error) {
+	return &LevelDBTokenMeta{
+		db:              db,
+		prefixTokenMeta: prefixTokenMeta,
+	}, nil
 }
 
 func (t *LevelDBTokenMeta) getTokenMetaKey(address string) string {
-	return fmt.Sprintf("%s%s", prefixTokenMeta, strings.ToUpper(address))
+	return fmt.Sprintf("%s%s", t.prefixTokenMeta, strings.ToUpper(address))
 }
 
 // GetTokenMeta for given token address
@@ -66,7 +64,7 @@ func (t *LevelDBTokenMeta) SaveTokenMeta(symbol, address string, decimals uint64
 // GetTokens returns all the token metas in storage
 func (t *LevelDBTokenMeta) GetTokens() ([]*types.TokenMeta, error) {
 	tokenMetas := make([]*types.TokenMeta, 0)
-	iterator := t.db.NewIterator(util.BytesPrefix([]byte(prefixTokenMeta)), nil)
+	iterator := t.db.NewIterator(util.BytesPrefix([]byte(t.prefixTokenMeta)), nil)
 	defer iterator.Release()
 	for iterator.Next() {
 		buf := iterator.Value()

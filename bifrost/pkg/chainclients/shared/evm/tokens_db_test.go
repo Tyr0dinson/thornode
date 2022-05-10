@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"fmt"
@@ -15,11 +15,13 @@ var _ = Suite(
 	&EthereumTokenMetaTestSuite{},
 )
 
+const prefix = "eth-tokenmeta-"
+
 func (s *EthereumTokenMetaTestSuite) TestNewTokenMeta(c *C) {
 	memStorage := storage.NewMemStorage()
 	db, err := leveldb.Open(memStorage, nil)
 	c.Assert(err, IsNil)
-	dbTokenMeta, err := NewLevelDBTokenMeta(db)
+	dbTokenMeta, err := NewLevelDBTokenMeta(db, prefix)
 	c.Assert(err, IsNil)
 	c.Assert(dbTokenMeta, NotNil)
 	c.Assert(db.Close(), IsNil)
@@ -29,14 +31,14 @@ func (s *EthereumTokenMetaTestSuite) TestTokenMeta(c *C) {
 	memStorage := storage.NewMemStorage()
 	db, err := leveldb.Open(memStorage, nil)
 	c.Assert(err, IsNil)
-	tokenMeta, err := NewLevelDBTokenMeta(db)
+	tokenMeta, err := NewLevelDBTokenMeta(db, prefix)
 	c.Assert(err, IsNil)
 	c.Assert(tokenMeta, NotNil)
 
 	c.Assert(tokenMeta.SaveTokenMeta("TKN", "0xa7d9ddbe1f17865597fbd27ec712455208b6b76d", 18), IsNil)
 
 	key := tokenMeta.getTokenMetaKey("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
-	c.Assert(key, Equals, fmt.Sprintf(prefixTokenMeta+"%s", strings.ToUpper("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")))
+	c.Assert(key, Equals, fmt.Sprintf(prefix+"%s", strings.ToUpper("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")))
 
 	tm, err := tokenMeta.GetTokenMeta("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d")
 	c.Assert(err, IsNil)

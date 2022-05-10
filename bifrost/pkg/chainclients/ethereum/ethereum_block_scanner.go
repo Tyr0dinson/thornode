@@ -47,6 +47,10 @@ const (
 	decimalMethod   = "decimals"
 	defaultDecimals = 18 // on ETH , consolidate all decimals to 18, in Wei
 	tenGwei         = 10000000000
+
+	// prefixTokenMeta declares prefix to use in leveldb to avoid conflicts
+	// #nosec G101 this is just a prefix
+	prefixTokenMeta = `eth-tokenmeta-`
 )
 
 var (
@@ -71,14 +75,14 @@ type ETHScanner struct {
 	globalErrataQueue    chan<- stypes.ErrataBlock
 	vaultABI             *abi.ABI
 	erc20ABI             *abi.ABI
-	tokens               *LevelDBTokenMeta
+	tokens               *evm.LevelDBTokenMeta
 	bridge               *thorclient.ThorchainBridge
 	pubkeyMgr            pubkeymanager.PubKeyValidator
 	eipSigner            etypes.Signer
 	currentBlockHeight   int64
 	gasCache             []*big.Int
 	solvencyReporter     SolvencyReporter
-	whitelistTokens      []ERC20Token
+	whitelistTokens      []evm.ERC20Token
 	signerCacheManager   *signercache.CacheManager
 
 	// set at creation based on the SuggestedFeeVersion in config
@@ -113,7 +117,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 	if err != nil {
 		return nil, fmt.Errorf("fail to create block meta accessor: %w", err)
 	}
-	tokens, err := NewLevelDBTokenMeta(storage.GetInternalDb())
+	tokens, err := evm.NewLevelDBTokenMeta(storage.GetInternalDb(), prefixTokenMeta)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create token meta db: %w", err)
 	}
@@ -126,7 +130,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}
 	// load token list
-	var whitelistTokens TokenList
+	var whitelistTokens evm.TokenList
 	if err := json.Unmarshal(tokenList, &whitelistTokens); err != nil {
 		return nil, fmt.Errorf("fail to load token list,err: %w", err)
 	}
