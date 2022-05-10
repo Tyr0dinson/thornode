@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"fmt"
@@ -15,6 +15,13 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+var (
+	// smart contract ABI, it doesn't change often after deploy , and also if it changed , likely bifrost will need to be upgraded to support
+	// given that , there is no point to put these into config file
+	ethRouterContractABI = "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"rune\",\"type\":\"address\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"Deposit\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldVault\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newVault\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"TransferAllowance\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"vault\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"TransferOut\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldVault\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newVault\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"indexed\":false,\"internalType\":\"struct Router.Coin[]\",\"name\":\"coins\",\"type\":\"tuple[]\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"VaultTransfer\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"RUNE\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"recipients\",\"type\":\"address[]\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"internalType\":\"struct Router.Coin[]\",\"name\":\"coins\",\"type\":\"tuple[]\"},{\"internalType\":\"string[]\",\"name\":\"memos\",\"type\":\"string[]\"}],\"name\":\"batchTransferOut\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address payable\",\"name\":\"vault\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"deposit\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"router\",\"type\":\"address\"},{\"internalType\":\"address payable\",\"name\":\"asgard\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"internalType\":\"struct Router.Coin[]\",\"name\":\"coins\",\"type\":\"tuple[]\"},{\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"returnVaultAssets\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"router\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"newVault\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"transferAllowance\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address payable\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"asset\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"memo\",\"type\":\"string\"}],\"name\":\"transferOut\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"vaultAllowance\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]"
+	erc20ContractABI     = "[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"tokenOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"spender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"tokens\",\"type\":\"uint256\"}],\"name\":\"Approval\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"tokens\",\"type\":\"uint256\"}],\"name\":\"Transfer\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"}],\"name\":\"allowance\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"numTokens\",\"type\":\"uint256\"}],\"name\":\"approve\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"tokenOwner\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"decimals\",\"outputs\":[{\"internalType\":\"uint8\",\"name\":\"\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"name\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"symbol\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"receiver\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"numTokens\",\"type\":\"uint256\"}],\"name\":\"transfer\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"buyer\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"numTokens\",\"type\":\"uint256\"}],\"name\":\"transferFrom\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+)
+
 type SmartContractLogParserTestSuite struct {
 	abi *abi.ABI
 }
@@ -22,7 +29,7 @@ type SmartContractLogParserTestSuite struct {
 var _ = Suite(&SmartContractLogParserTestSuite{})
 
 func (t *SmartContractLogParserTestSuite) SetUpSuite(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	t.abi = vaultABI
 }
@@ -39,7 +46,7 @@ const (
 )
 
 func mockAssetResolver(token string) (common.Asset, error) {
-	if strings.EqualFold(token, ethToken) {
+	if strings.EqualFold(token, nativeToken) {
 		return common.ETHAsset, nil
 	}
 	if strings.EqualFold(token, errAssetToken) {
@@ -141,17 +148,17 @@ func (t *SmartContractLogParserTestSuite) getVaultTransferEvent(smartContractAdd
 }
 
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 
 	// when logs are empty
-	isVaultTransfer, err := parser.getTxInItem(nil, &types.TxInItem{})
+	isVaultTransfer, err := parser.GetTxInItem(nil, &types.TxInItem{})
 	c.Assert(isVaultTransfer, Equals, false)
 	c.Assert(err, IsNil)
 
 	// when log is not emit by router contract
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		{
 			Address: ecommon.HexToAddress("0xe17d9cf3620ea447eed9089a22096a63bbd63eb4"),
 			Topics:  nil,
@@ -164,8 +171,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem := &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", ethToken, big.NewInt(0), "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", nativeToken, big.NewInt(0), "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 	}, txInItem)
 	c.Assert(isVaultTransfer, Equals, false)
 	c.Assert(err, IsNil)
@@ -176,7 +183,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", errAssetToken, big.NewInt(1024000), "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 	}, txInItem)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -188,8 +195,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", ethToken, big.NewInt(1024000), "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", nativeToken, big.NewInt(1024000), "ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -201,15 +208,15 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x6c4a2eeb8531e3c18bca51104df7eb2377708263",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 	}, txInItem)
@@ -220,15 +227,15 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"ADD:ETH.ETH:tthor16xxn0cadruuw6a2qwpv35av0mehryvdzzjz3af"),
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"whatever"),
 	}, txInItem)
@@ -239,10 +246,10 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"yggdrasil-:1024"),
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
@@ -263,10 +270,10 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
-			ethToken,
+			nativeToken,
 			big.NewInt(1024000),
 			"yggdrasil-:1024"),
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
@@ -289,7 +296,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 }
 
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 	// corrupted transferOutEvent should be ignored
@@ -298,7 +305,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 	}
 	logItem := t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken, big.NewInt(1024000), "OUT:"+types2.GetRandomTxHash().String())
 	logItem.Data = []byte("whatever")
-	isVaultTransfer, err := parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
 		logItem,
 	}, txInItem)
 	c.Assert(err, IsNil)
@@ -311,7 +318,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", errAssetToken, big.NewInt(1024000), "OUT:"+types2.GetRandomTxHash().String()),
 	}, txInItem)
 	c.Assert(err, NotNil)
@@ -322,8 +329,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(1024000), "whatever"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(1024000), "whatever"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -335,8 +342,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(1024000), "ADD:ETH.ETH"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(1024000), "ADD:ETH.ETH"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -346,7 +353,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 }
 
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 	// corrupted transferAllowance should be ignored
@@ -355,7 +362,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 	}
 	logItem := t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken, big.NewInt(1024000), "YGGDRASIL+:1024")
 	logItem.Data = []byte("whatever")
-	isVaultTransfer, err := parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
 		logItem,
 	}, txInItem)
 	c.Assert(err, IsNil)
@@ -368,7 +375,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", errAssetToken, big.NewInt(1024000), "YGGDRASIL+:1024"),
 	}, txInItem)
 	c.Assert(err, IsNil)
@@ -381,8 +388,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(0), "YGGDRASIL+:1024"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(0), "YGGDRASIL+:1024"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -394,8 +401,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(102400), "YGGDRASIL+:1024"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(102400), "YGGDRASIL+:1024"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -408,8 +415,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		To:     "0x9EcA25ee04FDCc9d9CDFF377aa8da019Dba38437",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", ethToken, big.NewInt(102400), "YGGDRASIL+:1024"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", nativeToken, big.NewInt(102400), "YGGDRASIL+:1024"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -421,8 +428,8 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(102400), "YGGDRASIL+:1024"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(102400), "YGGDRASIL+:1024"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -434,9 +441,9 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
 
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(102400), "YGGDRASIL+:1024"),
-		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", ethToken, big.NewInt(102400), "whatever"),
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(102400), "YGGDRASIL+:1024"),
+		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", nativeToken, big.NewInt(102400), "whatever"),
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -448,7 +455,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 }
 
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 	// corrupted transferAllowance should be ignored
@@ -462,7 +469,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 		},
 	}, "YGGDRASIL-:1024")
 	logItem.Data = []byte("whatever")
-	isVaultTransfer, err := parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
 		logItem,
 	}, txInItem)
 	c.Assert(err, IsNil)
@@ -474,7 +481,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -493,7 +500,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -520,7 +527,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -537,7 +544,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -554,7 +561,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -574,7 +581,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", []RouterCoin{
 			{
 				Asset:  ecommon.HexToAddress(tknTestToken),
@@ -596,7 +603,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_VaultTransferEvent(c *
 }
 
 func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 	tknAsset, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
@@ -606,7 +613,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	txInItem := &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err := parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
 		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263",
 			tknTestToken, big.NewInt(102400), "YGGDRASIL+:1024"),
@@ -620,7 +627,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	txInItem = &types.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263", tknTestToken, big.NewInt(204800), "SWAP:BTC.BTC:tb1q2mwvhprtsgtamrte23mptehnsjwe3a7j4yvdn4"),
 		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", "0x6c4a2eeb8531e3c18bca51104df7eb2377708263",
@@ -648,11 +655,11 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	}
 	maliciousAddress := "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
 	asgardAddr := "0x3f429e2212718A717Bd7f9E83CA47DAb7956447B"
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		// malicious address deposit 519600 ETH to it's own address
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			maliciousAddress,
-			ethToken, big.NewInt(519600),
+			nativeToken, big.NewInt(519600),
 			"SWAP:BTC.BTC:tb1q2mwvhprtsgtamrte23mptehnsjwe3a7j4yvdn4"),
 		// triger a vault transfer event with nil coins
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
@@ -678,7 +685,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	}
 	maliciousAddress = "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
 	asgardAddr = "0x3f429e2212718A717Bd7f9E83CA47DAb7956447B"
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			"0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", maliciousAddress, []RouterCoin{
 				{
@@ -691,7 +698,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 		// malicious address deposit 519600 ETH to it's own address
 		t.getDepositEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
 			asgardAddr,
-			ethToken, big.NewInt(519600),
+			nativeToken, big.NewInt(519600),
 			"SWAP:BTC.BTC:tb1q2mwvhprtsgtamrte23mptehnsjwe3a7j4yvdn4"),
 	}, txInItem)
 	c.Assert(isVaultTransfer, Equals, false)
@@ -699,7 +706,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 }
 
 func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := GetContractABI(ethRouterContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
 	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI)
 	tknAsset, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
@@ -713,7 +720,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
 	outboundHash := types2.GetRandomTxHash().String()
-	isVaultTransfer, err := parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
 		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 			"0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken, big.NewInt(2048000), "YGGDRASIL+:1024"),
 		t.getTransferOutEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44",
@@ -735,7 +742,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 	}
 	outboundHash = types2.GetRandomTxHash().String()
-	isVaultTransfer, err = parser.getTxInItem([]*etypes.Log{
+	isVaultTransfer, err = parser.GetTxInItem([]*etypes.Log{
 		t.getTransferAllowanceEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
 			"0x9eca25ee04fdcc9d9cdff377aa8da019dba38437", tknTestToken, big.NewInt(2048000), "YGGDRASIL+:1024"),
 		t.getVaultTransferEvent("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44", "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473", "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437",

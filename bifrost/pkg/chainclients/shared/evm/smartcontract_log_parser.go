@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"fmt"
@@ -14,6 +14,14 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
+)
+
+const (
+	nativeToken            = "0x0000000000000000000000000000000000000000"
+	depositEvent           = "0xef519b7eb82aaf6ac376a6df2d793843ebfd593de5f1a0601d3cc6ab49ebb395"
+	transferOutEvent       = "0xa9cd03aa3c1b4515114539cd53d22085129d495cb9e9f9af77864526240f1bf7"
+	transferAllowanceEvent = "0x05b90458f953d3fcb2d7fb25616a2fddeca749d0c47cc5c9832d0266b5346eea"
+	vaultTransferEvent     = "0x281daef48d91e5cd3d32db0784f6af69cd8d8d2e8c612a3568dca51ded51e08f"
 )
 
 type (
@@ -136,7 +144,7 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 	return event, nil
 }
 
-func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *types.TxInItem) (bool, error) {
+func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *types.TxInItem) (bool, error) {
 	if len(logs) == 0 {
 		return false, nil
 	}

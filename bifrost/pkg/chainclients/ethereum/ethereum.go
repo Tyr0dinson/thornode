@@ -22,6 +22,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
@@ -126,7 +127,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	if err != nil {
 		return nil, fmt.Errorf("fail to create ETH key sign wrapper: %w", err)
 	}
-	vaultABI, _, err := getContractABI()
+	vaultABI, _, err := evm.GetContractABI(routerContractABI, erc20ContractABI)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get contract abi: %w", err)
 	}
@@ -440,7 +441,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		}
 		hasRouterUpdated = !newSmartContractAddr.Equals(contractAddr)
 
-		var coins []RouterCoin
+		var coins []evm.RouterCoin
 		for _, item := range tx.Coins {
 			assetAddr := getTokenAddressFromAsset(item.Asset)
 			assetAmt := c.convertSigningAmount(item.Amount.BigInt(), assetAddr)
@@ -448,7 +449,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				ethValue = assetAmt
 				continue
 			}
-			coins = append(coins, RouterCoin{
+			coins = append(coins, evm.RouterCoin{
 				Asset:  ecommon.HexToAddress(assetAddr),
 				Amount: assetAmt,
 			})
