@@ -1,14 +1,14 @@
 package ethereum
 
 import (
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	evmtypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm/types"
 )
 
 // BlockMetaAccessor define methods need to access block meta storage
 type BlockMetaAccessor interface {
-	GetBlockMetas() ([]*types.BlockMeta, error)
-	GetBlockMeta(height int64) (*types.BlockMeta, error)
-	SaveBlockMeta(height int64, block *types.BlockMeta) error
+	GetBlockMetas() ([]*evmtypes.BlockMeta, error)
+	GetBlockMeta(height int64) (*evmtypes.BlockMeta, error)
+	SaveBlockMeta(height int64, block *evmtypes.BlockMeta) error
 	PruneBlockMeta(height int64) error
 	AddSignedTxItem(item SignedTxItem) error
 	RemoveSignedTxItem(hash string) error

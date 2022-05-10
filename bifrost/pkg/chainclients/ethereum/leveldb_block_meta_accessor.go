@@ -7,7 +7,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	evmtypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm/types"
 )
 
 // PrefixTxStorage declares prefix to use in leveldb to avoid conflicts
@@ -31,7 +31,7 @@ func (t *LevelDBBlockMetaAccessor) getBlockMetaKey(height int64) string {
 }
 
 // GetBlockMeta at given block height ,  when the requested block meta doesn't exist , it will return nil , thus caller need to double check it
-func (t *LevelDBBlockMetaAccessor) GetBlockMeta(height int64) (*types.BlockMeta, error) {
+func (t *LevelDBBlockMetaAccessor) GetBlockMeta(height int64) (*evmtypes.BlockMeta, error) {
 	key := t.getBlockMetaKey(height)
 	exist, err := t.db.Has([]byte(key), nil)
 	if err != nil {
@@ -44,7 +44,7 @@ func (t *LevelDBBlockMetaAccessor) GetBlockMeta(height int64) (*types.BlockMeta,
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block meta(%s) from storage: %w", key, err)
 	}
-	var blockMeta types.BlockMeta
+	var blockMeta evmtypes.BlockMeta
 	if err := json.Unmarshal(v, &blockMeta); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal block meta from json: %w", err)
 	}
@@ -52,7 +52,7 @@ func (t *LevelDBBlockMetaAccessor) GetBlockMeta(height int64) (*types.BlockMeta,
 }
 
 // SaveBlockMeta persistent the given BlockMeta into storage
-func (t *LevelDBBlockMetaAccessor) SaveBlockMeta(height int64, blockMeta *types.BlockMeta) error {
+func (t *LevelDBBlockMetaAccessor) SaveBlockMeta(height int64, blockMeta *evmtypes.BlockMeta) error {
 	key := t.getBlockMetaKey(height)
 	buf, err := json.Marshal(blockMeta)
 	if err != nil {
@@ -64,8 +64,8 @@ func (t *LevelDBBlockMetaAccessor) SaveBlockMeta(height int64, blockMeta *types.
 // GetBlockMetas returns all the block metas in storage
 // The chain client will Prune block metas every time it finished scan a block , so at maximum it will keep BlockCacheSize blocks
 // thus it should not grow out of control
-func (t *LevelDBBlockMetaAccessor) GetBlockMetas() ([]*types.BlockMeta, error) {
-	blockMetas := make([]*types.BlockMeta, 0)
+func (t *LevelDBBlockMetaAccessor) GetBlockMetas() ([]*evmtypes.BlockMeta, error) {
+	blockMetas := make([]*evmtypes.BlockMeta, 0)
 	iterator := t.db.NewIterator(util.BytesPrefix([]byte(PrefixBlockMeta)), nil)
 	defer iterator.Release()
 	for iterator.Next() {
@@ -73,7 +73,7 @@ func (t *LevelDBBlockMetaAccessor) GetBlockMetas() ([]*types.BlockMeta, error) {
 		if len(buf) == 0 {
 			continue
 		}
-		var blockMeta types.BlockMeta
+		var blockMeta evmtypes.BlockMeta
 		if err := json.Unmarshal(buf, &blockMeta); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal block meta: %w", err)
 		}
@@ -93,7 +93,7 @@ func (t *LevelDBBlockMetaAccessor) PruneBlockMeta(height int64) error {
 		if len(buf) == 0 {
 			continue
 		}
-		var blockMeta types.BlockMeta
+		var blockMeta evmtypes.BlockMeta
 		if err := json.Unmarshal(buf, &blockMeta); err != nil {
 			return fmt.Errorf("fail to unmarshal block meta: %w", err)
 		}

@@ -9,7 +9,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	evmtypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm/types"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 )
 
@@ -67,7 +67,7 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 
 	block, err := CreateBlock(1722479)
 	c.Assert(err, IsNil)
-	blockMeta := types.NewBlockMeta(block, stypes.TxIn{TxArray: []stypes.TxInItem{{Tx: "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}}})
+	blockMeta := evmtypes.NewBlockMeta(block, stypes.TxIn{TxArray: []stypes.TxInItem{{Tx: "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}}})
 	c.Assert(blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
 
 	key := blockMetaAccessor.getBlockMetaKey(blockMeta.Height)
@@ -84,7 +84,7 @@ func (s *EthereumBlockMetaAccessorTestSuite) TestBlockMetaAccessor(c *C) {
 	for i := 0; i < 1024; i++ {
 		block, err = CreateBlock(i)
 		c.Assert(err, IsNil)
-		bm := types.NewBlockMeta(block, stypes.TxIn{TxArray: []stypes.TxInItem{{Tx: "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}}})
+		bm := evmtypes.NewBlockMeta(block, stypes.TxIn{TxArray: []stypes.TxInItem{{Tx: "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}}})
 		c.Assert(blockMetaAccessor.SaveBlockMeta(bm.Height, bm), IsNil)
 	}
 	blockMetas, err := blockMetaAccessor.GetBlockMetas()
