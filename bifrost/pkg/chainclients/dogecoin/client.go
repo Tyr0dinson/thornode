@@ -52,7 +52,7 @@ const (
 	// DefaultFeePerKB is guidance set by dogecoin core team and adopted by miners: https://github.com/dogecoin/dogecoin/blob/master/doc/fee-recommendation.md
 	DefaultFeePerKB      = 0.01
 	DefaultCoinbaseValue = 10000
-	MaxMempoolScanPerTry = 500
+	MaxMempoolScanPerTry = 250
 )
 
 // Client observes dogecoin chain and allows to sign and broadcast tx
@@ -83,6 +83,7 @@ type Client struct {
 	signerCacheManager      *signercache.CacheManager
 	stopchan                chan struct{}
 	lastSolvencyCheckHeight int64
+	mempoolScannerHealthy   bool
 }
 
 // NewClient generates a new Client
@@ -210,7 +211,7 @@ func (c *Client) GetHeight() (int64, error) {
 
 // IsBlockScannerHealthy checks if the block scanner is healthy
 func (c *Client) IsBlockScannerHealthy() bool {
-	return c.blockScanner.IsHealthy()
+	return c.blockScanner.IsHealthy() && c.mempoolScannerHealthy
 }
 
 // GetAddress returns address from pubkey
@@ -556,8 +557,13 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		total++
 		// even it didn't finish scan all the mempool tx, but still yield here , so as block scanner can continue to scan a committed block
 		if total >= MaxMempoolScanPerTry {
+			c.mempoolScannerHealthy = false
+			c.logger.Info().Msgf("currently there are more than %d mempool entry didn't scan, so mark scanner as unhealthy", MaxMempoolScanPerTry)
 			break
 		}
+	}
+	if total < MaxMempoolScanPerTry {
+		c.mempoolScannerHealthy = true
 	}
 	if err := g.Wait(); err != nil {
 		c.logger.Err(err).Msgf("fail to scan mempool")

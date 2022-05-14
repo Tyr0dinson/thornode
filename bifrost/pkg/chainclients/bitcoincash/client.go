@@ -50,7 +50,7 @@ const (
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 250 here , as most of time it will spend 1 input, have 3 output
 	EstimateAverageTxSize = 1500
 	DefaultCoinbaseValue  = 6.25
-	MaxMempoolScanPerTry  = 500
+	MaxMempoolScanPerTry  = 250
 )
 
 // Client observes bitcoin cash chain and allows to sign and broadcast tx
@@ -81,6 +81,7 @@ type Client struct {
 	signerCacheManager      *signercache.CacheManager
 	stopchan                chan struct{}
 	lastSolvencyCheckHeight int64
+	mempoolScannerHealthy   bool
 }
 
 // NewClient generates a new Client
@@ -198,7 +199,7 @@ func (c *Client) GetConfig() config.ChainConfiguration {
 }
 
 func (c *Client) IsBlockScannerHealthy() bool {
-	return c.blockScanner.IsHealthy()
+	return c.blockScanner.IsHealthy() && c.mempoolScannerHealthy
 }
 
 // GetChain returns BCH Chain
@@ -557,8 +558,13 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		total++
 		// even it didn't finish scan all the mempool tx, but still yield here , so as block scanner can continue to scan a committed block
 		if total >= MaxMempoolScanPerTry {
+			c.logger.Info().Msgf("currently there are more than %d mempool entry didn't scan, so mark scanner as unhealthy", MaxMempoolScanPerTry)
+			c.mempoolScannerHealthy = false
 			break
 		}
+	}
+	if total < MaxMempoolScanPerTry {
+		c.mempoolScannerHealthy = true
 	}
 	if err := g.Wait(); err != nil {
 		c.logger.Err(err).Msgf("fail to scan mempool")

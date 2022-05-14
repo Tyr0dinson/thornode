@@ -51,7 +51,7 @@ const (
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
 	DefaultCoinbaseValue  = 6.25
-	MaxMempoolScanPerTry  = 500
+	MaxMempoolScanPerTry  = 250
 )
 
 // Client observes bitcoin chain and allows to sign and broadcast tx
@@ -82,6 +82,7 @@ type Client struct {
 	signerCacheManager      *signercache.CacheManager
 	stopchan                chan struct{}
 	lastSolvencyCheckHeight int64
+	mempoolScannerHealthy   bool
 }
 
 // NewClient generates a new Client
@@ -210,7 +211,7 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 func (c *Client) IsBlockScannerHealthy() bool {
-	return c.blockScanner.IsHealthy()
+	return c.blockScanner.IsHealthy() && c.mempoolScannerHealthy
 }
 
 // GetAddress returns address from pubkey
@@ -560,8 +561,13 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		total++
 		// even it didn't finish scan all the mempool tx, but still yield here , so as block scanner can continue to scan a committed block
 		if total >= MaxMempoolScanPerTry {
+			c.mempoolScannerHealthy = false
+			c.logger.Info().Msgf("currently there are more than %d mempool entry didn't scan, so mark scanner as unhealthy", MaxMempoolScanPerTry)
 			break
 		}
+	}
+	if total < MaxMempoolScanPerTry {
+		c.mempoolScannerHealthy = true
 	}
 	if err := g.Wait(); err != nil {
 		c.logger.Err(err).Msgf("fail to scan mempool")
