@@ -50,7 +50,8 @@ const (
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
 	// DefaultFeePerKB is guidance set by dogecoin core team and adopted by miners: https://github.com/dogecoin/dogecoin/blob/master/doc/fee-recommendation.md
-	DefaultFeePerKB      = 0.01
+	// On THORChain , let's pay a bit more, in dollar value , it is not much
+	DefaultFeePerKB      = 0.5
 	DefaultCoinbaseValue = 10000
 	MaxMempoolScanPerTry = 500
 )
@@ -635,10 +636,12 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	}
 
 	c.updateNetworkInfo()
-	if err := c.sendNetworkFee(block); err != nil {
-		c.logger.Err(err).Msg("fail to send network fee")
-	}
 	if c.IsBlockScannerHealthy() {
+		// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
+		// will be staled anyway , so don't send network fee
+		if err := c.sendNetworkFee(block); err != nil {
+			c.logger.Err(err).Msg("fail to send network fee")
+		}
 		if err := c.ReportSolvency(height); err != nil {
 			c.logger.Err(err).Msg("fail to report solvency info")
 		}

@@ -233,8 +233,9 @@ func (e *ETHScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 			// convert the gas price to 1E8 , the decimals used in thorchain
 			gasPriceForThorchain := big.NewInt(0).Div(gasPrice, big.NewInt(common.One*100))
 			gasValue := gasPriceForThorchain.Uint64()
-			if gasValue == 0 {
-				gasValue = 1
+			// Ensure the network always pay 30Gwei as gas price
+			if gasValue == 0 || gasValue < 3 {
+				gasValue = 3
 			}
 			// make it to round up
 			if big.NewInt(1).Mul(big.NewInt(int64(gasValue)), big.NewInt(common.One*100)).Cmp(gasPrice) < 0 {
@@ -258,7 +259,9 @@ func (e *ETHScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 
 		// gas price to 1e8
 		tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100)).Uint64()
-
+		if tcGasPrice < 3 {
+			tcGasPrice = 3
+		}
 		// skip posting if the fee has not changed
 		if tcGasPrice == e.lastReportedGasPrice {
 			break

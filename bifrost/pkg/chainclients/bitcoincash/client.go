@@ -636,10 +636,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
 	}
 	c.updateNetworkInfo()
-	if err := c.sendNetworkFee(height); err != nil {
-		c.logger.Err(err).Msg("fail to send network fee")
-	}
 	if c.IsBlockScannerHealthy() {
+		if err := c.sendNetworkFee(height); err != nil {
+			c.logger.Err(err).Msg("fail to send network fee")
+		}
 		if err := c.ReportSolvency(height); err != nil {
 			c.logger.Err(err).Msg("fail to send solvency to THORChain")
 		}

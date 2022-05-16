@@ -54,6 +54,9 @@ const (
 	// (mean) gas price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
 	GasCacheTransactions = 100
+
+	// MinTerraFee Given what happens on TERRA chain , LUNA worth nothing, and fee is high ,let's set the MinTerraFee to 3 LUNA
+	MinTerraFee = 3
 )
 
 var (
@@ -245,6 +248,9 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 			return errors.New("suggested gas fee was zero")
 		}
 
+		if gasFee.LT(cosmos.NewUint(MinTerraFee * common.One)) {
+			gasFee = cosmos.NewUint(MinTerraFee * common.One)
+		}
 		// don't update gas fee equal to the last one we sent
 		if gasFee.Equal(c.lastFee) {
 			return nil
