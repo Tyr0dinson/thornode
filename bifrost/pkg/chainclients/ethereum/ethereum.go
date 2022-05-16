@@ -67,6 +67,7 @@ type Client struct {
 	globalSolvencyQueue     chan stypes.Solvency
 	signerCacheManager      *signercache.CacheManager
 	lastSolvencyCheckHeight int64
+	rpcClient               *evm.EthRpc
 }
 
 // NewClient create new instance of Ethereum client
@@ -114,6 +115,11 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
+	rpcClient, err := evm.NewEthRpc(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create ETH rpc host(%s): %w", cfg.RPCHost, err)
+	}
+
 	ethClient, err := ethclient.Dial(cfg.RPCHost)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial ETH rpc host(%s): %w", cfg.RPCHost, err)
@@ -145,6 +151,7 @@ func NewClient(thorKeys *thorclient.Keys,
 		tssKeySigner: tssKm,
 		wg:           &sync.WaitGroup{},
 		stopchan:     make(chan struct{}),
+		rpcClient:    rpcClient,
 	}
 
 	c.logger.Info().Msgf("current chain id: %d", chainID.Uint64())
@@ -485,7 +492,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		estimatedETHValue = estimatedETHValue.SetInt64(21000)
 	}
 	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
-	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	// estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	estimatedGas, err := c.rpcClient.EstimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas
 		// the returned error is `execution reverted`
