@@ -54,7 +54,7 @@ type Client struct {
 	kw                      *keySignWrapper
 	ethScanner              *ETHScanner
 	bridge                  *thorclient.ThorchainBridge
-	blockScanner            *blockscanner.BlockScanner
+	blockScanner            *blockscanner.BlockScannerImp
 	vaultABI                *abi.ABI
 	pubkeyMgr               pubkeymanager.PubKeyValidator
 	poolMgr                 thorclient.PoolManager

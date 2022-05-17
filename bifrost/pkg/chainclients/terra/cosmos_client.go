@@ -63,7 +63,7 @@ type CosmosClient struct {
 	localKeyManager     *keyManager
 	thorchainBridge     *thorclient.ThorchainBridge
 	storage             *blockscanner.BlockScannerStorage
-	blockScanner        *blockscanner.BlockScanner
+	blockScanner        blockscanner.BlockScanner
 	signerCacheManager  *signercache.CacheManager
 	cosmosScanner       *CosmosBlockScanner
 	globalSolvencyQueue chan stypes.Solvency
@@ -214,7 +214,7 @@ func (c *CosmosClient) GetChain() common.Chain {
 }
 
 func (c *CosmosClient) GetHeight() (int64, error) {
-	return c.blockScanner.FetchLastHeight()
+	return c.cosmosScanner.GetHeight()
 }
 
 // GetAddress return current signer address, it will be bech32 encoded address

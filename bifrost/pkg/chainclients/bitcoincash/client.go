@@ -61,7 +61,7 @@ type Client struct {
 	client                  *rpcclient.Client
 	chain                   common.Chain
 	privateKey              *bchec.PrivateKey
-	blockScanner            *blockscanner.BlockScanner
+	blockScanner            blockscanner.BlockScanner
 	blockMetaAccessor       BlockMetaAccessor
 	ksWrapper               *KeySignWrapper
 	bridge                  *thorclient.ThorchainBridge

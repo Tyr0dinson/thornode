@@ -34,7 +34,7 @@ type Signer struct {
 	wg                    *sync.WaitGroup
 	thorchainBridge       *thorclient.ThorchainBridge
 	stopChan              chan struct{}
-	blockScanner          *blockscanner.BlockScanner
+	blockScanner          blockscanner.BlockScanner
 	thorchainBlockScanner *ThorchainBlockScan
 	chains                map[common.Chain]chainclients.ChainClient
 	storage               SignerStorage

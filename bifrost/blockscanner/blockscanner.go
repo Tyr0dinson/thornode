@@ -35,8 +35,18 @@ type Block struct {
 	Txs    []string
 }
 
-// BlockScanner is used to discover block height
-type BlockScanner struct {
+// BlockScanner interface
+type BlockScanner interface {
+	// Start the block scanner process
+	Start(globalTxsQueue chan types.TxIn)
+	// Stop Block Scanner
+	Stop()
+	// IsHealthy return a bool
+	IsHealthy() bool
+}
+
+// BlockScannerImp is used to discover block height
+type BlockScannerImp struct {
 	cfg             config.BlockScannerConfiguration
 	logger          zerolog.Logger
 	wg              *sync.WaitGroup
@@ -52,8 +62,8 @@ type BlockScanner struct {
 	healthy         bool // status of scanner, if last attempt to scan a block was successful or not
 }
 
-// NewBlockScanner create a new instance of BlockScanner
-func NewBlockScanner(cfg config.BlockScannerConfiguration, scannerStorage ScannerStorage, m *metrics.Metrics, thorchainBridge *thorclient.ThorchainBridge, chainScanner BlockScannerFetcher) (*BlockScanner, error) {
+// NewBlockScanner create a new instance of BlockScannerImp
+func NewBlockScanner(cfg config.BlockScannerConfiguration, scannerStorage ScannerStorage, m *metrics.Metrics, thorchainBridge *thorclient.ThorchainBridge, chainScanner BlockScannerFetcher) (*BlockScannerImp, error) {
 	var err error
 	if scannerStorage == nil {
 		return nil, errors.New("scannerStorage is nil")
@@ -66,7 +76,7 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, scannerStorage Scanne
 	}
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
-	scanner := &BlockScanner{
+	scanner := &BlockScannerImp{
 		cfg:             cfg,
 		logger:          logger,
 		wg:              &sync.WaitGroup{},
@@ -85,17 +95,17 @@ func NewBlockScanner(cfg config.BlockScannerConfiguration, scannerStorage Scanne
 }
 
 // IsHealthy return if the block scanner is healthy or not
-func (b *BlockScanner) IsHealthy() bool {
+func (b *BlockScannerImp) IsHealthy() bool {
 	return b.healthy
 }
 
 // GetMessages return the channel
-func (b *BlockScanner) GetMessages() <-chan int64 {
+func (b *BlockScannerImp) GetMessages() <-chan int64 {
 	return b.scanChan
 }
 
 // Start block scanner
-func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn) {
+func (b *BlockScannerImp) Start(globalTxsQueue chan types.TxIn) {
 	b.globalTxsQueue = globalTxsQueue
 	currentPos, err := b.scannerStorage.GetScanPos()
 	if err != nil {
@@ -108,7 +118,7 @@ func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn) {
 	go b.scanMempool()
 }
 
-func (b *BlockScanner) scanMempool() {
+func (b *BlockScannerImp) scanMempool() {
 	b.logger.Debug().Msg("start to scan mempool")
 	defer b.logger.Debug().Msg("stop scan mempool")
 	defer b.wg.Done()
@@ -143,7 +153,7 @@ func (b *BlockScanner) scanMempool() {
 
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
-func (b *BlockScanner) isChainPaused() bool {
+func (b *BlockScannerImp) isChainPaused() bool {
 	var haltHeight, solvencyHaltHeight, nodeHaltHeight, thorHeight int64
 
 	// Check if chain has been halted via mimir
@@ -182,7 +192,7 @@ func (b *BlockScanner) isChainPaused() bool {
 }
 
 // scanBlocks
-func (b *BlockScanner) scanBlocks() {
+func (b *BlockScannerImp) scanBlocks() {
 	b.logger.Debug().Msg("start to scan blocks")
 	defer b.logger.Debug().Msg("stop scan blocks")
 	defer b.wg.Done()
@@ -270,7 +280,7 @@ func (b *BlockScanner) scanBlocks() {
 // 2. Get the last observed height from THORChain if available
 // 3. Use block scanner storage if > 0
 // 4. Fetch last height from the chain itself
-func (b *BlockScanner) FetchLastHeight() (int64, error) {
+func (b *BlockScannerImp) FetchLastHeight() (int64, error) {
 	// get scanner storage height
 	currentPos, _ := b.scannerStorage.GetScanPos() // ignore error
 
@@ -304,7 +314,7 @@ func (b *BlockScanner) FetchLastHeight() (int64, error) {
 	return b.chainScanner.GetHeight()
 }
 
-func (b *BlockScanner) Stop() {
+func (b *BlockScannerImp) Stop() {
 	b.logger.Debug().Msg("receive stop request")
 	defer b.logger.Debug().Msg("common block scanner stopped")
 	close(b.stopChan)

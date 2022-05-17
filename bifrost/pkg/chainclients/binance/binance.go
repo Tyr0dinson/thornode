@@ -55,7 +55,7 @@ type Binance struct {
 	localKeyManager         *keyManager
 	thorchainBridge         *thorclient.ThorchainBridge
 	storage                 *blockscanner.BlockScannerStorage
-	blockScanner            *blockscanner.BlockScanner
+	blockScanner            *blockscanner.BlockScannerImp
 	bnbScanner              *BinanceBlockScanner
 	globalSolvencyQueue     chan stypes.Solvency
 	signerCacheManager      *signercache.CacheManager
