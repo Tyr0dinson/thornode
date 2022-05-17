@@ -691,7 +691,7 @@ func (c *Client) getHighestFeeRate() uint64 {
 func (c *Client) sendNetworkFee(height int64) error {
 	// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
 	// will be staled anyway , so don't send network fee
-	if c.IsBlockScannerHealthy() {
+	if !c.IsBlockScannerHealthy() {
 		return nil
 	}
 	result, err := c.client.GetBlockStats(height, nil)
