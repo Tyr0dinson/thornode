@@ -1,6 +1,7 @@
 package bitcoin
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -17,6 +18,10 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
+
+	abcitypes "github.com/tendermint/tendermint/rpc/core/types"
+
+	rpctypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -139,6 +144,20 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 			case r.Method == "createwallet":
 				_, err := rw.Write([]byte(`{ "result": null, "error": null, "id": 1 }`))
 				c.Assert(err, IsNil)
+			case r.Method == "broadcast_tx_sync":
+				hash := sha256.Sum256([]byte(ttypes.GetRandomTxHash()))
+				broadcastResp := abcitypes.ResultBroadcastTx{
+					Code:      0,
+					Data:      nil,
+					Log:       "",
+					Codespace: "",
+					Hash:      hash[:],
+				}
+				resp := rpctypes.NewRPCSuccessResponse(rpctypes.JSONRPCIntID(0), broadcastResp)
+				buf, err := json.Marshal(resp)
+				c.Assert(err, IsNil)
+				_, err = rw.Write(buf)
+				c.Assert(err, IsNil)
 			}
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/node/") {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
@@ -159,6 +178,7 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 	}))
 	var err error
 	cfg.ChainHost = s.server.Listener.Addr().String()
+	cfg.ChainRPC = s.server.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
@@ -1174,7 +1194,8 @@ func (s *BitcoinSuite) TestIsValidUTXO(c *C) {
 	c.Assert(s.client.isValidUTXO("5121037953dbf08030f67352134992643d033417eaa6fcfb770c038f364ff40d7615882100bd2fda4cf456d64386a0756f580101a607c25bd8d6814693bdf16e2a7ba3e45c52ae"), Equals, false)
 	c.Assert(s.client.isValidUTXO("524104d81fd577272bbe73308c93009eec5dc9fc319fc1ee2e7066e17220a5d47a18314578be2faea34b9f1f8ca078f8621acd4bc22897b03daa422b9bf56646b342a24104ec3afff0b2b66e8152e9018fe3be3fc92b30bf886b3487a525997d00fd9da2d012dce5d5275854adc3106572a5d1e12d4211b228429f5a7b2f7ba92eb0475bb14104b49b496684b02855bc32f5daefa2e2e406db4418f3b86bca5195600951c7d918cdbe5e6d3736ec2abf2dd7610995c3086976b2c0c7b4e459d10b34a316d5a5e753ae"), Equals, false)
 }
-func (s *BitcoinSuite) TestSendNetowrkFee(c *C) {
+
+func (s *BitcoinSuite) TestSendNetworkFee(c *C) {
 	originalBlockScanner := s.client.blockScanner
 	defer func() {
 		s.client.blockScanner = originalBlockScanner
@@ -1184,5 +1205,5 @@ func (s *BitcoinSuite) TestSendNetowrkFee(c *C) {
 	c.Check(s.client.sendNetworkFee(1), IsNil)
 	mockBlockScanner.Healthy = true
 	// if should fail to post network fee
-	c.Check(s.client.sendNetworkFee(1), NotNil)
+	c.Check(s.client.sendNetworkFee(1), IsNil)
 }
