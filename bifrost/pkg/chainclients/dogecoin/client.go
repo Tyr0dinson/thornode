@@ -636,12 +636,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	}
 
 	c.updateNetworkInfo()
+	if err := c.sendNetworkFee(block); err != nil {
+		c.logger.Err(err).Msg("fail to send network fee")
+	}
 	if c.IsBlockScannerHealthy() {
-		// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
-		// will be staled anyway , so don't send network fee
-		if err := c.sendNetworkFee(block); err != nil {
-			c.logger.Err(err).Msg("fail to send network fee")
-		}
 		if err := c.ReportSolvency(height); err != nil {
 			c.logger.Err(err).Msg("fail to report solvency info")
 		}
@@ -685,6 +683,11 @@ func (c *Client) updateNetworkInfo() {
 }
 
 func (c *Client) sendNetworkFee(blockResult *btcjson.GetBlockVerboseTxResult) error {
+	// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
+	// will be staled anyway , so don't send network fee
+	if !c.IsBlockScannerHealthy() {
+		return nil
+	}
 	height := blockResult.Height
 	var total float64 // total coinbase value , which is the block reward + all transaction fees in the block
 	var totalVSize int32

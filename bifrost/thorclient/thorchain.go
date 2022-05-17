@@ -14,8 +14,6 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -97,13 +95,6 @@ func NewThorchainBridge(cfg config.ClientConfiguration, m *metrics.Metrics, k *K
 		m:             m,
 		broadcastLock: &sync.RWMutex{},
 	}, nil
-}
-
-func MakeCodec() codec.ProtoCodecMarshaler {
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	std.RegisterInterfaces(interfaceRegistry)
-	stypes.RegisterInterfaces(interfaceRegistry)
-	return codec.NewProtoCodec(interfaceRegistry)
 }
 
 // MakeLegacyCodec creates codec

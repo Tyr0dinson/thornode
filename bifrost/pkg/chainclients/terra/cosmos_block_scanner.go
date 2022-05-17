@@ -36,6 +36,7 @@ import (
 
 // SolvencyReporter is to report solvency info to THORNode
 type SolvencyReporter func(int64) error
+type BooleanPredicate func() bool
 
 const (
 	// GasUpdatePeriodBlocks is the block interval at which we report gas fee changes.
@@ -68,16 +69,17 @@ var (
 
 // CosmosBlockScanner is to scan the blocks
 type CosmosBlockScanner struct {
-	cfg              config.BlockScannerConfiguration
-	logger           zerolog.Logger
-	db               blockscanner.ScannerStorage
-	cdc              *codec.ProtoCodec
-	txConfig         client.TxConfig
-	txService        *rpcclient.HTTP
-	tmService        tmservice.ServiceClient
-	grpc             *grpc.ClientConn
-	bridge           *thorclient.ThorchainBridge
-	solvencyReporter SolvencyReporter
+	cfg                          config.BlockScannerConfiguration
+	logger                       zerolog.Logger
+	db                           blockscanner.ScannerStorage
+	cdc                          *codec.ProtoCodec
+	txConfig                     client.TxConfig
+	txService                    *rpcclient.HTTP
+	tmService                    tmservice.ServiceClient
+	grpc                         *grpc.ClientConn
+	bridge                       *thorclient.ThorchainBridge
+	solvencyReporter             SolvencyReporter
+	blockScannerHealthyPredicate BooleanPredicate
 
 	// feeCache contains a rolling window of suggested gas fees which are computed as the
 	// gas price paid in each observed transaction multiplied by the default GasLimit.
@@ -93,6 +95,7 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 	bridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	solvencyReporter SolvencyReporter,
+	blockScannerHealthyPredicate BooleanPredicate,
 ) (*CosmosBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
@@ -134,18 +137,19 @@ func NewCosmosBlockScanner(cfg config.BlockScannerConfiguration,
 	}
 
 	return &CosmosBlockScanner{
-		cfg:              cfg,
-		logger:           logger,
-		db:               scanStorage,
-		cdc:              cdc,
-		txConfig:         txConfig,
-		txService:        rpcClient,
-		tmService:        tmService,
-		feeCache:         make([]ctypes.Uint, 0),
-		lastFee:          ctypes.NewUint(0),
-		grpc:             grpcConn,
-		bridge:           bridge,
-		solvencyReporter: solvencyReporter,
+		cfg:                          cfg,
+		logger:                       logger,
+		db:                           scanStorage,
+		cdc:                          cdc,
+		txConfig:                     txConfig,
+		txService:                    rpcClient,
+		tmService:                    tmService,
+		feeCache:                     make([]ctypes.Uint, 0),
+		lastFee:                      ctypes.NewUint(0),
+		grpc:                         grpcConn,
+		bridge:                       bridge,
+		solvencyReporter:             solvencyReporter,
+		blockScannerHealthyPredicate: blockScannerHealthyPredicate,
 	}, nil
 }
 
@@ -255,7 +259,10 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		if gasFee.Equal(c.lastFee) {
 			return nil
 		}
-
+		// when block scanner is not healthy , don't report network fee
+		if c.blockScannerHealthyPredicate != nil && !c.blockScannerHealthyPredicate() {
+			return nil
+		}
 		// NOTE: We post the fee to the network instead of the transaction rate, and set the
 		// transaction size 1 to ensure the MaxGas in the generated TxOut contains the
 		// correct fee. We cannot pass the proper size and rate without a deeper change to

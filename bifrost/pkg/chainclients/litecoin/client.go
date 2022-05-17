@@ -630,12 +630,8 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 		txIn.TxArray = append(txIn.TxArray, txInBlock.TxArray...)
 	}
 	c.updateNetworkInfo()
-	if c.IsBlockScannerHealthy() {
-		// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
-		// will be staled anyway , so don't send network fee
-		if err := c.sendNetworkFee(height); err != nil {
-			c.logger.Err(err).Msg("fail to send network fee")
-		}
+	if err := c.sendNetworkFee(height); err != nil {
+		c.logger.Err(err).Msg("fail to send network fee")
 	}
 
 	// LTC has faster block time, report every 5 blocks seems fine
@@ -693,6 +689,11 @@ func (c *Client) getHighestFeeRate() uint64 {
 }
 
 func (c *Client) sendNetworkFee(height int64) error {
+	// when block scanner is not healthy , which means block scanner is behind trying to catch up , the network fee
+	// will be staled anyway , so don't send network fee
+	if c.IsBlockScannerHealthy() {
+		return nil
+	}
 	result, err := c.client.GetBlockStats(height, nil)
 	if err != nil {
 		return fmt.Errorf("fail to get block stats")

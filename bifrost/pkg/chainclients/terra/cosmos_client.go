@@ -162,6 +162,7 @@ func NewCosmosClient(
 		c.thorchainBridge,
 		m,
 		c.ReportSolvency,
+		c.IsBlockScannerHealthy,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cosmos scanner: %w", err)
