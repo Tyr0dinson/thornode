@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm"
 	evmtypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -101,28 +102,30 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	}))
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	rpcClient, err := evm.NewEthRpc(server.URL, time.Second)
+	c.Assert(err, IsNil)
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
 		return nil
 	}
-	bs, err := NewETHScanner(getConfigForTest(""), nil, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewETHScanner(getConfigForTest(""), nil, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), nil, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), nil, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, nil, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, nil, solvencyReporter, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest("http://"+server.Listener.Addr().String()), storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 }
@@ -184,6 +187,8 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
+	rpcClient, err := evm.NewEthRpc(server.URL, time.Second)
+	c.Assert(err, IsNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	u, err := url.Parse(server.URL)
@@ -203,7 +208,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 		c.Assert(pubKeyMgr.Stop(), IsNil)
 	}()
 
-	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, bridge, s.m, pubKeyMgr, func(height int64) error {
+	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, rpcClient, bridge, s.m, pubKeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -322,6 +327,8 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
+	rpcClient, err := evm.NewEthRpc(server.URL, time.Second)
+	c.Assert(err, IsNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	c.Assert(storage, NotNil)
@@ -344,7 +351,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		c.Assert(pkeyMgr.Stop(), IsNil)
 	}()
 	c.Assert(err, IsNil)
-	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -390,7 +397,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		true,
 	)
 
-	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -409,7 +416,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(500000000)), Equals, true)
 
-	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	// whitelist the address for test
@@ -559,6 +566,8 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
 	c.Assert(ethClient, NotNil)
+	rpcClient, err := evm.NewEthRpc(server.URL, time.Second)
+	c.Assert(err, IsNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
 	bridge, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
@@ -576,7 +585,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	defer func() {
 		c.Assert(pkeyMgr.Stop(), IsNil)
 	}()
-	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -635,6 +644,8 @@ func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
 	}))
 	ethClient, err := ethclient.Dial(server.URL)
 	c.Assert(err, IsNil)
+	rpcClient, err := evm.NewEthRpc(server.URL, time.Second)
+	c.Assert(err, IsNil)
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
@@ -642,7 +653,7 @@ func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
 	}
 	conf := getConfigForTest("http://" + server.Listener.Addr().String())
 	conf.SuggestedFeeVersion = 2
-	bs, err := NewETHScanner(conf, storage, big.NewInt(int64(types.Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewETHScanner(conf, storage, big.NewInt(int64(types.Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 

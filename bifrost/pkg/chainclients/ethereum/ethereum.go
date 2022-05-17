@@ -172,7 +172,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	}
 
 	c.signerCacheManager = signerCacheManager
-	c.ethScanner, err = NewETHScanner(c.cfg.BlockScanner, storage, chainID, c.client, c.bridge, m, pubkeyMgr, c.ReportSolvency, signerCacheManager)
+	c.ethScanner, err = NewETHScanner(c.cfg.BlockScanner, storage, chainID, c.client, rpcClient, c.bridge, m, pubkeyMgr, c.ReportSolvency, signerCacheManager)
 	if err != nil {
 		return c, fmt.Errorf("fail to create eth block scanner: %w", err)
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
-	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm"
@@ -71,6 +70,7 @@ type ETHScanner struct {
 	gasPrice             *big.Int
 	lastReportedGasPrice uint64
 	client               *ethclient.Client
+	rpcClient            *evm.EthRpc
 	blockMetaAccessor    BlockMetaAccessor
 	globalErrataQueue    chan<- stypes.ErrataBlock
 	vaultABI             *abi.ABI
@@ -96,6 +96,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 	storage blockscanner.ScannerStorage,
 	chainID *big.Int,
 	client *ethclient.Client,
+	rpcClient *evm.EthRpc,
 	bridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
@@ -163,6 +164,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		logger:               log.Logger.With().Str("module", "block_scanner").Str("chain", common.ETHChain.String()).Logger(),
 		errCounter:           m.GetCounterVec(metrics.BlockScanError(common.ETHChain)),
 		client:               client,
+		rpcClient:            rpcClient,
 		db:                   storage,
 		m:                    m,
 		gasPrice:             big.NewInt(0),
@@ -217,7 +219,7 @@ func (e *ETHScanner) GetTokens() ([]*evmtypes.TokenMeta, error) {
 
 // FetchTxs query the ETH chain to get txs in the given block height
 func (e *ETHScanner) FetchTxs(height int64) (stypes.TxIn, error) {
-	block, err := e.getRPCBlock(height)
+	block, err := e.rpcClient.GetRPCBlock(height)
 	if err != nil {
 		return stypes.TxIn{}, err
 	}
@@ -550,7 +552,7 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 	var txIns []stypes.TxIn
 	for _, item := range heights {
 		e.logger.Info().Msgf("rescan block height: %d", item)
-		block, err := e.getRPCBlock(item)
+		block, err := e.rpcClient.GetRPCBlock(item)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to get block from RPC endpoint, height:%d", item)
 			continue
@@ -604,7 +606,7 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 			}
 		}
 		// Let's get the block again to fix the block hash
-		block, err := e.getHeader(blockMeta.Height)
+		block, err := e.rpcClient.GetHeader(blockMeta.Height)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
 		}
@@ -636,34 +638,34 @@ func (e *ETHScanner) checkTransaction(hash string) bool {
 	return true
 }
 
-func (e *ETHScanner) getReceipt(hash string) (*etypes.Receipt, error) {
-	ctx, cancel := e.getContext()
-	defer cancel()
-	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
-}
+// func (e *ETHScanner) getReceipt(hash string) (*etypes.Receipt, error) {
+// 	ctx, cancel := e.getContext()
+// 	defer cancel()
+// 	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
+// }
 
-func (e *ETHScanner) getHeader(height int64) (*etypes.Header, error) {
-	ctx, cancel := e.getContext()
-	defer cancel()
-	return e.client.HeaderByNumber(ctx, big.NewInt(height))
-}
+// func (e *ETHScanner) getHeader(height int64) (*etypes.Header, error) {
+// 	ctx, cancel := e.getContext()
+// 	defer cancel()
+// 	return e.client.HeaderByNumber(ctx, big.NewInt(height))
+// }
 
-func (e *ETHScanner) getBlock(height int64) (*etypes.Block, error) {
-	ctx, cancel := e.getContext()
-	defer cancel()
-	return e.client.BlockByNumber(ctx, big.NewInt(height))
-}
+// func (e *ETHScanner) getBlock(height int64) (*etypes.Block, error) {
+// 	ctx, cancel := e.getContext()
+// 	defer cancel()
+// 	return e.client.BlockByNumber(ctx, big.NewInt(height))
+// }
 
-func (e *ETHScanner) getRPCBlock(height int64) (*etypes.Block, error) {
-	block, err := e.getBlock(height)
-	if err == ethereum.NotFound {
-		return nil, btypes.ErrUnavailableBlock
-	}
-	if err != nil {
-		return nil, fmt.Errorf("fail to fetch block: %w", err)
-	}
-	return block, nil
-}
+// func (e *ETHScanner) getRPCBlock(height int64) (*etypes.Block, error) {
+// 	block, err := e.getBlock(height)
+// 	if err == ethereum.NotFound {
+// 		return nil, btypes.ErrUnavailableBlock
+// 	}
+// 	if err != nil {
+// 		return nil, fmt.Errorf("fail to fetch block: %w", err)
+// 	}
+// 	return block, nil
+// }
 
 // func (e *ETHScanner) getDecimals(token string) (uint64, error) {
 // 	if IsETH(token) {
@@ -901,7 +903,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
-	receipt, err := e.getReceipt(tx.Hash().Hex())
+	receipt, err := e.rpcClient.GetReceipt(tx.Hash().Hex())
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			return nil, nil
