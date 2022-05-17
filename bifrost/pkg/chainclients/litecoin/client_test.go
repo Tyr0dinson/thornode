@@ -1,6 +1,7 @@
 package litecoin
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -15,9 +16,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/ltcsuite/ltcd/btcjson"
+	abcitypes "github.com/tendermint/tendermint/rpc/core/types"
+	rpctypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
 	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -135,7 +139,22 @@ func (s *LitecoinSuite) SetUpTest(c *C) {
 				httpTestHandler(c, rw, "../../../../test/fixtures/ltc/getrawmempool.json")
 			case r.Method == "getblockstats":
 				httpTestHandler(c, rw, "../../../../test/fixtures/ltc/blockstats.json")
+			case r.Method == "broadcast_tx_sync":
+				hash := sha256.Sum256([]byte(ttypes.GetRandomTxHash()))
+				broadcastResp := abcitypes.ResultBroadcastTx{
+					Code:      0,
+					Data:      nil,
+					Log:       "",
+					Codespace: "",
+					Hash:      hash[:],
+				}
+				resp := rpctypes.NewRPCSuccessResponse(rpctypes.JSONRPCIntID(0), broadcastResp)
+				buf, err := json.Marshal(resp)
+				c.Assert(err, IsNil)
+				_, err = rw.Write(buf)
+				c.Assert(err, IsNil)
 			}
+
 		} else if strings.HasPrefix(req.RequestURI, "/thorchain/node/") {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
 		} else if req.RequestURI == "/thorchain/lastblock" {
@@ -155,6 +174,7 @@ func (s *LitecoinSuite) SetUpTest(c *C) {
 	}))
 	var err error
 	cfg.ChainHost = s.server.Listener.Addr().String()
+	cfg.ChainRPC = s.server.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
@@ -1125,4 +1145,17 @@ func (s *LitecoinSuite) TestGetOutput(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(out.ScriptPubKey.Addresses[0], Equals, "ltc1qjw8h4l3dtz5xxc7uyh5ys70qkezspgfu8hg5j3")
 	c.Assert(out.Value, Equals, 1.49655603)
+}
+
+func (s *LitecoinSuite) TestSendNetworkFee(c *C) {
+	originalBlockScanner := s.client.blockScanner
+	defer func() {
+		s.client.blockScanner = originalBlockScanner
+	}()
+	mockBlockScanner := &blockscanner.MockBlockScanner{Healthy: false}
+	s.client.blockScanner = mockBlockScanner
+	c.Check(s.client.sendNetworkFee(1), IsNil)
+	mockBlockScanner.Healthy = true
+	// if should fail to post network fee
+	c.Check(s.client.sendNetworkFee(1), IsNil)
 }

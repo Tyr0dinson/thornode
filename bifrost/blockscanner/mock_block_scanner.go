@@ -9,11 +9,11 @@ type MockBlockScanner struct {
 }
 
 func (b *MockBlockScanner) Start(globalTxsQueue chan types.TxIn) {
-
 }
+
 func (b *MockBlockScanner) Stop() {
-
 }
+
 func (b *MockBlockScanner) IsHealthy() bool {
 	return b.Healthy
 }
