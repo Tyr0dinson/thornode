@@ -31,7 +31,7 @@ func ParseUpdateLPMemo(asset common.Asset, parts []string) (UpdateLPMemo, error)
 	if len(parts) == 3 {
 		addr, err = common.NewAddress(parts[2])
 		if err != nil {
-
+			return UpdateLPMemo{}, fmt.Errorf("new address can't be parsed")
 		}
 	}
 	return NewUpdateLPMemo(asset, addr), nil

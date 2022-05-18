@@ -123,7 +123,6 @@ func (h UpdateLPRecordHandler) handle(ctx cosmos.Context, msg MsgUpdateLpRecord)
 }
 
 func (h UpdateLPRecordHandler) handleV90(ctx cosmos.Context, msg MsgUpdateLpRecord) (*cosmos.Result, error) {
-
 	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.PoolAsset, msg.Tx.FromAddress)
 	if err != nil {
 		return &cosmos.Result{}, multierror.Append(errFailGetLiquidityProvider, err)

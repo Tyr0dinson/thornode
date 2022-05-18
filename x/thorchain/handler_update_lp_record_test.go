@@ -12,7 +12,6 @@ type HandlerUpdateLpRecordSuite struct{}
 var _ = Suite(&HandlerUpdateLpRecordSuite{})
 
 func (HandlerUpdateLpRecordSuite) TestHandlerUpdateLpRecord_Validate(c *C) {
-
 	lpDoubleSided := LiquidityProvider{
 		Asset:             common.BNBAsset,
 		AssetAddress:      GetRandomBNBAddress(),
@@ -115,5 +114,4 @@ func (HandlerUpdateLpRecordSuite) TestHandlerUpdateLpRecord_Validate(c *C) {
 	msg = NewMsgUpdateLpRecord(bnbTxIn, common.BNBAsset, GetRandomBNBAddress(), GetRandomBech32Addr())
 	err = handler.validate(ctx, *msg)
 	c.Assert(err.Error(), Equals, "LP record has no units, skipping")
-
 }
