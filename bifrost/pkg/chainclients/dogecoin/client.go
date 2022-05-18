@@ -51,7 +51,7 @@ const (
 	EstimateAverageTxSize = 1000
 	// DefaultFeePerKB is guidance set by dogecoin core team and adopted by miners: https://github.com/dogecoin/dogecoin/blob/master/doc/fee-recommendation.md
 	// On THORChain , let's pay a bit more, in dollar value , it is not much
-	DefaultFeePerKB      = 0.5
+	DefaultFeePerKB      = 5.0
 	DefaultCoinbaseValue = 10000
 	MaxMempoolScanPerTry = 500
 )
