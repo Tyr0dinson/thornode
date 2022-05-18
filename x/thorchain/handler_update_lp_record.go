@@ -1,8 +1,12 @@
 package thorchain
 
 import (
-	"github.com/blang/semver"
+	"fmt"
 
+	"github.com/blang/semver"
+	"github.com/hashicorp/go-multierror"
+
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -48,7 +52,62 @@ func (h UpdateLPRecordHandler) validate(ctx cosmos.Context, msg MsgUpdateLpRecor
 
 func (h UpdateLPRecordHandler) validateV90(ctx cosmos.Context, msg MsgUpdateLpRecord) error {
 	if err := msg.ValidateBasic(); err != nil {
-		return errWithdrawFailValidation
+		return errUpdateLpRecordFailValidation
+	}
+
+	if isChainHalted(ctx, h.mgr, msg.Tx.Chain) {
+		return fmt.Errorf("unable to update LP record while chain is halted")
+	}
+
+	// Check update memo is enabled for this chain
+	mimirKey := fmt.Sprintf("EnableUpdateMemo%s", msg.Tx.Chain)
+	updateEnabled, err := h.mgr.Keeper().GetMimir(ctx, mimirKey)
+	if err == nil && updateEnabled != 1 {
+		return fmt.Errorf("update memo not enabled for this chain")
+	}
+
+	// Can't request with synthetic asset
+	if msg.PoolAsset.IsSyntheticAsset() {
+		ctx.Logger().Error("asset cannot be synth", "error", errUpdateLpRecordFailValidation)
+		return errUpdateLpRecordFailValidation
+	}
+
+	// Ensure it's a valid pool + that pool is Active or Staged
+	pool, err := h.mgr.Keeper().GetPool(ctx, msg.PoolAsset)
+	if err != nil {
+		errMsg := fmt.Sprintf("fail to get pool(%s)", msg.PoolAsset)
+		return ErrInternal(err, errMsg)
+	}
+
+	if err := pool.EnsureValidPoolStatus(&msg); err != nil {
+		return multierror.Append(errInvalidPoolStatus, err)
+	}
+
+	// Validate signer has an LP position in requested Pool
+	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.PoolAsset, msg.Tx.FromAddress)
+	if err != nil {
+		return multierror.Append(errFailGetLiquidityProvider, err)
+	}
+
+	if lp.Units.IsZero() && (lp.PendingAsset.IsZero() && lp.PendingRune.IsZero()) {
+		return fmt.Errorf("LP record has no units, skipping")
+	}
+
+	// Sanity check: make sure the tx from address matches the LP record
+	if msg.Tx.Chain.IsTHORChain() && !msg.Tx.FromAddress.Equals(lp.RuneAddress) {
+		return fmt.Errorf("From address doesn't match LP record rune address")
+	}
+
+	if !msg.Tx.Chain.IsTHORChain() && !msg.Tx.FromAddress.Equals(lp.AssetAddress) {
+		return fmt.Errorf("From address doesn't match LP record asset address")
+	}
+
+	// Ensure new address matches chain of LP Position if not a RUNE address
+	if !msg.NewAddress.IsChain(common.THORChain) {
+		if !msg.NewAddress.GetChain().Equals(lp.Asset.GetChain()) {
+			ctx.Logger().Error("new address doesn't match chain of LP record", "error", errUpdateLpRecordFailValidation)
+			return errUpdateLpRecordFailValidation
+		}
 	}
 
 	return nil
@@ -64,5 +123,17 @@ func (h UpdateLPRecordHandler) handle(ctx cosmos.Context, msg MsgUpdateLpRecord)
 }
 
 func (h UpdateLPRecordHandler) handleV90(ctx cosmos.Context, msg MsgUpdateLpRecord) (*cosmos.Result, error) {
+
+	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.PoolAsset, msg.Tx.FromAddress)
+	if err != nil {
+		return &cosmos.Result{}, multierror.Append(errFailGetLiquidityProvider, err)
+	}
+
+	if msg.NewAddress.IsChain(common.THORChain) {
+		lp.RuneAddress = msg.NewAddress
+	} else if msg.NewAddress.GetChain().Equals(lp.Asset.GetChain()) {
+		lp.AssetAddress = msg.NewAddress
+	}
+
 	return &cosmos.Result{}, nil
 }

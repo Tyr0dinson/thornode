@@ -32,13 +32,14 @@ const (
 	CodeAddLiquidityRUNEOverLimit    uint32 = 125
 	CodeAddLiquidityRUNEMoreThanBond uint32 = 126
 
-	CodeWithdrawFailValidation uint32 = 130
-	CodeFailAddOutboundTx      uint32 = 131
-	CodeFailSaveEvent          uint32 = 132
-	CodeNoLiquidityUnitLeft    uint32 = 135
-	CodeWithdrawWithin24Hours  uint32 = 136
-	CodeWithdrawFail           uint32 = 137
-	CodeEmptyChain             uint32 = 138
+	CodeWithdrawFailValidation       uint32 = 130
+	CodeFailAddOutboundTx            uint32 = 131
+	CodeFailSaveEvent                uint32 = 132
+	CodeNoLiquidityUnitLeft          uint32 = 135
+	CodeWithdrawWithin24Hours        uint32 = 136
+	CodeWithdrawFail                 uint32 = 137
+	CodeEmptyChain                   uint32 = 138
+	CodeUpdateLpRecordFailValidation uint32 = 139
 )
 
 var (
@@ -55,6 +56,7 @@ var (
 	errInvalidPoolStatus            = se.Register(DefaultCodespace, CodeInvalidPoolStatus, "invalid pool status")
 	errFailAddOutboundTx            = se.Register(DefaultCodespace, CodeFailAddOutboundTx, "prepare outbound tx not successful")
 	errWithdrawFailValidation       = se.Register(DefaultCodespace, CodeWithdrawFailValidation, "fail to validate withdraw")
+	errUpdateLpRecordFailValidation = se.Register(DefaultCodespace, CodeUpdateLpRecordFailValidation, "fail to validate update LP record")
 	errFailGetLiquidityProvider     = se.Register(DefaultCodespace, CodeFailGetLiquidityProvider, "fail to get liquidity provider")
 	errAddLiquidityMismatchAddr     = se.Register(DefaultCodespace, CodeAddLiquidityMismatchAddr, "mismatch of address")
 	errSwapFailNotEnoughFee         = se.Register(DefaultCodespace, CodeSwapFailNotEnoughFee, "fail swap, not enough fee")
