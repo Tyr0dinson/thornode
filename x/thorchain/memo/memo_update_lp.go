@@ -15,7 +15,7 @@ func (m UpdateLPMemo) GetNewAddress() common.Address { return m.NewAddress }
 
 func NewUpdateLPMemo(asset common.Asset, addr common.Address) UpdateLPMemo {
 	return UpdateLPMemo{
-		MemoBase:   MemoBase{TxType: TxAdd, Asset: asset},
+		MemoBase:   MemoBase{TxType: TxUpdateLp, Asset: asset},
 		NewAddress: addr,
 	}
 }
