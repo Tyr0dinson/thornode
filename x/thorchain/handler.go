@@ -131,6 +131,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgDonate{}.Type()] = NewDonateHandler(mgr)
 	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
 	m[MsgAddLiquidity{}.Type()] = NewAddLiquidityHandler(mgr)
+	m[MsgUpdateLpRecord{}.Type()] = NewUpdateLPRecordHandler(mgr)
 	m[MsgRefundTx{}.Type()] = NewRefundHandler(mgr)
 	m[MsgMigrate{}.Type()] = NewMigrateHandler(mgr)
 	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(mgr)
@@ -177,6 +178,10 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 	}
 
 	return NewMsgAddLiquidity(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, runeAddr, assetAddr, memo.AffiliateAddress, memo.AffiliateBasisPoints, signer), nil
+}
+
+func getMsgUpdateLPFromMemo(tx ObservedTx, memo UpdateLPMemo, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgUpdateLpRecord(tx.Tx, memo.GetAsset(), memo.GetNewAddress(), signer), nil
 }
 
 func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -244,6 +249,9 @@ func processOneTxInV63(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 	case WithdrawLiquidityMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgWithdrawFromMemo(m, tx, signer)
+	case UpdateLPMemo:
+		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
+		newMsg, err = getMsgUpdateLPFromMemo(tx, m, signer)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)

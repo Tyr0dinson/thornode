@@ -35,6 +35,7 @@ const (
 	TxNoOp
 	TxConsolidate
 	TxTHORName
+	TxUpdateLp
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -64,6 +65,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"name":        TxTHORName,
 	"n":           TxTHORName,
 	"~":           TxTHORName,
+	"update":      TxUpdateLp,
 }
 
 var txToStringMap = map[TxType]string{
@@ -85,6 +87,7 @@ var txToStringMap = map[TxType]string{
 	TxNoOp:            "noop",
 	TxConsolidate:     "consolidate",
 	TxTHORName:        "thorname",
+	TxUpdateLp:        "update",
 }
 
 // converts a string into a txType
@@ -99,7 +102,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve, TxNoOp, TxTHORName:
+	case TxAdd, TxWithdraw, TxSwap, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve, TxNoOp, TxTHORName, TxUpdateLp:
 		return true
 	default:
 		return false
@@ -203,7 +206,7 @@ func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 
 	var asset common.Asset
 	switch tx {
-	case TxDonate, TxAdd, TxSwap, TxWithdraw:
+	case TxDonate, TxAdd, TxSwap, TxWithdraw, TxUpdateLp:
 		if len(parts) < 2 {
 			return mem, fmt.Errorf("cannot parse given memo: length %d", len(parts))
 		}
@@ -222,6 +225,8 @@ func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 		return ParseAddLiquidityMemo(cosmos.Context{}, nil, asset, parts)
 	case TxWithdraw:
 		return ParseWithdrawLiquidityMemo(asset, parts)
+	case TxUpdateLp:
+		return ParseUpdateLPMemo(asset, parts)
 	case TxSwap:
 		return ParseSwapMemo(cosmos.Context{}, nil, asset, parts)
 	case TxOutbound:
@@ -271,7 +276,7 @@ func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo strin
 
 	var asset common.Asset
 	switch tx {
-	case TxDonate, TxAdd, TxSwap, TxWithdraw:
+	case TxDonate, TxAdd, TxSwap, TxWithdraw, TxUpdateLp:
 		if len(parts) < 2 {
 			return mem, fmt.Errorf("cannot parse given memo: length %d", len(parts))
 		}

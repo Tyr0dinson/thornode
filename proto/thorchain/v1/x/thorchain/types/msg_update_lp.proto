@@ -1,0 +1,14 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "thorchain/v1/common/common.proto";
+import "gogoproto/gogo.proto";
+
+message MsgUpdateLpRecord {
+  common.Tx tx = 1 [(gogoproto.nullable) = false];
+  common.Asset pool_asset = 2 [(gogoproto.nullable) = false];
+  string new_address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  bytes signer = 4  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+}

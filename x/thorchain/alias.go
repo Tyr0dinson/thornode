@@ -94,6 +94,7 @@ var (
 	NewMsgDonate                   = types.NewMsgDonate
 	NewMsgAddLiquidity             = types.NewMsgAddLiquidity
 	NewMsgWithdrawLiquidity        = types.NewMsgWithdrawLiquidity
+	NewMsgUpdateLpRecord           = types.NewMsgUpdateLpRecord
 	NewMsgSwap                     = types.NewMsgSwap
 	NewKeygen                      = types.NewKeygen
 	NewKeygenBlock                 = types.NewKeygenBlock
@@ -205,6 +206,7 @@ type (
 	MsgDonate                      = types.MsgDonate
 	MsgWithdrawLiquidity           = types.MsgWithdrawLiquidity
 	MsgAddLiquidity                = types.MsgAddLiquidity
+	MsgUpdateLpRecord              = types.MsgUpdateLpRecord
 	MsgOutboundTx                  = types.MsgOutboundTx
 	MsgMimir                       = types.MsgMimir
 	MsgNodePauseChain              = types.MsgNodePauseChain
@@ -301,6 +303,7 @@ type (
 	SwapMemo              = mem.SwapMemo
 	AddLiquidityMemo      = mem.AddLiquidityMemo
 	WithdrawLiquidityMemo = mem.WithdrawLiquidityMemo
+	UpdateLPMemo          = mem.UpdateLPMemo
 	DonateMemo            = mem.DonateMemo
 	RefundMemo            = mem.RefundMemo
 	MigrateMemo           = mem.MigrateMemo
