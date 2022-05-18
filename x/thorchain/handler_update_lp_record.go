@@ -134,6 +134,8 @@ func (h UpdateLPRecordHandler) handleV90(ctx cosmos.Context, msg MsgUpdateLpReco
 		lp.AssetAddress = msg.NewAddress
 	}
 
+	h.mgr.Keeper().SetLiquidityProvider(ctx, lp)
+
 	// TODO: emit update address event for midgard
 
 	return &cosmos.Result{}, nil
