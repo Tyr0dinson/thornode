@@ -33,8 +33,9 @@ const (
 	// SatsPervBytes it should be enough , this one will only be used if signer can't find any previous UTXO , and fee info from local storage.
 	SatsPervBytes = 25
 	// MinUTXOConfirmation UTXO that has less confirmation then this will not be spent , unless it is yggdrasil
-	MinUTXOConfirmation        = 1
-	defaultMaxDOGEFeeRate      = dogutil.SatoshiPerBitcoin * 10
+	MinUTXOConfirmation = 1
+	// Maximum total fees (in DOGE) to use in a single wallet transaction or raw transaction;
+	defaultMaxDOGEFeeRate      = dogutil.SatoshiPerBitcoin * 100
 	maxUTXOsToSpend            = 10
 	minSpendableUTXOAmountSats = 100000000 // If UTXO is less than this , it will not observed , and will not spend it either
 )
