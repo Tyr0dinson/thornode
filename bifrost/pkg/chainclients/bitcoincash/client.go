@@ -638,8 +638,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if err := c.sendNetworkFee(height); err != nil {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
-	if err := c.ReportSolvency(height); err != nil {
-		c.logger.Err(err).Msg("fail to send solvency to THORChain")
+	if c.IsBlockScannerHealthy() {
+		if err := c.ReportSolvency(height); err != nil {
+			c.logger.Err(err).Msg("fail to send solvency to THORChain")
+		}
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	if !c.consolidateInProgress.Load() {

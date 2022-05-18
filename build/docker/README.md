@@ -5,7 +5,7 @@
 The default image will start a fullnode:
 
 ```bash
-docker run -e NET=mainnet registry.gitlab.com/thorchain/thornode:chaosnet-multichain
+docker run -e CHAIN_ID=thorchain-mainnet-v1 -e NET=mainnet registry.gitlab.com/thorchain/thornode:chaosnet-multichain
 ```
 
 Since this image tag contains the latest version of THORNode, the node can auto update by simply placing this in a loop to re-pull the image on exit:
@@ -40,6 +40,19 @@ bifrost  => bifrost and thornode dependency
 midgard  => midgard and thornode dependency
 mocknet  => all mocknet dependencies
 ```
+
+### Keys
+
+We leverage the following keys for testing and local mocknet setup, created with a simplified mnemonic for ease of reference. We refer to these keys by the name of the animal used:
+
+```text
+cat => cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl
+dog => dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil
+fox => fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter
+pig => pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick
+```
+
+### Examples
 
 Example commands are provided below for those less familiar with Docker Compose features:
 
@@ -82,4 +95,32 @@ docker compose --profile mocknet down
 
 # clear mocknet docker volumes
 docker compose --profile mocknet down -v
+```
+
+## Multi-Node Mocknet
+
+The Docker Compose configuration has been extended to support a multi-node local network. Starting the multinode network requires the `mocknet-cluster` profile:
+
+```bash
+docker compose --profile mocknet-cluster up -d
+```
+
+Once the mocknet is running, you can open open a shell in the `cli` service to access CLIs for interacting with the mocknet:
+
+```bash
+docker compose run cli
+
+# increase default 60 block churn (keyring password is "password")
+thornode tx thorchain mimir CHURNINTERVAL 1000 --from dog $TX_FLAGS
+
+# set limit to 1 new node per churn (keyring password is "password")
+thornode tx thorchain mimir NUMBEROFNEWNODESPERCHURN 1 --from dog $TX_FLAGS
+```
+
+## Bootstrap Mocknet Data
+
+You can leverage the [Heimdall](https://gitlab.com/thorchain/heimdall) repo to bootstrap local vaults with a subset of smoke test data. Checkout the repo and run:
+
+```bash
+make bootstrap
 ```

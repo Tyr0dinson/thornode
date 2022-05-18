@@ -27,15 +27,15 @@ var WhitelistedArbs = []string{ // treasury addresses
 	"ltc1qaa064vvv4d6stgywnf777j6dl8rd3tt93fp6jx",
 }
 
-func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
 	version := mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.47.0")) {
-		return refundTxV47(ctx, tx, mgr, constAccessor, refundCode, refundReason, nativeRuneModuleName)
+		return refundTxV47(ctx, tx, mgr, refundCode, refundReason, nativeRuneModuleName)
 	}
 	return errBadVersion
 }
 
-func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, constAccessor constants.ConstantValues, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -1150,6 +1150,11 @@ func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutI
 }
 
 func updateTxOutGasV88(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
+	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
+	// For example , migration , yggdrasil funding etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
+	if txOut.InHash == common.BlankTxID {
+		return nil
+	}
 	voter, err := keeper.GetObservedTxInVoter(ctx, txOut.InHash)
 	if err != nil {
 		return err
@@ -1166,7 +1171,7 @@ func updateTxOutGasV88(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxO
 	}
 
 	if txOutIndex == -1 {
-		return fmt.Errorf("Fail to find tx out in ObservedTxVoter %s", txOut.InHash)
+		return fmt.Errorf("fail to find tx out in ObservedTxVoter %s", txOut.InHash)
 	}
 
 	return nil

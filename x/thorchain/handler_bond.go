@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -75,6 +74,12 @@ func (h BondHandler) validateV88(ctx cosmos.Context, msg MsgBond) error {
 		return ErrInternal(err, "cannot add bond while node is ready status")
 	}
 
+	if h.mgr.GetVersion().GTE(semver.MustParse("1.88.1")) {
+		if fetchConfigInt64(ctx, h.mgr, constants.PauseBond) > 0 {
+			return ErrInternal(err, "bonding has been paused")
+		}
+	}
+
 	if nodeAccount.Status == NodeActive {
 		validatorMaxRewardRatio, err := h.mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
 		if validatorMaxRewardRatio < 0 || err != nil {
@@ -112,17 +117,22 @@ func (h BondHandler) validateV88(ctx cosmos.Context, msg MsgBond) error {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
 	}
 
-	// Attemping to set Operator Fee
-	if msg.OperatorFee > -1 {
+	// Attemping to set Operator Fee. If the Node has no bond address yet it will have no fee set, continue
+	if msg.OperatorFee > -1 && !nodeAccount.BondAddress.IsEmpty() {
 
 		// Only Node Operator can set fee
-		if !msg.BondAddress.Equals(nodeAccount.BondAddress) && !nodeAccount.BondAddress.IsEmpty() {
+		if !msg.BondAddress.Equals(nodeAccount.BondAddress) {
 			return cosmos.ErrUnknownRequest("only node operator can set fee")
 		}
 
-		// Can't increase operator fee after a provider has bonded
+		nodeOpAddr, err := nodeAccount.BondAddress.AccAddress()
+		if err != nil {
+			return ErrInternal(err, fmt.Sprintf("fail to parse node account bond address(%s)", nodeAccount.BondAddress))
+		}
+
+		// Can't increase operator fee after a (non-operator) provider has bonded
 		if msg.OperatorFee > bp.NodeOperatorFee.BigInt().Int64() {
-			if bp.HasProviderBonded(types.AccAddress(nodeAccount.BondAddress)) {
+			if bp.HasProviderBonded(nodeOpAddr) {
 				return cosmos.ErrUnknownRequest("can't increase operator fee after a provider has bonded")
 			}
 		}

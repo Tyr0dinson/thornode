@@ -640,8 +640,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if err := c.sendNetworkFee(height); err != nil {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
-	if err := c.ReportSolvency(height); err != nil {
-		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
+	if c.IsBlockScannerHealthy() {
+		if err := c.ReportSolvency(height); err != nil {
+			c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
+		}
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	if !c.consolidateInProgress.Load() {
@@ -1096,8 +1098,18 @@ func (c *Client) createWallet(name string) error {
 	if err != nil {
 		return err
 	}
+	falseJSON, err := json.Marshal(false)
+	if err != nil {
+		return err
+	}
+
 	_, err = c.client.RawRequest("createwallet", []json.RawMessage{
 		walletNameJSON,
+		falseJSON,
+		falseJSON,
+		json.RawMessage([]byte("\"\"")),
+		falseJSON,
+		falseJSON,
 	})
 	if err != nil {
 		// ignore code -4 which means wallet already exists

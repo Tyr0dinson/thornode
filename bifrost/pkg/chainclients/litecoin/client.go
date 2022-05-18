@@ -634,7 +634,7 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	}
 
 	// LTC has faster block time, report every 5 blocks seems fine
-	if height%5 == 0 {
+	if height%5 == 0 && c.IsBlockScannerHealthy() {
 		if err := c.ReportSolvency(height); err != nil {
 			c.logger.Err(err).Msg("fail to report solvency to THORChain")
 		}
