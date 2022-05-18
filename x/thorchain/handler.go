@@ -119,6 +119,18 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 }
 
 func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.90.0")):
+		return getInternalHandlerMappingV1_90(mgr)
+	case version.GTE(semver.MustParse("0.1.0")):
+		return getInternalHandlerMappingV1(mgr)
+	default:
+		return map[string]MsgHandler{}
+	}
+}
+
+func getInternalHandlerMappingV1_90(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(mgr)
@@ -132,6 +144,29 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
 	m[MsgAddLiquidity{}.Type()] = NewAddLiquidityHandler(mgr)
 	m[MsgUpdateLpRecord{}.Type()] = NewUpdateLPRecordHandler(mgr)
+	m[MsgRefundTx{}.Type()] = NewRefundHandler(mgr)
+	m[MsgMigrate{}.Type()] = NewMigrateHandler(mgr)
+	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(mgr)
+	m[MsgSwitch{}.Type()] = NewSwitchHandler(mgr)
+	m[MsgNoOp{}.Type()] = NewNoOpHandler(mgr)
+	m[MsgConsolidate{}.Type()] = NewConsolidateHandler(mgr)
+	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
+	return m
+}
+
+func getInternalHandlerMappingV1(mgr Manager) map[string]MsgHandler {
+	// New arch handlers
+	m := make(map[string]MsgHandler)
+	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(mgr)
+	m[MsgYggdrasil{}.Type()] = NewYggdrasilHandler(mgr)
+	m[MsgSwap{}.Type()] = NewSwapHandler(mgr)
+	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(mgr)
+	m[MsgBond{}.Type()] = NewBondHandler(mgr)
+	m[MsgUnBond{}.Type()] = NewUnBondHandler(mgr)
+	m[MsgLeave{}.Type()] = NewLeaveHandler(mgr)
+	m[MsgDonate{}.Type()] = NewDonateHandler(mgr)
+	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
+	m[MsgAddLiquidity{}.Type()] = NewAddLiquidityHandler(mgr)
 	m[MsgRefundTx{}.Type()] = NewRefundHandler(mgr)
 	m[MsgMigrate{}.Type()] = NewMigrateHandler(mgr)
 	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(mgr)

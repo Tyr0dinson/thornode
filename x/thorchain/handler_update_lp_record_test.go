@@ -71,7 +71,7 @@ func (HandlerUpdateLpRecordSuite) TestHandlerUpdateLpRecord_Validate(c *C) {
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(uint64(0))),
 		},
 		BNBGasFeeSingleton,
-		"update:bnb.bnb:abc",
+		"updatelp:bnb.bnb:abc",
 	)
 	btcTxIn := common.NewTx(
 		GetRandomTxHash(),
@@ -83,7 +83,7 @@ func (HandlerUpdateLpRecordSuite) TestHandlerUpdateLpRecord_Validate(c *C) {
 		common.Gas{
 			common.NewCoin(common.BTCAsset, cosmos.NewUint(uint64(1))),
 		},
-		"update:btc.btc:abc",
+		"updatelp:btc.btc:abc",
 	)
 
 	// Chain halted, can't update
