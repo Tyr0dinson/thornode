@@ -72,15 +72,10 @@ func (h UpdateLPRecordHandler) validateV90(ctx cosmos.Context, msg MsgUpdateLpRe
 		return errUpdateLpRecordFailValidation
 	}
 
-	// Ensure it's a valid pool + that pool is Active or Staged
-	pool, err := h.mgr.Keeper().GetPool(ctx, msg.PoolAsset)
-	if err != nil {
-		errMsg := fmt.Sprintf("fail to get pool(%s)", msg.PoolAsset)
-		return ErrInternal(err, errMsg)
-	}
-
-	if err := pool.EnsureValidPoolStatus(&msg); err != nil {
-		return multierror.Append(errInvalidPoolStatus, err)
+	// Ensure pool exists
+	poolExists := h.mgr.Keeper().PoolExist(ctx, msg.PoolAsset)
+	if !poolExists {
+		return fmt.Errorf("pool doesn't exist")
 	}
 
 	// Validate signer has an LP position in requested Pool
@@ -100,14 +95,6 @@ func (h UpdateLPRecordHandler) validateV90(ctx cosmos.Context, msg MsgUpdateLpRe
 
 	if !msg.Tx.Chain.IsTHORChain() && !msg.Tx.FromAddress.Equals(lp.AssetAddress) {
 		return fmt.Errorf("From address doesn't match LP record asset address")
-	}
-
-	// Ensure new address matches chain of LP Position if not a RUNE address
-	if !msg.NewAddress.IsChain(common.THORChain) {
-		if !msg.NewAddress.GetChain().Equals(lp.Asset.GetChain()) {
-			ctx.Logger().Error("new address doesn't match chain of LP record", "error", errUpdateLpRecordFailValidation)
-			return errUpdateLpRecordFailValidation
-		}
 	}
 
 	return nil

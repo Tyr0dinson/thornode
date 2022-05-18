@@ -37,6 +37,12 @@ func (m *MsgUpdateLpRecord) ValidateBasic() error {
 	if m.NewAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("new address cannot be empty")
 	}
+	// Unless setting the $RUNE address, chain of new address and pool must match
+	if !m.NewAddress.IsChain(common.THORChain) {
+		if !m.NewAddress.GetChain().Equals(m.PoolAsset.GetChain()) {
+			return cosmos.ErrUnknownRequest("new address must match pool asset")
+		}
+	}
 	return nil
 }
 

@@ -65,7 +65,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"name":        TxTHORName,
 	"n":           TxTHORName,
 	"~":           TxTHORName,
-	"update":      TxUpdateLp,
+	"updatelp":    TxUpdateLp,
 }
 
 var txToStringMap = map[TxType]string{
@@ -87,7 +87,7 @@ var txToStringMap = map[TxType]string{
 	TxNoOp:            "noop",
 	TxConsolidate:     "consolidate",
 	TxTHORName:        "thorname",
-	TxUpdateLp:        "update",
+	TxUpdateLp:        "updatelp",
 }
 
 // converts a string into a txType
