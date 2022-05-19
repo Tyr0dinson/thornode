@@ -255,7 +255,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
 			ctx.Logger().Error("fail to unmarshal yggdrasil", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal yggdrasil: %w", err)
 		}
@@ -326,7 +326,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &vault); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
@@ -493,6 +493,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	result.SlashPoints = slashPts
 	result.Jail = jail
 	result.BondProviders = bp
+
 	// CurrentAward is an estimation of reward for node in active status
 	// Node in other status should not have current reward
 	if nodeAcc.Status == NodeActive && !nodeAcc.Bond.IsZero() {
@@ -507,13 +508,34 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		if len(vaults) == 0 {
 			return nil, fmt.Errorf("no active vaults")
 		}
-		lastChurnHeight := vaults[0].BlockHeight
-		// find number of blocks they were well behaved (ie active - slash points)
-		earnedBlocks := common.BlockHeight(ctx) - lastChurnHeight - slashPts
-		if earnedBlocks < 0 {
-			earnedBlocks = 0
+
+		// Determine current bond-weighted hard cap
+		constAccessor := mgr.GetConstants()
+
+		minBondInRune, err := mgr.Keeper().GetMimir(ctx, constants.MinimumBondInRune.String())
+		if minBondInRune < 0 || err != nil {
+			minBondInRune = constAccessor.GetInt64Value(constants.MinimumBondInRune)
 		}
-		result.CurrentAward = network.CalcNodeRewards(cosmos.NewUint(uint64(earnedBlocks)))
+
+		validatorMaxRewardRatio, err := mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
+		if validatorMaxRewardRatio < 0 || err != nil {
+			validatorMaxRewardRatio = constAccessor.GetInt64Value(constants.ValidatorMaxRewardRatio)
+		}
+
+		bondHardCap := cosmos.NewUint(uint64(validatorMaxRewardRatio)).MulUint64(uint64(minBondInRune))
+		totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get total effective bond: %w", err)
+		}
+
+		lastChurnHeight := vaults[0].BlockHeight
+
+		reward, err := getNodeCurrentRewards(ctx, mgr, nodeAcc, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get current node rewards: %w", err)
+		}
+
+		result.CurrentAward = reward
 	}
 
 	chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, addr)
@@ -562,6 +584,53 @@ func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) 
 	return preflightResult, nil
 }
 
+// Estimates current rewards for the NodeAccount taking into account bond-weighted rewards and slash points
+func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, lastChurnHeight int64, totalBondReward, totalEffectiveBond, bondHardCap cosmos.Uint) (cosmos.Uint, error) {
+	slashPts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nodeAcc.NodeAddress)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get node slash points: %w", err)
+	}
+
+	// Find number of blocks they have been an active node
+	totalActiveBlocks := common.BlockHeight(ctx) - lastChurnHeight
+
+	// find number of blocks they were well behaved (ie active - slash points)
+	earnedBlocks := totalActiveBlocks - slashPts
+	if earnedBlocks < 0 {
+		earnedBlocks = 0
+	}
+
+	naBond := nodeAcc.Bond
+	if naBond.GT(bondHardCap) {
+		naBond = bondHardCap
+	}
+
+	reward := common.GetShare(naBond, totalEffectiveBond, totalBondReward)
+	reward = common.GetShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
+	return reward, nil
+}
+
+// Calculates total "effective bond" - the total bond when taking into account the
+// Bond-weighted hard-cap
+func getTotalEffectiveBond(ctx cosmos.Context, mgr *Mgrs, bondHardCap cosmos.Uint) (cosmos.Uint, error) {
+	activeNodes, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeActive)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get active nodes: %w", err)
+	}
+
+	totalEffectiveBond := cosmos.ZeroUint()
+	for _, item := range activeNodes {
+		b := item.Bond
+		if item.Bond.GT(bondHardCap) {
+			b = bondHardCap
+		}
+
+		totalEffectiveBond = totalEffectiveBond.Add(b)
+	}
+
+	return totalEffectiveBond, nil
+}
+
 // queryNodes return all the nodes that has bond
 // /thorchain/nodes
 func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -582,6 +651,26 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	if len(vaults) == 0 {
 		return nil, fmt.Errorf("no active vaults")
 	}
+
+	// Determine current bond-weighted hard cap
+	constAccessor := mgr.GetConstants()
+
+	minBondInRune, err := mgr.Keeper().GetMimir(ctx, constants.MinimumBondInRune.String())
+	if minBondInRune < 0 || err != nil {
+		minBondInRune = constAccessor.GetInt64Value(constants.MinimumBondInRune)
+	}
+
+	validatorMaxRewardRatio, err := mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
+	if validatorMaxRewardRatio < 0 || err != nil {
+		validatorMaxRewardRatio = constAccessor.GetInt64Value(constants.ValidatorMaxRewardRatio)
+	}
+
+	bondHardCap := cosmos.NewUint(uint64(validatorMaxRewardRatio)).MulUint64(uint64(minBondInRune))
+	totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate total effective bond: %w", err)
+	}
+
 	lastChurnHeight := vaults[0].BlockHeight
 	result := make([]QueryNodeAccount, len(nodeAccounts))
 	for i, na := range nodeAccounts {
@@ -597,12 +686,12 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		result[i] = NewQueryNodeAccount(na)
 		result[i].SlashPoints = slashPts
 		if na.Status == NodeActive {
-			// find number of blocks they were well behaved (ie active - slash points)
-			earnedBlocks := common.BlockHeight(ctx) - lastChurnHeight - slashPts
-			if earnedBlocks < 0 {
-				earnedBlocks = 0
+			reward, err := getNodeCurrentRewards(ctx, mgr, na, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get current node rewards: %w", err)
 			}
-			result[i].CurrentAward = network.CalcNodeRewards(cosmos.NewUint(uint64(earnedBlocks)))
+
+			result[i].CurrentAward = reward
 		}
 
 		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
@@ -660,7 +749,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var lp LiquidityProvider
-		mgr.Keeper().Cdc().MustUnmarshalBinaryBare(iterator.Value(), &lp)
+		mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &lp)
 		lps = append(lps, lp)
 	}
 	res, err := json.MarshalIndent(lps, "", "	")
@@ -774,7 +863,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iterator.Value(), &pool); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
 		}
 		// ignore pool if no liquidity provider units
@@ -1028,7 +1117,7 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var msg MsgSwap
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iterator.Value(), &msg); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
 			continue
 		}
 		query.Swap++
@@ -1176,19 +1265,19 @@ func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery,
 }
 
 func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64, 0)
+	values := make(map[string]int64)
 
 	// collect keys
 	iter := mgr.Keeper().GetMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
-		k := strings.TrimLeft(string(iter.Key()), "mimir//")
+		k := strings.TrimPrefix(string(iter.Key()), "mimir//")
 		values[k] = 0
 	}
 	iterNode := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iterNode.Close()
 	for ; iterNode.Valid(); iterNode.Next() {
-		k := strings.TrimLeft(string(iterNode.Key()), "nodemimir//")
+		k := strings.TrimPrefix(string(iterNode.Key()), "nodemimir//")
 		values[k] = 0
 	}
 
@@ -1210,16 +1299,16 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryMimirAdminValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64, 0)
+	values := make(map[string]int64)
 	iter := mgr.Keeper().GetMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		value := types.ProtoInt64{}
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &value); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &value); err != nil {
 			ctx.Logger().Error("fail to unmarshal mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal mimir value: %w", err)
 		}
-		k := strings.TrimLeft(string(iter.Key()), "mimir//")
+		k := strings.TrimPrefix(string(iter.Key()), "mimir//")
 		values[k] = value.GetValue()
 	}
 	res, err := json.MarshalIndent(values, "", "	")
@@ -1236,7 +1325,7 @@ func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.Reques
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		m := NodeMimirs{}
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &m); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &m); err != nil {
 			ctx.Logger().Error("fail to unmarshal node mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
@@ -1259,16 +1348,16 @@ func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQu
 	}
 	active := activeNodes.GetNodeAddresses()
 
-	values := make(map[string]int64, 0)
+	values := make(map[string]int64)
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		mimirs := NodeMimirs{}
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &mimirs); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &mimirs); err != nil {
 			ctx.Logger().Error("fail to unmarshal node mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
-		k := strings.TrimLeft(string(iter.Key()), "nodemimir//")
+		k := strings.TrimPrefix(string(iter.Key()), "nodemimir//")
 		if v, ok := mimirs.HasSuperMajority(k, active); ok {
 			values[k] = v
 		}
@@ -1289,17 +1378,17 @@ func queryMimirNodeValues(ctx cosmos.Context, path []string, req abci.RequestQue
 		return nil, fmt.Errorf("fail to parse thor address: %w", err)
 	}
 
-	values := make(map[string]int64, 0)
+	values := make(map[string]int64)
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		mimirs := NodeMimirs{}
-		if err := mgr.Keeper().Cdc().UnmarshalBinaryBare(iter.Value(), &mimirs); err != nil {
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &mimirs); err != nil {
 			ctx.Logger().Error("fail to unmarshal node mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
 
-		k := strings.TrimLeft(string(iter.Key()), "nodemimir//")
+		k := strings.TrimPrefix(string(iter.Key()), "nodemimir//")
 		if v, ok := mimirs.Get(k, acc); ok {
 			values[k] = v
 		}

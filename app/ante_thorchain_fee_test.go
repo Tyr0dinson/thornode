@@ -60,9 +60,11 @@ func setupForAnteTest(t *testing.T) (cosmos.Context, ante.AccountKeeper, bankkee
 	})
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
-	bk.SetSupply(ctx, banktypes.NewSupply(cosmos.Coins{
+	if err := bk.MintCoins(ctx, thorchain.ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
-	}))
+	}); err != nil {
+		panic(err)
+	}
 	return ctx, ak, bk
 }
 

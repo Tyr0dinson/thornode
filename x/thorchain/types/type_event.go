@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -10,27 +11,31 @@ import (
 
 // all event types support by THORChain
 const (
-	SwapEventType              = `swap`
-	AddLiquidityEventType      = `add_liquidity`
-	WithdrawEventType          = `withdraw`
-	PendingLiquidity           = `pending_liquidity`
-	DonateEventType            = `donate`
-	PoolEventType              = `pool`
-	RewardEventType            = `rewards`
-	RefundEventType            = `refund`
-	BondEventType              = `bond`
-	GasEventType               = `gas`
-	ReserveEventType           = `reserve`
-	SlashEventType             = `slash`
-	ErrataEventType            = `errata`
-	FeeEventType               = `fee`
-	OutboundEventType          = `outbound`
-	TSSKeygenMetricEventType   = `tss_keygen`
-	TSSKeysignMetricEventType  = `tss_keysign`
-	SlashPointEventType        = `slash_points`
+	AddLiquidityEventType      = "add_liquidity"
+	BondEventType              = "bond"
+	DonateEventType            = "donate"
+	ErrataEventType            = "errata"
+	FeeEventType               = "fee"
+	GasEventType               = "gas"
+	OutboundEventType          = "outbound"
+	PendingLiquidity           = "pending_liquidity"
 	PoolBalanceChangeEventType = "pool_balance_change"
+	PoolEventType              = "pool"
+	RefundEventType            = "refund"
+	ReserveEventType           = "reserve"
+	RewardEventType            = "rewards"
+	ScheduledOutboundEventType = "scheduled_outbound"
+	SecurityEventType          = "security"
+	SetMimirEventType          = "set_mimir"
+	SetNodeMimirEventType      = "set_node_mimir"
+	SlashEventType             = "slash"
+	SlashPointEventType        = "slash_points"
+	SwapEventType              = "swap"
 	SwitchEventType            = "switch"
 	THORNameEventType          = "thorname"
+	TSSKeygenMetricEventType   = "tss_keygen"
+	TSSKeysignMetricEventType  = "tss_keysign"
+	WithdrawEventType          = "withdraw"
 )
 
 // PoolMods a list of pool modifications
@@ -344,6 +349,63 @@ func (m *EventReserve) Events() (cosmos.Events, error) {
 	}, nil
 }
 
+// NewEventScheduledOutbound creates a new scheduled outbound event.
+func NewEventScheduledOutbound(tx TxOutItem) *EventScheduledOutbound {
+	return &EventScheduledOutbound{
+		OutTx: tx,
+	}
+}
+
+// Type returns the scheduled outbound event type.
+func (m *EventScheduledOutbound) Type() string {
+	return ScheduledOutboundEventType
+}
+
+// Events returns the cosmos events for the scheduled outbound event.
+func (m *EventScheduledOutbound) Events() (cosmos.Events, error) {
+	attrs := []cosmos.Attribute{
+		cosmos.NewAttribute("chain", m.OutTx.Chain.String()),
+		cosmos.NewAttribute("to_address", m.OutTx.ToAddress.String()),
+		cosmos.NewAttribute("vault_pub_key", m.OutTx.VaultPubKey.String()),
+		cosmos.NewAttribute("coin_asset", m.OutTx.Coin.Asset.String()),
+		cosmos.NewAttribute("coin_amount", m.OutTx.Coin.Amount.String()),
+		cosmos.NewAttribute("coin_decimals", strconv.FormatInt(m.OutTx.Coin.Decimals, 10)),
+		cosmos.NewAttribute("memo", m.OutTx.Memo),
+		cosmos.NewAttribute("gas_rate", strconv.FormatInt(m.OutTx.GasRate, 10)),
+		cosmos.NewAttribute("in_hash", m.OutTx.InHash.String()),
+		cosmos.NewAttribute("out_hash", m.OutTx.OutHash.String()),
+		cosmos.NewAttribute("module_name", m.OutTx.ModuleName),
+	}
+
+	for i, gas := range m.OutTx.MaxGas {
+		attrs = append(attrs, cosmos.NewAttribute(fmt.Sprintf("max_gas_asset_%d", i), gas.Asset.String()))
+		attrs = append(attrs, cosmos.NewAttribute(fmt.Sprintf("max_gas_amount_%d", i), gas.Amount.String()))
+		attrs = append(attrs, cosmos.NewAttribute(fmt.Sprintf("max_gas_decimals_%d", i), strconv.FormatInt(gas.Decimals, 10)))
+	}
+
+	return cosmos.Events{cosmos.NewEvent(m.Type(), attrs...)}, nil
+}
+
+// NewEventSecurity creates a new security event.
+func NewEventSecurity(tx common.Tx, msg string) *EventSecurity {
+	return &EventSecurity{
+		Msg: msg,
+		Tx:  tx,
+	}
+}
+
+// Type returns the security event type.
+func (m *EventSecurity) Type() string {
+	return SecurityEventType
+}
+
+// Events returns the cosmos events for the security event.
+func (m *EventSecurity) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(), cosmos.NewAttribute("msg", m.Msg))
+	evt = evt.AppendAttributes(m.Tx.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
 // NewEventSlash create a new slash event
 func NewEventSlash(pool common.Asset, slashAmount []PoolAmt) *EventSlash {
 	return &EventSlash{
@@ -536,8 +598,9 @@ func (m *EventPoolBalanceChanged) Events() (cosmos.Events, error) {
 }
 
 // NewEventSwitch create a new instance of EventSwitch
-func NewEventSwitch(from common.Address, to cosmos.AccAddress, coin common.Coin) *EventSwitch {
+func NewEventSwitch(from common.Address, to cosmos.AccAddress, coin common.Coin, hash common.TxID) *EventSwitch {
 	return &EventSwitch{
+		TxID:        hash,
 		ToAddress:   to,
 		FromAddress: from,
 		Burn:        coin,
@@ -552,34 +615,37 @@ func (m *EventSwitch) Type() string {
 // Events return cosmos sdk events
 func (m *EventSwitch) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("txid", m.TxID.String()),
 		cosmos.NewAttribute("from", m.FromAddress.String()),
 		cosmos.NewAttribute("to", m.ToAddress.String()),
 		cosmos.NewAttribute("burn", m.Burn.String()))
 	return cosmos.Events{evt}, nil
 }
 
-// NewEventSwitchV56 create a new instance of EventSwitch
-func NewEventSwitchV56(from common.Address, to cosmos.AccAddress, coin common.Coin, hash common.TxID) *EventSwitchV56 {
-	return &EventSwitchV56{
+// NewEventSwitchV87 create a new instance of EventSwitch
+func NewEventSwitchV87(from common.Address, to cosmos.AccAddress, coin common.Coin, hash common.TxID, mint cosmos.Uint) *EventSwitchV87 {
+	return &EventSwitchV87{
 		TxID:        hash,
 		ToAddress:   to,
 		FromAddress: from,
 		Burn:        coin,
+		Mint:        mint,
 	}
 }
 
 // Type return a string which represent the type of this event
-func (m *EventSwitchV56) Type() string {
+func (m *EventSwitchV87) Type() string {
 	return SwitchEventType
 }
 
 // Events return cosmos sdk events
-func (m *EventSwitchV56) Events() (cosmos.Events, error) {
+func (m *EventSwitchV87) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("txid", m.TxID.String()),
 		cosmos.NewAttribute("from", m.FromAddress.String()),
 		cosmos.NewAttribute("to", m.ToAddress.String()),
-		cosmos.NewAttribute("burn", m.Burn.String()))
+		cosmos.NewAttribute("burn", m.Burn.String()),
+		cosmos.NewAttribute("mint", m.Mint.String()))
 	return cosmos.Events{evt}, nil
 }
 
@@ -653,12 +719,58 @@ func (m *EventTHORName) Type() string {
 // Events return cosmos sdk events
 func (m *EventTHORName) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
-		cosmos.NewAttribute("name", m.Name),
+		cosmos.NewAttribute("name", strings.ToLower(m.Name)),
 		cosmos.NewAttribute("chain", m.Chain.String()),
 		cosmos.NewAttribute("address", m.Address.String()),
 		cosmos.NewAttribute("registration_fee", m.RegistrationFee.String()),
 		cosmos.NewAttribute("fund_amount", m.FundAmt.String()),
 		cosmos.NewAttribute("expire", fmt.Sprintf("%d", m.Expire)),
 		cosmos.NewAttribute("owner", m.Owner.String()))
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventSetMimir create a new instance of EventSetMimir
+func NewEventSetMimir(key, value string) *EventSetMimir {
+	return &EventSetMimir{
+		Key:   key,
+		Value: value,
+	}
+}
+
+// Type return a string which represent the type of this event
+func (m *EventSetMimir) Type() string {
+	return SetMimirEventType
+}
+
+// Events return cosmos sdk events
+func (m *EventSetMimir) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("key", m.Key),
+		cosmos.NewAttribute("value", m.Value),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventSetNodeMimir create a new instance of EventSetNodeMimir
+func NewEventSetNodeMimir(key, value, address string) *EventSetNodeMimir {
+	return &EventSetNodeMimir{
+		Key:     key,
+		Value:   value,
+		Address: address,
+	}
+}
+
+// Type return a string which represent the type of this event
+func (m *EventSetNodeMimir) Type() string {
+	return SetNodeMimirEventType
+}
+
+// Events return cosmos sdk events
+func (m *EventSetNodeMimir) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("key", m.Key),
+		cosmos.NewAttribute("value", m.Value),
+		cosmos.NewAttribute("address", m.Address),
+	)
 	return cosmos.Events{evt}, nil
 }

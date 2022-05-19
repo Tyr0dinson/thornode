@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
@@ -13,7 +12,7 @@ import (
 
 func (k KVStore) setVault(ctx cosmos.Context, key string, record Vault) {
 	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshalBinaryBare(&record)
+	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -28,7 +27,7 @@ func (k KVStore) getVault(ctx cosmos.Context, key string, record *Vault) (bool, 
 	}
 
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return true, nil
@@ -90,9 +89,7 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 		totalValue := cosmos.ZeroUint()
 		for _, coin := range vault.Coins {
 			if coin.Asset.IsRune() {
-				if k.version.LT(semver.MustParse("0.79.0")) {
-					totalValue = totalValue.Add(coin.Amount)
-				}
+				continue
 			} else {
 				pool, err := k.GetPool(ctx, coin.Asset)
 				if err != nil {
@@ -162,7 +159,7 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 	}
 
 	// sort by how far total bond and total value are from each other
-	sort.SliceStable(vaultSecurity[:], func(i, j int) bool {
+	sort.SliceStable(vaultSecurity, func(i, j int) bool {
 		return vaultSecurity[i].Diff < vaultSecurity[j].Diff
 	})
 
@@ -213,7 +210,7 @@ func (k KVStore) HasValidVaultPools(ctx cosmos.Context) (bool, error) {
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var vault Vault
-		if err := k.cdc.UnmarshalBinaryBare(iterator.Value(), &vault); err != nil {
+		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
 			return false, dbError(ctx, "fail to unmarshal vault", err)
 		}
 		if vault.HasFunds() {

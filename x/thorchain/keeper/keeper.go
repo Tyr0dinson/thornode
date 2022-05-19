@@ -13,7 +13,7 @@ import (
 )
 
 type Keeper interface {
-	Cdc() codec.BinaryMarshaler
+	Cdc() codec.BinaryCodec
 	Version() semver.Version
 	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
@@ -126,6 +126,8 @@ type KeeperObservedTx interface {
 	SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter)
 	GetObservedTxOutVoterIterator(ctx cosmos.Context) cosmos.Iterator
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
+	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
+	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
 }
 
 type KeeperTxOut interface {
@@ -158,7 +160,8 @@ type KeeperVault interface {
 }
 
 type KeeperReserveContributors interface {
-	AddFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
+	AddPoolFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
+	AddBondFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
 }
 
 // KeeperNetwork func to access network data in key value store
@@ -241,8 +244,7 @@ type KeeperNetworkFee interface {
 type KeeperObservedNetworkFeeVoter interface {
 	SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter)
 	GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator
-	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain) (ObservedNetworkFeeVoter, error)
-	GetObservedNetworkFeeVoterV47(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error)
+	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error)
 }
 
 type KeeperChainContract interface {
@@ -267,7 +269,7 @@ type KeeperTHORName interface {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) Keeper {
+func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) Keeper {
 	version := semver.MustParse("0.0.0")
 	return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version)
 }

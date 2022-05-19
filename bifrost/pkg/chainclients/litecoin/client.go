@@ -20,13 +20,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	txscript "gitlab.com/thorchain/bifrost/ltcd-txscript"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
-	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
@@ -221,7 +222,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 // getUTXOs send a request to bitcond RPC endpoint to query all the UTXO
-func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUTXOs(minConfirm, maximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
 	ltcAddress, err := pkey.GetAddress(common.LTCChain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get LTC Address for pubkey(%s): %w", pkey, err)
@@ -230,7 +231,7 @@ func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode LTC address(%s): %w", ltcAddress.String(), err)
 	}
-	return c.client.ListUnspentMinMaxAddresses(minConfirm, MaximumConfirm, []ltcutil.Address{
+	return c.client.ListUnspentMinMaxAddresses(minConfirm, maximumConfirm, []ltcutil.Address{
 		addr,
 	})
 }
@@ -634,7 +635,7 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	}
 
 	// LTC has faster block time, report every 5 blocks seems fine
-	if height%5 == 0 {
+	if height%5 == 0 && c.IsBlockScannerHealthy() {
 		if err := c.ReportSolvency(height); err != nil {
 			c.logger.Err(err).Msg("fail to report solvency to THORChain")
 		}
@@ -994,7 +995,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 
 // getGas returns gas for a ltc tx (sum vin - sum vout)
 func (c *Client) getGas(tx *btcjson.TxRawResult) (common.Gas, error) {
-	var sumVin uint64 = 0
+	var sumVin uint64
 	for _, vin := range tx.Vin {
 		txHash, err := chainhash.NewHashFromStr(vin.Txid)
 		if err != nil {
@@ -1011,7 +1012,7 @@ func (c *Client) getGas(tx *btcjson.TxRawResult) (common.Gas, error) {
 		}
 		sumVin += uint64(amount.ToUnit(ltcutil.AmountSatoshi))
 	}
-	var sumVout uint64 = 0
+	var sumVout uint64
 	for _, vout := range tx.Vout {
 		amount, err := ltcutil.NewAmount(vout.Value)
 		if err != nil {

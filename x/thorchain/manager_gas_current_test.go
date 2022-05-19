@@ -8,14 +8,14 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type GasManagerTestSuiteV81 struct{}
+type GasManagerTestSuiteV89 struct{}
 
-var _ = Suite(&GasManagerTestSuiteV81{})
+var _ = Suite(&GasManagerTestSuiteV89{})
 
-func (GasManagerTestSuiteV81) TestGasManagerV81(c *C) {
+func (GasManagerTestSuiteV89) TestGasManagerV89(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV80(constAccessor, k)
+	gasMgr := newGasMgrV89(constAccessor, k)
 	gasEvent := gasMgr.gasEvent
 	c.Assert(gasMgr, NotNil)
 	gasMgr.BeginBlock()
@@ -45,10 +45,10 @@ func (GasManagerTestSuiteV81) TestGasManagerV81(c *C) {
 	gasMgr.EndBlock(ctx, k, eventMgr)
 }
 
-func (GasManagerTestSuiteV81) TestGetFee(c *C) {
+func (GasManagerTestSuiteV89) TestGetFee(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV80(constAccessor, k)
+	gasMgr := newGasMgrV89(constAccessor, k)
 	fee := gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	defaultTxFee := uint64(constAccessor.GetInt64Value(constants.OutboundTransactionFee))
 	// when there is no network fee available, it should just get from the constants
@@ -95,10 +95,10 @@ func (GasManagerTestSuiteV81) TestGetFee(c *C) {
 	c.Assert(synthAssetFee.Uint64(), Equals, uint64(400000))
 }
 
-func (GasManagerTestSuiteV81) TestDifferentValidations(c *C) {
+func (GasManagerTestSuiteV89) TestDifferentValidations(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV80(constAccessor, k)
+	gasMgr := newGasMgrV89(constAccessor, k)
 	gasMgr.BeginBlock()
 	helper := newGasManagerTestHelper(k)
 	eventMgr := newEventMgrV1()
@@ -129,10 +129,10 @@ func (GasManagerTestSuiteV81) TestDifferentValidations(c *C) {
 	gasMgr.EndBlock(ctx, helper, eventMgr)
 }
 
-func (GasManagerTestSuiteV81) TestGetMaxGas(c *C) {
+func (GasManagerTestSuiteV89) TestGetMaxGas(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV80(constAccessor, k)
+	gasMgr := newGasMgrV89(constAccessor, k)
 	gasCoin, err := gasMgr.GetMaxGas(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(gasCoin.Amount.IsZero(), Equals, true)

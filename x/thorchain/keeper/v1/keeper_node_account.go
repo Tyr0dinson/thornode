@@ -17,7 +17,7 @@ import (
 
 func (k KVStore) setNodeAccount(ctx cosmos.Context, key string, record NodeAccount) {
 	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshalBinaryBare(&record)
+	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -32,7 +32,7 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key string, record *NodeAcco
 	}
 
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return true, nil
@@ -52,7 +52,7 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
+		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
 		if na.Type == NodeTypeValidator && !na.Bond.IsZero() {
@@ -69,7 +69,7 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.UnmarshalBinaryBare(naIterator.Value(), &na); err != nil {
+		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
 		if na.Type == NodeTypeValidator && na.Status == status {
@@ -86,65 +86,10 @@ func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) 
 
 // GetMinJoinVersion - get min version to join. Min version is the most popular version
 func (k KVStore) GetMinJoinVersion(ctx cosmos.Context) semver.Version {
-	if k.version.GTE(semver.MustParse("0.80.0")) {
-		return k.getMinJoinVersionV80(ctx)
-	}
 	return k.getMinJoinVersionV1(ctx)
 }
 
-// getMinJoinVersionV1 - get min version to join. Min version is the most popular version
 func (k KVStore) getMinJoinVersionV1(ctx cosmos.Context) semver.Version {
-	type tmpVersionInfo struct {
-		version semver.Version
-		count   int
-	}
-	vCount := make(map[string]tmpVersionInfo, 0)
-	nodes, err := k.ListActiveValidators(ctx)
-	if err != nil {
-		_ = dbError(ctx, "Unable to list active node accounts", err)
-		return semver.Version{}
-	}
-	sort.SliceStable(nodes, func(i, j int) bool {
-		return nodes[i].GetVersion().LT(nodes[j].GetVersion())
-	})
-	for _, na := range nodes {
-		v, ok := vCount[na.Version]
-		if ok {
-			v.count = v.count + 1
-			vCount[na.Version] = v
-		} else {
-			vCount[na.Version] = tmpVersionInfo{
-				version: na.GetVersion(),
-				count:   1,
-			}
-		}
-		// assume all versions are backward compatible
-		// analyze-ignore(map-iteration)
-		for k, v := range vCount {
-			if v.version.LT(na.GetVersion()) {
-				v.count = v.count + 1
-				vCount[k] = v
-			}
-		}
-	}
-	totalCount := len(nodes)
-	version := semver.Version{}
-
-	// analyze-ignore(map-iteration)
-	for _, info := range vCount {
-		// skip those version that doesn't have majority
-		if !HasSuperMajority(info.count, totalCount) {
-			continue
-		}
-		if info.version.GT(version) {
-			version = info.version
-		}
-
-	}
-	return version
-}
-
-func (k KVStore) getMinJoinVersionV80(ctx cosmos.Context) semver.Version {
 	type tmpVersionInfo struct {
 		version semver.Version
 		count   int
@@ -176,7 +121,7 @@ func (k KVStore) getMinJoinVersionV80(ctx cosmos.Context) semver.Version {
 		// assume all versions are backward compatible
 		for k, v := range vCount {
 			if v.version.LTE(na.GetVersion()) {
-				v.count = v.count + 1
+				v.count++
 				vCount[k] = v
 			}
 		}
@@ -266,7 +211,7 @@ func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var na NodeAccount
-		if err := k.cdc.UnmarshalBinaryBare(iter.Value(), &na); err != nil {
+		if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
 			return dbError(ctx, "Unmarshal: node account", err)
 		}
 		if strings.EqualFold("", consensusPubKey) {
@@ -366,7 +311,7 @@ func (k KVStore) DecNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAd
 
 func (k KVStore) setJail(ctx cosmos.Context, key string, record Jail) {
 	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshalBinaryBare(&record)
+	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -381,7 +326,7 @@ func (k KVStore) getJail(ctx cosmos.Context, key string, record *Jail) (bool, er
 	}
 
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return true, nil
@@ -425,7 +370,7 @@ func (k KVStore) ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccA
 
 func (k KVStore) setBondProviders(ctx cosmos.Context, key string, record BondProviders) {
 	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshalBinaryBare(&record)
+	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -440,7 +385,7 @@ func (k KVStore) getBondProviders(ctx cosmos.Context, key string, record *BondPr
 	}
 
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, record); err != nil {
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return true, nil

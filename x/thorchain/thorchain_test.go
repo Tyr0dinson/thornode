@@ -42,27 +42,26 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(keeper))
 	// liquidity provider for user1
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
 	lp1, err := keeper.GetLiquidityProvider(ctx, common.BNBAsset, user1rune)
 	c.Assert(err, IsNil)
 	c.Check(lp1.Units.IsZero(), Equals, false)
 
 	// liquidity provider for user2
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(75*common.One), cosmos.NewUint(75*common.One), user2rune, user2asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(75*common.One), cosmos.NewUint(75*common.One), user2rune, user2asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(75*common.One), cosmos.NewUint(75*common.One), user2rune, user2asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(75*common.One), cosmos.NewUint(75*common.One), user2rune, user2asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
 	lp2, err := keeper.GetLiquidityProvider(ctx, common.BNBAsset, user2rune)
 	c.Assert(err, IsNil)
 	c.Check(lp2.Units.IsZero(), Equals, false)
 
-	version := GetCurrentVersion()
 	// withdraw for user1
 	msg := NewMsgWithdrawLiquidity(GetRandomTx(), user1rune, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
-	_, _, _, _, _, err = withdrawV1(ctx, version, *msg, NewDummyMgrWithKeeper(keeper))
+	_, _, _, _, _, err = withdraw(ctx, *msg, NewDummyMgrWithKeeper(keeper))
 	c.Assert(err, IsNil)
 	lp1, err = keeper.GetLiquidityProvider(ctx, common.BNBAsset, user1rune)
 	c.Assert(err, IsNil)
@@ -70,7 +69,7 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 
 	// withdraw for user2
 	msg = NewMsgWithdrawLiquidity(GetRandomTx(), user2rune, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
-	_, _, _, _, _, err = withdrawV1(ctx, version, *msg, NewDummyMgrWithKeeper(keeper))
+	_, _, _, _, _, err = withdraw(ctx, *msg, NewDummyMgrWithKeeper(keeper))
 	c.Assert(err, IsNil)
 	lp2, err = keeper.GetLiquidityProvider(ctx, common.BNBAsset, user2rune)
 	c.Assert(err, IsNil)
@@ -85,9 +84,9 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	c.Check(pool.LPUnits.IsZero(), Equals, true)
 
 	// liquidity provider for user1, again
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), user1rune, user1asset, txID, false, constAccessor)
 	c.Assert(err, IsNil)
 	lp1, err = keeper.GetLiquidityProvider(ctx, common.BNBAsset, user1rune)
 	c.Assert(err, IsNil)
@@ -151,14 +150,14 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// trigger marking bad actors as well as a keygen
 	rotateHeight := consts.GetInt64Value(constants.ChurnInterval) + vault.BlockHeight
 	ctx = ctx.WithBlockHeight(rotateHeight)
-	valMgr := newValidatorMgrV1(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	valMgr := newValidatorMgrV80(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(valMgr.BeginBlock(ctx, consts, existingValidators), IsNil)
 
 	// check we've created a keygen, with the correct members
 	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, common.BlockHeight(ctx))
 	c.Assert(err, IsNil)
 	c.Assert(keygenBlock.IsEmpty(), Equals, false)
-	expected := append(vault.Membership[1:], na.PubKeySet.Secp256k1.String())
+	expected := append(vault.Membership[1:], na.PubKeySet.Secp256k1.String()) // nolint
 	c.Assert(keygenBlock.Keygens, HasLen, 1)
 	keygen := keygenBlock.Keygens[0]
 	// sort our slices so they are in the same order
@@ -205,7 +204,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(vault2.Membership, HasLen, 4)
 
 	// check our validators get rotated appropriately
-	validators := valMgr.EndBlock(ctx, mgr, consts)
+	validators := valMgr.EndBlock(ctx, mgr)
 	nas, err := mgr.Keeper().ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 4)
@@ -213,7 +212,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// ensure that the first one is rotated out and the new one is rotated in
 	standby, err := mgr.Keeper().GetNodeAccount(ctx, addresses[0])
 	c.Assert(err, IsNil)
-	c.Check(standby.Status == NodeDisabled, Equals, true)
+	c.Check(standby.Status == NodeStandby, Equals, true)
 	na, err = mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(na.Status == NodeActive, Equals, true)
@@ -221,7 +220,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// check that the funds can be migrated from the retiring vault to the new
 	// vault
 	ctx = ctx.WithBlockHeight(vault1.StatusSince)
-	err = mgr.VaultMgr().EndBlock(ctx, mgr, consts) // should attempt to send 20% of the coin values
+	err = mgr.NetworkMgr().EndBlock(ctx, mgr) // should attempt to send 20% of the coin values
 	c.Assert(err, IsNil)
 	vault, err = mgr.Keeper().GetVault(ctx, vault1.PubKey)
 	c.Assert(err, IsNil)
@@ -237,7 +236,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(err, IsNil)
 	vault.PendingTxBlockHeights = nil
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-	c.Check(mgr.VaultMgr().EndBlock(ctx, mgr, consts), IsNil) // should attempt to send 100% of the coin values
+	c.Check(mgr.NetworkMgr().EndBlock(ctx, mgr), IsNil) // should attempt to send 100% of the coin values
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1, Commentf("%d", len(items)))
@@ -280,32 +279,32 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	// add liquidity providers
 	lp1 := GetRandomRUNEAddress() // LiquidityProvider1
 	lp1asset := GetRandomBNBAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp2 := GetRandomRUNEAddress() // liquidity provider 2
 	lp2asset := GetRandomBNBAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp3 := GetRandomRUNEAddress() // liquidity provider 3
 	lp3asset := GetRandomBNBAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 
 	lp4 := GetRandomTHORAddress() // liquidity provider 4 , BTC
 	lp4Asset := GetRandomBTCAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), lp4, lp4Asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), lp4, lp4Asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 
 	lp5 := GetRandomTHORAddress() // Rune only
-	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), lp5, common.NoAddress, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), lp5, common.NoAddress, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp6Asset := GetRandomBTCAddress() // BTC only
 
-	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), common.NoAddress, lp6Asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.ZeroUint(), cosmos.NewUint(100*common.One), common.NoAddress, lp6Asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 
 	asgard.AddFunds(common.Coins{
@@ -369,7 +368,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	c.Assert(err, IsNil)
 	// this should trigger stage 1 of the ragnarok protocol. We should see a tx
 	// out per node account
-	mgr.ValidatorMgr().processRagnarok(ctx, mgr, consts)
+	c.Assert(mgr.ValidatorMgr().processRagnarok(ctx, mgr), IsNil)
 	// after ragnarok get trigged , we pay bond reward immediately
 	for idx, bonder := range bonders {
 		na, err := mgr.Keeper().GetNodeAccount(ctx, bonder.NodeAddress)
@@ -397,13 +396,13 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	mgr.TxOutStore().ClearOutboundItems(ctx) // clear out txs
 
 	for i := 1; i <= 11; i++ { // simulate each round of ragnarok (max of ten)
-		c.Assert(mgr.ValidatorMgr().processRagnarok(ctx, mgr, consts), IsNil)
-		items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+		c.Assert(mgr.ValidatorMgr().processRagnarok(ctx, mgr), IsNil)
+		_, err := mgr.TxOutStore().GetOutboundItems(ctx)
 		c.Assert(err, IsNil)
 		// validate liquidity providers get their returns
 		for j, lp := range lpsAssets {
 			items := mgr.TxOutStore().GetOutboundItemByToAddress(ctx, lp)
-			if i == 1 {
+			if i == 1 { // nolint
 				if j >= len(lps)-1 {
 					c.Assert(items, HasLen, 0, Commentf("%d", len(items)))
 				} else {
@@ -445,17 +444,17 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(mgr.Keeper()))
 	// add liquidity providers
 	lp1 := GetRandomRUNEAddress() // LiquidityProvider1
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp2 := GetRandomRUNEAddress() // liquidity provider 2
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	err = addHandler.addLiquidityV1(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp3 := GetRandomRUNEAddress() // liquidity provider 3
-	err = addHandler.addLiquidityV1(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lps := []common.Address{
 		lp1, lp2, lp3,
@@ -520,7 +519,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	asgard.Membership = asgard.Membership[:len(asgard.Membership)-1]
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 	// no validator should leave, because it trigger ragnarok
-	updates := mgr.ValidatorMgr().EndBlock(ctx, mgr, consts)
+	updates := mgr.ValidatorMgr().EndBlock(ctx, mgr)
 	c.Assert(updates, IsNil)
 	ragnarokHeight, err := mgr.Keeper().GetRagnarokBlockHeight(ctx)
 	c.Assert(err, IsNil)
@@ -530,5 +529,5 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	ctx = ctx.WithBlockHeight(currentHeight + migrateInterval)
 	c.Assert(mgr.ValidatorMgr().BeginBlock(ctx, consts, nil), IsNil)
 	mgr.TxOutStore().ClearOutboundItems(ctx)
-	c.Assert(mgr.ValidatorMgr().EndBlock(ctx, mgr, consts), IsNil)
+	c.Assert(mgr.ValidatorMgr().EndBlock(ctx, mgr), IsNil)
 }

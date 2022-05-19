@@ -38,16 +38,17 @@ type SolvencyReporter func(int64) error
 
 // BinanceBlockScanner is to scan the blocks
 type BinanceBlockScanner struct {
-	cfg              config.BlockScannerConfiguration
-	logger           zerolog.Logger
-	db               blockscanner.ScannerStorage
-	m                *metrics.Metrics
-	errCounter       *prometheus.CounterVec
-	http             *http.Client
-	singleFee        uint64
-	multiFee         uint64
-	bridge           *thorclient.ThorchainBridge
-	solvencyReporter SolvencyReporter
+	cfg                   config.BlockScannerConfiguration
+	logger                zerolog.Logger
+	db                    blockscanner.ScannerStorage
+	m                     *metrics.Metrics
+	errCounter            *prometheus.CounterVec
+	http                  *http.Client
+	singleFee             uint64
+	multiFee              uint64
+	bridge                *thorclient.ThorchainBridge
+	solvencyReporter      SolvencyReporter
+	currentScanningHeight int64
 }
 
 // NewBinanceBlockScanner create a new instance of BlockScan
@@ -70,7 +71,7 @@ func NewBinanceBlockScanner(cfg config.BlockScannerConfiguration,
 	}
 
 	netClient := &http.Client{
-		Timeout: cfg.HttpRequestTimeout,
+		Timeout: cfg.HTTPRequestTimeout,
 	}
 
 	return &BinanceBlockScanner{
@@ -175,7 +176,10 @@ func (b *BinanceBlockScanner) updateFees(height int64) error {
 				return err
 			}
 
-			transferFee := fee.(*types.TransferFeeParam)
+			transferFee, ok := fee.(*types.TransferFeeParam)
+			if !ok {
+				return fmt.Errorf("dev error: fail to type cast TransferFeeParam")
+			}
 			if transferFee.FixedFeeParams.Fee > 0 {
 				if b.singleFee != uint64(transferFee.FixedFeeParams.Fee) {
 					changed = true
@@ -250,7 +254,7 @@ func (b *BinanceBlockScanner) processBlock(block blockscanner.Block) (stypes.TxI
 	return txIn, nil
 }
 
-func (b *BinanceBlockScanner) getFromHttp(url string) ([]byte, error) {
+func (b *BinanceBlockScanner) getFromHTTP(url string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create http request: %w", err)
@@ -305,7 +309,7 @@ func (b *BinanceBlockScanner) getRPCBlock(height int64) ([]string, error) {
 		b.m.GetHistograms(metrics.BlockDiscoveryDuration).Observe(duration.Seconds())
 	}()
 	url := b.BlockRequest(height)
-	buf, err := b.getFromHttp(url)
+	buf, err := b.getFromHTTP(url)
 	if err != nil {
 		if strings.Contains(err.Error(), "Height must be less than or equal to the current blockchain height") {
 			return nil, bltypes.ErrUnavailableBlock
@@ -352,7 +356,7 @@ func (b *BinanceBlockScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 	if err != nil {
 		return stypes.TxIn{}, err
 	}
-
+	b.currentScanningHeight = height
 	block := blockscanner.Block{Height: height, Txs: rawTxs}
 	b.logger.Debug().Int64("block", block.Height).Msg("processing block")
 	txIn, err := b.processBlock(block)

@@ -7,8 +7,8 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
-	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type HandlerMigrateSuite struct{}
@@ -85,7 +85,7 @@ func (k *TestMigrateKeeperHappyPath) GetTxOut(ctx cosmos.Context, blockHeight in
 	if k.txout != nil && k.txout.Height == blockHeight {
 		return k.txout, nil
 	}
-	return nil, kaboom
+	return nil, errKaboom
 }
 
 func (k *TestMigrateKeeperHappyPath) SetTxOut(ctx cosmos.Context, blockOut *TxOut) error {
@@ -93,7 +93,7 @@ func (k *TestMigrateKeeperHappyPath) SetTxOut(ctx cosmos.Context, blockOut *TxOu
 		k.txout = blockOut
 		return nil
 	}
-	return kaboom
+	return errKaboom
 }
 
 func (k *TestMigrateKeeperHappyPath) GetNodeAccountByPubKey(_ cosmos.Context, _ common.PubKey) (NodeAccount, error) {
@@ -185,7 +185,7 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	mgr := NewDummyMgrWithKeeper(keeper)
-	mgr.slasher = newSlasherV1(keeper, NewDummyEventMgr())
+	mgr.slasher = newSlasherV75(keeper, NewDummyEventMgr())
 	handler := NewMigrateHandler(mgr)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),

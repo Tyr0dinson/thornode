@@ -52,7 +52,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "add:BTC.BTC:tbnb1yeuljgpkg2c2qvx3nlmgv7gvnyss6ye2u8rasf:xxxx")
+	_, err = ParseMemoWithTHORNames(ctx, k, "add:BTC.BTC:tbnb1yeuljgpkg2c2qvx3nlmgv7gvnyss6ye2u8rasf:xxxx")
 	c.Assert(err, IsNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("-:%s:25", common.RuneAsset().String()))
@@ -207,14 +207,14 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.String(), Equals, "")
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "ADD:BTC.BTC")
+	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:BTC.BTC")
 	c.Assert(err, IsNil)
 	memo, err = ParseMemoWithTHORNames(ctx, k, "ADD:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetDestination().String(), Equals, "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "ADD:BNB.BNB:tbnb18f55frcvknxvcpx2vvpfedvw4l8eutuhca3lll:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
+	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:BNB.BNB:tbnb18f55frcvknxvcpx2vvpfedvw4l8eutuhca3lll:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
 	c.Assert(err, IsNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "WITHDRAW:"+common.RuneAsset().String()+":25")
@@ -254,6 +254,15 @@ func (s *MemoSuite) TestParse(c *C) {
 	mem, err := ParseBondMemo(k.Version(), []string{"BOND", whiteListAddr.String(), bondProvider.String()})
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
+	c.Assert(mem.NodeOperatorFee, Equals, int64(-1))
+	mem, err = ParseBondMemo(k.Version(), []string{"BOND", whiteListAddr.String(), bondProvider.String(), "0"})
+	c.Assert(err, IsNil)
+	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
+	c.Assert(mem.NodeOperatorFee, Equals, int64(0))
+	mem, err = ParseBondMemo(k.Version(), []string{"BOND", whiteListAddr.String(), bondProvider.String(), "1000"})
+	c.Assert(err, IsNil)
+	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
+	c.Assert(mem.NodeOperatorFee, Equals, int64(1000))
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)

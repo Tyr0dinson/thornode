@@ -21,7 +21,7 @@ func (k KVStore) SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter) {
 func (k KVStore) setObservedTxVoter(ctx cosmos.Context, prefix types.DbPrefix, tx ObservedTxVoter) {
 	store := ctx.KVStore(k.storeKey)
 	key := k.GetKey(ctx, prefix, tx.String())
-	buf := k.cdc.MustMarshalBinaryBare(&tx)
+	buf := k.cdc.MustMarshal(&tx)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -62,8 +62,44 @@ func (k KVStore) getObservedTxVoter(ctx cosmos.Context, prefix types.DbPrefix, h
 	}
 
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, &record); err != nil {
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
 		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return record, nil
+}
+
+func (k KVStore) SetObservedLink(ctx cosmos.Context, inhash, outhash common.TxID) {
+	k.setObservedLink(ctx, inhash, outhash)
+}
+
+func (k KVStore) setObservedLink(ctx cosmos.Context, inhash, outhash common.TxID) {
+	key := k.GetKey(ctx, prefixObservedLink, inhash.String())
+	record := make([]string, 0)
+	_, _ = k.getStrings(ctx, key, &record)
+	for _, s := range record {
+		if s == outhash.String() {
+			return
+		}
+	}
+
+	record = append(record, outhash.String())
+	k.setStrings(ctx, key, record)
+}
+
+func (k KVStore) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
+	hashes := make([]common.TxID, 0)
+	strs := make([]string, 0)
+
+	key := k.GetKey(ctx, prefixObservedLink, inhash.String())
+	_, _ = k.getStrings(ctx, key, &strs)
+
+	for _, s := range strs {
+		hash, err := common.NewTxID(s)
+		if err != nil {
+			ctx.Logger().Error("failed to parse TXID", "txid", s, "error", err)
+			continue
+		}
+		hashes = append(hashes, hash)
+	}
+	return hashes
 }

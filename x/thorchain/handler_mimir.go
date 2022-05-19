@@ -33,7 +33,6 @@ func (h MimirHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, err
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	ctx.Logger().Info("receive mimir", "key", msg.Key, "value", msg.Value)
 	if err := h.validate(ctx, *msg); err != nil {
 		ctx.Logger().Error("msg mimir failed validation", "error", err)
 		return nil, err
@@ -50,8 +49,6 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.78.0")) {
 		return h.validateV78(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -80,22 +77,19 @@ func (h MimirHandler) validateV78(ctx cosmos.Context, msg MsgMimir) error {
 }
 
 func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
-	ctx.Logger().Info("handleMsgMimir request", "key", msg.Key, "value", msg.Value)
+	ctx.Logger().Info("handleMsgMimir request", "node", msg.Signer, "key", msg.Key, "value", msg.Value)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.81.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.87.0")):
+		return h.handleV87(ctx, msg)
+	case version.GTE(semver.MustParse("0.81.0")):
 		return h.handleV81(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.78.0")) {
-		return h.handleV78(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.65.0")) {
-		return h.handleV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	ctx.Logger().Error(errInvalidVersion.Error())
 	return errBadVersion
 }
 
-func (h MimirHandler) handleV81(ctx cosmos.Context, msg MsgMimir) error {
+func (h MimirHandler) handleV87(ctx cosmos.Context, msg MsgMimir) error {
 	if h.isAdmin(msg.Signer) {
 		if msg.Value < 0 {
 			_ = h.mgr.Keeper().DeleteMimir(ctx, msg.Key)
@@ -103,10 +97,11 @@ func (h MimirHandler) handleV81(ctx cosmos.Context, msg MsgMimir) error {
 			h.mgr.Keeper().SetMimir(ctx, msg.Key, msg.Value)
 		}
 
-		ctx.EventManager().EmitEvent(
-			cosmos.NewEvent("set_mimir",
-				cosmos.NewAttribute("key", msg.Key),
-				cosmos.NewAttribute("value", strconv.FormatInt(msg.Value, 10))))
+		mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10))
+		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		}
+
 	} else {
 		nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)
 		if err != nil {
@@ -121,6 +116,7 @@ func (h MimirHandler) handleV81(ctx cosmos.Context, msg MsgMimir) error {
 		cost := cosmos.NewUint(uint64(c))
 		nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
 		if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+			ctx.Logger().Error("fail to save node account", "error", err)
 			return fmt.Errorf("fail to save node account: %w", err)
 		}
 
@@ -134,14 +130,14 @@ func (h MimirHandler) handleV81(ctx cosmos.Context, msg MsgMimir) error {
 		}
 
 		if err := h.mgr.Keeper().SetNodeMimir(ctx, msg.Key, msg.Value, msg.Signer); err != nil {
+			ctx.Logger().Error("fail to save node mimir", "error", err)
 			return err
 		}
 
-		ctx.EventManager().EmitEvent(
-			cosmos.NewEvent("set_node_mimir",
-				cosmos.NewAttribute("key", strings.ToUpper(msg.Key)),
-				cosmos.NewAttribute("value", strconv.FormatInt(msg.Value, 10)),
-				cosmos.NewAttribute("address", msg.Signer.String())))
+		mimirEvent := NewEventSetNodeMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10), msg.Signer.String())
+		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_node_mimir event", "error", err)
+		}
 
 		tx := common.Tx{}
 		tx.ID = common.BlankTxID

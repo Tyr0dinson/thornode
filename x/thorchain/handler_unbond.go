@@ -47,17 +47,17 @@ func (h UnBondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, er
 
 func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.81.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.88.0")):
+		return h.validateV88(ctx, msg)
+	case version.GTE(semver.MustParse("0.81.0")):
 		return h.validateV81(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.55.0")) {
-		return h.validateV55(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func (h UnBondHandler) validateV81(ctx cosmos.Context, msg MsgUnBond) error {
+func (h UnBondHandler) validateV88(ctx cosmos.Context, msg MsgUnBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -69,6 +69,12 @@ func (h UnBondHandler) validateV81(ctx cosmos.Context, msg MsgUnBond) error {
 
 	if na.Status == NodeActive || na.Status == NodeReady {
 		return cosmos.ErrUnknownRequest("cannot unbond while node is in active or ready status")
+	}
+
+	if h.mgr.GetVersion().GTE(semver.MustParse("1.88.1")) {
+		if fetchConfigInt64(ctx, h.mgr, constants.PauseUnbond) > 0 {
+			return ErrInternal(err, "unbonding has been paused")
+		}
 	}
 
 	ygg := Vault{}
@@ -112,14 +118,6 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.81.0")) {
 		return h.handleV81(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.76.0")) {
-		return h.handleV76(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.55.0")) {
-		return h.handleV55(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return h.handleV46(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -172,7 +170,7 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 		}
 		if !canUnbond {
 			ctx.Logger().Error("cannot unbond while yggdrasil vault still has funds")
-			if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, na, h.mgr, h.mgr.GetConstants()); err != nil {
+			if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, na, h.mgr); err != nil {
 				return ErrInternal(err, "fail to request yggdrasil return fund")
 			}
 			return nil
@@ -238,10 +236,8 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 				}
 			}
 		}
-	} else {
-		if err := refundBond(ctx, msg.TxIn, from, msg.Amount, &na, h.mgr); err != nil {
-			return ErrInternal(err, "fail to unbond")
-		}
+	} else if err := refundBond(ctx, msg.TxIn, from, msg.Amount, &na, h.mgr); err != nil {
+		return ErrInternal(err, "fail to unbond")
 	}
 
 	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())

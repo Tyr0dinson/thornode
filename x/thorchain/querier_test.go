@@ -43,7 +43,7 @@ func (s *QuerierSuite) SetUpTest(c *C) {
 	username := "thorchain"
 	password := "password"
 
-	_, _, err := kb.NewMnemonic(username, ckeys.English, cmd.THORChainHDPath, hd.Secp256k1)
+	_, _, err := kb.NewMnemonic(username, ckeys.English, cmd.THORChainHDPath, password, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.kb = cosmos.KeybaseStore{
 		SignerName:   username,
@@ -194,7 +194,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
 	vault := GetRandomVault()
 	vault.Status = ActiveVault
-	vault.BlockHeight = 1024
+	vault.BlockHeight = 1
 	c.Assert(keeper.SetVault(ctx, vault), IsNil)
 	res, err := querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -205,15 +205,40 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	c.Assert(len(out), Equals, 1)
 
 	nodeAccount2 := GetRandomValidatorNode(NodeActive)
+	nodeAccount2.Bond = cosmos.NewUint(common.One * 3000)
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount2), IsNil)
+
+	/* Check Bond-weighted rewards estimation works*/
+	var nodeAccountResp []QueryNodeAccount
+
+	// Add bond rewards + set min bond for bond-weighted system
+	network, _ := keeper.GetNetwork(ctx)
+	network.BondRewardRune = cosmos.NewUint(common.One * 1000)
+	c.Assert(keeper.SetNetwork(ctx, network), IsNil)
+	keeper.SetMimir(ctx, "MinimumBondInRune", common.One*1000)
 
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 
-	err1 = json.Unmarshal(res, &out)
+	err1 = json.Unmarshal(res, &nodeAccountResp)
 	c.Assert(err1, IsNil)
-	c.Assert(len(out), Equals, 2)
+	c.Assert(len(nodeAccountResp), Equals, 2)
 
+	for _, node := range nodeAccountResp {
+		if node.NodeAddress.Equals(nodeAccount.NodeAddress) {
+			// First node has 25% of total bond, gets 25% of rewards
+			c.Assert(node.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*250).Uint64())
+			continue
+		} else if node.NodeAddress.Equals(nodeAccount2.NodeAddress) {
+			// Second node has 75% of total bond, gets 75% of rewards
+			c.Assert(node.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*750).Uint64())
+			continue
+		}
+
+		c.Fail()
+	}
+
+	/* Check querier only returns nodes with bond */
 	nodeAccount2.Bond = cosmos.NewUint(0)
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount2), IsNil)
 
@@ -302,7 +327,7 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	c.Assert(result, IsNil)
 	c.Assert(err, NotNil)
 	nodeAccount := GetRandomValidatorNode(NodeActive)
-	s.k.SetNodeAccount(s.ctx, nodeAccount)
+	c.Assert(s.k.SetNodeAccount(s.ctx, nodeAccount), IsNil)
 	voter, err := s.k.GetObservedTxInVoter(s.ctx, tx.ID)
 	c.Assert(err, IsNil)
 	voter.Add(NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight()), nodeAccount.NodeAddress)
@@ -457,10 +482,10 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	c.Assert(err, NotNil)
 
 	na := GetRandomValidatorNode(NodeActive)
-	s.k.SetNodeAccount(s.ctx, na)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
 	vault := GetRandomVault()
 	vault.Status = ActiveVault
-	vault.BlockHeight = 1024
+	vault.BlockHeight = 1
 	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
 	result, err = s.querier(s.ctx, []string{
 		query.QueryNode.Key,
@@ -470,11 +495,52 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	c.Assert(err, IsNil)
 	var r QueryNodeAccount
 	c.Assert(json.Unmarshal(result, &r), IsNil)
+
+	/* Check bond-weighted rewards estimation works */
+
+	// Add another node with 75% of the bond
+	nodeAccount2 := GetRandomValidatorNode(NodeActive)
+	nodeAccount2.Bond = cosmos.NewUint(common.One * 3000)
+	c.Assert(s.k.SetNodeAccount(s.ctx, nodeAccount2), IsNil)
+
+	// Add bond rewards + set min bond for bond-weighted system
+	network, _ := s.k.GetNetwork(s.ctx)
+	network.BondRewardRune = cosmos.NewUint(common.One * 1000)
+	c.Assert(s.k.SetNetwork(s.ctx, network), IsNil)
+	s.k.SetMimir(s.ctx, "MinimumBondInRune", common.One*1000)
+
+	// Get first node
+	result, err = s.querier(s.ctx, []string{
+		query.QueryNode.Key,
+		na.NodeAddress.String(),
+	}, abci.RequestQuery{})
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+	var r2 QueryNodeAccount
+	c.Assert(json.Unmarshal(result, &r2), IsNil)
+
+	// First node has 25% of bond, should have 25% of the rewards
+	c.Assert(r2.Bond.Uint64(), Equals, cosmos.NewUint(common.One*1000).Uint64())
+	c.Assert(r2.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*250).Uint64())
+
+	// Get second node
+	result, err = s.querier(s.ctx, []string{
+		query.QueryNode.Key,
+		nodeAccount2.NodeAddress.String(),
+	}, abci.RequestQuery{})
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+	var r3 QueryNodeAccount
+	c.Assert(json.Unmarshal(result, &r3), IsNil)
+
+	// Second node has 75% of bond, should have 75% of the rewards
+	c.Assert(r3.Bond.Uint64(), Equals, cosmos.NewUint(common.One*3000).Uint64())
+	c.Assert(r3.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*750).Uint64())
 }
 
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
-	s.k.SetNodeAccount(s.ctx, na)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryInboundAddresses.Key,
 		na.NodeAddress.String(),
@@ -495,7 +561,7 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
-	s.k.SetNodeAccount(s.ctx, na)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryKeysignArrayPubkey.Key,
 	}, abci.RequestQuery{})
@@ -530,7 +596,7 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
-	s.k.SetVault(s.ctx, GetRandomVault())
+	c.Assert(s.k.SetVault(s.ctx, GetRandomVault()), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryVaultsAsgard.Key,
 	}, abci.RequestQuery{})
@@ -546,7 +612,7 @@ func (s *QuerierSuite) TestQueryYggdrasilVault(c *C) {
 	vault.AddFunds(common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*100)),
 	})
-	s.k.SetVault(s.ctx, vault)
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryVaultsYggdrasil.Key,
 	}, abci.RequestQuery{})
@@ -585,7 +651,7 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 }
 
 func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
-	s.k.SetVault(s.ctx, GetRandomVault())
+	c.Assert(s.k.SetVault(s.ctx, GetRandomVault()), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryBalanceModule.Key,
 		"asgard",
@@ -612,7 +678,7 @@ func (s *QuerierSuite) TestQueryVault(c *C) {
 	c.Assert(result, IsNil)
 	c.Assert(err, NotNil)
 
-	s.k.SetVault(s.ctx, vault)
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
 	result, err = s.querier(s.ctx, []string{
 		query.QueryVault.Key,
 		vault.PubKey.String(),

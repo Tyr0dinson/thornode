@@ -8,6 +8,7 @@ import (
 	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -48,10 +49,6 @@ func (h TssHandler) validate(ctx cosmos.Context, msg MsgTssPool) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.71.0")) {
 		return h.validateV71(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.68.0")) {
-		return h.validateV68(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -125,10 +122,6 @@ func (h TssHandler) handle(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Result, 
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.73.0")) {
 		return h.handleV73(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.68.0")) {
-		return h.handleV68(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }
@@ -224,7 +217,7 @@ func (h TssHandler) handleV73(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Resul
 					if err := h.mgr.Keeper().SetVault(ctx, v); err != nil {
 						return nil, fmt.Errorf("fail to save vault: %w", err)
 					}
-					if err := h.mgr.VaultMgr().RotateVault(ctx, v); err != nil {
+					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
 						return nil, fmt.Errorf("fail to rotate vault: %w", err)
 					}
 				}

@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/blang/semver"
@@ -42,26 +43,25 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.65.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.88.1")):
+		return h.validateV88(ctx, msg)
+	case version.GTE(semver.MustParse("0.65.0")):
 		return h.validateV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.58.0")) {
-		return h.validateV58(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.56.0")) {
-		return h.validateV56(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.55.0")) {
-		return h.validateV55(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
+	default:
+		return errInvalidVersion
 	}
-	return errInvalidVersion
 }
 
-func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV88(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
 
 	target := msg.TargetAsset
+	if isTradingHalt(ctx, &msg, h.mgr) {
+		return errors.New("trading is halted, can't process swap")
+	}
 	if target.IsSyntheticAsset() {
 
 		// the following  only applicable for chaosnet
@@ -104,6 +104,9 @@ func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
 		if err != nil {
 			return ErrInternal(err, "fail to get pool")
 		}
+		if pool.BalanceAsset.IsZero() {
+			return fmt.Errorf("pool(%s) has zero asset balance", pool.Asset.String())
+		}
 		coverage := int64(synthSupply.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset).Uint64())
 		if coverage > maxSynths {
 			return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
@@ -130,16 +133,6 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.81.0")) {
 		return h.handleV81(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.56.0")) {
-		return h.handleV56(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.55.0")) {
-		return h.handleV55(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.44.0")) {
-		return h.handleV44(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.43.0")) {
-		return h.handleV43(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }

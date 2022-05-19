@@ -51,12 +51,12 @@ func (a AppModuleBasic) RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
 }
 
 // DefaultGenesis returns default genesis state as raw bytes for the module.
-func (AppModuleBasic) DefaultGenesis(cdc codec.JSONMarshaler) json.RawMessage {
+func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 	return cdc.MustMarshalJSON(DefaultGenesis())
 }
 
 // ValidateGenesis check of the Genesis
-func (AppModuleBasic) ValidateGenesis(cdc codec.JSONMarshaler, config client.TxEncodingConfig, bz json.RawMessage) error {
+func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
 	var data GenesisState
 	if err := cdc.UnmarshalJSON(bz, &data); err != nil {
 		return err
@@ -99,7 +99,7 @@ type AppModule struct {
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
+func NewAppModule(k keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
 	kb, err := cosmos.GetKeybase(os.Getenv("CHAIN_HOME_FOLDER"))
 	if err != nil {
 		panic(err)
@@ -114,6 +114,10 @@ func NewAppModule(k keeper.Keeper, cdc codec.BinaryMarshaler, coinKeeper bankkee
 
 func (AppModule) Name() string {
 	return ModuleName
+}
+
+func (AppModule) ConsensusVersion() uint64 {
+	return 1
 }
 
 func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
@@ -193,7 +197,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		ctx.Logger().Error("constants is not available", "version", version)
 		return nil
 	}
-	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr, version, constantValues); err != nil {
+	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 	}
 
@@ -201,7 +205,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	if err := am.mgr.Slasher().LackObserving(ctx, constantValues); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of observing:", "error", err)
 	}
-	if err := am.mgr.Slasher().LackSigning(ctx, constantValues, am.mgr); err != nil {
+	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
 	}
 
@@ -231,20 +235,20 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
 
 	// update network data to account for block rewards and reward units
-	if err := am.mgr.VaultMgr().UpdateNetwork(ctx, constantValues, am.mgr.GasMgr(), am.mgr.EventMgr()); err != nil {
+	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, constantValues, am.mgr.GasMgr(), am.mgr.EventMgr()); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
 	}
 
-	if err := am.mgr.VaultMgr().EndBlock(ctx, am.mgr, constantValues); err != nil {
+	if err := am.mgr.NetworkMgr().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to end block for vault manager", "error", err)
 	}
 
-	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr, constantValues)
+	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)
 
 	// Fill up Yggdrasil vaults
 	// We do this AFTER validatorMgr.EndBlock, because we don't want to send
 	// funds to a yggdrasil vault that is being churned out this block.
-	if err := am.mgr.YggManager().Fund(ctx, am.mgr, constantValues); err != nil {
+	if err := am.mgr.YggManager().Fund(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("unable to fund yggdrasil", "error", err)
 	}
 
@@ -265,14 +269,14 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 }
 
 // InitGenesis initialise genesis
-func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONMarshaler, data json.RawMessage) []abci.ValidatorUpdate {
+func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
 	var genState GenesisState
 	ModuleCdc.MustUnmarshalJSON(data, &genState)
 	return InitGenesis(ctx, am.mgr.Keeper(), genState)
 }
 
 // ExportGenesis export genesis
-func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONMarshaler) json.RawMessage {
+func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
 	gs := ExportGenesis(ctx, am.mgr.Keeper())
 	return ModuleCdc.MustMarshalJSON(&gs)
 }

@@ -48,10 +48,6 @@ func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLi
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.80.0")) {
 		return h.validateV80(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.65.0")) {
-		return h.validateV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -89,38 +85,30 @@ func (h WithdrawLiquidityHandler) validateV80(ctx cosmos.Context, msg MsgWithdra
 
 func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.75.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.88.1")):
+		return h.handleV88(ctx, msg)
+	case version.GTE(semver.MustParse("1.88.0")):
+		// only change in 1.88.1 is moving cacheCtx to the caller
+		cacheCtx, commit := ctx.CacheContext()
+		res, err := h.handleV88(cacheCtx, msg)
+		if err == nil {
+			commit()
+			ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
+		}
+		return res, err
+	case version.GTE(semver.MustParse("0.75.0")):
 		return h.handleV75(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.65.0")) {
-		return h.handleV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.55.0")) {
-		return h.handleV55(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.50.0")) {
-		return h.handleV50(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.49.0")) {
-		return h.handleV49(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.47.0")) {
-		return h.handleV47(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.45.0")) {
-		return h.handleV45(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.42.0")) {
-		return h.handleV42(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
-func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
+func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
 	}
-	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
-	if err != nil {
-		return nil, ErrInternal(err, "fail to get pool")
-	}
-	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdraw(ctx, h.mgr.GetVersion(), msg, h.mgr)
+	runeAmt, assetAmount, impLossProtection, units, gasAsset, err := withdraw(ctx, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -130,9 +118,6 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 		// tx id is blank, must be triggered by the ragnarok protocol
 		memo = NewRagnarokMemo(common.BlockHeight(ctx)).String()
 	}
-
-	// any extra rune in the transaction will be donated to reserve
-	reserveCoin := msg.Tx.Coins.GetCoin(common.RuneAsset())
 
 	if !assetAmount.IsZero() {
 		toi := TxOutItem{
@@ -158,11 +143,6 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 
 		okAsset, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
 		if err != nil {
-			// restore pool and liquidity provider
-			if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
-				return nil, ErrInternal(err, "fail to save pool")
-			}
-			h.mgr.Keeper().SetLiquidityProvider(ctx, lp)
 			return nil, multierror.Append(errFailAddOutboundTx, err)
 		}
 		if !okAsset {
@@ -178,24 +158,12 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 			Coin:      common.NewCoin(common.RuneAsset(), runeAmt),
 			Memo:      memo,
 		}
-		okRune, txOutErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
-		if txOutErr != nil || !okRune {
-			// when assetAmount is zero , the network didn't try to send asset to customer
-			// thus if it failed to send RUNE , it should restore pool here
-			// this might happen when the emit RUNE from the withdraw is less than `NativeTransactionFee`
-			if assetAmount.IsZero() {
-				if poolErr := h.mgr.Keeper().SetPool(ctx, pool); poolErr != nil {
-					return nil, ErrInternal(poolErr, "fail to save pool")
-				}
-				h.mgr.Keeper().SetLiquidityProvider(ctx, lp)
-				if txOutErr != nil {
-					return nil, multierror.Append(errFailAddOutboundTx, txOutErr)
-				}
-				return nil, errFailAddOutboundTx
-			}
-			// asset success/rune failed: send rune to reserve and emit events
-			reserveCoin.Amount = reserveCoin.Amount.Add(toi.Coin.Amount)
-			ctx.Logger().Error("rune side failed, add to reserve", "error", txOutErr, "coin", toi.Coin)
+		okRune, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
+		if err != nil {
+			return nil, multierror.Append(errFailAddOutboundTx, err)
+		}
+		if !okRune {
+			return nil, errFailAddOutboundTx
 		}
 	}
 
@@ -237,11 +205,12 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 		}
 	}
 
-	// Get rune (if any) and donate it to the reserve
+	// any extra rune in the transaction will be donated to reserve
+	reserveCoin := msg.Tx.Coins.GetCoin(common.RuneAsset())
 	if !reserveCoin.IsEmpty() {
-		if err := h.mgr.Keeper().AddFeeToReserve(ctx, reserveCoin.Amount); err != nil {
-			// Add to reserve
+		if err := h.mgr.Keeper().AddPoolFeeToReserve(ctx, reserveCoin.Amount); err != nil {
 			ctx.Logger().Error("fail to add fee to reserve", "error", err)
+			return nil, err
 		}
 	}
 

@@ -12,6 +12,7 @@ import (
 // signer.
 func NewAnteHandler(
 	ak ante.AccountKeeper, bankKeeper bankkeeper.Keeper,
+	feegrantKeeper ante.FeegrantKeeper,
 	sigGasConsumer ante.SignatureVerificationGasConsumer,
 	signModeHandler signing.SignModeHandler,
 ) sdk.AnteHandler {
@@ -21,13 +22,12 @@ func NewAnteHandler(
 		ante.NewRejectExtensionOptionsDecorator(),
 		ante.NewMempoolFeeDecorator(),
 		ante.NewValidateBasicDecorator(),
-		ante.TxTimeoutHeightDecorator{},
+		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(ak),
 		ante.NewConsumeGasForTxSizeDecorator(ak),
-		ante.NewRejectFeeGranterDecorator(),
+		ante.NewDeductFeeDecorator(ak, bankKeeper, feegrantKeeper),
 		ante.NewSetPubKeyDecorator(ak), // SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewValidateSigCountDecorator(ak),
-		ante.NewDeductFeeDecorator(ak, bankKeeper),
 		ante.NewSigGasConsumeDecorator(ak, sigGasConsumer),
 		ante.NewSigVerificationDecorator(ak, signModeHandler),
 		NewTHORChainFeeDecorator(ak, bankKeeper),

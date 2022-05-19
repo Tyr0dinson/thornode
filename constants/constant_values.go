@@ -15,6 +15,8 @@ const (
 	BlocksPerYear
 	OutboundTransactionFee
 	NativeTransactionFee
+	KillSwitchStart
+	KillSwitchDuration
 	PoolCycle
 	MinRunePoolDepth
 	MaxAvailablePools
@@ -34,12 +36,16 @@ const (
 	LackOfObservationPenalty
 	SigningTransactionPeriod
 	DoubleSignMaxAge
+	PauseBond
+	PauseUnbond
 	MinimumBondInRune
 	FundMigrationInterval
 	ArtificialRagnarokBlockHeight
 	MaximumLiquidityRune
 	StrictBondLiquidityRatio
 	DefaultPoolStatus
+	MaxOutboundAttempts
+	PauseOnSlashThreshold
 	FailKeygenSlashPoints
 	FailKeysignSlashPoints
 	LiquidityLockUpBlocks
@@ -70,69 +76,77 @@ const (
 	NodeOperatorFee
 	ValidatorMaxRewardRatio
 	PoolDepthForYggFundingMin
+	MaxNodeToChurnOutForLowVersion
 )
 
 var nameToString = map[ConstantName]string{
-	EmissionCurve:                 "EmissionCurve",
-	IncentiveCurve:                "IncentiveCurve",
-	BlocksPerYear:                 "BlocksPerYear",
-	OutboundTransactionFee:        "OutboundTransactionFee",
-	NativeTransactionFee:          "NativeTransactionFee",
-	PoolCycle:                     "PoolCycle",
-	MinRunePoolDepth:              "MinRunePoolDepth",
-	MaxAvailablePools:             "MaxAvailablePools",
-	StagedPoolCost:                "StagedPoolCost",
-	MinimumNodesForYggdrasil:      "MinimumNodesForYggdrasil",
-	MinimumNodesForBFT:            "MinimumNodesForBFT",
-	DesiredValidatorSet:           "DesiredValidatorSet",
-	AsgardSize:                    "AsgardSize",
-	ChurnInterval:                 "ChurnInterval",
-	ChurnRetryInterval:            "ChurnRetryInterval",
-	ValidatorsChangeWindow:        "ValidatorsChangeWindow",
-	LeaveProcessPerBlockHeight:    "LeaveProcessPerBlockHeight",
-	BadValidatorRedline:           "BadValidatorRedline",
-	BadValidatorRate:              "BadValidatorRate",
-	OldValidatorRate:              "OldValidatorRate",
-	LowBondValidatorRate:          "LowBondValidatorRate",
-	LackOfObservationPenalty:      "LackOfObservationPenalty",
-	SigningTransactionPeriod:      "SigningTransactionPeriod",
-	DoubleSignMaxAge:              "DoubleSignMaxAge",
-	MinimumBondInRune:             "MinimumBondInRune",
-	MaxBondProviders:              "MaxBondProviders",
-	FundMigrationInterval:         "FundMigrationInterval",
-	ArtificialRagnarokBlockHeight: "ArtificialRagnarokBlockHeight",
-	MaximumLiquidityRune:          "MaximumLiquidityRune",
-	StrictBondLiquidityRatio:      "StrictBondLiquidityRatio",
-	DefaultPoolStatus:             "DefaultPoolStatus",
-	FailKeygenSlashPoints:         "FailKeygenSlashPoints",
-	FailKeysignSlashPoints:        "FailKeysignSlashPoints",
-	LiquidityLockUpBlocks:         "LiquidityLockUpBlocks",
-	ObserveSlashPoints:            "ObserveSlashPoints",
-	ObservationDelayFlexibility:   "ObservationDelayFlexibility",
-	YggFundLimit:                  "YggFundLimit",
-	YggFundRetry:                  "YggFundRetry",
-	JailTimeKeygen:                "JailTimeKeygen",
-	JailTimeKeysign:               "JailTimeKeysign",
-	NodePauseChainBlocks:          "NodePauseChainBlocks",
-	MinSwapsPerBlock:              "MinSwapsPerBlock",
-	MaxSwapsPerBlock:              "MaxSwapsPerBlock",
-	VirtualMultSynths:             "VirtualMultSynths",
-	MaxSynthPerAssetDepth:         "MaxSynthPerAssetDepth",
-	MinSlashPointsForBadValidator: "MinSlashPointsForBadValidator",
-	FullImpLossProtectionBlocks:   "FullImpLossProtectionBlocks",
-	BondLockupPeriod:              "BondLockupPeriod",
-	NumberOfNewNodesPerChurn:      "NumberOfNewNodesPerChurn",
-	MinTxOutVolumeThreshold:       "MinTxOutVolumeThreshold",
-	TxOutDelayRate:                "TxOutDelayRate",
-	TxOutDelayMax:                 "TxOutDelayMax",
-	MaxTxOutOffset:                "MaxTxOutOffset",
-	TNSRegisterFee:                "TNSRegisterFee",
-	TNSFeeOnSale:                  "TNSFeeOnSale",
-	TNSFeePerBlock:                "TNSFeePerBlock",
-	PermittedSolvencyGap:          "PermittedSolvencyGap",
-	ValidatorMaxRewardRatio:       "ValidatorMaxRewardRatio",
-	NodeOperatorFee:               "NodeOperatorFee",
-	PoolDepthForYggFundingMin:     "PoolDepthForYggFundingMin",
+	EmissionCurve:                  "EmissionCurve",
+	IncentiveCurve:                 "IncentiveCurve",
+	BlocksPerYear:                  "BlocksPerYear",
+	OutboundTransactionFee:         "OutboundTransactionFee",
+	NativeTransactionFee:           "NativeTransactionFee",
+	PoolCycle:                      "PoolCycle",
+	MinRunePoolDepth:               "MinRunePoolDepth",
+	MaxAvailablePools:              "MaxAvailablePools",
+	StagedPoolCost:                 "StagedPoolCost",
+	KillSwitchStart:                "KillSwitchStart",
+	KillSwitchDuration:             "KillSwitchDuration",
+	MinimumNodesForYggdrasil:       "MinimumNodesForYggdrasil",
+	MinimumNodesForBFT:             "MinimumNodesForBFT",
+	DesiredValidatorSet:            "DesiredValidatorSet",
+	AsgardSize:                     "AsgardSize",
+	ChurnInterval:                  "ChurnInterval",
+	ChurnRetryInterval:             "ChurnRetryInterval",
+	ValidatorsChangeWindow:         "ValidatorsChangeWindow",
+	LeaveProcessPerBlockHeight:     "LeaveProcessPerBlockHeight",
+	BadValidatorRedline:            "BadValidatorRedline",
+	BadValidatorRate:               "BadValidatorRate",
+	OldValidatorRate:               "OldValidatorRate",
+	LowBondValidatorRate:           "LowBondValidatorRate",
+	LackOfObservationPenalty:       "LackOfObservationPenalty",
+	SigningTransactionPeriod:       "SigningTransactionPeriod",
+	DoubleSignMaxAge:               "DoubleSignMaxAge",
+	PauseBond:                      "PauseBond",
+	PauseUnbond:                    "PauseUnbond",
+	MinimumBondInRune:              "MinimumBondInRune",
+	MaxBondProviders:               "MaxBondProviders",
+	FundMigrationInterval:          "FundMigrationInterval",
+	ArtificialRagnarokBlockHeight:  "ArtificialRagnarokBlockHeight",
+	MaximumLiquidityRune:           "MaximumLiquidityRune",
+	StrictBondLiquidityRatio:       "StrictBondLiquidityRatio",
+	DefaultPoolStatus:              "DefaultPoolStatus",
+	MaxOutboundAttempts:            "MaxOutboundAttempts",
+	PauseOnSlashThreshold:          "PauseOnSlashThreshold",
+	FailKeygenSlashPoints:          "FailKeygenSlashPoints",
+	FailKeysignSlashPoints:         "FailKeysignSlashPoints",
+	LiquidityLockUpBlocks:          "LiquidityLockUpBlocks",
+	ObserveSlashPoints:             "ObserveSlashPoints",
+	ObservationDelayFlexibility:    "ObservationDelayFlexibility",
+	YggFundLimit:                   "YggFundLimit",
+	YggFundRetry:                   "YggFundRetry",
+	JailTimeKeygen:                 "JailTimeKeygen",
+	JailTimeKeysign:                "JailTimeKeysign",
+	NodePauseChainBlocks:           "NodePauseChainBlocks",
+	MinSwapsPerBlock:               "MinSwapsPerBlock",
+	MaxSwapsPerBlock:               "MaxSwapsPerBlock",
+	VirtualMultSynths:              "VirtualMultSynths",
+	MaxSynthPerAssetDepth:          "MaxSynthPerAssetDepth",
+	MinSlashPointsForBadValidator:  "MinSlashPointsForBadValidator",
+	FullImpLossProtectionBlocks:    "FullImpLossProtectionBlocks",
+	BondLockupPeriod:               "BondLockupPeriod",
+	NumberOfNewNodesPerChurn:       "NumberOfNewNodesPerChurn",
+	MinTxOutVolumeThreshold:        "MinTxOutVolumeThreshold",
+	TxOutDelayRate:                 "TxOutDelayRate",
+	TxOutDelayMax:                  "TxOutDelayMax",
+	MaxTxOutOffset:                 "MaxTxOutOffset",
+	TNSRegisterFee:                 "TNSRegisterFee",
+	TNSFeeOnSale:                   "TNSFeeOnSale",
+	TNSFeePerBlock:                 "TNSFeePerBlock",
+	PermittedSolvencyGap:           "PermittedSolvencyGap",
+	ValidatorMaxRewardRatio:        "ValidatorMaxRewardRatio",
+	NodeOperatorFee:                "NodeOperatorFee",
+	PoolDepthForYggFundingMin:      "PoolDepthForYggFundingMin",
+	MaxNodeToChurnOutForLowVersion: "MaxNodeToChurnOutForLowVersion",
 }
 
 // String implement fmt.stringer

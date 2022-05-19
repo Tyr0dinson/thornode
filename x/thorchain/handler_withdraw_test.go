@@ -62,7 +62,7 @@ func (mfp *MockWithdrawKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccA
 
 func (mfp *MockWithdrawKeeper) GetLiquidityProviderIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator {
 	iter := keeper.NewDummyIterator()
-	iter.AddItem([]byte("key"), mfp.Cdc().MustMarshalBinaryBare(&mfp.lp))
+	iter.AddItem([]byte("key"), mfp.Cdc().MustMarshal(&mfp.lp))
 	return iter
 }
 
@@ -112,7 +112,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
 	runeAddr := GetRandomRUNEAddress()
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
-	err := addHandler.addLiquidityV1(ctx,
+	err := addHandler.addLiquidity(ctx,
 		common.BNBAsset,
 		cosmos.NewUint(common.One*100),
 		cosmos.NewUint(common.One*100),
@@ -145,7 +145,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	pool.BalanceAsset = cosmos.ZeroUint()
 	pool.BalanceRune = cosmos.ZeroUint()
 	pool.Status = PoolAvailable
-	keeper.SetPool(ctx, pool)
+	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
 	// Let's stake some BTC first
 	runeAddr := GetRandomRUNEAddress()
@@ -177,7 +177,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	c.Assert(lp.Units.IsZero(), Equals, false)
 
 	runeAddr1 := GetRandomRUNEAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.NewUint(50*common.One), cosmos.ZeroUint(), runeAddr1, common.NoAddress, GetRandomTxHash(), false, constAccessor)
+	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(50*common.One), cosmos.ZeroUint(), runeAddr1, common.NoAddress, GetRandomTxHash(), false, constAccessor)
 	c.Assert(err, IsNil)
 	lp, err = keeper.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr1)
 	c.Assert(err, IsNil)
@@ -197,7 +197,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 
 	// stake some BTC only
 	btcAddress1 := GetRandomBTCAddress()
-	err = addHandler.addLiquidityV1(ctx, common.BTCAsset, cosmos.ZeroUint(), cosmos.NewUint(50*common.One),
+	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.ZeroUint(), cosmos.NewUint(50*common.One),
 		common.NoAddress, btcAddress1, GetRandomTxHash(), false, constAccessor)
 	c.Assert(err, IsNil)
 	lp, err = keeper.GetLiquidityProvider(ctx, common.BTCAsset, btcAddress1)
@@ -359,7 +359,7 @@ type MockWithdrawEventMgr struct {
 }
 
 func (m *MockWithdrawEventMgr) EmitEvent(ctx cosmos.Context, evt EmitEventItem) error {
-	m.count += 1
+	m.count++
 	return nil
 }
 
@@ -425,11 +425,8 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 		lpAfter, _ := keeper.GetLiquidityProvider(ctx, asset, runeAddr)
 		poolAfter, _ := keeper.GetPool(ctx, asset)
 		if shouldFail {
-			// should error and leave pool/lp unmodified
+			// should error
 			c.Assert(err, NotNil, Commentf(name))
-			c.Assert(lpAfter.String(), Equals, lp.String(), Commentf(name))
-			c.Assert(poolAfter.String(), Equals, pool.String(), Commentf(name))
-			c.Assert(eventMgr.count, Equals, 0, Commentf(name))
 		} else {
 			// should not error and pool/lp  should be modified
 			c.Assert(err, IsNil, Commentf(name))
@@ -446,7 +443,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 	handleCase(msg, nil, errInternal, "asym asset fail", true)
 
 	msg.WithdrawalAsset = common.EmptyAsset
-	handleCase(msg, errInternal, nil, "sym rune fail/asset success", false)
+	handleCase(msg, errInternal, nil, "sym rune fail/asset success", true)
 	handleCase(msg, nil, errInternal, "sym rune success/asset fail", true)
 	handleCase(msg, errInternal, errInternal, "sym rune/asset fail", true)
 	handleCase(msg, nil, nil, "sym rune/asset success", false)

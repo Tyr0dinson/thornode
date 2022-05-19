@@ -26,6 +26,7 @@ const (
 	prefixStoreVersion           kvTypes.DbPrefix = "_ver/"
 	prefixObservedTxIn           kvTypes.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut          kvTypes.DbPrefix = "observed_tx_out/"
+	prefixObservedLink           kvTypes.DbPrefix = "ob_link/"
 	prefixPool                   kvTypes.DbPrefix = "pool/"
 	prefixTxOut                  kvTypes.DbPrefix = "txout/"
 	prefixTotalLiquidityFee      kvTypes.DbPrefix = "total_liquidity_fee/"
@@ -73,7 +74,7 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
-	cdc           codec.BinaryMarshaler
+	cdc           codec.BinaryCodec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
@@ -81,7 +82,7 @@ type KVStore struct {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
@@ -92,7 +93,7 @@ func NewKVStore(cdc codec.BinaryMarshaler, coinKeeper bankkeeper.Keeper, account
 }
 
 // Cdc return the amino codec
-func (k KVStore) Cdc() codec.BinaryMarshaler {
+func (k KVStore) Cdc() codec.BinaryCodec {
 	return k.cdc
 }
 
@@ -114,8 +115,8 @@ func (k KVStore) GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string)
 func (k KVStore) SetStoreVersion(ctx cosmos.Context, value int64) {
 	key := k.GetKey(ctx, prefixStoreVersion, "")
 	store := ctx.KVStore(k.storeKey)
-	ver := ProtoInt64{value}
-	store.Set([]byte(key), k.cdc.MustMarshalBinaryBare(&ver))
+	ver := ProtoInt64{Value: value}
+	store.Set([]byte(key), k.cdc.MustMarshal(&ver))
 }
 
 // GetStoreVersion get the current key value store version
@@ -128,7 +129,7 @@ func (k KVStore) GetStoreVersion(ctx cosmos.Context) int64 {
 	}
 	var ver ProtoInt64
 	buf := store.Get([]byte(key))
-	k.cdc.MustUnmarshalBinaryBare(buf, &ver)
+	k.cdc.MustUnmarshal(buf, &ver)
 	return ver.Value
 }
 
@@ -154,8 +155,8 @@ func (k KVStore) has(ctx cosmos.Context, key string) bool {
 
 func (k KVStore) setInt64(ctx cosmos.Context, key string, record int64) {
 	store := ctx.KVStore(k.storeKey)
-	value := ProtoInt64{record}
-	buf := k.cdc.MustMarshalBinaryBare(&value)
+	value := ProtoInt64{Value: record}
+	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -171,7 +172,7 @@ func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, 
 
 	value := ProtoInt64{}
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	*record = value.GetValue()
@@ -180,8 +181,8 @@ func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, 
 
 func (k KVStore) setUint64(ctx cosmos.Context, key string, record uint64) {
 	store := ctx.KVStore(k.storeKey)
-	value := ProtoUint64{record}
-	buf := k.cdc.MustMarshalBinaryBare(&value)
+	value := ProtoUint64{Value: record}
+	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -195,9 +196,9 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 		return false, nil
 	}
 
-	value := ProtoUint64{*record}
+	value := ProtoUint64{Value: *record}
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	*record = value.GetValue()
@@ -206,8 +207,8 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 
 func (k KVStore) setAccAddresses(ctx cosmos.Context, key string, record []cosmos.AccAddress) {
 	store := ctx.KVStore(k.storeKey)
-	value := ProtoAccAddresses{record}
-	buf := k.cdc.MustMarshalBinaryBare(&value)
+	value := ProtoAccAddresses{Value: record}
+	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -223,7 +224,7 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 
 	var value ProtoAccAddresses
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	*record = value.Value
@@ -233,7 +234,7 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 func (k KVStore) setStrings(ctx cosmos.Context, key string, record []string) {
 	store := ctx.KVStore(k.storeKey)
 	value := ProtoStrings{Value: record}
-	buf := k.cdc.MustMarshalBinaryBare(&value)
+	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
 	} else {
@@ -249,7 +250,7 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 
 	var value ProtoStrings
 	bz := store.Get([]byte(key))
-	if err := k.cdc.UnmarshalBinaryBare(bz, &value); err != nil {
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	*record = value.Value
@@ -277,7 +278,7 @@ func (k KVStore) SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins
 }
 
 func (k KVStore) AddCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) error {
-	return k.coinKeeper.AddCoins(ctx, addr, coins)
+	return k.coinKeeper.SendCoinsFromModuleToAccount(ctx, ModuleName, addr, coins)
 }
 
 // SendFromAccountToModule transfer fund from one account to a module

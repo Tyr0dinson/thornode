@@ -20,7 +20,7 @@ var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
-func (k KVStoreDummy) Cdc() codec.BinaryMarshaler              { return simapp.MakeTestEncodingConfig().Marshaler }
+func (k KVStoreDummy) Cdc() codec.BinaryCodec                  { return simapp.MakeTestEncodingConfig().Marshaler }
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
 func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }
 func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
@@ -242,6 +242,10 @@ func (k KVStoreDummy) GetObservedTxOutVoterIterator(_ cosmos.Context) cosmos.Ite
 func (k KVStoreDummy) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return ObservedTxVoter{}, kaboom
 }
+func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
+func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
+	return nil
+}
 func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)             {}
 func (k KVStoreDummy) GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) {
@@ -251,7 +255,7 @@ func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) 
 func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, error) {
 	return KeygenBlock{}, kaboom
 }
-func (k KVStoreDummy) SetKeygenBlock(_ cosmos.Context, _ KeygenBlock)          { return }
+func (k KVStoreDummy) SetKeygenBlock(_ cosmos.Context, _ KeygenBlock)          {}
 func (k KVStoreDummy) GetKeygenBlockIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error)      { return nil, kaboom }
 func (k KVStoreDummy) GetTxOutValue(_ cosmos.Context, _ int64) (cosmos.Uint, error) {
@@ -293,10 +297,11 @@ func (k KVStoreDummy) GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault  
 func (k KVStoreDummy) SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults { return nil }
 func (k KVStoreDummy) DeleteVault(_ cosmos.Context, _ common.PubKey) error       { return kaboom }
 
-func (k KVStoreDummy) HasValidVaultPools(_ cosmos.Context) (bool, error)     { return false, kaboom }
-func (k KVStoreDummy) AddFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
-func (k KVStoreDummy) GetNetwork(_ cosmos.Context) (Network, error)          { return Network{}, kaboom }
-func (k KVStoreDummy) SetNetwork(_ cosmos.Context, _ Network) error          { return kaboom }
+func (k KVStoreDummy) HasValidVaultPools(_ cosmos.Context) (bool, error)         { return false, kaboom }
+func (k KVStoreDummy) AddPoolFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
+func (k KVStoreDummy) AddBondFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
+func (k KVStoreDummy) GetNetwork(_ cosmos.Context) (Network, error)              { return Network{}, kaboom }
+func (k KVStoreDummy) SetNetwork(_ cosmos.Context, _ Network) error              { return kaboom }
 
 func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
 }
@@ -345,7 +350,7 @@ func (k KVStoreDummy) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 func (k KVStoreDummy) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) int64 {
 	return int64(-1)
 }
-func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) { return }
+func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {}
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
 	return NetworkFee{}, kaboom
@@ -366,11 +371,7 @@ func (k KVStoreDummy) GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cos
 	return nil
 }
 
-func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain) (ObservedNetworkFeeVoter, error) {
-	return ObservedNetworkFeeVoter{}, nil
-}
-
-func (k KVStoreDummy) GetObservedNetworkFeeVoterV47(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error) {
+func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error) {
 	return ObservedNetworkFeeVoter{}, nil
 }
 

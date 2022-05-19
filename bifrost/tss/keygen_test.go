@@ -47,7 +47,7 @@ func (*KeyGenTestSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
 	c.Assert(err, IsNil)
-	info, _, err := kb.NewMnemonic(signerNameForTest, cKeys.English, cmd.THORChainHDPath, hd.Secp256k1)
+	info, _, err := kb.NewMnemonic(signerNameForTest, cKeys.English, cmd.THORChainHDPath, signerPasswordForTest, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	c.Logf("name:%s", info.GetName())
 	return thorcliDir
@@ -77,6 +77,7 @@ func (kts *KeyGenTestSuite) TestNewTssKenGen(c *C) {
 		SignerName:   "bob",
 		SignerPasswd: "password",
 	}, nil, k)
+	c.Assert(err, IsNil)
 	kg, err := NewTssKeyGen(k, nil, b)
 	c.Assert(err, IsNil)
 	c.Assert(kg, NotNil)

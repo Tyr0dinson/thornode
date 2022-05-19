@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blang/semver"
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
@@ -311,7 +311,7 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 		m, err := mem.ParseMemo(common.LatestVersion, memo)
 		if err != nil {
 			o.logger.Error().Err(err).Msgf("Unable to parse memo: %s", memo)
-			return common.NoAddress
+			// don't return yet, in case a thorname destination caused the error
 		}
 		if !m.GetDestination().IsEmpty() {
 			return m.GetDestination()
@@ -320,15 +320,18 @@ func (o *Observer) filterBinanceMemoFlag(chain common.Chain, items []types.TxInI
 		// could not find an address, check THORNames
 		var raw string
 		parts := strings.Split(memo, ":")
-		switch m.GetType() {
-		case mem.TxAdd:
+		switch m.(type) {
+		case mem.AddLiquidityMemo:
 			if len(parts) > 2 {
 				raw = parts[2]
 			}
-		case mem.TxSwap:
-			if len(parts) > 3 {
-				raw = parts[3]
+		case mem.SwapMemo:
+			if len(parts) > 2 {
+				raw = parts[2]
 			}
+		}
+		if len(raw) == 0 {
+			return common.NoAddress
 		}
 		name, _ := bridge.GetTHORName(raw)
 		return name.GetAlias(common.BNBChain)
@@ -408,7 +411,7 @@ func (o *Observer) filterErrataTx(block types.ErrataBlock) {
 			}
 			if idx != -1 {
 				o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
-				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...)
+				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...) // nolint
 			}
 		}
 	}
@@ -427,17 +430,6 @@ func (o *Observer) sendErrataTxToThorchain(height int64, txID common.TxID, chain
 }
 
 func (o *Observer) sendSolvencyToThorchain(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) error {
-	// TODO: the following version check can be removed once the network has been upgrade to 0.63.0 and beyond
-	// before the network get to 0.63.0 , it won't understand  how to process solvency messages
-	v, err := o.thorchainBridge.GetThorchainVersion()
-	if err != nil {
-		o.logger.Err(err).Msg("fail to get THORChain version")
-		return nil
-	}
-	if v.LT(semver.MustParse("0.63.0")) {
-		o.logger.Info().Msgf("THORChain version is %s , less than 0.63.0", v)
-		return nil
-	}
 	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
 	if err != nil {
 		return fmt.Errorf("failed to get node status: %w", err)
@@ -541,7 +533,7 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 		}
 		height := item.BlockHeight
 		if txIn.Finalised {
-			height = height + txIn.ConfirmationRequired
+			height += txIn.ConfirmationRequired
 		}
 		tx := stypes.NewObservedTx(
 			common.NewTx(txID, sender, to, item.Coins.NoneEmpty(), item.Gas, item.Memo),
@@ -567,13 +559,6 @@ func (o *Observer) processSolvencyQueue() {
 				continue
 			}
 			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
-			targetChain, ok := o.chains[solvencyItem.Chain]
-			if !ok {
-				continue
-			}
-			if !targetChain.IsBlockScannerHealthy() {
-				continue
-			}
 			if err := o.sendSolvencyToThorchain(solvencyItem.Height, solvencyItem.Chain, solvencyItem.PubKey, solvencyItem.Coins); err != nil {
 				o.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
 				o.logger.Error().Err(err).Msg("fail to broadcast solvency tx")

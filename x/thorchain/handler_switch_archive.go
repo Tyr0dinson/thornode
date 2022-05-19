@@ -7,7 +7,23 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-func (h SwitchHandler) handleV1(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
+func (h SwitchHandler) validateV1(ctx cosmos.Context, msg MsgSwitch) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+
+	// if we are getting a non-native asset, ensure its signed by an active
+	// node account
+	if !msg.Tx.Coins[0].IsNative() {
+		if !isSignedByActiveNodeAccounts(ctx, h.mgr, msg.GetSigners()) {
+			return cosmos.ErrUnauthorized(errNotAuthorized.Error())
+		}
+	}
+
+	return nil
+}
+
+func (h SwitchHandler) handleV56(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
 	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
@@ -17,13 +33,13 @@ func (h SwitchHandler) handleV1(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Resu
 	}
 
 	if !msg.Tx.Coins[0].IsNative() && msg.Tx.Coins[0].Asset.IsRune() {
-		return h.toNative(ctx, msg)
+		return h.toNativeV56(ctx, msg)
 	}
 
 	return nil, fmt.Errorf("only non-native rune can be 'switched' to native rune")
 }
 
-func (h SwitchHandler) toNative(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
+func (h SwitchHandler) toNativeV56(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
 	coin := common.NewCoin(common.RuneNative, msg.Tx.Coins[0].Amount)
 
 	addr, err := cosmos.AccAddressFromBech32(msg.Destination.String())
@@ -51,7 +67,7 @@ func (h SwitchHandler) toNative(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Resu
 		ctx.Logger().Error("failed to set network", "error", err)
 	}
 
-	switchEvent := NewEventSwitch(msg.Tx.FromAddress, addr, msg.Tx.Coins[0])
+	switchEvent := NewEventSwitch(msg.Tx.FromAddress, addr, msg.Tx.Coins[0], msg.Tx.ID)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, switchEvent); err != nil {
 		ctx.Logger().Error("fail to emit switch event", "error", err)
 	}

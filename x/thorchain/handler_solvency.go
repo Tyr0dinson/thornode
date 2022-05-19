@@ -3,10 +3,13 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -43,8 +46,6 @@ func (h SolvencyHandler) validate(ctx cosmos.Context, msg MsgSolvency) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.70.0")) {
 		return h.validateV70(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -70,12 +71,11 @@ func (h SolvencyHandler) validateV70(ctx cosmos.Context, msg MsgSolvency) error 
 func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	ctx.Logger().Debug("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.79.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.87.0")):
+		return h.handleV87(ctx, msg)
+	case version.GTE(semver.MustParse("0.79.0")):
 		return h.handleV79(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.70.0")) {
-		return h.handleV70(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	ctx.Logger().Error(errInvalidVersion.Error())
 	return nil, errBadVersion
@@ -87,7 +87,7 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 //    if wallet has less fund than asgard vault , and the gap is more than 1% , then the chain
 //    that is insolvent will be halt
 // 3. When chain is halt , bifrost will not observe inbound , and will not sign outbound txs until the issue has been investigated , and enabled it again using mimir
-func (h SolvencyHandler) handleV79(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
+func (h SolvencyHandler) handleV87(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	voter, err := h.mgr.Keeper().GetSolvencyVoter(ctx, msg.Id, msg.Chain)
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
@@ -103,11 +103,9 @@ func (h SolvencyHandler) handleV79(ctx cosmos.Context, msg MsgSolvency) (*cosmos
 
 	if voter.Empty() {
 		voter = NewSolvencyVoter(msg.Id, msg.Chain, msg.PubKey, msg.Coins, msg.Height, msg.Signer)
-	} else {
-		if !voter.Sign(msg.Signer) {
-			ctx.Logger().Info("signer already signed MsgSolvency", "signer", msg.Signer.String(), "id", msg.Id)
-			return &cosmos.Result{}, nil
-		}
+	} else if !voter.Sign(msg.Signer) {
+		ctx.Logger().Info("signer already signed MsgSolvency", "signer", msg.Signer.String(), "id", msg.Id)
+		return &cosmos.Result{}, nil
 	}
 	h.mgr.Keeper().SetSolvencyVoter(ctx, voter)
 	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
@@ -153,7 +151,7 @@ func (h SolvencyHandler) handleV79(ctx cosmos.Context, msg MsgSolvency) (*cosmos
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < common.BlockHeight(ctx) {
 		return &cosmos.Result{}, nil
 	}
-	haltChainKey := fmt.Sprintf(`Halt%sChain`, voter.Chain)
+	haltChainKey := fmt.Sprintf(`SolvencyHalt%sChain`, voter.Chain)
 	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)
@@ -169,6 +167,10 @@ func (h SolvencyHandler) handleV79(ctx cosmos.Context, msg MsgSolvency) (*cosmos
 		// if the chain was halted by previous solvency checker, auto unhalt it
 		ctx.Logger().Info("auto un-halt", "chain", voter.Chain, "previous halt height", haltChain, "current block height", common.BlockHeight(ctx))
 		h.mgr.Keeper().SetMimir(ctx, haltChainKey, 0)
+		mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), "0")
+		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		}
 	}
 
 	if haltChain > 0 && haltChain < common.BlockHeight(ctx) {
@@ -176,6 +178,10 @@ func (h SolvencyHandler) handleV79(ctx cosmos.Context, msg MsgSolvency) (*cosmos
 		return &cosmos.Result{}, nil
 	}
 	h.mgr.Keeper().SetMimir(ctx, haltChainKey, common.BlockHeight(ctx))
+	mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(common.BlockHeight(ctx), 10))
+	if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+		ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+	}
 	ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
 	return &cosmos.Result{}, nil
 }

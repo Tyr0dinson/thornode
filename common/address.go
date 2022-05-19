@@ -34,7 +34,7 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
-	// Check bech32 addresses, would succeed any string bech32 encoded
+	// Check bech32 addresses, would succeed any string bech32 encoded (e.g. BNB, TERRA, ATOM)
 	_, _, err := bech32.Decode(address)
 	if err == nil {
 		return Address(address), nil
@@ -175,8 +175,8 @@ func getBCHAddress(address bchutil.Address, cfg *bchchaincfg.Params) (Address, e
 	return NoAddress, fmt.Errorf("invalid address type")
 }
 
-// ConvertToNewBCHAddressFormatV81 convert the given BCH to new address format
-func ConvertToNewBCHAddressFormatV81(addr Address) (Address, error) {
+// ConvertToNewBCHAddressFormatV83 convert the given BCH to new address format
+func ConvertToNewBCHAddressFormatV83(addr Address) (Address, error) {
 	if !addr.IsChain(BCHChain) {
 		return NoAddress, fmt.Errorf("address(%s) is not BCH chain", addr)
 	}
@@ -196,10 +196,10 @@ func ConvertToNewBCHAddressFormatV81(addr Address) (Address, error) {
 	if err != nil {
 		return NoAddress, fmt.Errorf("fail to decode address(%s), %w", addr, err)
 	}
-	return getBCHAddressV81(bchAddr, param)
+	return getBCHAddressV83(bchAddr, param)
 }
 
-func getBCHAddressV81(address bchutil.Address, cfg *bchchaincfg.Params) (Address, error) {
+func getBCHAddressV83(address bchutil.Address, cfg *bchchaincfg.Params) (Address, error) {
 	switch address.(type) {
 	case *bchutil.LegacyAddressPubKeyHash, *bchutil.AddressPubKeyHash:
 		h, err := bchutil.NewAddressPubKeyHash(address.ScriptAddress(), cfg)
@@ -224,6 +224,10 @@ func (addr Address) IsChain(chain Chain) bool {
 	case BNBChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "bnb" || prefix == "tbnb"
+	case TERRAChain:
+		// Note: Terra does not use a special prefix for testnet
+		prefix, _, _ := bech32.Decode(addr.String())
+		return prefix == "terra"
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
@@ -299,7 +303,7 @@ func (addr Address) IsChain(chain Chain) bool {
 }
 
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain} {
+	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -326,6 +330,8 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if strings.EqualFold(prefix, "tbnb") {
 			return TestNet
 		}
+	case TERRAChain:
+		return currentNetwork
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		if strings.EqualFold(prefix, "thor") {

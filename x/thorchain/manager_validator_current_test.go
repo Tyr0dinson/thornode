@@ -8,33 +8,33 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type ValidatorMgrV80TestSuite struct{}
+type ValidatorMgrV87TestSuite struct{}
 
-var _ = Suite(&ValidatorMgrV80TestSuite{})
+var _ = Suite(&ValidatorMgrV87TestSuite{})
 
-func (vts *ValidatorMgrV80TestSuite) SetUpSuite(_ *C) {
+func (vts *ValidatorMgrV87TestSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestSetupValidatorNodes(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestSetupValidatorNodes(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	mgr := NewDummyMgr()
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
-	err := vMgr.setupValidatorNodes(ctx, 0, constAccessor)
+	err := networkMgr.setupValidatorNodes(ctx, 0, constAccessor)
 	c.Assert(err, IsNil)
 
 	// no node accounts at all
-	err = vMgr.setupValidatorNodes(ctx, 1, constAccessor)
+	err = networkMgr.setupValidatorNodes(ctx, 1, constAccessor)
 	c.Assert(err, NotNil)
 
 	activeNode := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNode), IsNil)
 
-	err = vMgr.setupValidatorNodes(ctx, 1, constAccessor)
+	err = networkMgr.setupValidatorNodes(ctx, 1, constAccessor)
 	c.Assert(err, IsNil)
 
 	readyNode := GetRandomValidatorNode(NodeReady)
@@ -42,9 +42,9 @@ func (vts *ValidatorMgrV80TestSuite) TestSetupValidatorNodes(c *C) {
 
 	// one active node and one ready node on start up
 	// it should take both of the node as active
-	vMgr1 := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr1 := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
-	c.Assert(vMgr1.BeginBlock(ctx, constAccessor, nil), IsNil)
+	c.Assert(networkMgr1.BeginBlock(ctx, constAccessor, nil), IsNil)
 	activeNodes, err := k.ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(len(activeNodes) == 2, Equals, true)
@@ -55,19 +55,19 @@ func (vts *ValidatorMgrV80TestSuite) TestSetupValidatorNodes(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, activeNode2), IsNil)
 
 	// three active nodes and 1 ready nodes, it should take them all
-	vMgr2 := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr2.BeginBlock(ctx, constAccessor, nil), IsNil)
+	networkMgr2 := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr2.BeginBlock(ctx, constAccessor, nil), IsNil)
 
 	activeNodes1, err := k.ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(len(activeNodes1) == 4, Equals, true)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestRagnarokForChaosnet(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestRagnarokForChaosnet(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	vMgr := newValidatorMgrV80(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
-	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
+	mgr.constAccessor = constants.NewDummyConstants(map[constants.ConstantName]int64{
 		constants.DesiredValidatorSet:           12,
 		constants.ArtificialRagnarokBlockHeight: 1024,
 		constants.MinimumNodesForBFT:            4,
@@ -82,20 +82,20 @@ func (vts *ValidatorMgrV80TestSuite) TestRagnarokForChaosnet(c *C) {
 		node.Bond = cosmos.NewUint(common.One * uint64(i+1))
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
 	}
-	c.Assert(vMgr.setupValidatorNodes(ctx, 1, constAccessor), IsNil)
+	c.Assert(networkMgr.setupValidatorNodes(ctx, 1, mgr.GetConstants()), IsNil)
 	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeActive)
 	c.Assert(err, IsNil)
 	c.Assert(len(nodeAccounts), Equals, 12)
 
 	// trigger ragnarok
 	ctx = ctx.WithBlockHeight(1024)
-	c.Assert(vMgr.BeginBlock(ctx, constAccessor, nil), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr.GetConstants(), nil), IsNil)
 	vault := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	for _, item := range nodeAccounts {
 		vault.Membership = append(vault.Membership, item.PubKeySet.Secp256k1.String())
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-	updates := vMgr.EndBlock(ctx, mgr, constAccessor)
+	updates := networkMgr.EndBlock(ctx, mgr)
 	// ragnarok , no one leaves
 	c.Assert(updates, IsNil)
 	ragnarokHeight, err := mgr.Keeper().GetRagnarokBlockHeight(ctx)
@@ -103,38 +103,83 @@ func (vts *ValidatorMgrV80TestSuite) TestRagnarokForChaosnet(c *C) {
 	c.Assert(ragnarokHeight == 1024, Equals, true, Commentf("%d == %d", ragnarokHeight, 1024))
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestLowerVersion(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestLowerVersion(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1440)
 
-	vMgr := newValidatorMgrV80(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
-	c.Assert(vMgr.markLowerVersion(ctx), IsNil)
+	constAccessor := constants.NewDummyConstants(map[constants.ConstantName]int64{
+		constants.DesiredValidatorSet:            12,
+		constants.ArtificialRagnarokBlockHeight:  1024,
+		constants.MinimumNodesForBFT:             4,
+		constants.ChurnInterval:                  256,
+		constants.ChurnRetryInterval:             720,
+		constants.AsgardSize:                     30,
+		constants.MaxNodeToChurnOutForLowVersion: 3,
+	}, map[constants.ConstantName]bool{
+		constants.StrictBondLiquidityRatio: false,
+	}, map[constants.ConstantName]string{})
 
-	for i := 0; i < 5; i++ {
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+	c.Assert(networkMgr.markLowVersionValidators(ctx, constAccessor), IsNil)
+
+	for i := 0; i < 12; i++ {
 		activeNode := GetRandomValidatorNode(NodeActive)
 		activeNode.Version = "0.5.0"
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
 	}
+
+	// Add 4 low version nodes
 	activeNode1 := GetRandomValidatorNode(NodeActive)
 	activeNode1.Version = "0.4.0"
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode1), IsNil)
 
-	c.Assert(vMgr.markLowerVersion(ctx), IsNil)
-	na, err := mgr.Keeper().GetNodeAccount(ctx, activeNode1.NodeAddress)
-	c.Assert(err, IsNil)
-	c.Assert(na.LeaveScore, Equals, uint64(144000000000))
+	activeNode2 := GetRandomValidatorNode(NodeActive)
+	activeNode2.Version = "0.4.0"
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode2), IsNil)
+
+	activeNode3 := GetRandomValidatorNode(NodeActive)
+	activeNode3.Version = "0.4.0"
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode3), IsNil)
+
+	activeNode4 := GetRandomValidatorNode(NodeActive)
+	activeNode4.Version = "0.4.0"
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode4), IsNil)
+	c.Assert(networkMgr.markLowVersionValidators(ctx, constAccessor), IsNil)
+
+	activeNas, _ := networkMgr.k.ListActiveValidators(ctx)
+	markedCount := 0
+	lowVersionAddresses := []common.Address{activeNode1.BondAddress, activeNode2.BondAddress, activeNode3.BondAddress, activeNode4.BondAddress}
+
+	// should have marked 3 of the correct validators as low version
+	for _, na := range activeNas {
+
+		isCorrectNode := false
+
+		for _, addr := range lowVersionAddresses {
+			if addr == na.BondAddress {
+				isCorrectNode = true
+				break
+			}
+		}
+
+		if na.LeaveScore == uint64(144000000000) && isCorrectNode {
+			markedCount++
+		}
+	}
+
+	c.Assert(markedCount, Equals, 3)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestBadActors(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestBadActors(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
-	vMgr := newValidatorMgrV80(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	// no bad actors with active node accounts
-	nas, err := vMgr.findBadActors(ctx, 0, 3)
+	nas, err := networkMgr.findBadActors(ctx, 0, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 0)
 
@@ -142,7 +187,7 @@ func (vts *ValidatorMgrV80TestSuite) TestBadActors(c *C) {
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
 
 	// no bad actors with active node accounts with no slash points
-	nas, err = vMgr.findBadActors(ctx, 0, 3)
+	nas, err = networkMgr.findBadActors(ctx, 0, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 0)
 
@@ -154,7 +199,7 @@ func (vts *ValidatorMgrV80TestSuite) TestBadActors(c *C) {
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
 
 	// finds the worse actor
-	nas, err = vMgr.findBadActors(ctx, 0, 3)
+	nas, err = networkMgr.findBadActors(ctx, 0, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 1)
 	c.Check(nas[0].NodeAddress.Equals(activeNode.NodeAddress), Equals, true)
@@ -167,7 +212,7 @@ func (vts *ValidatorMgrV80TestSuite) TestBadActors(c *C) {
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, bad2.NodeAddress, 5000)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, bad2), IsNil)
 
-	nas, err = vMgr.findBadActors(ctx, 0, 3)
+	nas, err = networkMgr.findBadActors(ctx, 0, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nas, HasLen, 2, Commentf("%d", len(nas)))
 
@@ -175,23 +220,23 @@ func (vts *ValidatorMgrV80TestSuite) TestBadActors(c *C) {
 	var count int
 	for _, bad := range nas {
 		if bad.Equals(bad1) || bad.Equals(bad2) {
-			count += 1
+			count++
 		}
 	}
 	c.Check(count, Equals, 2)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestFindBadActors(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindBadActors(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
-	vMgr := newValidatorMgrV80(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	activeNode := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 50)
-	nodeAccounts, err := vMgr.findBadActors(ctx, 100, 3)
+	nodeAccounts, err := networkMgr.findBadActors(ctx, 100, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nodeAccounts, HasLen, 0)
 
@@ -202,7 +247,7 @@ func (vts *ValidatorMgrV80TestSuite) TestFindBadActors(c *C) {
 
 	// findBadActor assumes it is being called during a churn now,
 	// so this should now mark this node as bad.
-	nodeAccounts, err = vMgr.findBadActors(ctx, 100, 3)
+	nodeAccounts, err = networkMgr.findBadActors(ctx, 100, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nodeAccounts, HasLen, 1)
 	c.Assert(nodeAccounts.Contains(activeNode1), Equals, true)
@@ -218,24 +263,24 @@ func (vts *ValidatorMgrV80TestSuite) TestFindBadActors(c *C) {
 	ctx = ctx.WithBlockHeight(2000)
 	// node 3 and node 2 should both be marked even though node 3 is newer
 	// (this is because we're not favoring older nodes anymore)
-	nodeAccounts, err = vMgr.findBadActors(ctx, 100, 3)
+	nodeAccounts, err = networkMgr.findBadActors(ctx, 100, 3)
 	c.Assert(err, IsNil)
 	c.Assert(nodeAccounts, HasLen, 2)
 	c.Assert(nodeAccounts.Contains(activeNode2), Equals, true)
 	c.Assert(nodeAccounts.Contains(activeNode3), Equals, true)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestFindLowBondActor(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindLowBondActor(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
-	vMgr := newValidatorMgrV80(mgr.Keeper(), mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(10)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-	na, err := vMgr.findLowBondActor(ctx)
+	na, err := networkMgr.findLowBondActor(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(na.IsEmpty(), Equals, false)
 	c.Assert(na.Bond.Uint64(), Equals, uint64(10))
@@ -244,7 +289,7 @@ func (vts *ValidatorMgrV80TestSuite) TestFindLowBondActor(c *C) {
 	na2.Bond = cosmos.NewUint(9)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
 
-	na, err = vMgr.findLowBondActor(ctx)
+	na, err = networkMgr.findLowBondActor(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.Uint64(), Equals, uint64(9))
 
@@ -252,22 +297,22 @@ func (vts *ValidatorMgrV80TestSuite) TestFindLowBondActor(c *C) {
 	na3.Bond = cosmos.ZeroUint()
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
 
-	na, err = vMgr.findLowBondActor(ctx)
+	na, err = networkMgr.findLowBondActor(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.IsZero(), Equals, true)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestRagnarokBond(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestRagnarokBond(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	ver := GetCurrentVersion()
 
 	mgr := NewDummyMgrWithKeeper(k)
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	constAccessor := constants.GetConstantValues(ver)
-	err := vMgr.setupValidatorNodes(ctx, 0, constAccessor)
+	err := networkMgr.setupValidatorNodes(ctx, 0, constAccessor)
 	c.Assert(err, IsNil)
 
 	activeNode := GetRandomValidatorNode(NodeActive)
@@ -279,12 +324,12 @@ func (vts *ValidatorMgrV80TestSuite) TestRagnarokBond(c *C) {
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, disabledNode), IsNil)
 
 	// no unbonding for first 10
-	c.Assert(vMgr.ragnarokBond(ctx, 1, mgr), IsNil)
+	c.Assert(networkMgr.ragnarokBond(ctx, 1, mgr), IsNil)
 	activeNode, err = mgr.Keeper().GetNodeAccount(ctx, activeNode.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(activeNode.Bond.Equal(cosmos.NewUint(100)), Equals, true)
 
-	c.Assert(vMgr.ragnarokBond(ctx, 11, mgr), IsNil)
+	c.Assert(networkMgr.ragnarokBond(ctx, 11, mgr), IsNil)
 	activeNode, err = mgr.Keeper().GetNodeAccount(ctx, activeNode.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(activeNode.Bond.Equal(cosmos.NewUint(90)), Equals, true)
@@ -293,7 +338,7 @@ func (vts *ValidatorMgrV80TestSuite) TestRagnarokBond(c *C) {
 	c.Check(items, HasLen, 0, Commentf("Len %d", items))
 	mgr.TxOutStore().ClearOutboundItems(ctx)
 
-	c.Assert(vMgr.ragnarokBond(ctx, 12, mgr), IsNil)
+	c.Assert(networkMgr.ragnarokBond(ctx, 12, mgr), IsNil)
 	activeNode, err = mgr.Keeper().GetNodeAccount(ctx, activeNode.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(activeNode.Bond.Equal(cosmos.NewUint(72)), Equals, true)
@@ -302,17 +347,17 @@ func (vts *ValidatorMgrV80TestSuite) TestRagnarokBond(c *C) {
 	c.Check(items, HasLen, 0, Commentf("Len %d", items))
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestGetChangedNodes(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestGetChangedNodes(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	ver := GetCurrentVersion()
 
 	mgr := NewDummyMgrWithKeeper(k)
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	constAccessor := constants.GetConstantValues(ver)
-	err := vMgr.setupValidatorNodes(ctx, 0, constAccessor)
+	err := networkMgr.setupValidatorNodes(ctx, 0, constAccessor)
 	c.Assert(err, IsNil)
 
 	activeNode := GetRandomValidatorNode(NodeActive)
@@ -328,17 +373,17 @@ func (vts *ValidatorMgrV80TestSuite) TestGetChangedNodes(c *C) {
 	vault.Membership = append(vault.Membership, activeNode.PubKeySet.Secp256k1.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	newNodes, removedNodes, err := vMgr.getChangedNodes(ctx, NodeAccounts{activeNode})
+	newNodes, removedNodes, err := networkMgr.getChangedNodes(ctx, NodeAccounts{activeNode})
 	c.Assert(err, IsNil)
 	c.Assert(newNodes, HasLen, 0)
 	c.Assert(removedNodes, HasLen, 1)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestSplitNext(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestSplitNext(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgr()
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	nas := make(NodeAccounts, 0)
 	for i := 0; i < 90; i++ {
@@ -346,7 +391,7 @@ func (vts *ValidatorMgrV80TestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets := vMgr.splitNext(ctx, nas, 30)
+	sets := networkMgr.splitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 3)
 	c.Assert(sets[0], HasLen, 30)
 	c.Assert(sets[1], HasLen, 30)
@@ -358,7 +403,7 @@ func (vts *ValidatorMgrV80TestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets = vMgr.splitNext(ctx, nas, 30)
+	sets = networkMgr.splitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 4)
 	c.Assert(sets[0], HasLen, 25)
 	c.Assert(sets[1], HasLen, 25)
@@ -371,12 +416,12 @@ func (vts *ValidatorMgrV80TestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets = vMgr.splitNext(ctx, nas, 30)
+	sets = networkMgr.splitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 1)
 	c.Assert(sets[0], HasLen, 3)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestFindCounToRemove(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindCounToRemove(c *C) {
 	// remove one
 	c.Check(findCountToRemove(0, NodeAccounts{
 		NodeAccount{LeaveScore: 12},
@@ -427,7 +472,7 @@ func (vts *ValidatorMgrV80TestSuite) TestFindCounToRemove(c *C) {
 	}), Equals, 3)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestFindMaxAbleToLeave(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindMaxAbleToLeave(c *C) {
 	c.Check(findMaxAbleToLeave(-1), Equals, 0)
 	c.Check(findMaxAbleToLeave(0), Equals, 0)
 	c.Check(findMaxAbleToLeave(1), Equals, 0)
@@ -445,11 +490,11 @@ func (vts *ValidatorMgrV80TestSuite) TestFindMaxAbleToLeave(c *C) {
 	c.Check(findMaxAbleToLeave(12), Equals, 3)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestFindNextVaultNodeAccounts(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindNextVaultNodeAccounts(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	nas := NodeAccounts{}
@@ -466,19 +511,43 @@ func (vts *ValidatorMgrV80TestSuite) TestFindNextVaultNodeAccounts(c *C) {
 	for _, item := range nas {
 		c.Assert(k.SetNodeAccount(ctx, item), IsNil)
 	}
-	nasAfter, rotate, err := vMgr.nextVaultNodeAccounts(ctx, 12, constAccessor)
+	nasAfter, rotate, err := networkMgr.nextVaultNodeAccounts(ctx, 12, constAccessor)
 	c.Assert(err, IsNil)
 	c.Assert(rotate, Equals, true)
 	c.Assert(nasAfter, HasLen, 10)
 }
 
-func (vts *ValidatorMgrV80TestSuite) TestWeightedBondReward(c *C) {
+func (vts *ValidatorMgrV87TestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
+	// test that we don't exceed the targetCount
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newValidatorMgrV87(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+	// create active nodes
+	for i := 0; i < 12; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		if i < 3 {
+			na.LeaveScore = 1024
+		}
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	// create standby nodes
+	for i := 0; i < 12; i++ {
+		na := GetRandomValidatorNode(NodeStandby)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+	nasAfter, rotate, err := networkMgr.nextVaultNodeAccounts(ctx, 12, mgr.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(rotate, Equals, true)
+	c.Assert(nasAfter, HasLen, 12, Commentf("%d", len(nasAfter)))
+}
+
+func (vts *ValidatorMgrV87TestSuite) TestWeightedBondReward(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(20)
 
 	mgr := NewDummyMgrWithKeeper(k)
-	vMgr := newValidatorMgrV80(k, mgr.VaultMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(vMgr, NotNil)
+	networkMgr := newValidatorMgrV87(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
 
 	na1 := GetRandomValidatorNode(NodeActive)
 	na1.Bond = cosmos.NewUint(4 * common.One)
@@ -492,12 +561,12 @@ func (vts *ValidatorMgrV80TestSuite) TestWeightedBondReward(c *C) {
 	na3.Bond = cosmos.NewUint(2 * common.One)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
 
-	network, _ := vMgr.k.GetNetwork(ctx)
+	network, _ := networkMgr.k.GetNetwork(ctx)
 	network.BondRewardRune = cosmos.NewUint(1 * common.One)
 	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
 
 	// pay out bond rewards
-	c.Assert(vMgr.ragnarokBondReward(ctx, mgr), IsNil)
+	c.Assert(networkMgr.ragnarokBondReward(ctx, mgr), IsNil)
 
 	na1, _ = mgr.Keeper().GetNodeAccount(ctx, na1.NodeAddress)
 	na2, _ = mgr.Keeper().GetNodeAccount(ctx, na2.NodeAddress)

@@ -10,23 +10,34 @@ BINANCE_START_BLOCK_HEIGHT="${BINANCE_START_BLOCK_HEIGHT:=0}"
 # Bitcoin core chain config
 BTC_HOST="${BTC_HOST:=bitcoin:18443}"
 BTC_START_BLOCK_HEIGHT="${BTC_START_BLOCK_HEIGHT:=0}"
+BTC_PARALLEL_MEMPOOL_SCAN="${BTC_PARALLEL_MEMPOOL_SCAN:=5}"
 
 # Litecoin core chain config
 LTC_HOST="${LTC_HOST:=litecoin:18443}"
 LTC_START_BLOCK_HEIGHT="${LTC_START_BLOCK_HEIGHT:=0}"
+LTC_PARALLEL_MEMPOOL_SCAN="${LTC_PARALLEL_MEMPOOL_SCAN:=5}"
+LTC_DISABLED="${LTC_DISABLED:=false}"
 
 # Ethereum chain config
 ETH_HOST="${ETH_HOST:=http://ethereum:8545}"
 ETH_START_BLOCK_HEIGHT="${ETH_START_BLOCK_HEIGHT:=0}"
+ETH_SUGGESTED_FEE_VERSION="${ETH_SUGGESTED_FEE_VERSION:=1}"
 
 # Dogecoin chain config
 DOGE_HOST="${DOGE_HOST:=dogecoin:18332}"
 DOGE_START_BLOCK_HEIGHT="${DOGE_START_BLOCK_HEIGHT:=0}"
 DOGE_DISABLED="${DOGE_DISABLED:=false}"
+DOGE_PARALLEL_MEMPOOL_SCAN="${DOGE_PARALLEL_MEMPOOL_SCAN:=5}"
+
+# Terra chain config
+TERRA_HOST="${TERRA_HOST:=cosmos-terra-daemon:9090}"
+TERRA_START_BLOCK_HEIGHT="${TERRA_START_BLOCK_HEIGHT:=0}"
+TERRA_DISABLED="${TERRA_DISABLED:=false}"
 
 # Bitcoin Cash chain config
 BCH_HOST="${BCH_HOST:=bitcoin-cash:18443}"
 BCH_START_BLOCK_HEIGHT="${BCH_START_BLOCK_HEIGHT:=0}"
+BCH_PARALLEL_MEMPOOL_SCAN="${BCH_PARALLEL_MEMPOOL_SCAN:=5}"
 
 DB_PATH="${DB_PATH:=/var/data}"
 CHAIN_API="${CHAIN_API:=127.0.0.1:1317}"
@@ -49,30 +60,35 @@ BLOCK_SCANNER_BACKOFF="${BLOCK_SCANNER_BACKOFF:=5s}"
 create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
 if [ -n "$PEER" ]; then
-	OLD_IFS=$IFS
-	IFS=","
-	SEED_LIST=""
-	for SEED in $PEER; do
-		# check if we have a hostname we extract the IP
-		if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
-			SEED=$(host "$SEED" | awk '{print $4}')
-		fi
-		SEED_ID=$(curl -m 10 -sL --fail "http://$SEED:6040/p2pid") || continue
-		SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
-		if [ -z "$SEED_LIST" ]; then
-			SEED_LIST="\"$SEED\""
-		else
-			SEED_LIST="$SEED_LIST,\"$SEED\""
-		fi
-	done
-	IFS=$OLD_IFS
-	PEER=$SEED_LIST
+  OLD_IFS=$IFS
+  IFS=","
+  SEED_LIST=""
+  for SEED in $PEER; do
+    # check if we have a hostname we extract the IP
+    if ! expr "$SEED" : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$' >/dev/null; then
+      SEED=$(host "$SEED" | awk '{print $4}')
+    fi
+    SEED_ID=$(curl -m 10 -sL --fail "http://$SEED:6040/p2pid") || continue
+    SEED="/ip4/$SEED/tcp/5040/ipfs/$SEED_ID"
+    if [ -z "$SEED_LIST" ]; then
+      SEED_LIST="\"$SEED\""
+    else
+      SEED_LIST="$SEED_LIST,\"$SEED\""
+    fi
+  done
+  IFS=$OLD_IFS
+  PEER=$SEED_LIST
 fi
 
 OBSERVER_PATH=$DB_PATH/bifrost/observer/
 SIGNER_PATH=$DB_PATH/bifrost/signer/
 
 mkdir -p $SIGNER_PATH $OBSERVER_PATH /etc/bifrost
+
+# dynamically set external ip if mocknet and unset
+if [ "$NET" = "mocknet" ] && [ -z "$EXTERNAL_IP" ]; then
+  EXTERNAL_IP=$(hostname -i)
+fi
 
 # Generate bifrost config file
 echo "{
@@ -112,6 +128,7 @@ echo "{
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"parallel_mempool_scan\":$BTC_PARALLEL_MEMPOOL_SCAN,
         \"block_scanner\": {
           \"rpc_host\": \"$BTC_HOST\",
           \"enforce_block_height\": false,
@@ -134,6 +151,7 @@ echo "{
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"parallel_mempool_scan\":$DOGE_PARALLEL_MEMPOOL_SCAN,
         \"disabled\": $DOGE_DISABLED,
         \"block_scanner\": {
           \"rpc_host\": \"$DOGE_HOST\",
@@ -151,12 +169,37 @@ echo "{
         }
       },
       {
+        \"chain_id\": \"TERRA\",
+        \"rpc_host\": \"$TERRA_HOST\",
+        \"username\": \"$RPC_USER\",
+        \"password\": \"$RPC_PASSWD\",
+        \"http_post_mode\": 1,
+        \"disable_tls\": 1,
+        \"disabled\":$TERRA_DISABLED,
+        \"block_scanner\": {
+          \"rpc_host\": \"$TERRA_HOST\",
+          \"enforce_block_height\": false,
+          \"block_scan_processors\": 1,
+          \"block_height_discover_back_off\": \"$BLOCK_SCANNER_BACKOFF\",
+          \"block_retry_interval\": \"10s\",
+          \"chain_id\": \"TERRA\",
+          \"http_request_timeout\": \"30s\",
+          \"http_request_read_timeout\": \"30s\",
+          \"http_request_write_timeout\": \"30s\",
+          \"max_http_request_retry\": 10,
+          \"start_block_height\": $TERRA_START_BLOCK_HEIGHT,
+          \"db_path\": \"$OBSERVER_PATH\"
+        }
+      },
+      {
         \"chain_id\": \"LTC\",
         \"rpc_host\": \"$LTC_HOST\",
         \"username\": \"$RPC_USER\",
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"parallel_mempool_scan\":$LTC_PARALLEL_MEMPOOL_SCAN,
+        \"disabled\": $LTC_DISABLED,
         \"block_scanner\": {
           \"rpc_host\": \"$LTC_HOST\",
           \"enforce_block_height\": false,
@@ -179,6 +222,7 @@ echo "{
         \"password\": \"$RPC_PASSWD\",
         \"http_post_mode\": 1,
         \"disable_tls\": 1,
+        \"parallel_mempool_scan\":$BCH_PARALLEL_MEMPOOL_SCAN,
         \"block_scanner\": {
           \"rpc_host\": \"$BCH_HOST\",
           \"enforce_block_height\": false,
@@ -214,7 +258,8 @@ echo "{
           \"http_request_write_timeout\": \"30s\",
           \"max_http_request_retry\": 10,
           \"start_block_height\": $ETH_START_BLOCK_HEIGHT,
-          \"db_path\": \"$OBSERVER_PATH\"
+          \"db_path\": \"$OBSERVER_PATH\",
+          \"suggested_fee_version\": $ETH_SUGGESTED_FEE_VERSION
         }
       }
     ],

@@ -24,11 +24,12 @@ import (
 	ttypes "gitlab.com/thorchain/binance-sdk/types"
 	"gitlab.com/thorchain/binance-sdk/types/msg"
 	btx "gitlab.com/thorchain/binance-sdk/types/tx"
+	tssp "gitlab.com/thorchain/tss/go-tss/tss"
+
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
 	"gitlab.com/thorchain/thornode/constants"
 	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
-	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/config"
@@ -189,7 +190,7 @@ func (b *Binance) checkIsTestNet() error {
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to read body")
+		log.Fatal().Err(err).Msg("fail to read body") // nolint
 	}
 
 	type Status struct {
@@ -585,6 +586,11 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 	if !b.ShouldReportSolvency(bnbBlockHeight) {
 		return nil
 	}
+	// blockchain scanner is catching up , no solvency check messages
+	if !b.IsBlockScannerHealthy() && bnbBlockHeight == b.bnbScanner.currentScanningHeight {
+		return nil
+	}
+
 	asgardVaults, err := b.thorchainBridge.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards,err: %w", err)

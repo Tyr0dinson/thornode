@@ -58,29 +58,15 @@ func (h DepositHandler) validateV1(ctx cosmos.Context, msg MsgDeposit) error {
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.67.0")) {
+	if version.GTE(semver.MustParse("1.87.0")) {
+		return h.handleV87(ctx, msg)
+	} else if version.GTE(semver.MustParse("0.67.0")) {
 		return h.handleV67(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.65.0")) {
-		return h.handleV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.64.0")) {
-		return h.handleV64(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.63.0")) {
-		return h.handleV63(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.61.0")) {
-		return h.handleV61(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.58.0")) {
-		return h.handleV58(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.47.0")) {
-		return h.handleV47(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return h.handleV46(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return nil, errInvalidVersion
 }
 
-func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
@@ -136,7 +122,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	switch memo.GetType() {
 	case TxBond, TxUnBond, TxLeave:
 		targetModule = BondName
-	case TxReserve:
+	case TxReserve, TxTHORName:
 		targetModule = ReserveName
 	default:
 		targetModule = AsgardName
@@ -177,7 +163,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if newErr := refundTx(ctx, txIn, h.mgr, h.mgr.GetConstants(), CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
+		if newErr := refundTx(ctx, txIn, h.mgr, CodeInvalidMemo, txErr.Error(), targetModule); nil != newErr {
 			return nil, newErr
 		}
 
@@ -192,7 +178,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}
-			if newErr := refundTx(ctx, txIn, h.mgr, h.mgr.GetConstants(), se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
+			if newErr := refundTx(ctx, txIn, h.mgr, se.ErrUnauthorized.ABCICode(), "trading halted", targetModule); nil != newErr {
 				return nil, ErrInternal(newErr, "trading is halted, fail to refund")
 			}
 			return &cosmos.Result{}, nil
@@ -201,8 +187,10 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
-		msg := m.(*MsgSwap)
-		h.addSwap(ctx, *msg)
+		msg, ok := m.(*MsgSwap)
+		if ok {
+			h.addSwap(ctx, *msg)
+		}
 		return &cosmos.Result{}, nil
 	}
 
@@ -216,7 +204,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		if txIn.Tx.Coins.IsEmpty() {
 			return &cosmos.Result{}, nil
 		}
-		if err := refundTx(ctx, txIn, h.mgr, h.mgr.GetConstants(), code, err.Error(), targetModule); err != nil {
+		if err := refundTx(ctx, txIn, h.mgr, code, err.Error(), targetModule); err != nil {
 			return nil, fmt.Errorf("fail to refund tx: %w", err)
 		}
 		return &cosmos.Result{}, nil
@@ -233,10 +221,6 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.65.0")) {
 		h.addSwapV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.63.0")) {
-		h.addSwapV63(ctx, msg)
-	} else {
-		h.addSwapV1(ctx, msg)
 	}
 }
 

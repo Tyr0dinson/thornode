@@ -13,9 +13,9 @@ calc_progress() {
   if [ "$1" = "$2" ]; then
     [ "$1" = "0" ] && echo "0.000%" || echo "100.000%"
   elif [ -n "$3" ]; then
-    printf "%.3f%%" "$(echo "scale=6; $3 * 100" | bc 2>/dev/null)" 2>/dev/null || echo "Error"
+    progress="$(echo "scale=6; $3 * 100" | bc 2>/dev/null)" 2>/dev/null && printf "%.3f%%" "$progress" || echo "Error"
   else
-    printf "%.3f%%" "$(echo "scale=6; $1/$2 * 100" | bc 2>/dev/null)" 2>/dev/null || echo "Error"
+    progress="$(echo "scale=6; $1/$2 * 100" | bc 2>/dev/null)" 2>/dev/null && printf "%.3f%%" "$progress" || echo "Error"
   fi
 }
 
@@ -150,18 +150,36 @@ echo "API         http://$IP:1317/thorchain/doc/"
 echo "RPC         http://$IP:$THORNODE_PORT"
 echo "MIDGARD     http://$IP:8080/v2/doc"
 
+# set defaults to avoid failures in math below
+THOR_HEIGHT=${THOR_HEIGHT:=0}
+THOR_SYNC_HEIGHT=${THOR_SYNC_HEIGHT:=0}
+BNB_HEIGHT=${BNB_HEIGHT:=0}
+BNB_SYNC_HEIGHT=${BNB_SYNC_HEIGHT:=0}
+BTC_HEIGHT=${BTC_HEIGHT:=0}
+BTC_SYNC_HEIGHT=${BTC_SYNC_HEIGHT:=0}
+ETH_HEIGHT=${ETH_HEIGHT:=0}
+ETH_SYNC_HEIGHT=${ETH_SYNC_HEIGHT:=0}
+LTC_HEIGHT=${LTC_HEIGHT:=0}
+LTC_SYNC_HEIGHT=${LTC_SYNC_HEIGHT:=0}
+BCH_HEIGHT=${BCH_HEIGHT:=0}
+BCH_SYNC_HEIGHT=${BCH_SYNC_HEIGHT:=0}
+DOGE_HEIGHT=${DOGE_HEIGHT:=0}
+DOGE_SYNC_HEIGHT=${DOGE_SYNC_HEIGHT:=0}
+TERRA_HEIGHT=${TERRA_HEIGHT:=0}
+TERRA_SYNC_HEIGHT=${TERRA_SYNC_HEIGHT:=0}
+
 echo
-printf "%-11s %-10s %-10s\n" CHAIN SYNC BLOCKS
-printf "%-11s %-10s %-10s\n" THOR "$THOR_PROGRESS" "$(format_int "$THOR_SYNC_HEIGHT")/$(format_int "$THOR_HEIGHT")"
-[ "$VALIDATOR" = "true" ] && printf "%-11s %-10s %-10s\n" BNB "$BNB_PROGRESS" "$(format_int "$BNB_SYNC_HEIGHT")/$(format_int "$BNB_HEIGHT")"
-[ "$VALIDATOR" = "true" ] && printf "%-11s %-10s %-10s\n" BTC "$BTC_PROGRESS" "$(format_int "$BTC_SYNC_HEIGHT")/$(format_int "$BTC_HEIGHT")"
-[ "$VALIDATOR" = "true" ] && printf "%-11s %-10s %-10s\n" ETH "$ETH_PROGRESS" "$(format_int "$ETH_SYNC_HEIGHT")/$(format_int "$ETH_HEIGHT")"
-[ "$VALIDATOR" = "true" ] && printf "%-11s %-10s %-10s\n" LTC "$LTC_PROGRESS" "$(format_int "$LTC_SYNC_HEIGHT")/$(format_int "$LTC_HEIGHT")"
-[ "$VALIDATOR" = "true" ] && printf "%-11s %-10s %-10s\n" BCH "$BCH_PROGRESS" "$(format_int "$BCH_SYNC_HEIGHT")/$(format_int "$BCH_HEIGHT")"
+printf "%-10s %-10s %-14s %-10s\n" CHAIN SYNC BEHIND TIP
+printf "%-10s %-10s %-14s %-10s\n" THOR "$THOR_PROGRESS" "$(format_int $((THOR_SYNC_HEIGHT - THOR_HEIGHT)))" "$(format_int "$THOR_HEIGHT")"
+[ "$VALIDATOR" = "true" ] && printf "%-10s %-10s %-14s %-10s\n" BNB "$BNB_PROGRESS" "$(format_int $((BNB_SYNC_HEIGHT - BNB_HEIGHT)))" "$(format_int "$BNB_HEIGHT")"
+[ "$VALIDATOR" = "true" ] && printf "%-10s %-10s %-14s %-10s\n" BTC "$BTC_PROGRESS" "$(format_int $((BTC_SYNC_HEIGHT - BTC_HEIGHT)))" "$(format_int "$BTC_HEIGHT")"
+[ "$VALIDATOR" = "true" ] && printf "%-10s %-10s %-14s %-10s\n" ETH "$ETH_PROGRESS" "$(format_int $((ETH_SYNC_HEIGHT - ETH_HEIGHT)))" "$(format_int "$ETH_HEIGHT")"
+[ "$VALIDATOR" = "true" ] && printf "%-10s %-10s %-14s %-10s\n" LTC "$LTC_PROGRESS" "$(format_int $((LTC_SYNC_HEIGHT - LTC_HEIGHT)))" "$(format_int "$LTC_HEIGHT")"
+[ "$VALIDATOR" = "true" ] && printf "%-10s %-10s %-14s %-10s\n" BCH "$BCH_PROGRESS" "$(format_int $((BCH_SYNC_HEIGHT - BCH_HEIGHT)))" "$(format_int "$BCH_HEIGHT")"
 if [ "$VALIDATOR" = "true" ] && [ -n "$DOGECOIN_DAEMON_SERVICE_PORT_RPC" ]; then
-  printf "%-11s %-10s %-10s\n" DOGE "$DOGE_PROGRESS" "$(format_int "$DOGE_SYNC_HEIGHT")/$(format_int "$DOGE_HEIGHT")"
+  printf "%-10s %-10s %-14s %-10s\n" DOGE "$DOGE_PROGRESS" "$(format_int $((DOGE_SYNC_HEIGHT - DOGE_HEIGHT)))" "$(format_int "$DOGE_HEIGHT")"
 fi
 if [ "$VALIDATOR" = "true" ] && [ -n "$TERRA_DAEMON_SERVICE_PORT_RPC" ]; then
-  printf "%-11s %-10s %-10s\n" TERRA "$TERRA_PROGRESS" "$(format_int "$TERRA_SYNC_HEIGHT")/$(format_int "$TERRA_HEIGHT")"
+  printf "%-10s %-10s %-14s %-10s\n" TERRA "$TERRA_PROGRESS" "$(format_int $((TERRA_SYNC_HEIGHT - TERRA_HEIGHT)))" "$(format_int "$TERRA_HEIGHT")"
 fi
 exit 0

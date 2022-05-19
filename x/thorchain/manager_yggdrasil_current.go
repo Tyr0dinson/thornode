@@ -11,6 +11,8 @@ import (
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 )
 
+var mimirStopFundYggdrasil = `StopFundYggdrasil`
+
 // YggMgrV79 is an implementation of YggManager
 type YggMgrV79 struct {
 	keeper keeper.Keeper
@@ -24,7 +26,7 @@ func newYggMgrV79(keeper keeper.Keeper) *YggMgrV79 {
 }
 
 // Fund is a method to fund yggdrasil pool
-func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor constants.ConstantValues) error {
+func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager) error {
 	// Check if we have triggered the ragnarok protocol
 	ragnarokHeight, err := ymgr.keeper.GetRagnarokBlockHeight(ctx)
 	if err != nil {
@@ -56,7 +58,7 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	if err != nil {
 		return err
 	}
-	minimumNodesForYggdrasil := constAccessor.GetInt64Value(constants.MinimumNodesForYggdrasil)
+	minimumNodesForYggdrasil := mgr.GetConstants().GetInt64Value(constants.MinimumNodesForYggdrasil)
 	if int64(len(nodeAccs)) < minimumNodesForYggdrasil {
 		return nil
 	}
@@ -84,7 +86,7 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	// check that we have enough bond
 	minBond, err := ymgr.keeper.GetMimir(ctx, constants.MinimumBondInRune.String())
 	if minBond < 0 || err != nil {
-		minBond = constAccessor.GetInt64Value(constants.MinimumBondInRune)
+		minBond = mgr.GetConstants().GetInt64Value(constants.MinimumBondInRune)
 	}
 	if na.Bond.LT(cosmos.NewUint(uint64(minBond))) {
 		return nil
@@ -130,7 +132,7 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	}
 	maxBlock, err := ymgr.keeper.GetMimir(ctx, constants.YggFundRetry.String())
 	if maxBlock < 0 || err != nil {
-		maxBlock = constAccessor.GetInt64Value(constants.YggFundRetry)
+		maxBlock = mgr.GetConstants().GetInt64Value(constants.YggFundRetry)
 	}
 	pendingTxCount := ygg.LenPendingTxBlockHeights(common.BlockHeight(ctx), maxBlock)
 	if pendingTxCount > 0 {
@@ -139,12 +141,12 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 
 	yggFundLimit, err := ymgr.keeper.GetMimir(ctx, constants.YggFundLimit.String())
 	if yggFundLimit < 0 || err != nil {
-		yggFundLimit = constAccessor.GetInt64Value(constants.YggFundLimit)
+		yggFundLimit = mgr.GetConstants().GetInt64Value(constants.YggFundLimit)
 	}
 
 	minRuneDepth, err := ymgr.keeper.GetMimir(ctx, constants.PoolDepthForYggFundingMin.String())
 	if minRuneDepth < 0 || err != nil {
-		minRuneDepth = constAccessor.GetInt64Value(constants.PoolDepthForYggFundingMin)
+		minRuneDepth = mgr.GetConstants().GetInt64Value(constants.PoolDepthForYggFundingMin)
 	}
 
 	targetCoins, err := ymgr.calcTargetYggCoins(pools, ygg, na.Bond, totalBond, cosmos.NewUint(uint64(yggFundLimit)), cosmos.NewUint(uint64(minRuneDepth)))
@@ -172,12 +174,12 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 	}
 
 	if len(sendCoins) > 0 {
-		count, err := ymgr.sendCoinsToYggdrasil(ctx, sendCoins, ygg, mgr, constAccessor)
+		count, err := ymgr.sendCoinsToYggdrasil(ctx, sendCoins, ygg, mgr)
 		if err != nil {
 			return err
 		}
 		for i := 0; i < count; i++ {
-			ygg.AppendPendingTxBlockHeights(common.BlockHeight(ctx), constAccessor)
+			ygg.AppendPendingTxBlockHeights(common.BlockHeight(ctx), mgr.GetConstants())
 		}
 		if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
 			return fmt.Errorf("fail to create yggdrasil pool: %w", err)
@@ -189,7 +191,7 @@ func (ymgr YggMgrV79) Fund(ctx cosmos.Context, mgr Manager, constAccessor consta
 
 // sendCoinsToYggdrasil - adds outbound txs to send the given coins to a
 // yggdrasil pool
-func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coins, ygg Vault, mgr Manager, constAccessor constants.ConstantValues) (int, error) {
+func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coins, ygg Vault, mgr Manager) (int, error) {
 	var count int
 
 	active, err := ymgr.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -253,7 +255,7 @@ func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 
 				filterVaults = append(filterVaults, v)
 			}
-			signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+			signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 			vault := ymgr.keeper.GetLeastSecure(ctx, filterVaults, signingTransactionPeriod)
 			if vault.IsEmpty() {
 				continue
@@ -280,7 +282,7 @@ func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 			if err := mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi); err != nil {
 				return count, err
 			}
-			count += 1
+			count++
 		}
 	}
 
@@ -299,10 +301,7 @@ func (ymgr YggMgrV79) shouldFundYggdrasil(ctx cosmos.Context, asgard, ygg Vault,
 		return true
 	}
 	yggContract := ygg.GetContract(chain)
-	if asgardContract.Router.Equals(yggContract.Router) {
-		return true
-	}
-	return false
+	return asgardContract.Router.Equals(yggContract.Router)
 }
 
 // calcTargetYggCoins - calculate the amount of coins of each pool a yggdrasil
@@ -379,14 +378,14 @@ func (ymgr YggMgrV79) abandonYggdrasilVaults(ctx cosmos.Context, mgr Manager) er
 	if err != nil {
 		return fmt.Errorf("fail to get retiring asgard vaults: %w", err)
 	}
-	allVaults := append(activeVaults, retiringAsgards...)
+	allVaults := append(activeVaults, retiringAsgards...) // nolint
 
 	slasher := mgr.Slasher()
 	vaultIter := ymgr.keeper.GetVaultIterator(ctx)
 	defer vaultIter.Close()
 	for ; vaultIter.Valid(); vaultIter.Next() {
 		var v Vault
-		if err := ymgr.keeper.Cdc().UnmarshalBinaryBare(vaultIter.Value(), &v); err != nil {
+		if err := ymgr.keeper.Cdc().Unmarshal(vaultIter.Value(), &v); err != nil {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			continue
 		}

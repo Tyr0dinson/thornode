@@ -11,6 +11,7 @@ vendor
 .vendor-new
 observe
 *balances.json
+*.pb.go
 
 # IDE
 .idea/
@@ -74,3 +75,6 @@ preparam.data
 **/btc_observer/*
 
 .vscode/
+
+coverage.xml
+report.xml

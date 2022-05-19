@@ -21,13 +21,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/bifrost/txscript"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
-	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
@@ -223,7 +224,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 }
 
 // getUTXOs send a request to bitcond RPC endpoint to query all the UTXO
-func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUTXOs(minConfirm, maximumConfirm int, pkey common.PubKey) ([]btcjson.ListUnspentResult, error) {
 	btcAddress, err := pkey.GetAddress(common.BTCChain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get BTC Address for pubkey(%s): %w", pkey, err)
@@ -232,7 +233,7 @@ func (c *Client) getUTXOs(minConfirm, MaximumConfirm int, pkey common.PubKey) ([
 	if err != nil {
 		return nil, fmt.Errorf("fail to decode BTC address(%s): %w", btcAddress.String(), err)
 	}
-	return c.client.ListUnspentMinMaxAddresses(minConfirm, MaximumConfirm, []btcutil.Address{
+	return c.client.ListUnspentMinMaxAddresses(minConfirm, maximumConfirm, []btcutil.Address{
 		addr,
 	})
 }
@@ -640,8 +641,10 @@ func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
 	if err := c.sendNetworkFee(height); err != nil {
 		c.logger.Err(err).Msg("fail to send network fee")
 	}
-	if err := c.ReportSolvency(height); err != nil {
-		c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
+	if c.IsBlockScannerHealthy() {
+		if err := c.ReportSolvency(height); err != nil {
+			c.logger.Err(err).Msgf("fail to send solvency info to THORChain")
+		}
 	}
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	if !c.consolidateInProgress.Load() {
@@ -1045,7 +1048,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 
 // getGas returns gas for a btc tx (sum vin - sum vout)
 func (c *Client) getGas(tx *btcjson.TxRawResult) (common.Gas, error) {
-	var sumVin uint64 = 0
+	var sumVin uint64
 	for _, vin := range tx.Vin {
 		txHash, err := chainhash.NewHashFromStr(vin.Txid)
 		if err != nil {
@@ -1062,7 +1065,7 @@ func (c *Client) getGas(tx *btcjson.TxRawResult) (common.Gas, error) {
 		}
 		sumVin += uint64(amount.ToUnit(btcutil.AmountSatoshi))
 	}
-	var sumVout uint64 = 0
+	var sumVout uint64
 	for _, vout := range tx.Vout {
 		amount, err := btcutil.NewAmount(vout.Value)
 		if err != nil {
@@ -1096,8 +1099,18 @@ func (c *Client) createWallet(name string) error {
 	if err != nil {
 		return err
 	}
+	falseJSON, err := json.Marshal(false)
+	if err != nil {
+		return err
+	}
+
 	_, err = c.client.RawRequest("createwallet", []json.RawMessage{
 		walletNameJSON,
+		falseJSON,
+		falseJSON,
+		json.RawMessage([]byte("\"\"")),
+		falseJSON,
+		falseJSON,
 	})
 	if err != nil {
 		// ignore code -4 which means wallet already exists

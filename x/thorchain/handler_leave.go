@@ -75,10 +75,6 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.76.0")) {
 		return h.handleV76(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.46.0")) {
-		return h.handleV46(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	return errBadVersion
 }
@@ -166,7 +162,7 @@ func (h LeaveHandler) handleV76(ctx cosmos.Context, msg MsgLeave) error {
 								return ErrInternal(err, "fail to refund bond")
 							}
 						} else {
-							if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr, h.mgr.GetConstants()); err != nil {
+							if err := h.mgr.ValidatorMgr().RequestYggReturn(ctx, nodeAcc, h.mgr); err != nil {
 								return ErrInternal(err, "fail to request yggdrasil return fund")
 							}
 						}

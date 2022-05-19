@@ -52,7 +52,7 @@ func (h ErrataTxHandler) validateV1(ctx cosmos.Context, msg MsgErrataTx) error {
 	}
 
 	if !isSignedByActiveNodeAccounts(ctx, h.mgr, msg.GetSigners()) {
-		return cosmos.ErrUnauthorized(notAuthorized.Error())
+		return cosmos.ErrUnauthorized(errNotAuthorized.Error())
 	}
 
 	return nil
@@ -63,12 +63,6 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.58.0")) {
 		return h.handleV58(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.45.0")) {
-		return h.handleV45(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.42.0")) {
-		return h.handleV42(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
 	}
 	ctx.Logger().Error(errInvalidVersion.Error())
 	return nil, errBadVersion
@@ -87,7 +81,7 @@ func (h ErrataTxHandler) handleV58(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 
-	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_observe_errata"),
 		telemetry.NewLabel("chain", string(msg.Chain)),
 	}))
@@ -228,12 +222,6 @@ func (h ErrataTxHandler) processErrataOutboundTx(ctx cosmos.Context, msg MsgErra
 	version := h.mgr.GetVersion()
 	if version.GTE(semver.MustParse("0.65.0")) {
 		return h.processErrataOutboundTxV65(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.58.0")) {
-		return h.processErrataOutboundTxV58(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.42.0")) {
-		return h.processErrataOutboundTxV42(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.processErrataOutboundTxV1(ctx, msg)
 	}
 	return nil, errBadVersion
 }
