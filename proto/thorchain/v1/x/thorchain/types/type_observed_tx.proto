@@ -27,6 +27,13 @@ message ObservedTx {
   int64 finalise_height = 8;
 }
 
+message TxnObservation {
+  common.Tx tx = 1 [(gogoproto.nullable) = false];
+  int64 block_height = 2;
+  int64 finalise_height = 3;
+  string observed_pub_key = 4 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
+}
+
 message ObservedTxVoter {
   string tx_id = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
   ObservedTx tx = 2 [(gogoproto.nullable) = false];

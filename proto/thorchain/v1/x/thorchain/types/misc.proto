@@ -20,3 +20,8 @@ message ProtoAccAddresses {
 message ProtoStrings {
   repeated string value = 1;
 }
+
+enum ObservationType {
+  ObUnknown = 0;
+  ObTxn = 1;
+}

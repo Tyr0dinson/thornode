@@ -78,6 +78,7 @@ type (
 	LiquidityProvider        = types.LiquidityProvider
 	ObservedTxs              = types.ObservedTxs
 	ObservedTxVoter          = types.ObservedTxVoter
+	TxnObservation           = types.TxnObservation
 	BanVoter                 = types.BanVoter
 	ErrataTxVoter            = types.ErrataTxVoter
 	TssVoter                 = types.TssVoter

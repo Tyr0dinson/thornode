@@ -1,6 +1,7 @@
 package types
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -368,4 +369,19 @@ func (txs ObservedTxs) Contains(tx ObservedTx) bool {
 		}
 	}
 	return false
+}
+
+func (m *TxnObservation) IsEmpty() bool {
+	return m.Tx.IsEmpty()
+}
+
+// Hash calculate a hash based on attributes
+func (m *TxnObservation) Hash() string {
+	str := fmt.Sprintf("%s|%d|%d|%s", m.Tx.Hash(), m.BlockHeight, m.FinaliseHeight, m.ObservedPubKey)
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+}
+
+// String implement fmt.Stringer
+func (m *TxnObservation) String() string {
+	return m.Tx.String()
 }

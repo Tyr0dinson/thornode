@@ -24,6 +24,9 @@ import (
 
 const (
 	prefixStoreVersion           kvTypes.DbPrefix = "_ver/"
+	prefixObservation            kvTypes.DbPrefix = "o/"
+	prefixObservationVote        kvTypes.DbPrefix = "ov/"
+	prefixObservationLink        kvTypes.DbPrefix = "ol/"
 	prefixObservedTxIn           kvTypes.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut          kvTypes.DbPrefix = "observed_tx_out/"
 	prefixObservedLink           kvTypes.DbPrefix = "ob_link/"
