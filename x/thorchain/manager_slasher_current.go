@@ -358,7 +358,7 @@ func (s *SlasherV89) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			tx.GasRate = int64(mgr.GasMgr().GetGasRate(ctx, tx.Chain).Uint64())
 
 			// if a pool with the asset name doesn't exist, skip rescheduling
-			if !tx.Coin.Asset.IsRune() && !s.keeper.PoolExist(ctx, tx.Coin.Asset) {
+			if !tx.Coin.Asset.IsBaseAsset() && !s.keeper.PoolExist(ctx, tx.Coin.Asset) {
 				ctx.Logger().Error("fail to add outbound tx", "error", "coin is not rune and does not have an associated pool")
 				continue
 			}
@@ -425,7 +425,7 @@ func (s *SlasherV89) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 		if coinAmount.GT(vaultAmount) {
 			coinAmount = vaultAmount
 		}
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			runeValue = coinAmount
 		} else {
 			runeValue = s.adjustPoolForSlashedAsset(ctx, common.NewCoin(coin.Asset, coinAmount), mgr)
@@ -549,12 +549,12 @@ func (s *SlasherV89) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 		runeToReserve := common.SafeSub(totalSlashBondAmount, runeToAsgard)
 
 		if !runeToReserve.IsZero() {
-			if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToReserve))); err != nil {
+			if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(common.NewCoin(common.BaseAsset(), runeToReserve))); err != nil {
 				ctx.Logger().Error("fail to send slash funds to reserve module", "pk", vaultPK, "error", err)
 			}
 		}
 		if !runeToAsgard.IsZero() {
-			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToAsgard))); err != nil {
+			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.BaseAsset(), runeToAsgard))); err != nil {
 				ctx.Logger().Error("fail to send slash fund to asgard module", "pk", vaultPK, "error", err)
 			}
 		}
@@ -614,7 +614,7 @@ func (s *SlasherV89) adjustPoolForSlashedAsset(ctx cosmos.Context, coin common.C
 			Amount: 0 - int64(coinAmount.Uint64()),
 		},
 		{
-			Asset:  common.RuneAsset(),
+			Asset:  common.BaseAsset(),
 			Amount: int64(runeValue.Uint64()),
 		},
 	}

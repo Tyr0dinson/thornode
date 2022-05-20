@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -44,8 +46,8 @@ func (m *MsgBond) ValidateBasic() error {
 	if len(m.TxIn.Coins) == 0 {
 		return cosmos.ErrUnknownRequest("must bond with rune")
 	}
-	if !m.TxIn.Coins[0].Asset.IsNativeRune() {
-		return cosmos.ErrUnknownRequest("cannot bond non-native rune asset")
+	if !m.TxIn.Coins[0].Asset.IsNativeBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("cannot bond non-native %s asset", common.BaseDenom))
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress("empty signer address")

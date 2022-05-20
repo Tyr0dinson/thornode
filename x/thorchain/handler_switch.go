@@ -94,7 +94,7 @@ func (h SwitchHandler) handleV87(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Res
 		return nil, fmt.Errorf("mimir has halted THORChain transactions")
 	}
 
-	if !msg.Tx.Coins[0].IsNative() && msg.Tx.Coins[0].Asset.IsRune() {
+	if !msg.Tx.Coins[0].IsNative() && msg.Tx.Coins[0].Asset.IsBaseAsset() {
 		return h.toNativeV87(ctx, msg)
 	}
 

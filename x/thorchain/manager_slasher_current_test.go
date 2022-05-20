@@ -354,7 +354,7 @@ func (s *SlashingV89Suite) TestNodeSignSlashErrors(c *C) {
 			GetRandomBNBAddress(),
 			common.Coins{
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(320000000)),
-				common.NewCoin(common.RuneAsset(), cosmos.NewUint(420000000)),
+				common.NewCoin(common.BaseAsset(), cosmos.NewUint(420000000)),
 			},
 			nil,
 			"SWAP:BNB.BNB",
@@ -408,7 +408,7 @@ func (s *SlashingV89Suite) TestNotSigningSlash(c *C) {
 		GetRandomBNBAddress(),
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(320000000)),
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(420000000)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(420000000)),
 		},
 		nil,
 		"SWAP:BNB.BNB",

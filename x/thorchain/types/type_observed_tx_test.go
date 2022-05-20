@@ -153,7 +153,7 @@ func (s TypeObservedTxSuite) TestVoter(c *C) {
 	c.Check(voter.String() == txID.String(), Equals, true)
 
 	thorchainCoins := common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100)),
 	}
 	inputs := []struct {
@@ -335,18 +335,18 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	coins1 := common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 	coins2 := common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
 	coins3 := common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 	coins4 := common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 	bnb, err := common.NewAddress("bnb1xlvns0n2mxh77mzaspn2hgav4rr4m8eerfju38")
 	c.Assert(err, IsNil)

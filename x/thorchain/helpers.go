@@ -47,7 +47,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 			newTx := common.NewTx(tx.Tx.ID, tx.Tx.FromAddress, tx.Tx.ToAddress, tx.Tx.Coins, tx.Tx.Gas, tx.Tx.Memo)
 
 			// all the coins in tx.Tx should belongs to the same chain
-			transactionFee := mgr.GasMgr().GetFee(ctx, tx.Tx.Chain, common.RuneAsset())
+			transactionFee := mgr.GasMgr().GetFee(ctx, tx.Tx.Chain, common.BaseAsset())
 			fee := getFee(tx.Tx.Coins, refundCoins, transactionFee)
 			eventRefund = NewEventRefund(refundCode, refundReason, newTx, fee)
 		}
@@ -64,14 +64,14 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 	// safe to send back. Where as for external coins, we cannot make this
 	// assumption (ie coins we don't have pools for and therefore, don't know
 	// the value of it relative to rune)
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		if err := addEvent(tx.Tx.Coins); err != nil {
 			return err
 		}
 	}
 	refundCoins := make(common.Coins, 0)
 	for _, coin := range tx.Tx.Coins {
-		if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
+		if coin.Asset.IsBaseAsset() && coin.Asset.GetChain().Equals(common.ETHChain) {
 			continue
 		}
 		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
@@ -79,7 +79,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 			return fmt.Errorf("fail to get pool: %w", err)
 		}
 
-		if coin.Asset.IsRune() || !pool.BalanceRune.IsZero() {
+		if coin.Asset.IsBaseAsset() || !pool.BalanceRune.IsZero() {
 			toi := TxOutItem{
 				Chain:       coin.Asset.GetChain(),
 				InHash:      tx.Tx.ID,
@@ -102,7 +102,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 		}
 		// Zombie coins are just dropped.
 	}
-	if !tx.Tx.Chain.Equals(common.THORChain) {
+	if !tx.Tx.Chain.Equals(common.BaseChain) {
 		if err := addEvent(refundCoins); err != nil {
 			return err
 		}
@@ -115,7 +115,7 @@ func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 	var fee common.Fee
 	assetTxCount := 0
 	for _, out := range output {
-		if !out.Asset.IsRune() {
+		if !out.Asset.IsBaseAsset() {
 			assetTxCount++
 		}
 	}
@@ -156,7 +156,7 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	if slashRuneAmt.IsZero() {
 		return nil
 	}
-	stolenRUNE := ygg.GetCoin(common.RuneAsset()).Amount
+	stolenRUNE := ygg.GetCoin(common.BaseAsset()).Amount
 	slashRuneAmt = common.SafeSub(slashRuneAmt, stolenRUNE)
 	yggTotalStolen = common.SafeSub(yggTotalStolen, stolenRUNE)
 
@@ -178,7 +178,7 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 		if coin.IsEmpty() {
 			continue
 		}
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			// when the asset is RUNE, thorchain don't need to update the RUNE balance on pool
 			continue
 		}
@@ -232,7 +232,7 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 				Amount: 0 - int64(f.stolenAsset.Uint64()),
 			},
 			{
-				Asset:  common.RuneAsset(),
+				Asset:  common.BaseAsset(),
 				Amount: int64(f.subsidiseRune.Uint64()),
 			},
 		}
@@ -249,7 +249,7 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault) (cosmos.Uint, error) {
 	yggRune := cosmos.ZeroUint()
 	for _, coin := range ygg.Coins {
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			yggRune = yggRune.Add(coin.Amount)
 		} else {
 			pool, err := keeper.GetPool(ctx, coin.Asset)
@@ -353,10 +353,10 @@ func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 
 		// refund bond
 		txOutItem := TxOutItem{
-			Chain:      common.RuneAsset().Chain,
+			Chain:      common.BaseAsset().Chain,
 			ToAddress:  toAddress,
 			InHash:     tx.ID,
-			Coin:       common.NewCoin(common.RuneAsset(), amt),
+			Coin:       common.NewCoin(common.BaseAsset(), amt),
 			ModuleName: BondName,
 		}
 		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
@@ -1050,7 +1050,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		// calculate the total value of this yggdrasil vault
 		totalValue := cosmos.ZeroUint()
 		for _, coin := range vault.Coins {
-			if coin.Asset.IsRune() {
+			if coin.Asset.IsBaseAsset() {
 				totalValue = totalValue.Add(coin.Amount)
 			} else {
 				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)

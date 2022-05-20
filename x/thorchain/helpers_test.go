@@ -121,7 +121,7 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, poolBTC), IsNil)
 	ygg.Type = YggdrasilVault
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One)),            // 1
 		common.NewCoin(tCanAsset, cosmos.NewUint(common.One).QuoUint64(2)),       // 0.5 TCAN
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One).QuoUint64(4)), // 0.25 BTC
@@ -129,7 +129,7 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	totalRuneLeft, err := getTotalYggValueInRune(ctx, mgr.Keeper(), ygg)
 	c.Assert(err, IsNil)
 
-	totalRuneStolen := ygg.GetCoin(common.RuneAsset()).Amount
+	totalRuneStolen := ygg.GetCoin(common.BaseAsset()).Amount
 	slashAmt := totalRuneLeft.MulUint64(3).QuoUint64(2)
 
 	FundModule(c, ctx, mgr.Keeper(), BondName, slashAmt.Uint64())
@@ -196,7 +196,7 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	ygg2 := GetRandomVault()
 	ygg2.Type = YggdrasilVault
 	ygg2.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(2*common.One)),
 		common.NewCoin(tCanAsset, cosmos.NewUint(0)),
 	}
 	totalRuneLeft, err = getTotalYggValueInRune(ctx, mgr.Keeper(), ygg2)
@@ -226,7 +226,7 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 	na.PubKeySet.Secp256k1 = pk
 	na.Bond = cosmos.NewUint(100 * common.One)
 	tx := GetRandomTx()
-	tx.FromAddress = GetRandomTHORAddress()
+	tx.FromAddress = GetRandomBaseAddress()
 	keeper1 := &TestRefundBondKeeper{
 		modules: make(map[string]int64),
 	}
@@ -249,7 +249,7 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 	// fail to get pool should fail
 	ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(27*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(27*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(27*common.One)),
 	}
 	keeper1.ygg = ygg
@@ -279,7 +279,7 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(3946*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(3946*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(27*common.One)),
 	}
 	keeper := &TestRefundBondKeeper{
@@ -321,7 +321,7 @@ func (s *HelperSuite) TestRefundBondDisableRequestToLeaveNode(c *C) {
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(3946*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(3946*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(27*common.One)),
 	}
 	keeper := &TestRefundBondKeeper{
@@ -441,7 +441,7 @@ func (s *HelperSuite) TestAbandonPool(c *C) {
 	}
 	c.Assert(k.SetVault(ctx, vault), IsNil)
 
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	bnbAddr := GetRandomBNBAddress()
 	lp := LiquidityProvider{
 		Asset:        usdAsset,
@@ -607,7 +607,7 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 						ToAddress:   GetRandomBNBAddress(),
 						Coins: common.Coins{
 							common.NewCoin(common.BNBAsset, cosmos.NewUint(5*common.One)),
-							common.NewCoin(common.RuneAsset(), cosmos.NewUint(8*common.One)),
+							common.NewCoin(common.BaseAsset(), cosmos.NewUint(8*common.One)),
 						},
 						Gas: common.Gas{
 							common.NewCoin(common.BNBAsset, BNBGasFeeSingleton[0].Amount),
@@ -720,7 +720,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 
 	txAddLiquidity := common.NewTx(txID, GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
-	}, "add:BTC.BTC:"+GetRandomTHORAddress().String())
+	}, "add:BTC.BTC:"+GetRandomBaseAddress().String())
 	memoAddExternal, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txAddLiquidity.Memo)
 	c.Assert(err, IsNil)
 	mAddExternal, err := getMsgAddLiquidityFromMemo(ctx,
@@ -729,7 +729,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		GetRandomBech32Addr())
 
 	c.Assert(err, IsNil)
-	txAddRUNE := common.NewTx(txID, GetRandomTHORAddress(), GetRandomTHORAddress(), common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(100))), common.Gas{
+	txAddRUNE := common.NewTx(txID, GetRandomBaseAddress(), GetRandomBaseAddress(), common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.RuneNative, cosmos.NewUint(100)),
 	}, "add:BTC.BTC:"+GetRandomBTCAddress().String())
 	memoAddRUNE, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txAddRUNE.Memo)
@@ -760,10 +760,10 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	mWithThorname, err := getMsgSwapFromMemo(memoWithThorname.(SwapMemo), NewObservedTx(txWithThorname, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
-	txSynth := common.NewTx(txID, GetRandomTHORAddress(), GetRandomTHORAddress(),
+	txSynth := common.NewTx(txID, GetRandomBaseAddress(), GetRandomBaseAddress(),
 		common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(100))),
 		common.Gas{common.NewCoin(common.BNBAsset, cosmos.NewUint(100))},
-		"swap:ETH.ETH:"+GetRandomTHORAddress().String())
+		"swap:ETH.ETH:"+GetRandomBaseAddress().String())
 	memoRedeemSynth, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txSynth.Memo)
 	c.Assert(err, IsNil)
 	mRedeemSynth, err := getMsgSwapFromMemo(memoRedeemSynth.(SwapMemo), NewObservedTx(txSynth, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())

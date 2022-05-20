@@ -162,8 +162,7 @@ var (
 	GetRandomObservedTxVoter       = types.GetRandomObservedTxVoter
 	GetRandomValidatorNode         = types.GetRandomValidatorNode
 	GetRandomVaultNode             = types.GetRandomVaultNode
-	GetRandomTHORAddress           = types.GetRandomTHORAddress
-	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
+	GetRandomBaseAddress           = types.GetRandomBaseAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress
 	GetRandomTERRAAddress          = types.GetRandomTERRAAddress
 	GetRandomBTCAddress            = types.GetRandomBTCAddress

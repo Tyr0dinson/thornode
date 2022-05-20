@@ -309,7 +309,7 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(2*common.One)),
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),
 		FromAddress: fromAddr,
@@ -340,7 +340,7 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSla
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),
@@ -367,7 +367,7 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSl
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One)),
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),

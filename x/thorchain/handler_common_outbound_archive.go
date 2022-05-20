@@ -29,7 +29,7 @@ func (h CommonOutboundTxHandler) handleV69(ctx cosmos.Context, tx ObservedTx, in
 		}
 	}
 
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		return &cosmos.Result{}, nil
 	}
 
@@ -154,7 +154,7 @@ func (h CommonOutboundTxHandler) handleV85(ctx cosmos.Context, tx ObservedTx, in
 		}
 	}
 
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		return &cosmos.Result{}, nil
 	}
 
@@ -291,7 +291,7 @@ func (h CommonOutboundTxHandler) handleV87(ctx cosmos.Context, tx ObservedTx, in
 		}
 	}
 
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		return &cosmos.Result{}, nil
 	}
 

@@ -165,7 +165,7 @@ func (h ErrataTxHandler) handleV58(ctx cosmos.Context, msg MsgErrataTx) (*cosmos
 	runeCoin := common.NoCoin
 	assetCoin := common.NoCoin
 	for _, coin := range tx.Coins {
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			runeCoin = coin
 		} else {
 			assetCoin = coin
@@ -292,7 +292,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV65(ctx cosmos.Context, msg MsgE
 		}
 		if compensate {
 			for _, coin := range tx.Coins {
-				if coin.Asset.IsRune() {
+				if coin.Asset.IsBaseAsset() {
 					// it is using native rune, so outbound can't be RUNE
 					continue
 				}
@@ -304,7 +304,7 @@ func (h ErrataTxHandler) processErrataOutboundTxV65(ctx cosmos.Context, msg MsgE
 				p.BalanceRune = p.BalanceRune.Add(runeValue)
 				p.BalanceAsset = common.SafeSub(p.BalanceAsset, coin.Amount)
 				if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{
-					common.NewCoin(common.RuneAsset(), runeValue),
+					common.NewCoin(common.BaseAsset(), runeValue),
 				}); err != nil {
 					return nil, fmt.Errorf("fail to send fund from reserve to asgard: %w", err)
 				}

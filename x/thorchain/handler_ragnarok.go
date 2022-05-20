@@ -75,7 +75,7 @@ func (h RagnarokHandler) slashV1(ctx cosmos.Context, tx ObservedTx) error {
 
 func (h RagnarokHandler) handleV65(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
 	// for ragnarok on thorchain ,
-	if msg.Tx.Tx.Chain.Equals(common.THORChain) {
+	if msg.Tx.Tx.Chain.Equals(common.BaseChain) {
 		return &cosmos.Result{}, nil
 	}
 	shouldSlash := true

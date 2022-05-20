@@ -46,7 +46,7 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 		if keeper == nil {
 			affAddr, err = common.NewAddress(parts[3])
 		} else {
-			affAddr, err = FetchAddress(ctx, keeper, parts[3], common.THORChain)
+			affAddr, err = FetchAddress(ctx, keeper, parts[3], common.BaseChain)
 		}
 		if err != nil {
 			return AddLiquidityMemo{}, err

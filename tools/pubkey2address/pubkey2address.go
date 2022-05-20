@@ -41,10 +41,14 @@ func main() {
 	}
 
 	chains := common.Chains{
-		common.THORChain,
+		common.BaseChain,
 		common.BNBChain,
 		common.BTCChain,
 		common.ETHChain,
+		common.LTCChain,
+		common.BCHChain,
+		common.DOGEChain,
+		common.TERRAChain,
 	}
 
 	for _, chain := range chains {

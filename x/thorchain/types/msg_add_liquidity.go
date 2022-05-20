@@ -42,8 +42,8 @@ func (m *MsgAddLiquidity) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	// There is no dedicate pool for RUNE, because every pool will have RUNE, that's by design
-	if m.Asset.IsRune() {
-		return cosmos.ErrUnknownRequest("asset cannot be rune")
+	if m.Asset.IsBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("asset cannot be %s", common.BaseDenom))
 	}
 	// test scenario we get two coins, but none are rune, invalid liquidity provider
 	if len(m.Tx.Coins) == 2 && (m.AssetAmount.IsZero() || m.RuneAmount.IsZero()) {
@@ -61,8 +61,8 @@ func (m *MsgAddLiquidity) ValidateBasic() error {
 	if m.AffiliateAddress.IsEmpty() && !m.AffiliateBasisPoints.IsZero() {
 		return cosmos.ErrUnknownRequest("affiliate address is empty while affiliate basis points is non-zero")
 	}
-	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("affiliate address must be a THOR address")
+	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.BaseChain) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("affiliate address must be a %s address", common.BaseChain))
 	}
 	return nil
 }
@@ -79,8 +79,8 @@ func (m *MsgAddLiquidity) ValidateBasicV63() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	// There is no dedicate pool for RUNE, because every pool will have RUNE, that's by design
-	if m.Asset.IsRune() {
-		return cosmos.ErrUnknownRequest("asset cannot be rune")
+	if m.Asset.IsBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("asset cannot be %s", common.BaseDenom))
 	}
 	// test scenario we get two coins, but none are rune, invalid liquidity provider
 	if len(m.Tx.Coins) == 2 && (m.AssetAmount.IsZero() || m.RuneAmount.IsZero()) {
@@ -101,8 +101,8 @@ func (m *MsgAddLiquidity) ValidateBasicV63() error {
 	if !m.AffiliateBasisPoints.IsZero() && m.AffiliateBasisPoints.GT(cosmos.NewUint(MaxAffiliateFeeBasisPoints)) {
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("affiliate fee basis points can't be more than %d", MaxAffiliateFeeBasisPoints))
 	}
-	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("affiliate address must be a THOR address")
+	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.BaseChain) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("affiliate address must be a %s address", common.BaseChain))
 	}
 	return nil
 }

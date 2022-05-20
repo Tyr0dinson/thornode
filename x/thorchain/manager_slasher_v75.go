@@ -334,7 +334,7 @@ func (s *SlasherV75) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			tx.GasRate = int64(mgr.GasMgr().GetGasRate(ctx, tx.Chain).Uint64())
 
 			// if a pool with the asset name doesn't exist, skip rescheduling
-			if !tx.Coin.Asset.IsRune() && !s.keeper.PoolExist(ctx, tx.Coin.Asset) {
+			if !tx.Coin.Asset.IsBaseAsset() && !s.keeper.PoolExist(ctx, tx.Coin.Asset) {
 				ctx.Logger().Error("fail to add outbound tx", "error", "coin is not rune and does not have an associated pool")
 				continue
 			}
@@ -394,7 +394,7 @@ func (s *SlasherV75) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 			continue
 		}
 		totalSlashAmountInRune := cosmos.ZeroUint()
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			totalSlashAmountInRune = coin.Amount.MulUint64(3).QuoUint64(2)
 		} else {
 			pool, err := s.keeper.GetPool(ctx, coin.Asset)
@@ -425,7 +425,7 @@ func (s *SlasherV75) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 					Amount: 0 - int64(coinAmount.Uint64()),
 				},
 				{
-					Asset:  common.RuneAsset(),
+					Asset:  common.BaseAsset(),
 					Amount: int64(runeValue.Uint64()),
 				},
 			}
@@ -523,12 +523,12 @@ func (s *SlasherV75) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 		runeToReserve := common.SafeSub(totalSlashAmountInRune, runeToAsgard)
 
 		if !runeToReserve.IsZero() {
-			if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToReserve))); err != nil {
+			if err := s.keeper.SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(common.NewCoin(common.BaseAsset(), runeToReserve))); err != nil {
 				ctx.Logger().Error("fail to send slash funds to reserve module", "pk", vaultPK, "error", err)
 			}
 		}
 		if !runeToAsgard.IsZero() {
-			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToAsgard))); err != nil {
+			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.BaseAsset(), runeToAsgard))); err != nil {
 				ctx.Logger().Error("fail to send slash fund to asgard module", "pk", vaultPK, "error", err)
 			}
 		}

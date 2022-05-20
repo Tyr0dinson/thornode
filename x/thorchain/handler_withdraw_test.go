@@ -110,7 +110,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
 	err := addHandler.addLiquidity(ctx,
 		common.BNBAsset,
@@ -148,7 +148,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
 	// Let's stake some BTC first
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	btcAddress := GetRandomBTCAddress()
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(keeper))
 	// stake some RUNE first
@@ -176,7 +176,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	// symmetric stake, units is measured by liquidity tokens
 	c.Assert(lp.Units.IsZero(), Equals, false)
 
-	runeAddr1 := GetRandomRUNEAddress()
+	runeAddr1 := GetRandomBaseAddress()
 	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(50*common.One), cosmos.ZeroUint(), runeAddr1, common.NoAddress, GetRandomTxHash(), false, constAccessor)
 	c.Assert(err, IsNil)
 	lp, err = keeper.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr1)
@@ -229,12 +229,12 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 	}{
 		{
 			name:           "empty signer should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, cosmos.AccAddress{}),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, cosmos.AccAddress{}),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "empty asset should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.Asset{}, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.Asset{}, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
@@ -244,17 +244,17 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 		},
 		{
 			name:           "withdraw basis point is 0 should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.ZeroUint(), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.ZeroUint(), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "withdraw basis point is larger than 10000 should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints+100)), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints+100)), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "synth asset should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset.GetSyntheticAsset(), common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset.GetSyntheticAsset(), common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 	}
@@ -331,7 +331,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_mockFailScenarios(c *C) {
 
 	for _, tc := range testCases {
 		withdrawHandler := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(tc.k))
-		msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+		msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomBaseAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
 		_, err := withdrawHandler.Run(ctx, msgWithdraw)
 		c.Assert(errors.Is(err, tc.expectedResult), Equals, true, Commentf(tc.name))
 	}
@@ -344,10 +344,10 @@ type MockWithdrawTxOutStore struct {
 }
 
 func (store *MockWithdrawTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
-	if toi.Coin.Asset.IsNativeRune() && store.errRune != nil {
+	if toi.Coin.Asset.IsNativeBaseAsset() && store.errRune != nil {
 		return false, store.errRune
 	}
-	if !toi.Coin.Asset.IsNativeRune() && store.errAsset != nil {
+	if !toi.Coin.Asset.IsNativeBaseAsset() && store.errAsset != nil {
 		return false, store.errAsset
 	}
 	return true, nil
@@ -382,7 +382,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 	c.Assert(pool.Valid(), IsNil)
 	_ = keeper.SetPool(ctx, pool)
 
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	lp := LiquidityProvider{
 		Asset:              asset,
 		LastAddHeight:      common.BlockHeight(ctx),
@@ -399,7 +399,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 		lp.RuneAddress,
 		cosmos.NewUint(1000),
 		asset,
-		common.RuneAsset(),
+		common.BaseAsset(),
 		na.NodeAddress)
 
 	c.Assert(msg.ValidateBasic(), IsNil)
@@ -436,7 +436,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 		}
 	}
 
-	msg.WithdrawalAsset = common.RuneAsset()
+	msg.WithdrawalAsset = common.BaseAsset()
 	handleCase(msg, errInternal, nil, "asym rune fail", true)
 
 	msg.WithdrawalAsset = common.BTCAsset

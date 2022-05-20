@@ -27,7 +27,7 @@ func newSwapperV81() *SwapperV81 {
 // validate if pools exist
 func (s *SwapperV81) validatePools(ctx cosmos.Context, keeper keeper.Keeper, assets ...common.Asset) error {
 	for _, asset := range assets {
-		if !asset.IsRune() {
+		if !asset.IsBaseAsset() {
 			if !keeper.PoolExist(ctx, asset) {
 				return fmt.Errorf("%s pool doesn't exist", asset)
 			}
@@ -101,17 +101,17 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("cannot swap from %s --> %s, assets match", source, target)
 	}
 
-	isDoubleSwap := !source.IsRune() && !target.IsRune()
+	isDoubleSwap := !source.IsBaseAsset() && !target.IsBaseAsset()
 	if isDoubleSwap {
 		var swapErr error
 		var swapEvt *EventSwap
 		var amt cosmos.Uint
 		// Here we use a swapTarget of 0 because the target is for the next swap asset in a double swap
-		amt, swapEvt, swapErr = s.swapOne(ctx, keeper, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), transactionFee, synthVirtualDepthMult)
+		amt, swapEvt, swapErr = s.swapOne(ctx, keeper, tx, common.BaseAsset(), destination, cosmos.ZeroUint(), transactionFee, synthVirtualDepthMult)
 		if swapErr != nil {
 			return cosmos.ZeroUint(), swapEvents, swapErr
 		}
-		tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), amt)}
+		tx.Coins = common.Coins{common.NewCoin(common.BaseAsset(), amt)}
 		tx.Gas = nil
 		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
 		swapEvents = append(swapEvents, swapEvt)
@@ -124,7 +124,7 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) {
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, swapTarget)
 	}
-	if target.IsRune() {
+	if target.IsBaseAsset() {
 		if assetAmount.LTE(transactionFee) {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
 		}
@@ -150,7 +150,7 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 		Coin:      common.NewCoin(target, assetAmount),
 	}
 	// let the txout manager mint our outbound asset if it is a synthetic asset
-	if toi.Chain.IsTHORChain() && toi.Coin.Asset.IsSyntheticAsset() {
+	if toi.Chain.IsBaseChain() && toi.Coin.Asset.IsSyntheticAsset() {
 		toi.ModuleName = ModuleName
 	}
 
@@ -229,7 +229,7 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 
 	// Set asset to our non-rune asset
 	asset := source
-	if source.IsRune() {
+	if source.IsBaseAsset() {
 		asset = target
 		if amount.LTE(transactionFee) {
 			// stop swap , because the output will not enough to pay for transaction fee
@@ -273,7 +273,7 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 	}
 
 	// Get our X, x, Y values
-	if source.IsRune() {
+	if source.IsBaseAsset() {
 		X = pool.BalanceRune
 		Y = pool.BalanceAsset
 	} else {
@@ -302,7 +302,7 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
 	swapEvt.LiquidityFee = liquidityFee
 
-	if source.IsRune() {
+	if source.IsBaseAsset() {
 		swapEvt.LiquidityFeeInRune = pool.AssetValueInRune(liquidityFee)
 	} else {
 		// because the output asset is RUNE , so liqualidtyFee is already in RUNE
@@ -329,7 +329,7 @@ func (s *SwapperV81) swapOne(ctx cosmos.Context,
 			pool.BalanceRune = pool.BalanceRune.Add(x)
 		}
 	} else {
-		if source.IsRune() {
+		if source.IsBaseAsset() {
 			pool.BalanceRune = X.Add(x)
 			pool.BalanceAsset = common.SafeSub(Y, emitAssets)
 		} else {

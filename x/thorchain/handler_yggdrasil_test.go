@@ -233,7 +233,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 				tx := common.Tx{
 					ID:          GetRandomTxHash(),
@@ -263,7 +263,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 				tx := common.Tx{
 					ID:          GetRandomTxHash(),
@@ -291,7 +291,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 				tx := common.Tx{
 					ID:          GetRandomTxHash(),
@@ -315,7 +315,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 
 				tx := common.Tx{
@@ -341,7 +341,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 				tx := common.Tx{
 					ID:          GetRandomTxHash(),
@@ -373,7 +373,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One)),
 				}
 				asgardVault := GetRandomVault()
 				asgardVault.Status = RetiringVault

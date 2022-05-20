@@ -32,7 +32,7 @@ func (s *NetworkManagerV89TestSuite) TestRagnarokChain(c *C) {
 	yggVault.Type = YggdrasilVault
 	yggVault.Coins = common.Coins{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(300*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(300*common.One)),
 	}
 
 	btcPool := NewPool()
@@ -47,7 +47,7 @@ func (s *NetworkManagerV89TestSuite) TestRagnarokChain(c *C) {
 	bnbPool.BalanceAsset = cosmos.NewUint(10 * common.One)
 	bnbPool.LPUnits = cosmos.NewUint(1600)
 
-	addr := GetRandomRUNEAddress()
+	addr := GetRandomBaseAddress()
 	lps := LiquidityProviders{
 		{
 			RuneAddress:       addr,
@@ -60,7 +60,7 @@ func (s *NetworkManagerV89TestSuite) TestRagnarokChain(c *C) {
 			RuneDepositValue:  cosmos.ZeroUint(),
 		},
 		{
-			RuneAddress:       GetRandomRUNEAddress(),
+			RuneAddress:       GetRandomBaseAddress(),
 			AssetAddress:      GetRandomBTCAddress(),
 			LastAddHeight:     10,
 			Units:             btcPool.LPUnits.QuoUint64(2),
@@ -176,7 +176,7 @@ func (s *NetworkManagerV89TestSuite) TestUpdateNetwork(c *C) {
 
 	// fail to get total liquidity fee should result an error
 	helper.failGetTotalLiquidityFee = true
-	if common.RuneAsset().Equals(common.RuneNative) {
+	if common.BaseAsset().Equals(common.RuneNative) {
 		FundModule(c, ctx, helper, ReserveName, 100)
 	}
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), NotNil)

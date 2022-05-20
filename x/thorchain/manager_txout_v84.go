@@ -128,7 +128,7 @@ func (tos *TxOutStorageV84) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 	// calculate the single block height to send all of these txout items,
 	// using the summed amount
 	outboundHeight := common.BlockHeight(ctx)
-	if !toi.Chain.IsTHORChain() && !toi.InHash.IsEmpty() && !toi.InHash.Equals(common.BlankTxID) {
+	if !toi.Chain.IsBaseChain() && !toi.InHash.IsEmpty() && !toi.InHash.Equals(common.BlankTxID) {
 		toi.Memo = outputs[0].Memo
 		targetHeight, err := tos.calcTxOutHeight(ctx, mgr.GetVersion(), toi)
 		if err != nil {
@@ -249,13 +249,13 @@ func (tos *TxOutStorageV84) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 		toi.ToAddress = newBCHAddress
 	}
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
+	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.BaseAsset())
 	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
 	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get max gas asset", "error", err)
 	}
-	if toi.Chain.Equals(common.THORChain) {
+	if toi.Chain.Equals(common.BaseChain) {
 		outputs = append(outputs, toi)
 	} else {
 		if !toi.VaultPubKey.IsEmpty() {
@@ -358,7 +358,7 @@ func (tos *TxOutStorageV84) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 				maxGasCoin,
 			}
 			// THOR Chain doesn't need to have max gas
-			if outputs[i].MaxGas.IsEmpty() && !outputs[i].Chain.Equals(common.THORChain) {
+			if outputs[i].MaxGas.IsEmpty() && !outputs[i].Chain.Equals(common.BaseChain) {
 				return nil, fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
 			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
@@ -369,7 +369,7 @@ func (tos *TxOutStorageV84) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
 		if err == nil && !memo.IsType(TxYggdrasilFund) && !memo.IsType(TxYggdrasilReturn) && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) {
-			if outputs[i].Coin.Asset.IsRune() {
+			if outputs[i].Coin.Asset.IsBaseAsset() {
 				if outputs[i].Coin.Amount.LTE(transactionFeeRune) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
@@ -501,7 +501,7 @@ func (tos *TxOutStorageV84) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 
 func (tos *TxOutStorageV84) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {
 	// if we're sending native assets, transfer them now and return
-	if item.Chain.IsTHORChain() {
+	if item.Chain.IsBaseChain() {
 		return tos.nativeTxOut(ctx, mgr, item)
 	}
 
@@ -553,7 +553,7 @@ func (tos *TxOutStorageV84) calcTxOutHeight(ctx cosmos.Context, version semver.V
 
 	// get txout item value in rune
 	runeValue := toi.Coin.Amount
-	if !toi.Coin.Asset.IsRune() {
+	if !toi.Coin.Asset.IsBaseAsset() {
 		pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get pool for appending txout item", "error", err)
@@ -657,7 +657,7 @@ func (tos *TxOutStorageV84) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxO
 		from,
 		toi.ToAddress,
 		common.Coins{toi.Coin},
-		common.Gas{common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(outboundTxFee)))},
+		common.Gas{common.NewCoin(common.BaseAsset(), cosmos.NewUint(uint64(outboundTxFee)))},
 		toi.Memo,
 	)
 

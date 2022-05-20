@@ -76,7 +76,7 @@ func (h AddLiquidityHandler) validateV76(ctx cosmos.Context, msg MsgAddLiquidity
 		return errAddLiquidityFailValidation
 	}
 
-	if !msg.RuneAddress.IsEmpty() && !msg.RuneAddress.IsChain(common.THORChain) {
+	if !msg.RuneAddress.IsEmpty() && !msg.RuneAddress.IsChain(common.BaseChain) {
 		ctx.Logger().Error("rune address must be THORChain")
 		return errAddLiquidityFailValidation
 	}

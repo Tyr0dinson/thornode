@@ -21,6 +21,12 @@ type Address string
 
 var NoAddress = Address("")
 
+var (
+	baseChainMainnet  = "thor"
+	baseChainTestnet  = "tthor"
+	baseChainStagenet = "sthor"
+)
+
 const ETHAddressLen = 42
 
 // NewAddress create a new Address. Supports Binance, Bitcoin, and Ethereum
@@ -228,9 +234,9 @@ func (addr Address) IsChain(chain Chain) bool {
 		// Note: Terra does not use a special prefix for testnet
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "terra"
-	case THORChain:
+	case BaseChain:
 		prefix, _, _ := bech32.Decode(addr.String())
-		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
+		return prefix == baseChainMainnet || prefix == baseChainTestnet || prefix == baseChainStagenet
 	case BTCChain:
 		prefix, _, err := bech32.Decode(addr.String())
 		if err == nil && (prefix == "bc" || prefix == "tb") {
@@ -303,7 +309,7 @@ func (addr Address) IsChain(chain Chain) bool {
 }
 
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain} {
+	for _, chain := range []Chain{ETHChain, BNBChain, BaseChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -332,15 +338,15 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 	case TERRAChain:
 		return currentNetwork
-	case THORChain:
+	case BaseChain:
 		prefix, _, _ := bech32.Decode(addr.String())
-		if strings.EqualFold(prefix, "thor") {
+		if strings.EqualFold(prefix, baseChainMainnet) {
 			return mainNetPredicate()
 		}
-		if strings.EqualFold(prefix, "tthor") {
+		if strings.EqualFold(prefix, baseChainTestnet) {
 			return TestNet
 		}
-		if strings.EqualFold(prefix, "sthor") {
+		if strings.EqualFold(prefix, baseChainStagenet) {
 			return StageNet
 		}
 	case BTCChain:

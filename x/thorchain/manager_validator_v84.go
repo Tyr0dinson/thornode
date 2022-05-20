@@ -714,10 +714,10 @@ func (vm *validatorMgrV84) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manag
 
 		// refund bond
 		txOutItem := TxOutItem{
-			Chain:      common.RuneAsset().Chain,
+			Chain:      common.BaseAsset().Chain,
 			ToAddress:  na.BondAddress,
 			InHash:     common.BlankTxID,
-			Coin:       common.NewCoin(common.RuneAsset(), amt),
+			Coin:       common.NewCoin(common.BaseAsset(), amt),
 			Memo:       NewRagnarokMemo(common.BlockHeight(ctx)).String(),
 			ModuleName: BondName,
 		}
@@ -839,7 +839,7 @@ func (vm *validatorMgrV84) ragnarokPools(ctx cosmos.Context, nth int64, mgr Mana
 					withdrawAddr = lp.RuneAddress
 					// if liquidity provider only add RUNE , then asset address will be empty
 					if lp.AssetAddress.IsEmpty() {
-						withdrawAsset = common.RuneAsset()
+						withdrawAsset = common.BaseAsset()
 					}
 				} else {
 					// if liquidity provider only add Asset, then RUNE Address will be empty
@@ -861,7 +861,7 @@ func (vm *validatorMgrV84) ragnarokPools(ctx cosmos.Context, nth int64, mgr Mana
 					ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "error", err)
 
 					// when withdraw asset is only RUNE , then it should process more , because RUNE asset doesn't leave THORChain
-				} else if !withdrawAsset.Equals(common.RuneAsset()) {
+				} else if !withdrawAsset.Equals(common.BaseAsset()) {
 					count++
 					pending, err := vm.k.GetRagnarokPending(ctx)
 					if err != nil {
@@ -931,7 +931,7 @@ func (vm *validatorMgrV84) RequestYggReturn(ctx cosmos.Context, node NodeAccount
 		return fmt.Errorf("unable to determine asgard vault")
 	}
 	for _, chain := range chains {
-		if chain.Equals(common.THORChain) {
+		if chain.Equals(common.BaseChain) {
 			continue
 		}
 		if !ygg.HasFundsForChain(chain) {
@@ -948,7 +948,7 @@ func (vm *validatorMgrV84) RequestYggReturn(ctx cosmos.Context, node NodeAccount
 				ToAddress:   toAddr,
 				InHash:      common.BlankTxID,
 				VaultPubKey: ygg.PubKey,
-				Coin:        common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+				Coin:        common.NewCoin(common.BaseAsset(), cosmos.ZeroUint()),
 				Memo:        NewYggdrasilReturn(common.BlockHeight(ctx)).String(),
 				GasRate:     int64(mgr.GasMgr().GetGasRate(ctx, chain).Uint64()),
 				// DO NOT specify MaxGas , for yggdrasil return , should allow node to spend more on gas , for example ETH, return multiple

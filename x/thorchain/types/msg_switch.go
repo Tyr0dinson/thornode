@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -35,8 +37,8 @@ func (m *MsgSwitch) ValidateBasic() error {
 	if len(m.Tx.Coins) != 1 {
 		return cosmos.ErrInvalidCoins("must be only one coin (rune)")
 	}
-	if !m.Tx.Coins[0].Asset.IsRune() {
-		return cosmos.ErrInvalidCoins("must be rune")
+	if !m.Tx.Coins[0].Asset.IsBaseAsset() {
+		return cosmos.ErrInvalidCoins(fmt.Sprintf("must be %s", common.BaseDenom))
 	}
 	return nil
 }

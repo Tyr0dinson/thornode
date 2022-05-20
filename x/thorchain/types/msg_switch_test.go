@@ -17,7 +17,7 @@ var _ = Suite(&MsgSwitchSuite{})
 func (MsgSwitchSuite) TestMsgSwitchSuite(c *C) {
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 
 	acc1 := GetRandomBNBAddress()
@@ -43,7 +43,7 @@ func (MsgSwitchSuite) TestMsgSwitchSuite(c *C) {
 	c.Assert(errors.Is(err2, se.ErrInvalidAddress), Equals, true)
 	// test too many coins
 	tx.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
 	}
 	msg = NewMsgSwitch(tx, acc1, acc2)

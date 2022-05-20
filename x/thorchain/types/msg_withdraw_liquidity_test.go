@@ -23,7 +23,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 		BNBGasFeeSingleton,
 		"",
 	)
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	acc1 := GetRandomBech32Addr()
 	m := NewMsgWithdrawLiquidity(tx, runeAddr, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, acc1)
 	EnsureMsgBasicCorrect(m, c)

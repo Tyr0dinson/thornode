@@ -33,7 +33,7 @@ func (s *HandlerSwapSuite) TestValidate(c *C) {
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.OneUint()),
+			common.NewCoin(common.BaseAsset(), cosmos.OneUint()),
 		},
 		BNBGasFeeSingleton,
 		"",
@@ -135,12 +135,12 @@ func (s *HandlerSwapSuite) TestValidation(c *C) {
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One*100)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(common.One*100)),
 		},
 		BNBGasFeeSingleton,
 		"",
 	)
-	msg := NewMsgSwap(tx, common.BNBAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), observerAddr)
+	msg := NewMsgSwap(tx, common.BNBAsset.GetSyntheticAsset(), GetRandomBaseAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), observerAddr)
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
@@ -176,7 +176,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.OneUint()),
+			common.NewCoin(common.BaseAsset(), cosmos.OneUint()),
 		},
 		BNBGasFeeSingleton,
 		"",
@@ -196,7 +196,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 
 	tx = common.NewTx(txID, signerBNBAddr, signerBNBAddr,
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(2*common.One)),
 		},
 		BNBGasFeeSingleton,
 		"",
@@ -288,7 +288,7 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 		1,
 		GetRandomPubKey(), 1,
 	)
-	observerAddr, err := GetRandomTHORAddress().AccAddress()
+	observerAddr, err := GetRandomBaseAddress().AccAddress()
 	c.Assert(err, IsNil)
 	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
 	c.Assert(err, IsNil)

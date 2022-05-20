@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -39,8 +41,8 @@ func (m *MsgWithdrawLiquidity) ValidateBasic() error {
 	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("pool asset cannot be empty")
 	}
-	if m.Asset.IsRune() {
-		return cosmos.ErrUnknownRequest("asset cannot be rune")
+	if m.Asset.IsBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("asset cannot be %s", common.BaseDenom))
 	}
 	if m.WithdrawAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("address cannot be empty")
@@ -51,8 +53,8 @@ func (m *MsgWithdrawLiquidity) ValidateBasic() error {
 	if m.BasisPoints.GT(cosmos.NewUint(MaxWithdrawBasisPoints)) {
 		return cosmos.ErrUnknownRequest("basis points is larger than maximum withdraw basis points")
 	}
-	if !m.WithdrawalAsset.IsEmpty() && !m.WithdrawalAsset.IsRune() && !m.WithdrawalAsset.Equals(m.Asset) {
-		return cosmos.ErrUnknownRequest("withdrawal asset must be empty, rune, or pool asset")
+	if !m.WithdrawalAsset.IsEmpty() && !m.WithdrawalAsset.IsBaseAsset() && !m.WithdrawalAsset.Equals(m.Asset) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("withdrawal asset must be empty, %s, or pool asset", common.BaseDenom))
 	}
 	return nil
 }

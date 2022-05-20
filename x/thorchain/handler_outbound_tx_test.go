@@ -191,16 +191,16 @@ func newOutboundTxHandlerTestHelper(c *C) outboundTxHandlerTestHelper {
 	asgardVault := GetRandomVault()
 	asgardVault.Membership = []string{asgardVault.PubKey.String()}
 	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-	addr, err := asgardVault.PubKey.GetAddress(common.RuneAsset().Chain)
+	addr, err := asgardVault.PubKey.GetAddress(common.BaseAsset().Chain)
 	yggVault := GetRandomVault()
 	yggVault.Membership = []string{yggVault.PubKey.String()}
 	c.Assert(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
 		ID:          GetRandomTxHash(),
-		Chain:       common.RuneAsset().Chain,
+		Chain:       common.BaseAsset().Chain,
 		Coins:       common.Coins{common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One))},
-		Memo:        "SWAP:" + common.RuneAsset().String(),
+		Memo:        "SWAP:" + common.BaseAsset().String(),
 		FromAddress: GetRandomBNBAddress(),
 		ToAddress:   addr,
 		Gas:         BNBGasFeeSingleton,
@@ -368,7 +368,7 @@ func (s *HandlerOutboundTxSuite) TestOuboundTxHandlerSendExtraFundShouldBeSlashe
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(2*common.One)),
 		},
 		Memo:        NewOutboundMemo(helper.inboundTx.Tx.ID).String(),
 		FromAddress: fromAddr,
@@ -398,7 +398,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldB
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One)),
 		},
 		Memo:        NewOutboundMemo(helper.inboundTx.Tx.ID).String(),
@@ -425,7 +425,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerInvalidObservedTxVoterShou
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One)),
 		},
 		Memo:        NewOutboundMemo(helper.inboundTx.Tx.ID).String(),

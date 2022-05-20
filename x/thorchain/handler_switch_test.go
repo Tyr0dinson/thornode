@@ -29,7 +29,7 @@ func (s *HandlerSwitchSuite) TestValidate(c *C) {
 
 	handler := NewSwitchHandler(NewDummyMgrWithKeeper(k))
 
-	destination := GetRandomTHORAddress()
+	destination := GetRandomBaseAddress()
 	// happy path
 	msg := NewMsgSwitch(tx, destination, na.NodeAddress)
 	result, err := handler.Run(ctx, msg)
@@ -74,7 +74,7 @@ func (s *HandlerSwitchSuite) TestGettingNativeTokens(c *C) {
 	tx.Coins = common.Coins{
 		common.NewCoin(common.Rune67CAsset, cosmos.NewUint(100*common.One)),
 	}
-	destination := GetRandomTHORAddress()
+	destination := GetRandomBaseAddress()
 
 	handler := NewSwitchHandler(NewDummyMgrWithKeeper(k))
 
@@ -160,7 +160,7 @@ func (s *HandlerSwitchSuite) TestSwitchHandlerDifferentValidations(c *C) {
 	}
 
 	for _, tc := range testCases {
-		if len(common.RuneAsset().Native()) == 0 && tc.nativeRune {
+		if len(common.BaseAsset().Native()) == 0 && tc.nativeRune {
 			continue
 		}
 

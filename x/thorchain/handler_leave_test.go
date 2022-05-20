@@ -24,7 +24,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_NotActiveNodeLeave(c *C) {
 	acc2 := GetRandomValidatorNode(NodeStandby)
 	acc2.Bond = cosmos.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
-	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})
+	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BaseAsset().Chain}.Strings(), []ChainContract{})
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
 	FundModule(c, w.ctx, w.keeper, BondName, 100)
@@ -34,7 +34,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_NotActiveNodeLeave(c *C) {
 		txID,
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
-		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		common.Coins{common.NewCoin(common.BaseAsset(), cosmos.OneUint())},
 		BNBGasFeeSingleton,
 		"LEAVE",
 	)
@@ -58,7 +58,7 @@ func (HandlerLeaveSuite) TestLeaveHandler_ActiveNodeLeave(c *C) {
 		txID,
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
-		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		common.Coins{common.NewCoin(common.BaseAsset(), cosmos.OneUint())},
 		BNBGasFeeSingleton,
 		"",
 	)
@@ -82,7 +82,7 @@ func (HandlerLeaveSuite) TestLeaveJail(c *C) {
 
 	c.Assert(w.keeper.SetNodeAccountJail(w.ctx, acc2.NodeAddress, common.BlockHeight(w.ctx)+100, "test it"), IsNil)
 
-	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})
+	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BaseAsset().Chain}.Strings(), []ChainContract{})
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
 	FundModule(c, w.ctx, w.keeper, BondName, 100)
@@ -92,7 +92,7 @@ func (HandlerLeaveSuite) TestLeaveJail(c *C) {
 		txID,
 		acc2.BondAddress,
 		GetRandomBNBAddress(),
-		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		common.Coins{common.NewCoin(common.BaseAsset(), cosmos.OneUint())},
 		BNBGasFeeSingleton,
 		"LEAVE",
 	)

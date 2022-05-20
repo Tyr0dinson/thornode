@@ -159,12 +159,12 @@ func getMsgWithdrawFromMemo(memo WithdrawLiquidityMemo, tx ObservedTx, signer co
 func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	// Extract the Rune amount and the asset amount from the transaction. At least one of them must be
 	// nonzero. If THORNode saw two types of coins, one of them must be the asset coin.
-	runeCoin := tx.Tx.Coins.GetCoin(common.RuneAsset())
+	runeCoin := tx.Tx.Coins.GetCoin(common.BaseAsset())
 	assetCoin := tx.Tx.Coins.GetCoin(memo.GetAsset())
 
 	var runeAddr common.Address
 	var assetAddr common.Address
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		runeAddr = tx.Tx.FromAddress
 		assetAddr = memo.GetDestination()
 	} else {
@@ -172,7 +172,7 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 		assetAddr = tx.Tx.FromAddress
 	}
 	// in case we are providing native rune and another native asset
-	if memo.GetAsset().Chain.Equals(common.THORChain) {
+	if memo.GetAsset().Chain.Equals(common.BaseChain) {
 		assetAddr = runeAddr
 	}
 
@@ -180,7 +180,7 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 }
 
 func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	runeCoin := tx.Tx.Coins.GetCoin(common.RuneAsset())
+	runeCoin := tx.Tx.Coins.GetCoin(common.BaseAsset())
 	assetCoin := tx.Tx.Coins.GetCoin(memo.GetAsset())
 	return NewMsgDonate(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, signer), nil
 }
@@ -206,7 +206,7 @@ func getMsgLeaveFromMemo(memo LeaveMemo, tx ObservedTx, signer cosmos.AccAddress
 }
 
 func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	coin := tx.Tx.Coins.GetCoin(common.RuneAsset())
+	coin := tx.Tx.Coins.GetCoin(common.BaseAsset())
 	return NewMsgBond(tx.Tx, memo.GetAccAddress(), coin.Amount, tx.Tx.FromAddress, memo.BondProviderAddress, signer, memo.NodeOperatorFee), nil
 }
 
@@ -269,7 +269,7 @@ func processOneTxInV63(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 	case YggdrasilReturnMemo:
 		newMsg = NewMsgYggdrasil(tx.Tx, tx.ObservedPubKey, m.GetBlockHeight(), false, tx.Tx.Coins, signer)
 	case ReserveMemo:
-		res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins.GetCoin(common.RuneAsset()).Amount)
+		res := NewReserveContributor(tx.Tx.FromAddress, tx.Tx.Coins.GetCoin(common.BaseAsset()).Amount)
 		newMsg = NewMsgReserveContributor(tx.Tx, res, signer)
 	case SwitchMemo:
 		newMsg = NewMsgSwitch(tx.Tx, memo.GetDestination(), signer)

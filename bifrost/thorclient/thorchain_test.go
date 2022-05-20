@@ -311,6 +311,6 @@ func (s *ThorchainSuite) TestTHORName(c *C) {
 	c.Assert(result.Name, Equals, "test1")
 	c.Assert(result.ExpireBlockHeight, Equals, int64(10000))
 	c.Assert(result.Aliases, HasLen, 1)
-	c.Assert(result.Aliases[0].Chain, Equals, common.THORChain)
+	c.Assert(result.Aliases[0].Chain, Equals, common.BaseChain)
 	c.Assert(result.Aliases[0].Address, Equals, common.Address("tthor1tdfqy34uptx207scymqsy4k5uzfmry5sf7z3dw"))
 }

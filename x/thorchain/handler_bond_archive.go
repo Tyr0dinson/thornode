@@ -52,7 +52,7 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 		}
 	}
 
-	if !msg.BondAddress.IsChain(common.THORChain) {
+	if !msg.BondAddress.IsChain(common.BaseChain) {
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("bonding address is NOT a THORChain address: %s", msg.BondAddress.String()))
 	}
 

@@ -75,7 +75,7 @@ func (h SwapHandler) validateV88(ctx cosmos.Context, msg MsgSwap) error {
 			// calculate rune value on incoming swap, and add to total liquidity.
 			coin := msg.Tx.Coins[0]
 			runeVal := coin.Amount
-			if !coin.Asset.IsRune() {
+			if !coin.Asset.IsBaseAsset() {
 				pool, err := h.mgr.Keeper().GetPool(ctx, coin.Asset)
 				if err != nil {
 					return ErrInternal(err, "fail to get pool")
@@ -142,13 +142,13 @@ func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
-	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Destination.GetChain(), common.RuneAsset())
+	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Destination.GetChain(), common.BaseAsset())
 	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynths.String())
 	if synthVirtualDepthMult < 1 || err != nil {
 		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynths)
 	}
 
-	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsNativeRune() {
+	if msg.TargetAsset.IsBaseAsset() && !msg.TargetAsset.IsNativeBaseAsset() {
 		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
 	}
 

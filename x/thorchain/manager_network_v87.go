@@ -53,7 +53,7 @@ func (vm *NetworkMgrV87) processGenesisSetup(ctx cosmos.Context) error {
 	}
 	if len(active) == 1 {
 		supportChains := common.Chains{
-			common.THORChain,
+			common.BaseChain,
 			common.BTCChain,
 			common.LTCChain,
 			common.BCHChain,
@@ -138,7 +138,7 @@ func (vm *NetworkMgrV87) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					continue
 				}
 				// ERC20 RUNE will be burned when it reach router contract
-				if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
+				if coin.Asset.IsBaseAsset() && coin.Asset.GetChain().Equals(common.ETHChain) {
 					continue
 				}
 
@@ -223,7 +223,7 @@ func (vm *NetworkMgrV87) EndBlock(ctx cosmos.Context, mgr Manager) error {
 						}
 						runeAmt := p.RuneReimbursementForAssetWithdrawal(coin.Amount)
 						if !runeAmt.IsZero() {
-							if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
+							if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.BaseAsset(), runeAmt))); err != nil {
 								return fmt.Errorf("fail to transfer RUNE from reserve to asgard,err:%w", err)
 							}
 						}
@@ -392,7 +392,7 @@ func (vm *NetworkMgrV87) manageChains(ctx cosmos.Context, mgr Manager) error {
 	if err != nil {
 		return err
 	}
-	vault := active.SelectByMinCoin(common.RuneAsset())
+	vault := active.SelectByMinCoin(common.BaseAsset())
 	if vault.IsEmpty() {
 		return fmt.Errorf("unable to determine asgard vault")
 	}
@@ -516,7 +516,7 @@ func (vm *NetworkMgrV87) RecallChainFunds(ctx cosmos.Context, chain common.Chain
 				ToAddress:   toAddr,
 				InHash:      common.BlankTxID,
 				VaultPubKey: ygg.PubKey,
-				Coin:        common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()),
+				Coin:        common.NewCoin(common.BaseAsset(), cosmos.ZeroUint()),
 				Memo:        NewYggdrasilReturn(common.BlockHeight(ctx)).String(),
 				GasRate:     int64(mgr.GasMgr().GetGasRate(ctx, chain).Uint64()),
 			}
@@ -583,7 +583,7 @@ func (vm *NetworkMgrV87) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 			withdrawAddr = lp.RuneAddress
 			// if liquidity provider only add RUNE , then asset address will be empty
 			if lp.AssetAddress.IsEmpty() {
-				withdrawAsset = common.RuneAsset()
+				withdrawAsset = common.BaseAsset()
 			}
 		} else {
 			// if liquidity provider only add Asset, then RUNE Address will be empty

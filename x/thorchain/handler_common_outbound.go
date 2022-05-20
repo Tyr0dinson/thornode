@@ -74,7 +74,7 @@ func (h CommonOutboundTxHandler) handleV88(ctx cosmos.Context, tx ObservedTx, in
 		}
 	}
 
-	if tx.Tx.Chain.Equals(common.THORChain) {
+	if tx.Tx.Chain.Equals(common.BaseChain) {
 		return &cosmos.Result{}, nil
 	}
 

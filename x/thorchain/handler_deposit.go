@@ -142,7 +142,7 @@ func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	}
 
 	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
-	tx.Chain = common.THORChain
+	tx.Chain = common.BaseChain
 
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}
@@ -227,7 +227,7 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 func (h DepositHandler) addSwapV65(ctx cosmos.Context, msg MsgSwap) {
 	amt := cosmos.ZeroUint()
 	swapSourceAsset := msg.Tx.Coins[0].Asset
-	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
+	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.BaseChain) {
 		amt = common.GetSafeShare(
 			msg.AffiliateBasisPoints,
 			cosmos.NewUint(10000),

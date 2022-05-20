@@ -233,7 +233,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	var result []QueryChainAddress
-	allChains := append(vault.GetChains(), common.THORChain)
+	allChains := append(vault.GetChains(), common.BaseChain)
 	for _, c := range allChains.Distinct() {
 		addr, err := vault.PubKey.GetAddress(c)
 		if err != nil {
@@ -277,7 +277,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 		// calculate the total value of this yggdrasil vault
 		for _, coin := range vault.Coins {
-			if coin.Asset.IsRune() {
+			if coin.Asset.IsBaseAsset() {
 				totalValue = totalValue.Add(coin.Amount)
 			} else {
 				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
@@ -414,14 +414,14 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	chains := vault.GetChains()
 
 	if len(chains) == 0 {
-		chains = common.Chains{common.RuneAsset().Chain}
+		chains = common.Chains{common.BaseAsset().Chain}
 	}
 	if err := mgr.BeginBlock(ctx); err != nil {
 		return nil, fmt.Errorf("fail to build manager: %w", err)
 	}
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
-		if chain == common.THORChain {
+		if chain == common.BaseChain {
 			continue
 		}
 		vaultAddress, err := vault.PubKey.GetAddress(chain)
@@ -1195,7 +1195,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 	}
 	var result []QueryResLastBlockHeights
 	for _, c := range chains {
-		if c == common.THORChain {
+		if c == common.BaseChain {
 			continue
 		}
 		chainHeight, err := mgr.Keeper().GetLastChainHeight(ctx, c)

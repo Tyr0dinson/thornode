@@ -26,7 +26,7 @@ func (h SwapHandler) validateV65(ctx cosmos.Context, msg MsgSwap) error {
 			// calculate rune value on incoming swap, and add to total liquidity.
 			coin := msg.Tx.Coins[0]
 			runeVal := coin.Amount
-			if !coin.Asset.IsRune() {
+			if !coin.Asset.IsBaseAsset() {
 				pool, err := h.mgr.Keeper().GetPool(ctx, coin.Asset)
 				if err != nil {
 					return ErrInternal(err, "fail to get pool")

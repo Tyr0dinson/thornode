@@ -45,14 +45,14 @@ func (tos *TxOutStoreDummy) GetOutboundItemByToAddress(_ cosmos.Context, to comm
 
 // AddTxOutItem add an item to internal structure
 func (tos *TxOutStoreDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
-	if !toi.Chain.Equals(common.THORChain) {
+	if !toi.Chain.Equals(common.BaseChain) {
 		tos.addToBlockOut(ctx, toi)
 	}
 	return true, nil
 }
 
 func (tos *TxOutStoreDummy) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	if !toi.Chain.Equals(common.THORChain) {
+	if !toi.Chain.Equals(common.BaseChain) {
 		tos.addToBlockOut(ctx, toi)
 	}
 	return nil
@@ -102,14 +102,14 @@ func (tos *TxOutStoreFailDummy) GetOutboundItemByToAddress(_ cosmos.Context, to 
 
 // AddTxOutItem add an item to internal structure
 func (tos *TxOutStoreFailDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
-	if !toi.Chain.Equals(common.THORChain) {
+	if !toi.Chain.Equals(common.BaseChain) {
 		tos.addToBlockOut(ctx, toi)
 	}
 	return false, errKaboom
 }
 
 func (tos *TxOutStoreFailDummy) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	if !toi.Chain.Equals(common.THORChain) {
+	if !toi.Chain.Equals(common.BaseChain) {
 		tos.addToBlockOut(ctx, toi)
 	}
 	return errKaboom

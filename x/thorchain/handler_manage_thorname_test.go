@@ -25,14 +25,14 @@ func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	handler := NewManageTHORNameHandler(mgr)
-	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
-	addr := GetRandomTHORAddress()
+	coin := common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One))
+	addr := GetRandomBaseAddress()
 	acc, _ := addr.AccAddress()
-	name := NewTHORName("hello", 50, []THORNameAlias{{Chain: common.THORChain, Address: addr}})
+	name := NewTHORName("hello", 50, []THORNameAlias{{Chain: common.BaseChain, Address: addr}})
 	mgr.Keeper().SetTHORName(ctx, name)
 
 	// happy path
-	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.THORChain, addr, coin, 0, common.BNBAsset, acc, acc)
+	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.BaseChain, addr, coin, 0, common.BNBAsset, acc, acc)
 	c.Assert(handler.validate(ctx, *msg), IsNil)
 
 	// fail: name is too long
@@ -68,8 +68,8 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	blocksPerYear := mgr.GetConstants().GetInt64Value(constants.BlocksPerYear)
 	handler := NewManageTHORNameHandler(mgr)
-	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
-	addr := GetRandomTHORAddress()
+	coin := common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One))
+	addr := GetRandomBaseAddress()
 	acc, _ := addr.AccAddress()
 	tnName := "hello"
 
@@ -77,7 +77,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	FundAccount(c, ctx, mgr.Keeper(), acc, 10*common.One)
 
 	// happy path, register new name
-	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.RuneAsset(), acc, acc)
+	msg := NewMsgManageTHORName(tnName, common.BaseChain, addr, coin, 0, common.BaseAsset(), acc, acc)
 	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err := mgr.Keeper().GetTHORName(ctx, tnName)
@@ -87,7 +87,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, set alt chain address
 	bnbAddr := GetRandomBNBAddress()
-	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.BaseAsset(), acc, acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
@@ -96,7 +96,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, update alt chain address
 	bnbAddr = GetRandomBNBAddress()
-	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.BaseAsset(), acc, acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
@@ -104,7 +104,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Check(name.GetAlias(common.BNBChain).Equals(bnbAddr), Equals, true)
 
 	// happy path, release thorname back into the wild
-	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.BaseChain, addr, common.NewCoin(common.BaseAsset(), cosmos.ZeroUint()), 1, common.BaseAsset(), acc, acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)

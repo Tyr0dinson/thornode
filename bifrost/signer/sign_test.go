@@ -277,7 +277,7 @@ func (s *SignSuite) TestHandleYggReturn_Success_FeeMulti(c *C) {
 				account: common.Account{
 					Coins: common.Coins{
 						common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
-						common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000000)),
+						common.NewCoin(common.BaseAsset(), cosmos.NewUint(1000000)),
 					},
 				},
 			},
@@ -337,7 +337,7 @@ func (s *SignSuite) TestProcess(c *C) {
 			account: common.Account{
 				Coins: common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
-					common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000000)),
+					common.NewCoin(common.BaseAsset(), cosmos.NewUint(1000000)),
 				},
 			},
 		},

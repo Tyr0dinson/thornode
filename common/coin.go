@@ -9,8 +9,8 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// THORChainDecimals indicate the number of decimal points used in THORChain
-const THORChainDecimals = 8
+// BaseChainDecimals indicate the number of decimal points used in BaseChain
+const BaseChainDecimals = 8
 
 // NoCoin is empty Coin
 var NoCoin = Coin{
@@ -72,9 +72,9 @@ func (c Coin) Valid() error {
 	return nil
 }
 
-// IsNative check whether the coin is native on THORChain
+// IsNative check whether the coin is native on BaseChain
 func (c Coin) IsNative() bool {
-	return c.Asset.GetChain().Equals(THORChain)
+	return c.Asset.GetChain().Equals(BaseChain)
 }
 
 // Native create a new instance of cosmos.Coin
@@ -250,9 +250,9 @@ func (cs Coins) Adds(coins Coins) Coins {
 
 // HasNoneNativeRune check whether the coins contains NoneNativeRUNE
 //  At the moment, there are BEP2 RUNE, ERC20 RUNE and Native RUNE
-func (cs Coins) HasNoneNativeRune() bool {
+func (cs Coins) HasNoneNativeBaseAsset() bool {
 	for _, c := range cs {
-		if c.Asset.IsRune() && !c.IsNative() {
+		if c.Asset.IsBaseAsset() && !c.IsNative() {
 			return true
 		}
 	}

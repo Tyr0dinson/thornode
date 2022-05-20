@@ -86,7 +86,7 @@ func NewSigner(cfg config.SignerConfiguration,
 	}
 	pubkeyMgr.AddNodePubKey(na.PubKeySet.Secp256k1)
 
-	cfg.BlockScanner.ChainID = common.THORChain // hard code to thorchain
+	cfg.BlockScanner.ChainID = common.BaseChain // hard code to thorchain
 
 	// Create pubkey manager and add our private key (Yggdrasil pubkey)
 	thorchainBlockScanner, err := NewThorchainBlockScan(cfg.BlockScanner, storage, thorchainBridge, m, pubkeyMgr)
@@ -309,7 +309,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
-		common.THORChain,
+		common.BaseChain,
 	}
 	for name, chain := range s.chains {
 		if !chain.GetConfig().OptToRetire {

@@ -80,7 +80,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	bnbAddr := GetRandomBNBAddress()
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
@@ -143,7 +143,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNewPool(c *C) {
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	activeNodeAccount.Bond = cosmos.NewUint(1000000 * common.One)
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	bnbAddr := GetRandomBNBAddress()
 	pool := NewPool()
 	pool.Status = PoolAvailable
@@ -203,13 +203,13 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNe
 func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	bnbAddr := GetRandomBNBAddress()
 	bnbSynthAsset, _ := common.NewAsset("BNB/BNB")
 	tx := common.NewTx(
 		GetRandomTxHash(),
-		GetRandomRUNEAddress(),
-		GetRandomRUNEAddress(),
+		GetRandomBaseAddress(),
+		GetRandomBaseAddress(),
 		common.Coins{common.NewCoin(bnbSynthAsset, cosmos.NewUint(common.One*5))},
 		common.Gas{
 			{Asset: common.RuneNative, Amount: cosmos.NewUint(1 * common.One)},
@@ -269,17 +269,17 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerValidation(c *C) {
 		},
 		{
 			name:           "total liquidity provider is more than total bond should fail",
-			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5000), cosmos.NewUint(common.One*5000), GetRandomRUNEAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress),
+			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5000), cosmos.NewUint(common.One*5000), GetRandomBaseAddress(), GetRandomBNBAddress(), common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress),
 			expectedResult: errAddLiquidityRUNEMoreThanBond,
 		},
 		{
 			name:           "asset address with wrong chain should fail",
-			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomRUNEAddress(), GetRandomRUNEAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBaseAddress(), GetRandomBaseAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errAddLiquidityFailValidation,
 		},
 		{
 			name:           "rune address with wrong chain should fail",
-			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomRUNEAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgAddLiquidity(GetRandomTx(), common.BNBAsset, cosmos.NewUint(common.One*5), cosmos.NewUint(common.One*5), GetRandomBNBAddress(), GetRandomBaseAddress(), common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errAddLiquidityFailValidation,
 		},
 	}
@@ -338,7 +338,7 @@ func (s *HandlerAddLiquiditySuite) TestHandlerAddLiquidityFailScenario(c *C) {
 		},
 	}
 	for _, tc := range testCases {
-		runeAddr := GetRandomRUNEAddress()
+		runeAddr := GetRandomBaseAddress()
 		bnbAddr := GetRandomBNBAddress()
 		addTxHash := GetRandomTxHash()
 		tx := common.NewTx(
@@ -541,7 +541,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityV1(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	txID := GetRandomTxHash()
 
-	runeAddress := GetRandomRUNEAddress()
+	runeAddress := GetRandomBaseAddress()
 	assetAddress := GetRandomBNBAddress()
 	btcAddress, err := common.NewAddress("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Assert(err, IsNil)
@@ -652,7 +652,7 @@ func (HandlerAddLiquiditySuite) TestRuneOnlyLiquidity(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 	h := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
 	err := h.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), runeAddr, common.NoAddress, txID, false, constAccessor)

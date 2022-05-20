@@ -133,9 +133,9 @@ func (k *TestSwapKeeper) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (
 			TransactionFeeRate: 37500,
 		}, nil
 	}
-	if chain.Equals(common.THORChain) {
+	if chain.Equals(common.BaseChain) {
 		return NetworkFee{
-			Chain:              common.THORChain,
+			Chain:              common.BaseChain,
 			TransactionSize:    1,
 			TransactionFeeRate: 1_00000000,
 		}, nil
@@ -184,7 +184,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "empty-target",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.Asset{},
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     "tester",
@@ -195,7 +195,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "empty-requestTxHash",
 			requestTxHash: "",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     "tester",
@@ -206,7 +206,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "empty-amount",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.ZeroUint(),
 			requester:     "tester",
@@ -217,7 +217,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "empty-requester",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     "",
@@ -228,7 +228,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "empty-destination",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     GetRandomBNBAddress(),
@@ -240,7 +240,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			name:          "pool-not-exist",
 			requestTxHash: "hash",
 			source:        common.Asset{Chain: common.BNBChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
-			target:        common.RuneAsset(),
+			target:        common.BaseAsset(),
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     GetRandomBNBAddress(),
 			destination:   GetRandomBNBAddress(),
@@ -251,7 +251,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "pool-not-exist-1",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.Asset{Chain: common.BNBChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     "tester",
@@ -263,7 +263,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "swap-cross-chain-different-address",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BTCAsset,
 			amount:        cosmos.NewUint(50 * common.One),
 			requester:     "tester",
@@ -276,7 +276,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "swap-no-global-sliplimit",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(50 * common.One),
 			requester:     "tester",
@@ -289,7 +289,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "swap-over-trade-sliplimit",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(9 * common.One),
 			requester:     "tester",
@@ -301,7 +301,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "swap-no-target-price-no-protection",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(8 * common.One),
 			requester:     "tester",
@@ -314,7 +314,7 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 		{
 			name:          "swap",
 			requestTxHash: "hash",
-			source:        common.RuneAsset(),
+			source:        common.BaseAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(5 * common.One),
 			requester:     "tester",
@@ -341,10 +341,10 @@ func (s *SwapV81Suite) TestSwap(c *C) {
 			name:          "swap-synth-to-rune-when-pool-is-not-available",
 			requestTxHash: "hash",
 			source:        common.BCHAsset.GetSyntheticAsset(),
-			target:        common.RuneAsset(),
+			target:        common.BaseAsset(),
 			amount:        cosmos.NewUint(5 * common.One),
 			requester:     "tester",
-			destination:   GetRandomTHORAddress(),
+			destination:   GetRandomBaseAddress(),
 			returnAmount:  cosmos.NewUint(475907198),
 			tradeTarget:   cosmos.NewUint(453514738),
 			expectedErr:   nil,
@@ -403,13 +403,13 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 
 	// swap rune --> synth
 	{
-		addr := GetRandomTHORAddress()
+		addr := GetRandomBaseAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
 			addr,
 			addr,
 			common.NewCoins(
-				common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One)),
+				common.NewCoin(common.BaseAsset(), cosmos.NewUint(50*common.One)),
 			),
 			BNBGasFeeSingleton,
 			"",
@@ -483,7 +483,7 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 
 	// swap synth --> rune
 	{
-		addr := GetRandomTHORAddress()
+		addr := GetRandomBaseAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
 			addr,
@@ -516,7 +516,7 @@ func (s *SwapV81Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		poolUnitsBefore2 := pool.GetPoolUnits().Mul(pool.GetPoolUnits())
 		luviBefore2 := pool.BalanceRune.Mul(pool.BalanceAsset).Quo(poolUnitsBefore2)
 
-		amount, _, err := newSwapperV81().swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
+		amount, _, err := newSwapperV81().swap(ctx, mgr.Keeper(), tx, common.BaseAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 		c.Assert(err, IsNil)
 		c.Check(amount.Uint64(), Equals, swapResult.Uint64(),
 			Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult.Uint64()))
@@ -556,7 +556,7 @@ func (s *SwapV81Suite) TestSynthSwap_AssetSynth(c *C) {
 	asgardVault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
 
-	addr := GetRandomTHORAddress()
+	addr := GetRandomBaseAddress()
 	// swap BNB.BNB -> BNB/BNB (external asset directly to synth)
 	tx := common.NewTx(
 		GetRandomTxHash(),

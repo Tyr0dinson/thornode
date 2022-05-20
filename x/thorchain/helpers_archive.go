@@ -98,10 +98,10 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 
 		// refund bond
 		txOutItem := TxOutItem{
-			Chain:      common.RuneAsset().Chain,
+			Chain:      common.BaseAsset().Chain,
 			ToAddress:  toAddress,
 			InHash:     tx.ID,
-			Coin:       common.NewCoin(common.RuneAsset(), amt),
+			Coin:       common.NewCoin(common.BaseAsset(), amt),
 			ModuleName: BondName,
 		}
 		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
@@ -168,7 +168,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	if slashRuneAmt.IsZero() {
 		return nil
 	}
-	stolenRUNE := ygg.GetCoin(common.RuneAsset()).Amount
+	stolenRUNE := ygg.GetCoin(common.BaseAsset()).Amount
 	slashRuneAmt = common.SafeSub(slashRuneAmt, stolenRUNE)
 	yggTotalStolen = common.SafeSub(yggTotalStolen, stolenRUNE)
 
@@ -190,7 +190,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 		if coin.IsEmpty() {
 			continue
 		}
-		if coin.Asset.IsRune() {
+		if coin.Asset.IsBaseAsset() {
 			// when the asset is RUNE, thorchain don't need to update the RUNE balance on pool
 			continue
 		}
@@ -236,7 +236,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 				Amount: 0 - int64(f.stolenAsset.Uint64()),
 			},
 			{
-				Asset:  common.RuneAsset(),
+				Asset:  common.BaseAsset(),
 				Amount: int64(f.subsidiseRune.Uint64()),
 			},
 		}

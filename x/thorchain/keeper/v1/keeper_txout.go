@@ -75,7 +75,7 @@ func (k KVStore) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, e
 
 	runeValue := cosmos.ZeroUint()
 	for _, item := range txout.TxArray {
-		if item.Coin.Asset.IsRune() {
+		if item.Coin.Asset.IsBaseAsset() {
 			runeValue = runeValue.Add(item.Coin.Amount)
 		} else {
 			pool, err := k.GetPool(ctx, item.Coin.Asset)

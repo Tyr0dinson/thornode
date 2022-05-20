@@ -32,7 +32,7 @@ func (s EventSuite) TestAddLiqudityEvent(c *C) {
 	evt := NewEventAddLiquidity(
 		common.BNBAsset,
 		cosmos.NewUint(5),
-		GetRandomRUNEAddress(),
+		GetRandomBaseAddress(),
 		cosmos.NewUint(5),
 		cosmos.NewUint(5),
 		GetRandomTxHash(),
@@ -92,14 +92,14 @@ func (s EventSuite) TestReward(c *C) {
 func (s EventSuite) TestSlash(c *C) {
 	evt := NewEventSlash(common.BNBAsset, []PoolAmt{
 		{common.BNBAsset, -20},
-		{common.RuneAsset(), 30},
+		{common.BaseAsset(), 30},
 	})
 	c.Check(evt.Type(), Equals, "slash")
 	c.Check(evt.Pool, Equals, common.BNBAsset)
 	c.Assert(evt.SlashAmount, HasLen, 2)
 	c.Check(evt.SlashAmount[0].Asset, Equals, common.BNBAsset)
 	c.Check(evt.SlashAmount[0].Amount, Equals, int64(-20))
-	c.Check(evt.SlashAmount[1].Asset, Equals, common.RuneAsset())
+	c.Check(evt.SlashAmount[1].Asset, Equals, common.BaseAsset())
 	c.Check(evt.SlashAmount[1].Amount, Equals, int64(30))
 	events, err := evt.Events()
 	c.Check(err, IsNil)

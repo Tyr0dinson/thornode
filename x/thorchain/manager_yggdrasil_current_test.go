@@ -91,7 +91,7 @@ func (s YggdrasilManagerV79Suite) TestCalcTargetAmounts3(c *C) {
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(6.25*common.One)),
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(1.8125*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(30*common.One)),
 	}
 
 	minRuneDepth := cosmos.NewUint(1000 * common.One)
@@ -127,7 +127,7 @@ func (s YggdrasilManagerV79Suite) TestCalcTargetAmounts4(c *C) {
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(6.25*common.One)),
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(1.8125*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(30*common.One)),
 	}
 
 	minRuneDepth := cosmos.NewUint(1000 * common.One)
@@ -179,7 +179,7 @@ func (s YggdrasilManagerV79Suite) TestFund(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(k.SetVault(ctx, vault), IsNil)
@@ -216,7 +216,7 @@ func (s YggdrasilManagerV79Suite) TestNotAvailablePoolAssetWillNotFundYggdrasil(
 	asset, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 		common.NewCoin(asset, cosmos.NewUint(10000*common.One)),
 	}
@@ -262,7 +262,7 @@ func (s YggdrasilManagerV79Suite) TestChainTradingHaltWillNotFundYggdrasil(c *C)
 	asset, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 		common.NewCoin(asset, cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
@@ -314,7 +314,7 @@ func (s YggdrasilManagerV79Suite) TestAbandonYggdrasil(c *C) {
 	vault := GetRandomVault()
 	vault.Membership = []string{vault.PubKey.String()}
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
@@ -341,7 +341,7 @@ func (s YggdrasilManagerV79Suite) TestAbandonYggdrasil(c *C) {
 	yggdrasilVault.PubKey = naDisabled.PubKeySet.Secp256k1
 	yggdrasilVault.Membership = []string{yggdrasilVault.PubKey.String()}
 	yggdrasilVault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(250*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(250*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
 	}
 	yggdrasilVault.Type = YggdrasilVault
@@ -382,7 +382,7 @@ func (s YggdrasilManagerV79Suite) TestAbandonYggdrasilWithDifferentConditions(c 
 	ctx, mgr := setupManagerForTest(c)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
@@ -405,7 +405,7 @@ func (s YggdrasilManagerV79Suite) TestAbandonYggdrasilWithDifferentConditions(c 
 	yggdrasilVault := GetRandomVault()
 	yggdrasilVault.PubKey = naDisabled.PubKeySet.Secp256k1
 	yggdrasilVault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(250*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(250*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
 	}
 	yggdrasilVault.Type = YggdrasilVault

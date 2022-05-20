@@ -291,7 +291,7 @@ func (h ObservedTxInHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 
 func (h ObservedTxInHandler) addSwapV63(ctx cosmos.Context, msg MsgSwap) {
 	amt := cosmos.ZeroUint()
-	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
+	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.BaseChain) {
 		amt = common.GetSafeShare(
 			msg.AffiliateBasisPoints,
 			cosmos.NewUint(10000),
@@ -307,7 +307,7 @@ func (h ObservedTxInHandler) addSwapV63(ctx cosmos.Context, msg MsgSwap) {
 	if !amt.IsZero() {
 		affiliateSwap := NewMsgSwap(
 			msg.Tx,
-			common.RuneAsset(),
+			common.BaseAsset(),
 			msg.AffiliateAddress,
 			cosmos.ZeroUint(),
 			common.NoAddress,

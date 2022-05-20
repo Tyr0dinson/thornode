@@ -92,7 +92,7 @@ func (h LeaveHandler) handleV76(ctx cosmos.Context, msg MsgLeave) error {
 	}
 	// THORNode add the node to leave queue
 
-	coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
+	coin := msg.Tx.Coins.GetCoin(common.BaseAsset())
 	if !coin.IsEmpty() {
 		nodeAcc.Bond = nodeAcc.Bond.Add(coin.Amount)
 	}

@@ -53,7 +53,7 @@ func (k KVStore) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, ad
 		RuneDepositValue:  cosmos.ZeroUint(),
 		AssetDepositValue: cosmos.ZeroUint(),
 	}
-	if !addr.IsChain(common.RuneAsset().Chain) {
+	if !addr.IsChain(common.BaseChain) {
 		record.AssetAddress = addr
 		record.RuneAddress = common.NoAddress
 	}

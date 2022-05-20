@@ -13,7 +13,7 @@ var _ = Suite(&MsgManageTHORNameSuite{})
 func (MsgManageTHORNameSuite) TestMsgManageTHORNameSuite(c *C) {
 	owner := GetRandomBech32Addr()
 	signer := GetRandomBech32Addr()
-	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One))
+	coin := common.NewCoin(common.BaseAsset(), cosmos.NewUint(10*common.One))
 	msg := NewMsgManageTHORName("myname", common.BNBChain, GetRandomBNBAddress(), coin, 0, common.BNBAsset, owner, signer)
 	c.Assert(msg.Route(), Equals, RouterKey)
 	c.Assert(msg.Type(), Equals, "manage_thorname")

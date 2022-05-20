@@ -319,7 +319,7 @@ func (s WithdrawSuiteV76) TestCalculateUnsake(c *C) {
 func (WithdrawSuiteV76) TestWithdraw(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	accountAddr := GetRandomValidatorNode(NodeWhiteListed).NodeAddress
-	runeAddress := GetRandomRUNEAddress()
+	runeAddress := GetRandomBaseAddress()
 	ps := NewWithdrawTestKeeperV76(mgr.Keeper())
 	ps2 := getWithdrawTestKeeperV76(c, ctx, mgr.Keeper(), runeAddress)
 
@@ -483,7 +483,7 @@ func (WithdrawSuiteV76) TestWithdraw(c *C) {
 
 func (WithdrawSuiteV76) TestWithdrawAsym(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeWhiteListed).NodeAddress
-	runeAddress := GetRandomRUNEAddress()
+	runeAddress := GetRandomBaseAddress()
 
 	testCases := []struct {
 		name          string
@@ -499,7 +499,7 @@ func (WithdrawSuiteV76) TestWithdrawAsym(c *C) {
 				BasisPoints:     cosmos.NewUint(10000),
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
-				WithdrawalAsset: common.RuneAsset(),
+				WithdrawalAsset: common.BaseAsset(),
 				Signer:          accountAddr,
 			},
 			runeAmount:    cosmos.NewUint(6250000000),
@@ -558,7 +558,7 @@ func (WithdrawSuiteV76) TestWithdrawPendingRuneOrAsset(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	lp := LiquidityProvider{
 		Asset:              common.BNBAsset,
-		RuneAddress:        GetRandomRUNEAddress(),
+		RuneAddress:        GetRandomBaseAddress(),
 		AssetAddress:       GetRandomBNBAddress(),
 		LastAddHeight:      1024,
 		LastWithdrawHeight: 0,
@@ -585,7 +585,7 @@ func (WithdrawSuiteV76) TestWithdrawPendingRuneOrAsset(c *C) {
 
 	lp1 := LiquidityProvider{
 		Asset:              common.BNBAsset,
-		RuneAddress:        GetRandomRUNEAddress(),
+		RuneAddress:        GetRandomBaseAddress(),
 		AssetAddress:       GetRandomBNBAddress(),
 		LastAddHeight:      1024,
 		LastWithdrawHeight: 0,
@@ -632,13 +632,13 @@ func (s *WithdrawSuiteV76) TestWithdrawWithImpermanentLossProtection(c *C) {
 			common.BTCAsset,
 			cosmos.NewUint(common.One),
 			cosmos.NewUint(common.One),
-			GetRandomTHORAddress(),
+			GetRandomBaseAddress(),
 			GetRandomBTCAddress(),
 			GetRandomTxHash(),
 			false,
 			constantAccessor), IsNil)
 	}
-	lpAddr := GetRandomTHORAddress()
+	lpAddr := GetRandomBaseAddress()
 	c.Assert(addHandler.addLiquidity(ctx,
 		common.BTCAsset,
 		cosmos.NewUint(common.One),

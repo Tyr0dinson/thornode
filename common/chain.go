@@ -20,7 +20,7 @@ var (
 	LTCChain   = Chain("LTC")
 	BCHChain   = Chain("BCH")
 	DOGEChain  = Chain("DOGE")
-	THORChain  = Chain("THOR")
+	BaseChain  = Chain("THOR")
 	TERRAChain = Chain("TERRA")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
@@ -65,8 +65,8 @@ func (c Chain) Equals(c2 Chain) bool {
 	return strings.EqualFold(c.String(), c2.String())
 }
 
-func (c Chain) IsTHORChain() bool {
-	return c.Equals(THORChain)
+func (c Chain) IsBaseChain() bool {
+	return c.Equals(BaseChain)
 }
 
 // IsEmpty is to determinate whether the chain is empty
@@ -94,8 +94,8 @@ func (c Chain) GetSigningAlgo() SigningAlgo {
 // GetGasAsset chain's base asset
 func (c Chain) GetGasAsset() Asset {
 	switch c {
-	case THORChain:
-		return RuneNative
+	case BaseChain:
+		return BaseAsset()
 	case BNBChain:
 		return BNBAsset
 	case BTCChain:
@@ -117,7 +117,7 @@ func (c Chain) GetGasAsset() Asset {
 
 // GetGasAssetDecimal for the gas asset of given chain , what kind of precision it is using
 // TERRA is using 1E6, all other gas asset so far using 1E8
-// THORChain is using 1E8, if an external chain's gas asset is larger than 1E8, just return cosmos.DefaultCoinDecimals
+// BaseChain is using 1E8, if an external chain's gas asset is larger than 1E8, just return cosmos.DefaultCoinDecimals
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case TERRAChain:
@@ -146,7 +146,7 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "terra"
 		case ETHChain:
 			return "0x"
-		case THORChain:
+		case BaseChain:
 			// TODO update this to use testnet address prefix
 			return types.GetConfig().GetBech32AccountAddrPrefix()
 		case BTCChain:
@@ -164,7 +164,7 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "terra"
 		case ETHChain:
 			return "0x"
-		case THORChain:
+		case BaseChain:
 			// TODO update this to use testnet address prefix
 			return types.GetConfig().GetBech32AccountAddrPrefix()
 		case BTCChain:
@@ -182,7 +182,7 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return "terra"
 		case ETHChain:
 			return "0x"
-		case THORChain:
+		case BaseChain:
 			return types.GetConfig().GetBech32AccountAddrPrefix()
 		case BTCChain:
 			return chaincfg.MainNetParams.Bech32HRPSegwit

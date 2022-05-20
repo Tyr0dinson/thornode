@@ -19,7 +19,7 @@ func (s *KeeperLiquidityProviderSuite) TestLiquidityProvider(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	asset := common.BNBAsset
 
-	lp, err := k.GetLiquidityProvider(ctx, asset, GetRandomRUNEAddress())
+	lp, err := k.GetLiquidityProvider(ctx, asset, GetRandomBaseAddress())
 	c.Assert(err, IsNil)
 	c.Check(lp.PendingRune, NotNil)
 	c.Check(lp.Units, NotNil)
@@ -27,7 +27,7 @@ func (s *KeeperLiquidityProviderSuite) TestLiquidityProvider(c *C) {
 	lp = LiquidityProvider{
 		Asset:        asset,
 		Units:        cosmos.NewUint(12),
-		RuneAddress:  GetRandomRUNEAddress(),
+		RuneAddress:  GetRandomBaseAddress(),
 		AssetAddress: GetRandomBTCAddress(),
 	}
 	k.SetLiquidityProvider(ctx, lp)

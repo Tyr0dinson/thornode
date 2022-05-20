@@ -53,7 +53,7 @@ func (s TxOutStoreV84Suite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
@@ -177,7 +177,7 @@ func (s TxOutStoreV84Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
@@ -259,9 +259,9 @@ func (s TxOutStoreV84Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	c.Assert(err, IsNil)
 	c.Assert(afterVoter.OutboundHeight, Equals, int64(4))
 
-	item.Chain = common.THORChain
+	item.Chain = common.BaseChain
 	item.Coin = common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One))
-	item.ToAddress = GetRandomTHORAddress()
+	item.ToAddress = GetRandomBaseAddress()
 	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item)
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -276,7 +276,7 @@ func (s TxOutStoreV84Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
@@ -371,7 +371,7 @@ func (s TxOutStoreV84Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
@@ -508,7 +508,7 @@ func (s TxOutStoreV84Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
@@ -601,9 +601,9 @@ func (s TxOutStoreV84Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	c.Assert(err, IsNil)
 	c.Assert(afterVoter.OutboundHeight, Equals, int64(4))
 
-	item.Chain = common.THORChain
+	item.Chain = common.BaseChain
 	item.Coin = common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One))
-	item.ToAddress = GetRandomTHORAddress()
+	item.ToAddress = GetRandomBaseAddress()
 	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item)
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)

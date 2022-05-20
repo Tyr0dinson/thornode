@@ -120,7 +120,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 	vault = NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 
@@ -130,7 +130,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 		standbyNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(1))),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(uint64(1))),
 		},
 		BNBGasFeeSingleton,
 		"unbond me please",
@@ -222,7 +222,7 @@ func (HandlerUnBondSuite) TestUnBondHandlerFailValidation(c *C) {
 		activeNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(1))),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(uint64(1))),
 		},
 		BNBGasFeeSingleton,
 		"unbond it",
@@ -291,7 +291,7 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 	vault = NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
 	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 	retiringVault := NewVault(12, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
@@ -302,7 +302,7 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 		standbyNodeAccount.PubKeySet.Secp256k1.String(),
 	}
 	retiringVault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(k1.SetVault(ctx, retiringVault), IsNil)
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k1))
@@ -311,7 +311,7 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 		standbyNodeAccount.BondAddress,
 		GetRandomBNBAddress(),
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(1))),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(uint64(1))),
 		},
 		BNBGasFeeSingleton,
 		"unbond me please",
@@ -328,7 +328,7 @@ func (HandlerUnBondSuite) TestBondProviders_Validate(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
 	txIn := GetRandomTx()
-	txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)))
+	txIn.Coins = common.NewCoins(common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)))
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
 
 	// happy path
@@ -367,7 +367,7 @@ func (HandlerUnBondSuite) TestBondProviders_Handler(c *C) {
 	vaultActive.PubKey = activeNodeAccount.PubKeySet.Secp256k1
 	c.Assert(k.SetVault(ctx, vaultActive), IsNil)
 	txIn := GetRandomTx()
-	txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(0)))
+	txIn.Coins = common.NewCoins(common.NewCoin(common.BaseAsset(), cosmos.NewUint(0)))
 	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
 
 	// happy path

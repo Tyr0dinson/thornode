@@ -67,7 +67,7 @@ func (gm *GasMgrV81) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 	transactionFee := cosmos.NewUint(uint64(outboundTxFee))
 	// if the asset is Native RUNE , then we could just return the transaction Fee
 	// because transaction fee is always in native RUNE
-	if asset.IsRune() && chain.Equals(common.THORChain) {
+	if asset.IsBaseAsset() && chain.Equals(common.BaseChain) {
 		return transactionFee
 	}
 
@@ -112,7 +112,7 @@ func (gm *GasMgrV81) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 	}
 
 	fee = pool.AssetValueInRune(fee)
-	if asset.IsRune() {
+	if asset.IsBaseAsset() {
 		return fee
 	}
 
@@ -153,7 +153,7 @@ func (gm *GasMgrV81) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.U
 		outboundTxFee = gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)
 	}
 	transactionFee := cosmos.NewUint(uint64(outboundTxFee))
-	if chain.Equals(common.THORChain) {
+	if chain.Equals(common.BaseChain) {
 		return transactionFee
 	}
 	networkFee, err := gm.keeper.GetNetworkFee(ctx, chain)

@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	BaseDenom = "rune"
 	// EmptyAsset empty asset, not valid
 	EmptyAsset = Asset{Chain: EmptyChain, Symbol: "", Ticker: "", Synth: false}
 	// LUNAAsset LUNA
@@ -31,7 +32,7 @@ var (
 	// RuneB1AAsset RUNE on Binance main net
 	RuneB1AAsset = Asset{Chain: BNBChain, Symbol: "RUNE-B1A", Ticker: "RUNE", Synth: false} // mainnet
 	// RuneNative RUNE on thorchain
-	RuneNative            = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
+	RuneNative            = Asset{Chain: BaseChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	RuneERC20Asset        = Asset{Chain: ETHChain, Symbol: "RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE", Synth: false}
 	RuneERC20TestnetAsset = Asset{Chain: ETHChain, Symbol: "RUNE-0xd601c6A3a36721320573885A8d8420746dA3d7A0", Ticker: "RUNE", Synth: false}
 )
@@ -50,7 +51,7 @@ func NewAsset(input string) (Asset, error) {
 		asset.Synth = false
 	}
 	if len(parts) == 1 {
-		asset.Chain = THORChain
+		asset.Chain = BaseChain
 		sym = parts[0]
 	} else {
 		asset.Chain, err = NewChain(parts[0])
@@ -81,7 +82,7 @@ func (a Asset) Equals(a2 Asset) bool {
 
 func (a Asset) GetChain() Chain {
 	if a.Synth {
-		return THORChain
+		return BaseChain
 	}
 	return a.Chain
 }
@@ -117,10 +118,10 @@ func (a Asset) IsSyntheticAsset() bool {
 	return a.Synth
 }
 
-// Native return native asset, only relevant on THORChain
+// Native return native asset, only relevant on BaseChain
 func (a Asset) Native() string {
-	if a.IsRune() {
-		return "rune"
+	if a.IsBaseAsset() {
+		return BaseDenom
 	}
 	return strings.ToLower(a.String())
 }
@@ -148,14 +149,14 @@ func (a Asset) IsGasAsset() bool {
 	return a.Equals(gasAsset)
 }
 
-// IsRune is a helper function ,return true only when the asset represent RUNE
-func (a Asset) IsRune() bool {
+// IsBaseAsset is a helper function ,return true only when the asset represent the base asset
+func (a Asset) IsBaseAsset() bool {
 	return a.Equals(BEP2RuneAsset()) || a.Equals(RuneNative) || a.Equals(ERC20RuneAsset())
 }
 
-// IsNativeRune is a helper function, return true only when the asset represent NATIVE RUNE
-func (a Asset) IsNativeRune() bool {
-	return a.IsRune() && a.Chain.IsTHORChain()
+// IsNativeBaseAsset is a helper function, return true only when the asset represent NATIVE Base Asset
+func (a Asset) IsNativeBaseAsset() bool {
+	return a.IsBaseAsset() && a.Chain.IsBaseChain()
 }
 
 // IsBNB is a helper function, return true only when the asset represent BNB
@@ -189,8 +190,8 @@ func (a *Asset) UnmarshalJSONPB(unmarshal *jsonpb.Unmarshaler, content []byte) e
 	return a.UnmarshalJSON(content)
 }
 
-// RuneAsset return RUNE Asset depends on different environment
-func RuneAsset() Asset {
+// BaseAsset return Base Asset depends on different environment
+func BaseAsset() Asset {
 	return RuneNative
 }
 

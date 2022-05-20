@@ -94,7 +94,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
-		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
+		cosmos.NewCoin(common.BaseAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
 	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
@@ -150,7 +150,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
-		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
+		cosmos.NewCoin(common.BaseAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
 	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
@@ -239,7 +239,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
 	vaultAddr, err := vault.PubKey.GetAddress(common.BNBChain)
@@ -251,7 +251,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 	pool.LPUnits = cosmos.NewUint(100)
 	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
 
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	lp := LiquidityProvider{
 		Asset:        common.BNBAsset,
 		RuneAddress:  runeAddr,
@@ -265,7 +265,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.BaseAsset(), cosmos.NewUint(1*common.One)),
 		},
 		Memo:        "withdraw:BNB.BNB",
 		FromAddress: lp.RuneAddress,
@@ -370,7 +370,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 			Chain: common.BNBChain,
 			Coins: common.Coins{
 				common.NewCoin(
-					common.RuneAsset(),
+					common.BaseAsset(),
 					cosmos.NewUint(100*common.One),
 				),
 			},
@@ -392,8 +392,8 @@ func (HandlerSuite) TestGetMsgWithdrawFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	tx := GetRandomTx()
 	tx.Memo = "withdraw:10000"
-	if common.RuneAsset().Equals(common.RuneNative) {
-		tx.FromAddress = GetRandomTHORAddress()
+	if common.BaseAsset().Equals(common.RuneNative) {
+		tx.FromAddress = GetRandomBaseAddress()
 	}
 	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
@@ -419,7 +419,7 @@ func (HandlerSuite) TestGetMsgBondFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
 	tx.Memo = "bond:" + GetRandomBech32Addr().String()
 	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
@@ -434,9 +434,9 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 	}
-	tx.Memo = "unbond:" + GetRandomTHORAddress().String() + ":1000"
+	tx.Memo = "unbond:" + GetRandomBaseAddress().String() + ":1000"
 	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
@@ -448,13 +448,13 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	// provide BNB, however THORNode send T-CAN as coin , which is incorrect, should result in an error
-	m, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("add:BNB.BNB:%s", GetRandomRUNEAddress()))
+	m, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("add:BNB.BNB:%s", GetRandomBaseAddress()))
 	c.Assert(err, IsNil)
 	lpMemo, ok := m.(AddLiquidityMemo)
 	c.Assert(ok, Equals, true)
 	tcanAsset, err := common.NewAsset("BNB.TCAN-014")
 	c.Assert(err, IsNil)
-	runeAsset := common.RuneAsset()
+	runeAsset := common.BaseAsset()
 	c.Assert(err, IsNil)
 
 	txin := types.NewObservedTx(
@@ -512,7 +512,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 			cosmos.NewUint(100*common.One)),
 	}
 
-	runeAddr := GetRandomRUNEAddress()
+	runeAddr := GetRandomBaseAddress()
 	lokiAddLiquidityMemo, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("add:BNB.LOKI:%s", runeAddr))
 	c.Assert(err, IsNil)
 	msg4, err4 := getMsgAddLiquidityFromMemo(w.ctx, lokiAddLiquidityMemo.(AddLiquidityMemo), txin, GetRandomBech32Addr())
@@ -532,7 +532,7 @@ func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.BNBChain,
-			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1))},
+			Coins:       common.Coins{common.NewCoin(common.BaseAsset(), cosmos.NewUint(1))},
 			Memo:        fmt.Sprintf("LEAVE:%s", addr.String()),
 			FromAddress: GetRandomBNBAddress(),
 			ToAddress:   GetRandomBNBAddress(),
@@ -554,7 +554,7 @@ func (HandlerSuite) TestYggdrasilMemo(c *C) {
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.BNBChain,
-			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1))},
+			Coins:       common.Coins{common.NewCoin(common.BaseAsset(), cosmos.NewUint(1))},
 			Memo:        "yggdrasil+:1024",
 			FromAddress: GetRandomBNBAddress(),
 			ToAddress:   GetRandomBNBAddress(),
@@ -581,7 +581,7 @@ func (s *HandlerSuite) TestReserveContributor(c *C) {
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.BNBChain,
-			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1))},
+			Coins:       common.Coins{common.NewCoin(common.BaseAsset(), cosmos.NewUint(1))},
 			Memo:        "reserve",
 			FromAddress: GetRandomBNBAddress(),
 			ToAddress:   GetRandomBNBAddress(),
@@ -605,7 +605,7 @@ func (s *HandlerSuite) TestSwitch(c *C) {
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.BNBChain,
-			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1))},
+			Coins:       common.Coins{common.NewCoin(common.BaseAsset(), cosmos.NewUint(1))},
 			Memo:        "switch:" + GetRandomBech32Addr().String(),
 			FromAddress: GetRandomBNBAddress(),
 			ToAddress:   GetRandomBNBAddress(),
@@ -701,8 +701,8 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	thorAddr := GetRandomTHORAddress()
-	name := NewTHORName("hello", 50, []THORNameAlias{{Chain: common.THORChain, Address: thorAddr}})
+	thorAddr := GetRandomBaseAddress()
+	name := NewTHORName("hello", 50, []THORNameAlias{{Chain: common.BaseChain, Address: thorAddr}})
 	k.SetTHORName(ctx, name)
 
 	bnbAddr := GetRandomBNBAddress()
@@ -710,11 +710,11 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(addr.Equals(bnbAddr), Equals, true)
 
-	addr, err = FetchAddress(ctx, k, "hello", common.THORChain)
+	addr, err = FetchAddress(ctx, k, "hello", common.BaseChain)
 	c.Assert(err, IsNil)
 	c.Check(addr.Equals(thorAddr), Equals, true)
 
-	addr, err = FetchAddress(ctx, k, "hello.thor", common.THORChain)
+	addr, err = FetchAddress(ctx, k, "hello.thor", common.BaseChain)
 	c.Assert(err, IsNil)
 	c.Check(addr.Equals(thorAddr), Equals, true)
 }

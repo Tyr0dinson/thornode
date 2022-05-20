@@ -130,13 +130,8 @@ func GetRandomBech32ConsensusPubKey() string {
 	return result
 }
 
-// GetRandomRUNEAddress will just create a random rune address used for test purpose
-func GetRandomRUNEAddress() common.Address {
-	return GetRandomTHORAddress()
-}
-
-// GetRandomTHORAddress will just create a random thor address used for test purpose
-func GetRandomTHORAddress() common.Address {
+// GetRandomBaseAddress will just create a random thor address used for test purpose
+func GetRandomBaseAddress() common.Address {
 	name := common.RandStringBytesMask(10)
 	str, _ := common.ConvertAndEncode(cmd.Bech32PrefixAccAddr, crypto.AddressHash([]byte(name)))
 	thor, _ := common.NewAddress(str)
@@ -212,8 +207,8 @@ func SetupConfigForTest() {
 	config.SetBech32PrefixForAccount(cmd.Bech32PrefixAccAddr, cmd.Bech32PrefixAccPub)
 	config.SetBech32PrefixForValidator(cmd.Bech32PrefixValAddr, cmd.Bech32PrefixValPub)
 	config.SetBech32PrefixForConsensusNode(cmd.Bech32PrefixConsAddr, cmd.Bech32PrefixConsPub)
-	config.SetCoinType(cmd.THORChainCoinType)
-	config.SetPurpose(cmd.THORChainCoinPurpose)
+	config.SetCoinType(cmd.BaseChainCoinType)
+	config.SetPurpose(cmd.BaseChainCoinPurpose)
 	types.SetCoinDenomRegex(func() string {
 		return cmd.DenomRegex
 	})

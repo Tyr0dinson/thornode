@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -32,8 +33,8 @@ func (m *MsgDonate) ValidateBasic() error {
 	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("donate asset cannot be empty")
 	}
-	if m.Asset.IsRune() {
-		return cosmos.ErrUnknownRequest("asset cannot be rune")
+	if m.Asset.IsBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("asset cannot be %s", common.BaseDenom))
 	}
 	if m.RuneAmount.IsZero() && m.AssetAmount.IsZero() {
 		return errors.New("rune and asset amount cannot be zero")

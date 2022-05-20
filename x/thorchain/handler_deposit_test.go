@@ -28,7 +28,7 @@ func (s *HandlerDepositSuite) TestValidate(c *C) {
 	coins := common.Coins{
 		common.NewCoin(common.RuneNative, cosmos.NewUint(200*common.One)),
 	}
-	msg := NewMsgDeposit(coins, fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()), addr)
+	msg := NewMsgDeposit(coins, fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomBaseAddress()), addr)
 
 	handler := NewDepositHandler(NewDummyMgrWithKeeper(k))
 	err := handler.validate(ctx, *msg)
@@ -138,7 +138,7 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 			name: "invalid memo should refund",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg {
 				FundAccount(c, ctx, helper.Keeper, acctAddr, 100)
-				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.THORChain}.Strings(), []ChainContract{})
+				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BaseChain}.Strings(), []ChainContract{})
 				c.Check(helper.Keeper.SetVault(ctx, vault), IsNil)
 				return NewMsgDeposit(common.Coins{
 					common.NewCoin(common.RuneNative, cosmos.NewUint(2*common.One)),
@@ -172,8 +172,8 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	handler := NewDepositHandler(mgr)
 	tx := common.NewTx(
 		GetRandomTxHash(),
-		GetRandomTHORAddress(),
-		GetRandomTHORAddress(),
+		GetRandomBaseAddress(),
+		GetRandomBaseAddress(),
 		common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))},
 		common.Gas{
 			{Asset: common.BNBAsset, Amount: cosmos.NewUint(37500)},
@@ -188,7 +188,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	c.Assert(swap.String(), Equals, msg.String())
 
 	// affiliate fee, with more than 10K as basis points
-	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(20000), GetRandomBech32Addr())
+	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomBaseAddress(), cosmos.NewUint(20000), GetRandomBech32Addr())
 	handler.addSwapV65(ctx, *msg1)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx.ID, 0)
 	c.Assert(err, IsNil)
@@ -200,7 +200,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 
 	// normal affiliate fee
 	tx.Coins[0].Amount = cosmos.NewUint(common.One)
-	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(1000), GetRandomBech32Addr())
+	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomBaseAddress(), cosmos.NewUint(1000), GetRandomBech32Addr())
 	handler.addSwapV65(ctx, *msg2)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx.ID, 0)
 	c.Assert(err, IsNil)
@@ -217,8 +217,8 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 	c.Assert(err, IsNil)
 	tx1 := common.NewTx(
 		GetRandomTxHash(),
-		GetRandomTHORAddress(),
-		GetRandomTHORAddress(),
+		GetRandomBaseAddress(),
+		GetRandomBaseAddress(),
 		common.Coins{common.NewCoin(synthAsset, cosmos.NewUint(common.One))},
 		common.Gas{
 			{Asset: common.RuneNative, Amount: cosmos.NewUint(200000)},
@@ -228,7 +228,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 
 	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, tx1.Coins[0]), IsNil)
 	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx1.Coins), IsNil)
-	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(1000), GetRandomBech32Addr())
+	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomBaseAddress(), cosmos.NewUint(1000), GetRandomBech32Addr())
 	handler.addSwapV65(ctx, *msg3)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx1.ID, 0)
 	c.Assert(err, IsNil)
@@ -241,7 +241,7 @@ func (s *HandlerDepositSuite) TestAddSwapV64(c *C) {
 }
 
 func (s *HandlerDepositSuite) TestTargetModule(c *C) {
-	fee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(2000000))
+	fee := common.NewCoin(common.BaseAsset(), cosmos.NewUint(2000000))
 	acctAddr := GetRandomBech32Addr()
 	testCases := []struct {
 		name            string
@@ -253,8 +253,8 @@ func (s *HandlerDepositSuite) TestTargetModule(c *C) {
 			name:       "thorname coins should go to reserve",
 			moduleName: ReserveName,
 			messageProvider: func(c *C, ctx cosmos.Context) *MsgDeposit {
-				addr := GetRandomRUNEAddress()
-				coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(20_00000000))
+				addr := GetRandomBaseAddress()
+				coin := common.NewCoin(common.BaseAsset(), cosmos.NewUint(20_00000000))
 				return NewMsgDeposit(common.Coins{coin}, "name:test:THOR:"+addr.String(), acctAddr)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, name string, balDelta cosmos.Uint) {

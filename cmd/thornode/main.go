@@ -18,8 +18,8 @@ func main() {
 	config.SetBech32PrefixForAccount(prefix.Bech32PrefixAccAddr, prefix.Bech32PrefixAccPub)
 	config.SetBech32PrefixForValidator(prefix.Bech32PrefixValAddr, prefix.Bech32PrefixValPub)
 	config.SetBech32PrefixForConsensusNode(prefix.Bech32PrefixConsAddr, prefix.Bech32PrefixConsPub)
-	config.SetCoinType(prefix.THORChainCoinType)
-	config.SetPurpose(prefix.THORChainCoinPurpose)
+	config.SetCoinType(prefix.BaseChainCoinType)
+	config.SetPurpose(prefix.BaseChainCoinPurpose)
 	config.Seal()
 	types.SetCoinDenomRegex(func() string {
 		return prefix.DenomRegex

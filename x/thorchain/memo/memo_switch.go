@@ -33,7 +33,7 @@ func ParseSwitchMemo(ctx cosmos.Context, keeper keeper.Keeper, parts []string) (
 	if keeper == nil {
 		destination, err = common.NewAddress(parts[1])
 	} else {
-		destination, err = FetchAddress(ctx, keeper, parts[1], common.THORChain)
+		destination, err = FetchAddress(ctx, keeper, parts[1], common.BaseChain)
 	}
 	if err != nil {
 		return SwitchMemo{}, err

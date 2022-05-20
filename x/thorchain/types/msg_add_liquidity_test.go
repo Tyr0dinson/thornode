@@ -14,14 +14,14 @@ var _ = Suite(&MsgAddLiquiditySuite{})
 func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 	addr := GetRandomBech32Addr()
 	c.Check(addr.Empty(), Equals, false)
-	runeAddress := GetRandomRUNEAddress()
+	runeAddress := GetRandomBaseAddress()
 	assetAddress := GetRandomBNBAddress()
 	txID := GetRandomTxHash()
 	c.Check(txID.IsEmpty(), Equals, false)
 	tx := common.NewTx(
 		txID,
 		runeAddress,
-		GetRandomRUNEAddress(),
+		GetRandomBaseAddress(),
 		common.Coins{
 			common.NewCoin(common.BTCAsset, cosmos.NewUint(100000000)),
 		},
@@ -81,7 +81,7 @@ func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 	for i, item := range inputs {
 		tx := common.NewTx(
 			item.txHash,
-			GetRandomRUNEAddress(),
+			GetRandomBaseAddress(),
 			GetRandomBNBAddress(),
 			common.Coins{
 				common.NewCoin(item.asset, item.r),
@@ -93,6 +93,6 @@ func (MsgAddLiquiditySuite) TestMsgAddLiquidity(c *C) {
 		c.Assert(m.ValidateBasicV63(), NotNil, Commentf("%d) %s\n", i, m))
 	}
 	// If affiliate fee basis point is more than 1000 , the message should be rejected
-	m1 := NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), GetRandomTHORAddress(), GetRandomBNBAddress(), GetRandomTHORAddress(), cosmos.NewUint(1024), GetRandomBech32Addr())
+	m1 := NewMsgAddLiquidity(tx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), GetRandomBaseAddress(), GetRandomBNBAddress(), GetRandomBaseAddress(), cosmos.NewUint(1024), GetRandomBech32Addr())
 	c.Assert(m1.ValidateBasicV63(), NotNil)
 }

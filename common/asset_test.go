@@ -1,6 +1,8 @@
 package common
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -9,10 +11,10 @@ type AssetSuite struct{}
 var _ = Suite(&AssetSuite{})
 
 func (s AssetSuite) TestAsset(c *C) {
-	asset, err := NewAsset("thor.rune")
+	asset, err := NewAsset(fmt.Sprintf("%s.%s", BaseChain, BaseDenom))
 	c.Assert(err, IsNil)
 	c.Check(asset.Equals(RuneNative), Equals, true)
-	c.Check(asset.IsRune(), Equals, true)
+	c.Check(asset.IsBaseAsset(), Equals, true)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.Synth, Equals, false)
 	c.Check(asset.String(), Equals, "THOR.RUNE")
@@ -20,12 +22,12 @@ func (s AssetSuite) TestAsset(c *C) {
 	asset, err = NewAsset("thor/rune")
 	c.Assert(err, IsNil)
 	c.Check(asset.Equals(RuneNative), Equals, false)
-	c.Check(asset.IsRune(), Equals, false)
+	c.Check(asset.IsBaseAsset(), Equals, false)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.Synth, Equals, true)
 	c.Check(asset.String(), Equals, "THOR/RUNE")
 
-	c.Check(asset.Chain.Equals(THORChain), Equals, true)
+	c.Check(asset.Chain.Equals(BaseChain), Equals, true)
 	c.Check(asset.Symbol.Equals(Symbol("RUNE")), Equals, true)
 	c.Check(asset.Ticker.Equals(Ticker("RUNE")), Equals, true)
 
@@ -55,7 +57,7 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(asset.Chain.Equals(DOGEChain), Equals, true)
 	c.Check(asset.Equals(DOGEAsset), Equals, true)
-	c.Check(asset.IsRune(), Equals, false)
+	c.Check(asset.IsBaseAsset(), Equals, false)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.String(), Equals, "DOGE.DOGE")
 
@@ -64,7 +66,7 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(asset.Chain.Equals(BCHChain), Equals, true)
 	c.Check(asset.Equals(BCHAsset), Equals, true)
-	c.Check(asset.IsRune(), Equals, false)
+	c.Check(asset.IsBaseAsset(), Equals, false)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.String(), Equals, "BCH.BCH")
 
@@ -73,7 +75,7 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(asset.Chain.Equals(LTCChain), Equals, true)
 	c.Check(asset.Equals(LTCAsset), Equals, true)
-	c.Check(asset.IsRune(), Equals, false)
+	c.Check(asset.IsBaseAsset(), Equals, false)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.String(), Equals, "LTC.LTC")
 

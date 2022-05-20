@@ -185,7 +185,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(500)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{
@@ -233,7 +233,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFunds(c *C) {
 	tx.Memo = "I AM A THIEF!" // bad memo
 	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 12)
 	obTx.Tx.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(300*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(300*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
 	txs := ObservedTxs{obTx}
@@ -247,7 +247,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFunds(c *C) {
 	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Membership = []string{pk.String()}
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(500*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{

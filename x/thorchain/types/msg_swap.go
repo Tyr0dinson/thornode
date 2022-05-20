@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -53,8 +54,8 @@ func (m *MsgSwap) ValidateBasic() error {
 			return cosmos.ErrUnknownRequest("swap Source and Target cannot be the same.")
 		}
 	}
-	if m.Tx.Coins.HasNoneNativeRune() {
-		return cosmos.ErrUnknownRequest("only NATIVE RUNE can be used for swap")
+	if m.Tx.Coins.HasNoneNativeBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("only NATIVE %s can be used for swap", strings.ToUpper(common.BaseDenom)))
 	}
 	if m.Destination.IsEmpty() {
 		return cosmos.ErrUnknownRequest("swap Destination cannot be empty")
@@ -62,11 +63,11 @@ func (m *MsgSwap) ValidateBasic() error {
 	if m.AffiliateAddress.IsEmpty() && !m.AffiliateBasisPoints.IsZero() {
 		return cosmos.ErrUnknownRequest("swap affiliate address is empty while affiliate basis points is non-zero")
 	}
-	if !m.Destination.IsChain(m.TargetAsset.GetChain()) && !m.Destination.IsChain(common.THORChain) {
+	if !m.Destination.IsChain(m.TargetAsset.GetChain()) && !m.Destination.IsChain(common.BaseChain) {
 		return cosmos.ErrUnknownRequest("swap destination address is not the same chain as the target asset")
 	}
-	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("swap affiliate address must be a THOR address")
+	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.BaseChain) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("swap affiliate address must be a %s address", common.BaseChain))
 	}
 	return nil
 }
@@ -93,8 +94,8 @@ func (m *MsgSwap) ValidateBasicV63() error {
 			return cosmos.ErrUnknownRequest("swap Source and Target cannot be the same.")
 		}
 	}
-	if m.Tx.Coins.HasNoneNativeRune() {
-		return cosmos.ErrUnknownRequest("only NATIVE RUNE can be used for swap")
+	if m.Tx.Coins.HasNoneNativeBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("only NATIVE %s can be used for swap", strings.ToUpper(common.BaseDenom)))
 	}
 	if m.Destination.IsEmpty() {
 		return cosmos.ErrUnknownRequest("swap Destination cannot be empty")
@@ -108,8 +109,8 @@ func (m *MsgSwap) ValidateBasicV63() error {
 	if !m.Destination.IsChain(m.TargetAsset.GetChain()) {
 		return cosmos.ErrUnknownRequest("swap destination address is not the same chain as the target asset")
 	}
-	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("swap affiliate address must be a THOR address")
+	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.BaseChain) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("swap affiliate address must be a %s address", common.BaseChain))
 	}
 	return nil
 }

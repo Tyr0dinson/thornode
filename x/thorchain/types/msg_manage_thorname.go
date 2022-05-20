@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -40,8 +42,8 @@ func (m *MsgManageTHORName) ValidateBasic() error {
 	if !m.Address.IsChain(m.Chain) {
 		return cosmos.ErrUnknownRequest("address and chain must match")
 	}
-	if !m.Coin.Asset.IsNativeRune() {
-		return cosmos.ErrUnknownRequest("coin must be native rune")
+	if !m.Coin.Asset.IsNativeBaseAsset() {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("coin must be native %s", common.BaseDenom))
 	}
 	return nil
 }

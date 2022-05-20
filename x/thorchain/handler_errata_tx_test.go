@@ -98,9 +98,9 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 			Chain:       common.BNBChain,
 			FromAddress: addr,
 			Coins: common.Coins{
-				common.NewCoin(common.RuneAsset(), cosmos.NewUint(30*common.One)),
+				common.NewCoin(common.BaseAsset(), cosmos.NewUint(30*common.One)),
 			},
-			Memo: fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomRUNEAddress()),
+			Memo: fmt.Sprintf("ADD:BNB.BNB:%s", GetRandomBaseAddress()),
 		},
 	}
 	keeper := &TestErrataTxKeeper{

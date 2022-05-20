@@ -17,9 +17,9 @@ func (s *KeeperTHORNameSuite) TestTHORName(c *C) {
 	ok := k.THORNameExists(ctx, ref)
 	c.Assert(ok, Equals, false)
 
-	thorAddr := GetRandomTHORAddress()
+	thorAddr := GetRandomBaseAddress()
 	bnbAddr := GetRandomBNBAddress()
-	name := NewTHORName(ref, 50, []THORNameAlias{{Chain: common.THORChain, Address: thorAddr}, {Chain: common.BNBChain, Address: bnbAddr}})
+	name := NewTHORName(ref, 50, []THORNameAlias{{Chain: common.BaseChain, Address: thorAddr}, {Chain: common.BNBChain, Address: bnbAddr}})
 	k.SetTHORName(ctx, name)
 
 	ok = k.THORNameExists(ctx, ref)
@@ -29,6 +29,6 @@ func (s *KeeperTHORNameSuite) TestTHORName(c *C) {
 
 	name, err = k.GetTHORName(ctx, ref)
 	c.Assert(err, IsNil)
-	c.Assert(name.GetAlias(common.THORChain).Equals(thorAddr), Equals, true)
+	c.Assert(name.GetAlias(common.BaseChain).Equals(thorAddr), Equals, true)
 	c.Assert(name.GetAlias(common.BNBChain).Equals(bnbAddr), Equals, true)
 }

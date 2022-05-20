@@ -88,7 +88,7 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	}
 
 	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{gas}, msg.Memo)
-	tx.Chain = common.THORChain
+	tx.Chain = common.BaseChain
 
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}

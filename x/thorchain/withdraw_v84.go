@@ -91,7 +91,7 @@ func withdrawV84(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 			assetToWithdraw = pool.Asset
 		}
 		if lp.AssetAddress.IsEmpty() {
-			assetToWithdraw = common.RuneAsset()
+			assetToWithdraw = common.BaseAsset()
 		}
 	}
 
@@ -155,7 +155,7 @@ func withdrawV84(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 		}
 		// minus gas costs for our transactions
 		// TODO: chain specific logic should be in a single location
-		if pool.Asset.IsBNB() && !common.RuneAsset().Chain.Equals(common.THORChain) {
+		if pool.Asset.IsBNB() && !common.BaseAsset().Chain.Equals(common.BaseChain) {
 			originalAsset := withDrawAsset
 			withDrawAsset = common.SafeSub(
 				withDrawAsset,
@@ -213,7 +213,7 @@ func withdrawV84(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	}
 	// add rune from the reserve to the asgard module, to cover imp loss protection
 	if !protectionRuneAmount.IsZero() {
-		err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), protectionRuneAmount)))
+		err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.BaseAsset(), protectionRuneAmount)))
 		if err != nil {
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), ErrInternal(err, "fail to move imp loss protection rune from the reserve to asgard")
 		}
@@ -246,7 +246,7 @@ func calculateWithdrawV84(poolUnits, poolRune, poolAsset, lpUnits, extraUnits, w
 		withdrawAsset := common.GetSafeShare(unitsToClaim, poolUnits, poolAsset)
 		return withdrawRune, withdrawAsset, unitAfter, nil
 	}
-	if withdrawalAsset.IsRune() {
+	if withdrawalAsset.IsBaseAsset() {
 		return calcAsymWithdrawalV1(unitsToClaim, poolUnits, poolRune), cosmos.ZeroUint(), unitAfter, nil
 	}
 	return cosmos.ZeroUint(), calcAsymWithdrawalV1(unitsToClaim, poolUnits, poolAsset), unitAfter, nil

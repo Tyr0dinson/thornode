@@ -96,7 +96,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to bech32 encode the address, err: %w", err)
 		}
 		return NewAddress(str)
-	case THORChain:
+	case BaseChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
 		if err != nil {
 			return NoAddress, err
@@ -201,7 +201,7 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 }
 
 func (pubKey PubKey) GetThorAddress() (cosmos.AccAddress, error) {
-	addr, err := pubKey.GetAddress(THORChain)
+	addr, err := pubKey.GetAddress(BaseChain)
 	if err != nil {
 		return nil, err
 	}

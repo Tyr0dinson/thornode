@@ -285,7 +285,7 @@ func (b *BlockScanner) FetchLastHeight() (int64, error) {
 	}
 	if b.thorchainBridge != nil {
 		var height int64
-		if b.cfg.ChainID.Equals(common.THORChain) {
+		if b.cfg.ChainID.Equals(common.BaseChain) {
 			height, _ = b.thorchainBridge.GetBlockHeight()
 		} else {
 			height, _ = b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)

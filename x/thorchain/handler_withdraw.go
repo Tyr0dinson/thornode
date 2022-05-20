@@ -131,7 +131,7 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 			// TODO: chain specific logic should be in a single location
 			if msg.Asset.IsBNB() {
 				toi.MaxGas = common.Gas{
-					common.NewCoin(common.RuneAsset().GetChain().GetGasAsset(), gasAsset.QuoUint64(2)),
+					common.NewCoin(common.BaseAsset().GetChain().GetGasAsset(), gasAsset.QuoUint64(2)),
 				}
 			} else if msg.Asset.GetChain().GetGasAsset().Equals(msg.Asset) {
 				toi.MaxGas = common.Gas{
@@ -152,10 +152,10 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 
 	if !runeAmt.IsZero() {
 		toi := TxOutItem{
-			Chain:     common.RuneAsset().GetChain(),
+			Chain:     common.BaseAsset().GetChain(),
 			InHash:    msg.Tx.ID,
 			ToAddress: lp.RuneAddress,
-			Coin:      common.NewCoin(common.RuneAsset(), runeAmt),
+			Coin:      common.NewCoin(common.BaseAsset(), runeAmt),
 			Memo:      memo,
 		}
 		okRune, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi)
@@ -171,7 +171,7 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 		// withdraw pending liquidity event
 		runeHash := common.TxID("")
 		assetHash := common.TxID("")
-		if msg.Tx.Chain.Equals(common.THORChain) {
+		if msg.Tx.Chain.Equals(common.BaseChain) {
 			runeHash = msg.Tx.ID
 		} else {
 			assetHash = msg.Tx.ID
@@ -206,7 +206,7 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 	}
 
 	// any extra rune in the transaction will be donated to reserve
-	reserveCoin := msg.Tx.Coins.GetCoin(common.RuneAsset())
+	reserveCoin := msg.Tx.Coins.GetCoin(common.BaseAsset())
 	if !reserveCoin.IsEmpty() {
 		if err := h.mgr.Keeper().AddPoolFeeToReserve(ctx, reserveCoin.Amount); err != nil {
 			ctx.Logger().Error("fail to add fee to reserve", "error", err)

@@ -240,7 +240,7 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 		return ErrInternal(err, "fail to unbond")
 	}
 
-	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
+	coin := msg.TxIn.Coins.GetCoin(common.BaseAsset())
 	if !coin.IsEmpty() {
 		na.Bond = na.Bond.Add(coin.Amount)
 		if err := h.mgr.Keeper().SetNodeAccount(ctx, na); err != nil {

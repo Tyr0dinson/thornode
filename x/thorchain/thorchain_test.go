@@ -28,9 +28,9 @@ var _ = Suite(&ThorchainSuite{})
 func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	var err error
 	ctx, keeper := setupKeeperForTest(c)
-	user1rune := GetRandomRUNEAddress()
+	user1rune := GetRandomBaseAddress()
 	user1asset := GetRandomBNBAddress()
-	user2rune := GetRandomRUNEAddress()
+	user2rune := GetRandomBaseAddress()
 	user2asset := GetRandomBNBAddress()
 	txID := GetRandomTxHash()
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
@@ -107,7 +107,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// create starting point, vault and four node active node accounts
 	vault := GetRandomVault()
 	vault.AddFunds(common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseAsset(), cosmos.NewUint(100*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(79*common.One)),
 	})
 	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BNBChain, NetworkFee{
@@ -173,7 +173,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	signer, err := common.PubKey(keygen.Members[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 	keygenTime := int64(1024)
-	msg, err := NewMsgTssPool(keygen.Members, newVaultPk, AsgardKeygen, common.BlockHeight(ctx), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime)
+	msg, err := NewMsgTssPool(keygen.Members, newVaultPk, AsgardKeygen, common.BlockHeight(ctx), Blame{}, common.Chains{common.BaseAsset().Chain}.Strings(), signer, keygenTime)
 	c.Assert(err, IsNil)
 	tssHandler := NewTssHandler(mgr)
 
@@ -277,29 +277,29 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	addHandler := NewAddLiquidityHandler(mgr)
 	// add liquidity providers
-	lp1 := GetRandomRUNEAddress() // LiquidityProvider1
+	lp1 := GetRandomBaseAddress() // LiquidityProvider1
 	lp1asset := GetRandomBNBAddress()
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	lp2 := GetRandomRUNEAddress() // liquidity provider 2
+	lp2 := GetRandomBaseAddress() // liquidity provider 2
 	lp2asset := GetRandomBNBAddress()
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	lp3 := GetRandomRUNEAddress() // liquidity provider 3
+	lp3 := GetRandomBaseAddress() // liquidity provider 3
 	lp3asset := GetRandomBNBAddress()
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 
-	lp4 := GetRandomTHORAddress() // liquidity provider 4 , BTC
+	lp4 := GetRandomBaseAddress() // liquidity provider 4 , BTC
 	lp4Asset := GetRandomBTCAddress()
 	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(100*common.One), lp4, lp4Asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 
-	lp5 := GetRandomTHORAddress() // Rune only
+	lp5 := GetRandomBaseAddress() // Rune only
 	err = addHandler.addLiquidity(ctx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.ZeroUint(), lp5, common.NoAddress, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lp6Asset := GetRandomBTCAddress() // BTC only
@@ -336,7 +336,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 
 		// Add bond to asgard
 		asgard.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), na.Bond),
+			common.NewCoin(common.BaseAsset(), na.Bond),
 		})
 		c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
@@ -345,9 +345,9 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 		ygg.PubKey = na.PubKeySet.Secp256k1
 		ygg.Type = YggdrasilVault
 		ygg.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BaseAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
 			common.NewCoin(common.BNBAsset, bnbPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.RuneAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BaseAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
 			common.NewCoin(boltAsset, boltPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
 		})
 		c.Assert(mgr.Keeper().SetVault(ctx, ygg), IsNil)
@@ -380,7 +380,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, bonderCount)
 	for _, item := range items {
-		c.Assert(item.Coin.Equals(common.NewCoin(common.RuneAsset(), cosmos.ZeroUint())), Equals, true)
+		c.Assert(item.Coin.Equals(common.NewCoin(common.BaseAsset(), cosmos.ZeroUint())), Equals, true)
 	}
 
 	// we'll assume the signer does it's job and sends the yggdrasil funds back
@@ -443,17 +443,17 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(mgr.Keeper()))
 	// add liquidity providers
-	lp1 := GetRandomRUNEAddress() // LiquidityProvider1
+	lp1 := GetRandomBaseAddress() // LiquidityProvider1
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(10*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(50*common.One), cosmos.NewUint(11*common.One), lp1, lp1, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	lp2 := GetRandomRUNEAddress() // liquidity provider 2
+	lp2 := GetRandomBaseAddress() // liquidity provider 2
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
-	lp3 := GetRandomRUNEAddress() // liquidity provider 3
+	lp3 := GetRandomBaseAddress() // liquidity provider 3
 	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp3, lp3, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	lps := []common.Address{
@@ -479,7 +479,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 
 		// Add bond to asgard
 		asgard.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), na.Bond),
+			common.NewCoin(common.BaseAsset(), na.Bond),
 		})
 		asgard.Membership = append(asgard.Membership, na.PubKeySet.Secp256k1.String())
 		c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
@@ -489,9 +489,9 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 		ygg.PubKey = na.PubKeySet.Secp256k1
 		ygg.Type = YggdrasilVault
 		ygg.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BaseAsset(), bnbPool.BalanceRune.QuoUint64(uint64(bonderCount))),
 			common.NewCoin(common.BNBAsset, bnbPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
-			common.NewCoin(common.RuneAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
+			common.NewCoin(common.BaseAsset(), boltPool.BalanceRune.QuoUint64(uint64(bonderCount))),
 			common.NewCoin(boltAsset, boltPool.BalanceAsset.QuoUint64(uint64(bonderCount))),
 		})
 		c.Assert(mgr.Keeper().SetVault(ctx, ygg), IsNil)
@@ -508,7 +508,7 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 	resHandler := NewReserveContributorHandler(mgr)
 	for _, res := range reserves {
 		asgard.AddFunds(common.Coins{
-			common.NewCoin(common.RuneAsset(), res.Amount),
+			common.NewCoin(common.BaseAsset(), res.Amount),
 		})
 		msg := NewMsgReserveContributor(GetRandomTx(), res, bonders[0].NodeAddress)
 		err := resHandler.handle(ctx, *msg)
