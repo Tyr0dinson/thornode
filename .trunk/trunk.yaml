@@ -7,7 +7,7 @@ lint:
     - flake8@4.0.1
     - gitleaks@8.2.5
     - gofmt@1.16.7
-    - golangci-lint@1.46.2
+    - golangci-lint@1.42.1
     - hadolint@2.8.0
     - isort@5.10.1
     - markdownlint@0.30.0
