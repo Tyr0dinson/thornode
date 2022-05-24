@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"crypto/ecdsa"
@@ -18,12 +18,12 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-func getETHPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
+func GetPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
 	return ecrypto.ToECDSA(key.Bytes())
 }
 
-// keySignWrapper is a wrap of private key and also tss instance
-type keySignWrapper struct {
+// KeySignWrapper is a wrap of private key and also tss instance
+type KeySignWrapper struct {
 	privKey       *ecdsa.PrivateKey
 	pubKey        common.PubKey
 	tssKeyManager tss.ThorchainKeyManager
@@ -31,9 +31,9 @@ type keySignWrapper struct {
 	eipSigner     etypes.EIP155Signer
 }
 
-// newKeySignWrapper create a new instance of keysign wrapper
-func newKeySignWrapper(privateKey *ecdsa.PrivateKey, pubKey common.PubKey, keyManager tss.ThorchainKeyManager, chainID *big.Int) (*keySignWrapper, error) {
-	return &keySignWrapper{
+// NewKeySignWrapper create a new instance of keysign wrapper
+func NewKeySignWrapper(privateKey *ecdsa.PrivateKey, pubKey common.PubKey, keyManager tss.ThorchainKeyManager, chainID *big.Int) (*KeySignWrapper, error) {
+	return &KeySignWrapper{
 		privKey:       privateKey,
 		pubKey:        pubKey,
 		tssKeyManager: keyManager,
@@ -43,17 +43,17 @@ func newKeySignWrapper(privateKey *ecdsa.PrivateKey, pubKey common.PubKey, keyMa
 }
 
 // GetPrivKey return the private key
-func (w *keySignWrapper) GetPrivKey() *ecdsa.PrivateKey {
+func (w *KeySignWrapper) GetPrivKey() *ecdsa.PrivateKey {
 	return w.privKey
 }
 
 // GetPubKey return the public key
-func (w *keySignWrapper) GetPubKey() common.PubKey {
+func (w *KeySignWrapper) GetPubKey() common.PubKey {
 	return w.pubKey
 }
 
 // Sign the given transaction
-func (w *keySignWrapper) Sign(tx *etypes.Transaction, poolPubKey common.PubKey) ([]byte, error) {
+func (w *KeySignWrapper) Sign(tx *etypes.Transaction, poolPubKey common.PubKey) ([]byte, error) {
 	if tx == nil {
 		return nil, errors.New("tx is nil")
 	}
@@ -81,12 +81,12 @@ func (w *keySignWrapper) Sign(tx *etypes.Transaction, poolPubKey common.PubKey) 
 	return enc, nil
 }
 
-func (w *keySignWrapper) sign(tx *etypes.Transaction) ([]byte, error) {
+func (w *KeySignWrapper) sign(tx *etypes.Transaction) ([]byte, error) {
 	hash := w.eipSigner.Hash(tx)
 	return ecrypto.Sign(hash[:], w.privKey)
 }
 
-func (w *keySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string) ([]byte, error) {
+func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string) ([]byte, error) {
 	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, poolPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pub key: %w", err)

@@ -52,9 +52,12 @@ func NewTokensHelper(db *leveldb.DB,
 	tokenWhitelist []ERC20Token,
 	rpcHost string) (*TokensHelper, error) {
 
-	tokenDb, _ := NewLevelDBTokenMeta(db, prefixTokenMeta)
-	_, erc20ABI, err := GetContractABI(routerContractABI, erc20ContractABI)
+	tokenDb, err := NewLevelDBTokenMeta(db, prefixTokenMeta)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create tokenDb: %w", err)
+	}
 
+	_, erc20ABI, err := GetContractABI(routerContractABI, erc20ContractABI)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}

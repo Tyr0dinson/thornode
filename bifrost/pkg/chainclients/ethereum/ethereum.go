@@ -52,7 +52,7 @@ type Client struct {
 	cfg                     config.ChainConfiguration
 	localPubKey             common.PubKey
 	client                  *ethclient.Client
-	kw                      *keySignWrapper
+	kw                      *evm.KeySignWrapper
 	ethScanner              *ETHScanner
 	bridge                  *thorclient.ThorchainBridge
 	blockScanner            *blockscanner.BlockScanner
@@ -110,7 +110,7 @@ func NewClient(thorKeys *thorclient.Keys,
 	if poolMgr == nil {
 		return nil, errors.New("pool manager is nil")
 	}
-	ethPrivateKey, err := getETHPrivateKey(priv)
+	ethPrivateKey, err := evm.GetPrivateKey(priv)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
-	keysignWrapper, err := newKeySignWrapper(ethPrivateKey, pk, tssKm, chainID)
+	keysignWrapper, err := evm.NewKeySignWrapper(ethPrivateKey, pk, tssKm, chainID)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create ETH key sign wrapper: %w", err)
 	}

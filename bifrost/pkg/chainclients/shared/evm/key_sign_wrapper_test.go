@@ -1,4 +1,4 @@
-package ethereum
+package evm
 
 import (
 	"math/big"
@@ -18,17 +18,19 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-type ETHKeysignWrapperTestSuite struct {
+const MaxContractGas = 80000
+
+type KeysignWrapperTestSuite struct {
 	thorKeys *thorclient.Keys
-	wrapper  *keySignWrapper
+	wrapper  *KeySignWrapper
 }
 
 var _ = Suite(
-	&ETHKeysignWrapperTestSuite{},
+	&KeysignWrapperTestSuite{},
 )
 
 // SetUpSuite setup the test conditions
-func (s *ETHKeysignWrapperTestSuite) SetUpSuite(c *C) {
+func (s *KeysignWrapperTestSuite) SetUpSuite(c *C) {
 	cfg := config.ClientConfiguration{
 		ChainID:      "thorchain",
 		SignerName:   "bob",
@@ -47,24 +49,24 @@ func (s *ETHKeysignWrapperTestSuite) SetUpSuite(c *C) {
 	pk, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
 	keyMgr := &tss.MockThorchainKeyManager{}
-	ethPrivateKey, err := getETHPrivateKey(privateKey)
+	ethPrivateKey, err := GetPrivateKey(privateKey)
 	c.Assert(err, IsNil)
 	c.Assert(ethPrivateKey, NotNil)
-	wrapper, err := newKeySignWrapper(ethPrivateKey, pk, keyMgr, big.NewInt(15))
+	wrapper, err := NewKeySignWrapper(ethPrivateKey, pk, keyMgr, big.NewInt(15))
 	c.Assert(err, IsNil)
 	c.Assert(wrapper, NotNil)
 	s.wrapper = wrapper
 }
 
-func (s *ETHKeysignWrapperTestSuite) TestGetPrivKey(c *C) {
+func (s *KeysignWrapperTestSuite) TestGetPrivKey(c *C) {
 	c.Assert(s.wrapper.GetPrivKey(), NotNil)
 }
 
-func (s *ETHKeysignWrapperTestSuite) TestGetPubKey(c *C) {
+func (s *KeysignWrapperTestSuite) TestGetPubKey(c *C) {
 	c.Assert(s.wrapper.GetPubKey(), NotNil)
 }
 
-func (s *ETHKeysignWrapperTestSuite) TestSign(c *C) {
+func (s *KeysignWrapperTestSuite) TestSign(c *C) {
 	buf, err := s.wrapper.Sign(nil, types.GetRandomPubKey())
 	c.Assert(err, NotNil)
 	c.Assert(buf, IsNil)
