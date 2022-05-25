@@ -425,3 +425,115 @@ func (s *NetworkManagerV90TestSuite) TestRecoverPoolDeficit(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(pool.BalanceRune.String(), Equals, pools[0].BalanceRune.Sub(lpDeficit).String())
 }
+
+func (s *NetworkManagerV90TestSuite) TestRagnarokPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100000)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	activeVault := GetRandomVault()
+	activeVault.StatusSince = common.BlockHeight(ctx) - 10
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(k.SetVault(ctx, activeVault), IsNil)
+	retireVault := GetRandomVault()
+	retireVault.Chains = common.Chains{common.BNBChain, common.BTCChain}.Strings()
+	yggVault := GetRandomVault()
+	yggVault.Type = YggdrasilVault
+	yggVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(300*common.One)),
+	}
+	c.Assert(k.SetVault(ctx, yggVault), IsNil)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(1600)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+	bnbPool := NewPool()
+	bnbPool.Asset = common.BNBAsset
+	bnbPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	bnbPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	bnbPool.LPUnits = cosmos.NewUint(1600)
+	bnbPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, bnbPool), IsNil)
+	addr := GetRandomRUNEAddress()
+	lps := LiquidityProviders{
+		{
+			Asset:             common.BTCAsset,
+			RuneAddress:       addr,
+			AssetAddress:      GetRandomBTCAddress(),
+			LastAddHeight:     5,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+		{
+			Asset:             common.BTCAsset,
+			RuneAddress:       GetRandomRUNEAddress(),
+			AssetAddress:      GetRandomBTCAddress(),
+			LastAddHeight:     10,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+	}
+	k.SetLiquidityProvider(ctx, lps[0])
+	k.SetLiquidityProvider(ctx, lps[1])
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgrV90(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	ctx = ctx.WithBlockHeight(1)
+	// block height not correct , doesn't take any actions
+	err := networkMgr.checkPoolRagnarok(ctx, mgr)
+	c.Assert(err, IsNil)
+	for _, a := range []common.Asset{common.BTCAsset, common.BNBAsset} {
+		tempPool, err := k.GetPool(ctx, a)
+		c.Assert(err, IsNil)
+		c.Assert(tempPool.Status, Equals, PoolAvailable)
+	}
+
+	// mimir didn't set , it should not take any actions
+	ctx = ctx.WithBlockHeight(mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) * 5)
+	err = networkMgr.checkPoolRagnarok(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// happy path
+	networkMgr.k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	err = networkMgr.checkPoolRagnarok(ctx, mgr)
+	c.Assert(err, IsNil)
+	items, _ := mgr.txOutStore.GetOutboundItems(ctx)
+	c.Assert(items, HasLen, 2)
+	tempPool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(tempPool.Status, Equals, PoolStaged)
+
+	tempPool, err = k.GetPool(ctx, common.BNBAsset)
+	c.Assert(err, IsNil)
+	c.Assert(tempPool.Status, Equals, PoolAvailable)
+
+	// when there are none gas token pool , and it is active , gas asset token pool should not be ragnarok
+	busdPool := NewPool()
+	busdAsset, err := common.NewAsset("BNB.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool.Asset = busdAsset
+	busdPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	busdPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	busdPool.LPUnits = cosmos.NewUint(1600)
+	busdPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	networkMgr.k.SetMimir(ctx, "RAGNAROK-BNB-BNB", 1)
+	err = networkMgr.checkPoolRagnarok(ctx, mgr)
+	c.Assert(err, IsNil)
+	tempPool, err = k.GetPool(ctx, common.BNBAsset)
+	c.Assert(err, IsNil)
+	c.Assert(tempPool.Status, Equals, PoolAvailable)
+}

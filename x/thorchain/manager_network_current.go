@@ -903,7 +903,7 @@ func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 			continue
 		}
 
-		k := fmt.Sprintf("RAGNAROK-%s", strings.Replace(pool.Asset.String(), ".", "-", -1))
+		k := fmt.Sprintf("RAGNAROK-%s", strings.ReplaceAll(pool.Asset.String(), ".", "-"))
 		v, err := vm.k.GetMimir(ctx, k)
 		if err != nil {
 			ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
