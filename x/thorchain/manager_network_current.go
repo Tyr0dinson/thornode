@@ -269,7 +269,9 @@ func (vm *NetworkMgrV90) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			}
 		}
 	}
-
+	if err := vm.checkPoolRagnarok(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to process pool ragnarok", "error", err)
+	}
 	return nil
 }
 
@@ -886,6 +888,57 @@ func (vm *NetworkMgrV90) deductPoolRewardDeficit(ctx cosmos.Context, pools Pools
 }
 
 func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
+	// check whether pool need to be ragnarok per constants.FundMigrationInterval
+	if common.BlockHeight(ctx)%mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) > 0 {
+		return nil
+	}
+	pools, err := vm.k.GetPools(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, pool := range pools {
+		// once pool is already staged , don't ragnarok it , let pool cycle do it's job
+		if pool.Status == PoolStaged {
+			continue
+		}
+
+		k := fmt.Sprintf("RAGNAROK-%s", strings.Replace(pool.Asset.String(), ".", "-", -1))
+		v, err := vm.k.GetMimir(ctx, k)
+		if err != nil {
+			ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
+			continue
+		}
+		if v < 1 {
+			continue
+		}
+		if pool.Asset.IsGasAsset() && !canRagnarokPool(ctx, pool.Asset.GetChain(), pools) {
+			continue
+		}
+		if err := vm.ragnarokPool(ctx, mgr, pool); err != nil {
+			ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// canRagnarokPool check whether a pool can be ragnarok
+// On blockchain that support multiple assets, make sure gas pool doesn't get ragnarok before none-gas asset pool
+func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
+	for _, pool := range allPools {
+		if pool.Status == PoolStaged {
+			continue
+		}
+		if pool.Asset.GetChain().Equals(c) && !pool.Asset.IsGasAsset() {
+			ctx.Logger().With("asset", pool.Asset.String()).Info("pool is not in staging status , thus gas asset pool can't ragnarok")
+			return false
+		}
+	}
+	return true
+}
+
+func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
 	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		ctx.Logger().Error("can't get active nodes", "error", err)
@@ -895,38 +948,18 @@ func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 		return fmt.Errorf("can't find any active nodes")
 	}
 	na := nas[0]
-
-	pools, err := vm.k.GetPools(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, pool := range pools {
-		if pool.Asset.IsGasAsset() {
-			continue
-		}
-		mimirKey := fmt.Sprintf("RAGNAROK-%s", strings.Replace(pool.Asset.String(), ".", "-", -1))
-		mimirValue, err := vm.k.GetMimir(ctx, mimirKey)
-		if err != nil {
-			ctx.Logger().Error("fail to get mimir value", "mimir", mimirKey, "error", err)
-			continue
-		}
-		if mimirValue < 1 {
-			continue
-		}
-		if err := vm.ragnarokPool(ctx, mgr, pool, na); err != nil {
-			ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
-		}
-	}
-
-	return nil
-}
-
-func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool, na NodeAccount) error {
 	if err := vm.withdrawLiquidity(ctx, p, na, 1, mgr); err != nil {
 		ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
 	}
-	// when it get to here, only those LPs that can't be withdrawed left
-	p.Status = PoolSuspended
-	return vm.k.SetPool(ctx, p)
+
+	// when it get to here, set the pool status to staging.
+	// leave the rest work for pool churn, pool churn logic will keep charging pool fees
+	// once the pool has zero RUNE left , it will be burned
+	poolAfter, err := vm.k.GetPool(ctx, p.Asset)
+	if err != nil {
+		ctx.Logger().With("pool", p.Asset.String()).Error("fail to get pool", "error", err)
+		return fmt.Errorf("fail to get pool,err: %w", err)
+	}
+	poolAfter.Status = PoolStaged
+	return vm.k.SetPool(ctx, poolAfter)
 }
