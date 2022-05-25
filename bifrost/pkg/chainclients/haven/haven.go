@@ -95,7 +95,7 @@ const (
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 1000 here , as most of time it will spend 1 input, have 3 output
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
-	AverageFeeRate        = uint64(314016568) / DecimalDiff // atomic units
+	AverageFeeRate        = uint64(31401)
 )
 
 // NewClient generates a new Client
@@ -416,7 +416,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 			if err != nil {
 				return acct, fmt.Errorf("fail tconstruct asset: %w", err)
 			}
-			coins = append(coins, common.NewCoin(a, cosmos.NewUint(uint64(resp.Balance)/DecimalDiff)))
+			coins = append(coins, common.NewCoin(a, cosmos.NewUint(resp.Balance/DecimalDiff)))
 		}
 	}
 
@@ -1137,7 +1137,11 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 		return types.TxInItem{}, fmt.Errorf("ignoring a tx with invalid asset type: %w", err)
 	}
 	coins := common.Coins{
-		common.NewCoin(asset, cosmos.NewUint(output.Amount/DecimalDiff)),
+		common.Coin{
+			Asset:    asset,
+			Amount:   cosmos.NewUint(output.Amount / DecimalDiff),
+			Decimals: int64(12),
+		},
 	}
 
 	// get the memo
@@ -1190,7 +1194,11 @@ func (c *Client) getTxIn(tx *RawTx, height int64, inBlock bool) (types.TxInItem,
 		Coins:       coins,
 		Memo:        memoStr,
 		Gas: common.Gas{
-			common.NewCoin(asset, cosmos.NewUint(fee)),
+			common.Coin{
+				Asset:    asset,
+				Amount:   cosmos.NewUint(fee),
+				Decimals: int64(12),
+			},
 		},
 	}, nil
 }
