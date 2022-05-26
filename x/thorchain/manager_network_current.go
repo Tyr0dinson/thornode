@@ -964,6 +964,7 @@ func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 }
 
 func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
+	ctx.Logger().With("asset", p.Asset.String()).Info("process pool ragnarok")
 	startBlockHeight, err := vm.k.GetPoolRagnarokStart(ctx, p.Asset)
 	if err != nil || startBlockHeight == 0 {
 		if err != nil {
