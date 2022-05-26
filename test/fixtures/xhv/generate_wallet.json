@@ -1,8 +1,8 @@
 {
-    "id": "0",
-    "jsonrpc": "2.0",
-    "result": {
-        "address" : "hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg",
-        "info" : "OK"
-    }
+  "id": "0",
+  "jsonrpc": "2.0",
+  "result": {
+    "address": "hvxy6ABzHQFbfQNrDj6kbDUbk79eaEpbpTLxPjZPZcLLVnBX7KGAiep4cgPMp1hUtHAWrnAFq1o26Q8qvDf6cbmc7jtFNfXHMg",
+    "info": "OK"
+  }
 }

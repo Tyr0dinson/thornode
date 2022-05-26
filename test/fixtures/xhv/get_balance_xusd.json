@@ -1,24 +1,24 @@
 {
-    "id": "0",
-    "jsonrpc": "2.0",
-    "result": {
+  "id": "0",
+  "jsonrpc": "2.0",
+  "result": {
+    "balance": 50686634370000,
+    "blocks_to_unlock": 0,
+    "multisig_import_needed": false,
+    "per_subaddress": [
+      {
+        "account_index": 0,
+        "address": "hvxyLy4UdoGCgmGqMSaTUi4gX76syNh9zGidKn9yJSxYVvch5GW7U4SbA8qcz8ReAFVyGWahCCwyaKNTLDeEWR6n2q8GNT6F1m",
+        "address_index": 0,
         "balance": 50686634370000,
         "blocks_to_unlock": 0,
-        "multisig_import_needed": false,
-        "per_subaddress": [
-            {
-                "account_index": 0,
-                "address": "hvxyLy4UdoGCgmGqMSaTUi4gX76syNh9zGidKn9yJSxYVvch5GW7U4SbA8qcz8ReAFVyGWahCCwyaKNTLDeEWR6n2q8GNT6F1m",
-                "address_index": 0,
-                "balance": 50686634370000,
-                "blocks_to_unlock": 0,
-                "label": "Primary account",
-                "num_unspent_outputs": 2,
-                "time_to_unlock": 0,
-                "unlocked_balance": 50686634370000
-            }
-        ],
+        "label": "Primary account",
+        "num_unspent_outputs": 2,
         "time_to_unlock": 0,
         "unlocked_balance": 50686634370000
-    }
+      }
+    ],
+    "time_to_unlock": 0,
+    "unlocked_balance": 50686634370000
+  }
 }
