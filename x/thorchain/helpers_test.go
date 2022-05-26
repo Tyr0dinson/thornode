@@ -728,6 +728,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		NewObservedTx(txAddLiquidity, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)),
 		GetRandomBech32Addr())
 
+	c.Assert(err, IsNil)
 	txAddRUNE := common.NewTx(txID, "", GetRandomTHORAddress(), GetRandomTHORAddress(), common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(100))), common.Gas{
 		common.NewCoin(common.RuneNative, cosmos.NewUint(100)),
 	}, "add:BTC.BTC:"+GetRandomBTCAddress().String())

@@ -305,7 +305,7 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				tx := GetRandomTx()
 				tx.FromAddress = nodeAccount.BondAddress
 				vault := NewVault(1024, ActiveVault, YggdrasilVault, nodeAccount.PubKeySet.Secp256k1, "", common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{})
-				helper.Keeper.SetVault(ctx, vault)
+				c.Assert(helper.Keeper.SetVault(ctx, vault), IsNil)
 				helper.failGetVault = true
 				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
 			},
