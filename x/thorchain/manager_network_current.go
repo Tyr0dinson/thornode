@@ -474,9 +474,7 @@ func (vm *NetworkMgrV90) RecallChainFunds(ctx cosmos.Context, chain common.Chain
 		return err
 	}
 
-	version := vm.k.GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	vault := vm.k.GetMostSecure(ctx, active, signingTransactionPeriod)
 	if vault.IsEmpty() {
 		return fmt.Errorf("unable to determine asgard vault")
@@ -620,6 +618,10 @@ func (vm *NetworkMgrV90) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 		afterPool, err := vm.k.GetPool(ctx, pool.Asset)
 		if err != nil {
 			return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
+		}
+		poolEvent := NewEventPool(pool.Asset, PoolSuspended)
+		if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
+			ctx.Logger().Error("fail to emit pool event", "error", err)
 		}
 		if afterPool.Asset.IsGasAsset() {
 			afterPool.Status = PoolSuspended
@@ -915,6 +917,8 @@ func (vm *NetworkMgrV90) deductPoolRewardDeficit(ctx cosmos.Context, pools Pools
 	return poolAmts, nil
 }
 
+// checkPoolRagnarok iterate through all the pools to see whether there are pools need to be ragnarok
+// this function will only run in an interval , defined by constants.FundMigrationInterval
 func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 	// check whether pool need to be ragnarok per constants.FundMigrationInterval
 	if common.BlockHeight(ctx)%mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) > 0 {
@@ -935,20 +939,20 @@ func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 		if v < 1 {
 			continue
 		}
-		if pool.Asset.IsGasAsset() && !canRagnarokPool(ctx, pool.Asset.GetChain(), pools) {
+		if pool.Asset.IsGasAsset() && !canRagnarokGasPool(ctx, pool.Asset.GetChain(), pools) {
 			continue
 		}
 		if err := vm.ragnarokPool(ctx, mgr, pool); err != nil {
-			ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
+			ctx.Logger().Error("fail to ragnarok pool", "error", err)
 		}
 	}
 
 	return nil
 }
 
-// canRagnarokPool check whether a pool can be ragnarok
+// canRagnarokGasPool check whether a gas pool can be ragnarok
 // On blockchain that support multiple assets, make sure gas pool doesn't get ragnarok before none-gas asset pool
-func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
+func canRagnarokGasPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 	for _, pool := range allPools {
 		if pool.Status == PoolSuspended {
 			continue
@@ -961,6 +965,29 @@ func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 		}
 	}
 	return true
+}
+
+func (vm *NetworkMgrV90) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) error {
+	totalSupply := vm.k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
+	if totalSupply.IsZero() {
+		return nil
+	}
+	runeValue := p.AssetValueInRune(totalSupply)
+	p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
+	// deduct the LP units
+	p.LPUnits = common.SafeSub(p.LPUnits, totalSupply)
+	if err := vm.k.SetPool(ctx, p); err != nil {
+		return fmt.Errorf("fail to save pool,err: %w", err)
+	}
+	if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName,
+		common.NewCoins(common.NewCoin(common.RuneNative, runeValue))); err != nil {
+		ctx.Logger().Error("fail to send redeemed synth RUNE to reserve", "error", err)
+	}
+	ctx.Logger().
+		With("synth_supply", totalSupply.String()).
+		With("rune_amount", runeValue).
+		Info("sending synth redeem RUNE to Reserve")
+	return nil
 }
 
 func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
@@ -976,37 +1003,27 @@ func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) e
 	}
 	nth := (common.BlockHeight(ctx)-startBlockHeight)/mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) + 1
 
-	// set the pool status to stage , thus
+	// set the pool status to stage , thus the network will not send asset to yggdrasil vault
 	if p.Status != PoolStaged {
 		p.Status = PoolStaged
 		if err := vm.k.SetPool(ctx, p); err != nil {
 			return fmt.Errorf("fail to set pool to stage,err: %w", err)
 		}
+		poolEvent := NewEventPool(p.Asset, PoolStaged)
+		if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
+			ctx.Logger().Error("fail to emit pool event", "error", err)
+		}
+
 	}
 
 	// first round , let's set the pool to stage , and recall yggdrasil fund
 	// staged pool will not fund yggdrasil again
 	if nth == 1 {
 		// redeem all synth asset from the pool , and send RUNE to reserve
-		totalSupply := vm.k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
-		if totalSupply.GT(cosmos.ZeroUint()) {
-			runeValue := p.AssetValueInRune(totalSupply)
-			p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
-			// deduct the LP units
-			p.LPUnits = common.SafeSub(p.LPUnits, totalSupply)
-			if err := vm.k.SetPool(ctx, p); err != nil {
-				return fmt.Errorf("fail to save pool,err: %w", err)
-			}
-			if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(
-				common.NewCoin(common.RuneNative, runeValue))); err != nil {
-				ctx.Logger().Error("fail to send redeemed synth RUNE to reserve", "error", err)
-			}
-			ctx.Logger().
-				With("synth_supply", totalSupply.String()).
-				With("rune_amount", runeValue).
-				Info("sending synth redeem RUNE to Reserve")
+		if err := vm.redeemSynthAssetToReserve(ctx, p); err != nil {
+			ctx.Logger().Error("fail to redeem synth to reserve, continue to ragnarok", "error", err)
 		}
-		return vm.RecallChainFunds(ctx, p.Asset.GetChain(), mgr, nil)
+		return vm.RecallChainFunds(ctx, p.Asset.GetChain(), mgr, common.PubKeys{})
 	}
 
 	nas, err := vm.k.ListActiveValidators(ctx)
