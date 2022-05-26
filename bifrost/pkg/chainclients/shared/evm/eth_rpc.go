@@ -78,3 +78,14 @@ func (e *EthRpc) GetRPCBlock(height int64) (*etypes.Block, error) {
 	}
 	return block, nil
 }
+
+// GetNonce gets nonce
+func (e *EthRpc) GetNonce(addr string) (uint64, error) {
+	ctx, cancel := e.getContext()
+	defer cancel()
+	nonce, err := e.client.PendingNonceAt(ctx, ecommon.HexToAddress(addr))
+	if err != nil {
+		return 0, fmt.Errorf("fail to get account nonce: %w", err)
+	}
+	return nonce, nil
+}

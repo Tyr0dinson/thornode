@@ -400,6 +400,26 @@ func (b *ThorchainBridge) GetAsgards() (stypes.Vaults, error) {
 	return vaults, nil
 }
 
+// GetChainAsgards retrieve all the asgard vaults addresses from thorchain of a specific chain
+func (b *ThorchainBridge) GetChainAsgards(chain common.Chain) ([]common.Address, error) {
+	addresses := []common.Address{}
+	vaults, err := b.GetAsgards()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgards : %w", err)
+	}
+
+	for _, v := range vaults {
+		addr, err := v.PubKey.GetAddress(chain)
+		if err != nil {
+			b.logger.Err(err).Msg("failed to get asgard address")
+			continue
+		}
+		addresses = append(addresses, addr)
+	}
+
+	return addresses, nil
+}
+
 // GetPubKeys retrieve asgard vaults and yggdrasil vaults , and it's relevant smart contracts
 func (b *ThorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	buf, s, err := b.getWithPath(PubKeysEndpoint)

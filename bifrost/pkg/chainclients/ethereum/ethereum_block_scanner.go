@@ -84,7 +84,7 @@ type ETHScanner struct {
 	solvencyReporter     SolvencyReporter
 	whitelistTokens      []evm.ERC20Token
 	signerCacheManager   *signercache.CacheManager
-	tokensHelper         *evm.TokensHelper
+	tokenManager         *evm.TokenManager
 
 	// set at creation based on the SuggestedFeeVersion in config
 	gasCacheBlocks uint64
@@ -119,10 +119,6 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 	if err != nil {
 		return nil, fmt.Errorf("fail to create block meta accessor: %w", err)
 	}
-	// tokens, err := evm.NewLevelDBTokenMeta(storage.GetInternalDb(), prefixTokenMeta)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("fail to create token meta db: %w", err)
-	// }
 
 	vaultABI, erc20ABI, err := evm.GetContractABI(routerContractABI, erc20ContractABI)
 	if err != nil {
@@ -135,12 +131,12 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		return nil, fmt.Errorf("fail to load token list,err: %w", err)
 	}
 
-	tokensHelper, err := evm.NewTokensHelper(storage.GetInternalDb(), prefixTokenMeta, common.ETHAsset, defaultDecimals, cfg.HTTPRequestTimeout, whitelistTokens.Tokens, cfg.RPCHost)
+	tokenManager, err := evm.NewTokenManager(storage.GetInternalDb(), prefixTokenMeta, common.ETHAsset, defaultDecimals, cfg.HTTPRequestTimeout, whitelistTokens.Tokens, client)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create token helper: %w", err)
 	}
 
-	err = tokensHelper.SaveTokenMeta("ETH", ethToken, defaultDecimals)
+	err = tokenManager.SaveTokenMeta("ETH", ethToken, defaultDecimals)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +179,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		signerCacheManager: signerCacheManager,
 		gasCacheBlocks:     gasCacheBlocks,
 		blockLag:           blockLag,
-		tokensHelper:       tokensHelper,
+		tokenManager:       tokenManager,
 	}, nil
 }
 
@@ -214,7 +210,12 @@ func (e *ETHScanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
 
 // GetTokens return all the token meta data
 func (e *ETHScanner) GetTokens() ([]*evmtypes.TokenMeta, error) {
-	return e.tokensHelper.GetTokens()
+	return e.tokenManager.GetTokens()
+}
+
+// ConvertSigningAmount converts a value of a token to wei (1e18 decimals)
+func (e *ETHScanner) ConvertSigningAmount(amt *big.Int, token string) *big.Int {
+	return e.tokenManager.ConvertSigningAmount(amt, token)
 }
 
 // FetchTxs query the ETH chain to get txs in the given block height
@@ -638,112 +639,6 @@ func (e *ETHScanner) checkTransaction(hash string) bool {
 	return true
 }
 
-// func (e *ETHScanner) getReceipt(hash string) (*etypes.Receipt, error) {
-// 	ctx, cancel := e.getContext()
-// 	defer cancel()
-// 	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
-// }
-
-// func (e *ETHScanner) getHeader(height int64) (*etypes.Header, error) {
-// 	ctx, cancel := e.getContext()
-// 	defer cancel()
-// 	return e.client.HeaderByNumber(ctx, big.NewInt(height))
-// }
-
-// func (e *ETHScanner) getBlock(height int64) (*etypes.Block, error) {
-// 	ctx, cancel := e.getContext()
-// 	defer cancel()
-// 	return e.client.BlockByNumber(ctx, big.NewInt(height))
-// }
-
-// func (e *ETHScanner) getRPCBlock(height int64) (*etypes.Block, error) {
-// 	block, err := e.getBlock(height)
-// 	if err == ethereum.NotFound {
-// 		return nil, btypes.ErrUnavailableBlock
-// 	}
-// 	if err != nil {
-// 		return nil, fmt.Errorf("fail to fetch block: %w", err)
-// 	}
-// 	return block, nil
-// }
-
-// func (e *ETHScanner) getDecimals(token string) (uint64, error) {
-// 	if IsETH(token) {
-// 		return defaultDecimals, nil
-// 	}
-// 	to := ecommon.HexToAddress(token)
-// 	input, err := e.erc20ABI.Pack(decimalMethod)
-// 	if err != nil {
-// 		return defaultDecimals, fmt.Errorf("fail to pack decimal method: %w", err)
-// 	}
-// 	ctx, cancel := e.getContext()
-// 	defer cancel()
-// 	res, err := e.client.CallContract(ctx, ethereum.CallMsg{
-// 		To:   &to,
-// 		Data: input,
-// 	}, nil)
-// 	if err != nil {
-// 		return defaultDecimals, fmt.Errorf("fail to call smart contract get decimals: %w", err)
-// 	}
-// 	output, err := e.erc20ABI.Unpack(decimalMethod, res)
-// 	if err != nil {
-// 		return defaultDecimals, fmt.Errorf("fail to unpack decimal method call result: %w", err)
-// 	}
-// 	switch output[0].(type) {
-// 	case uint8:
-// 		decimals, ok := abi.ConvertType(output[0], new(uint8)).(*uint8)
-// 		if !ok {
-// 			return defaultDecimals, fmt.Errorf("dev error: fail to cast uint8")
-// 		}
-// 		return uint64(*decimals), nil
-// 	case *big.Int:
-// 		decimals, ok := abi.ConvertType(output[0], new(*big.Int)).(*big.Int)
-// 		if !ok {
-// 			return defaultDecimals, fmt.Errorf("dev error: fail to cast big.Int")
-// 		}
-// 		return decimals.Uint64(), nil
-// 	}
-// 	return defaultDecimals, fmt.Errorf("%s is %T fail to parse it", output[0], output[0])
-// }
-
-// // replace the . in symbol to *, and replace the - in symbol to #
-// // because . and - had been reserved to use in THORChain symbol
-// var symbolReplacer = strings.NewReplacer(".", "*", "-", "#", `\u0000`, "", "\u0000", "")
-
-// func sanitiseSymbol(symbol string) string {
-// 	return symbolReplacer.Replace(symbol)
-// }
-
-// func (e *ETHScanner) getSymbol(token string) (string, error) {
-// 	if IsETH(token) {
-// 		return "ETH", nil
-// 	}
-// 	to := ecommon.HexToAddress(token)
-// 	input, err := e.erc20ABI.Pack(symbolMethod)
-// 	if err != nil {
-// 		return "", nil
-// 	}
-// 	ctx, cancel := e.getContext()
-// 	defer cancel()
-// 	res, err := e.client.CallContract(ctx, ethereum.CallMsg{
-// 		To:   &to,
-// 		Data: input,
-// 	}, nil)
-// 	if err != nil {
-// 		return "", fmt.Errorf("fail to call to smart contract and get symbol: %w", err)
-// 	}
-// 	var symbol string
-// 	output, err := e.erc20ABI.Unpack(symbolMethod, res)
-// 	if err != nil {
-// 		symbol = string(res)
-// 		e.logger.Err(err).Msgf("fail to unpack symbol method call,token address: %s , symbol: %s", token, symbol)
-// 		return sanitiseSymbol(symbol), nil
-// 	}
-// 	// nolint
-// 	symbol = *abi.ConvertType(output[0], new(string)).(*string)
-// 	return sanitiseSymbol(symbol), nil
-// }
-
 // isToValidContractAddress this method make sure the transaction to address is to THORChain router or a whitelist address
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
@@ -761,12 +656,12 @@ func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 }
 
 func (e *ETHScanner) getTokenMeta(token string) (evmtypes.TokenMeta, error) {
-	return e.tokensHelper.GetTokenMeta(token)
+	return e.tokenManager.GetTokenMeta(token)
 }
 
 // convertAmount will convert the amount to 1e8 , the decimals used by THORChain
 func (e *ETHScanner) convertAmount(token string, amt *big.Int) cosmos.Uint {
-	return e.tokensHelper.ConvertAmount(token, amt)
+	return e.tokenManager.ConvertAmount(token, amt)
 }
 
 // // return value 0 means use the default value which is common.THORChainDecimals, use 1e8 as precision
@@ -819,9 +714,9 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, nil
 	}
 	p := evm.NewSmartContractLogParser(e.isToValidContractAddress,
-		e.tokensHelper.GetAssetFromTokenAddress,
-		e.tokensHelper.GetTokenDecimalsForTHORChain,
-		e.tokensHelper.ConvertAmount,
+		e.tokenManager.GetAssetFromTokenAddress,
+		e.tokenManager.GetTokenDecimalsForTHORChain,
+		e.tokenManager.ConvertAmount,
 		e.vaultABI)
 	// txInItem will be changed in p.getTxInItem function, so if the function return an error
 	// txInItem should be abandoned
@@ -842,7 +737,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 			// it is important to keep this part outside the above loop, as when we do router upgrade , which might generate multiple deposit event , along with tx that has eth value in it
 			ethValue := cosmos.NewUintFromBigInt(tx.Value())
 			if !ethValue.IsZero() {
-				ethValue = e.tokensHelper.ConvertAmount(ethToken, tx.Value())
+				ethValue = e.tokenManager.ConvertAmount(ethToken, tx.Value())
 				if txInItem.Coins.GetCoin(common.ETHAsset).IsEmpty() && !ethValue.IsZero() {
 					txInItem.Coins = append(txInItem.Coins, common.NewCoin(common.ETHAsset, ethValue))
 				}
@@ -885,7 +780,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 			txInItem.Memo = string(memo)
 		}
 	}
-	ethValue := e.tokensHelper.ConvertAmount(ethToken, tx.Value())
+	ethValue := e.tokenManager.ConvertAmount(ethToken, tx.Value())
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, ethValue))
 	txGasPrice := tx.GasPrice()
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {

@@ -68,6 +68,7 @@ type Client struct {
 	signerCacheManager      *signercache.CacheManager
 	lastSolvencyCheckHeight int64
 	rpcClient               *evm.EthRpc
+	tokensHelper            *evm.TokenManager
 }
 
 // NewClient create new instance of Ethereum client
@@ -286,17 +287,6 @@ func (c *Client) estimateGas(from string, tx *etypes.Transaction) (uint64, error
 	})
 }
 
-// GetNonce gets nonce
-func (c *Client) GetNonce(addr string) (uint64, error) {
-	ctx, cancel := c.getContext()
-	defer cancel()
-	nonce, err := c.client.PendingNonceAt(ctx, ecommon.HexToAddress(addr))
-	if err != nil {
-		return 0, fmt.Errorf("fail to get account nonce: %w", err)
-	}
-	return nonce, nil
-}
-
 func getTokenAddressFromAsset(asset common.Asset) string {
 	if asset.Equals(common.ETHAsset) {
 		return ethToken
@@ -323,26 +313,7 @@ func (c *Client) getSmartContractByAddress(addr common.Address) common.Address {
 }
 
 func (c *Client) convertSigningAmount(amt *big.Int, token string) *big.Int {
-	// convert 1e8 to 1e18
-	amt = c.convertThorchainAmountToWei(amt)
-	if IsETH(token) {
-		return amt
-	}
-	tm, err := c.ethScanner.getTokenMeta(token)
-	if err != nil {
-		c.logger.Err(err).Msgf("fail to get token meta for token: %s", token)
-		return amt
-	}
-
-	if tm.Decimal == defaultDecimals {
-		// when the smart contract is using 1e18 as decimals , that means is based on WEI
-		// thus the input amt is correct amount to send out
-		return amt
-	}
-	var value big.Int
-	amt = amt.Mul(amt, value.Exp(big.NewInt(10), big.NewInt(int64(tm.Decimal)), nil))
-	amt = amt.Div(amt, value.Exp(big.NewInt(10), big.NewInt(defaultDecimals), nil))
-	return amt
+	return c.ethScanner.ConvertSigningAmount(amt, token)
 }
 
 func (c *Client) convertThorchainAmountToWei(amt *big.Int) *big.Int {
@@ -467,7 +438,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		}
 	}
 
-	nonce, err := c.GetNonce(fromAddr.String())
+	nonce, err := c.rpcClient.GetNonce(fromAddr.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to fetch account(%s) nonce : %w", fromAddr, err)
 	}
@@ -641,7 +612,7 @@ func (c *Client) GetBalances(addr string, height *big.Int) (common.Coins, error)
 // GetAccount gets account by address in eth client
 func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
 	addr := c.GetAddress(pk)
-	nonce, err := c.GetNonce(addr)
+	nonce, err := c.rpcClient.GetNonce(addr)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -655,7 +626,7 @@ func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, 
 
 // GetAccountByAddress return account information
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
-	nonce, err := c.GetNonce(address)
+	nonce, err := c.rpcClient.GetNonce(address)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -799,29 +770,13 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && c.asgardAddresses != nil {
 		return c.asgardAddresses, nil
 	}
-	vaults, err := c.bridge.GetAsgards()
+
+	addresses, err := c.bridge.GetChainAsgards(common.ETHChain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgards : %w", err)
 	}
+	c.asgardAddresses = addresses
 
-	for _, v := range vaults {
-		addr, err := v.PubKey.GetAddress(common.ETHChain)
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get address")
-			continue
-		}
-		found := false
-		for _, item := range c.asgardAddresses {
-			if item.Equals(addr) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			c.asgardAddresses = append(c.asgardAddresses, addr)
-		}
-
-	}
 	if len(c.asgardAddresses) > maxAsgardAddresses {
 		startIdx := len(c.asgardAddresses) - maxAsgardAddresses
 		c.asgardAddresses = c.asgardAddresses[startIdx:]

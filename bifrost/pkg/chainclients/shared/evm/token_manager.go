@@ -2,6 +2,7 @@ package evm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -31,8 +32,8 @@ type (
 	decimalsFetcher func(token string) (uint64, error)
 )
 
-// TokensHelper is a wrapper around a EVM-based token LevelDB with other helper functions
-type TokensHelper struct {
+// TokenManager manages a LevelDB of ERC20 token meta data and interfaces with token smart contracts
+type TokenManager struct {
 	tokenDb         *LevelDBTokenMeta
 	defaultDecimals uint64
 	nativeAsset     common.Asset
@@ -43,14 +44,14 @@ type TokensHelper struct {
 	logger          zerolog.Logger
 }
 
-// NewTokensHelper returns an instance of TokensHelper
-func NewTokensHelper(db *leveldb.DB,
+// NewTokenManager returns an instance of TokenManager
+func NewTokenManager(db *leveldb.DB,
 	prefixTokenMeta string,
 	nativeAsset common.Asset,
 	defaultDecimals uint64,
 	requestTimeout time.Duration,
 	tokenWhitelist []ERC20Token,
-	rpcHost string) (*TokensHelper, error) {
+	ethClient *ethclient.Client) (*TokenManager, error) {
 
 	tokenDb, err := NewLevelDBTokenMeta(db, prefixTokenMeta)
 	if err != nil {
@@ -62,33 +63,32 @@ func NewTokensHelper(db *leveldb.DB,
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}
 
-	client, err := ethclient.Dial(rpcHost)
-	if err != nil {
-		return nil, fmt.Errorf("fail to dial %s rpc host(%s): %w", nativeAsset.Symbol, rpcHost, err)
+	if ethClient == nil {
+		return nil, errors.New("ETH client is nil")
 	}
 
-	return &TokensHelper{
+	return &TokenManager{
 		tokenDb:         tokenDb,
 		defaultDecimals: defaultDecimals,
 		nativeAsset:     nativeAsset,
 		erc20ABI:        erc20ABI,
 		tokenWhitelist:  tokenWhitelist,
-		client:          client,
+		client:          ethClient,
 		requestTimeout:  requestTimeout,
-		logger:          log.Logger.With().Str("module", "tokens_helper").Str("chain", nativeAsset.Chain.String()).Logger(),
+		logger:          log.Logger.With().Str("module", "token_manager").Str("chain", nativeAsset.Chain.String()).Logger(),
 	}, nil
 }
 
-func (h *TokensHelper) getContext() (context.Context, context.CancelFunc) {
+func (h *TokenManager) getContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), h.requestTimeout)
 }
 
 // GetTokens return all the token meta data
-func (h *TokensHelper) GetTokens() ([]*types.TokenMeta, error) {
+func (h *TokenManager) GetTokens() ([]*types.TokenMeta, error) {
 	return h.tokenDb.GetTokens()
 }
 
-func (h *TokensHelper) GetTokenMeta(token string) (types.TokenMeta, error) {
+func (h *TokenManager) GetTokenMeta(token string) (types.TokenMeta, error) {
 	tokenMeta, err := h.tokenDb.GetTokenMeta(token)
 	if err != nil {
 		return types.TokenMeta{}, fmt.Errorf("fail to get token meta: %w", err)
@@ -112,7 +112,6 @@ func (h *TokensHelper) GetTokenMeta(token string) (types.TokenMeta, error) {
 		if err != nil {
 			h.logger.Err(err).Msgf("fail to get decimals from smart contract, default to: %d", h.defaultDecimals)
 		}
-		// e.logger.Info().Msgf("token:%s, decimals: %d", token, decimals)
 		tokenMeta = types.NewTokenMeta(symbol, token, decimals)
 		if err = h.tokenDb.SaveTokenMeta(symbol, token, decimals); err != nil {
 			return types.TokenMeta{}, fmt.Errorf("fail to save token meta: %w", err)
@@ -121,7 +120,7 @@ func (h *TokensHelper) GetTokenMeta(token string) (types.TokenMeta, error) {
 	return tokenMeta, nil
 }
 
-func (h *TokensHelper) SaveTokenMeta(symbol, address string, decimals uint64) error {
+func (h *TokenManager) SaveTokenMeta(symbol, address string, decimals uint64) error {
 	return h.tokenDb.SaveTokenMeta(symbol, address, decimals)
 }
 
@@ -130,7 +129,7 @@ func IsNative(token string) bool {
 	return strings.EqualFold(token, nativeToken)
 }
 
-func (h *TokensHelper) GetAssetFromTokenAddress(token string) (common.Asset, error) {
+func (h *TokenManager) GetAssetFromTokenAddress(token string) (common.Asset, error) {
 	if IsNative(token) {
 		return h.nativeAsset, nil
 	}
@@ -145,7 +144,7 @@ func (h *TokensHelper) GetAssetFromTokenAddress(token string) (common.Asset, err
 }
 
 // convertAmount will convert the amount to 1e8 , the decimals used by THORChain
-func (h *TokensHelper) ConvertAmount(token string, amt *big.Int) cosmos.Uint {
+func (h *TokenManager) ConvertAmount(token string, amt *big.Int) cosmos.Uint {
 	if IsNative(token) {
 		return cosmos.NewUintFromBigInt(amt).QuoUint64(common.One * 100)
 	}
@@ -165,8 +164,37 @@ func (h *TokensHelper) ConvertAmount(token string, amt *big.Int) cosmos.Uint {
 	return cosmos.NewUintFromBigInt(amt).QuoUint64(common.One * 100)
 }
 
+// ConvertThorchainAmountToWei converts amt in 1e8 decimals to wei (1e18 decimals)
+func (h *TokenManager) ConvertThorchainAmountToWei(amt *big.Int) *big.Int {
+	return big.NewInt(0).Mul(amt, big.NewInt(common.One*100))
+}
+
+// ConvertSigningAmount converts a value of a token to wei (1e18 decimals)
+func (h *TokenManager) ConvertSigningAmount(amt *big.Int, token string) *big.Int {
+	// convert 1e8 to 1e18
+	amt = h.ConvertThorchainAmountToWei(amt)
+	if IsNative(token) {
+		return amt
+	}
+	tm, err := h.GetTokenMeta(token)
+	if err != nil {
+		h.logger.Err(err).Msgf("fail to get token meta for token: %s", token)
+		return amt
+	}
+
+	if tm.Decimal == h.defaultDecimals {
+		// when the smart contract is using 1e18 as decimals , that means is based on WEI
+		// thus the input amt is correct amount to send out
+		return amt
+	}
+	var value big.Int
+	amt = amt.Mul(amt, value.Exp(big.NewInt(10), big.NewInt(int64(tm.Decimal)), nil))
+	amt = amt.Div(amt, value.Exp(big.NewInt(10), big.NewInt(int64(h.defaultDecimals)), nil))
+	return amt
+}
+
 // return value 0 means use the default value which is common.THORChainDecimals, use 1e8 as precision
-func (h *TokensHelper) GetTokenDecimalsForTHORChain(token string) int64 {
+func (h *TokenManager) GetTokenDecimalsForTHORChain(token string) int64 {
 	if IsNative(token) {
 		return 0
 	}
@@ -185,12 +213,13 @@ func (h *TokensHelper) GetTokenDecimalsForTHORChain(token string) int64 {
 }
 
 // getDecimals calls the token's contract and retrieves its decimals
-func (h *TokensHelper) getDecimals(token string) (uint64, error) {
+func (h *TokenManager) getDecimals(token string) (uint64, error) {
 	if IsNative(token) {
 		return h.defaultDecimals, nil
 	}
 	to := ecommon.HexToAddress(token)
 	input, err := h.erc20ABI.Pack(decimalMethod)
+	h.logger.Info().Bytes("decimals data", input).Msg("decimals data")
 	if err != nil {
 		return h.defaultDecimals, fmt.Errorf("fail to pack decimal method: %w", err)
 	}
@@ -233,12 +262,13 @@ func sanitiseSymbol(symbol string) string {
 }
 
 // getSymbol calls the token's contract and retrieves its symbol
-func (h *TokensHelper) getSymbol(token string) (string, error) {
+func (h *TokenManager) getSymbol(token string) (string, error) {
 	if IsNative(token) {
 		return h.nativeAsset.Symbol.String(), nil
 	}
 	to := ecommon.HexToAddress(token)
 	input, err := h.erc20ABI.Pack(symbolMethod)
+	h.logger.Info().Bytes("symbol data", input).Msg("symbol data")
 	if err != nil {
 		return "", nil
 	}
