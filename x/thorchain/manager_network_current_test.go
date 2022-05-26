@@ -499,21 +499,30 @@ func (s *NetworkManagerV90TestSuite) TestRagnarokPool(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(tempPool.Status, Equals, PoolAvailable)
 	}
-
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
 	// mimir didn't set , it should not take any actions
-	ctx = ctx.WithBlockHeight(mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) * 5)
+	ctx = ctx.WithBlockHeight(interval * 5)
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
 
 	// happy path
 	networkMgr.k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	// first round , it should recall yggdrasil
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
 	items, _ := mgr.txOutStore.GetOutboundItems(ctx)
+	c.Assert(items, HasLen, 0)
+
+	// second round, ragnarok
+	ctx = ctx.WithBlockHeight(interval * 6)
+	err = networkMgr.checkPoolRagnarok(ctx, mgr)
+	c.Assert(err, IsNil)
+	items, _ = mgr.txOutStore.GetOutboundItems(ctx)
 	c.Assert(items, HasLen, 2)
+
 	tempPool, err := k.GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
-	c.Assert(tempPool.Status, Equals, PoolStaged)
+	c.Assert(tempPool.Status, Equals, PoolSuspended)
 
 	tempPool, err = k.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
