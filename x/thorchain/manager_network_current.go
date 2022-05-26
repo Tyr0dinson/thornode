@@ -553,7 +553,7 @@ func (vm *NetworkMgrV90) ragnarokChain(ctx cosmos.Context, chain common.Chain, n
 		if !pool.Asset.GetChain().Equals(chain) || pool.LPUnits.IsZero() {
 			continue
 		}
-		if err := vm.withdrawLiquidity(ctx, pool, na, nth, mgr); err != nil {
+		if err := vm.withdrawLiquidity(ctx, pool, na, mgr); err != nil {
 			ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
 		}
 	}
@@ -561,17 +561,23 @@ func (vm *NetworkMgrV90) ragnarokChain(ctx cosmos.Context, chain common.Chain, n
 	return nil
 }
 
-func (vm *NetworkMgrV90) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, nth int64, mgr Manager) error {
+// withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.ProcessNumOfLPPerIteration
+// once the all LP get processed, none-gas pool will be removed , gas pool will be set to Suspended
+func (vm *NetworkMgrV90) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
 	handler := NewInternalHandler(mgr)
 	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
+	lpPerIteration := mgr.GetConstants().GetInt64Value(constants.ProcessNumOfLPPerIteration)
+	totalCount := int64(0)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var lp LiquidityProvider
 		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &lp); err != nil {
 			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
+			vm.k.RemoveLiquidityProvider(ctx, lp)
 			continue
 		}
 		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
+			vm.k.RemoveLiquidityProvider(ctx, lp)
 			continue
 		}
 		var withdrawAddr common.Address
@@ -598,7 +604,29 @@ func (vm *NetworkMgrV90) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 
 		_, err := handler(ctx, withdrawMsg)
 		if err != nil {
-			ctx.Logger().Error("fail to withdraw", "liquidity provider", lp.RuneAddress, "asset address", lp.AssetAddress, "error", err)
+			ctx.Logger().Error("fail to withdraw, remove LP", "liquidity provider", lp.RuneAddress, "asset address", lp.AssetAddress, "error", err)
+			// in a ragnarok scenario , try best to withdraw it  ,
+			// if an LP failed to withdraw most likely it is due to not enough asset to pay for gas fee, then let's remove the LP record
+			// write a log first , so we can grep the log to deal with it manually
+			vm.k.RemoveLiquidityProvider(ctx, lp)
+		}
+		totalCount++
+		if totalCount >= lpPerIteration {
+			break
+		}
+	}
+	// this means finished
+	if totalCount < lpPerIteration {
+		afterPool, err := vm.k.GetPool(ctx, pool.Asset)
+		if err != nil {
+			return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
+		}
+		if afterPool.Asset.IsGasAsset() {
+			afterPool.Status = PoolSuspended
+			return vm.k.SetPool(ctx, afterPool)
+		} else {
+			// remove the pool
+			vm.k.RemovePool(ctx, pool.Asset)
 		}
 	}
 	return nil
@@ -898,11 +926,6 @@ func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 	}
 
 	for _, pool := range pools {
-		// once pool is already staged , don't ragnarok it , let pool cycle do it's job
-		if pool.Status == PoolStaged {
-			continue
-		}
-
 		k := fmt.Sprintf("RAGNAROK-%s", strings.ReplaceAll(pool.Asset.String(), ".", "-"))
 		v, err := vm.k.GetMimir(ctx, k)
 		if err != nil {
@@ -927,11 +950,13 @@ func (vm *NetworkMgrV90) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 // On blockchain that support multiple assets, make sure gas pool doesn't get ragnarok before none-gas asset pool
 func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 	for _, pool := range allPools {
-		if pool.Status == PoolStaged {
+		if pool.Status == PoolSuspended {
 			continue
 		}
 		if pool.Asset.GetChain().Equals(c) && !pool.Asset.IsGasAsset() {
-			ctx.Logger().With("asset", pool.Asset.String()).Info("pool is not in staging status , thus gas asset pool can't ragnarok")
+			ctx.Logger().
+				With("asset", pool.Asset.String()).
+				Info("gas asset pool can't ragnarok when none-gas asset pool still exist")
 			return false
 		}
 	}
@@ -939,6 +964,32 @@ func canRagnarokPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 }
 
 func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
+	startBlockHeight, err := vm.k.GetPoolRagnarokStart(ctx, p.Asset)
+	if err != nil || startBlockHeight == 0 {
+		if err != nil {
+			ctx.Logger().Error("fail to get pool ragnarok start block height", "error", err)
+		}
+		// set it to current block height
+		vm.k.SetPoolRagnarokStart(ctx, p.Asset)
+		startBlockHeight = common.BlockHeight(ctx)
+	}
+	nth := (common.BlockHeight(ctx)-startBlockHeight)/mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) + 1
+
+	// set the pool status to stage , thus
+	if p.Status != PoolStaged {
+		p.Status = PoolStaged
+		if err := vm.k.SetPool(ctx, p); err != nil {
+			return fmt.Errorf("fail to set pool to stage,err: %w", err)
+		}
+	}
+
+	// first round , let's set the pool to stage , and recall yggdrasil fund
+	// staged pool will not fund yggdrasil again
+	if nth == 1 {
+		// redeem all synth asset from the pool , and send RUNE to reserve
+		return vm.RecallChainFunds(ctx, p.Asset.GetChain(), mgr, nil)
+	}
+
 	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		ctx.Logger().Error("can't get active nodes", "error", err)
@@ -948,18 +999,6 @@ func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) e
 		return fmt.Errorf("can't find any active nodes")
 	}
 	na := nas[0]
-	if err := vm.withdrawLiquidity(ctx, p, na, 1, mgr); err != nil {
-		ctx.Logger().Error("fail to ragnarok liquidity", "error", err)
-	}
 
-	// when it get to here, set the pool status to staging.
-	// leave the rest work for pool churn, pool churn logic will keep charging pool fees
-	// once the pool has zero RUNE left , it will be burned
-	poolAfter, err := vm.k.GetPool(ctx, p.Asset)
-	if err != nil {
-		ctx.Logger().With("pool", p.Asset.String()).Error("fail to get pool", "error", err)
-		return fmt.Errorf("fail to get pool,err: %w", err)
-	}
-	poolAfter.Status = PoolStaged
-	return vm.k.SetPool(ctx, poolAfter)
+	return vm.withdrawLiquidity(ctx, p, na, mgr)
 }

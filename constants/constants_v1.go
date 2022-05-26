@@ -63,6 +63,7 @@ func NewConstantValue010() *ConstantVals {
 			ValidatorMaxRewardRatio:        1,                  // the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 			PoolDepthForYggFundingMin:      500_000_00000000,   // the minimum pool depth in RUNE required for ygg funding
 			MaxNodeToChurnOutForLowVersion: 1,                  // the maximum number of nodes to churn out for low version per churn
+			ProcessNumOfLPPerIteration:     500,                // the number of LP to be processed per iteration during ragnarok pool
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
