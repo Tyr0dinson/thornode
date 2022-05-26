@@ -99,15 +99,6 @@ func (m *MsgTssPool) ValidateBasic() error {
 		if signerAddress.Equals(m.Signer) {
 			isSignerInPubKeys = true
 		}
-		if signerAddress.Equals(m.Signer) {
-			isSignerInPubKeys = true
-		}
-	}
-	if !isSignerInPubKeys {
-		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
-	}
-	if !isSignerInPubKeys {
-		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
 	}
 	if !isSignerInPubKeys {
 		return cosmos.ErrUnknownRequest("signer is not part of keygen member")
