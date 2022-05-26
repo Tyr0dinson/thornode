@@ -440,10 +440,10 @@ func (s *NetworkManagerV90TestSuite) TestRagnarokPool(c *C) {
 	retireVault := GetRandomVault()
 	retireVault.Chains = common.Chains{common.BNBChain, common.BTCChain}.Strings()
 	yggVault := GetRandomVault()
+	yggVault.PubKey = na.PubKeySet.Secp256k1
 	yggVault.Type = YggdrasilVault
 	yggVault.Coins = common.Coins{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(3*common.One)),
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(300*common.One)),
 	}
 	c.Assert(k.SetVault(ctx, yggVault), IsNil)
 	btcPool := NewPool()
@@ -511,14 +511,15 @@ func (s *NetworkManagerV90TestSuite) TestRagnarokPool(c *C) {
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
 	items, _ := mgr.txOutStore.GetOutboundItems(ctx)
-	c.Assert(items, HasLen, 0)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Memo, Equals, "YGGDRASIL-:200")
 
 	// second round, ragnarok
 	ctx = ctx.WithBlockHeight(interval * 6)
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
 	items, _ = mgr.txOutStore.GetOutboundItems(ctx)
-	c.Assert(items, HasLen, 2)
+	c.Assert(items, HasLen, 3)
 
 	tempPool, err := k.GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)

@@ -474,9 +474,7 @@ func (vm *NetworkMgrV90) RecallChainFunds(ctx cosmos.Context, chain common.Chain
 		return err
 	}
 
-	version := vm.k.GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	vault := vm.k.GetMostSecure(ctx, active, signingTransactionPeriod)
 	if vault.IsEmpty() {
 		return fmt.Errorf("unable to determine asgard vault")
@@ -988,21 +986,23 @@ func (vm *NetworkMgrV90) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) e
 	if nth == 1 {
 		// redeem all synth asset from the pool , and send RUNE to reserve
 		totalSupply := vm.k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
-		runeValue := p.AssetValueInRune(totalSupply)
-		p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
-		// deduct the LP units
-		p.LPUnits = common.SafeSub(p.LPUnits, totalSupply)
-		if err := vm.k.SetPool(ctx, p); err != nil {
-			return fmt.Errorf("fail to save pool,err: %w", err)
+		if totalSupply.GT(cosmos.ZeroUint()) {
+			runeValue := p.AssetValueInRune(totalSupply)
+			p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
+			// deduct the LP units
+			p.LPUnits = common.SafeSub(p.LPUnits, totalSupply)
+			if err := vm.k.SetPool(ctx, p); err != nil {
+				return fmt.Errorf("fail to save pool,err: %w", err)
+			}
+			if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(
+				common.NewCoin(common.RuneNative, runeValue))); err != nil {
+				ctx.Logger().Error("fail to send redeemed synth RUNE to reserve", "error", err)
+			}
+			ctx.Logger().
+				With("synth_supply", totalSupply.String()).
+				With("rune_amount", runeValue).
+				Info("sending synth redeem RUNE to Reserve")
 		}
-		if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(
-			common.NewCoin(common.RuneNative, runeValue))); err != nil {
-			ctx.Logger().Error("fail to send redeemed synth RUNE to reserve", "error", err)
-		}
-		ctx.Logger().
-			With("synth_supply", totalSupply.String()).
-			With("rune_amount", runeValue).
-			Info("sending synth redeem RUNE to Reserve")
 		return vm.RecallChainFunds(ctx, p.Asset.GetChain(), mgr, nil)
 	}
 
