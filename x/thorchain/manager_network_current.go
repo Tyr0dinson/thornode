@@ -57,7 +57,7 @@ func (vm *NetworkMgrV89) processGenesisSetup(ctx cosmos.Context) error {
 			common.XHVChain,
 			common.TERRAChain,
 		}
-		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, string(active[0].Cryptonote), supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
+		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, active[0].Cryptonote, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
 		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)

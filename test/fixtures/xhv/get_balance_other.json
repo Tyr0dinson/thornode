@@ -1,24 +1,24 @@
 {
-    "id": "0",
-    "jsonrpc": "2.0",
-    "result": {
+  "id": "0",
+  "jsonrpc": "2.0",
+  "result": {
+    "balance": 0,
+    "blocks_to_unlock": 329,
+    "multisig_import_needed": false,
+    "per_subaddress": [
+      {
+        "account_index": 0,
+        "address": "hvxyLy4UdoGCgmGqMSaTUi4gX76syNh9zGidKn9yJSxYVvch5GW7U4SbA8qcz8ReAFVyGWahCCwyaKNTLDeEWR6n2q8GNT6F1m",
+        "address_index": 0,
         "balance": 0,
         "blocks_to_unlock": 329,
-        "multisig_import_needed": false,
-        "per_subaddress": [
-            {
-                "account_index": 0,
-                "address": "hvxyLy4UdoGCgmGqMSaTUi4gX76syNh9zGidKn9yJSxYVvch5GW7U4SbA8qcz8ReAFVyGWahCCwyaKNTLDeEWR6n2q8GNT6F1m",
-                "address_index": 0,
-                "balance": 0,
-                "blocks_to_unlock": 329,
-                "label": "Primary account",
-                "num_unspent_outputs": 4,
-                "time_to_unlock": 0,
-                "unlocked_balance": 0
-            }
-        ],
+        "label": "Primary account",
+        "num_unspent_outputs": 4,
         "time_to_unlock": 0,
         "unlocked_balance": 0
-    }
+      }
+    ],
+    "time_to_unlock": 0,
+    "unlocked_balance": 0
+  }
 }

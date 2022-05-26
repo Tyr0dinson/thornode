@@ -67,8 +67,8 @@ require (
 	github.com/Workiva/go-datastructures v1.0.52 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
-	github.com/akildemir/go-tss v0.0.0-20220424150522-1212848aa0f9 // indirect
-	github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c // indirect
+	github.com/akildemir/go-tss v0.0.0-20220424150522-1212848aa0f9
+	github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
@@ -125,8 +125,8 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
-	github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220210120456-ebe936d7475a // indirect
-	github.com/haven-protocol-org/monero-go-utils v0.0.0-20211126154105-058b2666f217 // indirect
+	github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220210120456-ebe936d7475a
+	github.com/haven-protocol-org/monero-go-utils v0.0.0-20211126154105-058b2666f217
 	github.com/hdevalence/ed25519consensus v0.0.0-20210204194344-59a8610d2b87 // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.2.0 // indirect
@@ -168,7 +168,7 @@ require (
 	github.com/libp2p/go-libp2p-mplex v0.2.4 // indirect
 	github.com/libp2p/go-libp2p-nat v0.0.6 // indirect
 	github.com/libp2p/go-libp2p-noise v0.1.1 // indirect
-	github.com/libp2p/go-libp2p-peerstore v0.2.6 // indirect
+	github.com/libp2p/go-libp2p-peerstore v0.2.6
 	github.com/libp2p/go-libp2p-pnet v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-record v0.1.3 // indirect
 	github.com/libp2p/go-libp2p-swarm v0.2.8 // indirect
@@ -256,6 +256,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	nhooyr.io/websocket v1.8.6 // indirect
 )
+
+require golang.org/x/mod v0.5.1 // indirect
 
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43

@@ -30,6 +30,6 @@ do
 	"amount_of_blocks": 1,
 	"wallet_address": "'"${MASTER_ADDR}"'",
 	"starting_nonce": 0}' \
-	-H 'Content-Type: application/json'
-	sleep $BLOCK_TIME
+    -H 'Content-Type: application/json'
+  sleep $BLOCK_TIME
 done

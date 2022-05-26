@@ -137,7 +137,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 	for _, tx := range msg.Txs {
 
 		// set the correct observed vault key for txs from XHV chain.
-		// It is currently set to cryptonote data instead of the actualy thor pubKey
+		// It is currently set to cryptonote data instead of the actual thor pubKey
 		if tx.Tx.Chain == common.XHVChain {
 			iter := h.mgr.Keeper().GetVaultIterator(ctx)
 			defer iter.Close()
