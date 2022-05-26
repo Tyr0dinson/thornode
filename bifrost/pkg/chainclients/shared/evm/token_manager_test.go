@@ -76,7 +76,7 @@ func (s *TokenManagerTestSuite) SetUpSuite(c *C) {
 	s.prefix = "eth-tokenmeta-"
 }
 
-func (s *TokenManagerTestSuite) TestTokenManagerSaveAndGet(c *C) {
+func (s *TokenManagerTestSuite) TestSaveAndGet(c *C) {
 	manager, err := NewTokenManager(s.storage.GetInternalDb(), s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
 	c.Assert(err, IsNil)
 
