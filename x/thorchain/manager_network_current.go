@@ -559,12 +559,12 @@ func (vm *NetworkMgrV90) ragnarokChain(ctx cosmos.Context, chain common.Chain, n
 	return nil
 }
 
-// withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.ProcessNumOfLPPerIteration
+// withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
 // once the all LP get processed, none-gas pool will be removed , gas pool will be set to Suspended
 func (vm *NetworkMgrV90) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
 	handler := NewInternalHandler(mgr)
 	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
-	lpPerIteration := mgr.GetConstants().GetInt64Value(constants.ProcessNumOfLPPerIteration)
+	lpPerIteration := mgr.GetConstants().GetInt64Value(constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
