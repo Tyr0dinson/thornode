@@ -219,10 +219,10 @@ func GetBlock(height int64) (Block, error) {
 	return reply.Result, err
 }
 
-// GetTxes returns the txs for given hashes. If any of the given hashes could not be found on the chain
+// GetTxs returns the txs for given hashes. If any of the given hashes could not be found on the chain
 // it returns then in the missedTxs variable.
-func GetTxes(txes []string) (rawTxs []RawTx, missedTxs []string, err error) {
-	requestBody, err := json.Marshal(map[string]interface{}{"txs_hashes": txes, "decode_as_json": true})
+func GetTxs(txs []string) (rawTxs []RawTx, missedTxs []string, err error) {
+	requestBody, err := json.Marshal(map[string]interface{}{"txs_hashes": txs, "decode_as_json": true})
 	if err != nil {
 		return
 	}
@@ -248,7 +248,7 @@ func GetTxes(txes []string) (rawTxs []RawTx, missedTxs []string, err error) {
 		}
 	}{}
 
-	// parse the returned resutl
+	// parse the returned result
 	err = json.Unmarshal(body, &txResult)
 	if err != nil {
 		return
@@ -290,7 +290,7 @@ func GetPoolTxs() ([]RawTx, error) {
 	}{}
 	var rawTxs []RawTx
 
-	// parse the returned resutl
+	// parse the returned result
 	err = json.Unmarshal(body, &result)
 	if err != nil {
 		return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
@@ -304,7 +304,7 @@ func GetPoolTxs() ([]RawTx, error) {
 			return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
 		}
 		rawTx.Hash = tx.Hash
-		rawTx.Block_Height = 0 // they are in pool, so dont have block height
+		rawTx.Block_Height = 0 // they are in pool, so don't have block height
 		rawTxs = append(rawTxs, rawTx)
 	}
 
@@ -336,7 +336,7 @@ func SendRawTransaction(txHash string) BroadcastTxResponse {
 		return reply
 	}
 
-	// parse the returned resutl
+	// parse the returned result
 	err = json.Unmarshal(body, &reply)
 	if err != nil {
 		reply.Status = "Unmarshaling Response Error"

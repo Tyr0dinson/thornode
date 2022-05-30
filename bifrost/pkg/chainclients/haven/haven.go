@@ -43,11 +43,11 @@ type Client struct {
 	processedMemPool          map[string]bool
 	signedTxOut               map[string]TxOutWitness
 	signedTxOutDelete         map[string]int64
-	asgarNames                map[common.PubKey]string
+	asgardNames               map[common.PubKey]string
 	memPoolLock               *sync.Mutex
 	signedTxOutLock           *sync.Mutex
 	clientLock                *sync.Mutex
-	asgarNamesLock            *sync.Mutex
+	asgardNamesLock           *sync.Mutex
 	lastMemPoolScan           time.Time
 	blockScanner              *blockscanner.BlockScanner
 	blockMetaAccessor         BlockMetaAccessor
@@ -79,7 +79,7 @@ type TxOutWitness struct {
 	TxID     string
 	TxKey    string
 	Coin     common.Coin
-	Reciever string
+	Receiver string
 	Sender   string
 	Memo     string
 	Asset    common.Asset
@@ -123,21 +123,21 @@ func NewClient(
 	}
 
 	// Get thor keys
-	thorPriveKey, err := thorKeys.GetPrivateKey()
+	thorPrivKey, err := thorKeys.GetPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get THORChain private key: %w", err)
 	}
-	temp, err := codec.ToTmPubKeyInterface(thorPriveKey.PubKey())
+	temp, err := codec.ToTmPubKeyInterface(thorPrivKey.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tm pub key: %w", err)
 	}
-	thorPubkey, err := common.NewPubKeyFromCrypto(temp)
+	thorPubKey, err := common.NewPubKeyFromCrypto(temp)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get the node pubkey: %w", err)
 	}
 
 	// generate private keys for local haven wallet
-	havenPrivViewKey, havenPrivSpendKey := getHavenPrivateKey(thorPriveKey)
+	havenPrivViewKey, havenPrivSpendKey := getHavenPrivateKey(thorPrivKey)
 
 	// generate wallet address
 	walletAddr, err := generateWalletAddress(&havenPrivSpendKey, &havenPrivViewKey)
@@ -195,22 +195,22 @@ func NewClient(
 		bridge:                    bridge,
 		pkm:                       pkm,
 		poolMgr:                   poolMgr,
-		nodePubKey:                thorPubkey,
+		nodePubKey:                thorPubKey,
 		walletAddr:                common.Address(walletResp.Address),
 		memPoolLock:               &sync.Mutex{},
 		signedTxOutLock:           &sync.Mutex{},
 		clientLock:                &sync.Mutex{},
-		asgarNamesLock:            &sync.Mutex{},
+		asgardNamesLock:           &sync.Mutex{},
 		client:                    client,
 		tssKm:                     tssKm,
 		supportedAssets:           []string{"XHV", "XUSD", "XBTC", "XEUR", "XGBP", "XCHF", "XAUD", "XAU", "XAG", "XCNY"},
-		asgardPassword:            hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPriveKey).Bytes()),
+		asgardPassword:            hex.EncodeToString(common.CosmosPrivateKeyToTMPrivateKey(thorPrivKey).Bytes()),
 		processedMemPool:          make(map[string]bool),
 		signingOrKeygenInProgress: atomic.NewBool(false),
 		stopScanTxOuts:            atomic.NewBool(false),
 		signedTxOut:               make(map[string]TxOutWitness),
 		signedTxOutDelete:         make(map[string]int64),
-		asgarNames:                make(map[common.PubKey]string),
+		asgardNames:               make(map[common.PubKey]string),
 		currentBlockHeight:        atomic.NewInt64(0),
 	}
 
@@ -304,13 +304,13 @@ func (c *Client) openWallet(walletName, password string) error {
 }
 
 func (c *Client) SetAsgardWallet(keygenHeight int64, pk common.PubKey) {
-	c.asgarNamesLock.Lock()
-	defer c.asgarNamesLock.Unlock()
-	c.asgarNames[pk] = strconv.FormatInt(keygenHeight, 10)
-	c.logger.Info().Msgf("saved asgard keygen heiggt %s for pk: %s", c.asgarNames[pk], pk.String())
+	c.asgardNamesLock.Lock()
+	defer c.asgardNamesLock.Unlock()
+	c.asgardNames[pk] = strconv.FormatInt(keygenHeight, 10)
+	c.logger.Info().Msgf("saved asgard keygen height %s for pk: %s", c.asgardNames[pk], pk.String())
 }
 
-func (c *Client) KeygenInProgess(val bool) {
+func (c *Client) KeygenInProgress(val bool) {
 	c.signingOrKeygenInProgress.Store(val)
 }
 
@@ -344,7 +344,7 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 		if err != nil {
 			return err
 		}
-		c.logger.Info().Msgf("Switched wallet to yggrasil %s", c.walletAddr.String())
+		c.logger.Info().Msgf("Switched wallet to yggdrasil %s", c.walletAddr.String())
 	} else {
 
 		// check whether the node is active or not
@@ -353,13 +353,13 @@ func (c *Client) loginToWallet(pk common.PubKey, fromSignTx bool) error {
 			return err
 		}
 		if nodeStatus != ttypes.NodeStatus_Active {
-			return fmt.Errorf("node is not active. No asgard wallet avaible")
+			return fmt.Errorf("node is not active. No asgard wallet available")
 		}
 
 		// get the wallet name
-		c.asgarNamesLock.Lock()
-		asgardWalletName := c.nodePubKey.String() + "-" + c.asgarNames[pk] + ".mo"
-		c.asgarNamesLock.Unlock()
+		c.asgardNamesLock.Lock()
+		asgardWalletName := c.nodePubKey.String() + "-" + c.asgardNames[pk] + ".mo"
+		c.asgardNamesLock.Unlock()
 
 		err = c.openWallet(asgardWalletName, c.asgardPassword)
 		if err != nil {
@@ -394,7 +394,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 	for i := 0; i < 3; i++ {
 		refresh, err = c.client.Refresh(&wallet.RequestRefresh{})
 		if err != nil {
-			return acct, fmt.Errorf("error when refresing wallet %w", err)
+			return acct, fmt.Errorf("error when refreshing wallet %w", err)
 		}
 		if refresh.BlocksFetched > 0 {
 			break
@@ -414,7 +414,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 		if resp.Balance != 0 {
 			a, err := common.NewAsset("XHV." + asset)
 			if err != nil {
-				return acct, fmt.Errorf("fail tconstruct asset: %w", err)
+				return acct, fmt.Errorf("fail to construct asset: %w", err)
 			}
 			coins = append(coins, common.NewCoin(a, cosmos.NewUint(resp.Balance/DecimalDiff)))
 		}
@@ -737,7 +737,7 @@ func (c *Client) processReorg(block Block) ([]types.TxIn, error) {
 	}
 	var txIns []types.TxIn
 	for _, item := range blockHeights {
-		c.logger.Info().Msgf("rescan block height: %d", item)
+		c.logger.Info().Msgf("re-scan block height: %d", item)
 		b, err := GetBlock(item)
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get block from RPC for height:%d", item)
@@ -758,7 +758,7 @@ func (c *Client) processReorg(block Block) ([]types.TxIn, error) {
 }
 
 // reConfirmTx will be kicked off only when chain client detected a re-org on bitcoin chain
-// it will read through all the block meta data from local storage , and go through all the UTXOes.
+// it will read through all the block meta data from local storage , and go through all the UTXOs.
 // For each UTXO , it will send a RPC request to bitcoin chain , double check whether the TX exist or not
 // if the tx still exist , then it is all good, if a transaction previous we detected , however doesn't exist anymore , that means
 // the transaction had been removed from chain,  chain client should report to thorchain
@@ -833,7 +833,7 @@ func (c *Client) confirmTx(txHash string) bool {
 
 	// then get raw tx and check if it has confirmations or not
 	// if no confirmation and not in mempool then invalid
-	txs, missedTxs, err := GetTxes([]string{txHash})
+	txs, missedTxs, err := GetTxs([]string{txHash})
 	if err != nil {
 		c.logger.Err(err).Msgf("Error Getting Tx: %s", txHash)
 		return false
@@ -931,7 +931,7 @@ func (c *Client) scanTxOuts() {
 					TxID:     "",
 					TxKey:    "",
 					Coin:     o.Coin,
-					Reciever: o.ToAddress.String(),
+					Receiver: o.ToAddress.String(),
 					Sender:   vaultAddr.String(),
 					Memo:     o.Memo,
 					Vault:    vaultType,
@@ -983,7 +983,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 			tx := observedTxs[0].Tx
 
 			// check whether this witness is for this tx
-			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Reciever && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
+			if tx.FromAddress.String() == w.Sender && tx.ToAddress.String() == w.Receiver && tx.Coins[0].Equals(w.Coin) && tx.Memo == w.Memo {
 				w.TxID = strings.ToLower(tx.ID.String())
 				w.TxKey = tx.TxKey
 				c.signedTxOut[h] = w
@@ -1006,7 +1006,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 			respCheck, err := c.client.CheckTxKey(&wallet.RequestCheckTxKey{
 				TxID:    w.TxID,
 				TxKey:   w.TxKey,
-				Address: w.Reciever, // it is important to take this from our own cache because sender might change it.
+				Address: w.Receiver, // it is important to take this from our own cache because sender might change it.
 			})
 			c.clientLock.Unlock()
 			if err != nil {
@@ -1031,7 +1031,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				TxKey:       w.TxKey,
 				Memo:        w.Memo,
 				Sender:      w.Sender,
-				To:          w.Reciever,
+				To:          w.Receiver,
 				Coins:       []common.Coin{w.Coin},
 				Gas: common.Gas{
 					common.NewCoin(w.Coin.Asset, cosmos.NewUint(tx.Rct_Signatures.TxnFee/DecimalDiff)),
@@ -1061,7 +1061,7 @@ func (c *Client) extractTxs(block Block) (types.TxIn, error) {
 	}
 
 	// get txs from daemon, we aren't interested if a given hash can't be found here.
-	txs, _, err := GetTxes(block.Tx_Hashes)
+	txs, _, err := GetTxs(block.Tx_Hashes)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get txs from daemon: %w", err)
 	}
@@ -1384,9 +1384,9 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, error) {
 	c.signingOrKeygenInProgress.Store(true)
 	defer c.signingOrKeygenInProgress.Store(false)
-	c.asgarNamesLock.Lock()
-	keygenHeight := c.asgarNames[tx.VaultPubKey]
-	c.asgarNamesLock.Unlock()
+	c.asgardNamesLock.Lock()
+	keygenHeight := c.asgardNames[tx.VaultPubKey]
+	c.asgardNamesLock.Unlock()
 
 	// check if the chain is correct
 	if !tx.Chain.Equals(common.XHVChain) {
@@ -1510,7 +1510,7 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 		TxID:     txID,
 		TxKey:    txKey,
 		Coin:     tx.Coins[0],
-		Reciever: tx.ToAddress.String(),
+		Receiver: tx.ToAddress.String(),
 		Sender:   vaultAddr.String(),
 		Memo:     tx.Memo,
 		Vault:    vaultType,

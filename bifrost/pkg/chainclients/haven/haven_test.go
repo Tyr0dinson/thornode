@@ -218,7 +218,7 @@ func (s *HavenSuite) TestGetBlock(c *C) {
 }
 
 func (s *HavenSuite) TestGetTxs(c *C) {
-	txs, missedTxs, err := GetTxes([]string{"dde09739f16de9cd2b8c51f0258fa3816377fcbf7a60c19a6d5f162f1ea24270"})
+	txs, missedTxs, err := GetTxs([]string{"dde09739f16de9cd2b8c51f0258fa3816377fcbf7a60c19a6d5f162f1ea24270"})
 	c.Assert(err, IsNil)
 	c.Assert(len(txs), Equals, 1)
 	c.Assert(len(missedTxs), Equals, 0)
