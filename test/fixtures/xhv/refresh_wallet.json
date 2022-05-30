@@ -1,0 +1,8 @@
+{
+  "id": "0",
+  "jsonrpc": "2.0",
+  "result": {
+    "blocks_fetched": 24,
+    "received_money": true
+  }
+}

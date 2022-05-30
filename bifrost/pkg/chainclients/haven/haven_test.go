@@ -128,6 +128,8 @@ func (s *HavenSuite) SetUpTest(c *C) {
 			case r.Method == "open_wallet":
 				_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "0", "result": { } } } }`))
 				c.Assert(err, IsNil)
+			case r.Method == "refresh":
+				httpTestHandler(c, rw, "../../../../test/fixtures/xhv/refresh_wallet.json")
 			}
 		} else if req.RequestURI == "/get_transactions" {
 			b := struct {

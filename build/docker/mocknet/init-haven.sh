@@ -11,22 +11,20 @@ havend --regtest --offline --fixed-difficulty 1 --non-interactive --rpc-bind-ip 
 sleep 5
 
 i=0
-while [ $i -ne 50 ]
-do
-       curl http://127.0.0.1:17750/json_rpc -d \
-       '{"jsonrpc":"2.0","id":"0","method":"generateblocks","params":{
+while [ $i -ne 50 ]; do
+  curl http://127.0.0.1:17750/json_rpc -d \
+    '{"jsonrpc":"2.0","id":"0","method":"generateblocks","params":{
        "amount_of_blocks": 2,
        "wallet_address": "'"${MASTER_ADDR}"'",
        "starting_nonce": 0}' \
-       -H 'Content-Type: application/json'
-       i=$(($i+1))
+    -H 'Content-Type: application/json'
+  i=$((i + 1))
 done
 
 # mine a new block every BLOCK_TIME
-while true
-do
-	curl http://127.0.0.1:17750/json_rpc -d \
-	'{"jsonrpc":"2.0","id":"0","method":"generateblocks","params":{
+while true; do
+  curl http://127.0.0.1:17750/json_rpc -d \
+    '{"jsonrpc":"2.0","id":"0","method":"generateblocks","params":{
 	"amount_of_blocks": 1,
 	"wallet_address": "'"${MASTER_ADDR}"'",
 	"starting_nonce": 0}' \
