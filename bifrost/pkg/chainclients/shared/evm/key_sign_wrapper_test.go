@@ -2,6 +2,7 @@ package evm
 
 import (
 	"math/big"
+	"testing"
 
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -17,6 +18,8 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
+
+func TestEVMPackage(t *testing.T) { TestingT(t) }
 
 const MaxContractGas = 80000
 

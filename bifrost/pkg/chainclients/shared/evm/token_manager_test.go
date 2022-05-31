@@ -3,8 +3,10 @@ package evm
 import (
 	"encoding/json"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -58,7 +60,22 @@ func getTestEthClient(c *C) (*ethclient.Client, error) {
 			c.Assert(err, IsNil)
 		}
 		if rpcRequest.Method == "eth_call" {
-			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+			symbolInput := "0x95d89b41"
+			decimalsInput := "0x313ce567"
+
+			// Symbol Call
+			if strings.Contains(string(rpcRequest.Params), symbolInput) {
+				// TKN
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x544B4E"}`))
+				c.Assert(err, IsNil)
+
+				// Decimal call
+			} else if strings.Contains(string(rpcRequest.Params), decimalsInput) {
+				// 18
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x12"}`))
+				c.Assert(err, IsNil)
+			}
+			_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x0"}`))
 			c.Assert(err, IsNil)
 		}
 	}))
@@ -84,12 +101,24 @@ func (s *TokenManagerTestSuite) TestSaveAndGet(c *C) {
 	tether := "0xdAC17F958D2ee523a2206206994597C13D831ec7"
 	meta, err := manager.GetTokenMeta(tether)
 	c.Assert(err.Error(), Equals, "token: 0xdAC17F958D2ee523a2206206994597C13D831ec7 is not whitelisted")
-	c.Assert(meta, IsNil)
 
 	// Test whitelisted token gets saved
 	usdc := "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 	meta, err = manager.GetTokenMeta(usdc)
 	c.Assert(err, IsNil)
-	c.Assert(meta.Decimal, Equals, uint64(2))
-	c.Assert(meta.Symbol, Equals, "2")
+	c.Assert(meta.Decimal, Equals, uint64(18))
+	// c.Assert(meta.Symbol, Equals, "TKN")
+
+}
+
+func (s *TokenManagerTestSuite) TestConvertAmounts(c *C) {
+	manager, err := NewTokenManager(s.storage.GetInternalDb(), s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
+	c.Assert(err, IsNil)
+
+	err = manager.SaveTokenMeta("0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49", "TKN", 9)
+	c.Assert(err, IsNil)
+
+	convertedAmt := manager.ConvertSigningAmount(big.NewInt(2111111112), "0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49")
+	c.Assert(convertedAmt.Int64(), Equals, 2111111112)
+
 }

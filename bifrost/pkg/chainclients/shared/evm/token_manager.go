@@ -219,7 +219,6 @@ func (h *TokenManager) getDecimals(token string) (uint64, error) {
 	}
 	to := ecommon.HexToAddress(token)
 	input, err := h.erc20ABI.Pack(decimalMethod)
-	h.logger.Info().Bytes("decimals data", input).Msg("decimals data")
 	if err != nil {
 		return h.defaultDecimals, fmt.Errorf("fail to pack decimal method: %w", err)
 	}
@@ -268,7 +267,6 @@ func (h *TokenManager) getSymbol(token string) (string, error) {
 	}
 	to := ecommon.HexToAddress(token)
 	input, err := h.erc20ABI.Pack(symbolMethod)
-	h.logger.Info().Bytes("symbol data", input).Msg("symbol data")
 	if err != nil {
 		return "", nil
 	}
