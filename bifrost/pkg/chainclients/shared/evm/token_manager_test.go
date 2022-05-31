@@ -106,7 +106,6 @@ func (s *TokenManagerTestSuite) TestSaveAndGet(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(meta.Decimal, Equals, uint64(18))
 	c.Assert(meta.Symbol, Equals, "TKN")
-
 }
 
 func (s *TokenManagerTestSuite) TestConvertAmounts(c *C) {
