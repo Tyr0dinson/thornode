@@ -589,7 +589,7 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 		metaTxs := make([]evmtypes.TransactionMeta, 0)
 		var errataTxs []stypes.ErrataTx
 		for _, tx := range blockMeta.Transactions {
-			if e.checkTransaction(tx.Hash) {
+			if e.rpcClient.CheckTransaction(tx.Hash) {
 				e.logger.Debug().Msgf("block height: %d, tx: %s still exist", blockMeta.Height, tx.Hash)
 				metaTxs = append(metaTxs, tx)
 				continue
@@ -626,19 +626,6 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 	return rescanBlockHeights, nil
 }
 
-func (e *ETHScanner) checkTransaction(hash string) bool {
-	ctx, cancel := e.getContext()
-	defer cancel()
-	tx, pending, err := e.client.TransactionByHash(ctx, ecommon.HexToHash(hash))
-	if err != nil || tx == nil {
-		return false
-	}
-	if pending {
-		e.logger.Info().Msgf("tx: %s is in pending status", hash)
-	}
-	return true
-}
-
 // isToValidContractAddress this method make sure the transaction to address is to THORChain router or a whitelist address
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
@@ -663,39 +650,6 @@ func (e *ETHScanner) getTokenMeta(token string) (evmtypes.TokenMeta, error) {
 func (e *ETHScanner) convertAmount(token string, amt *big.Int) cosmos.Uint {
 	return e.tokenManager.ConvertAmount(token, amt)
 }
-
-// // return value 0 means use the default value which is common.THORChainDecimals, use 1e8 as precision
-// func (e *ETHScanner) getTokenDecimalsForTHORChain(token string) int64 {
-// 	if IsETH(token) {
-// 		return 0
-// 	}
-// 	tokenMeta, err := e.getTokenMeta(token)
-// 	if err != nil {
-// 		e.logger.Err(err).Msgf("fail to get token meta for token address: %s", token)
-// 	}
-// 	if tokenMeta.IsEmpty() {
-// 		return 0
-// 	}
-// 	// when the token's precision is more than THORChain , that's fine , just use THORChainDecimals
-// 	if tokenMeta.Decimal >= common.THORChainDecimals {
-// 		return 0
-// 	}
-// 	return int64(tokenMeta.Decimal)
-// }
-
-// func (e *ETHScanner) getAssetFromTokenAddress(token string) (common.Asset, error) {
-// 	if IsETH(token) {
-// 		return common.ETHAsset, nil
-// 	}
-// 	tokenMeta, err := e.getTokenMeta(token)
-// 	if err != nil {
-// 		return common.EmptyAsset, fmt.Errorf("fail to get token meta: %w", err)
-// 	}
-// 	if tokenMeta.IsEmpty() {
-// 		return common.EmptyAsset, fmt.Errorf("token metadata is empty")
-// 	}
-// 	return common.NewAsset(fmt.Sprintf("ETH.%s-%s", tokenMeta.Symbol, strings.ToUpper(tokenMeta.Address)))
-// }
 
 // getTxInFromSmartContract returns txInItem
 func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {

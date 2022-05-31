@@ -116,7 +116,7 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
-	rpcClient, err := evm.NewEthRpc(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
+	rpcClient, err := evm.NewEthRpc(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout, common.ETHChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create ETH rpc host(%s): %w", cfg.RPCHost, err)
 	}
@@ -271,20 +271,6 @@ func (c *Client) GetGasFee(gas uint64) common.Gas {
 func (c *Client) GetGasPrice() *big.Int {
 	gasPrice := c.ethScanner.GetGasPrice()
 	return gasPrice
-}
-
-// estimateGas estimates gas for tx
-func (c *Client) estimateGas(from string, tx *etypes.Transaction) (uint64, error) {
-	ctx, cancel := c.getContext()
-	defer cancel()
-	return c.client.EstimateGas(ctx, ethereum.CallMsg{
-		From:     ecommon.HexToAddress(from),
-		To:       tx.To(),
-		GasPrice: tx.GasPrice(),
-		// Gas:      tx.Gas(),
-		Value: tx.Value(),
-		Data:  tx.Data(),
-	})
 }
 
 func getTokenAddressFromAsset(asset common.Asset) string {
@@ -463,7 +449,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 		estimatedETHValue = estimatedETHValue.SetInt64(21000)
 	}
 	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
-	// estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
 	estimatedGas, err := c.rpcClient.EstimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas

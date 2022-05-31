@@ -10,6 +10,8 @@ import (
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
 )
 
@@ -18,9 +20,10 @@ type EthRpc struct {
 	host    string
 	client  *ethclient.Client
 	timeout time.Duration
+	logger  zerolog.Logger
 }
 
-func NewEthRpc(host string, timeout time.Duration) (*EthRpc, error) {
+func NewEthRpc(host string, timeout time.Duration, chain string) (*EthRpc, error) {
 	ethClient, err := ethclient.Dial(host)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial ETH rpc host(%s): %w", host, err)
@@ -30,6 +33,7 @@ func NewEthRpc(host string, timeout time.Duration) (*EthRpc, error) {
 		host:    host,
 		client:  ethClient,
 		timeout: timeout,
+		logger:  log.Logger.With().Str("module", "eth_rpc").Str("chain", chain).Logger(),
 	}, nil
 }
 
@@ -88,4 +92,18 @@ func (e *EthRpc) GetNonce(addr string) (uint64, error) {
 		return 0, fmt.Errorf("fail to get account nonce: %w", err)
 	}
 	return nonce, nil
+}
+
+// CheckTransaction returns true if a tx can be found by TransactionByHash rpc method
+func (e *EthRpc) CheckTransaction(hash string) bool {
+	ctx, cancel := e.getContext()
+	defer cancel()
+	tx, pending, err := e.client.TransactionByHash(ctx, ecommon.HexToHash(hash))
+	if err != nil || tx == nil {
+		return false
+	}
+	if pending {
+		e.logger.Info().Msgf("tx: %s is in pending status", hash)
+	}
+	return true
 }

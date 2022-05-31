@@ -7,7 +7,7 @@ import (
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-func TestFundModule(c *C, ctx cosmos.Context, k Keeper, name string, amt uint64) {
+func FundModule(c *C, ctx cosmos.Context, k Keeper, name string, amt uint64) {
 	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
@@ -15,7 +15,7 @@ func TestFundModule(c *C, ctx cosmos.Context, k Keeper, name string, amt uint64)
 	c.Assert(err, IsNil)
 }
 
-func TestFundAccount(c *C, ctx cosmos.Context, k Keeper, addr cosmos.AccAddress, amt uint64) {
+func FundAccount(c *C, ctx cosmos.Context, k Keeper, addr cosmos.AccAddress, amt uint64) {
 	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)

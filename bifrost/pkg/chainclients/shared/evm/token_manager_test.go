@@ -10,15 +10,15 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
-	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 	"gitlab.com/thorchain/thornode/common"
 	. "gopkg.in/check.v1"
 )
 
 type TokenManagerTestSuite struct {
-	prefix  string
-	storage *blockscanner.BlockScannerStorage
-	client  *ethclient.Client
+	prefix string
+	client *ethclient.Client
 }
 
 var testWhiteList = []ERC20Token{
@@ -83,18 +83,16 @@ func getTestEthClient(c *C) (*ethclient.Client, error) {
 }
 
 func (s *TokenManagerTestSuite) SetUpSuite(c *C) {
-	storage, err := blockscanner.NewBlockScannerStorage("test/path")
-	c.Assert(err, IsNil)
 	ethClient, err := getTestEthClient(c)
 	c.Assert(err, IsNil)
-
-	s.storage = storage
 	s.client = ethClient
 	s.prefix = "eth-tokenmeta-"
 }
 
 func (s *TokenManagerTestSuite) TestSaveAndGet(c *C) {
-	manager, err := NewTokenManager(s.storage.GetInternalDb(), s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	manager, err := NewTokenManager(db, s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
 	c.Assert(err, IsNil)
 
 	// Test non-whitelisted token gets rejected
@@ -107,18 +105,41 @@ func (s *TokenManagerTestSuite) TestSaveAndGet(c *C) {
 	meta, err = manager.GetTokenMeta(usdc)
 	c.Assert(err, IsNil)
 	c.Assert(meta.Decimal, Equals, uint64(18))
-	// c.Assert(meta.Symbol, Equals, "TKN")
+	c.Assert(meta.Symbol, Equals, "TKN")
 
 }
 
 func (s *TokenManagerTestSuite) TestConvertAmounts(c *C) {
-	manager, err := NewTokenManager(s.storage.GetInternalDb(), s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	manager, err := NewTokenManager(db, s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
 	c.Assert(err, IsNil)
 
 	err = manager.SaveTokenMeta("0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49", "TKN", 9)
 	c.Assert(err, IsNil)
 
-	convertedAmt := manager.ConvertSigningAmount(big.NewInt(2111111112), "0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49")
-	c.Assert(convertedAmt.Int64(), Equals, 2111111112)
+	convertedAmt := manager.ConvertSigningAmount(big.NewInt(123), "0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49")
+	c.Assert(convertedAmt.Int64(), Equals, int64(1230000000000))
+}
 
+func (s *TokenManagerTestSuite) TestGetDecimals(c *C) {
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	manager, err := NewTokenManager(db, s.prefix, common.ETHAsset, 18, time.Second, testWhiteList, s.client)
+	c.Assert(err, IsNil)
+
+	err = manager.SaveTokenMeta("TKN", "0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49", 9)
+	c.Assert(err, IsNil)
+
+	err = manager.SaveTokenMeta("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6)
+	c.Assert(err, IsNil)
+
+	decimals := manager.GetTokenDecimalsForTHORChain(nativeToken)
+	c.Assert(decimals, Equals, int64(0))
+
+	decimals = manager.GetTokenDecimalsForTHORChain("0xB0b86991c6218b36c1d19D4a2e9Eb0cE3606eB49")
+	c.Assert(decimals, Equals, int64(0))
+
+	decimals = manager.GetTokenDecimalsForTHORChain("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")
+	c.Assert(decimals, Equals, int64(6))
 }
