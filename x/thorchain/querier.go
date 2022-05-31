@@ -404,8 +404,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		GasRate cosmos.Uint    `json:"gas_rate,omitempty"`
 	}
 	var resp []address
-	version := mgr.Keeper().GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
+	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
 	// select vault that is most secure
@@ -528,6 +527,13 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 			return nil, fmt.Errorf("fail to get total effective bond: %w", err)
 		}
 
+		// Note that unlike actual BondRewardRune distribution in manager_validator_current.go ,
+		// this estimate treats lastChurnHeight as the block_height of the first (oldest) Asgard vault,
+		// rather than the active_block_height of the youngest active node.
+		// As an example, note from the below URLs that these are 5293728 and 5293733 respectively in block 5336942.
+		// https://thornode.ninerealms.com/thorchain/vaults/asgard?height=5336942
+		// https://thornode.ninerealms.com/thorchain/nodes?height=5336942
+		// (Nodes .cxmy and .uy3a .)
 		lastChurnHeight := vaults[0].BlockHeight
 
 		reward, err := getNodeCurrentRewards(ctx, mgr, nodeAcc, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
@@ -566,11 +572,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
-	version := mgr.Keeper().GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
-	if constAccessor == nil {
-		return QueryNodeAccountPreflightCheck{}, fmt.Errorf("constants for version(%s) is not available", version)
-	}
+	constAccessor := mgr.GetConstants()
 	preflightResult := QueryNodeAccountPreflightCheck{}
 	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
 	preflightResult.Status = status
@@ -591,7 +593,7 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get node slash points: %w", err)
 	}
 
-	// Find number of blocks they have been an active node
+	// Find number of blocks since the last churn (the last bond reward payout)
 	totalActiveBlocks := common.BlockHeight(ctx) - lastChurnHeight
 
 	// find number of blocks they were well behaved (ie active - slash points)
@@ -600,12 +602,13 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 		earnedBlocks = 0
 	}
 
-	naBond := nodeAcc.Bond
-	if naBond.GT(bondHardCap) {
-		naBond = bondHardCap
+	naEffectiveBond := nodeAcc.Bond
+	if naEffectiveBond.GT(bondHardCap) {
+		naEffectiveBond = bondHardCap
 	}
 
-	reward := common.GetShare(naBond, totalEffectiveBond, totalBondReward)
+	// reward = totalBondReward * (naEffectiveBond / totalEffectiveBond) * (unslashed blocks since last churn / blocks since last churn)
+	reward := common.GetShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
 	reward = common.GetShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 	return reward, nil
 }
@@ -807,9 +810,8 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	if pool.IsEmpty() {
 		return nil, fmt.Errorf("pool: %s doesn't exist", path[0])
 	}
-	ver := mgr.Keeper().GetLowestActiveVersion(ctx)
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-	pool.CalcUnits(ver, synthSupply)
+	pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
 	p := struct {
 		BalanceRune         cosmos.Uint  `json:"balance_rune"`
@@ -871,9 +873,8 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			continue
 		}
 
-		ver := mgr.Keeper().GetLowestActiveVersion(ctx)
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		pool.CalcUnits(ver, synthSupply)
+		pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
 		p := pp{
 			BalanceRune:         pool.BalanceRune,
@@ -1105,8 +1106,7 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	version := mgr.Keeper().GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
+	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
 	query := QueryQueue{
@@ -1224,8 +1224,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 }
 
 func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	ver := mgr.Keeper().GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(ver)
+	constAccessor := mgr.GetConstants()
 	res, err := json.MarshalIndent(constAccessor, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal constant values to json", "error", err)
@@ -1236,7 +1235,7 @@ func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuer
 
 func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	ver := QueryVersion{
-		Current: mgr.Keeper().GetLowestActiveVersion(ctx),
+		Current: mgr.GetVersion(),
 		Next:    mgr.Keeper().GetMinJoinVersion(ctx),
 	}
 	res, err := json.MarshalIndent(ver, "", "	")
@@ -1458,8 +1457,7 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	version := mgr.Keeper().GetLowestActiveVersion(ctx)
-	constAccessor := constants.GetConstantValues(version)
+	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
 	var result []TxOutItem

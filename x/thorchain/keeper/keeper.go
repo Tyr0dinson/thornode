@@ -14,7 +14,7 @@ import (
 
 type Keeper interface {
 	Cdc() codec.BinaryCodec
-	Version() semver.Version
+	GetVersion() semver.Version
 	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
 	SetStoreVersion(ctx cosmos.Context, ver int64)
@@ -126,6 +126,8 @@ type KeeperObservedTx interface {
 	SetObservedTxOutVoter(ctx cosmos.Context, tx ObservedTxVoter)
 	GetObservedTxOutVoterIterator(ctx cosmos.Context) cosmos.Iterator
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
+	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
+	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
 }
 
 type KeeperTxOut interface {

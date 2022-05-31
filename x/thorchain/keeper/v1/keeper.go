@@ -26,6 +26,7 @@ const (
 	prefixStoreVersion           kvTypes.DbPrefix = "_ver/"
 	prefixObservedTxIn           kvTypes.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut          kvTypes.DbPrefix = "observed_tx_out/"
+	prefixObservedLink           kvTypes.DbPrefix = "ob_link/"
 	prefixPool                   kvTypes.DbPrefix = "pool/"
 	prefixTxOut                  kvTypes.DbPrefix = "txout/"
 	prefixTotalLiquidityFee      kvTypes.DbPrefix = "total_liquidity_fee/"
@@ -96,8 +97,8 @@ func (k KVStore) Cdc() codec.BinaryCodec {
 	return k.cdc
 }
 
-// Version return the current version
-func (k KVStore) Version() semver.Version {
+// GetVersion return the current version
+func (k KVStore) GetVersion() semver.Version {
 	return k.version
 }
 
