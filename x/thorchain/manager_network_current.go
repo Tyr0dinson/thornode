@@ -975,7 +975,7 @@ func (vm *NetworkMgrV91) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) e
 	runeValue := p.AssetValueInRune(totalSupply)
 	p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
 	// deduct the LP units
-	p.LPUnits = common.SafeSub(p.LPUnits, totalSupply)
+	p.LPUnits = common.SafeSub(p.LPUnits, p.SynthUnits)
 	if err := vm.k.SetPool(ctx, p); err != nil {
 		return fmt.Errorf("fail to save pool,err: %w", err)
 	}
