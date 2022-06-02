@@ -44,8 +44,8 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.90.0")):
-		return h.validateV90(ctx, msg)
+	case version.GTE(semver.MustParse("1.92.0")):
+		return h.validateV92(ctx, msg)
 	case version.GTE(semver.MustParse("1.88.1")):
 		return h.validateV88(ctx, msg)
 	case version.GTE(semver.MustParse("0.65.0")):
@@ -55,7 +55,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	}
 }
 
-func (h SwapHandler) validateV90(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
@@ -162,15 +162,15 @@ func (h SwapHandler) validateV90(ctx cosmos.Context, msg MsgSwap) error {
 func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.90.0")) {
-		return h.handleV90(ctx, msg)
+	if version.GTE(semver.MustParse("1.92.0")) {
+		return h.handleV92(ctx, msg)
 	} else if version.GTE(semver.MustParse("0.81.0")) {
 		return h.handleV81(ctx, msg)
 	}
 	return nil, errBadVersion
 }
 
-func (h SwapHandler) handleV90(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
 	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
@@ -201,7 +201,7 @@ func (h SwapHandler) handleV90(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		}
 	}
 
-	swapper := newSwapperV90()
+	swapper := newSwapperV92()
 	_, _, swapErr := swapper.swap(
 		ctx,
 		h.mgr.Keeper(),
