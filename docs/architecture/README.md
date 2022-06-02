@@ -51,4 +51,5 @@ None
 
 ### Proposed
 
-None
+- [001 - ThorChat](./adr-001-thorchat.md)
+- [002 - Remove Yggdrasil Vaults](./adr-002-removeyggvaults.md)

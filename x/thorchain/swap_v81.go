@@ -199,8 +199,11 @@ func (s *SwapperV81) swap(ctx cosmos.Context,
 	if !s.coinsToBurn.IsEmpty() {
 		if err := keeper.SendFromModuleToModule(ctx, AsgardName, ModuleName, s.coinsToBurn); err != nil {
 			ctx.Logger().Error("fail to move coins during swap", "error", err)
-		} else if err := keeper.BurnFromModule(ctx, ModuleName, s.coinsToBurn[0]); err != nil {
-			ctx.Logger().Error("fail to burn coins during swap", "error", err)
+		} else {
+			err := keeper.BurnFromModule(ctx, ModuleName, s.coinsToBurn[0])
+			if err != nil {
+				ctx.Logger().Error("fail to burn coins during swap", "error", err)
+			}
 		}
 	}
 

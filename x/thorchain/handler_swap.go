@@ -162,12 +162,16 @@ func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.92.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.92.0")):
 		return h.handleV92(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.81.0")) {
+	case version.GTE(semver.MustParse("1.90.0")):
+		return h.handleV90(ctx, msg)
+	case version.GTE(semver.MustParse("0.81.0")):
 		return h.handleV81(ctx, msg)
+	default:
+		return nil, errBadVersion
 	}
-	return nil, errBadVersion
 }
 
 func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {

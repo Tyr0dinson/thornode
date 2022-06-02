@@ -274,7 +274,7 @@ func (s *SwapperV92) swapOne(ctx cosmos.Context,
 			return cosmos.ZeroUint(), evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
 		}
 		synthSupply := keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		pool.CalcUnits(keeper.GetVerion(), synthSupply)
+		pool.CalcUnits(keeper.GetVersion(), synthSupply)
 		s.poolsOrig = s.poolsOrig.Set(pool)
 	}
 
