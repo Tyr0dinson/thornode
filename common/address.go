@@ -219,7 +219,7 @@ func getBCHAddressV83(address bchutil.Address, cfg *bchchaincfg.Params) (Address
 
 func (addr Address) IsChain(chain Chain) bool {
 	switch chain {
-	case ETHChain:
+	case ETHChain, AVAXChain:
 		return strings.HasPrefix(addr.String(), "0x")
 	case BNBChain:
 		prefix, _, _ := bech32.Decode(addr.String())
@@ -331,6 +331,8 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 			return TestNet
 		}
 	case TERRAChain:
+		return currentNetwork
+	case AVAXChain:
 		return currentNetwork
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())

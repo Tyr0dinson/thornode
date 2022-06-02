@@ -22,6 +22,7 @@ var (
 	DOGEChain  = Chain("DOGE")
 	THORChain  = Chain("THOR")
 	TERRAChain = Chain("TERRA")
+	AVAXChain  = Chain("AVAX")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
