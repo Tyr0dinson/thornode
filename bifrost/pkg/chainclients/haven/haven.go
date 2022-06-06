@@ -94,7 +94,7 @@ const (
 	MaxAsgardAddresses = 100
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 1000 here , as most of time it will spend 1 input, have 3 output
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
-	EstimateAverageTxSize = 1000
+	EstimateAverageTxSize = uint64(1000)
 	AverageFeeRate        = uint64(31401)
 )
 
@@ -698,7 +698,7 @@ func (c *Client) canDeleteBlock(blockMeta *BlockMeta) bool {
 		return true
 	}
 	for _, tx := range blockMeta.SelfTransactions {
-		if c.txInThePool(&tx) {
+		if c.txInThePool(tx) {
 			c.logger.Info().Msgf("tx: %s still in mempool , block can't be deleted", tx)
 			return false
 		}
@@ -707,7 +707,7 @@ func (c *Client) canDeleteBlock(blockMeta *BlockMeta) bool {
 }
 
 func (c *Client) sendNetworkFee(height int64) error {
-	txid, err := c.bridge.PostNetworkFee(height, common.XHVChain, uint64(EstimateAverageTxSize), uint64(AverageFeeRate))
+	txid, err := c.bridge.PostNetworkFee(height, common.XHVChain, EstimateAverageTxSize, AverageFeeRate)
 	if err != nil {
 		return fmt.Errorf("fail to post network fee to thornode: %w", err)
 	}
@@ -806,7 +806,7 @@ func (c *Client) reConfirmTx() ([]int64, error) {
 	return rescanBlockHeights, nil
 }
 
-func (c *Client) txInThePool(txHash *string) bool {
+func (c *Client) txInThePool(txHash string) bool {
 	// get pool txs
 	poolTxs, err := GetPoolTxs()
 	if err != nil {
@@ -816,7 +816,7 @@ func (c *Client) txInThePool(txHash *string) bool {
 
 	// check if the tx is in the pool.
 	for _, tx := range poolTxs {
-		if tx.Hash == *txHash {
+		if tx.Hash == txHash {
 			return true
 		}
 	}
@@ -827,7 +827,7 @@ func (c *Client) txInThePool(txHash *string) bool {
 func (c *Client) confirmTx(txHash string) bool {
 	// first check if tx is in mempool, just signed it for example
 	// if no error it means its valid mempool tx and move on
-	if c.txInThePool(&txHash) {
+	if c.txInThePool(txHash) {
 		return true
 	}
 
@@ -1014,7 +1014,7 @@ func (c *Client) processOutgoing(tx *RawTx, height int64, inBlock bool) types.Tx
 				break
 			}
 
-			// we expect that address to recieve only 1 asset type, thus lenght of ReceivedAmounts should be 1
+			// we expect that address to receive only 1 asset type, thus length of ReceivedAmounts should be 1
 			if len(respCheck.ReceivedAmounts) == 1 && len(respCheck.ReceivedAssets) == 1 &&
 				(respCheck.ReceivedAmounts[0]/DecimalDiff) == w.Coin.Amount.Uint64() &&
 				respCheck.ReceivedAssets[0] == w.Coin.Asset.Ticker.String() {
@@ -1068,13 +1068,13 @@ func (c *Client) extractTxs(block Block) (types.TxIn, error) {
 
 	// populate txItems
 	var txItems []types.TxInItem
-	for _, tx := range txs {
+	for i, tx := range txs {
 		// remove from pool cache
 		c.removeFromMemPoolCache(tx.Hash)
 
 		// get txInItem
 		inBlock := true
-		txInItem, err := c.getTxIn(&tx, block.Block_Header.Height, inBlock)
+		txInItem, err := c.getTxIn(&txs[i], block.Block_Header.Height, inBlock)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get TxInItem")
 			continue
@@ -1357,7 +1357,7 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		Chain:   c.GetChain(),
 		MemPool: true,
 	}
-	for _, tx := range txs {
+	for i, tx := range txs {
 		// this hash had been processed before , ignore it
 		if !c.tryAddToMemPoolCache(tx.Hash) {
 			c.logger.Debug().Msgf("%s had been processed , ignore", tx.Hash)
@@ -1366,7 +1366,7 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 
 		c.logger.Debug().Msgf("process hash %s", tx.Hash)
 		inBlock := false
-		txInItem, err := c.getTxIn(&tx, height, inBlock)
+		txInItem, err := c.getTxIn(&txs[i], height, inBlock)
 		if err != nil {
 			c.logger.Error().Err(err).Msg("fail to get TxInItem")
 			continue
@@ -1482,8 +1482,11 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			sign = true
 			// close any open wallet, since MSS will try to login itself.
 			c.clientLock.Lock()
-			c.client.CloseWallet()
+			err = c.client.CloseWallet()
 			c.clientLock.Unlock()
+			if err != nil {
+				return nil, err
+			}
 
 			c.logger.Info().Msgf("Creating an outbound from asgard tx Amount: %d %s for %s", amount, outputAsset, tx.ToAddress.String())
 			// tss sign
@@ -1493,9 +1496,14 @@ func (c *Client) SignTx(tx types.TxOutItem, thorchainHeight int64) ([]byte, erro
 			}
 			txKey, txID, err = c.tssKm.RemoteSignMn(msg, tx.VaultPubKey.String(), keygenHeight, c.cfg.WalletRPCHost)
 			// login back to closed wallet above.
-			c.loginToWallet(tx.VaultPubKey, true)
+			err2 := c.loginToWallet(tx.VaultPubKey, true)
 			if err != nil {
 				return nil, err
+			}
+			// we dont care about login error if the signing was successsfull.
+			// it will retried when necessary anyways.
+			if err2 != nil {
+				return nil, nil
 			}
 
 			// at this point we expect RemoteSignMn() to complete tx construction and submit to haven daemon.
@@ -1641,7 +1649,7 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			}
 			var ba []byte
 			if length > 127 {
-				// we have 1 extra byte between the actual data an the lenght byte hence (ind + 2)
+				// we have 1 extra byte between the actual data an the length byte hence (ind + 2)
 				ba = extra[ind+2 : ind+2+length]
 				ind += length + 1
 			} else {

@@ -108,7 +108,7 @@ func (s *HavenSuite) SetUpTest(c *C) {
 					AssetType string `json:"asset_type"`
 				} `json:"params"`
 			}{}
-			json.NewDecoder(req.Body).Decode(&r)
+			_ = json.NewDecoder(req.Body).Decode(&r)
 
 			switch {
 			case r.Method == "get_info":
@@ -135,7 +135,7 @@ func (s *HavenSuite) SetUpTest(c *C) {
 			b := struct {
 				Txs_Hashes []string
 			}{}
-			json.NewDecoder(req.Body).Decode(&b)
+			_ = json.NewDecoder(req.Body).Decode(&b)
 			if b.Txs_Hashes[0] == "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241" {
 				httpTestHandler(c, rw, "../../../../test/fixtures/xhv/tx_not_found.json")
 			} else {

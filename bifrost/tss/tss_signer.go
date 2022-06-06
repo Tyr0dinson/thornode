@@ -434,7 +434,7 @@ func (s *KeySign) toLocalTSSSignerMn(encodedTx string, poolPubKey string, keygen
 	// this is just round the block height to the nearest 10
 	tssMsg.BlockHeight = blockHeight / 10 * 10
 
-	s.logger.Debug().Str("payload", fmt.Sprintf("Rpc Adress: %s, Message: %s, Signers: %+v", tssMsg.RpcAddress, tssMsg.EncodedTx, tssMsg.SignerPubKeys)).Msg("msgToSign to tss Local node")
+	s.logger.Debug().Str("payload", fmt.Sprintf("Rpc Address: %s, Message: %s, Signers: %+v", tssMsg.RpcAddress, tssMsg.EncodedTx, tssMsg.SignerPubKeys)).Msg("msgToSign to tss Local node")
 
 	ch := make(chan bool, 1)
 	defer close(ch)
