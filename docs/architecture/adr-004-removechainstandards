@@ -1,0 +1,51 @@
+# ADR 004: REMOVE CHAIN STANDARDS
+
+## Changelog
+
+- {date}: {changelog}
+
+## Status
+
+ - [ ] PROPOSED
+
+Accepted | Rejected | Deprecated | Superseded by
+
+## Context
+
+Chains should meet a minimum standard to remain listed on THORChain.
+
+- meet initial listing standards
+- meet pool depth, volume, LP count requirements
+
+A chain that changes its characteristics for the worse, or drops in uptake on THORChain may cause the following issues:
+- become centralised and introduce a risk to the network
+- lose adoption and thus be costly to subsidise for the network
+
+## Decision
+
+This ADR should set the expectations & process for how chains are removed from THORChain. 
+
+This ADR should be kept up to date as Dev+Node+Community provide input into the chain-removal process. 
+
+## Detailed Criteria
+
+A chain should be purged from THORChain if any of the following are sustained over a 6 month period:
+
+** Breach Listing Standards **
+* Breach any of New Chain Standards set out in ADR-003
+
+** Pool Depth **
+* Have a base asset pool depth that drops below `MINRUNEPOOLDEPTH`
+
+** Pool Volumes **
+* Have daily volumes that drop below $1k for an entire `POOLCYCLE`
+
+** User Count **
+* Have less than 100 LPs
+
+
+## Consequences
+
+Following acceptance, all listed chains that breach this ADR should be purged, or this ADR must be amended.
+
+The Purge should follow the ChainRagnarok logic path. A final `node-mimir` temperature check should be conducted prior to releasing the specific chain-ragnarok code. 
