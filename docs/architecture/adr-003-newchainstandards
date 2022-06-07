@@ -1,0 +1,64 @@
+
+# ADR 003: NEW CHAIN STANDARDS
+
+## Changelog
+
+- {date}: {changelog}
+
+## Status
+
+ - [ ] PROPOSED
+
+Accepted | Rejected | Deprecated | Superseded by
+
+## Context
+
+Chains should meet a minimum standard of the following before being listed on THORChain.
+
+- decentralisation
+- ossification
+- economic value
+- developer support
+- community support
+
+A chain that fails on THORChain may have the following affects:
+- Infinite Mint bug causes theft of pooled assets from LPs
+- Impact to reliability of THORNodes (poor sync, halted churn, double-spend txOuts)
+- Poor LP uptake causes low fee revenue for that chain
+- Waste of developer resources to support the chain
+- Disruption to THORChain when Ragnaroking the chain
+
+## Decision
+
+This ADR doesn't need a Node-Mimir to be accepted, rather it should set the expectations & process for how new chains are added to THORChain. 
+
+This ADR should be kept up to date as Dev+Node+Community provide input into the chain-listing process. 
+
+## Detailed Criteria
+
+A new chain to be added should meet the following requirements:
+
+** Decentralisation **
+* Must not be controlled by a single entity that can pause the network or freeze accounts. 
+* Must not be controlled by a multisig < 10 signatories
+* If PoS, should have more than 10 Validators
+
+** Ossification **
+* Must not be younger (since genesis) than 2 years
+* Must not be hard-forking more than once per 6 months
+
+** Economic Value **
+* Must not be less than 10% of THORChain's FDV
+* Must have existing daily volumes not less than 10% of $RUNE volumes
+* If PoW, must not take longer than 1hour to conf-count a $1k swap
+
+** Developer Support **
+* Must demonstrate organic developer support
+* Must have functioning node client + wallet js client 
+
+** Community **
+* Must have users that exceed 10% of THORChain's on-chain users
+
+## Consequences
+
+Following acceptance, all new chains must pass this ADR, or the ADR must be amended to accept the chain.
