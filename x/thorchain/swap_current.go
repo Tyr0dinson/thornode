@@ -35,7 +35,7 @@ func GetSwapper(version semver.Version) (Swapper, error) {
 	case version.GTE(semver.MustParse("1.92.0")):
 		return newSwapperV92(), nil
 	case version.GTE(semver.MustParse("1.91.0")):
-		return newSwapperV92(), nil
+		return newSwapperV91(), nil
 	case version.GTE(semver.MustParse("1.90.0")):
 		return newSwapperV90(), nil
 	case version.GTE(semver.MustParse("0.81.0")):

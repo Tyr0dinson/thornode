@@ -39,6 +39,9 @@ func (s *SwapperV91) Swap(ctx cosmos.Context,
 	target common.Asset,
 	destination common.Address,
 	swapTarget cosmos.Uint,
+	dexAgg common.Address,
+	dexAggTargetAsset common.Address,
+	dexAggLimit *cosmos.Uint,
 	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
