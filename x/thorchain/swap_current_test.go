@@ -4,10 +4,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/cosmos/cosmos-sdk/types"
-	. "gopkg.in/check.v1"
-
 	"github.com/blang/semver"
+	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -243,10 +241,10 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			target:        common.RuneAsset(),
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     GetRandomBNBAddress(),
-			destination:   GetRandomBNBAddress(),
+			destination:   GetRandomTHORAddress(),
 			tradeTarget:   cosmos.NewUint(110000000),
 			returnAmount:  cosmos.ZeroUint(),
-			expectedErr:   errors.New("BNB.NOTEXIST pool doesn't exist"),
+			expectedErr:   errors.New("pool BNB.NOTEXIST doesn't exist"),
 		},
 		{
 			name:          "pool-not-exist-1",
@@ -254,11 +252,11 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.Asset{Chain: common.BNBChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
 			amount:        cosmos.NewUint(100 * common.One),
-			requester:     "tester",
-			destination:   "don'tknow",
+			requester:     GetRandomTHORAddress(),
+			destination:   GetRandomBNBAddress(),
 			tradeTarget:   cosmos.NewUint(120000000),
 			returnAmount:  cosmos.ZeroUint(),
-			expectedErr:   errors.New("BNB.NOTEXIST pool doesn't exist"),
+			expectedErr:   errors.New("pool BNB.NOTEXIST doesn't exist"),
 		},
 		{
 			name:          "swap-cross-chain-different-address",
@@ -266,7 +264,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.BTCAsset,
 			amount:        cosmos.NewUint(50 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.ZeroUint(),
 			tradeTarget:   cosmos.ZeroUint(),
@@ -279,7 +277,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(50 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.NewUint(2222222222),
 			tradeTarget:   cosmos.ZeroUint(),
@@ -292,7 +290,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(9 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.ZeroUint(),
 			tradeTarget:   cosmos.NewUint(9 * common.One),
@@ -304,7 +302,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(8 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.NewUint(685871056),
 			tradeTarget:   cosmos.ZeroUint(),
@@ -317,7 +315,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.RuneAsset(),
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(5 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.NewUint(453514739),
 			tradeTarget:   cosmos.NewUint(453514738),
@@ -330,7 +328,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.Asset{Chain: common.BTCChain, Ticker: "BTC", Symbol: "BTC"},
 			target:        common.BNBAsset,
 			amount:        cosmos.NewUint(5 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomBNBAddress(),
 			returnAmount:  cosmos.NewUint(415017809),
 			tradeTarget:   cosmos.NewUint(415017809),
@@ -343,7 +341,7 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 			source:        common.BCHAsset.GetSyntheticAsset(),
 			target:        common.RuneAsset(),
 			amount:        cosmos.NewUint(5 * common.One),
-			requester:     "tester",
+			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomTHORAddress(),
 			returnAmount:  cosmos.NewUint(475907198),
 			tradeTarget:   cosmos.NewUint(453514738),
@@ -369,18 +367,10 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 		mgr.K = poolStorage
 		mgr.txOutStore = NewTxStoreDummy()
 
-		amount, evts, err := newSwapperV92().swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, common.NoAddress, common.NoAddress, nil, cosmos.NewUint(1000_000), 2, mgr)
+		amount, evts, err := newSwapperV91().Swap(ctx, poolStorage, tx, item.target, item.destination, item.tradeTarget, cosmos.NewUint(1000_000), 2, mgr)
 		if item.expectedErr == nil {
 			c.Assert(err, IsNil)
 			c.Assert(evts, HasLen, item.events)
-
-			// ensure aggregator is NOT included in txns
-			items, err := mgr.txOutStore.GetOutboundItems(ctx)
-			c.Assert(err, IsNil)
-			for _, item := range items {
-				c.Check(item.Aggregator.IsEmpty(), Equals, true)
-				c.Check(item.AggregatorTargetAsset.IsEmpty(), Equals, true)
-			}
 		} else {
 			c.Assert(err, NotNil, Commentf("Expected: %s, got nil", item.expectedErr.Error()))
 			c.Assert(err.Error(), Equals, item.expectedErr.Error())
@@ -390,50 +380,6 @@ func (s *SwapV92Suite) TestSwap(c *C) {
 		c.Check(item.returnAmount.Uint64(), Equals, amount.Uint64())
 
 	}
-}
-
-func QuoUint(num, denom types.Uint) types.Dec {
-	res := cosmos.NewDecFromBigInt(num.BigInt()).Quo(cosmos.NewDecFromBigInt(denom.BigInt()))
-	return res
-}
-
-func (s *SwapV92Suite) TestAggregator(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	mgr.txOutStore = NewTxStoreDummy()
-	pool := NewPool()
-	pool.Asset = common.ETHAsset
-	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(34 * common.One)
-	pool.LPUnits = pool.BalanceRune
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-
-	addr := GetRandomTHORAddress()
-	tx := common.NewTx(
-		GetRandomTxHash(),
-		addr,
-		addr,
-		common.NewCoins(
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One)),
-		),
-		BNBGasFeeSingleton,
-		"",
-	)
-	tx.Chain = common.ETHChain
-
-	bat, err := common.NewAsset("ETH.ETH")
-	c.Assert(err, IsNil)
-	agg := common.Address("0x69ba883Af416fF5501D54D5e27A1f497fBD97156")
-	toAddr := common.Address("0xdAC17F958D2ee523a2206206994597C13D831ec7")
-	swapTarget := cosmos.NewUint(405)
-	amount, _, err := newSwapperV92().swap(ctx, mgr.Keeper(), tx, bat, toAddr, swapTarget, agg, common.Address("0x0D8775F648430679A709E98d2b0Cb6250d2887EF"), nil, cosmos.NewUint(1000_000), 2, mgr)
-	c.Assert(err, IsNil)
-	c.Check(amount.Uint64(), Equals, uint64(140119487), Commentf("%d", amount.Uint64()))
-
-	items := mgr.txOutStore.GetOutboundItemByToAddress(ctx, toAddr)
-	c.Assert(items, HasLen, 1)
-	c.Check(items[0].Aggregator.Equals(agg), Equals, true)
-	c.Check(items[0].AggregatorTargetAsset.String(), Equals, "0x0D8775F648430679A709E98d2b0Cb6250d2887EF")
-	c.Check(items[0].AggregatorTargetLimit, IsNil)
 }
 
 func (s *SwapV92Suite) TestSynthSwap_RuneSynthRune(c *C) {
@@ -502,7 +448,7 @@ func (s *SwapV92Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		expectedRuneBalance := initialBalanceRune.Add(swapAmt).Sub(runeDisbursement)
 		expectedSynthSupply := swapResult.Sub(assetFee)
 
-		amount, _, err := newSwapperV92().swap(ctx, mgr.Keeper(), tx, common.BNBAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), common.NoAddress, common.NoAddress, nil, cosmos.NewUint(1000_000), 2, mgr)
+		amount, _, err := newSwapperV91().Swap(ctx, mgr.Keeper(), tx, common.BNBAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 		c.Assert(err, IsNil)
 		c.Check(amount.Uint64(), Equals, swapResult.Uint64(),
 			Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult.Uint64()))
@@ -541,6 +487,12 @@ func (s *SwapV92Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		)
 		tx.Chain = common.BNBChain
 
+		// synths are expected to be on the asgard module
+		mintErr := mgr.Keeper().MintToModule(ctx, ModuleName, tx.Coins[0])
+		c.Assert(mintErr, IsNil)
+		sendErr := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx.Coins)
+		c.Assert(sendErr, IsNil)
+
 		// Expectations:
 		// BalanceAsset should stay the same.
 		// BalanceRune is decreased by the swap result.
@@ -563,7 +515,7 @@ func (s *SwapV92Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		poolUnitsBefore2 := pool.GetPoolUnits().Mul(pool.GetPoolUnits())
 		luviBefore2 := pool.BalanceRune.Mul(pool.BalanceAsset).Quo(poolUnitsBefore2)
 
-		amount, _, err := newSwapperV92().swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), common.NoAddress, common.NoAddress, nil, cosmos.NewUint(1000_000), 2, mgr)
+		amount, _, err := newSwapperV91().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 		c.Assert(err, IsNil)
 		c.Check(amount.Uint64(), Equals, swapResult.Uint64(),
 			Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult.Uint64()))
@@ -658,7 +610,7 @@ func (s *SwapV92Suite) TestSynthSwap_AssetSynth(c *C) {
 	poolUnitsBefore2 := pool.GetPoolUnits().Mul(pool.GetPoolUnits())
 	luviBefore2 := pool.BalanceRune.Mul(pool.BalanceAsset).Quo(poolUnitsBefore2)
 
-	amount, _, err := newSwapperV92().swap(ctx, mgr.Keeper(), tx, common.BNBAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), common.NoAddress, common.NoAddress, nil, cosmos.NewUint(1000_000), 2, mgr)
+	amount, _, err := newSwapperV91().Swap(ctx, mgr.Keeper(), tx, common.BNBAsset.GetSyntheticAsset(), addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000), 2, mgr)
 	c.Assert(err, IsNil)
 	c.Check(amount.Uint64(), Equals, swapResult2.Uint64(),
 		Commentf("Actual: %d Exp: %d", amount.Uint64(), swapResult2.Uint64()))
@@ -703,7 +655,7 @@ func (s *SwapV92Suite) TestSynthSwap_AssetSynth(c *C) {
 	btcPool.SynthUnits = cosmos.ZeroUint()
 	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
 
-	amount, _, err = newSwapperV92().swap(ctx, mgr.Keeper(), tx1, common.BTCAsset, addr, cosmos.ZeroUint(), common.NoAddress, common.NoAddress, nil, cosmos.NewUint(1000_000_000_000), 2, mgr)
+	amount, _, err = newSwapperV91().Swap(ctx, mgr.Keeper(), tx1, common.BTCAsset, addr, cosmos.ZeroUint(), cosmos.NewUint(1000_000_000_000), 2, mgr)
 	c.Assert(err, NotNil)
 	c.Check(amount.IsZero(), Equals, true)
 	pool, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)

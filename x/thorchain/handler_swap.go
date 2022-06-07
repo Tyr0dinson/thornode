@@ -165,8 +165,6 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	switch {
 	case version.GTE(semver.MustParse("1.92.0")):
 		return h.handleV92(ctx, msg)
-	case version.GTE(semver.MustParse("1.90.0")):
-		return h.handleV90(ctx, msg)
 	case version.GTE(semver.MustParse("0.81.0")):
 		return h.handleV81(ctx, msg)
 	default:
@@ -205,8 +203,11 @@ func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		}
 	}
 
-	swapper := newSwapperV92()
-	_, _, swapErr := swapper.swap(
+	swapper, err := GetSwapper(h.mgr.Keeper().GetVersion())
+	if err != nil {
+		return nil, err
+	}
+	_, _, swapErr := swapper.Swap(
 		ctx,
 		h.mgr.Keeper(),
 		msg.Tx,

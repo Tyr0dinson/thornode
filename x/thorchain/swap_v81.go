@@ -60,13 +60,17 @@ func (s *SwapperV81) validateMessage(tx common.Tx, target common.Asset, destinat
 	return nil
 }
 
-func (s *SwapperV81) swap(ctx cosmos.Context,
+func (s *SwapperV81) Swap(ctx cosmos.Context,
 	keeper keeper.Keeper,
 	tx common.Tx,
 	target common.Asset,
 	destination common.Address,
 	swapTarget cosmos.Uint,
-	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
+	dexAgg common.Address,
+	dexAggTargetAsset common.Address,
+	dexAggLimit *cosmos.Uint,
+	transactionFee cosmos.Uint,
+	synthVirtualDepthMult int64, mgr Manager,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
 

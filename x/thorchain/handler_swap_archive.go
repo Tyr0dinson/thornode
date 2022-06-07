@@ -171,46 +171,21 @@ func (h SwapHandler) handleV81(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
 	}
 
-	swapper := newSwapperV81()
-	_, _, swapErr := swapper.swap(
+	swapper, err := GetSwapper(h.mgr.Keeper().GetVersion())
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, swapErr := swapper.Swap(
 		ctx,
 		h.mgr.Keeper(),
 		msg.Tx,
 		msg.TargetAsset,
 		msg.Destination,
 		msg.TradeTarget,
-		transactionFee,
-		synthVirtualDepthMult,
-		h.mgr)
-	if swapErr != nil {
-		return nil, swapErr
-	}
-	return &cosmos.Result{}, nil
-}
-
-func (h SwapHandler) handleV90(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
-	// test that the network we are running matches the destination network
-	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
-		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
-	}
-	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Destination.GetChain(), common.RuneAsset())
-	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynths.String())
-	if synthVirtualDepthMult < 1 || err != nil {
-		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynths)
-	}
-
-	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsNativeRune() {
-		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
-	}
-
-	swapper := newSwapperV90()
-	_, _, swapErr := swapper.swap(
-		ctx,
-		h.mgr.Keeper(),
-		msg.Tx,
-		msg.TargetAsset,
-		msg.Destination,
-		msg.TradeTarget,
+		common.NoAddress,
+		common.NoAddress,
+		nil,
 		transactionFee,
 		synthVirtualDepthMult,
 		h.mgr)
