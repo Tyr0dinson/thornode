@@ -393,25 +393,20 @@ func (o *Observer) processErrataTx() {
 	}
 }
 
-// filterErrataTx with confirmation counting logic in place, all inbound tx to asgard will be parked and waiting for confirmation count to reach
-// the target threshold before it get forward to THORChain,  it is possible that when a re-org happened on BTC / ETH
-// the transaction that has been re-org out ,still in bifrost memory waiting for confirmation, as such, it should be
-// removed from ondeck tx queue, and not forward it to THORChain
+// filterErrataTx - given a set of errata txns, filter them out of the ondeck txn queues.
+// Errata transactions can come from blocks that were dropped due to chain re-orgs, for example.
 func (o *Observer) filterErrataTx(block types.ErrataBlock) {
 	o.lock.Lock()
 	defer o.lock.Unlock()
 	for _, tx := range block.Txs {
-		for deckIdx, txIn := range o.onDeck {
-			idx := -1
+		for deckIdx := range o.onDeck {
+			txIn := o.onDeck[deckIdx]
 			for i, item := range txIn.TxArray {
 				if item.Tx == tx.TxID.String() {
-					idx = i
+					o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
+					txIn.TxArray = append(txIn.TxArray[:i], txIn.TxArray[i+1:]...)
 					break
 				}
-			}
-			if idx != -1 {
-				o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
-				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...) // nolint
 			}
 		}
 	}

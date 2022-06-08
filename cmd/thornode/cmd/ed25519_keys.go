@@ -15,7 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/input"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	bech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint
+	bech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/spf13/cobra"
@@ -45,7 +45,7 @@ func GetEd25519Keys() *cobra.Command {
 
 func ed25519Keys(cmd *cobra.Command, args []string) error {
 	buf := bufio.NewReader(cmd.InOrStdin())
-	password, err := input.GetPassword("Enter password", buf)
+	password, err := input.GetPassword("Enter password: ", buf)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 }
 
 func generateNewKey(buf *bufio.Reader) (*keyring.Item, error) {
-	mnemonic, err := input.GetString("Enter mnemonic", buf)
+	mnemonic, err := input.GetString("Enter mnemonic: ", buf)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get mnemonic: %w", err)
 	}
