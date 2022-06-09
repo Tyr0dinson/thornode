@@ -221,6 +221,7 @@ func (s *SwapV90Suite) TestSwap(c *C) {
 		c.Logf("test name:%s", item.name)
 		tx := common.NewTx(
 			item.requestTxHash,
+			"",
 			item.requester,
 			item.destination,
 			common.Coins{
@@ -266,6 +267,7 @@ func (s *SwapV90Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		addr := GetRandomTHORAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
+			"",
 			addr,
 			addr,
 			common.NewCoins(
@@ -346,6 +348,7 @@ func (s *SwapV90Suite) TestSynthSwap_RuneSynthRune(c *C) {
 		addr := GetRandomTHORAddress()
 		tx := common.NewTx(
 			GetRandomTxHash(),
+			"",
 			addr,
 			addr,
 			common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), cosmos.NewUint(1*1e8))),
@@ -420,6 +423,7 @@ func (s *SwapV90Suite) TestSynthSwap_AssetSynth(c *C) {
 	// swap BNB.BNB -> BNB/BNB (external asset directly to synth)
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		addr,
 		addr,
 		common.NewCoins(
@@ -499,6 +503,7 @@ func (s *SwapV90Suite) TestSynthSwap_AssetSynth(c *C) {
 	// emit asset is not enough to pay for fee , then pool balance should be restored
 	tx1 := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		addr,
 		addr,
 		common.NewCoins(

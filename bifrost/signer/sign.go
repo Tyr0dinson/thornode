@@ -340,7 +340,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 						s.logger.Error().Err(err).Msg("Error while decoding view key!")
 					}
 
-					cryptonoteData = hex.EncodeToString(append(privViewKey, pubSpendKey[:]...))
+					cryptonoteData = hex.EncodeToString(append(privViewKey, pubSpendKey...))
 					s.pubkeyMgr.UpdateCnDataOfPubKey(common.XHVChain, pubKey.Secp256k1, cryptonoteData)
 				}
 

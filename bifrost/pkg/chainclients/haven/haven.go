@@ -1234,15 +1234,18 @@ func (c *Client) getOutput(tx *RawTx, txPubKey *[32]byte) (TxVout, error) {
 				targetRaw, _ := hex.DecodeString(vout.Target.Key)
 				copy(targetKey[:], targetRaw)
 				assetType = "XHV"
-			} else if len(vout.Target.Offshore) != 0 {
+			}
+			if len(vout.Target.Offshore) != 0 {
 				targetRaw, _ := hex.DecodeString(vout.Target.Offshore)
 				copy(targetKey[:], targetRaw)
 				assetType = "XUSD"
-			} else if len(vout.Target.Xasset) != 0 {
+			}
+			if len(vout.Target.Xasset) != 0 {
 				targetRaw, _ := hex.DecodeString(vout.Target.Xasset)
 				copy(targetKey[:], targetRaw)
 				assetType = vout.Target.asset_type
-			} else {
+			}
+			if len(assetType) == 0 {
 				c.logger.Info().Msgf("invalid tx output found, skipping..")
 				continue
 			}
@@ -1609,11 +1612,12 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 	parsedTxExtra := make(map[byte][][]byte)
 	len := len(extra)
 	for ind := 0; ind < len; ind++ {
-		if extra[ind] == 0 {
+		switch extra[ind] {
+		case 0:
 			// Padding
 			ind++
 			ind += int(extra[ind])
-		} else if extra[ind] == 0x01 {
+		case 1:
 			// Pubkey - 32 byte key (fixed length)
 			if len-ind <= 32 {
 				return nil, fmt.Errorf("tx pubKey has insufficient length")
@@ -1621,26 +1625,26 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 			ba := extra[ind+1 : ind+33]
 			parsedTxExtra[0x01] = append(parsedTxExtra[0x01], ba)
 			ind += 32
-		} else if extra[ind] == 2 {
+		case 2:
 			// Nonce
 			ind++
 			ind += int(extra[ind])
-		} else if extra[ind] == 3 {
+		case 3:
 			// Merge mining key
 			ind += 40
-		} else if extra[ind] == 4 {
+		case 4:
 			// Additional pubkeys
 			ind++
 			ind += 32 * int(extra[ind])
-		} else if extra[ind] == 0xde {
+		case 0xde:
 			// miner gate tag
 			ind++
 			ind += int(extra[ind])
-		} else if extra[ind] == 0x17 {
+		case 0x17:
 			// Offshore data
 			ind++
 			ind += int(extra[ind])
-		} else if extra[ind] == 0x18 {
+		case 0x18:
 			// Thorchain memo data
 			ind++
 			length := int(extra[ind])
@@ -1657,7 +1661,7 @@ func (c *Client) parseTxExtra(extra []byte) (map[byte][][]byte, error) {
 				ind += length
 			}
 			parsedTxExtra[0x18] = append(parsedTxExtra[0x18], ba)
-		} else {
+		default:
 			c.logger.Info().Msgf("err ind: %d char: %d", ind, extra[ind])
 			return nil, fmt.Errorf("unknown tx extra tag. Parse Failed")
 		}

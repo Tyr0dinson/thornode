@@ -114,11 +114,12 @@ func (s *HavenSuite) SetUpTest(c *C) {
 			case r.Method == "get_info":
 				httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_info.json")
 			case r.Method == "get_balance":
-				if r.Params.AssetType == "XHV" {
+				switch r.Params.AssetType {
+				case "XHV":
 					httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_balance_xhv.json")
-				} else if r.Params.AssetType == "XUSD" {
+				case "XUSD":
 					httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_balance_xusd.json")
-				} else {
+				default:
 					httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_balance_other.json")
 				}
 			case r.Method == "get_block":
@@ -131,7 +132,8 @@ func (s *HavenSuite) SetUpTest(c *C) {
 			case r.Method == "refresh":
 				httpTestHandler(c, rw, "../../../../test/fixtures/xhv/refresh_wallet.json")
 			}
-		} else if req.RequestURI == "/get_transactions" {
+		}
+		if req.RequestURI == "/get_transactions" {
 			b := struct {
 				Txs_Hashes []string
 			}{}
@@ -141,21 +143,28 @@ func (s *HavenSuite) SetUpTest(c *C) {
 			} else {
 				httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_txs.json")
 			}
-		} else if req.RequestURI == "/get_transaction_pool" {
+		}
+		if req.RequestURI == "/get_transaction_pool" {
 			httpTestHandler(c, rw, "../../../../test/fixtures/xhv/get_pool.json")
-		} else if strings.HasPrefix(req.RequestURI, "/thorchain/node/") {
-			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
-		} else if req.RequestURI == "/thorchain/lastblock" {
+		}
+		if req.RequestURI == "/thorchain/lastblock" {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/lastblock/btc.json")
-		} else if strings.HasPrefix(req.RequestURI, "/auth/accounts/") {
-			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "0", "result": { "height": "0", "result": { "value": { "account_number": "0", "sequence": "0" } } } }`))
-			c.Assert(err, IsNil)
-		} else if req.RequestURI == "/txs" {
+		}
+		if req.RequestURI == "/txs" {
 			_, err := rw.Write([]byte(`{"height": "1", "txhash": "AAAA000000000000000000000000000000000000000000000000000000000000", "logs": [{"success": "true", "log": ""}]}`))
 			c.Assert(err, IsNil)
-		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
+		}
+		if strings.HasPrefix(req.RequestURI, "/thorchain/node/") {
+			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
+		}
+		if strings.HasPrefix(req.RequestURI, "/auth/accounts/") {
+			_, err := rw.Write([]byte(`{ "jsonrpc": "2.0", "id": "0", "result": { "height": "0", "result": { "value": { "account_number": "0", "sequence": "0" } } } }`))
+			c.Assert(err, IsNil)
+		}
+		if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
-		} else if strings.HasPrefix(req.RequestURI, thorclient.PubKeysEndpoint) {
+		}
+		if strings.HasPrefix(req.RequestURI, thorclient.PubKeysEndpoint) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 		}
 	}))

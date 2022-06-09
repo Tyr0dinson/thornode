@@ -125,13 +125,11 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to get private key")
 	}
 
+	// set up tss comms
 	bootstrapPeers, err := cfg.TSS.GetBootstrapPeers()
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
 	}
-	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
-
-	// set up tss comms
 	stateManager, err := storage.NewFileStateMgr(app.DefaultNodeHome(""))
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create file state manager")
@@ -141,12 +139,14 @@ func main() {
 	if err != nil {
 		bootstrapPeersfinal = bootstrapPeers
 	} else {
-		bootstrapPeersfinal = append(savedPeers, bootstrapPeers...)
+		bootstrapPeersfinal = savedPeers
+		bootstrapPeersfinal = append(bootstrapPeersfinal, bootstrapPeers...)
 	}
 	comm, err := p2p.NewCommunication(cfg.TSS.Rendezvous, bootstrapPeersfinal, cfg.TSS.P2PPort, cfg.TSS.ExternalIP)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create communication layer")
 	}
+	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
 	priKeyRawBytes, err := conversion.GetPriKeyRawBytes(tmPrivateKey)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to get private key")

@@ -45,8 +45,6 @@ const (
 	ethBlockRewardAndFee = 3 * 1e18
 )
 
-var blockReward *big.Int = big.NewInt(2e18) // in Wei
-
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
 type Client struct {
 	logger                  zerolog.Logger

@@ -445,11 +445,11 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 	case XHVChain:
 		if strings.HasPrefix(addr.String(), "hvx") {
 			return currentNetwork
-		} else if strings.HasPrefix(addr.String(), "hvsa") {
-			return StageNet
-		} else {
-			return TestNet
 		}
+		if strings.HasPrefix(addr.String(), "hvsa") {
+			return StageNet
+		}
+		return TestNet
 	}
 	return MockNet
 }
