@@ -424,13 +424,13 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
 	c.Assert(err, IsNil)
 	// when SwapOut Dex integration has been disabled by mimir , it should return an error cause refund
-	mgr.Keeper().SetMimir(ctx, constants.SwapOutDexIntegrationDisabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.SwapOutDexAggregationDisabled.String(), 1)
 	res, err := handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(res, IsNil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "swap out dex integration disabled")
 
-	mgr.Keeper().SetMimir(ctx, constants.SwapOutDexIntegrationDisabled.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.SwapOutDexAggregationDisabled.String(), 0)
 
 	// when target asset address is empty , swap should fail
 	swapM, ok := m.(SwapMemo)

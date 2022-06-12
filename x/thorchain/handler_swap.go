@@ -128,7 +128,7 @@ func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if len(msg.Aggregator) > 0 {
-		swapOutDisabled := fetchConfigInt64(ctx, h.mgr, constants.SwapOutDexIntegrationDisabled)
+		swapOutDisabled := fetchConfigInt64(ctx, h.mgr, constants.SwapOutDexAggregationDisabled)
 		if swapOutDisabled > 0 {
 			return errors.New("swap out dex integration disabled")
 		}
