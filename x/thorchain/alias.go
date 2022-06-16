@@ -167,6 +167,7 @@ var (
 	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress
 	GetRandomTERRAAddress          = types.GetRandomTERRAAddress
+	GetRandomGAIAAddress           = types.GetRandomGAIAAddress
 	GetRandomBTCAddress            = types.GetRandomBTCAddress
 	GetRandomLTCAddress            = types.GetRandomLTCAddress
 	GetRandomTxHash                = types.GetRandomTxHash

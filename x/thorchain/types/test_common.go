@@ -166,6 +166,14 @@ func GetRandomETHAddress() common.Address {
 	return addr
 }
 
+// GetRandomGAIAAddress will just create a random terra address used for test purpose
+func GetRandomGAIAAddress() common.Address {
+	name := common.RandStringBytesMask(10)
+	str, _ := common.ConvertAndEncode("cosmos", crypto.AddressHash([]byte(name)))
+	gaia, _ := common.NewAddress(str)
+	return gaia
+}
+
 func GetRandomBTCAddress() common.Address {
 	pubKey := GetRandomPubKey()
 	addr, _ := pubKey.GetAddress(common.BTCChain)
