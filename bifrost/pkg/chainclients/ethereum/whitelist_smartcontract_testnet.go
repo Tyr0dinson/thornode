@@ -18,4 +18,10 @@ var whitelistSmartContractAddress = []common.Address{
 	common.Address(`0x7fD9bd7A2Cab44820DD2874859E461640F04542D`),
 	// generic
 	common.Address(`0xDdf2498f9C57A8BB6dc9c75c64ef007E2592A81F`),
+	// RangoV1
+	common.Address(`0x0e81E5F5555Ece18b5F86F52a736476790eEF82d`),
+	// RangoThorchainOutputAggUniV2
+	common.Address(`0x4e071DA486bB901BC802758f6d63BCFb7D88345b`),
+	// RangoThorchainOutputAggUniV3
+	common.Address(`0x128766D155615b53C7655cD78A1A870C110bfdE6`),
 }

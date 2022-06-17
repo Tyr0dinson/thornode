@@ -26,4 +26,10 @@ var whitelistSmartContractAddress = []common.Address{
 	common.Address(`0x3660dE6C56cFD31998397652941ECe42118375DA`),
 	// TSAggregator SUSHIswap
 	common.Address(`0x0F2CD5dF82959e00BE7AfeeF8245900FC4414199`),
+	// RangoV1
+	common.Address(`0x0e3EB2eAB0e524b69C79E24910f4318dB46bAa9c`),
+	// RangoThorchainOutputAggUniV2
+	common.Address(`0x2a7813412b8da8d18Ce56FE763B9eb264D8e28a8`),
+	// RangoThorchainOutputAggUniV3
+	common.Address(`0xbB8De86F3b041B3C084431dcf3159fE4827c5F0D`),
 }
