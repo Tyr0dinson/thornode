@@ -67,7 +67,7 @@ require (
 	github.com/Workiva/go-datastructures v1.0.52 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
-	github.com/akildemir/go-tss v0.0.0-20220424150522-1212848aa0f9
+	github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac
 	github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect

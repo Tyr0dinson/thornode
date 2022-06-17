@@ -103,6 +103,8 @@ github.com/ajstarks/svgo v0.0.0-20180226025133-644b8db467af/go.mod h1:K08gAheRH3
 github.com/akildemir/go-tss v0.0.0-20211214111608-4a9e15716350/go.mod h1:KLY44wX4XxZXDb6WbuiV8g992qa5V6361tj8pAEapDI=
 github.com/akildemir/go-tss v0.0.0-20220424150522-1212848aa0f9 h1:/sAurukb7aN2FOHrqlgAew5PBj9dm1H+LYU63mfzxDI=
 github.com/akildemir/go-tss v0.0.0-20220424150522-1212848aa0f9/go.mod h1:KLY44wX4XxZXDb6WbuiV8g992qa5V6361tj8pAEapDI=
+github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac h1:mdq+vmt7lgPrZY9rXeQnjDn19ky6iC7Dwqy9Wm3ExFQ=
+github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac/go.mod h1:rvm9ak03WetcpAbv8NBMrLoLSZ1Gb0viSlnbRAcfZKE=
 github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c h1:iBqmB+JY0vatfzjFXy4y6EWY3/Fnj2NiOb0eWK5MoPM=
 github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c/go.mod h1:jHeqkBY+fvoZ/3BhITxXapJ2mt13KkLRQbV/pWCetXQ=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
