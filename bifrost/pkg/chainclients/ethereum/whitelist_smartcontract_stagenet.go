@@ -17,9 +17,9 @@ var whitelistSmartContractAddress = []common.Address{
 	// THORSwap Wrapped Uniswap V3 Router
 	common.Address(`0x2f8aedd149afbdb5206ecaf8b1a3abb9186c8053`),
 	// RangoV1
-	common.Address(`0x0e81E5F5555Ece18b5F86F52a736476790eEF82d`),
+	common.Address(`0x0e3EB2eAB0e524b69C79E24910f4318dB46bAa9c`),
 	// RangoThorchainOutputAggUniV2
-	common.Address(`0x4e071DA486bB901BC802758f6d63BCFb7D88345b`),
+	common.Address(`0x2a7813412b8da8d18Ce56FE763B9eb264D8e28a8`),
 	// RangoThorchainOutputAggUniV3
-	common.Address(`0x128766D155615b53C7655cD78A1A870C110bfdE6`),
+	common.Address(`0xbB8De86F3b041B3C084431dcf3159fE4827c5F0D`),
 }
