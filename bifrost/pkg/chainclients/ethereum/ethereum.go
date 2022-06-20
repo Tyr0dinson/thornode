@@ -419,6 +419,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 			}
 		} else {
+			memoType := memo.GetType()
+			if memoType == mem.TxRefund || memoType == mem.TxRagnarok {
+				return nil, fmt.Errorf("%s can't use transferOutAndCall", memoType)
+			}
+
+			if ethValue.Uint64() == 0 {
+				return nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is ETH")
+			}
 			targetLimit := tx.AggregatorTargetLimit
 			if targetLimit == nil {
 				zeroLimit := cosmos.ZeroUint()
@@ -542,8 +550,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				} else {
 					if estimatedGas > maxGasLimit {
 						// the estimated gas unit is more than the maximum , so bring down the gas rate
-						maximumGasToPay := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
-						gasRate = big.NewInt(1).Div(maximumGasToPay, big.NewInt(int64(estimatedGas)))
+						maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
+						gasRate = big.NewInt(1).Div(maxGasWei, big.NewInt(int64(estimatedGas)))
 					} else {
 						estimatedGas = maxGasLimit // pay the maximum
 					}
@@ -558,8 +566,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	} else {
 		if estimatedGas > maxGasLimit {
 			// the estimated gas unit is more than the maximum , so bring down the gas rate
-			maximumGasToPay := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
-			gasRate = big.NewInt(1).Div(maximumGasToPay, big.NewInt(int64(estimatedGas)))
+			maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
+			gasRate = big.NewInt(1).Div(maxGasWei, big.NewInt(int64(estimatedGas)))
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
