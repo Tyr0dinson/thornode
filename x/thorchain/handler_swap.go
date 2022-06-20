@@ -190,7 +190,6 @@ func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	dexAgg := common.NoAddress
 	dexAggTargetAsset := common.NoAddress
 	if len(msg.Aggregator) > 0 {
-		// validate that a referenced dex aggregator is legit
 		dexAgg, err = FetchDexAggregator(h.mgr.GetVersion(), msg.TargetAsset.Chain, msg.Aggregator)
 		if err != nil {
 			return nil, err
