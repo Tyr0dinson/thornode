@@ -120,8 +120,8 @@ func (h CommonOutboundTxHandler) handleV92(ctx cosmos.Context, tx ObservedTx, in
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
-				tx.Aggregator.Equals(txOutItem.Aggregator) &&
-				tx.AggregatorTarget.Equals(txOutItem.AggregatorTargetAsset) &&
+				tx.Aggregator == txOutItem.Aggregator &&
+				tx.AggregatorTarget == txOutItem.AggregatorTargetAsset &&
 				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})

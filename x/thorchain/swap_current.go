@@ -142,8 +142,8 @@ func (s *SwapperV92) Swap(ctx cosmos.Context,
 		InHash:                tx.ID,
 		ToAddress:             destination,
 		Coin:                  common.NewCoin(target, assetAmount),
-		Aggregator:            dexAgg,
-		AggregatorTargetAsset: dexAggTargetAsset,
+		Aggregator:            dexAgg.String(),
+		AggregatorTargetAsset: dexAggTargetAsset.String(),
 		AggregatorTargetLimit: dexAggLimit,
 	}
 	// let the txout manager mint our outbound asset if it is a synthetic asset

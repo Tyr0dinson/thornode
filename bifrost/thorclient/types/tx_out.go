@@ -20,8 +20,8 @@ type TxOutItem struct {
 	GasRate               int64          `json:"gas_rate"`
 	InHash                common.TxID    `json:"in_hash"`
 	OutHash               common.TxID    `json:"out_hash"`
-	Aggregator            common.Address `json:"aggregator"`
-	AggregatorTargetAsset common.Address `json:"aggregator_target_asset,omitempty"`
+	Aggregator            string         `json:"aggregator"`
+	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 }
 
@@ -60,10 +60,10 @@ func (tx TxOutItem) Equals(tx2 TxOutItem) bool {
 	if tx.GasRate != tx2.GasRate {
 		return false
 	}
-	if !tx.Aggregator.Equals(tx2.Aggregator) {
+	if tx.Aggregator != tx2.Aggregator {
 		return false
 	}
-	if !tx.AggregatorTargetAsset.Equals(tx2.AggregatorTargetAsset) {
+	if tx.AggregatorTargetAsset != tx2.AggregatorTargetAsset {
 		return false
 	}
 	if tx.AggregatorTargetLimit == nil && tx2.AggregatorTargetLimit == nil {
@@ -96,8 +96,8 @@ type TxArrayItem struct {
 	GasRate               int64          `json:"gas_rate,omitempty"`
 	InHash                common.TxID    `json:"in_hash,omitempty"`
 	OutHash               common.TxID    `json:"out_hash,omitempty"`
-	Aggregator            common.Address `json:"aggregator,omitempty"`
-	AggregatorTargetAsset common.Address `json:"aggregator_target_asset,omitempty"`
+	Aggregator            string         `json:"aggregator,omitempty"`
+	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 }
 

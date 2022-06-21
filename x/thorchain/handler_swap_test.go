@@ -501,7 +501,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
-	c.Assert(items[0].Aggregator.String(), Equals, "0x69800327b38A4CeF30367Dec3f64c2f2386f3848")
-	c.Assert(items[0].AggregatorTargetAsset.String(), Equals, swapM.DexTargetAddress)
+	c.Assert(items[0].Aggregator, Equals, "0x69800327b38A4CeF30367Dec3f64c2f2386f3848")
+	c.Assert(items[0].AggregatorTargetAsset, Equals, swapM.DexTargetAddress)
 	c.Assert(items[0].AggregatorTargetLimit, IsNil)
 }

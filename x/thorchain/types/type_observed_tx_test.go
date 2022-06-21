@@ -405,16 +405,16 @@ func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	tx2 := NewObservedTx(common.Tx{FromAddress: bnb, ToAddress: addr, Coins: coins1, Memo: "memo", Gas: BNBGasFeeSingleton}, 0, observePoolAddr, 0)
 	c.Assert(tx1.Equals(tx2), Equals, true)
 
-	tx1.Aggregator = GetRandomBNBAddress()
+	tx1.Aggregator = GetRandomBNBAddress().String()
 	c.Assert(tx1.Equals(tx2), Equals, false)
-	tx2.Aggregator = GetRandomBNBAddress()
+	tx2.Aggregator = GetRandomBNBAddress().String()
 	c.Assert(tx1.Equals(tx2), Equals, false)
 	tx2.Aggregator = tx1.Aggregator
 	c.Assert(tx1.Equals(tx2), Equals, true)
 
-	tx1.AggregatorTarget = GetRandomETHAddress()
+	tx1.AggregatorTarget = GetRandomETHAddress().String()
 	c.Assert(tx1.Equals(tx2), Equals, false)
-	tx2.AggregatorTarget = GetRandomETHAddress()
+	tx2.AggregatorTarget = GetRandomETHAddress().String()
 	c.Assert(tx1.Equals(tx2), Equals, false)
 	tx2.AggregatorTarget = tx1.AggregatorTarget
 	c.Assert(tx1.Equals(tx2), Equals, true)

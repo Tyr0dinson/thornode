@@ -413,7 +413,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	hasRouterUpdated := false
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
-		if tx.Aggregator.IsEmpty() {
+		if tx.Aggregator == "" {
 			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 			if err != nil {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
@@ -433,13 +433,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				targetLimit = &zeroLimit
 			}
 
-			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator.String()), ecommon.HexToAddress(tx.AggregatorTargetAsset.String()), dest, targetLimit.BigInt(), tx.Memo)
+			data, err = c.vaultABI.Pack("transferOutAndCall", ecommon.HexToAddress(tx.Aggregator), ecommon.HexToAddress(tx.AggregatorTargetAsset), dest, targetLimit.BigInt(), tx.Memo)
 			if err != nil {
 				return nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
 			}
 		}
 	case mem.TxMigrate, mem.TxYggdrasilFund:
-		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTargetAsset.IsEmpty() {
+		if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" {
 			return nil, fmt.Errorf("migration / yggdrasil+ can't use aggregator")
 		}
 		if IsETH(tokenAddr) {
@@ -458,7 +458,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 			}
 		}
 	case mem.TxYggdrasilReturn:
-		if !tx.Aggregator.IsEmpty() || !tx.AggregatorTargetAsset.IsEmpty() {
+		if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" {
 			return nil, fmt.Errorf("yggdrasil- can't use aggregator")
 		}
 		newSmartContractAddr := c.getSmartContractByAddress(tx.ToAddress)
@@ -544,7 +544,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 				c.logger.Info().Msgf("yggdrasil return fund , gas need: %s", gap.String())
 				ethValue = ethValue.Sub(ethValue, gap)
 			} else {
-				if tx.Aggregator.IsEmpty() {
+				if tx.Aggregator == "" {
 					gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 					c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
 				} else {

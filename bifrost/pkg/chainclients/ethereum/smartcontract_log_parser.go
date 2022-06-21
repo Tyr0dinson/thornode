@@ -370,8 +370,8 @@ func (scp *SmartContractLogParser) getTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()
-			txInItem.Aggregator = aggregatorAddr
-			txInItem.AggregatorTarget = aggregatorTargetAddr
+			txInItem.Aggregator = aggregatorAddr.String()
+			txInItem.AggregatorTarget = aggregatorTargetAddr.String()
 			if transferOutAndCall.AmountOutMin != nil {
 				limit := cosmos.NewUintFromBigInt(transferOutAndCall.AmountOutMin)
 				if !limit.IsZero() {
