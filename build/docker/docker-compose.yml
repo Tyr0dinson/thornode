@@ -101,6 +101,39 @@ services:
       - plain
       - --rpc.laddr
       - tcp://0.0.0.0:26657
+  # ------------------------------ validator ------------------------------
+
+  thornode-validator:
+    <<: *thorchain-defaults
+    hostname: thornode
+    profiles:
+      - validator
+    environment:
+      <<: *thorchain-environment
+      NODES: 1
+      SEEDS: ${SEEDS:-}
+      PEER: ${PEER:-}
+      THORNODE_API_ENABLE: "true"
+      HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
+      NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
+    ports:
+      - 26657:26657
+      - 26656:26656
+      - 1317:1317
+      - 6060:6060
+    volumes:
+      - "../scripts:/docker/scripts"
+      - thornode:/root/.thornode
+    entrypoint: /docker/scripts/validator.sh
+    command:
+      - thornode
+      - start
+      - --log_level
+      - info
+      - --log_format
+      - plain
+      - --rpc.laddr
+      - tcp://0.0.0.0:26657
 
   # ------------------------------ bifrost ------------------------------
 
@@ -133,6 +166,7 @@ services:
       THOR_BLOCK_TIME: ${THOR_BLOCK_TIME:-5s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
       PEER: ${PEER:-}
+      EXTERNAL_IP: ${EXTERNAL_IP:-}
       PPROF_ENABLED: "true"
       TERRA_DISABLED: "true"
     ports:
