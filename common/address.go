@@ -14,6 +14,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -228,6 +229,10 @@ func (addr Address) IsChain(chain Chain) bool {
 		// Note: Terra does not use a special prefix for testnet
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "terra"
+	case GAIAChain:
+		// Note: Gaia does not use a special prefix for testnet
+		prefix, _, _ := bech32.Decode(addr.String())
+		return prefix == "cosmos"
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
@@ -303,7 +308,7 @@ func (addr Address) IsChain(chain Chain) bool {
 }
 
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain} {
+	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain, GAIAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}

@@ -159,6 +159,21 @@ func GetRandomTERRAAddress() common.Address {
 	return terra
 }
 
+// GetRandomETHAddress get a random ETH address for test purpose
+func GetRandomETHAddress() common.Address {
+	pKey := GetRandomPubKey()
+	addr, _ := pKey.GetAddress(common.ETHChain)
+	return addr
+}
+
+// GetRandomGAIAAddress will just create a random terra address used for test purpose
+func GetRandomGAIAAddress() common.Address {
+	name := common.RandStringBytesMask(10)
+	str, _ := common.ConvertAndEncode("cosmos", crypto.AddressHash([]byte(name)))
+	gaia, _ := common.NewAddress(str)
+	return gaia
+}
+
 func GetRandomBTCAddress() common.Address {
 	pubKey := GetRandomPubKey()
 	addr, _ := pubKey.GetAddress(common.BTCChain)
@@ -198,6 +213,10 @@ func GetRandomVault() Vault {
 	return NewVault(32, VaultStatus_ActiveVault, VaultType_AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 }
 
+func GetRandomYggVault() Vault {
+	return NewVault(32, VaultStatus_ActiveVault, VaultType_YggdrasilVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+}
+
 func GetRandomPubKey() common.PubKey {
 	r := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
 	accts := simtypes.RandomAccounts(r, 1)
@@ -234,6 +253,7 @@ func MakeTestCodec() *codec.LegacyAmino {
 // GetCurrentVersion - intended for unit tests, fetches the current version of
 // THORNode via `version` file
 // #nosec G304 this is a method only used for test purpose
+// This can also be used for reporting querier (e.g. fullnode) version.
 func GetCurrentVersion() semver.Version {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := path.Join(path.Dir(filename), "../../..")

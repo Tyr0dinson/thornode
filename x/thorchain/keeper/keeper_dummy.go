@@ -300,6 +300,11 @@ func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error) { return
 func (k KVStoreDummy) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
 	return nil, kaboom
 }
+
+func (k KVStoreDummy) RemoveFromAsgardIndex(ctx cosmos.Context, pubkey common.PubKey) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetLeastSecure(_ cosmos.Context, _ Vaults, _ int64) Vault  { return Vault{} }
 func (k KVStoreDummy) GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault   { return Vault{} }
 func (k KVStoreDummy) SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults { return nil }
@@ -349,6 +354,10 @@ func (k KVStoreDummy) GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ i
 }
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
 func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64)   {}
+func (k KVStoreDummy) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
+	return NodeMimirs{}, kaboom
+}
+
 func (k KVStoreDummy) SetNodeMimir(_ cosmos.Context, key string, value int64, acc cosmos.AccAddress) error {
 	return kaboom
 }
