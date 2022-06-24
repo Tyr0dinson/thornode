@@ -3,6 +3,7 @@ package thorchain
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 
+	"gitlab.com/thorchain/thornode/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -156,6 +157,7 @@ var (
 	NewTHORName                    = types.NewTHORName
 	GetPoolStatus                  = types.GetPoolStatus
 	GetRandomVault                 = types.GetRandomVault
+	GetRandomYggVault              = types.GetRandomYggVault
 	GetRandomTx                    = types.GetRandomTx
 	GetRandomObservedTx            = types.GetRandomObservedTx
 	GetRandomTxOutItem             = types.GetRandomTxOutItem
@@ -166,6 +168,7 @@ var (
 	GetRandomRUNEAddress           = types.GetRandomRUNEAddress
 	GetRandomBNBAddress            = types.GetRandomBNBAddress
 	GetRandomTERRAAddress          = types.GetRandomTERRAAddress
+	GetRandomGAIAAddress           = types.GetRandomGAIAAddress
 	GetRandomBTCAddress            = types.GetRandomBTCAddress
 	GetRandomLTCAddress            = types.GetRandomLTCAddress
 	GetRandomTxHash                = types.GetRandomTxHash
@@ -192,6 +195,8 @@ var (
 	NewYggdrasilReturn     = mem.NewYggdrasilReturn
 	NewYggdrasilFund       = mem.NewYggdrasilFund
 	NewMigrateMemo         = mem.NewMigrateMemo
+
+	FetchDexAggregator = aggregators.FetchDexAggregator
 )
 
 type (

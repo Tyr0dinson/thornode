@@ -157,6 +157,7 @@ type KeeperVault interface {
 	GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault
 	SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults
 	DeleteVault(ctx cosmos.Context, pk common.PubKey) error
+	RemoveFromAsgardIndex(ctx cosmos.Context, pubkey common.PubKey) error
 }
 
 type KeeperReserveContributors interface {
@@ -229,6 +230,7 @@ type KeeperSwapQueue interface {
 type KeeperMimir interface {
 	GetMimir(_ cosmos.Context, key string) (int64, error)
 	SetMimir(_ cosmos.Context, key string, value int64)
+	GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error)
 	SetNodeMimir(_ cosmos.Context, key string, value int64, acc cosmos.AccAddress) error
 	GetMimirIterator(ctx cosmos.Context) cosmos.Iterator
 	GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator
