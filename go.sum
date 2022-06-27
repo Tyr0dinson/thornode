@@ -107,6 +107,8 @@ github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac h1:mdq+vmt7lgPrZY
 github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac/go.mod h1:rvm9ak03WetcpAbv8NBMrLoLSZ1Gb0viSlnbRAcfZKE=
 github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c h1:iBqmB+JY0vatfzjFXy4y6EWY3/Fnj2NiOb0eWK5MoPM=
 github.com/akildemir/moneroTss v0.0.0-20220424150722-5f8f11d7d43c/go.mod h1:jHeqkBY+fvoZ/3BhITxXapJ2mt13KkLRQbV/pWCetXQ=
+github.com/akildemir/moneroTss v0.0.0-20220627094234-26b83c037ec8 h1:mwLsodGopqOQgxDC2py6EO10AnN4mceuLnIYKx+wzpo=
+github.com/akildemir/moneroTss v0.0.0-20220627094234-26b83c037ec8/go.mod h1:vfgFphEh3R6MO/k8C9bR55nL1nx/Hflt2vLCQSBAnOk=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
@@ -643,6 +645,8 @@ github.com/hashicorp/memberlist v0.1.3/go.mod h1:ajVTdAv/9Im8oMAAj5G31PhhMCZJV2p
 github.com/hashicorp/serf v0.8.2/go.mod h1:6hOLApaqBFA1NXqRQAsxw9QxuDEvNxSQRwA/JwenrHc=
 github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220210120456-ebe936d7475a h1:nUrm5c3s3Cz+ln3lSy7bhxanxp/k6ucRWu2zRb45tcc=
 github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220210120456-ebe936d7475a/go.mod h1:orqw3vu8Y12DsIXx9CuVGbSH4wKoOvU5DwOu4jxqiSg=
+github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220622125045-986219a60b46 h1:PdkHQFH7PaCYWmfHyfVyOrKQPIU/I71QP5n4KB1yQrw=
+github.com/haven-protocol-org/go-haven-rpc-client v0.0.0-20220622125045-986219a60b46/go.mod h1:orqw3vu8Y12DsIXx9CuVGbSH4wKoOvU5DwOu4jxqiSg=
 github.com/haven-protocol-org/monero-go-utils v0.0.0-20211126154105-058b2666f217 h1:CflMOYZHhaBo+7up92oOYcesIG+qDCAKdJo+niKBFWM=
 github.com/haven-protocol-org/monero-go-utils v0.0.0-20211126154105-058b2666f217/go.mod h1:vSMDRpw62HGWO1Fi9DQwfgs4e3JCbt475GWY/W5DQZI=
 github.com/hdevalence/ed25519consensus v0.0.0-20210204194344-59a8610d2b87 h1:uUjLpLt6bVvZ72SQc/B4dXcPBw4Vgd7soowdRl52qEM=

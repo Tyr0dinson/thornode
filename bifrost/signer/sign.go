@@ -301,10 +301,10 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 
 				// notify the haven client about keygen
 				i, ok := s.chains[common.XHVChain].(interface {
-					KeygenInProgess(val bool)
+					KeygenInProgress(val bool)
 				})
 				if ok {
-					i.KeygenInProgess(true)
+					i.KeygenInProgress(true)
 				}
 
 				// generate keys for haven/monero
@@ -316,7 +316,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 
 				// keygen is done
 				if ok {
-					i.KeygenInProgess(false)
+					i.KeygenInProgress(false)
 				}
 				if !blame.IsEmpty() {
 					err := fmt.Errorf("reason: %s, nodes %+v", blame.FailReason, blame.BlameNodes)

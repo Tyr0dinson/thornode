@@ -293,8 +293,8 @@ func (c *Client) openWallet(walletName, password string) error {
 	c.clientLock.Lock()
 	defer c.clientLock.Unlock()
 	err := c.client.OpenWallet(&wallet.RequestOpenWallet{
-		Filename: c.walletAddr.String(),
-		Password: c.cfg.Password,
+		Filename: walletName,
+		Password: password,
 	})
 	if err != nil {
 		return err
