@@ -111,6 +111,7 @@ type QueryVaultResp struct {
 type QueryVersion struct {
 	Current semver.Version `json:"current"`
 	Next    semver.Version `json:"next"`
+	Querier semver.Version `json:"querier"`
 }
 
 type QueryChainAddress struct {

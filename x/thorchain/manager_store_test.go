@@ -131,3 +131,91 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 		c.Assert(txAfter.IsDone(len(voterAfter.Actions)), Equals, true)
 	}
 }
+
+func (s *StoreManagerTestSuite) TestMigrateStoreV92(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	storeMgr := newStoreMgr(mgr)
+	ustAsset, err := common.NewAsset("TERRA.UST")
+	c.Assert(err, IsNil)
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+		common.ETHChain.String(),
+		common.TERRAChain.String(),
+	}, nil)
+
+	vault.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
+		common.ETHChain.String(),
+		common.TERRAChain.String(),
+	}, nil)
+
+	vault1.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
+
+	c.Assert(storeMgr.migrate(ctx, 92), IsNil)
+	vaultAfter, err := mgr.Keeper().GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vaultAfter.HasAsset(common.LUNAAsset), Equals, false)
+	c.Assert(vaultAfter.HasAsset(ustAsset), Equals, false)
+	c.Assert(vaultAfter.HasAsset(common.BTCAsset), Equals, true)
+
+	vaultAfter1, err := mgr.Keeper().GetVault(ctx, vault1.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vaultAfter1.HasAsset(common.LUNAAsset), Equals, false)
+	c.Assert(vaultAfter1.HasAsset(ustAsset), Equals, false)
+	c.Assert(vaultAfter1.HasAsset(common.BTCAsset), Equals, true)
+}
+
+func (s *StoreManagerTestSuite) TestMigrateStoreV92_UpdateUSDCBalance(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	config := cosmos.GetConfig()
+	config.SetBech32PrefixForAccount("thor", "thorpub")
+	storeMgr := newStoreMgr(mgr)
+	usdcAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	firstVault := GetRandomVault()
+	firstVault.Type = AsgardVault
+	firstVault.Status = ActiveVault
+	firstVault.Coins = common.NewCoins(
+		common.NewCoin(usdcAsset, cosmos.NewUint(778569000000)))
+	firstVault.PubKey = common.PubKey("thorpub1addwnpepqvxy3grgfsm6e9r7zdcfm5tuvmuefk6vcaen8x7mep4ywpa9jqeu6puyxnw")
+	c.Assert(mgr.Keeper().SetVault(ctx, firstVault), IsNil)
+	secondVault := GetRandomVault()
+	secondVault.Type = AsgardVault
+	secondVault.Status = ActiveVault
+	secondVault.Coins = common.NewCoins(
+		common.NewCoin(usdcAsset, cosmos.NewUint(557933000000)))
+	secondVault.PubKey = common.PubKey("thorpub1addwnpepqd6lgh7qjsfrkfxud68k7kc43f945x9s7wt2tzsttfde783u59mlyaql6cy")
+	c.Assert(mgr.Keeper().SetVault(ctx, secondVault), IsNil)
+	thirdVault := GetRandomVault()
+	thirdVault.Type = AsgardVault
+	thirdVault.Status = ActiveVault
+	thirdVault.Coins = common.NewCoins(
+		common.NewCoin(usdcAsset, cosmos.NewUint(1337164000000)))
+	thirdVault.PubKey = common.PubKey("thorpub1addwnpepq25tc6wckjrpnx2rc7l0lzz4vjsa8cseq8p39jyhm7jr9sk3hqjns80xmmm")
+	c.Assert(mgr.Keeper().SetVault(ctx, thirdVault), IsNil)
+	p := NewPool()
+	p.Asset = usdcAsset
+	p.Status = PoolAvailable
+	p.BalanceAsset = cosmos.NewUint(2673666000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
+
+	c.Assert(storeMgr.migrate(ctx, 92), IsNil)
+	firstVaultAfter, err := mgr.Keeper().GetVault(ctx, firstVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(firstVaultAfter.Coins.IsEmpty(), Equals, true)
+	secondVaultAfter, err := mgr.Keeper().GetVault(ctx, secondVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(secondVaultAfter.Coins.IsEmpty(), Equals, true)
+	thirdVaultAfter, err := mgr.Keeper().GetVault(ctx, thirdVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(thirdVaultAfter.Coins.IsEmpty(), Equals, true)
+	pAfter, err := mgr.Keeper().GetPool(ctx, usdcAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pAfter.BalanceAsset.IsZero(), Equals, true)
+}

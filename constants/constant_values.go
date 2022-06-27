@@ -45,6 +45,7 @@ const (
 	StrictBondLiquidityRatio
 	DefaultPoolStatus
 	MaxOutboundAttempts
+	SlashPenalty
 	PauseOnSlashThreshold
 	FailKeygenSlashPoints
 	FailKeysignSlashPoints
@@ -78,6 +79,7 @@ const (
 	PoolDepthForYggFundingMin
 	MaxNodeToChurnOutForLowVersion
 	RagnarokProcessNumOfLPPerIteration
+	SwapOutDexAggregationDisabled
 )
 
 var nameToString = map[ConstantName]string{
@@ -117,6 +119,7 @@ var nameToString = map[ConstantName]string{
 	StrictBondLiquidityRatio:           "StrictBondLiquidityRatio",
 	DefaultPoolStatus:                  "DefaultPoolStatus",
 	MaxOutboundAttempts:                "MaxOutboundAttempts",
+	SlashPenalty:                       "SlashPenalty",
 	PauseOnSlashThreshold:              "PauseOnSlashThreshold",
 	FailKeygenSlashPoints:              "FailKeygenSlashPoints",
 	FailKeysignSlashPoints:             "FailKeysignSlashPoints",
@@ -148,6 +151,7 @@ var nameToString = map[ConstantName]string{
 	NodeOperatorFee:                    "NodeOperatorFee",
 	PoolDepthForYggFundingMin:          "PoolDepthForYggFundingMin",
 	MaxNodeToChurnOutForLowVersion:     "MaxNodeToChurnOutForLowVersion",
+	SwapOutDexAggregationDisabled:      "SwapOutDexAggregationDisabled",
 	RagnarokProcessNumOfLPPerIteration: "RagnarokProcessNumOfLPPerIteration",
 }
 

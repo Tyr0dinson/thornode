@@ -47,6 +47,8 @@ type ChainConfiguration struct {
 	Password            string                    `json:"password" mapstructure:"password"`
 	RPCHost             string                    `json:"rpc_host" mapstructure:"rpc_host"`
 	WalletRPCHost       string                    `json:"wallet_rpc_host" mapstructure:"wallet_rpc_host"`
+	CosmosGRPCHost      string                    `json:"cosmos_grpc_host" mapstructure:"cosmos_grpc_host"`
+	CosmosGRPCTLS       bool                      `json:"cosmos_grpc_tls" mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                      `json:"http_post_mode" mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
 	DisableTLS          bool                      `json:"disable_tls" mapstructure:"disable_tls"`       // Bitcoin core does not provide TLS by default
 	BlockScanner        BlockScannerConfiguration `json:"block_scanner" mapstructure:"block_scanner"`
@@ -69,6 +71,8 @@ type TSSConfiguration struct {
 // BlockScannerConfiguration settings for BlockScanner
 type BlockScannerConfiguration struct {
 	RPCHost                    string        `json:"rpc_host" mapstructure:"rpc_host"`
+	CosmosGRPCHost             string        `json:"cosmos_grpc_host" mapstructure:"cosmos_grpc_host"`
+	CosmosGRPCTLS              bool          `json:"cosmos_grpc_tls" mapstructure:"cosmos_grpc_tls"`
 	StartBlockHeight           int64         `json:"start_block_height" mapstructure:"start_block_height"`
 	BlockScanProcessors        int           `json:"block_scan_processors" mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `json:"http_request_timeout" mapstructure:"http_request_timeout"`
@@ -151,7 +155,7 @@ func applyDefaultConfig() {
 	viper.SetDefault("metrics.listen_port", "9000")
 	viper.SetDefault("metrics.read_timeout", "30s")
 	viper.SetDefault("metrics.write_timeout", "30s")
-	viper.SetDefault("metrics.chains", common.Chains{common.BNBChain, common.BTCChain, common.LTCChain, common.BCHChain, common.ETHChain, common.DOGEChain, common.TERRAChain, common.XHVChain})
+	viper.SetDefault("metrics.chains", common.Chains{common.BNBChain, common.BTCChain, common.LTCChain, common.BCHChain, common.ETHChain, common.DOGEChain, common.TERRAChain, common.GAIAChain, common.XHVChain})
 	viper.SetDefault("thorchain.chain_id", "thorchain")
 	viper.SetDefault("thorchain.chain_host", "localhost:1317")
 	viper.SetDefault("back_off.initial_interval", 500*time.Millisecond)

@@ -143,15 +143,19 @@ func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 
 func subsidizePoolWithSlashBond(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.88.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.92.0")):
+		return subsidizePoolWithSlashBondV92(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
+	case version.GTE(semver.MustParse("1.88.0")):
 		return subsidizePoolWithSlashBondV88(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	} else if version.GTE(semver.MustParse("0.74.0")) {
+	case version.GTE(semver.MustParse("0.74.0")):
 		return subsidizePoolWithSlashBondV74(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
+func subsidizePoolWithSlashBondV92(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
 	// Thorchain did not slash the node account
 	if slashRuneAmt.IsZero() {
 		return nil
@@ -194,6 +198,10 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 		}
 		f.stolenAsset = f.stolenAsset.Add(coin.Amount)
 		runeValue := pool.AssetValueInRune(coin.Amount)
+		if runeValue.IsZero() {
+			ctx.Logger().Info("rune value of stolen asset is 0", "pool", pool.Asset, "asset amount", coin.Amount.String())
+			continue
+		}
 		// the amount of RUNE thorchain used to subsidize the pool is calculate by ratio
 		// slashRune * (stealAssetRuneValue /totalStealAssetRuneValue)
 		subsidizeAmt := slashRuneAmt.Mul(runeValue).Quo(yggTotalStolen)
@@ -221,9 +229,11 @@ func subsidizePoolWithSlashBondV88(ctx cosmos.Context, ygg Vault, yggTotalStolen
 
 		// Send the subsidized RUNE from the Bond module to Asgard
 		runeToAsgard := common.NewCoin(common.RuneNative, f.subsidiseRune)
-		if err := mgr.Keeper().SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(runeToAsgard)); err != nil {
-			ctx.Logger().Error("fail to send subsidy from bond to asgard", "error", err)
-			return err
+		if !runeToAsgard.Amount.IsZero() {
+			if err := mgr.Keeper().SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(runeToAsgard)); err != nil {
+				ctx.Logger().Error("fail to send subsidy from bond to asgard", "error", err)
+				return err
+			}
 		}
 
 		poolSlashAmt := []PoolAmt{
@@ -265,6 +275,8 @@ func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault)
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.92.0")):
+		return refundBondV92(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("1.88.0")):
 		return refundBondV88(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("0.81.0")):
@@ -274,7 +286,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 	}
 }
 
-func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+func refundBondV92(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
@@ -329,8 +341,9 @@ func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	if nodeAcc.Bond.LT(yggRune) {
 		ctx.Logger().Error("Node Account left with more funds in their Yggdrasil vault than their bond's value", "address", nodeAcc.NodeAddress, "ygg-value", yggRune, "bond", nodeAcc.Bond)
 	}
-	// slashing 1.5 * yggdrasil remains
-	slashRune := yggRune.MulUint64(3).QuoUint64(2)
+	// slash yggdrasil remains
+	penaltyPts := fetchConfigInt64(ctx, mgr, constants.SlashPenalty)
+	slashRune := common.GetShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), yggRune)
 	if slashRune.GT(nodeAcc.Bond) {
 		slashRune = nodeAcc.Bond
 	}

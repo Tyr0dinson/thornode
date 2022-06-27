@@ -7,6 +7,7 @@ import (
 	mnTss "github.com/akildemir/moneroTss/tss"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/dogecoin"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/gaia"
 
 	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -94,6 +95,13 @@ func LoadChains(thorKeys *thorclient.Keys,
 				continue
 			}
 			chains[common.TERRAChain] = terra
+		case common.GAIAChain:
+			gaia, err := gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
+			if err != nil {
+				logger.Fatal().Err(err).Str("chain_id", chain.ChainID.String()).Msg("fail to load chain")
+				continue
+			}
+			chains[common.GAIAChain] = gaia
 		case common.XHVChain:
 			xhv, err := haven.NewClient(thorKeys, chain, mnServer, thorchainBridge, pubKeyValidator, poolMgr, m)
 			if err != nil {
@@ -101,8 +109,6 @@ func LoadChains(thorKeys *thorclient.Keys,
 				continue
 			}
 			chains[common.XHVChain] = xhv
-		default:
-			continue
 		}
 	}
 
