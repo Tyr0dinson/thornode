@@ -14,6 +14,8 @@ var (
 	EmptyAsset = Asset{Chain: EmptyChain, Symbol: "", Ticker: "", Synth: false}
 	// LUNAAsset LUNA
 	LUNAAsset = Asset{Chain: TERRAChain, Symbol: "LUNA", Ticker: "LUNA", Synth: false}
+	// ATOMAsset ATOM
+	ATOMAsset = Asset{Chain: GAIAChain, Symbol: "ATOM", Ticker: "ATOM", Synth: false}
 	// BNBAsset BNB
 	BNBAsset = Asset{Chain: BNBChain, Symbol: "BNB", Ticker: "BNB", Synth: false}
 	// BTCAsset BTC
@@ -174,6 +176,10 @@ func (a *Asset) UnmarshalJSON(data []byte) error {
 	var assetStr string
 	if err := json.Unmarshal(data, &assetStr); err != nil {
 		return err
+	}
+	if assetStr == "." {
+		*a = EmptyAsset
+		return nil
 	}
 	*a, err = NewAsset(assetStr)
 	return err

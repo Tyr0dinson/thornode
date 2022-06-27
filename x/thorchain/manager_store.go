@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
@@ -68,6 +70,9 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV87(ctx, smgr.mgr)
 	case 88:
 		migrateStoreV88(ctx, smgr.mgr)
+	case 92:
+		migrateStoreV92(ctx, smgr.mgr)
+		migrateStoreV92_USDCBalance(ctx, smgr.mgr)
 	}
 
 	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
@@ -124,5 +129,87 @@ func migrateStoreV87(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("fail to save bond provider", "error", err)
 			return
 		}
+	}
+}
+
+func migrateStoreV92(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v92", "error", err)
+		}
+	}()
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get asgard vaults", "error", err)
+		return
+	}
+	ustAsset, err := common.NewAsset("TERRA.UST")
+	if err != nil {
+		ctx.Logger().Error("fail to parse UST asset", "error", err)
+		return
+	}
+	for _, v := range vaults {
+		if v.Status == InactiveVault || v.Status == InitVault {
+			continue
+		}
+		coinsToSubtract := common.NewCoins(v.GetCoin(common.LUNAAsset), v.GetCoin(ustAsset))
+		if coinsToSubtract.IsEmpty() {
+			continue
+		}
+		v.SubFunds(coinsToSubtract)
+		if err := mgr.Keeper().SetVault(ctx, v); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+		}
+	}
+}
+
+func migrateStoreV92_USDCBalance(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to correct USDC balance on v92", "error", err)
+		}
+	}()
+	source := []struct {
+		pubKey common.PubKey
+		amount cosmos.Uint
+	}{
+		{
+			pubKey: common.PubKey("thorpub1addwnpepqvxy3grgfsm6e9r7zdcfm5tuvmuefk6vcaen8x7mep4ywpa9jqeu6puyxnw"),
+			amount: cosmos.NewUint(778569000000),
+		},
+		{
+			pubKey: common.PubKey("thorpub1addwnpepqd6lgh7qjsfrkfxud68k7kc43f945x9s7wt2tzsttfde783u59mlyaql6cy"),
+			amount: cosmos.NewUint(557933000000),
+		},
+		{
+			pubKey: common.PubKey("thorpub1addwnpepq25tc6wckjrpnx2rc7l0lzz4vjsa8cseq8p39jyhm7jr9sk3hqjns80xmmm"),
+			amount: cosmos.NewUint(1337164000000),
+		},
+	}
+	usdcAsset, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	if err != nil {
+		ctx.Logger().Error("fail to parse USDC asset", "error", err)
+		return
+	}
+	pool, err := mgr.Keeper().GetPool(ctx, usdcAsset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "error", err)
+		return
+	}
+	for _, item := range source {
+		v, err := mgr.Keeper().GetVault(ctx, item.pubKey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "error", err)
+			continue
+		}
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, item.amount)
+		v.SubFunds(common.NewCoins(common.NewCoin(usdcAsset, item.amount)))
+		if err := mgr.Keeper().SetVault(ctx, v); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+			continue
+		}
+	}
+	if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+		ctx.Logger().Error("fail to save pool balance", "error", err)
 	}
 }

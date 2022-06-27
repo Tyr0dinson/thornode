@@ -12,6 +12,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	types2 "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/tendermint/tendermint/abci/types"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -406,7 +407,10 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	var resp []address
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-
+	if mgr.Keeper() == nil {
+		ctx.Logger().Error("keeper is nil, can't fulfill query")
+		return nil, errors.New("keeper is nil, can't fulfill query")
+	}
 	// select vault that is most secure
 	vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
 
@@ -415,9 +419,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
-	if err := mgr.BeginBlock(ctx); err != nil {
-		return nil, fmt.Errorf("fail to build manager: %w", err)
-	}
+
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chain == common.THORChain {
@@ -1235,8 +1237,12 @@ func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuer
 
 func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	ver := QueryVersion{
-		Current: mgr.GetVersion(),
+		// Querier needs to use GetLowestActiveVersion for historical version information
+		// (for efficiency, only for a query which needs it),
+		// since not recreating all managers with BeginBlock in managers.go .
+		Current: mgr.Keeper().GetLowestActiveVersion(ctx),
 		Next:    mgr.Keeper().GetMinJoinVersion(ctx),
+		Querier: constants.SWVersion,
 	}
 	res, err := json.MarshalIndent(ver, "", "	")
 	if err != nil {
