@@ -215,7 +215,7 @@ func GetRandomVault() Vault {
 }
 
 func GetRandomYggVault() Vault {
-	return NewVault(32, VaultStatus_ActiveVault, VaultType_YggdrasilVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	return NewVault(32, VaultStatus_ActiveVault, VaultType_YggdrasilVault, GetRandomPubKey(), "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 }
 
 func GetRandomPubKey() common.PubKey {
