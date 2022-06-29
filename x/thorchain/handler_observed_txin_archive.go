@@ -160,6 +160,7 @@ func (h ObservedTxInHandler) handleV78(ctx cosmos.Context, msg MsgObservedTxIn) 
 	}
 	return &cosmos.Result{}, nil
 }
+
 func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -313,6 +314,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 	}
 	return &cosmos.Result{}, nil
 }
+
 func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)

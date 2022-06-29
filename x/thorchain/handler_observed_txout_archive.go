@@ -317,6 +317,7 @@ func (h ObservedTxOutHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxOut
 	}
 	return &cosmos.Result{}, nil
 }
+
 func (h ObservedTxOutHandler) preflightV89(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
