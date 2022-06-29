@@ -358,6 +358,15 @@ func (m *ObservedTxVoter) SetDone() {
 	m.setStatus(Status_done)
 }
 
+// GetAllSigners return all the signer addresses that have voted
+func (m *ObservedTxVoter) GetAllSigners() []cosmos.AccAddress {
+	var allSigners []cosmos.AccAddress
+	for _, item := range m.Txs {
+		allSigners = append(allSigners, item.GetSigners()...)
+	}
+	return allSigners
+}
+
 // MarshalJSON marshal Status to JSON in string form
 func (x Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(x.String())

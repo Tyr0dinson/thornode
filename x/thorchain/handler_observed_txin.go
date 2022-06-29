@@ -68,6 +68,8 @@ func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn)
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.handleV93(ctx, msg)
 	case version.GTE(semver.MustParse("1.89.0")):
 		return h.handleV89(ctx, msg)
 	case version.GTE(semver.MustParse("0.78.0")):
@@ -76,7 +78,7 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	return nil, errBadVersion
 }
 
-func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+func (h ObservedTxInHandler) preflightV93(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 
@@ -98,8 +100,10 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 			ok = true
 			voter.FinalisedHeight = common.BlockHeight(ctx)
 			voter.Tx = voter.GetTx(nas)
+			consensusSigners := voter.Tx.GetSigners()
+			voter.Tx.Signers = nil
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
-			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, consensusSigners...)
 		} else if common.BlockHeight(ctx) <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
@@ -112,9 +116,10 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 			voter.Height = common.BlockHeight(ctx)
 			// this is the tx that has consensus
 			voter.Tx = voter.GetTx(nas)
-
+			consensusSigners := voter.Tx.GetSigners()
+			voter.Tx.Signers = nil
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
-			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, consensusSigners...)
 		} else if common.BlockHeight(ctx) <= (voter.Height+observeFlex) && voter.Tx.Equals(tx) {
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
@@ -123,12 +128,11 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 	}
 
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-
 	// Check to see if we have enough identical observations to process the transaction
 	return voter, ok
 }
 
-func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+func (h ObservedTxInHandler) handleV93(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -147,7 +151,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
+		voter, ok := h.preflightV93(ctx, voter, activeNodeAccounts, tx, msg.Signer)
 		if !ok {
 			if voter.Height == common.BlockHeight(ctx) || voter.FinalisedHeight == common.BlockHeight(ctx) {
 				// we've already process the transaction, but we should still
@@ -230,8 +234,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		// add addresses to observing addresses. This is used to detect
 		// active/inactive observing node accounts
-
-		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.GetAllSigners())
 
 		if !voter.HasFinalised(activeNodeAccounts) {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
