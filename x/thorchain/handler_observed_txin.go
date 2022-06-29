@@ -211,6 +211,7 @@ func (h ObservedTxInHandler) handleV93(ctx cosmos.Context, msg MsgObservedTxIn) 
 			}
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
 		}
+		voter.Tx.Signers = nil
 		// save the changes in Tx Voter to key value store
 		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
