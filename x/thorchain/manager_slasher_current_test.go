@@ -14,9 +14,9 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type SlashingV92Suite struct{}
+type SlashingV93Suite struct{}
 
-var _ = Suite(&SlashingV92Suite{})
+var _ = Suite(&SlashingV93Suite{})
 
 type TestSlashingLackKeeper struct {
 	keeper.KVStoreDummy
@@ -192,11 +192,11 @@ func (k *TestDoubleSlashKeeper) DecNodeAccountSlashPoints(ctx cosmos.Context, ad
 	return nil
 }
 
-func (s *SlashingV92Suite) SetUpSuite(_ *C) {
+func (s *SlashingV93Suite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
-func (s *SlashingV92Suite) TestObservingSlashing(c *C) {
+func (s *SlashingV93Suite) TestObservingSlashing(c *C) {
 	var err error
 	ctx, k := setupKeeperForTest(c)
 	naActiveAfterTx := GetRandomValidatorNode(NodeActive)
@@ -273,7 +273,7 @@ func (s *SlashingV92Suite) TestObservingSlashing(c *C) {
 	c.Assert(slashPoint, Equals, lackOfObservationPenalty)
 }
 
-func (s *SlashingV92Suite) TestLackObservingErrors(c *C) {
+func (s *SlashingV93Suite) TestLackObservingErrors(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	nas := NodeAccounts{
@@ -292,7 +292,7 @@ func (s *SlashingV92Suite) TestLackObservingErrors(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *SlashingV92Suite) TestNodeSignSlashErrors(c *C) {
+func (s *SlashingV93Suite) TestNodeSignSlashErrors(c *C) {
 	testCases := []struct {
 		name        string
 		condition   func(keeper *TestSlashingLackKeeper)
@@ -395,7 +395,7 @@ func (s *SlashingV92Suite) TestNodeSignSlashErrors(c *C) {
 	}
 }
 
-func (s *SlashingV92Suite) TestNotSigningSlash(c *C) {
+func (s *SlashingV93Suite) TestNotSigningSlash(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(201) // set blockheight
 	txOutStore := NewTxStoreDummy()
@@ -460,7 +460,7 @@ func (s *SlashingV92Suite) TestNotSigningSlash(c *C) {
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
-func (s *SlashingV92Suite) TestNewSlasher(c *C) {
+func (s *SlashingV93Suite) TestNewSlasher(c *C) {
 	nas := NodeAccounts{
 		GetRandomValidatorNode(NodeActive),
 		GetRandomValidatorNode(NodeActive),
@@ -474,7 +474,7 @@ func (s *SlashingV92Suite) TestNewSlasher(c *C) {
 	c.Assert(slasher, NotNil)
 }
 
-func (s *SlashingV92Suite) TestDoubleSign(c *C) {
+func (s *SlashingV93Suite) TestDoubleSign(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 
@@ -497,7 +497,7 @@ func (s *SlashingV92Suite) TestDoubleSign(c *C) {
 	c.Check(keeper.modules[ReserveName], Equals, int64(5000000))
 }
 
-func (s *SlashingV92Suite) TestIncreaseDecreaseSlashPoints(c *C) {
+func (s *SlashingV93Suite) TestIncreaseDecreaseSlashPoints(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	na := GetRandomValidatorNode(NodeActive)
@@ -515,7 +515,7 @@ func (s *SlashingV92Suite) TestIncreaseDecreaseSlashPoints(c *C) {
 	c.Assert(keeper.slashPoints[addr.String()], Equals, int64(0))
 }
 
-func (s *SlashingV92Suite) TestSlashVault(c *C) {
+func (s *SlashingV93Suite) TestSlashVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasherV92(mgr.Keeper(), mgr.EventMgr())
 	// when coins are empty , it should return nil
@@ -622,7 +622,7 @@ func (s *SlashingV92Suite) TestSlashVault(c *C) {
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 }
 
-func (s *SlashingV92Suite) TestSlashAndUpdateNodeAccount(c *C) {
+func (s *SlashingV93Suite) TestSlashAndUpdateNodeAccount(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasherV92(mgr.Keeper(), mgr.EventMgr())
 
@@ -663,7 +663,7 @@ func (s *SlashingV92Suite) TestSlashAndUpdateNodeAccount(c *C) {
 	c.Assert(updatedNode.ForcedToLeave, Equals, false)
 }
 
-func (s *SlashingV92Suite) TestUpdatePoolFromSlash(c *C) {
+func (s *SlashingV93Suite) TestUpdatePoolFromSlash(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasherV92(mgr.Keeper(), mgr.EventMgr())
 
@@ -685,7 +685,7 @@ func (s *SlashingV92Suite) TestUpdatePoolFromSlash(c *C) {
 	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(1500*common.One))
 }
 
-func (s *SlashingV92Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
+func (s *SlashingV93Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasherV92(mgr.Keeper(), mgr.EventMgr())
 
@@ -815,7 +815,7 @@ func (s *SlashingV92Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Assert(updatedPool.BalanceAsset.Uint64(), Equals, cosmos.NewUint(2000*common.One).Uint64())
 }
 
-func (s *SlashingV92Suite) TestNeedsNewVault(c *C) {
+func (s *SlashingV93Suite) TestNeedsNewVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	inhash := GetRandomTxHash()
