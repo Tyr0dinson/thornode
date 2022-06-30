@@ -58,15 +58,18 @@ func (h DepositHandler) validateV1(ctx cosmos.Context, msg MsgDeposit) error {
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.87.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.handleV93(ctx, msg)
+	case version.GTE(semver.MustParse("1.87.0")):
 		return h.handleV87(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.67.0")) {
+	case version.GTE(semver.MustParse("0.67.0")):
 		return h.handleV67(ctx, msg)
 	}
 	return nil, errInvalidVersion
 }
 
-func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handleV93(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
@@ -156,6 +159,7 @@ func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 	}
 	txInVoter.FinalisedHeight = common.BlockHeight(ctx)
 	txInVoter.Tx = txInVoter.GetTx(activeNodes)
+	txInVoter.Tx.Signers = nil
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {

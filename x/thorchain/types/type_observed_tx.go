@@ -367,6 +367,19 @@ func (m *ObservedTxVoter) GetAllSigners() []cosmos.AccAddress {
 	return allSigners
 }
 
+// HasSigned check whether the given signer has signed the transaction
+func (m *ObservedTxVoter) HasSigned(signer cosmos.AccAddress) bool {
+	if m.Tx.IsEmpty() {
+		return false
+	}
+	for _, item := range m.Txs {
+		if item.Equals(m.Tx) && item.HasSigned(signer) {
+			return true
+		}
+	}
+	return false
+}
+
 // MarshalJSON marshal Status to JSON in string form
 func (x Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(x.String())

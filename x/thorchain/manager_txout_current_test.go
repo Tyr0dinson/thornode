@@ -10,11 +10,11 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-type TxOutStoreV88Suite struct{}
+type TxOutStoreV93Suite struct{}
 
-var _ = Suite(&TxOutStoreV88Suite{})
+var _ = Suite(&TxOutStoreV93Suite{})
 
-func (s TxOutStoreV88Suite) TestAddGasFees(c *C) {
+func (s TxOutStoreV93Suite) TestAddGasFees(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	tx := GetRandomObservedTx()
 
@@ -26,7 +26,7 @@ func (s TxOutStoreV88Suite) TestAddGasFees(c *C) {
 	c.Assert(mgr.GasMgr().GetGas(), HasLen, 1)
 }
 
-func (s TxOutStoreV88Suite) TestEndBlock(c *C) {
+func (s TxOutStoreV93Suite) TestEndBlock(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	txOutStore := newTxOutStorageV88(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 
@@ -50,7 +50,7 @@ func (s TxOutStoreV88Suite) TestEndBlock(c *C) {
 	c.Check(items[0].MaxGas[0].Amount.Uint64(), Equals, uint64(37500))
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItem(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -223,7 +223,7 @@ func (s TxOutStoreV88Suite) TestAddOutTxItem(c *C) {
 	)
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
@@ -324,7 +324,7 @@ func (s TxOutStoreV88Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	c.Assert(afterVoter1.OutboundHeight, Equals, int64(4))
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -394,7 +394,7 @@ func (s TxOutStoreV88Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	c.Assert(msgs, HasLen, 0)
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItemWithoutBFT(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -419,7 +419,7 @@ func (s TxOutStoreV88Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999887500)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -535,7 +535,7 @@ func (k *TestCalcKeeper) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos
 	return val, nil
 }
 
-func (s TxOutStoreV88Suite) TestcalcTxOutHeight(c *C) {
+func (s TxOutStoreV93Suite) TestcalcTxOutHeight(c *C) {
 	keeper := &TestCalcKeeper{
 		value: make(map[int64]cosmos.Uint),
 		mimir: make(map[string]int64),
@@ -581,7 +581,7 @@ func (s TxOutStoreV88Suite) TestcalcTxOutHeight(c *C) {
 	addValue(targetBlock, value)
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTheSameBlockHeight(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTheSameBlockHeight(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
@@ -693,7 +693,7 @@ func (s TxOutStoreV88Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	c.Assert(afterVoter1.OutboundHeight, Equals, int64(4))
 }
 
-func (s TxOutStoreV88Suite) TestAddOutTxItemInteractionWithPool(c *C) {
+func (s TxOutStoreV93Suite) TestAddOutTxItemInteractionWithPool(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	pool, err := w.keeper.GetPool(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
