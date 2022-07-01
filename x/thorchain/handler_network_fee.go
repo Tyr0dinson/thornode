@@ -62,13 +62,17 @@ func (h NetworkFeeHandler) validateV1(ctx cosmos.Context, msg MsgNetworkFee) err
 // handle process MsgNetworkFee
 func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.47.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.handleV93(ctx, msg)
+	case version.GTE(semver.MustParse("0.47.0")):
 		return h.handleV47(ctx, msg)
+	default:
+		return nil, errBadVersion
 	}
-	return nil, errBadVersion
 }
 
-func (h NetworkFeeHandler) handleV47(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
+func (h NetworkFeeHandler) handleV93(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
 	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")
@@ -118,5 +122,30 @@ func (h NetworkFeeHandler) handleV47(ctx cosmos.Context, msg MsgNetworkFee) (*co
 	}); err != nil {
 		return nil, ErrInternal(err, "fail to save network fee")
 	}
+
+	// check to add a new chain to our vaults
+	conf := fetchConfigInt64(ctx, h.mgr, constants.ChainsUpdateInterval)
+	if conf > 0 && common.BlockHeight(ctx)%conf == 0 {
+		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if err != nil {
+			ctx.Logger().Error("MsgNetworkFee to fetch active vaults", "error", err)
+			return &cosmos.Result{}, nil // do not return error, need to fail the handler in this scenario
+		}
+
+		for _, vault := range vaults {
+			chains := vault.GetChains()
+			if chains.Has(msg.Chain) {
+				continue
+			}
+			chains = append(chains, msg.Chain)
+			chains = chains.Distinct() // ensure uniqueness
+			vault.Chains = chains.Strings()
+			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+				ctx.Logger().Error("MsgNetworkFee failed to set vault", "error", err)
+				continue
+			}
+		}
+	}
+
 	return &cosmos.Result{}, nil
 }

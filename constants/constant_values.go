@@ -52,6 +52,7 @@ const (
 	LiquidityLockUpBlocks
 	ObserveSlashPoints
 	ObservationDelayFlexibility
+	ChainsUpdateInterval
 	YggFundLimit
 	YggFundRetry
 	JailTimeKeygen
@@ -126,6 +127,7 @@ var nameToString = map[ConstantName]string{
 	LiquidityLockUpBlocks:              "LiquidityLockUpBlocks",
 	ObserveSlashPoints:                 "ObserveSlashPoints",
 	ObservationDelayFlexibility:        "ObservationDelayFlexibility",
+	ChainsUpdateInterval:               "ChainsUpdateInterval",
 	YggFundLimit:                       "YggFundLimit",
 	YggFundRetry:                       "YggFundRetry",
 	JailTimeKeygen:                     "JailTimeKeygen",
