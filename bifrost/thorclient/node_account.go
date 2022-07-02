@@ -20,3 +20,16 @@ func (b *ThorchainBridge) GetNodeAccount(thorAddr string) (*types.NodeAccount, e
 	}
 	return &na, nil
 }
+
+// GetNodeAccounts retrieves all node accounts
+func (b *ThorchainBridge) GetNodeAccounts() (*types.NodeAccounts, error) {
+	body, _, err := b.getWithPath(NodeAccountsEndpoint)
+	if err != nil {
+		return &types.NodeAccounts{}, fmt.Errorf("failed to get node accounts: %w", err)
+	}
+	var accts types.NodeAccounts
+	if err := json.Unmarshal(body, &accts); err != nil {
+		return &types.NodeAccounts{}, fmt.Errorf("failed to unmarshal node accounts: %w", err)
+	}
+	return &accts, nil
+}

@@ -43,6 +43,7 @@ const (
 	KeysignEndpoint          = "/thorchain/keysign"
 	LastBlockEndpoint        = "/thorchain/lastblock"
 	NodeAccountEndpoint      = "/thorchain/node"
+	NodeAccountsEndpoint     = "/thorchain/nodes"
 	SignerMembershipEndpoint = "/thorchain/vaults/%s/signers"
 	StatusEndpoint           = "/status"
 	AsgardVault              = "/thorchain/vaults/asgard"

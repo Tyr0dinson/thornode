@@ -46,3 +46,10 @@ func (s *NodeAccountSuite) TestGetNodeAccount(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(na, NotNil)
 }
+
+func (s *NodeAccountSuite) TestGetNodeAccounts(c *C) {
+	s.fixture = "../../test/fixtures/endpoints/nodeaccounts/template.json"
+	accts, err := s.bridge.GetNodeAccounts()
+	c.Assert(err, IsNil)
+	c.Assert(*accts, HasLen, 1)
+}
