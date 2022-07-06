@@ -71,7 +71,12 @@ func (vm *validatorMgrV92) BeginBlock(ctx cosmos.Context, constAccessor constant
 	if desiredValidatorSet < 0 || err != nil {
 		desiredValidatorSet = constAccessor.GetInt64Value(constants.DesiredValidatorSet)
 	}
-	churnRetryInterval := constAccessor.GetInt64Value(constants.ChurnRetryInterval)
+
+	churnRetryInterval, err := vm.k.GetMimir(ctx, constants.ChurnRetryInterval.String())
+	if churnRetryInterval < 0 || err != nil {
+		churnRetryInterval = constAccessor.GetInt64Value(constants.ChurnRetryInterval)
+	}
+
 	asgardSize, err := vm.k.GetMimir(ctx, constants.AsgardSize.String())
 	if asgardSize < 0 || err != nil {
 		asgardSize = constAccessor.GetInt64Value(constants.AsgardSize)
