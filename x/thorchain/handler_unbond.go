@@ -13,13 +13,21 @@ import (
 
 // UnBondHandler a handler to process unbond request
 type UnBondHandler struct {
-	mgr Manager
+	mgr        Manager
+	validators LadderDispatch
+	handlers   LadderDispatch
 }
 
 // NewUnBondHandler create new UnBondHandler
 func NewUnBondHandler(mgr Manager) UnBondHandler {
 	return UnBondHandler{
 		mgr: mgr,
+		validators: LadderDispatch{}.
+			Register("1.88.0", UnBondHandler.validateV88).
+			Register("0.81.0", UnBondHandler.validateV81),
+		handlers: LadderDispatch{}.
+			Register("1.92.0", UnBondHandler.handleV92).
+			Register("0.81.0", UnBondHandler.handleV81),
 	}
 }
 
@@ -47,14 +55,11 @@ func (h UnBondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, er
 
 func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.validateV88(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.validateV81(ctx, msg)
-	default:
-		return errBadVersion
+	handler := h.validators.Get(version)
+	if handler != nil {
+		return handler.(func(UnBondHandler, cosmos.Context, MsgUnBond) error)(h, ctx, msg) // nolint
 	}
+	return errBadVersion
 }
 
 func (h UnBondHandler) validateV88(ctx cosmos.Context, msg MsgUnBond) error {
@@ -114,14 +119,11 @@ func (h UnBondHandler) validateV88(ctx cosmos.Context, msg MsgUnBond) error {
 
 func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.handleV92(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.handleV81(ctx, msg)
-	default:
-		return errBadVersion
+	handler := h.handlers.Get(version)
+	if handler != nil {
+		return handler.(func(UnBondHandler, cosmos.Context, MsgUnBond) error)(h, ctx, msg) // nolint
 	}
+	return errBadVersion
 }
 
 func (h UnBondHandler) handleV92(ctx cosmos.Context, msg MsgUnBond) error {

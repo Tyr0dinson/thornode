@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blang/semver"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -13,13 +11,24 @@ import (
 
 // SwapHandler is the handler to process swap request
 type SwapHandler struct {
-	mgr Manager
+	mgr        Manager
+	validators LadderDispatch
+	handlers   LadderDispatch
 }
 
 // NewSwapHandler create a new instance of swap handler
 func NewSwapHandler(mgr Manager) SwapHandler {
 	return SwapHandler{
 		mgr: mgr,
+		validators: LadderDispatch{}.
+			Register("1.93.0", SwapHandler.validateV93).
+			Register("1.92.0", SwapHandler.validateV92).
+			Register("1.88.1", SwapHandler.validateV88).
+			Register("0.65.0", SwapHandler.validateV65),
+		handlers: LadderDispatch{}.
+			Register("1.93.0", SwapHandler.handleV93).
+			Register("1.92.0", SwapHandler.handleV92).
+			Register("0.81.0", SwapHandler.handleV81),
 	}
 }
 
@@ -43,18 +52,11 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.93.0")):
-		return h.validateV93(ctx, msg)
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.validateV92(ctx, msg)
-	case version.GTE(semver.MustParse("1.88.1")):
-		return h.validateV88(ctx, msg)
-	case version.GTE(semver.MustParse("0.65.0")):
-		return h.validateV65(ctx, msg)
-	default:
-		return errInvalidVersion
+	handler := h.validators.Get(version)
+	if handler != nil {
+		return handler.(func(SwapHandler, cosmos.Context, MsgSwap) error)(h, ctx, msg) // nolint
 	}
+	return errInvalidVersion
 }
 
 func (h SwapHandler) validateV93(ctx cosmos.Context, msg MsgSwap) error {
@@ -156,16 +158,11 @@ func (h SwapHandler) validateV93(ctx cosmos.Context, msg MsgSwap) error {
 func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.93.0")):
-		return h.handleV93(ctx, msg)
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.handleV92(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.handleV81(ctx, msg)
-	default:
-		return nil, errBadVersion
+	handler := h.handlers.Get(version)
+	if handler != nil {
+		return handler.(func(SwapHandler, cosmos.Context, MsgSwap) (*cosmos.Result, error))(h, ctx, msg) // nolint
 	}
+	return nil, errBadVersion
 }
 
 func (h SwapHandler) handleV93(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {

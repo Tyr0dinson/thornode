@@ -12,13 +12,23 @@ import (
 
 // BondHandler a handler to process bond
 type BondHandler struct {
-	mgr Manager
+	mgr        Manager
+	validators LadderDispatch
+	handlers   LadderDispatch
 }
 
 // NewBondHandler create new BondHandler
 func NewBondHandler(mgr Manager) BondHandler {
 	return BondHandler{
 		mgr: mgr,
+		validators: LadderDispatch{}.
+			Register("1.88.0", BondHandler.validateV88).
+			Register("0.81.0", BondHandler.validateV81),
+		handlers: LadderDispatch{}.
+			Register("1.88.0", BondHandler.handleV88).
+			Register("1.87.0", BondHandler.handleV87).
+			Register("1.86.0", BondHandler.handleV86).
+			Register("0.81.0", BondHandler.handleV81),
 	}
 }
 
@@ -48,14 +58,11 @@ func (h BondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.validateV88(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.validateV81(ctx, msg)
-	default:
-		return errBadVersion
+	handler := h.validators.Get(version)
+	if handler != nil {
+		return handler.(func(BondHandler, cosmos.Context, MsgBond) error)(h, ctx, msg) // nolint
 	}
+	return errBadVersion
 }
 
 func (h BondHandler) validateV88(ctx cosmos.Context, msg MsgBond) error {
@@ -161,15 +168,9 @@ func (h BondHandler) validateV88(ctx cosmos.Context, msg MsgBond) error {
 
 func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.handleV88(ctx, msg)
-	case version.GTE(semver.MustParse("1.87.0")):
-		return h.handleV87(ctx, msg)
-	case version.GTE(semver.MustParse("1.86.0")):
-		return h.handleV86(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.handleV81(ctx, msg)
+	handler := h.handlers.Get(version)
+	if handler != nil {
+		return handler.(func(BondHandler, cosmos.Context, MsgBond) error)(h, ctx, msg) // nolint
 	}
 	return errBadVersion
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/x/gov/types"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -14,13 +13,20 @@ import (
 
 // SendHandler handle MsgSend
 type SendHandler struct {
-	mgr Manager
+	mgr        Manager
+	validators LadderDispatch
+	handlers   LadderDispatch
 }
 
 // NewSendHandler create a new instance of SendHandler
 func NewSendHandler(mgr Manager) SendHandler {
 	return SendHandler{
 		mgr: mgr,
+		validators: LadderDispatch{}.
+			Register("1.87.0", SendHandler.validateV87).
+			Register("0.1.0", SendHandler.validateV1),
+		handlers: LadderDispatch{}.
+			Register("0.1.0", SendHandler.handleV1),
 	}
 }
 
@@ -43,10 +49,9 @@ func (h SendHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 
 func (h SendHandler) validate(ctx cosmos.Context, msg MsgSend) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.87.0")) {
-		return h.validateV87(ctx, msg)
-	} else if version.GTE(semver.MustParse("0.1.0")) {
-		return h.validateV1(ctx, msg)
+	handler := h.validators.Get(version)
+	if handler != nil {
+		return handler.(func(SendHandler, cosmos.Context, MsgSend) error)(h, ctx, msg) // nolint
 	}
 	return errInvalidVersion
 }
@@ -70,8 +75,9 @@ func (h SendHandler) validateV87(ctx cosmos.Context, msg MsgSend) error {
 func (h SendHandler) handle(ctx cosmos.Context, msg MsgSend) (*cosmos.Result, error) {
 	ctx.Logger().Info("receive MsgSend", "from", msg.FromAddress, "to", msg.ToAddress, "coins", msg.Amount)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
-		return h.handleV1(ctx, msg)
+	handler := h.handlers.Get(version)
+	if handler != nil {
+		return handler.(func(SendHandler, cosmos.Context, MsgSend) (*cosmos.Result, error))(h, ctx, msg) // nolint
 	}
 	return nil, errBadVersion
 }
