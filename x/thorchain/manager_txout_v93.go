@@ -107,6 +107,10 @@ func (tos *TxOutStorageV93) ClearOutboundItems(ctx cosmos.Context) {
 	_ = tos.keeper.ClearTxOut(ctx, common.BlockHeight(ctx))
 }
 
+func (tos *TxOutStorageV93) PrepareTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) ([]TxOutItem, error) {
+	return nil, nil
+}
+
 // TryAddTxOutItem add an outbound tx to block
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error

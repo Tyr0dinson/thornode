@@ -43,6 +43,10 @@ func (tos *TxOutStoreDummy) GetOutboundItemByToAddress(_ cosmos.Context, to comm
 	return items
 }
 
+func (tos *TxOutStoreDummy) PrepareTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) ([]TxOutItem, error) {
+	return nil, nil
+}
+
 // AddTxOutItem add an item to internal structure
 func (tos *TxOutStoreDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
 	if !toi.Chain.Equals(common.THORChain) {
@@ -98,6 +102,10 @@ func (tos *TxOutStoreFailDummy) GetOutboundItemByToAddress(_ cosmos.Context, to 
 		}
 	}
 	return items
+}
+
+func (tos *TxOutStoreFailDummy) PrepareTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) ([]TxOutItem, error) {
+	return nil, errKaboom
 }
 
 // AddTxOutItem add an item to internal structure

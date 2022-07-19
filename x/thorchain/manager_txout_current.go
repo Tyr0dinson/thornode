@@ -107,16 +107,13 @@ func (tos *TxOutStorageV95) ClearOutboundItems(ctx cosmos.Context) {
 	_ = tos.keeper.ClearTxOut(ctx, common.BlockHeight(ctx))
 }
 
-// TryAddTxOutItem add an outbound tx to block
-// return bool indicate whether the transaction had been added successful or not
-// return error indicate error
-func (tos *TxOutStorageV95) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+func (tos *TxOutStorageV95) PrepareTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) ([]TxOutItem, error) {
 	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
-		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
+		return nil, fmt.Errorf("fail to prepare outbound tx: %w", err)
 	}
 	if len(outputs) == 0 {
-		return false, ErrNotEnoughToPayFee
+		return nil, ErrNotEnoughToPayFee
 	}
 
 	sumOut := cosmos.ZeroUint()
@@ -124,7 +121,19 @@ func (tos *TxOutStorageV95) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
 	if sumOut.LT(minOut) {
-		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+		return nil, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+	}
+
+	return outputs, nil
+}
+
+// TryAddTxOutItem add an outbound tx to block
+// return bool indicate whether the transaction had been added successful or not
+// return error indicate error
+func (tos *TxOutStorageV95) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	outputs, err := tos.PrepareTxOutItem(ctx, mgr, toi, minOut)
+	if err != nil {
+		return false, err
 	}
 
 	// blacklist binance exchange as an outbound destination. This is because
