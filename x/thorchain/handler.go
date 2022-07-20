@@ -369,11 +369,24 @@ func fuzzyAssetMatchV83(ctx cosmos.Context, keeper keeper.Keeper, origAsset comm
 
 func externalAssetMatch(version semver.Version, chain common.Chain, hint string) string {
 	switch {
+	case version.GTE(semver.MustParse("1.95.0")):
+		return externalAssetMatchV95(version, chain, hint)
 	case version.GTE(semver.MustParse("1.93.0")):
 		return externalAssetMatchV93(version, chain, hint)
 	default:
 		return hint
 	}
+}
+
+func externalAssetMatchV95(version semver.Version, chain common.Chain, hint string) string {
+	if len(hint) == 0 {
+		return hint
+	}
+
+	// if chain.IsEVM() {
+
+	// }
+	return ""
 }
 
 func externalAssetMatchV93(version semver.Version, chain common.Chain, hint string) string {

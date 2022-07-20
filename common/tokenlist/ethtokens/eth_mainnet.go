@@ -1,11 +1,11 @@
 //go:build !testnet && !mocknet
 // +build !testnet,!mocknet
 
-package tokenlist
+package ethtokens
 
 import (
 	_ "embed"
 )
 
 //go:embed eth_mainnet_V93.json
-var ethTokenListRawV93 []byte
+var ETHTokenListRawV93 []byte

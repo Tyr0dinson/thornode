@@ -2,36 +2,20 @@ package tokenlist
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/common/tokenlist/ethtokens"
 )
 
-var ethTokenListV93 ETHTokenList
-
-// ERC20Token is a struct to represent the token
-type ERC20Token struct {
-	Address  string `json:"address"`
-	Symbol   string `json:"symbol"`
-	Name     string `json:"name"`
-	Decimals int    `json:"decimals"`
-}
-
-type ETHTokenList struct {
-	Name      string       `json:"name"`
-	LogoURI   string       `json:"logoURI"`
-	Tokens    []ERC20Token `json:"tokens"`
-	Keywords  []string     `json:"keywords"`
-	Timestamp time.Time    `json:"timestamp"`
-}
+var ethTokenListV93 EVMTokenList
 
 func init() {
-	if err := json.Unmarshal(ethTokenListRawV93, &ethTokenListV93); err != nil {
+	if err := json.Unmarshal(ethtokens.ETHTokenListRawV93, &ethTokenListV93); err != nil {
 		panic(err)
 	}
 }
 
-func GetETHTokenList(version semver.Version) ETHTokenList {
+func GetETHTokenList(version semver.Version) EVMTokenList {
 	switch {
 	case version.GTE(semver.MustParse("1.93.0")):
 		return ethTokenListV93
