@@ -28,7 +28,7 @@ func GetEVMTokenList(chain common.Chain, version semver.Version) EVMTokenList {
 	case common.ETHChain:
 		return GetETHTokenList(version)
 	case common.AVAXChain:
-		return EVMTokenList{}
+		return GetAVAXTokenList(version)
 	default:
 		return EVMTokenList{}
 	}

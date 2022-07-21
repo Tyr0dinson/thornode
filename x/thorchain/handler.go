@@ -382,7 +382,6 @@ func externalAssetMatchV95(version semver.Version, chain common.Chain, hint stri
 	if len(hint) == 0 {
 		return hint
 	}
-
 	if chain.IsEVM() {
 		// find all potential matches
 		matches := []string{}
@@ -394,7 +393,6 @@ func externalAssetMatchV95(version semver.Version, chain common.Chain, hint stri
 				}
 			}
 		}
-
 		// if we only have one match, lets go with it, otherwise leave the
 		// user's input alone. It may still work, if it doesn't, should get the
 		// gas asset instead of the erc20 desired.
@@ -404,7 +402,6 @@ func externalAssetMatchV95(version semver.Version, chain common.Chain, hint stri
 
 		return hint
 	}
-
 	return hint
 }
 
