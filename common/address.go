@@ -228,9 +228,10 @@ func getBCHAddressV83(address bchutil.Address, cfg *bchchaincfg.Params) (Address
 }
 
 func (addr Address) IsChain(chain Chain) bool {
-	switch chain {
-	case ETHChain:
+	if chain.IsEVM() {
 		return strings.HasPrefix(addr.String(), "0x")
+	}
+	switch chain {
 	case BNBChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "bnb" || prefix == "tbnb"

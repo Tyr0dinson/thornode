@@ -1,11 +1,11 @@
 {
-    "name": "AVAX C-Chain Testnet Tokens",
-    "logoURI": "",
-    "keywords": ["avalanche"],
-    "version": {
-      "major": 86,
-      "minor": 0,
-      "patch": 0
-    },
-    "tokens": []
+  "name": "AVAX C-Chain Testnet Tokens",
+  "logoURI": "",
+  "keywords": ["avalanche"],
+  "version": {
+    "major": 86,
+    "minor": 0,
+    "patch": 0
+  },
+  "tokens": []
 }

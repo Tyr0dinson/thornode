@@ -383,10 +383,29 @@ func externalAssetMatchV95(version semver.Version, chain common.Chain, hint stri
 		return hint
 	}
 
-	// if chain.IsEVM() {
+	if chain.IsEVM() {
+		// find all potential matches
+		matches := []string{}
+		for _, token := range tokenlist.GetEVMTokenList(chain, version).Tokens {
+			if strings.HasSuffix(strings.ToLower(token.Address), strings.ToLower(hint)) {
+				matches = append(matches, token.Address)
+				if len(matches) > 1 {
+					break
+				}
+			}
+		}
 
-	// }
-	return ""
+		// if we only have one match, lets go with it, otherwise leave the
+		// user's input alone. It may still work, if it doesn't, should get the
+		// gas asset instead of the erc20 desired.
+		if len(matches) == 1 {
+			return matches[0]
+		}
+
+		return hint
+	}
+
+	return hint
 }
 
 func externalAssetMatchV93(version semver.Version, chain common.Chain, hint string) string {
