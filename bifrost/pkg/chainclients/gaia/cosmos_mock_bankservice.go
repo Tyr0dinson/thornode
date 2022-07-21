@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc"
 )
 
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
@@ -24,6 +24,8 @@ type MockBankServiceClient interface {
 	DenomMetadata(ctx context.Context, in *btypes.QueryDenomMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomMetadataResponse, error)
 	// DenomsMetadata queries the client metadata for all registered coin denominations.
 	DenomsMetadata(ctx context.Context, in *btypes.QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomsMetadataResponse, error)
+	// SpendableBalances
+	SpendableBalances(ctx context.Context, req *btypes.QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalancesResponse, error)
 }
 
 type mockBankServiceClient struct{}
@@ -62,5 +64,8 @@ func (c *mockBankServiceClient) DenomMetadata(ctx context.Context, in *btypes.Qu
 }
 
 func (c *mockBankServiceClient) DenomsMetadata(ctx context.Context, in *btypes.QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomsMetadataResponse, error) {
+	return nil, nil
+}
+func (c *mockBankServiceClient) SpendableBalances(ctx context.Context, req *btypes.QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalancesResponse, error) {
 	return nil, nil
 }
