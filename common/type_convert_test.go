@@ -66,3 +66,15 @@ func (TypeConvertTestSuite) TestGetUncappedShare(c *C) {
 	share := GetUncappedShare(y, cosmos.NewUint(10000), x)
 	c.Assert(share.IsZero(), Equals, true)
 }
+
+func (TypeConvertTestSuite) TestAbsoluteDelta(c *C) {
+	x := cosmos.NewUint(1024)
+	y := cosmos.NewUint(20)
+	zero := cosmos.NewUint(0)
+
+	expected := cosmos.NewUint(1004)
+
+	c.Assert(AbsoluteDelta(x, y).Equal(expected), Equals, true)
+	c.Assert(AbsoluteDelta(y, x).Equal(expected), Equals, true)
+	c.Assert(AbsoluteDelta(zero, x).Equal(x), Equals, true)
+}

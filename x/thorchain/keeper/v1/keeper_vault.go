@@ -22,13 +22,12 @@ func (k KVStore) setVault(ctx cosmos.Context, key string, record Vault) {
 
 func (k KVStore) getVault(ctx cosmos.Context, key string, record *Vault) (bool, error) {
 	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+	bz := store.Get([]byte(key))
+	if bz == nil {
 		return false, nil
 	}
-
-	bz := store.Get([]byte(key))
 	if err := k.cdc.Unmarshal(bz, record); err != nil {
-		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	return true, nil
 }
@@ -60,13 +59,9 @@ func (k KVStore) GetLeastSecure(ctx cosmos.Context, vaults Vaults, signingTransP
 // value of the vault is to the total bond of the members of that vault. Sorts
 // by least secure to most secure.
 func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) Vaults {
-	if len(vaults) <= 1 {
-		return vaults
-	}
-
 	type VaultSecurity struct {
 		Vault Vault
-		Diff  int64
+		Diff  uint64
 	}
 
 	vaultSecurity := make([]VaultSecurity, len(vaults))
@@ -145,16 +140,9 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 			}
 		}
 
-		if totalValue.GT(totalBond) {
-			vaultSecurity[i] = VaultSecurity{
-				Vault: vault,
-				Diff:  -(int64(common.SafeSub(totalValue, totalBond).Uint64())),
-			}
-		} else {
-			vaultSecurity[i] = VaultSecurity{
-				Vault: vault,
-				Diff:  int64(common.SafeSub(totalBond, totalValue).Uint64()),
-			}
+		vaultSecurity[i] = VaultSecurity{
+			Vault: vault,
+			Diff:  common.AbsoluteDelta(totalBond, totalValue).Uint64(),
 		}
 	}
 

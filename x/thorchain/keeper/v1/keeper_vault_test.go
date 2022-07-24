@@ -66,7 +66,7 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	c.Check(k.DeleteVault(ctx, vault1.PubKey), NotNil)
 }
 
-func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
+func (s *KeeperVaultSuite) TestVaultSortBySecurity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Add node accounts
@@ -133,4 +133,11 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	c.Assert(sorted[0].PubKey.Equals(vault2.PubKey), Equals, true)
 	c.Assert(sorted[1].PubKey.Equals(vault3.PubKey), Equals, true)
 	c.Assert(sorted[2].PubKey.Equals(vault1.PubKey), Equals, true)
+}
+
+func (s *KeeperVaultSuite) TestVaultSortBySecurityZeroLen(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	sorted := k.SortBySecurity(ctx, Vaults{}, 9000)
+	c.Assert(sorted, HasLen, 0)
 }

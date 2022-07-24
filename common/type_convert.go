@@ -63,6 +63,14 @@ func SafeSub(input1, input2 cosmos.Uint) cosmos.Uint {
 	return input1.Sub(input2)
 }
 
+// AbsoluteDelta returns the absolute value of the difference between the two inputs.
+func AbsoluteDelta(input1, input2 cosmos.Uint) cosmos.Uint {
+	if input2.GT(input1) {
+		return input2.Sub(input1)
+	}
+	return input1.Sub(input2)
+}
+
 // CosmosPrivateKeyToTMPrivateKey convert cosmos implementation of private key to tendermint private key
 func CosmosPrivateKeyToTMPrivateKey(privateKey cryptotypes.PrivKey) crypto.PrivKey {
 	switch k := privateKey.(type) {
