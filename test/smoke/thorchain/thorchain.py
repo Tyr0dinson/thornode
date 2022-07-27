@@ -1641,6 +1641,8 @@ class Pool(Jsonable):
         S = synth balance
         A = asset balance
         """
+        if self.lp_units == 0:
+            return self.synth_balance
         if self.asset_balance == 0:
             return 0
         numerator = self.lp_units * self.synth_balance
