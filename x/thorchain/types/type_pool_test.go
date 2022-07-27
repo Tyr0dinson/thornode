@@ -148,6 +148,14 @@ func (PoolTestSuite) TestCalcUnits(c *C) {
 	units = pool.CalcUnits(version, synthSupply)
 	c.Assert(pool.SynthUnits.Uint64(), Equals, uint64(5))
 	c.Assert(units.Uint64(), Equals, uint64(105))
+
+	// only synths, no LPs
+	pool.LPUnits = cosmos.ZeroUint()
+	synthSupply = cosmos.NewUint(100)
+	units = pool.CalcUnits(version, synthSupply)
+	c.Assert(pool.SynthUnits.Uint64(), Equals, uint64(100))
+	c.Assert(units.Uint64(), Equals, uint64(100))
+
 }
 
 func (PoolTestSuite) TestReimbursementAndDisbursement(c *C) {

@@ -73,17 +73,23 @@ func (m *Pool) GetPoolUnits() cosmos.Uint {
 }
 
 func (m *Pool) CalcUnits(version semver.Version, s cosmos.Uint) cosmos.Uint {
-	if version.GTE(semver.MustParse("0.80.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.95.0")):
+		return m.CalcUnitsV95(s)
+	case version.GTE(semver.MustParse("0.80.0")):
 		return m.CalcUnitsV80(s)
+	default:
+		return m.GetPoolUnits()
 	}
-	return m.GetPoolUnits()
 }
 
-func (m *Pool) CalcUnitsV80(s cosmos.Uint) cosmos.Uint {
+func (m *Pool) CalcUnitsV95(s cosmos.Uint) cosmos.Uint {
 	// Calculate synth units
 	// (L*S)/(2*A-S)
 	// S := k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
-	if m.BalanceAsset.IsZero() {
+	if m.LPUnits.IsZero() {
+		m.SynthUnits = s
+	} else if m.BalanceAsset.IsZero() {
 		m.SynthUnits = cosmos.ZeroUint()
 	} else {
 		numerator := m.LPUnits.Mul(s)
