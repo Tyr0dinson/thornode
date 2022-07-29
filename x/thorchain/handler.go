@@ -18,6 +18,8 @@ type MsgHandler interface {
 	Run(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error)
 }
 
+type Handler2[H, M interface{}] interface{}
+
 // NewExternalHandler returns a handler for "thorchain" type messages.
 func NewExternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
