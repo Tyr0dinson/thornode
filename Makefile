@@ -59,7 +59,7 @@ smoke-protob:
 smoke-protob-docker:
 	@docker run --rm -v $(shell pwd):/app -w /app \
 		registry.gitlab.com/thorchain/thornode:builder-v1@sha256:6a7fb4e4ba636ca8ae6b7db93ae8838a8393ddbc8dfc2b99eb706fb18f50d635 \
-		sh -c 'apt-get install -y python3-pip && make smoke-protob'
+		sh -c 'apt-get update && apt-get install -y python3-pip && make smoke-protob'
 
 openapi:
 	@docker run --rm \
