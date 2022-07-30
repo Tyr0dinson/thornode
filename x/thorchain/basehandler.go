@@ -1,14 +1,9 @@
 package thorchain
 
 import (
-	//"fmt"
+	"fmt"
 
-	//"github.com/blang/semver"
-	//se "github.com/cosmos/cosmos-sdk/types/errors"
-
-	//"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	//"gitlab.com/thorchain/thornode/constants"
 )
 
 type BaseHandlerI interface {
@@ -37,30 +32,23 @@ func NewHandlers[M interface{}]() LadderDispatchT[func(Manager, cosmos.Context, 
 	return LadderDispatchT[func(Manager, cosmos.Context, M) (*cosmos.Result, error)]{}
 }
 
-// func NewHandlerX[M interface{}](mgr Manager, validators, handlers LadderDispatch) BaseHandler[M] {
-// 	return BaseHandler[M]{
-// 		mgr: mgr,
-// 		validators: validators,
-// 		handlers: handlers,
-// 	}
-// }
+func typeof(v interface{}) string {
+	return fmt.Sprintf("%T", v)
+}
 
 func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
 	msg, ok := m.(M)
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	//ctx.Logger().Info("receive MsgUnBond",
-	//	"node address", msg.NodeAddress,
-	//	"request hash", msg.TxIn.ID,
-	//	"amount", msg.Amount)
+	ctx.Logger().Info("received " + typeof(m))
 	if err := h.validate(ctx, msg); err != nil {
-		ctx.Logger().Error("MsgType failed validation", "error", err)
+		ctx.Logger().Error(typeof(m) + " failed validation", "error", err)
 		return nil, err
 	}
 	result, err := h.handle(ctx, msg)
 	if err != nil {
-		ctx.Logger().Error("MsgType failed handler", "error", err)
+		ctx.Logger().Error(typeof(m) + " failed handler", "error", err)
 	}
 	return result, nil
 }

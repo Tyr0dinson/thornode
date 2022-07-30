@@ -11,7 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-// NewSendHandler create a new instance of SendHandler
 func NewSendHandler(mgr Manager) TypedHandler[MsgSend] {
 	return BaseHandler[MsgSend]{
 		mgr: mgr,
