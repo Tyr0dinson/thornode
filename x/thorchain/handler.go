@@ -18,8 +18,6 @@ type MsgHandler interface {
 	Run(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error)
 }
 
-type Handler2[H, M interface{}] interface{}
-
 // NewExternalHandler returns a handler for "thorchain" type messages.
 func NewExternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
@@ -401,9 +399,6 @@ func externalAssetMatchV93(version semver.Version, chain common.Chain, hint stri
 		if len(matches) == 1 {
 			return matches[0]
 		}
-
-		return hint
-	default:
-		return hint
 	}
+	return hint
 }
