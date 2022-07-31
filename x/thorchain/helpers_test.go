@@ -132,7 +132,7 @@ func (s *HelperSuite) TestSubsidizePoolWithSlashBond(c *C) {
 	totalRuneStolen := ygg.GetCoin(common.RuneAsset()).Amount
 	slashAmt := totalRuneLeft.MulUint64(3).QuoUint64(2)
 
-	FundModule(c, ctx, mgr.Keeper(), BondName, slashAmt.Uint64())
+	FundModule(c, ctx, mgr.Keeper(), BondName, slashAmt.Uint64()*common.One)
 	asgardBeforeSlash := mgr.Keeper().GetRuneBalanceOfModule(ctx, AsgardName)
 	bondBeforeSlash := mgr.Keeper().GetRuneBalanceOfModule(ctx, BondName)
 	poolsBeforeSlash := poolBNB.BalanceRune.Add(poolTCAN.BalanceRune).Add(poolBTC.BalanceRune)
