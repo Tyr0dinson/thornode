@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 // Valid check whether the node status is valid or not
@@ -323,7 +324,7 @@ func (bp *BondProviders) Adjust(nodeBond cosmos.Uint) {
 	fee := cosmos.ZeroUint()
 	if totalBond.LT(nodeBond) {
 		surplus := common.SafeSub(nodeBond, totalBond)
-		fee = common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(10000), surplus)
+		fee = common.GetSafeShare(bp.NodeOperatorFee, constants.MaxBasisPoints, surplus)
 	}
 	nodeBond = common.SafeSub(nodeBond, fee)
 

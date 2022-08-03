@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type MsgWithdrawSuite struct{}
@@ -25,7 +26,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 	)
 	runeAddr := GetRandomRUNEAddress()
 	acc1 := GetRandomBech32Addr()
-	m := NewMsgWithdrawLiquidity(tx, runeAddr, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, acc1)
+	m := NewMsgWithdrawLiquidity(tx, runeAddr, constants.MaxBasisPoints, common.BNBAsset, common.EmptyAsset, acc1)
 	EnsureMsgBasicCorrect(m, c)
 	c.Check(m.Type(), Equals, "withdraw")
 
@@ -39,7 +40,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 		{
 			tx:                  GetRandomTx(),
 			publicAddress:       common.NoAddress,
-			withdrawBasisPoints: cosmos.NewUint(10000),
+			withdrawBasisPoints: constants.MaxBasisPoints,
 			asset:               common.BNBAsset,
 			signer:              acc1,
 		},
@@ -60,14 +61,14 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 		{
 			tx:                  GetRandomTx(),
 			publicAddress:       runeAddr,
-			withdrawBasisPoints: cosmos.NewUint(10000),
+			withdrawBasisPoints: constants.MaxBasisPoints,
 			asset:               common.Asset{},
 			signer:              acc1,
 		},
 		{
 			tx:                  GetRandomTx(),
 			publicAddress:       runeAddr,
-			withdrawBasisPoints: cosmos.NewUint(10000),
+			withdrawBasisPoints: constants.MaxBasisPoints,
 			asset:               common.BNBAsset,
 			signer:              cosmos.AccAddress{},
 		},

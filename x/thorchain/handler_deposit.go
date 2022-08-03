@@ -230,7 +230,7 @@ func (h DepositHandler) addSwapV65(ctx cosmos.Context, msg MsgSwap) {
 	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
 		amt = common.GetSafeShare(
 			msg.AffiliateBasisPoints,
-			cosmos.NewUint(10000),
+			constants.MaxBasisPoints,
 			msg.Tx.Coins[0].Amount,
 		)
 		msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, amt)

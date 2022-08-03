@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
@@ -34,6 +35,8 @@ const MaxETHGas = 50000000
 const CtxMetricLabels = "metricLabels"
 
 const MimirKeyRegex = `^[a-zA-Z0-9-]+$`
+
+var MaxBasisPoints cosmos.Uint = cosmos.NewUint(10_000)
 
 // ConstantVals implement ConstantValues interface
 type ConstantVals struct {

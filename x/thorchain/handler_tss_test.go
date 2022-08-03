@@ -509,7 +509,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			runner: func(handler TssHandler, msg cosmos.Msg, helper tssHandlerTestHelper) (*cosmos.Result, error) {
 				vd := Network{
 					BondRewardRune: cosmos.NewUint(5000 * common.One),
-					TotalBondUnits: cosmos.NewUint(10000),
+					TotalBondUnits: constants.MaxBasisPoints,
 				}
 				_ = helper.keeper.SetNetwork(helper.ctx, vd)
 				return handler.Run(helper.ctx, msg)
@@ -553,7 +553,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			runner: func(handler TssHandler, msg cosmos.Msg, helper tssHandlerTestHelper) (*cosmos.Result, error) {
 				vd := Network{
 					BondRewardRune: cosmos.NewUint(5000 * common.One),
-					TotalBondUnits: cosmos.NewUint(10000),
+					TotalBondUnits: constants.MaxBasisPoints,
 				}
 				_ = helper.keeper.SetNetwork(helper.ctx, vd)
 				helper.keeper.errFailSetNetwork = true

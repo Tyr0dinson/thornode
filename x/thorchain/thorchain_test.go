@@ -60,7 +60,7 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	c.Check(lp2.Units.IsZero(), Equals, false)
 
 	// withdraw for user1
-	msg := NewMsgWithdrawLiquidity(GetRandomTx(), user1rune, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
+	msg := NewMsgWithdrawLiquidity(GetRandomTx(), user1rune, constants.MaxBasisPoints, common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
 	_, _, _, _, _, err = withdraw(ctx, *msg, NewDummyMgrWithKeeper(keeper))
 	c.Assert(err, IsNil)
 	lp1, err = keeper.GetLiquidityProvider(ctx, common.BNBAsset, user1rune)
@@ -68,7 +68,7 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	c.Check(lp1.Units.IsZero(), Equals, true)
 
 	// withdraw for user2
-	msg = NewMsgWithdrawLiquidity(GetRandomTx(), user2rune, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
+	msg = NewMsgWithdrawLiquidity(GetRandomTx(), user2rune, constants.MaxBasisPoints, common.BNBAsset, common.EmptyAsset, GetRandomBech32Addr())
 	_, _, _, _, _, err = withdraw(ctx, *msg, NewDummyMgrWithKeeper(keeper))
 	c.Assert(err, IsNil)
 	lp2, err = keeper.GetLiquidityProvider(ctx, common.BNBAsset, user2rune)

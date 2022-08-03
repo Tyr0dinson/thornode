@@ -206,7 +206,7 @@ func calculateWithdrawV89(poolUnits, poolRune, poolAsset, lpUnits, extraUnits, w
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("withdraw basis point %s is not valid", withdrawBasisPoints.String())
 	}
 
-	unitsToClaim := common.GetSafeShare(withdrawBasisPoints, cosmos.NewUint(10000), lpUnits)
+	unitsToClaim := common.GetSafeShare(withdrawBasisPoints, constants.MaxBasisPoints, lpUnits)
 	unitAfter := common.SafeSub(lpUnits, unitsToClaim)
 	unitsToClaim = unitsToClaim.Add(extraUnits)
 	if withdrawalAsset.IsEmpty() {
@@ -242,7 +242,7 @@ func calcImpLossV89(lp LiquidityProvider, withdrawBasisPoints cosmos.Uint, prote
 	coverage := common.SafeSub(depositValue, redeemValue)
 
 	// taking withdrawBasisPoints, calculate how much of the coverage the user should receives
-	coverage = common.GetSafeShare(withdrawBasisPoints, cosmos.NewUint(10000), coverage)
+	coverage = common.GetSafeShare(withdrawBasisPoints, constants.MaxBasisPoints, coverage)
 
 	// taking protection basis points, calculate how much of the coverage the user actually receives
 	result := coverage.MulUint64(uint64(protectionBasisPoints)).QuoUint64(10000)

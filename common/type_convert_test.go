@@ -6,6 +6,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type TypeConvertTestSuite struct{}
@@ -63,6 +64,6 @@ func (TypeConvertTestSuite) TestGetUncappedShare(c *C) {
 	z2.SetBytes(data)
 	c.Log(z2.String())
 	y := cosmos.NewUintFromBigInt(z2)
-	share := GetUncappedShare(y, cosmos.NewUint(10000), x)
+	share := GetUncappedShare(y, constants.MaxBasisPoints, x)
 	c.Assert(share.IsZero(), Equals, true)
 }

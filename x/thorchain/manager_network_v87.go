@@ -794,7 +794,7 @@ func (vm *NetworkMgrV87) calcBlockRewards(totalProvidedLiquidity, totalBonded, t
 
 	lpSplit := vm.getPoolShare(incentiveCurve, totalProvidedLiquidity, totalBonded, systemIncome) // Get liquidity provider share
 	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                          // Remainder to Bonders
-	lpShare := common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(10_000))
+	lpShare := common.GetSafeShare(lpSplit, systemIncome, constants.MaxBasisPoints)
 
 	lpDeficit := cosmos.ZeroUint()
 	poolReward := cosmos.ZeroUint()

@@ -108,7 +108,7 @@ func (s WithdrawSuiteV91) TestValidateWithdraw(c *C) {
 			name: "empty-rune-address",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: "",
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -130,7 +130,7 @@ func (s WithdrawSuiteV91) TestValidateWithdraw(c *C) {
 			name: "empty-request-txhash",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{},
 				Signer:          accountAddr,
@@ -141,7 +141,7 @@ func (s WithdrawSuiteV91) TestValidateWithdraw(c *C) {
 			name: "empty-asset",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.Asset{},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -163,7 +163,7 @@ func (s WithdrawSuiteV91) TestValidateWithdraw(c *C) {
 			name: "invalid-pool-notexist",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.Asset{Chain: common.BNBChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -174,7 +174,7 @@ func (s WithdrawSuiteV91) TestValidateWithdraw(c *C) {
 			name: "all-good",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -279,7 +279,7 @@ func (s WithdrawSuiteV91) TestCalculateUnsake(c *C) {
 			poolRune:              cosmos.NewUint(700 * common.One),
 			poolAsset:             cosmos.NewUint(700 * common.One),
 			lpUnit:                cosmos.NewUint(200 * common.One),
-			percentage:            cosmos.NewUint(10000),
+			percentage:            constants.MaxBasisPoints,
 			expectedUnitLeft:      cosmos.ZeroUint(),
 			expectedWithdrawAsset: cosmos.NewUint(200 * common.One),
 			expectedWithdrawRune:  cosmos.NewUint(200 * common.One),
@@ -334,7 +334,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "empty-rune-address",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: "",
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -348,7 +348,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "empty-request-txhash",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{},
 				Signer:          accountAddr,
@@ -362,7 +362,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "empty-asset",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.Asset{},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -390,7 +390,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "invalid-pool-notexist",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.Asset{Chain: common.BNBChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -404,7 +404,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "invalid-pool-liquidity-provider-notexist",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.Asset{Chain: common.BNBChain, Ticker: "NOTEXISTSTICKER", Symbol: "NOTEXISTSTICKER"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -446,7 +446,7 @@ func (WithdrawSuiteV91) TestWithdraw(c *C) {
 			name: "all-good",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
@@ -494,7 +494,7 @@ func (WithdrawSuiteV91) TestWithdrawAsym(c *C) {
 			name: "all-good-asymmetric-rune",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				WithdrawalAsset: common.RuneAsset(),
@@ -508,7 +508,7 @@ func (WithdrawSuiteV91) TestWithdrawAsym(c *C) {
 			name: "all-good-asymmetric-asset",
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
-				BasisPoints:     cosmos.NewUint(10000),
+				BasisPoints:     constants.MaxBasisPoints,
 				Asset:           common.BNBAsset,
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				WithdrawalAsset: common.BNBAsset,
@@ -568,7 +568,7 @@ func (WithdrawSuiteV91) TestWithdrawPendingRuneOrAsset(c *C) {
 	mgr.Keeper().SetLiquidityProvider(ctx, lp)
 	msg := MsgWithdrawLiquidity{
 		WithdrawAddress: lp.RuneAddress,
-		BasisPoints:     cosmos.NewUint(10000),
+		BasisPoints:     constants.MaxBasisPoints,
 		Asset:           common.BNBAsset,
 		Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 		WithdrawalAsset: common.BNBAsset,
@@ -595,7 +595,7 @@ func (WithdrawSuiteV91) TestWithdrawPendingRuneOrAsset(c *C) {
 	mgr.Keeper().SetLiquidityProvider(ctx, lp1)
 	msg1 := MsgWithdrawLiquidity{
 		WithdrawAddress: lp1.RuneAddress,
-		BasisPoints:     cosmos.NewUint(10000),
+		BasisPoints:     constants.MaxBasisPoints,
 		Asset:           common.BNBAsset,
 		Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 		WithdrawalAsset: common.BNBAsset,
@@ -700,7 +700,7 @@ func (s *WithdrawSuiteV91) TestWithdrawPendingLiquidityShouldRoundToPoolDecimals
 	newctx := ctx.WithBlockHeight(ctx.BlockHeight() + 17280*2)
 	msg2 := MsgWithdrawLiquidity{
 		WithdrawAddress: lpAddr,
-		BasisPoints:     cosmos.NewUint(10000),
+		BasisPoints:     constants.MaxBasisPoints,
 		Asset:           common.LUNAAsset,
 		Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 		WithdrawalAsset: common.LUNAAsset,

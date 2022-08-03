@@ -206,8 +206,8 @@ func (h AddLiquidityHandler) handleV93(ctx cosmos.Context, msg MsgAddLiquidity) 
 	}
 
 	// add liquidity has an affiliate fee, add liquidity for both the user and their affiliate
-	affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.RuneAmount)
-	affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.AssetAmount)
+	affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, constants.MaxBasisPoints, msg.RuneAmount)
+	affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, constants.MaxBasisPoints, msg.AssetAmount)
 	userRune := common.SafeSub(msg.RuneAmount, affiliateRune)
 	userAsset := common.SafeSub(msg.AssetAmount, affiliateAsset)
 
