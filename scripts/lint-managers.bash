@@ -7,6 +7,9 @@ created=$(grep --exclude "*_test.go" "func new" x/thorchain/manager_* | awk '{pr
 missing=$(echo -e "$inited\n$created" | grep -Ev 'Dummy|Helper|newStoreMgr' | sort -n | uniq -u)
 echo "$missing"
 
-[ -z "$missing" ] && echo "OK" && exit 0
+if [[ -n $missing ]]; then
+  echo "Not OK"
+  exit 1
+fi
 
-[[ -n $missing ]] && echo "Not OK" && exit 1
+echo "OK"
