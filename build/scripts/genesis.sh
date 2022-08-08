@@ -78,6 +78,9 @@ if [ "$SEED" = "$(hostname)" ]; then
     else
       echo "ETH Contract Address: $CONTRACT"
       set_eth_contract "$CONTRACT"
+
+      echo "AVAX Contract Address: $AVAX_CONTRACT"
+      set_avax_contract "$AVAX_CONTRACT"
     fi
     if [ "$NET" = "testnet" ]; then
       # mint 1m RUNE to reserve for testnet
