@@ -84,7 +84,8 @@ func (HandlerBondSuite) TestBondHandler_Run(c *C) {
 	}
 	// happy path
 	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
-	handler := NewBondHandler(NewDummyMgrWithKeeper(k1))
+	mgr := NewDummyMgrWithKeeper(k1)
+	handler := NewBondHandler(mgr)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	minimumBondInRune := constAccessor.GetInt64Value(constants.MinimumBondInRune)
@@ -310,7 +311,8 @@ func (HandlerBondSuite) TestBondProvider_Handler(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
-	handler := NewBondHandler(NewDummyMgrWithKeeper(k))
+	mgr := NewDummyMgrWithKeeper(k)
+	handler := NewBondHandler(mgr)
 	txIn := GetRandomTx()
 	amt := cosmos.NewUint(100 * common.One)
 	txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), amt))
@@ -326,7 +328,7 @@ func (HandlerBondSuite) TestBondProvider_Handler(c *C) {
 	msg := NewMsgBond(txIn, standbyNA, amt, standbyNAAddress, additionalBondAddress, activeNA, -1)
 	err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	na, _ := handler.mgr.Keeper().GetNodeAccount(ctx, standbyNA)
+	na, _ := mgr.Keeper().GetNodeAccount(ctx, standbyNA)
 	c.Check(na.Bond.Uint64(), Equals, amt.Uint64()+(100*common.One), Commentf("%d", na.Bond.Uint64()))
 	bp, _ := k.GetBondProviders(ctx, standbyNA)
 	c.Assert(bp.Providers, HasLen, 2)
@@ -359,12 +361,12 @@ func (HandlerBondSuite) TestBondProvider_Handler(c *C) {
 	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
 
 	// Simulate Network Rewards by adding to the bond
-	na, _ = handler.mgr.Keeper().GetNodeAccount(ctx, standbyNA)
+	na, _ = mgr.Keeper().GetNodeAccount(ctx, standbyNA)
 	na.Bond = na.Bond.Add(cosmos.NewUint(200 * common.One))
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 
 	// Check total bond - 600 RUNE
-	na, _ = handler.mgr.Keeper().GetNodeAccount(ctx, standbyNA)
+	na, _ = mgr.Keeper().GetNodeAccount(ctx, standbyNA)
 	c.Check(na.Bond.Uint64(), Equals, cosmos.NewUint(600*common.One).Uint64(), Commentf("%d", na.Bond.Uint64()))
 
 	// Check BP bond - Node Operator should have 200 (2/3rd share), BP #2 should have 100 (1/3rd share)

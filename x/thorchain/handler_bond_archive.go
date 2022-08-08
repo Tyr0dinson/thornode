@@ -8,14 +8,14 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
+func MsgBondValidateV81(ctx cosmos.Context, mgr Manager, msg MsgBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 	// When RUNE is on thorchain , pay bond doesn't need to be active node
 	// in fact , usually the node will not be active at the time it bond
 
-	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
+	nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
@@ -25,13 +25,13 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	if nodeAccount.Status == NodeActive {
-		validatorMaxRewardRatio, err := h.mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
+		validatorMaxRewardRatio, err := mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
 		if validatorMaxRewardRatio < 0 || err != nil {
-			validatorMaxRewardRatio = h.mgr.GetConstants().GetInt64Value(constants.ValidatorMaxRewardRatio)
+			validatorMaxRewardRatio = mgr.GetConstants().GetInt64Value(constants.ValidatorMaxRewardRatio)
 		}
 
 		if validatorMaxRewardRatio > 1 {
-			retiring, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+			retiring, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
 			if err != nil {
 				return err
 			}
@@ -44,7 +44,7 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
-	maxBond, err := h.mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
+	maxBond, err := mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
 	if maxBond > 0 && err == nil {
 		maxValidatorBond := cosmos.NewUint(uint64(maxBond))
 		if bond.GT(maxValidatorBond) {
@@ -65,7 +65,7 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 		return nil
 	}
 
-	bp, err := h.mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
+	bp, err := mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
 	}
@@ -80,8 +80,8 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 	return nil
 }
 
-func (h BondHandler) handleV81(ctx cosmos.Context, msg MsgBond) error {
-	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
+func MsgBondHandleV81(ctx cosmos.Context, mgr Manager, msg MsgBond) error {
+	nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
@@ -102,13 +102,13 @@ func (h BondHandler) handleV81(ctx cosmos.Context, msg MsgBond) error {
 	originalBond := nodeAccount.Bond
 	nodeAccount.Bond = nodeAccount.Bond.Add(msg.Bond)
 
-	acct := h.mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
+	acct := mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
 
 	// when node bond for the first time , send 1 RUNE to node address
 	// so as the node address will be created on THORChain otherwise node account won't be able to send tx
 	if acct == nil && nodeAccount.Bond.GTE(cosmos.NewUint(common.One)) {
 		coin := common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))
-		if err := h.mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
+		if err := mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
 			ctx.Logger().Error("fail to send one RUNE to node address", "error", err)
 			nodeAccount.Status = NodeUnknown
 		}
@@ -118,12 +118,12 @@ func (h BondHandler) handleV81(ctx cosmos.Context, msg MsgBond) error {
 		tx.ID = common.BlankTxID
 		tx.ToAddress = common.Address(nodeAccount.String())
 		bondEvent := NewEventBond(cosmos.NewUint(common.One), BondCost, tx)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+		if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
 	}
 
-	bp, err := h.mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
+	bp, err := mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
 	}
@@ -142,9 +142,9 @@ func (h BondHandler) handleV81(ctx cosmos.Context, msg MsgBond) error {
 
 	// if bonder is node operator, add additional bonding address
 	if msg.BondAddress.Equals(nodeAccount.BondAddress) && !msg.BondProviderAddress.Empty() {
-		max, err := h.mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
+		max, err := mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
 		if err != nil || max < 0 {
-			max = h.mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
+			max = mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
 		}
 		if int64(len(bp.Providers)) >= max {
 			return fmt.Errorf("additional bond providers are not allowed, maximum reached")
@@ -162,24 +162,24 @@ func (h BondHandler) handleV81(ctx cosmos.Context, msg MsgBond) error {
 		bp.Bond(msg.Bond, from)
 	}
 
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+	if err := mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
 	}
 
-	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
 	bondEvent := NewEventBond(msg.Bond, BondPaid, msg.TxIn)
-	if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+	if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 
 	return nil
 }
 
-func (h BondHandler) handleV86(ctx cosmos.Context, msg MsgBond) error {
-	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
+func MsgBondHandleV86(ctx cosmos.Context, mgr Manager, msg MsgBond) error {
+	nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
@@ -200,13 +200,13 @@ func (h BondHandler) handleV86(ctx cosmos.Context, msg MsgBond) error {
 	originalBond := nodeAccount.Bond
 	nodeAccount.Bond = nodeAccount.Bond.Add(msg.Bond)
 
-	acct := h.mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
+	acct := mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
 
 	// when node bond for the first time , send 1 RUNE to node address
 	// so as the node address will be created on THORChain otherwise node account won't be able to send tx
 	if acct == nil && nodeAccount.Bond.GTE(cosmos.NewUint(common.One)) {
 		coin := common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))
-		if err := h.mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
+		if err := mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
 			ctx.Logger().Error("fail to send one RUNE to node address", "error", err)
 			nodeAccount.Status = NodeUnknown
 		}
@@ -216,12 +216,12 @@ func (h BondHandler) handleV86(ctx cosmos.Context, msg MsgBond) error {
 		tx.ID = common.BlankTxID
 		tx.ToAddress = common.Address(nodeAccount.String())
 		bondEvent := NewEventBond(cosmos.NewUint(common.One), BondCost, tx)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+		if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
 	}
 
-	bp, err := h.mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
+	bp, err := mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
 	}
@@ -243,9 +243,9 @@ func (h BondHandler) handleV86(ctx cosmos.Context, msg MsgBond) error {
 
 	// if bonder is node operator, add additional bonding address
 	if msg.BondAddress.Equals(nodeAccount.BondAddress) && !msg.BondProviderAddress.Empty() {
-		max, err := h.mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
+		max, err := mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
 		if err != nil || max < 0 {
-			max = h.mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
+			max = mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
 		}
 		if int64(len(bp.Providers)) >= max {
 			return fmt.Errorf("additional bond providers are not allowed, maximum reached")
@@ -263,24 +263,24 @@ func (h BondHandler) handleV86(ctx cosmos.Context, msg MsgBond) error {
 		bp.Bond(msg.Bond, from)
 	}
 
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+	if err := mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
 	}
 
-	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
 	bondEvent := NewEventBond(msg.Bond, BondPaid, msg.TxIn)
-	if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+	if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 
 	return nil
 }
 
-func (h BondHandler) handleV87(ctx cosmos.Context, msg MsgBond) error {
-	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
+func MsgBondHandleV87(ctx cosmos.Context, mgr Manager, msg MsgBond) error {
+	nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
@@ -301,13 +301,13 @@ func (h BondHandler) handleV87(ctx cosmos.Context, msg MsgBond) error {
 	originalBond := nodeAccount.Bond
 	nodeAccount.Bond = nodeAccount.Bond.Add(msg.Bond)
 
-	acct := h.mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
+	acct := mgr.Keeper().GetAccount(ctx, msg.NodeAddress)
 
 	// when node bond for the first time , send 1 RUNE to node address
 	// so as the node address will be created on THORChain otherwise node account won't be able to send tx
 	if acct == nil && nodeAccount.Bond.GTE(cosmos.NewUint(common.One)) {
 		coin := common.NewCoin(common.RuneNative, cosmos.NewUint(common.One))
-		if err := h.mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
+		if err := mgr.Keeper().SendFromModuleToAccount(ctx, BondName, msg.NodeAddress, common.NewCoins(coin)); err != nil {
 			ctx.Logger().Error("fail to send one RUNE to node address", "error", err)
 			nodeAccount.Status = NodeUnknown
 		}
@@ -317,19 +317,19 @@ func (h BondHandler) handleV87(ctx cosmos.Context, msg MsgBond) error {
 		tx.ID = common.BlankTxID
 		tx.ToAddress = common.Address(nodeAccount.String())
 		bondEvent := NewEventBond(cosmos.NewUint(common.One), BondCost, tx)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+		if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
 		}
 	}
 
-	bp, err := h.mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
+	bp, err := mgr.Keeper().GetBondProviders(ctx, nodeAccount.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
 	}
 
 	// Re-distribute current bond if needed
 	bp.Adjust(originalBond)
-	bp.NodeOperatorFee = cosmos.NewUint(uint64(fetchConfigInt64(ctx, h.mgr, constants.NodeOperatorFee)))
+	bp.NodeOperatorFee = cosmos.NewUint(uint64(fetchConfigInt64(ctx, mgr, constants.NodeOperatorFee)))
 
 	// backfill bond provider information (passive migration code)
 	if len(bp.Providers) == 0 {
@@ -345,9 +345,9 @@ func (h BondHandler) handleV87(ctx cosmos.Context, msg MsgBond) error {
 
 	// if bonder is node operator, add additional bonding address
 	if msg.BondAddress.Equals(nodeAccount.BondAddress) && !msg.BondProviderAddress.Empty() {
-		max, err := h.mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
+		max, err := mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
 		if err != nil || max < 0 {
-			max = h.mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
+			max = mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
 		}
 		if int64(len(bp.Providers)) >= max {
 			return fmt.Errorf("additional bond providers are not allowed, maximum reached")
@@ -365,16 +365,16 @@ func (h BondHandler) handleV87(ctx cosmos.Context, msg MsgBond) error {
 		bp.Bond(msg.Bond, from)
 	}
 
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+	if err := mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save node account(%s)", nodeAccount.String()))
 	}
 
-	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+	if err := mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
 	bondEvent := NewEventBond(msg.Bond, BondPaid, msg.TxIn)
-	if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+	if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 

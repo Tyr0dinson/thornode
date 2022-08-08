@@ -43,12 +43,12 @@ func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 	}
 	ctx.Logger().Info("received " + typeof(m))
 	if err := h.validate(ctx, *msg); err != nil {
-		ctx.Logger().Error(typeof(m) + " failed validation", "error", err)
+		ctx.Logger().Error(typeof(m)+" failed validation", "error", err)
 		return nil, err
 	}
 	err := h.handle(ctx, *msg)
 	if err != nil {
-		ctx.Logger().Error(typeof(m) + " failed handler", "error", err)
+		ctx.Logger().Error(typeof(m)+" failed handler", "error", err)
 		return nil, err
 	}
 	return &cosmos.Result{}, nil
