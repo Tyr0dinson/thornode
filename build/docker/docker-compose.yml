@@ -116,7 +116,6 @@ services:
       NODES: 1
       SEEDS: ${SEEDS:-}
       PEER: ${PEER:-}
-      THORNODE_API_ENABLE: "true"
       HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
     ports:
