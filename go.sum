@@ -1445,6 +1445,8 @@ gitlab.com/thorchain/binance-sdk v1.2.3-0.20210117202539-d569b6b9ba5d h1:GGPSI9g
 gitlab.com/thorchain/binance-sdk v1.2.3-0.20210117202539-d569b6b9ba5d/go.mod h1:SW01IZMpqlPNPdhHnn99qnJNvg8ll/agyyW7p85npwY=
 gitlab.com/thorchain/tss/go-tss v1.5.1 h1:EwGSwnOLpuXARoBbNohiOvemxHsnHoZ1h7NZFmNHm6o=
 gitlab.com/thorchain/tss/go-tss v1.5.1/go.mod h1:qOX9i/d8NS0UYgohA1q5R2SVJnT/o4gc4Sj3gnDF+Uc=
+gitlab.com/thorchain/tss/go-tss v1.5.2-0.20220805031742-43fa2098059e h1:S/abbv27ijP9hEQYyer+PNQzI2bJdG+VoPbZWvAF/vE=
+gitlab.com/thorchain/tss/go-tss v1.5.2-0.20220805031742-43fa2098059e/go.mod h1:qOX9i/d8NS0UYgohA1q5R2SVJnT/o4gc4Sj3gnDF+Uc=
 gitlab.com/thorchain/tss/tss-lib v0.1.2 h1:ZVjr2lKxDCwCEXmacmT4EjChjeDsER4Cv7/RValj20w=
 gitlab.com/thorchain/tss/tss-lib v0.1.2/go.mod h1:pEM3W/1inIzmdQn9IY9pA0MkG1bTGKhsSivxizeyyt4=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
