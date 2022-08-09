@@ -77,6 +77,8 @@ services:
       - mocknet-cluster
     depends_on:
       - ethereum
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment: &thornode-environment
       <<: *thorchain-environment
       NODES: 1
