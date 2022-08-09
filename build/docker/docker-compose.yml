@@ -82,7 +82,6 @@ services:
       NODES: 1
       SEED: thornode
       THOR_BLOCK_TIME: ${THOR_BLOCK_TIME:-5s}
-      THORNODE_API_ENABLE: "true"
       HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
     ports:
