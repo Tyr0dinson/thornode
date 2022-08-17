@@ -58,14 +58,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 5
     done
 
-    # add IP address
-    sleep 10 # wait for thorchain to commit a block
-
-    NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
-    until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-ip-address "$NODE_IP_ADDRESS" --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
-      sleep 5
-    done
-
     sleep 10 # wait for thorchain to commit a block
     # set node version
     until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-version --node tcp://$PEER:26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do

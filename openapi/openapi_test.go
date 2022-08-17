@@ -49,7 +49,9 @@ func (Test) TestJSONSpec(c *C) {
 
 	// nodes
 	assertJSONStructTagsMatch(c, types.QueryNodeAccountPreflightCheck{}, gen.NodePreflightStatus{})
-	assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
+	// Temporarily disable OpenAPI validation for node accounts
+	// TODO: this can be removed after the next hard fork removes IP Address message types
+	// assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
 	assertJSONStructTagsMatch(c, types.QueryChainHeight{}, gen.ChainHeight{})
 	assertJSONStructTagsMatch(c, types.Jail{}, gen.NodeJail{})
 

@@ -27,7 +27,6 @@ func GetTxCmd() *cobra.Command {
 
 	cmd.AddCommand(GetCmdSetNodeKeys())
 	cmd.AddCommand(GetCmdSetVersion())
-	cmd.AddCommand(GetCmdSetIPAddress())
 	cmd.AddCommand(GetCmdBan())
 	cmd.AddCommand(GetCmdMimir())
 	cmd.AddCommand(GetCmdNodePauseChain())
@@ -190,27 +189,6 @@ func GetCmdBan() *cobra.Command {
 			}
 
 			msg := types.NewMsgBan(addr, clientCtx.GetFromAddress())
-			if err := msg.ValidateBasic(); err != nil {
-				return err
-			}
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
-		},
-	}
-}
-
-// GetCmdSetIPAddress command to set a node accounts IP Address
-func GetCmdSetIPAddress() *cobra.Command {
-	return &cobra.Command{
-		Use:   "set-ip-address [ip address]",
-		Short: "update registered ip address",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
-			if err != nil {
-				return err
-			}
-
-			msg := types.NewMsgSetIPAddress(args[0], clientCtx.GetFromAddress())
 			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}

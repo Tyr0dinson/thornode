@@ -137,7 +137,6 @@ type QueryNodeAccount struct {
 	RequestedToLeave    bool                           `json:"requested_to_leave"`
 	ForcedToLeave       bool                           `json:"forced_to_leave"`
 	LeaveScore          uint64                         `json:"leave_height"`
-	IPAddress           string                         `json:"ip_address"`
 	Version             semver.Version                 `json:"version"`
 	SlashPoints         int64                          `json:"slash_points"`
 	Jail                Jail                           `json:"jail"`
@@ -162,7 +161,6 @@ func NewQueryNodeAccount(na NodeAccount) QueryNodeAccount {
 		RequestedToLeave:    na.RequestedToLeave,
 		ForcedToLeave:       na.ForcedToLeave,
 		LeaveScore:          na.LeaveScore,
-		IPAddress:           na.IPAddress,
 		Version:             na.GetVersion(),
 	}
 }

@@ -8,15 +8,15 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type ValidatorMgrV95TestSuite struct{}
+type ValidatorMgrV96TestSuite struct{}
 
-var _ = Suite(&ValidatorMgrV95TestSuite{})
+var _ = Suite(&ValidatorMgrV96TestSuite{})
 
-func (vts *ValidatorMgrV95TestSuite) SetUpSuite(_ *C) {
+func (vts *ValidatorMgrV96TestSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestSetupValidatorNodes(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestSetupValidatorNodes(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	mgr := NewDummyMgr()
@@ -63,7 +63,7 @@ func (vts *ValidatorMgrV95TestSuite) TestSetupValidatorNodes(c *C) {
 	c.Assert(len(activeNodes1) == 4, Equals, true)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestRagnarokForChaosnet(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestRagnarokForChaosnet(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newValidatorMgrV95(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
@@ -103,7 +103,7 @@ func (vts *ValidatorMgrV95TestSuite) TestRagnarokForChaosnet(c *C) {
 	c.Assert(ragnarokHeight == 1024, Equals, true, Commentf("%d == %d", ragnarokHeight, 1024))
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestLowerVersion(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestLowerVersion(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1440)
 
@@ -171,7 +171,7 @@ func (vts *ValidatorMgrV95TestSuite) TestLowerVersion(c *C) {
 	c.Assert(markedCount, Equals, 3)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestBadActors(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestBadActors(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
@@ -226,7 +226,7 @@ func (vts *ValidatorMgrV95TestSuite) TestBadActors(c *C) {
 	c.Check(count, Equals, 2)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindBadActors(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindBadActors(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
@@ -270,7 +270,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindBadActors(c *C) {
 	c.Assert(nodeAccounts.Contains(activeNode3), Equals, true)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindLowBondActor(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindLowBondActor(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(1000)
 
@@ -302,7 +302,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindLowBondActor(c *C) {
 	c.Assert(na.Bond.IsZero(), Equals, true)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestRagnarokBond(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestRagnarokBond(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	ver := GetCurrentVersion()
@@ -347,7 +347,7 @@ func (vts *ValidatorMgrV95TestSuite) TestRagnarokBond(c *C) {
 	c.Check(items, HasLen, 0, Commentf("Len %d", items))
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestGetChangedNodes(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestGetChangedNodes(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
 	ver := GetCurrentVersion()
@@ -379,7 +379,7 @@ func (vts *ValidatorMgrV95TestSuite) TestGetChangedNodes(c *C) {
 	c.Assert(removedNodes, HasLen, 1)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestSplitNext(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestSplitNext(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgr()
 	networkMgr := newValidatorMgrV95(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
@@ -421,7 +421,7 @@ func (vts *ValidatorMgrV95TestSuite) TestSplitNext(c *C) {
 	c.Assert(sets[0], HasLen, 3)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindCounToRemove(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindCounToRemove(c *C) {
 	// remove one
 	c.Check(findCountToRemove(0, NodeAccounts{
 		NodeAccount{LeaveScore: 12},
@@ -472,7 +472,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindCounToRemove(c *C) {
 	}), Equals, 3)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindMaxAbleToLeave(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindMaxAbleToLeave(c *C) {
 	c.Check(findMaxAbleToLeave(-1), Equals, 0)
 	c.Check(findMaxAbleToLeave(0), Equals, 0)
 	c.Check(findMaxAbleToLeave(1), Equals, 0)
@@ -490,7 +490,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindMaxAbleToLeave(c *C) {
 	c.Check(findMaxAbleToLeave(12), Equals, 3)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindNextVaultNodeAccounts(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindNextVaultNodeAccounts(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 	networkMgr := newValidatorMgrV95(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
@@ -517,7 +517,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindNextVaultNodeAccounts(c *C) {
 	c.Assert(nasAfter, HasLen, 10)
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
 	// test that we don't exceed the targetCount
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newValidatorMgrV95(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
@@ -541,7 +541,7 @@ func (vts *ValidatorMgrV95TestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
 	c.Assert(nasAfter, HasLen, 12, Commentf("%d", len(nasAfter)))
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestWeightedBondReward(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestWeightedBondReward(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(20)
 
@@ -580,7 +580,7 @@ func (vts *ValidatorMgrV95TestSuite) TestWeightedBondReward(c *C) {
 	c.Check(na3.Bond.Uint64(), Equals, uint64(2_25000000))
 }
 
-func (vts *ValidatorMgrV95TestSuite) TestActiveNodeRequestToLeaveShouldBeStandby(c *C) {
+func (vts *ValidatorMgrV96TestSuite) TestActiveNodeRequestToLeaveShouldBeStandby(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(10)

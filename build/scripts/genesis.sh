@@ -37,10 +37,9 @@ if [ "$SEED" = "$(hostname)" ]; then
   echo "Setting THORNode as genesis"
   if [ ! -f ~/.thornode/config/genesis.json ]; then
     # add ourselves to the genesis state
-    NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
 
     init_chain "$NODE_ADDRESS"
-    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
+    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519"
 
     # disable default bank transfer, and opt to use our own custom one
     disable_bank_send

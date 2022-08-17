@@ -31,7 +31,6 @@ ETHEREUM_PORT="${ETHEREUM_DAEMON_SERVICE_PORT_RPC:-8545}"
 ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 JSON=$(curl -sL --fail -m 10 "$API/thorchain/node/$ADDRESS")
 
-IP=$(echo "$JSON" | jq -r ".ip_address")
 VERSION=$(echo "$JSON" | jq -r ".version")
 BOND=$(echo "$JSON" | jq -r ".bond")
 REWARDS=$(echo "$JSON" | jq -r ".current_award")

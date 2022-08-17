@@ -1079,7 +1079,6 @@ components:
         - requested_to_leave
         - forced_to_leave
         - leave_height
-        - ip_address
         - version
         - slash_points
         - jail
@@ -1141,9 +1140,6 @@ components:
           type: integer
           format: int64
           example: 0
-        ip_address:
-          type: string
-          example: "10.20.30.40"
         version:
           type: string
           description: the currently set version of the node
