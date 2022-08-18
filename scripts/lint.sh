@@ -8,6 +8,17 @@ die() {
 
 ./scripts/check-build-env.sh
 
+# Make sure no one is reintroducing a _current.go file.
+CURRENT=$(git diff origin/develop --name-only | grep '_current\.go$' || true)
+if [ -n "$CURRENT" ]; then
+  cat <<EOF
+Using the '_current.go' pattern has been deprecated. Failed for introducing:
+
+$CURRENT
+EOF
+  exit 1
+fi
+
 # Check that no .pb.go files were added.
 if git ls-files '*.go' | grep -q '.pb.go$'; then
   die "Do not add generated protobuf .pb.go files"
