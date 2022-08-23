@@ -1,0 +1,14 @@
+FROM python:3.10-slim
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    libsecp256k1-0 build-essential git \
+    && rm -rf /var/cache/apt/lists
+
+WORKDIR /tmp
+COPY smoke-requirements.txt .
+# hadolint ignore=DL3013
+RUN pip install --no-cache-dir python-bitcointx \
+    && pip install --no-cache-dir git+https://gitlab.com/thorchain/bifrost/python-dogecointx.git#egg=python-dogecointx \
+    && pip install --no-cache-dir -r smoke-requirements.txt
