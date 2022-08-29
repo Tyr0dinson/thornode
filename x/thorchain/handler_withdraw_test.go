@@ -25,6 +25,8 @@ type MockWithdrawKeeper struct {
 	failAddEvents         bool
 	lp                    LiquidityProvider
 	keeper                keeper.Keeper
+	pol                   ProtocolOwnedLiquidity
+	polAddress            common.Address
 }
 
 func (mfp *MockWithdrawKeeper) PoolExist(_ cosmos.Context, asset common.Asset) bool {
@@ -50,6 +52,19 @@ func (mfp *MockWithdrawKeeper) GetPool(_ cosmos.Context, _ common.Asset) (Pool, 
 
 func (mfp *MockWithdrawKeeper) SetPool(_ cosmos.Context, pool Pool) error {
 	mfp.currentPool = pool
+	return nil
+}
+
+func (mfp *MockWithdrawKeeper) GetModuleAddress(mod string) (common.Address, error) {
+	return mfp.polAddress, nil
+}
+
+func (mfp *MockWithdrawKeeper) GetPOL(_ cosmos.Context) (ProtocolOwnedLiquidity, error) {
+	return mfp.pol, nil
+}
+
+func (mfp *MockWithdrawKeeper) SetPOL(_ cosmos.Context, pol ProtocolOwnedLiquidity) error {
+	mfp.pol = pol
 	return nil
 }
 
@@ -86,6 +101,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 	SetupConfigForTest()
 	ctx, keeper := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	runeAddr := GetRandomRUNEAddress()
 	k := &MockWithdrawKeeper{
 		keeper:            keeper,
 		activeNodeAccount: activeNodeAccount,
@@ -106,11 +122,12 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 			RuneDepositValue:  cosmos.ZeroUint(),
 			AssetDepositValue: cosmos.ZeroUint(),
 		},
+		pol:        NewProtocolOwnedLiquidity(),
+		polAddress: runeAddr,
 	}
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	// Happy path , this is a round trip , first we provide liquidity, then we withdraw
-	runeAddr := GetRandomRUNEAddress()
 	addHandler := NewAddLiquidityHandler(NewDummyMgrWithKeeper(k))
 	err := addHandler.addLiquidity(ctx,
 		common.BNBAsset,
@@ -128,6 +145,10 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), runeAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
 	c.Assert(err, IsNil)
+
+	pol, err := k.GetPOL(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pol.RuneWithdrawn.Uint64(), Equals, uint64(100*common.One))
 
 	// Bad version should fail
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
@@ -252,11 +273,6 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints+100)), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
-		{
-			name:           "synth asset should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset.GetSyntheticAsset(), common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
-			expectedResult: errWithdrawFailValidation,
-		},
 	}
 	for _, tc := range testCases {
 		withdrawHandler := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(k))
@@ -343,7 +359,7 @@ type MockWithdrawTxOutStore struct {
 	errRune  error
 }
 
-func (store *MockWithdrawTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) (bool, error) {
+func (store *MockWithdrawTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, _ cosmos.Uint) (bool, error) {
 	if toi.Coin.Asset.IsNativeRune() && store.errRune != nil {
 		return false, store.errRune
 	}
@@ -385,11 +401,11 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 	runeAddr := GetRandomRUNEAddress()
 	lp := LiquidityProvider{
 		Asset:              asset,
-		LastAddHeight:      common.BlockHeight(ctx),
+		LastAddHeight:      ctx.BlockHeight(),
 		RuneAddress:        runeAddr,
 		AssetAddress:       GetRandomBTCAddress(),
 		Units:              cosmos.NewUint(100),
-		LastWithdrawHeight: common.BlockHeight(ctx),
+		LastWithdrawHeight: ctx.BlockHeight(),
 	}
 	c.Assert(lp.Valid(), IsNil)
 	keeper.SetLiquidityProvider(ctx, lp)
@@ -447,4 +463,85 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 	handleCase(msg, nil, errInternal, "sym rune success/asset fail", true)
 	handleCase(msg, errInternal, errInternal, "sym rune/asset fail", true)
 	handleCase(msg, nil, nil, "sym rune/asset success", false)
+}
+
+func (s *HandlerWithdrawSuite) TestWithdrawLiquidityHandlerWithSwap(c *C) {
+	var err error
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	runeAddr := GetRandomRUNEAddress()
+	bnbAddr := GetRandomBNBAddress()
+	pool := NewPool()
+	pool.Asset = common.BNBAsset
+	pool.BalanceRune = cosmos.NewUint(219911755050746)
+	pool.BalanceAsset = cosmos.NewUint(2189430478930)
+	pool.LPUnits = cosmos.NewUint(104756821848147)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(929514035216049)
+	pool.BalanceAsset = cosmos.NewUint(89025872745)
+	pool.LPUnits = cosmos.NewUint(530237037742827)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// happy path
+	addHandler := NewAddLiquidityHandler(mgr)
+	btcAddr := GetRandomBTCAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		btcAddr,
+		runeAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One*5))},
+		BNBGasFeeSingleton,
+		"add:BNB.BNB",
+	)
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.BNBAsset,
+		cosmos.NewUint(100*common.One),
+		cosmos.ZeroUint(),
+		runeAddr,
+		bnbAddr,
+		common.NoAddress, cosmos.ZeroUint(),
+		activeNodeAccount.NodeAddress)
+	err = addHandler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+
+	pool, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(924351713466224), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(89525872745), Commentf("%d", pool.BalanceAsset.Uint64()))
+
+	pool, err = mgr.Keeper().GetPool(ctx, common.BNBAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(225074076800571), Commentf("%d", pool.BalanceRune.Uint64()))
+	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(2189430478930), Commentf("%d", pool.BalanceAsset.Uint64()))
+
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BNBAsset, btcAddr)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.IsZero(), Equals, false)
+	c.Check(lp.Units.Uint64(), Equals, uint64(1173802086792), Commentf("%d", lp.Units.Uint64()))
+
+	// nothing in the outbound queue
+	outbound, err := mgr.txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outbound, HasLen, 0)
+
+	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
+
+	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), btcAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+	_, err = withdrawHandler.Run(ctx, msgWithdraw)
+	c.Assert(err, IsNil)
+
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+
+	outbound, err = mgr.txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outbound, HasLen, 1)
+
+	expected := common.NewCoin(common.BTCAsset, cosmos.NewUint(462467571))
+	c.Check(outbound[0].Coin.Equals(expected), Equals, true, Commentf("%s", outbound[0].Coin))
 }

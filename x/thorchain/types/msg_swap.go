@@ -13,7 +13,7 @@ const MaxAffiliateFeeBasisPoints = 1_000
 var _ cosmos.Msg = &MsgSwap{}
 
 // NewMsgSwap is a constructor function for MsgSwap
-func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, tradeTarget cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, agg, aggregatorTargetAddr string, aggregatorTargetLimit *cosmos.Uint, signer cosmos.AccAddress) *MsgSwap {
+func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, tradeTarget cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, agg, aggregatorTargetAddr string, aggregatorTargetLimit *cosmos.Uint, otype OrderType, signer cosmos.AccAddress) *MsgSwap {
 	return &MsgSwap{
 		Tx:                      tx,
 		TargetAsset:             target,
@@ -25,6 +25,7 @@ func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, t
 		Aggregator:              agg,
 		AggregatorTargetAddress: aggregatorTargetAddr,
 		AggregatorTargetLimit:   aggregatorTargetLimit,
+		OrderType:               otype,
 	}
 }
 
@@ -108,7 +109,7 @@ func (m *MsgSwap) ValidateBasicV63() error {
 	if !m.AffiliateBasisPoints.IsZero() && m.AffiliateBasisPoints.GT(cosmos.NewUint(MaxAffiliateFeeBasisPoints)) {
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("affiliate fee basis points can't be more than %d", MaxAffiliateFeeBasisPoints))
 	}
-	if !m.Destination.IsChain(m.TargetAsset.GetChain()) {
+	if !m.Destination.IsNoop() && !m.Destination.IsChain(m.TargetAsset.GetChain()) {
 		return cosmos.ErrUnknownRequest("swap destination address is not the same chain as the target asset")
 	}
 	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {

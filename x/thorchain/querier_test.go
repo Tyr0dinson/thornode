@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/blang/semver"
+
 	abci "github.com/tendermint/tendermint/abci/types"
 	. "gopkg.in/check.v1"
 
@@ -181,6 +183,34 @@ func (s *QuerierSuite) TestVaultss(c *C) {
 	result, err := s.querier(s.ctx, []string{query.QueryPool.Key, "BNB.BNB"}, abci.RequestQuery{})
 	c.Assert(result, HasLen, 0)
 	c.Assert(err, NotNil)
+}
+
+func (s *QuerierSuite) TestBucket(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	querier := NewQuerier(mgr, s.kb)
+	path := []string{"buckets"}
+
+	poolBNB := NewPool()
+	poolBNB.Asset = common.BNBAsset.GetSyntheticAsset()
+	poolBNB.LPUnits = cosmos.NewUint(100)
+
+	poolBTC := NewPool()
+	poolBTC.Asset = common.BTCAsset
+	poolBTC.LPUnits = cosmos.NewUint(1000)
+
+	err := mgr.Keeper().SetPool(ctx, poolBNB)
+	c.Assert(err, IsNil)
+
+	err = mgr.Keeper().SetPool(ctx, poolBTC)
+	c.Assert(err, IsNil)
+
+	res, err := querier(ctx, path, abci.RequestQuery{})
+	c.Assert(err, IsNil)
+
+	var out Pools
+	err = json.Unmarshal(res, &out)
+	c.Assert(err, IsNil)
+	c.Assert(len(out), Equals, 1)
 }
 
 func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
@@ -691,4 +721,30 @@ func (s *QuerierSuite) TestQueryVault(c *C) {
 	c.Assert(vault.Type, Equals, returnVault.Type)
 	c.Assert(vault.Status, Equals, returnVault.Status)
 	c.Assert(vault.BlockHeight, Equals, returnVault.BlockHeight)
+}
+
+func (s *QuerierSuite) TestQueryVersion(c *C) {
+	result, err := s.querier(s.ctx, []string{
+		query.QueryVersion.Key,
+	}, abci.RequestQuery{})
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+	var r types.QueryVersion
+	c.Assert(json.Unmarshal(result, &r), IsNil)
+
+	verComputed := s.k.GetLowestActiveVersion(s.ctx)
+	c.Assert(r.Current.String(), Equals, verComputed.String(),
+		Commentf("query should return same version as computed"))
+
+	// override the version computed in BeginBlock
+	s.k.SetVersionWithCtx(s.ctx, semver.MustParse("4.5.6"))
+
+	result, err = s.querier(s.ctx, []string{
+		query.QueryVersion.Key,
+	}, abci.RequestQuery{})
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+	c.Assert(json.Unmarshal(result, &r), IsNil)
+	c.Assert(r.Current.String(), Equals, "4.5.6",
+		Commentf("query should use stored version"))
 }

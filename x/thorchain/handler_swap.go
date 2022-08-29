@@ -44,6 +44,10 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.95.0")):
+		return h.validateV95(ctx, msg)
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.validateV93(ctx, msg)
 	case version.GTE(semver.MustParse("1.92.0")):
 		return h.validateV92(ctx, msg)
 	case version.GTE(semver.MustParse("1.88.1")):
@@ -55,7 +59,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	}
 }
 
-func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV95(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
@@ -77,7 +81,7 @@ func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 			coin := msg.Tx.Coins[0]
 			runeVal := coin.Amount
 			if !coin.Asset.IsRune() {
-				pool, err := h.mgr.Keeper().GetPool(ctx, coin.Asset)
+				pool, err := h.mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 				if err != nil {
 					return ErrInternal(err, "fail to get pool")
 				}
@@ -101,7 +105,7 @@ func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 			maxSynths = h.mgr.GetConstants().GetInt64Value(constants.MaxSynthPerAssetDepth)
 		}
 		synthSupply := h.mgr.Keeper().GetTotalSupply(ctx, target.GetSyntheticAsset())
-		pool, err := h.mgr.Keeper().GetPool(ctx, target)
+		pool, err := h.mgr.Keeper().GetPool(ctx, target.GetLayer1Asset())
 		if err != nil {
 			return ErrInternal(err, "fail to get pool")
 		}
@@ -117,12 +121,12 @@ func (h SwapHandler) validateV92(ctx cosmos.Context, msg MsgSwap) error {
 		if !ensureLiquidityNoLargerThanBond {
 			return nil
 		}
-		totalBondRune, err := h.getTotalActiveBond(ctx)
+		securityBond, err := h.getEffectiveSecurityBond(ctx)
 		if err != nil {
-			return ErrInternal(err, "fail to get total bond RUNE")
+			return ErrInternal(err, "fail to get security bond RUNE")
 		}
-		if totalLiquidityRUNE.GT(totalBondRune) {
-			ctx.Logger().Info("total liquidity RUNE is more than total Bond", "liquidity rune", totalLiquidityRUNE, "bond rune", totalBondRune)
+		if totalLiquidityRUNE.GT(securityBond) {
+			ctx.Logger().Info("total liquidity RUNE is more than effective security bond", "liquidity rune", totalLiquidityRUNE, "effective security bond", securityBond)
 			return errAddLiquidityRUNEMoreThanBond
 		}
 	}
@@ -155,6 +159,10 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.95.0")):
+		return h.handleV95(ctx, msg)
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.handleV93(ctx, msg)
 	case version.GTE(semver.MustParse("1.92.0")):
 		return h.handleV92(ctx, msg)
 	case version.GTE(semver.MustParse("0.81.0")):
@@ -164,15 +172,15 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	}
 }
 
-func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV95(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
-	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(msg.Destination.GetChain())) {
+	if !common.GetCurrentChainNetwork().SoftEquals(msg.Destination.GetNetwork(h.mgr.GetVersion(), msg.Destination.GetChain())) {
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
 	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.Destination.GetChain(), common.RuneAsset())
-	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynths.String())
+	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynthsBasisPoints.String())
 	if synthVirtualDepthMult < 1 || err != nil {
-		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynths)
+		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynthsBasisPoints)
 	}
 
 	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsNativeRune() {
@@ -193,7 +201,8 @@ func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	if err != nil {
 		return nil, err
 	}
-	_, _, swapErr := swapper.Swap(
+
+	emit, _, swapErr := swapper.Swap(
 		ctx,
 		h.mgr.Keeper(),
 		msg.Tx,
@@ -209,23 +218,42 @@ func (h SwapHandler) handleV92(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 	if swapErr != nil {
 		return nil, swapErr
 	}
+
+	mem, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	if err != nil {
+		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
+		return nil, err
+	}
+	if mem.IsType(TxAdd) {
+		m, ok := mem.(AddLiquidityMemo)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast add liquidity memo")
+		}
+		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
+		msg.Tx.Coins = common.NewCoins(common.NewCoin(m.Asset, emit))
+		obTx := ObservedTx{Tx: msg.Tx}
+		msg, err := getMsgAddLiquidityFromMemo(ctx, m, obTx, msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		handler := NewAddLiquidityHandler(h.mgr)
+		_, err = handler.Run(ctx, msg)
+		if err != nil {
+			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
+			return nil, err
+		}
+	}
+
 	return &cosmos.Result{}, nil
 }
 
-// getTotalActiveBond
-func (h SwapHandler) getTotalActiveBond(ctx cosmos.Context) (cosmos.Uint, error) {
-	nodeAccounts, err := h.mgr.Keeper().ListValidatorsWithBond(ctx)
+// get the total bond of the bottom 2/3rds active validators
+func (h SwapHandler) getEffectiveSecurityBond(ctx cosmos.Context) (cosmos.Uint, error) {
+	nodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
-	total := cosmos.ZeroUint()
-	for _, na := range nodeAccounts {
-		if na.Status != NodeActive {
-			continue
-		}
-		total = total.Add(na.Bond)
-	}
-	return total, nil
+	return getEffectiveSecurityBond(nodeAccounts), nil
 }
 
 // getTotalLiquidityRUNE we have in all pools
@@ -238,6 +266,9 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 	for _, p := range pools {
 		// ignore suspended pools
 		if p.Status == PoolSuspended {
+			continue
+		}
+		if p.Asset.IsNative() {
 			continue
 		}
 		total = total.Add(p.BalanceRune)

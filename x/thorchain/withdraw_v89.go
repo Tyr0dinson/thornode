@@ -52,7 +52,7 @@ func withdrawV89(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	}
 
 	cv := mgr.GetConstants()
-	height := common.BlockHeight(ctx)
+	height := ctx.BlockHeight()
 	if height < (lp.LastAddHeight + cv.GetInt64Value(constants.LiquidityLockUpBlocks)) {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawWithin24Hours
 	}
@@ -147,7 +147,7 @@ func withdrawV89(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 
 	ctx.Logger().Info("pool after withdraw", "pool unit", pool.GetPoolUnits(), "balance RUNE", pool.BalanceRune, "balance asset", pool.BalanceAsset)
 
-	lp.LastWithdrawHeight = common.BlockHeight(ctx)
+	lp.LastWithdrawHeight = ctx.BlockHeight()
 	maxPts := cosmos.NewUint(uint64(MaxWithdrawBasisPoints))
 	lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetSafeShare(msg.BasisPoints, maxPts, lp.RuneDepositValue))
 	lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetSafeShare(msg.BasisPoints, maxPts, lp.AssetDepositValue))
@@ -226,8 +226,8 @@ func calcImpLossV89(lp LiquidityProvider, withdrawBasisPoints cosmos.Uint, prote
 		A0 = assetDepositValue; R0 = runeDepositValue;
 
 		liquidityUnits = units the member wishes to redeem after applying withdrawBasisPoints
-		A1 = GetShare(liquidityUnits, lpUnits, assetDepth);
-		R1 = GetShare(liquidityUnits, lpUnits, runeDepth);
+		A1 = GetUncappedShare(liquidityUnits, lpUnits, assetDepth);
+		R1 = GetUncappedShare(liquidityUnits, lpUnits, runeDepth);
 		P1 = R1/A1
 		coverage = ((A0 * P1) + R0) - ((A1 * P1) + R1) => ((A0 * R1/A1) + R0) - (R1 + R1)
 	*/

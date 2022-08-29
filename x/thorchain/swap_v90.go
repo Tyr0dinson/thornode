@@ -29,10 +29,10 @@ func newSwapperV90() *SwapperV90 {
 func (s *SwapperV90) validatePools(ctx cosmos.Context, keeper keeper.Keeper, assets ...common.Asset) error {
 	for _, asset := range assets {
 		if !asset.IsRune() {
-			if !keeper.PoolExist(ctx, asset) {
+			if !keeper.PoolExist(ctx, asset.GetLayer1Asset()) {
 				return fmt.Errorf("%s pool doesn't exist", asset)
 			}
-			pool, err := keeper.GetPool(ctx, asset)
+			pool, err := keeper.GetPool(ctx, asset.GetLayer1Asset())
 			if err != nil {
 				return ErrInternal(err, fmt.Sprintf("fail to get %s pool", asset))
 			}
@@ -80,13 +80,13 @@ func (s *SwapperV90) Swap(ctx cosmos.Context,
 
 	if source.IsSyntheticAsset() {
 		burnHeight, _ := keeper.GetMimir(ctx, "BurnSynths")
-		if burnHeight > 0 && common.BlockHeight(ctx) > burnHeight {
+		if burnHeight > 0 && ctx.BlockHeight() > burnHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
 	}
 	if target.IsSyntheticAsset() {
 		mintHeight, _ := keeper.GetMimir(ctx, "MintSynths")
-		if mintHeight > 0 && common.BlockHeight(ctx) > mintHeight {
+		if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}
 	}
@@ -158,7 +158,7 @@ func (s *SwapperV90) Swap(ctx cosmos.Context,
 		toi.ModuleName = ModuleName
 	}
 
-	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
+	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 	if err != nil {
 		// when it fail to send out the txout item , thus let's restore the pool balance here , thus nothing happen to the pool
 		// given the previous pool status is already in memory, so here just apply it again
@@ -256,7 +256,7 @@ func (s *SwapperV90) swapOne(ctx cosmos.Context,
 	)
 
 	// Check if pool exists
-	if !keeper.PoolExist(ctx, asset) {
+	if !keeper.PoolExist(ctx, asset.GetLayer1Asset()) {
 		err := fmt.Errorf("pool %s doesn't exist", asset)
 		return cosmos.ZeroUint(), evt, err
 	}
@@ -266,7 +266,7 @@ func (s *SwapperV90) swapOne(ctx cosmos.Context,
 		pool = p
 	} else {
 		// Get our pool from the KVStore
-		pool, err = keeper.GetPool(ctx, asset)
+		pool, err = keeper.GetPool(ctx, asset.GetLayer1Asset())
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
 		}
@@ -299,9 +299,9 @@ func (s *SwapperV90) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailInvalidBalance
 	}
 
-	liquidityFee = s.calcLiquidityFee(X, x, Y)
-	swapSlip = s.calcSwapSlip(X, x)
-	emitAssets = s.calcAssetEmission(X, x, Y)
+	liquidityFee = s.CalcLiquidityFee(X, x, Y)
+	swapSlip = s.CalcSwapSlip(X, x)
+	emitAssets = s.CalcAssetEmission(X, x, Y)
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
 	swapEvt.LiquidityFee = liquidityFee
 
@@ -350,7 +350,7 @@ func (s *SwapperV90) swapOne(ctx cosmos.Context,
 
 // calculate the number of assets sent to the address (includes liquidity fee)
 // nolint
-func (s *SwapperV90) calcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperV90) CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x * X * Y ) / ( x + X )^2
 	numerator := x.Mul(X).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -360,9 +360,9 @@ func (s *SwapperV90) calcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 	return numerator.Quo(denominator)
 }
 
-// calculateFee the fee of the swap
+// CalculateFee the fee of the swap
 // nolint
-func (s *SwapperV90) calcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperV90) CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x^2 *  Y ) / ( x + X )^2
 	numerator := x.Mul(x).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -372,9 +372,9 @@ func (s *SwapperV90) calcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 	return numerator.Quo(denominator)
 }
 
-// calcSwapSlip - calculate the swap slip, expressed in basis points (10000)
+// CalcSwapSlip - calculate the swap slip, expressed in basis points (10000)
 // nolint
-func (s *SwapperV90) calcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
+func (s *SwapperV90) CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
 	// Cast to DECs
 	xD := cosmos.NewDecFromBigInt(xi.BigInt())
 	XD := cosmos.NewDecFromBigInt(Xi.BigInt())

@@ -6,6 +6,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ],
       "cryptonote": "c571d80e2a42d547ef1d7a2e55969ffb91d36e84cbe15a0ef9eb7e60d89d2109714c31b3eccf3b357355adb174a500f6b4e56af0b79d80344bb46be32dac0eee"
@@ -16,6 +20,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ]
     },
@@ -25,6 +33,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ]
     },
@@ -34,6 +46,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ]
     }
@@ -45,6 +61,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ]
     },
@@ -54,6 +74,10 @@
         {
           "chain": "ETH",
           "router": "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+        },
+        {
+          "chain": "AVAX",
+          "router": "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
         }
       ]
     }

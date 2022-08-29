@@ -25,7 +25,6 @@ import (
 	"github.com/akildemir/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/app"
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/observer"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients"
@@ -43,6 +42,7 @@ import (
 
 	"github.com/akildemir/go-tss/p2p"
 	"github.com/akildemir/go-tss/storage"
+	"gitlab.com/thorchain/thornode/config"
 )
 
 // THORNode define version / revision here , so THORNode could inject the version from CI pipeline if THORNode want to
@@ -63,7 +63,6 @@ func main() {
 	showVersion := flag.Bool("version", false, "Shows version")
 	logLevel := flag.StringP("log-level", "l", "info", "Log Level")
 	pretty := flag.BoolP("pretty-log", "p", false, "Enables unstructured prettified logging. This is useful for local debugging")
-	cfgFile := flag.StringP("cfg", "c", "config", "configuration file with extension")
 	tssPreParam := flag.StringP("preparm", "t", "", "pre-generated PreParam file used for tss")
 	flag.Parse()
 
@@ -74,13 +73,9 @@ func main() {
 
 	initPrefix()
 	initLog(*logLevel, *pretty)
-
-	// load configuration file
-	cfg, err := config.LoadBiFrostConfig(*cfgFile)
-	if err != nil {
-		log.Fatal().Err(err).Msg("fail to load config ")
-	}
-	cfg.Thorchain.SignerPasswd = os.Getenv("SIGNER_PASSWD")
+	config.Init()
+	config.InitBifrost()
+	cfg := config.GetBifrost()
 
 	// metrics
 	m, err := metrics.NewMetrics(cfg.Metrics)
@@ -221,8 +216,11 @@ func main() {
 
 	// ensure we have a protocol for chain RPC Hosts
 	for _, chainCfg := range cfg.Chains {
+		if chainCfg.Disabled {
+			continue
+		}
 		if len(chainCfg.RPCHost) == 0 {
-			log.Fatal().Err(err).Msg("missing chain RPC host")
+			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("missing chain RPC host")
 			return
 		}
 		if !strings.HasPrefix(chainCfg.RPCHost, "http") {
@@ -262,7 +260,7 @@ func main() {
 	}
 
 	// start observer
-	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfg.Chains[0].BlockScanner.DBPath, tssKeysignMetricMgr)
+	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfg.Chains[tcommon.BTCChain].BlockScanner.DBPath, tssKeysignMetricMgr)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create observer")
 	}

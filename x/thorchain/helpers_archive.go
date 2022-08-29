@@ -197,7 +197,7 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			ModuleName: BondName,
 		}
-		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
+		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
@@ -217,7 +217,7 @@ func refundBondV81(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	if nodeAcc.RequestedToLeave {
 		// when node already request to leave , it can't come back , here means the node already unbond
 		// so set the node to disabled status
-		nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+		nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
 	}
 	if err := mgr.Keeper().SetNodeAccount(ctx, *nodeAcc); err != nil {
 		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
@@ -341,7 +341,7 @@ func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			ModuleName: BondName,
 		}
-		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
+		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
@@ -361,7 +361,7 @@ func refundBondV88(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	if nodeAcc.RequestedToLeave {
 		// when node already request to leave , it can't come back , here means the node already unbond
 		// so set the node to disabled status
-		nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+		nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
 	}
 	if err := mgr.Keeper().SetNodeAccount(ctx, *nodeAcc); err != nil {
 		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
@@ -437,7 +437,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 			subsidiseRune: cosmos.ZeroUint(),
 		}
 
-		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 		if err != nil {
 			return err
 		}
@@ -451,7 +451,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	}
 
 	for _, f := range subsidize {
-		pool, err := mgr.Keeper().GetPool(ctx, f.asset)
+		pool, err := mgr.Keeper().GetPool(ctx, f.asset.GetLayer1Asset())
 		if err != nil {
 			ctx.Logger().Error("fail to get pool", "asset", f.asset, "error", err)
 			continue

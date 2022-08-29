@@ -96,6 +96,18 @@ func (k *TestRagnarokChainKeeper) PoolExist(_ cosmos.Context, _ common.Asset) bo
 	return true
 }
 
+func (k *TestRagnarokChainKeeper) GetModuleAddress(_ string) (common.Address, error) {
+	return common.NoAddress, nil
+}
+
+func (k *TestRagnarokChainKeeper) SetPOL(_ cosmos.Context, pol ProtocolOwnedLiquidity) error {
+	return nil
+}
+
+func (k *TestRagnarokChainKeeper) GetPOL(_ cosmos.Context) (ProtocolOwnedLiquidity, error) {
+	return NewProtocolOwnedLiquidity(), nil
+}
+
 func (k *TestRagnarokChainKeeper) GetLiquidityProviderIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator {
 	cdc := makeTestCodec()
 	iter := keeper.NewDummyIterator()
@@ -174,7 +186,7 @@ func (s *NetworkManagerV87TestSuite) TestRagnarokChain(c *C) {
 	ctx = ctx.WithBlockHeight(100000)
 
 	activeVault := GetRandomVault()
-	activeVault.StatusSince = common.BlockHeight(ctx) - 10
+	activeVault.StatusSince = ctx.BlockHeight() - 10
 	activeVault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}

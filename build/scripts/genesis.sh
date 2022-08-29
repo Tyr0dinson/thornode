@@ -3,21 +3,25 @@
 set -o pipefail
 
 . "$(dirname "$0")/core.sh"
-. "$(dirname "$0")/testnet/state.sh"
 
-SIGNER_NAME="${SIGNER_NAME:=thorchain}"
-SIGNER_PASSWD="${SIGNER_PASSWD:=password}"
+if [ "$NET" = "mocknet" ] || [ "$NET" = "testnet" ]; then
+  echo "Loading unsafe init for mocknet and testnet..."
+  . "$(dirname "$0")/core-unsafe.sh"
+  . "$(dirname "$0")/testnet/state.sh"
+fi
+
 NODES="${NODES:=1}"
 SEED="${SEED:=thornode}" # the hostname of the master node
 ETH_HOST="${ETH_HOST:=http://ethereum:8545}"
+AVAX_HOST="${AVAX_HOST:=http://avalanche:9650}"
 THOR_BLOCK_TIME="${THOR_BLOCK_TIME:=5s}"
 CHAIN_ID=${CHAIN_ID:=thorchain}
 
-# this is required as it need to run thornode init , otherwise tendermint related commant doesn't work
+# this is required as it need to run thornode init, otherwise tendermint related command doesn't work
 if [ "$SEED" = "$(hostname)" ]; then
   if [ ! -f ~/.thornode/config/priv_validator_key.json ]; then
     init_chain
-    # remove the original generate genesis file , as below will init chain again
+    # remove the original generate genesis file, as below will init chain again
     rm -rf ~/.thornode/config/genesis.json
   fi
 fi
@@ -30,48 +34,14 @@ NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain -p --keyring
 NODE_CRYPTONOTE=$(echo "$SIGNER_PASSWD" | thornode cryptonote thorchain --keyring-backend file)
 VERSION=$(fetch_version)
 
-mkdir -p /tmp/shared
-
-if [ "$SEED" = "$(hostname)" ]; then
-  thornode tendermint show-node-id >/tmp/shared/node.txt
-fi
-
-# write node account data to json file in shared directory
-echo "$NODE_ADDRESS $VALIDATOR $NODE_PUB_KEY $VERSION $NODE_ADDRESS $NODE_PUB_KEY_ED25519 $NODE_CRYPTONOTE" >"/tmp/shared/node_$NODE_ADDRESS.json"
-
-# wait until THORNode have the correct number of nodes in our directory before continuing
-while [ "$(find /tmp/shared -maxdepth 1 -type f -name 'node_*.json' | awk -F/ '{print $NF}' | wc -l | tr -d '[:space:]')" != "$NODES" ]; do
-  sleep 1
-done
-
 if [ "$SEED" = "$(hostname)" ]; then
   echo "Setting THORNode as genesis"
   if [ ! -f ~/.thornode/config/genesis.json ]; then
-    # get a list of addresses (thor bech32)
-    ADDRS=""
-    for f in /tmp/shared/node_*.json; do
-      ADDRS="$ADDRS,$(awk <"$f" '{print $1}')"
-    done
-    init_chain "$(echo "$ADDRS" | sed -e 's/^,*//')"
-
-    if [ -n "${VAULT_PUBKEY+x}" ]; then
-      PUBKEYS=""
-      for f in /tmp/shared/node_*.json; do
-        PUBKEYS="$PUBKEYS,$(awk <"$f" '{print $3}')"
-      done
-      add_vault "$VAULT_PUBKEY" "$(echo "$PUBKEYS" | sed -e 's/^,*//')"
-    fi
-
+    # add ourselves to the genesis state
     NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
 
-    # add node accounts to genesis file
-    for f in /tmp/shared/node_*.json; do
-      if [ -n "${VAULT_PUBKEY+x}" ]; then
-        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$(awk <"$f" '{print $7}')" "$NODE_IP_ADDRESS" "$VAULT_PUBKEY"
-      else
-        add_node_account "$(awk <"$f" '{print $1}')" "$(awk <"$f" '{print $2}')" "$(awk <"$f" '{print $3}')" "$(awk <"$f" '{print $4}')" "$(awk <"$f" '{print $5}')" "$(awk <"$f" '{print $6}')" "$(awk <"$f" '{print $7}')" "$NODE_IP_ADDRESS"
-      fi
-    done
+    init_chain "$NODE_ADDRESS"
+    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
 
     # disable default bank transfer, and opt to use our own custom one
     disable_bank_send
@@ -94,8 +64,15 @@ if [ "$SEED" = "$(hostname)" ]; then
       add_account tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u rune 200000000000000 # pig
 
       reserve 22000000000000000
+
       # deploy eth contract
       deploy_eth_contract $ETH_HOST
+
+      # deploy avax contract
+      deploy_avax_contract $AVAX_HOST
+
+      # sets hardcoded contract address for Local EVM fork testing
+      # set_manual_avax_contract
 
       # override block time for faster smoke tests
       block_time "$THOR_BLOCK_TIME"
@@ -107,21 +84,9 @@ if [ "$SEED" = "$(hostname)" ]; then
       # mint 1m RUNE to reserve for testnet
       reserve 100000000000000
 
-      # add existing account and balances
-      add_exiting_accounts
+      # add testnet account and balances
+      testnet_add_accounts
     fi
-
-    # enable telemetry through prometheus metrics endpoint
-    enable_telemetry
-
-    # set the minimum gas to 0 rune
-    set_minimum_gas
-
-    # enable internal traffic as well
-    enable_internal_traffic
-
-    # use external IP if available
-    [ -n "$EXTERNAL_IP" ] && external_address "$EXTERNAL_IP" "$NET"
 
     echo "Genesis content"
     cat ~/.thornode/config/genesis.json
@@ -129,7 +94,7 @@ if [ "$SEED" = "$(hostname)" ]; then
   fi
 fi
 
-# setup peer connection
+# setup peer connection, typically only used for some mocknet configurations
 if [ "$SEED" != "$(hostname)" ]; then
   if [ ! -f ~/.thornode/config/genesis.json ]; then
     echo "Setting THORNode as peer not genesis"
@@ -138,10 +103,15 @@ if [ "$SEED" != "$(hostname)" ]; then
     fetch_genesis $SEED
     NODE_ID=$(fetch_node_id $SEED)
     echo "NODE ID: $NODE_ID"
-    peer_list "$NODE_ID" "$SEED"
+    export THOR_TENDERMINT_P2P_PERSISTENT_PEERS="$NODE_ID@$SEED:$PORT_P2P"
 
     cat ~/.thornode/config/genesis.json
   fi
 fi
 
-printf "%s\n%s\n" "$SIGNER_NAME" "$SIGNER_PASSWD" | exec "$@"
+# render tendermint and cosmos configuration files
+thornode render-config
+
+export SIGNER_NAME
+export SIGNER_PASSWD
+exec "$@"

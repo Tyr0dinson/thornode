@@ -10,15 +10,19 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 type Keeper interface {
 	Cdc() codec.BinaryCodec
 	GetVersion() semver.Version
+	GetVersionWithCtx(ctx cosmos.Context) (semver.Version, bool)
+	SetVersionWithCtx(ctx cosmos.Context, v semver.Version)
 	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
 	SetStoreVersion(ctx cosmos.Context, ver int64)
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
+	GetBalanceOfModule(ctx cosmos.Context, moduleName, denom string) cosmos.Uint
 	SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coins) error
 	SendFromAccountToModule(ctx cosmos.Context, from cosmos.AccAddress, to string, coin common.Coins) error
 	SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coins) error
@@ -54,6 +58,7 @@ type Keeper interface {
 	KeeperErrataTx
 	KeeperBanVoter
 	KeeperSwapQueue
+	KeeperOrderBooks
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
@@ -143,6 +148,8 @@ type KeeperLiquidityFees interface {
 	AddToLiquidityFees(ctx cosmos.Context, asset common.Asset, fee cosmos.Uint) error
 	GetTotalLiquidityFees(ctx cosmos.Context, height uint64) (cosmos.Uint, error)
 	GetPoolLiquidityFees(ctx cosmos.Context, height uint64, asset common.Asset) (cosmos.Uint, error)
+	GetRollingPoolLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error)
+	ResetRollingPoolLiquidityFee(ctx cosmos.Context, asset common.Asset)
 }
 
 type KeeperVault interface {
@@ -169,6 +176,8 @@ type KeeperReserveContributors interface {
 type KeeperNetwork interface {
 	GetNetwork(ctx cosmos.Context) (Network, error)
 	SetNetwork(ctx cosmos.Context, data Network) error
+	GetPOL(ctx cosmos.Context) (ProtocolOwnedLiquidity, error)
+	SetPOL(ctx cosmos.Context, data ProtocolOwnedLiquidity) error
 }
 
 type KeeperTss interface {
@@ -224,7 +233,23 @@ type KeeperSwapQueue interface {
 	SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error
 	GetSwapQueueIterator(ctx cosmos.Context) cosmos.Iterator
 	GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) (MsgSwap, error)
+	HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) bool
 	RemoveSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int)
+}
+
+type KeeperOrderBooks interface {
+	SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error
+	GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator
+	GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error)
+	HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool
+	RemoveOrderBookItem(ctx cosmos.Context, txID common.TxID) error
+	GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator
+	SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
+	GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error)
+	HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
+	RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
+	SetOrderBookProcessor(_ cosmos.Context, _ uint64) error
+	GetOrderBookProcessor(_ cosmos.Context) (uint64, error)
 }
 
 type KeeperMimir interface {

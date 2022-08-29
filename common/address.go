@@ -2,8 +2,10 @@ package common
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/blang/semver"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
@@ -21,14 +23,21 @@ import (
 
 type Address string
 
-var NoAddress = Address("")
+const (
+	NoAddress   = Address("")
+	NoopAddress = Address("noop")
+)
 
-const ETHAddressLen = 42
+var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9]*$")
 
 // NewAddress create a new Address. Supports Binance, Bitcoin, and Ethereum
 func NewAddress(address string) (Address, error) {
 	if len(address) == 0 {
 		return NoAddress, nil
+	}
+
+	if !alphaNumRegex.MatchString(address) {
+		return NoAddress, fmt.Errorf("address format not supported: %s", address)
 	}
 
 	// Check is eth address
@@ -238,9 +247,10 @@ func getBCHAddressV83(address bchutil.Address, cfg *bchchaincfg.Params) (Address
 }
 
 func (addr Address) IsChain(chain Chain) bool {
-	switch chain {
-	case ETHChain:
+	if chain.IsEVM() {
 		return strings.HasPrefix(addr.String(), "0x")
+	}
+	switch chain {
 	case BNBChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "bnb" || prefix == "tbnb"
@@ -329,7 +339,7 @@ func (addr Address) IsChain(chain Chain) bool {
 }
 
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain, GAIAChain, XHVChain} {
+	for _, chain := range []Chain{ETHChain, BNBChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, TERRAChain, GAIAChain, AVAXChain, XHVChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -337,7 +347,7 @@ func (addr Address) GetChain() Chain {
 	return EmptyChain
 }
 
-func (addr Address) GetNetwork(chain Chain) ChainNetwork {
+func (addr Address) GetNetwork(ver semver.Version, chain Chain) ChainNetwork {
 	currentNetwork := GetCurrentChainNetwork()
 	mainNetPredicate := func() ChainNetwork {
 		if currentNetwork == StageNet {
@@ -345,9 +355,11 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 		return MainNet
 	}
-	switch chain {
-	case ETHChain:
+	// EVM addresses don't have different prefixes per network
+	if chain.IsEVM() {
 		return currentNetwork
+	}
+	switch chain {
 	case BNBChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		if strings.EqualFold(prefix, "bnb") {
@@ -456,7 +468,12 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 		return TestNet
 	}
-	return MockNet
+	switch {
+	case ver.GTE(semver.MustParse("1.93.0")):
+		return currentNetwork
+	default:
+		return MockNet
+	}
 }
 
 func (addr Address) AccAddress() (cosmos.AccAddress, error) {
@@ -469,6 +486,10 @@ func (addr Address) Equals(addr2 Address) bool {
 
 func (addr Address) IsEmpty() bool {
 	return strings.TrimSpace(addr.String()) == ""
+}
+
+func (addr Address) IsNoop() bool {
+	return addr.Equals(NoopAddress)
 }
 
 func (addr Address) String() string {

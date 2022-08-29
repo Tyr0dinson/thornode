@@ -120,7 +120,7 @@ func newTssHandlerTestHelper(c *C) tssHandlerTestHelper {
 	nodeReady.NodeAddress = signer
 	nodeReady.Bond = cosmos.NewUint(1000000 * common.One)
 	c.Assert(keeperHelper.SetNodeAccount(ctx, nodeReady), IsNil)
-	keygenBlock := NewKeygenBlock(common.BlockHeight(ctx))
+	keygenBlock := NewKeygenBlock(ctx.BlockHeight())
 	keygenBlock.Keygens = []Keygen{
 		{
 			Type:    AsgardKeygen,
@@ -401,7 +401,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
 				thorAddr, _ := helper.members[3].GetThorAddress()
 				na, _ := helper.keeper.GetNodeAccount(helper.ctx, thorAddr)
-				na.UpdateStatus(NodeActive, common.BlockHeight(helper.ctx))
+				na.UpdateStatus(NodeActive, helper.ctx.BlockHeight())
 				_ = helper.keeper.SetNodeAccount(helper.ctx, na)
 				b := Blame{
 					FailReason: "who knows",

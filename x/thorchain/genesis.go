@@ -108,6 +108,7 @@ func DefaultGenesisState() GenesisState {
 		LastSignedHeight:    0,
 		LastChainHeights:    make([]LastChainHeight, 0),
 		Network:             NewNetwork(),
+		POL:                 NewProtocolOwnedLiquidity(),
 		MsgSwaps:            make([]MsgSwap, 0),
 		NetworkFees:         make([]NetworkFee, 0),
 		ChainContracts:      make([]ChainContract, 0),
@@ -323,8 +324,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	var observedTxInVoters ObservedTxVoters
 	var outs []TxOut
-	startBlockHeight := common.BlockHeight(ctx)
-	endBlockHeight := common.BlockHeight(ctx) + 17200
+	startBlockHeight := ctx.BlockHeight()
+	endBlockHeight := ctx.BlockHeight() + 17200
 
 	for height := startBlockHeight; height < endBlockHeight; height++ {
 		txOut, err := k.GetTxOut(ctx, height)
@@ -377,6 +378,11 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		return lastChainHeights[i].Chain < lastChainHeights[j].Chain
 	})
 	network, err := k.GetNetwork(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	pol, err := k.GetPOL(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -454,6 +460,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastSignedHeight:   lastSignedHeight,
 		LastChainHeights:   lastChainHeights,
 		Network:            network,
+		POL:                pol,
 		MsgSwaps:           swapMsgs,
 		NetworkFees:        networkFees,
 		ChainContracts:     chainContracts,

@@ -77,10 +77,8 @@ func (h UnBondHandler) validateV88(ctx cosmos.Context, msg MsgUnBond) error {
 		}
 	}
 
-	ygg := Vault{}
 	if h.mgr.Keeper().VaultExists(ctx, na.PubKeySet.Secp256k1) {
-		var err error
-		ygg, err = h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
+		ygg, err := h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
 		if err != nil {
 			return err
 		}
@@ -132,7 +130,7 @@ func (h UnBondHandler) handleV92(ctx cosmos.Context, msg MsgUnBond) error {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
 
-	ygg := Vault{}
+	var ygg Vault
 	if h.mgr.Keeper().VaultExists(ctx, na.PubKeySet.Secp256k1) {
 		var err error
 		ygg, err = h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
@@ -180,7 +178,7 @@ func (h UnBondHandler) handleV92(ctx cosmos.Context, msg MsgUnBond) error {
 			return nil
 		}
 		penaltyPts := fetchConfigInt64(ctx, h.mgr, constants.SlashPenalty)
-		totalRuneValue = common.GetShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), totalRuneValue)
+		totalRuneValue = common.GetUncappedShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), totalRuneValue)
 		totalAmountCanBeUnbond := common.SafeSub(na.Bond, totalRuneValue)
 		if msg.Amount.GT(totalAmountCanBeUnbond) {
 			return cosmos.ErrUnknownRequest(fmt.Sprintf("unbond amount %s is more than %s , not allowed", msg.Amount, totalAmountCanBeUnbond))
@@ -191,7 +189,7 @@ func (h UnBondHandler) handleV92(ctx cosmos.Context, msg MsgUnBond) error {
 	if err != nil || bondLockPeriod < 0 {
 		bondLockPeriod = h.mgr.GetConstants().GetInt64Value(constants.BondLockupPeriod)
 	}
-	if common.BlockHeight(ctx)-na.StatusSince < bondLockPeriod {
+	if ctx.BlockHeight()-na.StatusSince < bondLockPeriod {
 		return fmt.Errorf("node can not unbond before %d", na.StatusSince+bondLockPeriod)
 	}
 	vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)

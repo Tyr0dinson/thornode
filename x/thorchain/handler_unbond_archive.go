@@ -23,10 +23,8 @@ func (h UnBondHandler) validateV81(ctx cosmos.Context, msg MsgUnBond) error {
 		return cosmos.ErrUnknownRequest("cannot unbond while node is in active or ready status")
 	}
 
-	ygg := Vault{}
 	if h.mgr.Keeper().VaultExists(ctx, na.PubKeySet.Secp256k1) {
-		var err error
-		ygg, err = h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
+		ygg, err := h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
 		if err != nil {
 			return err
 		}
@@ -66,7 +64,7 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
 	}
 
-	ygg := Vault{}
+	var ygg Vault
 	if h.mgr.Keeper().VaultExists(ctx, na.PubKeySet.Secp256k1) {
 		var err error
 		ygg, err = h.mgr.Keeper().GetVault(ctx, na.PubKeySet.Secp256k1)
@@ -124,7 +122,7 @@ func (h UnBondHandler) handleV81(ctx cosmos.Context, msg MsgUnBond) error {
 	if err != nil || bondLockPeriod < 0 {
 		bondLockPeriod = h.mgr.GetConstants().GetInt64Value(constants.BondLockupPeriod)
 	}
-	if common.BlockHeight(ctx)-na.StatusSince < bondLockPeriod {
+	if ctx.BlockHeight()-na.StatusSince < bondLockPeriod {
 		return fmt.Errorf("node can not unbond before %d", na.StatusSince+bondLockPeriod)
 	}
 	vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)

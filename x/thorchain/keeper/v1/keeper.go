@@ -23,48 +23,55 @@ import (
 // Also, use underscores between words and use lowercase characters only
 
 const (
-	prefixStoreVersion           kvTypes.DbPrefix = "_ver/"
-	prefixObservedTxIn           kvTypes.DbPrefix = "observed_tx_in/"
-	prefixObservedTxOut          kvTypes.DbPrefix = "observed_tx_out/"
-	prefixObservedLink           kvTypes.DbPrefix = "ob_link/"
-	prefixPool                   kvTypes.DbPrefix = "pool/"
-	prefixTxOut                  kvTypes.DbPrefix = "txout/"
-	prefixTotalLiquidityFee      kvTypes.DbPrefix = "total_liquidity_fee/"
-	prefixPoolLiquidityFee       kvTypes.DbPrefix = "pool_liquidity_fee/"
-	prefixLiquidityProvider      kvTypes.DbPrefix = "lp/"
-	prefixLastChainHeight        kvTypes.DbPrefix = "last_chain_height/"
-	prefixLastSignedHeight       kvTypes.DbPrefix = "last_signed_height/"
-	prefixLastObserveHeight      kvTypes.DbPrefix = "last_observe_height/"
-	prefixNodeAccount            kvTypes.DbPrefix = "node_account/"
-	prefixBondProviders          kvTypes.DbPrefix = "bond_providers/"
-	prefixVault                  kvTypes.DbPrefix = "vault/"
-	prefixVaultAsgardIndex       kvTypes.DbPrefix = "vault_asgard_index/"
-	prefixNetwork                kvTypes.DbPrefix = "network/"
-	prefixObservingAddresses     kvTypes.DbPrefix = "observing_addresses/"
-	prefixTss                    kvTypes.DbPrefix = "tss/"
-	prefixTssKeysignFailure      kvTypes.DbPrefix = "tssKeysignFailure/"
-	prefixKeygen                 kvTypes.DbPrefix = "keygen/"
-	prefixRagnarokHeight         kvTypes.DbPrefix = "ragnarokHeight/"
-	prefixRagnarokNth            kvTypes.DbPrefix = "ragnarokNth/"
-	prefixRagnarokPending        kvTypes.DbPrefix = "ragnarokPending/"
-	prefixRagnarokPosition       kvTypes.DbPrefix = "ragnarokPosition/"
-	prefixRagnarokPoolHeight     kvTypes.DbPrefix = "ragnarokPool/"
-	prefixErrataTx               kvTypes.DbPrefix = "errata/"
-	prefixBanVoter               kvTypes.DbPrefix = "ban/"
-	prefixNodeSlashPoints        kvTypes.DbPrefix = "slash/"
-	prefixNodeJail               kvTypes.DbPrefix = "jail/"
-	prefixSwapQueueItem          kvTypes.DbPrefix = "swapitem/"
-	prefixMimir                  kvTypes.DbPrefix = "mimir/"
-	prefixNodeMimir              kvTypes.DbPrefix = "nodemimir/"
-	prefixNodePauseChain         kvTypes.DbPrefix = "node_pause_chain/"
-	prefixNetworkFee             kvTypes.DbPrefix = "network_fee/"
-	prefixNetworkFeeVoter        kvTypes.DbPrefix = "network_fee_voter/"
-	prefixTssKeygenMetric        kvTypes.DbPrefix = "tss_keygen_metric/"
-	prefixTssKeysignMetric       kvTypes.DbPrefix = "tss_keysign_metric/"
-	prefixTssKeysignMetricLatest kvTypes.DbPrefix = "latest_tss_keysign_metric/"
-	prefixChainContract          kvTypes.DbPrefix = "chain_contract/"
-	prefixSolvencyVoter          kvTypes.DbPrefix = "solvency_voter/"
-	prefixTHORName               kvTypes.DbPrefix = "thorname/"
+	prefixStoreVersion            kvTypes.DbPrefix = "_ver/"
+	prefixObservedTxIn            kvTypes.DbPrefix = "observed_tx_in/"
+	prefixObservedTxOut           kvTypes.DbPrefix = "observed_tx_out/"
+	prefixObservedLink            kvTypes.DbPrefix = "ob_link/"
+	prefixPool                    kvTypes.DbPrefix = "pool/"
+	prefixTxOut                   kvTypes.DbPrefix = "txout/"
+	prefixTotalLiquidityFee       kvTypes.DbPrefix = "total_liquidity_fee/"
+	prefixPoolLiquidityFee        kvTypes.DbPrefix = "pool_liquidity_fee/"
+	prefixLiquidityProvider       kvTypes.DbPrefix = "lp/"
+	prefixLastChainHeight         kvTypes.DbPrefix = "last_chain_height/"
+	prefixLastSignedHeight        kvTypes.DbPrefix = "last_signed_height/"
+	prefixLastObserveHeight       kvTypes.DbPrefix = "last_observe_height/"
+	prefixNodeAccount             kvTypes.DbPrefix = "node_account/"
+	prefixBondProviders           kvTypes.DbPrefix = "bond_providers/"
+	prefixVault                   kvTypes.DbPrefix = "vault/"
+	prefixVaultAsgardIndex        kvTypes.DbPrefix = "vault_asgard_index/"
+	prefixNetwork                 kvTypes.DbPrefix = "network/"
+	prefixPOL                     kvTypes.DbPrefix = "pol/"
+	prefixObservingAddresses      kvTypes.DbPrefix = "observing_addresses/"
+	prefixTss                     kvTypes.DbPrefix = "tss/"
+	prefixTssKeysignFailure       kvTypes.DbPrefix = "tssKeysignFailure/"
+	prefixKeygen                  kvTypes.DbPrefix = "keygen/"
+	prefixRagnarokHeight          kvTypes.DbPrefix = "ragnarokHeight/"
+	prefixRagnarokNth             kvTypes.DbPrefix = "ragnarokNth/"
+	prefixRagnarokPending         kvTypes.DbPrefix = "ragnarokPending/"
+	prefixRagnarokPosition        kvTypes.DbPrefix = "ragnarokPosition/"
+	prefixRagnarokPoolHeight      kvTypes.DbPrefix = "ragnarokPool/"
+	prefixErrataTx                kvTypes.DbPrefix = "errata/"
+	prefixBanVoter                kvTypes.DbPrefix = "ban/"
+	prefixNodeSlashPoints         kvTypes.DbPrefix = "slash/"
+	prefixNodeJail                kvTypes.DbPrefix = "jail/"
+	prefixSwapQueueItem           kvTypes.DbPrefix = "swapitem/"
+	prefixOrderBookItem           kvTypes.DbPrefix = "o/"
+	prefixOrderBookLimitIndex     kvTypes.DbPrefix = "olim/"
+	prefixOrderBookMarketIndex    kvTypes.DbPrefix = "omark/"
+	prefixOrderBookProcessor      kvTypes.DbPrefix = "oproc/"
+	prefixMimir                   kvTypes.DbPrefix = "mimir/"
+	prefixNodeMimir               kvTypes.DbPrefix = "nodemimir/"
+	prefixNodePauseChain          kvTypes.DbPrefix = "node_pause_chain/"
+	prefixNetworkFee              kvTypes.DbPrefix = "network_fee/"
+	prefixNetworkFeeVoter         kvTypes.DbPrefix = "network_fee_voter/"
+	prefixTssKeygenMetric         kvTypes.DbPrefix = "tss_keygen_metric/"
+	prefixTssKeysignMetric        kvTypes.DbPrefix = "tss_keysign_metric/"
+	prefixTssKeysignMetricLatest  kvTypes.DbPrefix = "latest_tss_keysign_metric/"
+	prefixChainContract           kvTypes.DbPrefix = "chain_contract/"
+	prefixSolvencyVoter           kvTypes.DbPrefix = "solvency_voter/"
+	prefixTHORName                kvTypes.DbPrefix = "thorname/"
+	prefixRollingPoolLiquidityFee kvTypes.DbPrefix = "rolling_pool_liquidity_fee/"
+	prefixVersion                 kvTypes.DbPrefix = "version/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -260,8 +267,12 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 
 // GetRuneBalanceOfModule get the RUNE balance
 func (k KVStore) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
+	return k.GetBalanceOfModule(ctx, moduleName, common.RuneNative.Native())
+}
+
+func (k KVStore) GetBalanceOfModule(ctx cosmos.Context, moduleName, denom string) cosmos.Uint {
 	addr := k.accountKeeper.GetModuleAddress(moduleName)
-	coin := k.coinKeeper.GetBalance(ctx, addr, common.RuneNative.Native())
+	coin := k.coinKeeper.GetBalance(ctx, addr, denom)
 	return cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 }
 
@@ -323,6 +334,21 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 	err = k.coinKeeper.MintCoins(ctx, module, coinsToMint)
 	if err != nil {
 		return fmt.Errorf("fail to mint assets: %w", err)
+	}
+
+	if k.GetVersion().GTE(semver.MustParse("1.95.0")) {
+		// check if we've exceeded max rune supply cap. If we have, there could
+		// be an issue (infinite mint bug/exploit), or maybe runway rune
+		// hyperinflation. In any case, pause everything and allow the
+		// community time to find a solution to the issue.
+		coin := k.coinKeeper.GetSupply(ctx, common.RuneAsset().Native())
+		maxAmt, _ := k.GetMimir(ctx, "MaxRuneSupply")
+		if maxAmt > 0 && coin.Amount.GT(cosmos.NewInt(maxAmt)) {
+			k.SetMimir(ctx, "HaltTrading", 1)
+			k.SetMimir(ctx, "HaltChainGlobal", 1)
+			k.SetMimir(ctx, "PauseLP", 1)
+			k.SetMimir(ctx, "HaltTHORChain", 1)
+		}
 	}
 
 	return nil

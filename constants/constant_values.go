@@ -61,6 +61,7 @@ const (
 	MaxSwapsPerBlock
 	MaxSynthPerAssetDepth
 	VirtualMultSynths
+	VirtualMultSynthsBasisPoints
 	MinSlashPointsForBadValidator
 	FullImpLossProtectionBlocks
 	BondLockupPeriod
@@ -78,8 +79,14 @@ const (
 	ValidatorMaxRewardRatio
 	PoolDepthForYggFundingMin
 	MaxNodeToChurnOutForLowVersion
+	POLMaxNetworkDeposit
+	POLMaxPoolMovement
+	POLSynthUtilization
+	POLBuffer
 	RagnarokProcessNumOfLPPerIteration
 	SwapOutDexAggregationDisabled
+	MinimumL1OutboundFeeUSD
+	MinimumPoolLiquidityFee
 )
 
 var nameToString = map[ConstantName]string{
@@ -134,6 +141,7 @@ var nameToString = map[ConstantName]string{
 	MinSwapsPerBlock:                   "MinSwapsPerBlock",
 	MaxSwapsPerBlock:                   "MaxSwapsPerBlock",
 	VirtualMultSynths:                  "VirtualMultSynths",
+	VirtualMultSynthsBasisPoints:       "VirtualMultSynthsBasisPoints",
 	MaxSynthPerAssetDepth:              "MaxSynthPerAssetDepth",
 	MinSlashPointsForBadValidator:      "MinSlashPointsForBadValidator",
 	FullImpLossProtectionBlocks:        "FullImpLossProtectionBlocks",
@@ -152,7 +160,13 @@ var nameToString = map[ConstantName]string{
 	PoolDepthForYggFundingMin:          "PoolDepthForYggFundingMin",
 	MaxNodeToChurnOutForLowVersion:     "MaxNodeToChurnOutForLowVersion",
 	SwapOutDexAggregationDisabled:      "SwapOutDexAggregationDisabled",
+	POLMaxNetworkDeposit:               "POLMaxNetworkDeposit",
+	POLMaxPoolMovement:                 "POLMaxPoolMovement",
+	POLSynthUtilization:                "POLSynthUtilization",
+	POLBuffer:                          "POLBuffer",
 	RagnarokProcessNumOfLPPerIteration: "RagnarokProcessNumOfLPPerIteration",
+	MinimumL1OutboundFeeUSD:            "MinimumL1OutboundFeeUSD",
+	MinimumPoolLiquidityFee:            "MinimumPoolLiquidityFee",
 }
 
 // String implement fmt.stringer

@@ -28,7 +28,6 @@ import (
 	tssp "github.com/akildemir/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
@@ -37,6 +36,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/tss"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
@@ -52,7 +52,7 @@ var CosmosSuccessCodes = map[uint32]bool{
 // CosmosClient is a structure to sign and broadcast tx to Cosmos chain used by signer mostly
 type CosmosClient struct {
 	logger              zerolog.Logger
-	cfg                 config.ChainConfiguration
+	cfg                 config.BifrostChainConfiguration
 	chainID             string
 	txConfig            client.TxConfig
 	txClient            txtypes.ServiceClient
@@ -74,7 +74,7 @@ type CosmosClient struct {
 // NewCosmosClient creates a new instance of a Cosmos-based chain client
 func NewCosmosClient(
 	thorKeys *thorclient.Keys,
-	cfg config.ChainConfiguration,
+	cfg config.BifrostChainConfiguration,
 	server *tssp.TssServer,
 	thorchainBridge *thorclient.ThorchainBridge,
 	m *metrics.Metrics,
@@ -198,7 +198,7 @@ func (c *CosmosClient) Stop() {
 }
 
 // GetConfig return the configuration used by Cosmos chain client
-func (c *CosmosClient) GetConfig() config.ChainConfiguration {
+func (c *CosmosClient) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg
 }
 
@@ -553,6 +553,9 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
+		if runners.IsVaultSolvent(acct, asgard, c.cosmosScanner.lastFee) && c.IsBlockScannerHealthy() {
+			continue
+		}
 		select {
 		case c.globalSolvencyQueue <- stypes.Solvency{
 			Height: blockHeight,
@@ -568,8 +571,11 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 }
 
 func (c *CosmosClient) ShouldReportSolvency(height int64) bool {
-	// Block time on Cosmos-based chains generally hovers around 6 seconds (10 blocks/min).
-	return height%10 == 0
+	// Block time on Cosmos-based chains generally hovers around 6 seconds (10
+	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is
+	// non-zero (enough blocks have been seen) before checking insolvency to avoid false
+	// positives.
+	return height%10 == 0 && !c.cosmosScanner.lastFee.IsZero()
 }
 
 // OnObservedTxIn update the signer cache (in case we haven't already)

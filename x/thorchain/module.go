@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 	abci "github.com/tendermint/tendermint/abci/types"
 
-	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 
@@ -183,7 +182,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	if err := am.mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
-	am.mgr.GasMgr().BeginBlock()
+	am.mgr.GasMgr().BeginBlock(am.mgr)
 
 	am.mgr.Slasher().BeginBlock(ctx, req, am.mgr.GetConstants())
 
@@ -210,27 +209,8 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
 	}
 
-	poolCycle, err := am.mgr.Keeper().GetMimir(ctx, constants.PoolCycle.String())
-	if poolCycle < 0 || err != nil {
-		poolCycle = am.mgr.GetConstants().GetInt64Value(constants.PoolCycle)
-	}
-	// Enable a pool every poolCycle
-	if common.BlockHeight(ctx)%poolCycle == 0 && !am.mgr.Keeper().RagnarokInProgress(ctx) {
-		maxAvailablePools, err := am.mgr.Keeper().GetMimir(ctx, constants.MaxAvailablePools.String())
-		if maxAvailablePools < 0 || err != nil {
-			maxAvailablePools = am.mgr.GetConstants().GetInt64Value(constants.MaxAvailablePools)
-		}
-		minRunePoolDepth, err := am.mgr.Keeper().GetMimir(ctx, constants.MinRunePoolDepth.String())
-		if minRunePoolDepth < 0 || err != nil {
-			minRunePoolDepth = am.mgr.GetConstants().GetInt64Value(constants.MinRunePoolDepth)
-		}
-		stagedPoolCost, err := am.mgr.Keeper().GetMimir(ctx, constants.StagedPoolCost.String())
-		if stagedPoolCost < 0 || err != nil {
-			stagedPoolCost = am.mgr.GetConstants().GetInt64Value(constants.StagedPoolCost)
-		}
-		if err := cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, am.mgr); err != nil {
-			ctx.Logger().Error("Unable to enable a pool", "error", err)
-		}
+	if err := am.mgr.PoolMgr().EndBlock(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process pools", "error", err)
 	}
 
 	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())

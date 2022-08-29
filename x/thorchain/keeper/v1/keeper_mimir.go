@@ -6,7 +6,6 @@ import (
 
 	"github.com/blang/semver"
 
-	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -14,7 +13,7 @@ const KRAKEN string = "ReleaseTheKraken"
 
 // GetMimir get a mimir value from key value store
 func (k KVStore) GetMimir(ctx cosmos.Context, key string) (int64, error) {
-	if k.version.LT(semver.MustParse("1.92.0")) {
+	if k.GetVersion().LT(semver.MustParse("1.92.0")) {
 		// Once node mimir reach super majority  , admin mimir will be set automatically to lock in the vote
 		// thus , there is no need to check node mimir everytime
 		nodeMimirs, err := k.GetNodeMimirs(ctx, key)
@@ -112,5 +111,5 @@ func (k KVStore) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) in
 }
 
 func (k KVStore) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {
-	k.setInt64(ctx, k.GetKey(ctx, prefixNodePauseChain, acc.String()), common.BlockHeight(ctx))
+	k.setInt64(ctx, k.GetKey(ctx, prefixNodePauseChain, acc.String()), ctx.BlockHeight())
 }

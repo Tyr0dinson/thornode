@@ -82,7 +82,7 @@ func (HandlerLeaveSuite) TestLeaveJail(c *C) {
 	acc2.Bond = cosmos.NewUint(100 * common.One)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 
-	c.Assert(w.keeper.SetNodeAccountJail(w.ctx, acc2.NodeAddress, common.BlockHeight(w.ctx)+100, "test it"), IsNil)
+	c.Assert(w.keeper.SetNodeAccountJail(w.ctx, acc2.NodeAddress, w.ctx.BlockHeight()+100, "test it"), IsNil)
 
 	ygg := NewVault(common.BlockHeight(w.ctx), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, "", common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{})
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)

@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -114,7 +115,21 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	os.Setenv("NET", "mocknet")
 	mgr := NewManagers(k, marshaler, bk, ak, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
+
+	_, hasVerStored := k.GetVersionWithCtx(ctx)
+	c.Assert(hasVerStored, Equals, false,
+		Commentf("version should not be stored until BeginBlock"))
+
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	mgr.gasMgr.BeginBlock(mgr)
+
+	verStored, hasVerStored := k.GetVersionWithCtx(ctx)
+	c.Assert(hasVerStored, Equals, true,
+		Commentf("version should be stored"))
+	verComputed := k.GetLowestActiveVersion(ctx)
+	c.Assert(verStored.String(), Equals, verComputed.String(),
+		Commentf("stored version should match computed version"))
+
 	return ctx, mgr
 }
 
@@ -152,7 +167,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	k := keeper.NewKeeper(marshaler, bk, ak, keyThorchain)
+	k := kv1.NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
@@ -211,26 +226,6 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieBNBPool 
 		activeNodeAccount:    acc1,
 		notActiveNodeAccount: GetRandomValidatorNode(NodeDisabled),
 	}
-}
-
-func (HandlerSuite) TestIsSignedByActiveNodeAccounts(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	nodeAddr := GetRandomBech32Addr()
-	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{}), Equals, false)
-	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAddr}), Equals, false)
-	nodeAccount1 := GetRandomValidatorNode(NodeWhiteListed)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
-	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, false)
-
-	// Update node to be active, check should succeed
-	nodeAccount1.Status = NodeActive
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
-	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, true)
-
-	// Update node to be a vault node, check should fail
-	nodeAccount1.Type = NodeTypeVault
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
-	c.Check(isSignedByActiveNodeAccounts(ctx, mgr, []cosmos.AccAddress{nodeAccount1.NodeAddress}), Equals, false)
 }
 
 func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
@@ -717,4 +712,14 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 	addr, err = FetchAddress(ctx, k, "hello.thor", common.THORChain)
 	c.Assert(err, IsNil)
 	c.Check(addr.Equals(thorAddr), Equals, true)
+}
+
+func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
+	v := GetCurrentVersion()
+
+	c.Check(externalAssetMatch(v, common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
+	c.Check(externalAssetMatch(v, common.ETHChain, "foobar"), Equals, "foobar")
+	c.Check(externalAssetMatch(v, common.ETHChain, "3"), Equals, "3")
+	c.Check(externalAssetMatch(v, common.ETHChain, ""), Equals, "")
+	c.Check(externalAssetMatch(v, common.BTCChain, "foo"), Equals, "foo")
 }

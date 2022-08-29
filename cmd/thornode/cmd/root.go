@@ -18,7 +18,6 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/snapshots"
 	"github.com/cosmos/cosmos-sdk/store"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -26,18 +25,20 @@ import (
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	tmcli "github.com/tendermint/tendermint/libs/cli"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
 
 	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/app/params"
+	"gitlab.com/thorchain/thornode/config"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 )
 
-// NewRootCmd creates a new root command for simd. It is called once in the
-// main function.
+// NewRootCmd creates a new root command for thornode.
+// It is called once in the main function.
 func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 	encodingConfig := app.MakeEncodingConfig()
 	initClientCtx := client.Context{}.
@@ -54,6 +55,8 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 		Use:   appName,
 		Short: "THORChain Network",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			config.Init()
+
 			if err := client.SetCmdClientContextHandler(initClientCtx, cmd); err != nil {
 				return err
 			}
@@ -70,6 +73,7 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 	rootCmd.AddCommand(
 		genutilcli.InitCmd(app.ModuleBasics, app.DefaultNodeHome(appName)),
+		renderConfigCommand(),
 		genutilcli.CollectGenTxsCmd(banktypes.GenesisBalancesIterator{}, app.DefaultNodeHome(appName)),
 		genutilcli.MigrateGenesisCmd(),
 		genutilcli.GenTxCmd(app.ModuleBasics, encodingConfig.TxConfig, banktypes.GenesisBalancesIterator{}, app.DefaultNodeHome(appName)),
@@ -82,7 +86,7 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		GetPubKeyCmd(),
 	)
 	rootCmd.SetOut(rootCmd.OutOrStdout())
-	server.AddCommands(rootCmd, app.DefaultNodeHome(appName), newApp, createSimappAndExport, addModuleInitFlags)
+	server.AddCommands(rootCmd, app.DefaultNodeHome(appName), newApp, createAppAndExport, addModuleInitFlags)
 
 	// add keybase, auxiliary RPC, query, and tx child commands
 	rootCmd.AddCommand(
@@ -90,6 +94,7 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		queryCommand(),
 		txCommand(),
 		cli.GetUtilCmd(),
+		compactCommand(),
 		keys.Commands(app.DefaultNodeHome(appName)),
 	)
 }
@@ -104,7 +109,7 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		if err := serverCtx.Viper.BindPFlags(cmd.Flags()); err != nil {
 			return fmt.Errorf("fail to bind flags,err: %w", err)
 		}
-		_, err := server.GetPruningOptionsFromFlags(serverCtx.Viper)
+
 		filterModules := serverCtx.Viper.GetString("filter-modules")
 		if zw, ok := serverCtx.Logger.(server.ZeroLogWrapper); ok {
 			serverCtx.Logger = app.ThornodeLogWrapper{
@@ -113,7 +118,7 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 			}
 			return server.SetCmdServerContext(startCmd, serverCtx)
 		}
-		return err
+		return nil
 	}
 }
 
@@ -168,6 +173,36 @@ func txCommand() *cobra.Command {
 	return cmd
 }
 
+func renderConfigCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                        "render-config",
+		Short:                      "renders tendermint and cosmos config from thornode base config",
+		DisableFlagParsing:         true,
+		SuggestionsMinimumDistance: 2,
+		Run: func(cmd *cobra.Command, args []string) {
+			config.Init()
+			config.InitThornode(cmd.Context())
+		},
+	}
+}
+
+func compactCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                        "compact",
+		Short:                      "force leveldb compaction",
+		DisableFlagParsing:         true,
+		SuggestionsMinimumDistance: 2,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data := filepath.Join(app.DefaultNodeHome(appName), "data")
+			db, err := dbm.NewGoLevelDB("application", data)
+			if err != nil {
+				return err
+			}
+			return db.DB().CompactRange(util.Range{})
+		},
+	}
+}
+
 func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts servertypes.AppOptions) servertypes.Application {
 	var cache sdk.MultiStorePersistentCache
 
@@ -180,13 +215,17 @@ func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts serverty
 		skipUpgradeHeights[int64(h)] = true
 	}
 
-	pruningOpts := storetypes.NewPruningOptionsFromString(storetypes.PruningOptionNothing)
 	snapshotDir := filepath.Join(cast.ToString(appOpts.Get(flags.FlagHome)), "data", "snapshots")
 	snapshotDB, err := sdk.NewLevelDB("metadata", snapshotDir)
 	if err != nil {
 		panic(err)
 	}
 	snapshotStore, err := snapshots.NewStore(snapshotDB, snapshotDir)
+	if err != nil {
+		panic(err)
+	}
+
+	pruningOpts, err := server.GetPruningOptionsFromFlags(appOpts)
 	if err != nil {
 		panic(err)
 	}
@@ -210,20 +249,18 @@ func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts serverty
 	)
 }
 
-func createSimappAndExport(
+func createAppAndExport(
 	logger log.Logger, db dbm.DB, traceStore io.Writer, height int64, forZeroHeight bool, jailWhiteList []string, appOpts servertypes.AppOptions,
 ) (servertypes.ExportedApp, error) {
 	encCfg := app.MakeEncodingConfig() // Ideally, we would reuse the one created by NewRootCmd.
 	encCfg.Marshaler = codec.NewProtoCodec(encCfg.InterfaceRegistry)
-	var a *app.THORChainApp
-	if height != -1 {
-		a = app.New(appName, logger, db, traceStore, false, map[int64]bool{}, cast.ToString(appOpts.Get(flags.FlagHome)), uint(1), encCfg, false)
 
+	heightSpecified := height != -1
+	a := app.New(appName, logger, db, traceStore, !heightSpecified, map[int64]bool{}, cast.ToString(appOpts.Get(flags.FlagHome)), uint(1), encCfg, false)
+	if heightSpecified {
 		if err := a.LoadHeight(height); err != nil {
 			return servertypes.ExportedApp{}, err
 		}
-	} else {
-		a = app.New(appName, logger, db, traceStore, true, map[int64]bool{}, cast.ToString(appOpts.Get(flags.FlagHome)), uint(1), encCfg, false)
 	}
 
 	return a.ExportAppStateAndValidators(forZeroHeight, jailWhiteList)
