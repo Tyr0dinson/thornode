@@ -74,7 +74,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 		if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
 			continue
 		}
-		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 		if err != nil {
 			return fmt.Errorf("fail to get pool: %w", err)
 		}
@@ -90,7 +90,7 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 				ModuleName:  nativeRuneModuleName,
 			}
 
-			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi)
+			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 			if err != nil {
 				ctx.Logger().Error("fail to prepare outbund tx", "error", err)
 				// concatenate the refund failure to refundReason
@@ -192,7 +192,7 @@ func subsidizePoolWithSlashBondV92(ctx cosmos.Context, ygg Vault, yggTotalStolen
 			subsidiseRune: cosmos.ZeroUint(),
 		}
 
-		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 		if err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func subsidizePoolWithSlashBondV92(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	}
 
 	for _, f := range subsidize {
-		pool, err := mgr.Keeper().GetPool(ctx, f.asset)
+		pool, err := mgr.Keeper().GetPool(ctx, f.asset.GetLayer1Asset())
 		if err != nil {
 			ctx.Logger().Error("fail to get pool", "asset", f.asset, "error", err)
 			continue
@@ -343,7 +343,7 @@ func refundBondV92(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	}
 	// slash yggdrasil remains
 	penaltyPts := fetchConfigInt64(ctx, mgr, constants.SlashPenalty)
-	slashRune := common.GetShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), yggRune)
+	slashRune := common.GetUncappedShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), yggRune)
 	if slashRune.GT(nodeAcc.Bond) {
 		slashRune = nodeAcc.Bond
 	}
@@ -372,7 +372,7 @@ func refundBondV92(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			ModuleName: BondName,
 		}
-		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem)
+		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
@@ -392,7 +392,7 @@ func refundBondV92(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	if nodeAcc.RequestedToLeave {
 		// when node already request to leave , it can't come back , here means the node already unbond
 		// so set the node to disabled status
-		nodeAcc.UpdateStatus(NodeDisabled, common.BlockHeight(ctx))
+		nodeAcc.UpdateStatus(NodeDisabled, ctx.BlockHeight())
 	}
 	if err := mgr.Keeper().SetNodeAccount(ctx, *nodeAcc); err != nil {
 		ctx.Logger().Error(fmt.Sprintf("fail to save node account(%s)", nodeAcc), "error", err)
@@ -431,23 +431,16 @@ func refundBondV92(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt 
 	return nil
 }
 
-func isSignedByActiveNodeAccounts(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress) bool {
-	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
-		return isSignedByActiveNodeAccountsV1(ctx, mgr, signers)
-	}
-	return false
-}
-
-func isSignedByActiveNodeAccountsV1(ctx cosmos.Context, mgr Manager, signers []cosmos.AccAddress) bool {
+// isSignedByActiveNodeAccounts check if all signers are active validator nodes
+func isSignedByActiveNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) bool {
 	if len(signers) == 0 {
 		return false
 	}
 	for _, signer := range signers {
-		if signer.Equals(mgr.Keeper().GetModuleAccAddress(AsgardName)) {
+		if signer.Equals(k.GetModuleAccAddress(AsgardName)) {
 			continue
 		}
-		nodeAccount, err := mgr.Keeper().GetNodeAccount(ctx, signer)
+		nodeAccount, err := k.GetNodeAccount(ctx, signer)
 		if err != nil {
 			ctx.Logger().Error("unauthorized account", "address", signer.String(), "error", err)
 			return false
@@ -457,11 +450,15 @@ func isSignedByActiveNodeAccountsV1(ctx cosmos.Context, mgr Manager, signers []c
 			return false
 		}
 		if nodeAccount.Status != NodeActive {
-			ctx.Logger().Error("unauthorized account, node account not active", "address", signer.String(), "status", nodeAccount.Status)
+			ctx.Logger().Error("unauthorized account, node account not active",
+				"address", signer.String(),
+				"status", nodeAccount.Status)
 			return false
 		}
 		if nodeAccount.Type != NodeTypeValidator {
-			ctx.Logger().Error("unauthorized account, node account must be a validator", "address", signer.String(), "type", nodeAccount.Type)
+			ctx.Logger().Error("unauthorized account, node account must be a validator",
+				"address", signer.String(),
+				"type", nodeAccount.Type)
 			return false
 		}
 	}
@@ -479,204 +476,37 @@ func fetchConfigInt64(ctx cosmos.Context, mgr Manager, key constants.ConstantNam
 	return val
 }
 
-func cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
-	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.73.0")) {
-		return cyclePoolsV73(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr)
-	}
-	return errBadVersion
-}
+// polPoolValue - calculates how much the POL is worth in rune
+func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
+	total := cosmos.ZeroUint()
 
-func cyclePoolsV73(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
-	var availblePoolCount int64
-	onDeck := NewPool()        // currently staged pool that could get promoted
-	choppingBlock := NewPool() // currently available pool that is on the chopping block to being demoted
-	minRuneDepth := cosmos.NewUint(uint64(minRunePoolDepth))
-
-	// quick func to check the validity of a pool
-	validPool := func(pool Pool) bool {
-		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() || pool.BalanceRune.LT(minRuneDepth) {
-			return false
-		}
-		return true
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return total, err
 	}
 
-	// quick func to save a pool status and emit event
-	setPool := func(pool Pool) error {
-		poolEvt := NewEventPool(pool.Asset, pool.Status)
-		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
-			return fmt.Errorf("fail to emit pool event: %w", err)
-		}
-
-		switch pool.Status {
-		case PoolAvailable:
-			ctx.Logger().Info("New available pool", "pool", pool.Asset)
-		case PoolStaged:
-			ctx.Logger().Info("Pool demoted to staged status", "pool", pool.Asset)
-		}
-		pool.StatusSince = common.BlockHeight(ctx)
-		return mgr.Keeper().SetPool(ctx, pool)
+	pools, err := mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return total, err
 	}
-
-	iterator := mgr.Keeper().GetPoolIterator(ctx)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var pool Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
-			return err
-		}
-
-		switch pool.Status {
-		case PoolAvailable:
-			// any available pools that have no asset, no rune, or less than
-			// min rune, moves back to staged status
-			if validPool(pool) {
-				availblePoolCount += 1
-			} else if !pool.Asset.IsGasAsset() {
-				pool.Status = PoolStaged
-				if err := setPool(pool); err != nil {
-					return err
-				}
-			}
-			if pool.BalanceRune.LT(choppingBlock.BalanceRune) || choppingBlock.IsEmpty() {
-				// omit pools that are gas assets from being on the chopping
-				// block, removing these pool requires a chain ragnarok, and
-				// cannot be handled individually
-				if !pool.Asset.IsGasAsset() {
-					choppingBlock = pool
-				}
-			}
-		case PoolStaged:
-			// deduct staged pool rune fee
-			fee := cosmos.NewUint(uint64(stagedPoolCost))
-			if fee.GT(pool.BalanceRune) {
-				fee = pool.BalanceRune
-			}
-			if !fee.IsZero() {
-				pool.BalanceRune = common.SafeSub(pool.BalanceRune, fee)
-				if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
-					ctx.Logger().Error("fail to save pool", "pool", pool.Asset, "err", err)
-				}
-
-				if err := mgr.Keeper().AddPoolFeeToReserve(ctx, fee); err != nil {
-					ctx.Logger().Error("fail to add rune to reserve", "from pool", pool.Asset, "err", err)
-				}
-
-				emitPoolBalanceChangedEvent(ctx,
-					NewPoolMod(pool.Asset, fee, false, cosmos.ZeroUint(), false),
-					"pool stage cost",
-					mgr)
-			}
-			// check if the rune balance is zero, and asset balance IS NOT
-			// zero. This is because we don't want to abandon a pool that is in
-			// the process of being created (race condition). We can safely
-			// assume, if a pool has asset, but no rune, it should be
-			// abandoned.
-			if pool.BalanceRune.IsZero() && !pool.BalanceAsset.IsZero() {
-				// the staged pool no longer has any rune, abandon the pool
-				// and liquidity provider, and burn the asset (via zero'ing
-				// the vaults for the asset, and churning away from the
-				// tokens)
-				ctx.Logger().Info("burning pool", "pool", pool.Asset)
-
-				// remove LPs
-				removeLiquidityProviders(ctx, pool.Asset, mgr)
-
-				// delete the pool
-				mgr.Keeper().RemovePool(ctx, pool.Asset)
-
-				poolEvent := NewEventPool(pool.Asset, PoolSuspended)
-				if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
-					ctx.Logger().Error("fail to emit pool event", "error", err)
-				}
-				// remove asset from Vault
-				removeAssetFromVault(ctx, pool.Asset, mgr)
-
-			} else if validPool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
-				onDeck = pool
-			}
-		}
-	}
-
-	if availblePoolCount >= maxAvailablePools {
-		// if we've hit our max available pools, and the onDeck pool is less
-		// than the chopping block pool, then we do make no changes, by
-		// resetting the variables
-		if onDeck.BalanceRune.LTE(choppingBlock.BalanceRune) {
-			onDeck = NewPool()        // reset
-			choppingBlock = NewPool() // reset
-		}
-	} else {
-		// since we haven't hit the max number of available pools, there is no
-		// available pool on the chopping block
-		choppingBlock = NewPool() // reset
-	}
-
-	if !onDeck.IsEmpty() {
-		onDeck.Status = PoolAvailable
-		if err := setPool(onDeck); err != nil {
-			return err
-		}
-	}
-
-	if !choppingBlock.IsEmpty() {
-		choppingBlock.Status = PoolStaged
-		if err := setPool(choppingBlock); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func removeAssetFromVault(ctx cosmos.Context, asset common.Asset, mgr Manager) {
-	// zero vaults with the pool asset
-	vaultIter := mgr.Keeper().GetVaultIterator(ctx)
-	defer vaultIter.Close()
-	for ; vaultIter.Valid(); vaultIter.Next() {
-		var vault Vault
-		if err := mgr.Keeper().Cdc().Unmarshal(vaultIter.Value(), &vault); err != nil {
-			ctx.Logger().Error("fail to unmarshal vault", "error", err)
+	for _, pool := range pools {
+		if pool.Asset.IsSyntheticAsset() {
 			continue
 		}
-		if vault.HasAsset(asset) {
-			for i, coin := range vault.Coins {
-				if asset.Equals(coin.Asset) {
-					vault.Coins[i].Amount = cosmos.ZeroUint()
-					if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
-						ctx.Logger().Error("fail to save vault", "error", err)
-					}
-					break
-				}
-			}
-		}
-	}
-}
-
-func removeLiquidityProviders(ctx cosmos.Context, asset common.Asset, mgr Manager) {
-	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var lp LiquidityProvider
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &lp); err != nil {
-			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
+		if pool.BalanceRune.IsZero() {
 			continue
 		}
-		withdrawEvt := NewEventWithdraw(
-			asset,
-			lp.Units,
-			int64(0),
-			cosmos.ZeroDec(),
-			common.Tx{FromAddress: lp.GetAddress()},
-			cosmos.ZeroUint(),
-			cosmos.ZeroUint(),
-			cosmos.ZeroUint(),
-		)
-		if err := mgr.EventMgr().EmitEvent(ctx, withdrawEvt); err != nil {
-			ctx.Logger().Error("fail to emit pool withdraw event", "error", err)
+		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
+		if err != nil {
+			return total, err
 		}
-		mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
+		share := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune)
+		total = total.Add(share.MulUint64(2))
 	}
+
+	return total, nil
 }
 
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
@@ -773,7 +603,7 @@ func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 // isGlobalTradingHalted check whether trading has been halt at global level
 func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
 	haltTrading, err := mgr.Keeper().GetMimir(ctx, "HaltTrading")
-	if err == nil && ((haltTrading > 0 && haltTrading < common.BlockHeight(ctx)) || mgr.Keeper().RagnarokInProgress(ctx)) {
+	if err == nil && ((haltTrading > 0 && haltTrading < ctx.BlockHeight()) || mgr.Keeper().RagnarokInProgress(ctx)) {
 		return true
 	}
 	return false
@@ -783,7 +613,7 @@ func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
 func isChainTradingHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
 	haltChainTrading, err := mgr.Keeper().GetMimir(ctx, mimirKey)
-	if err == nil && (haltChainTrading > 0 && haltChainTrading < common.BlockHeight(ctx)) {
+	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
 		ctx.Logger().Info("trading is halt", "chain", chain)
 		return true
 	}
@@ -807,27 +637,27 @@ func isChainHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 // outbound will not be signed and broadcast
 func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("global is halt")
 		return true
 	}
 
 	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
-	if err == nil && haltChain > common.BlockHeight(ctx) {
+	if err == nil && haltChain > ctx.BlockHeight() {
 		ctx.Logger().Info("node global is halt")
 		return true
 	}
 
 	haltMimirKey := fmt.Sprintf("Halt%sChain", chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, haltMimirKey)
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt via admin or double-spend check", "chain", chain)
 		return true
 	}
 
 	solvencyHaltMimirKey := fmt.Sprintf("SolvencyHalt%sChain", chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, solvencyHaltMimirKey)
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt via solvency check", "chain", chain)
 		return true
 	}
@@ -839,20 +669,20 @@ func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 // outbound will not be signed and broadcast
 func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("global is halt")
 		return true
 	}
 
 	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
-	if err == nil && haltChain > common.BlockHeight(ctx) {
+	if err == nil && haltChain > ctx.BlockHeight() {
 		ctx.Logger().Info("node global is halt")
 		return true
 	}
 
 	mimirKey := fmt.Sprintf("Halt%sChain", chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, mimirKey)
-	if err == nil && (haltChain > 0 && haltChain < common.BlockHeight(ctx)) {
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt", "chain", chain)
 		return true
 	}
@@ -870,19 +700,19 @@ func isLPPaused(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 func isLPPausedV1(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 	// check if global LP is paused
 	pauseLPGlobal, err := mgr.Keeper().GetMimir(ctx, "PauseLP")
-	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < common.BlockHeight(ctx) {
+	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
 		return true
 	}
 
 	pauseLP, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseLP%s", chain))
-	if err == nil && pauseLP > 0 && pauseLP < common.BlockHeight(ctx) {
+	if err == nil && pauseLP > 0 && pauseLP < ctx.BlockHeight() {
 		ctx.Logger().Info("chain has paused LP actions", "chain", chain)
 		return true
 	}
 	return false
 }
 
-// gets the amount of rune that is equal to 1 USD
+// DollarInRune gets the amount of rune that is equal to 1 USD
 func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 	// check for mimir override
 	dollarInRune, err := mgr.Keeper().GetMimir(ctx, "DollarInRune")
@@ -900,7 +730,7 @@ func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 		if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, asset.Chain) {
 			continue
 		}
-		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
 		if err != nil {
 			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
 			continue
@@ -946,6 +776,14 @@ func telem(input cosmos.Uint) float32 {
 	return float32(i) / 100000000
 }
 
+func telemInt(input cosmos.Int) float32 {
+	if !input.BigInt().IsInt64() {
+		return 0
+	}
+	i := input.Int64()
+	return float32(i) / 100000000
+}
+
 func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	// capture panics
 	defer func() {
@@ -964,6 +802,20 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(float32(network.TotalBondUnits.Uint64()), "thornode", "network", "total_bond_units")
 	telemetry.SetGauge(telem(network.BurnedBep2Rune), "thornode", "network", "rune", "burned", "bep2")
 	telemetry.SetGauge(telem(network.BurnedErc20Rune), "thornode", "network", "rune", "burned", "erc20")
+
+	// emit protocol owned liquidity data
+	pol, err := mgr.Keeper().GetPOL(ctx)
+	if err != nil {
+		return err
+	}
+	telemetry.SetGauge(telem(pol.RuneDeposited), "thornode", "pol", "rune_deposited")
+	telemetry.SetGauge(telem(pol.RuneWithdrawn), "thornode", "pol", "rune_withdrawn")
+	telemetry.SetGauge(telemInt(pol.CurrentDeposit()), "thornode", "pol", "current_deposit")
+	polValue, err := polPoolValue(ctx, mgr)
+	if err == nil {
+		telemetry.SetGauge(telem(polValue), "thornode", "pol", "value")
+		telemetry.SetGauge(telemInt(pol.PnL(polValue)), "thornode", "pol", "pnl")
+	}
 
 	// emit module balances
 	for _, name := range []string{ReserveName, AsgardName, BondName} {
@@ -1009,7 +861,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String())},
 		)
 
-		age := cosmos.NewUint(uint64((common.BlockHeight(ctx) - node.StatusSince) * common.One))
+		age := cosmos.NewUint(uint64((ctx.BlockHeight() - node.StatusSince) * common.One))
 		if pts > 0 {
 			leaveScore := age.QuoUint64(uint64(pts))
 			telemetry.SetGaugeWithLabels(
@@ -1066,7 +918,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			if coin.Asset.IsRune() {
 				totalValue = totalValue.Add(coin.Amount)
 			} else {
-				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 				if err != nil {
 					continue
 				}
@@ -1088,7 +940,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 
 	// emit queue metrics
 	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
+	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	txOutDelayMax, err := mgr.Keeper().GetMimir(ctx, constants.TxOutDelayMax.String())
 	if txOutDelayMax <= 0 || err != nil {
 		txOutDelayMax = mgr.GetConstants().GetInt64Value(constants.TxOutDelayMax)
@@ -1109,7 +961,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		}
 		query.Swap++
 	}
-	for height := startHeight; height <= common.BlockHeight(ctx); height++ {
+	for height := startHeight; height <= ctx.BlockHeight(); height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			continue
@@ -1125,13 +977,13 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			}
 		}
 	}
-	for height := common.BlockHeight(ctx) + 1; height <= common.BlockHeight(ctx)+txOutDelayMax; height++ {
+	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
 		value, err := mgr.Keeper().GetTxOutValue(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > common.BlockHeight(ctx)+maxTxOutOffset && value.IsZero() {
+		if height > ctx.BlockHeight()+maxTxOutOffset && value.IsZero() {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -1145,6 +997,39 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(telem(query.ScheduledOutboundValue)*runeUSDPrice, "thornode", "queue", "scheduled", "value", "usd")
 
 	return nil
+}
+
+// get the total bond of the bottom 2/3rds active nodes
+func getEffectiveSecurityBond(nas NodeAccounts) cosmos.Uint {
+	amt := cosmos.ZeroUint()
+	sort.SliceStable(nas, func(i, j int) bool {
+		return nas[i].Bond.LT(nas[j].Bond)
+	})
+	t := len(nas) * 2 / 3
+	if len(nas)%3 == 0 {
+		t -= 1
+	}
+	for i, na := range nas {
+		if i <= t {
+			amt = amt.Add(na.Bond)
+		}
+	}
+	return amt
+}
+
+// find the bond size the highest of the bottom 2/3rds node bonds
+func getHardBondCap(nas NodeAccounts) cosmos.Uint {
+	if len(nas) == 0 {
+		return cosmos.ZeroUint()
+	}
+	sort.SliceStable(nas, func(i, j int) bool {
+		return nas[i].Bond.LT(nas[j].Bond)
+	})
+	i := len(nas) * 2 / 3
+	if len(nas)%3 == 0 {
+		i -= 1
+	}
+	return nas[i].Bond
 }
 
 // In the case where the max gas of the chain of a queued outbound tx has changed

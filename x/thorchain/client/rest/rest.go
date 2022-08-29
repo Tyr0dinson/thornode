@@ -3,13 +3,13 @@ package rest
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/didip/tollbooth"
 	"github.com/didip/tollbooth/limiter"
 	"github.com/gorilla/mux"
 
+	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/openapi"
 	"gitlab.com/thorchain/thornode/x/thorchain/query"
 )
@@ -29,7 +29,10 @@ func RegisterRoutes(cliCtx client.Context, r *mux.Router, storeName string) {
 
 	// limit api calls
 	// limit it to 60 per minute
-	lmt := tollbooth.NewLimiter(60, &limiter.ExpirableOptions{DefaultExpirationTTL: time.Hour})
+	lmt := tollbooth.NewLimiter(
+		config.GetThornode().API.LimitCount,
+		&limiter.ExpirableOptions{DefaultExpirationTTL: config.GetThornode().API.LimitDuration},
+	)
 	lmt.SetMessage("You have reached maximum request limit.")
 
 	// Dynamically create endpoints of all funcs in querier.go
@@ -72,7 +75,8 @@ func RegisterRoutes(cliCtx client.Context, r *mux.Router, storeName string) {
 	).Methods(http.MethodPost)
 
 	// api doc handlers
-	r.HandleFunc(fmt.Sprintf("/%s/doc/openapi.yaml", storeName), openapi.HandleSpec)
+	r.HandleFunc(fmt.Sprintf("/%s/doc/openapi.yaml", storeName), openapi.HandleSpecYAML)
+	r.HandleFunc(fmt.Sprintf("/%s/doc/openapi.json", storeName), openapi.HandleSpecJSON)
 	r.HandleFunc(fmt.Sprintf("/%s/doc", storeName), openapi.HandleSwaggerUI)
 	r.HandleFunc(fmt.Sprintf("/%s/doc/", storeName), openapi.HandleSwaggerUI)
 

@@ -112,20 +112,33 @@ Emergency changes to the protocol may be difficult to coordinate, since there is
 
 ## Setup
 
-Ensure you have a recent version of go (ie `1.16`) and enabled go modules
-And have `GOBIN` in your `PATH`
+Install dependencies, you may skip packages you already have.
+```bash
+apt-get update
+apt-get install -y git make golang-go protobuf-compiler
+```
+Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
+
+Ensure you have a recent version of go ([scripts/check-build-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-build-env.sh#L7-9)) and enabled go modules.<br/>
+Add `GOBIN` to your `PATH`.
 
 ```bash
 export GOBIN=$GOPATH/bin
 ```
 
-Install Docker and Docker Compose V2.
+
 
 ### Automated Install Locally
 
+Clone repo 
+```bash
+git clone https://gitlab.com/thorchain/thornode.git
+cd thornode
+```
 Install via this `make` command.
 
 ```bash
+make openapi
 make install
 ```
 
@@ -155,8 +168,8 @@ make reset-mocknet-cluster
 make cli-mocknet
 > thornode tx thorchain mimir CHURNINTERVAL 1000 --from dog $TX_FLAGS
 
-# bootstrap vaults from the `heimdall` repo
-make bootstrap
+# bootstrap vaults from smoke test add liquidity transactions
+make mocknet-bootstrap
 
 # verify vault balances
 curl -s localhost:1317/thorchain/vaults/asgard | jq '.[0].coins'
@@ -173,6 +186,25 @@ make cli-mocknet
 ```
 
 See [build/docker/README.md](./build/docker/README.md) for more detailed documentation on the THORNode images and local mocknet environment.
+
+### Smoke Tests
+
+The smoke tests compare a mocknet against a simulator implemented in python. Changes to thornode, particularly to the calculations, will require also updating the python simulator, and subsequently the unit-tests for the simulator.
+
+The smoke-test currently requires that all synth balances be cleared be liquidity is withdrawn at the end of the smoke-test, so it is possible the transactions in `test/smoke/data/smoke_test_transactions.json` may need to be changed.
+
+#### Run Smoke Tests
+
+```bash
+make smoke-protob-docker
+make smoke
+```
+
+#### Update Balances and Events
+
+```bash
+EXPORT=data/smoke_test_balances.json EXPORT_EVENTS=data/smoke_test_events.json make smoke-unit-test
+```
 
 ### Format code
 
@@ -230,7 +262,6 @@ If you find a vulnerability in THORNode, please submit it for a bounty according
 THORNode manage changelog entry the same way like gitlab, refer to (https://docs.gitlab.com/ee/development/changelog.html) for more detail. Once a merge request get merged into master branch,
 if the merge request upgrade the [version](https://gitlab.com/thorchain/thornode/-/blob/master/version), then a new release will be created automatically, and the repository will be tagged with
 the new version by the release tool.
-
 
 ## New Chain Integration
 

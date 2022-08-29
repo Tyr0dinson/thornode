@@ -68,8 +68,8 @@ func (HandlerBondSuite) TestBondHandler_ValidateActive(c *C) {
 	vault.Status = ActiveVault
 	c.Assert(k.SetVault(ctx, vault), IsNil)
 
-	// unhappy path
-	c.Assert(handler.validate(ctx, *msg), NotNil)
+	// node should be able to bond even it is active
+	c.Assert(handler.validate(ctx, *msg), IsNil)
 }
 
 func (HandlerBondSuite) TestBondHandler_Run(c *C) {
@@ -212,10 +212,10 @@ func (HandlerBondSuite) TestBondProvider_Validate(c *C) {
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
-	// try to bond while node account is active
+	// try to bond while node account is active should success
 	msg = NewMsgBond(txIn, activeNA, amt, activeNAAddress, nil, activeNA, -1)
 	err = handler.validate(ctx, *msg)
-	errCheck(c, err, "cannot add bond while the network is not churning")
+	c.Assert(err, IsNil)
 
 	// try to bond with a bnb address
 	msg = NewMsgBond(txIn, standbyNA, amt, GetRandomBNBAddress(), nil, activeNA, -1)
@@ -269,13 +269,13 @@ func (HandlerBondSuite) TestBondProvider_OperatorFee(c *C) {
 	// Check that a bond provider for the operator + new provider was added
 	c.Assert(len(bp.Providers), Equals, 2)
 
-	// try to increase operator fee after provider has bonded, should fail
+	// try to increase operator fee after provider has bonded, should success , because bond providers should trust each other
 	bp.Providers[1].Bond = cosmos.NewUint(100)
 	bp.NodeOperatorFee = cosmos.NewUint(5000)
 	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
 	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, providerAccAddr, operatorAccAddress, 6000)
 	err = handler.validate(ctx, *msg)
-	c.Assert(err.Error(), Equals, "can't increase operator fee after a provider has bonded: unknown request")
+	c.Assert(err, IsNil)
 
 	// Should be able to decrease operator fee after provider has bonded
 	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, providerAccAddr, operatorAccAddress, 4000)

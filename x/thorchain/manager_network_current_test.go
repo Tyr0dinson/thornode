@@ -9,20 +9,20 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-type NetworkManagerV92TestSuite struct{}
+type NetworkManagerV96TestSuite struct{}
 
-var _ = Suite(&NetworkManagerV92TestSuite{})
+var _ = Suite(&NetworkManagerV96TestSuite{})
 
-func (s *NetworkManagerV92TestSuite) SetUpSuite(c *C) {
+func (s *NetworkManagerV96TestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
-func (s *NetworkManagerV92TestSuite) TestRagnarokChain(c *C) {
+func (s *NetworkManagerV96TestSuite) TestRagnarokChain(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(100000)
 
 	activeVault := GetRandomVault()
-	activeVault.StatusSince = common.BlockHeight(ctx) - 10
+	activeVault.StatusSince = ctx.BlockHeight() - 10
 	activeVault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
@@ -82,7 +82,7 @@ func (s *NetworkManagerV92TestSuite) TestRagnarokChain(c *C) {
 
 	mgr := NewDummyMgrWithKeeper(keeper)
 
-	networkMgr := newNetworkMgrV92(keeper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(keeper, mgr.TxOutStore(), mgr.EventMgr())
 
 	// the first round should just recall yggdrasil fund
 	err := networkMgr.manageChains(ctx, mgr)
@@ -118,7 +118,7 @@ func (s *NetworkManagerV92TestSuite) TestRagnarokChain(c *C) {
 	ctx, mgr1 := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr1.Keeper())
 	mgr.K = helper
-	networkMgr1 := newNetworkMgrV92(helper, mgr1.TxOutStore(), mgr1.EventMgr())
+	networkMgr1 := newNetworkMgrV96(helper, mgr1.TxOutStore(), mgr1.EventMgr())
 	// fail to get active nodes should error out
 	helper.failToListActiveAccounts = true
 	c.Assert(networkMgr1.ragnarokChain(ctx, common.BNBChain, 1, mgr), NotNil)
@@ -135,13 +135,13 @@ func (s *NetworkManagerV92TestSuite) TestRagnarokChain(c *C) {
 	helper.failGetPools = false
 }
 
-func (s *NetworkManagerV92TestSuite) TestUpdateNetwork(c *C) {
+func (s *NetworkManagerV96TestSuite) TestUpdateNetwork(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 
 	// fail to get Network should return error
 	helper.failGetNetwork = true
@@ -186,9 +186,9 @@ func (s *NetworkManagerV92TestSuite) TestUpdateNetwork(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), NotNil)
 }
 
-func (s *NetworkManagerV92TestSuite) TestCalcBlockRewards(c *C) {
+func (s *NetworkManagerV96TestSuite) TestCalcBlockRewards(c *C) {
 	mgr := NewDummyMgr()
-	networkMgr := newNetworkMgrV92(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
 
 	ver := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(ver)
@@ -233,13 +233,13 @@ func (s *NetworkManagerV92TestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
 }
 
-func (s *NetworkManagerV92TestSuite) TestCalcPoolDeficit(c *C) {
+func (s *NetworkManagerV96TestSuite) TestCalcPoolDeficit(c *C) {
 	pool1Fees := cosmos.NewUint(1000)
 	pool2Fees := cosmos.NewUint(3000)
 	totalFees := cosmos.NewUint(4000)
 
 	mgr := NewDummyMgr()
-	networkMgr := newNetworkMgrV92(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(keeper.KVStoreDummy{}, mgr.TxOutStore(), mgr.EventMgr())
 
 	lpDeficit := cosmos.NewUint(1120)
 	amt1 := networkMgr.calcPoolDeficit(lpDeficit, totalFees, pool1Fees)
@@ -249,12 +249,12 @@ func (s *NetworkManagerV92TestSuite) TestCalcPoolDeficit(c *C) {
 	c.Check(amt2.Equal(cosmos.NewUint(840)), Equals, true, Commentf("%d", amt2.Uint64()))
 }
 
-func (*NetworkManagerV92TestSuite) TestProcessGenesisSetup(c *C) {
+func (*NetworkManagerV96TestSuite) TestProcessGenesisSetup(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	ctx = ctx.WithBlockHeight(1)
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// no active account
 	c.Assert(networkMgr.EndBlock(ctx, mgr), NotNil)
 
@@ -278,7 +278,7 @@ func (*NetworkManagerV92TestSuite) TestProcessGenesisSetup(c *C) {
 	helper = NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	ctx = ctx.WithBlockHeight(1)
 	mgr.K = helper
-	networkMgr = newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr = newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	c.Assert(networkMgr.EndBlock(ctx, mgr), NotNil)
 	helper.failToListActiveAccounts = false
@@ -297,11 +297,11 @@ func (*NetworkManagerV92TestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
-func (*NetworkManagerV92TestSuite) TestGetTotalActiveBond(c *C) {
+func (*NetworkManagerV96TestSuite) TestGetTotalActiveBond(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	bond, err := networkMgr.getTotalActiveBond(ctx)
 	c.Assert(err, NotNil)
@@ -313,11 +313,11 @@ func (*NetworkManagerV92TestSuite) TestGetTotalActiveBond(c *C) {
 	c.Assert(bond.Uint64() > 0, Equals, true)
 }
 
-func (*NetworkManagerV92TestSuite) TestGetTotalLiquidityRune(c *C) {
+func (*NetworkManagerV96TestSuite) TestGetTotalLiquidityRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
 	p.BalanceRune = cosmos.NewUint(common.One * 100)
@@ -330,11 +330,11 @@ func (*NetworkManagerV92TestSuite) TestGetTotalLiquidityRune(c *C) {
 	c.Assert(totalLiquidity.Equal(p.BalanceRune), Equals, true)
 }
 
-func (*NetworkManagerV92TestSuite) TestPayPoolRewards(c *C) {
+func (*NetworkManagerV96TestSuite) TestPayPoolRewards(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	p := NewPool()
 	p.Asset = common.BNBAsset
 	p.BalanceRune = cosmos.NewUint(common.One * 100)
@@ -346,11 +346,11 @@ func (*NetworkManagerV92TestSuite) TestPayPoolRewards(c *C) {
 	c.Assert(networkMgr.payPoolRewards(ctx, []cosmos.Uint{cosmos.NewUint(100 * common.One)}, Pools{p}), NotNil)
 }
 
-func (*NetworkManagerV92TestSuite) TestFindChainsToRetire(c *C) {
+func (*NetworkManagerV96TestSuite) TestFindChainsToRetire(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	// fail to get active asgard vault
 	helper.failGetActiveAsgardVault = true
 	chains, err := networkMgr.findChainsToRetire(ctx)
@@ -366,11 +366,11 @@ func (*NetworkManagerV92TestSuite) TestFindChainsToRetire(c *C) {
 	helper.failGetRetiringAsgardVault = false
 }
 
-func (*NetworkManagerV92TestSuite) TestRecallChainFunds(c *C) {
+func (*NetworkManagerV96TestSuite) TestRecallChainFunds(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
 	c.Assert(networkMgr.RecallChainFunds(ctx, common.BNBChain, mgr, common.PubKeys{}), NotNil)
 	helper.failToListActiveAccounts = false
@@ -380,11 +380,11 @@ func (*NetworkManagerV92TestSuite) TestRecallChainFunds(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
-func (s *NetworkManagerV92TestSuite) TestRecoverPoolDeficit(c *C) {
+func (s *NetworkManagerV96TestSuite) TestRecoverPoolDeficit(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
-	networkMgr := newNetworkMgrV92(helper, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(helper, mgr.TxOutStore(), mgr.EventMgr())
 
 	pools := Pools{
 		Pool{
@@ -426,13 +426,13 @@ func (s *NetworkManagerV92TestSuite) TestRecoverPoolDeficit(c *C) {
 	c.Assert(pool.BalanceRune.String(), Equals, pools[0].BalanceRune.Sub(lpDeficit).String())
 }
 
-func (s *NetworkManagerV92TestSuite) TestRagnarokPool(c *C) {
+func (s *NetworkManagerV96TestSuite) TestRagnarokPool(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(100000)
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	activeVault := GetRandomVault()
-	activeVault.StatusSince = common.BlockHeight(ctx) - 10
+	activeVault.StatusSince = ctx.BlockHeight() - 10
 	activeVault.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
@@ -488,7 +488,7 @@ func (s *NetworkManagerV92TestSuite) TestRagnarokPool(c *C) {
 	k.SetLiquidityProvider(ctx, lps[0])
 	k.SetLiquidityProvider(ctx, lps[1])
 	mgr := NewDummyMgrWithKeeper(k)
-	networkMgr := newNetworkMgrV92(k, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(k, mgr.TxOutStore(), mgr.EventMgr())
 
 	ctx = ctx.WithBlockHeight(1)
 	// block height not correct , doesn't take any actions
@@ -548,7 +548,7 @@ func (s *NetworkManagerV92TestSuite) TestRagnarokPool(c *C) {
 	c.Assert(tempPool.Status, Equals, PoolAvailable)
 }
 
-func (s *NetworkManagerV92TestSuite) TestCleanupAsgardIndex(c *C) {
+func (s *NetworkManagerV96TestSuite) TestCleanupAsgardIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault1), IsNil)
@@ -559,7 +559,7 @@ func (s *NetworkManagerV92TestSuite) TestCleanupAsgardIndex(c *C) {
 	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault4), IsNil)
 	mgr := NewDummyMgrWithKeeper(k)
-	networkMgr := newNetworkMgrV92(k, mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgrV96(k, mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(networkMgr.cleanupAsgardIndex(ctx), IsNil)
 	containsVault := func(vaults Vaults, pubKey common.PubKey) bool {
 		for _, item := range vaults {
@@ -575,4 +575,136 @@ func (s *NetworkManagerV92TestSuite) TestCleanupAsgardIndex(c *C) {
 	c.Assert(containsVault(asgards, vault2.PubKey), Equals, true)
 	c.Assert(containsVault(asgards, vault3.PubKey), Equals, true)
 	c.Assert(containsVault(asgards, vault4.PubKey), Equals, false)
+}
+
+func (*NetworkManagerV96TestSuite) TestPOLLiquidityAdd(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	net := newNetworkMgrV96(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	max := cosmos.NewUint(100)
+
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	c.Assert(err, IsNil)
+	asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	c.Assert(err, IsNil)
+	na := GetRandomValidatorNode(NodeActive)
+	signer := na.NodeAddress
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(1600)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// hit max
+	util := cosmos.NewUint(1500)
+	target := cosmos.NewUint(1000)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(7), Commentf("%d", lp.Units.Uint64()))
+
+	// doesn't hit max
+	util = cosmos.NewUint(1050)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
+
+	// no change needed
+	util = cosmos.NewUint(1000)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
+
+	// not enough balance in the reserve module
+	max = cosmos.NewUint(10000)
+	util = cosmos.NewUint(50_000)
+	btcPool.BalanceRune = cosmos.NewUint(90000000000 * common.One)
+	c.Assert(net.addPOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(10), Commentf("%d", lp.Units.Uint64()))
+}
+
+func (*NetworkManagerV96TestSuite) TestPOLLiquidityWithdraw(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	net := newNetworkMgrV96(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	max := cosmos.NewUint(100)
+
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	c.Assert(err, IsNil)
+	asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	c.Assert(err, IsNil)
+	na := GetRandomValidatorNode(NodeActive)
+	signer := na.NodeAddress
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(1600)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	lps := LiquidityProviders{
+		{
+			Asset:             btcPool.Asset,
+			RuneAddress:       GetRandomBNBAddress(),
+			AssetAddress:      GetRandomBTCAddress(),
+			LastAddHeight:     5,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+		{
+			Asset:             btcPool.Asset,
+			RuneAddress:       polAddress,
+			AssetAddress:      common.NoAddress,
+			LastAddHeight:     10,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+	}
+	for _, lp := range lps {
+		mgr.Keeper().SetLiquidityProvider(ctx, lp)
+	}
+
+	// hit max
+	util := cosmos.NewUint(500)
+	target := cosmos.NewUint(1000)
+	c.Assert(net.removePOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(792), Commentf("%d", lp.Units.Uint64()))
+	// To withdraw max 1% (100 basis points) of the pool RUNE depth, asymmetrically withdraw as RUNE 0.5% of all pool units.
+	// 0.5% of 1600 is 8; 800 minus 8 is 792.
+
+	// doesn't hit max
+	util = cosmos.NewUint(950)
+	c.Assert(net.removePOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(788), Commentf("%d", lp.Units.Uint64()))
+	// To withdraw 0.5% of the pool RUNE depth, asymmetrically withdraw as RUNE 0.25% of all pool units.
+	// 0.25% of 1592 is 3.98 which rounds to 4; 792 minus 4 is 788.
+
+	// no change needed
+	util = cosmos.NewUint(1000)
+	c.Assert(net.removePOLLiquidity(ctx, btcPool, polAddress, asgardAddress, signer, max, util, target, mgr), IsNil)
+	lp, err = mgr.Keeper().GetLiquidityProvider(ctx, btcPool.Asset, polAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Uint64(), Equals, uint64(788), Commentf("%d", lp.Units.Uint64()))
 }

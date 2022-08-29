@@ -3,7 +3,6 @@ package ethereum
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blang/semver"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -22,7 +22,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/bifrost/blockscanner/types"
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/signercache"
@@ -31,6 +30,8 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	tokenlist "gitlab.com/thorchain/thornode/common/tokenlist"
+	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
@@ -55,7 +56,7 @@ const (
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
 type ETHScanner struct {
-	cfg                  config.BlockScannerConfiguration
+	cfg                  config.BifrostBlockScannerConfiguration
 	logger               zerolog.Logger
 	db                   blockscanner.ScannerStorage
 	m                    *metrics.Metrics
@@ -75,7 +76,7 @@ type ETHScanner struct {
 	currentBlockHeight   int64
 	gasCache             []*big.Int
 	solvencyReporter     SolvencyReporter
-	whitelistTokens      []ERC20Token
+	whitelistTokens      []tokenlist.ERC20Token
 	signerCacheManager   *signercache.CacheManager
 
 	// set at creation based on the SuggestedFeeVersion in config
@@ -84,7 +85,7 @@ type ETHScanner struct {
 }
 
 // NewETHScanner create a new instance of ETHScanner
-func NewETHScanner(cfg config.BlockScannerConfiguration,
+func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 	storage blockscanner.ScannerStorage,
 	chainID *big.Int,
 	client *ethclient.Client,
@@ -122,11 +123,6 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 	if err != nil {
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}
-	// load token list
-	var whitelistTokens TokenList
-	if err := json.Unmarshal(tokenList, &whitelistTokens); err != nil {
-		return nil, fmt.Errorf("fail to load token list,err: %w", err)
-	}
 
 	// suggested gas fee configuration
 	var gasCacheBlocks, blockLag uint64
@@ -149,7 +145,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		client:               client,
 		db:                   storage,
 		m:                    m,
-		gasPrice:             big.NewInt(0),
+		gasPrice:             big.NewInt(initialGasPrice),
 		lastReportedGasPrice: 0,
 		gasPriceChanged:      false,
 		blockMetaAccessor:    blockMetaAccessor,
@@ -161,7 +157,7 @@ func NewETHScanner(cfg config.BlockScannerConfiguration,
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 		solvencyReporter:     solvencyReporter,
-		whitelistTokens:      whitelistTokens.Tokens,
+		whitelistTokens:      tokenlist.GetETHTokenList(semver.MustParse("9999.0.0")).Tokens,
 		signerCacheManager:   signerCacheManager,
 		gasCacheBlocks:       gasCacheBlocks,
 		blockLag:             blockLag,
@@ -259,6 +255,9 @@ func (e *ETHScanner) FetchTxs(height int64) (stypes.TxIn, error) {
 
 		// gas price to 1e8
 		tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100)).Uint64()
+		if tcGasPrice == 0 {
+			tcGasPrice = 1
+		}
 
 		// skip posting if the fee has not changed
 		if tcGasPrice == e.lastReportedGasPrice {

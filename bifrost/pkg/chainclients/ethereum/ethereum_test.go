@@ -16,7 +16,6 @@ import (
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -24,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/config"
 	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -44,7 +44,7 @@ var m *metrics.Metrics
 func GetMetricForTest(c *C) *metrics.Metrics {
 	if m == nil {
 		var err error
-		m, err = metrics.NewMetrics(config.MetricsConfiguration{
+		m, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
 			Enabled:      false,
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
@@ -193,7 +193,7 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 		}
 	}))
 	s.server = server
-	cfg := config.ClientConfiguration{
+	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       server.Listener.Addr().String(),
 		SignerName:      "bob",
@@ -223,21 +223,21 @@ func (s *EthereumSuite) TestNewClient(c *C) {
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
 
 	// bridge is nil
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{}, nil, nil, s.m, pubkeyMgr, poolMgr)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{}, nil, nil, s.m, pubkeyMgr, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
 
 	// pubkey manager is nil
-	e, err = NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m, nil, poolMgr)
+	e, err = NewClient(s.thorKeys, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, nil, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
 
 	// pubkey manager is nil
-	e, err = NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, nil)
+	e, err = NewClient(s.thorKeys, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, nil)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
 	// pubkey manager is nil
-	e, err = NewClient(nil, config.ChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err = NewClient(nil, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
 }
@@ -246,12 +246,12 @@ func (s *EthereumSuite) TestConvertSigningAmount(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -277,15 +277,15 @@ func (s *EthereumSuite) TestClient(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(e, IsNil)
 	c.Assert(err, NotNil)
-	e2, err2 := NewClient(s.thorKeys, config.ChainConfiguration{
+	e2, err2 := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err2, IsNil)
@@ -295,9 +295,9 @@ func (s *EthereumSuite) TestClient(c *C) {
 	c.Check(e2.GetChain(), Equals, common.ETHChain)
 	height, err := e2.GetHeight()
 	c.Assert(err, IsNil)
-	c.Check(height, Equals, int64(7))
+	c.Check(height, Equals, int64(6))
 	gasPrice := e2.GetGasPrice()
-	c.Check(gasPrice.Uint64(), Equals, uint64(0))
+	c.Check(gasPrice.Uint64(), Equals, uint64(initialGasPrice))
 
 	acct, err := e2.GetAccount(types2.GetRandomPubKey(), nil)
 	c.Assert(err, IsNil)
@@ -363,12 +363,12 @@ func (s *EthereumSuite) TestGetAccount(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -387,12 +387,12 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -614,12 +614,12 @@ func (s *EthereumSuite) TestGetAsgardAddresses(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -635,12 +635,12 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewClient(s.thorKeys, config.ChainConfiguration{
+	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight:    1, // avoids querying thorchain for block height
 			HTTPRequestTimeout:  time.Second,
-			SuggestedFeeVersion: 1,
+			SuggestedFeeVersion: 2,
 		},
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)

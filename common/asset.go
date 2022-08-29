@@ -28,6 +28,8 @@ var (
 	DOGEAsset = Asset{Chain: DOGEChain, Symbol: "DOGE", Ticker: "DOGE", Synth: false}
 	// ETHAsset ETH
 	ETHAsset = Asset{Chain: ETHChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
+	// AVAXAsset AVAX
+	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
 	// Rune67CAsset RUNE on Binance test net
 	Rune67CAsset = Asset{Chain: BNBChain, Symbol: "RUNE-67C", Ticker: "RUNE", Synth: false} // testnet asset on binance ganges
 	// RuneB1AAsset RUNE on Binance main net
@@ -119,6 +121,10 @@ func (a Asset) IsSyntheticAsset() bool {
 	return a.Synth
 }
 
+func (a Asset) IsVaultAsset() bool {
+	return a.IsSyntheticAsset()
+}
+
 // Native return native asset, only relevant on THORChain
 func (a Asset) Native() string {
 	if a.IsRune() {
@@ -158,6 +164,12 @@ func (a Asset) IsRune() bool {
 // IsNativeRune is a helper function, return true only when the asset represent NATIVE RUNE
 func (a Asset) IsNativeRune() bool {
 	return a.IsRune() && a.Chain.IsTHORChain()
+}
+
+// IsNative is a helper function, returns true when the asset is a native
+// asset to THORChain (ie rune, a synth, etc)
+func (a Asset) IsNative() bool {
+	return a.GetChain().IsTHORChain()
 }
 
 // IsBNB is a helper function, return true only when the asset represent BNB
@@ -224,4 +236,9 @@ func ERC20RuneAsset() Asset {
 		return RuneERC20TestnetAsset
 	}
 	return RuneERC20Asset
+}
+
+// Replace pool name "." with a "-" for Mimir key checking.
+func (a Asset) MimirString() string {
+	return a.Chain.String() + "-" + a.Symbol.String()
 }

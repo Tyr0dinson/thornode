@@ -32,9 +32,7 @@ func NewCoin(asset Asset, amount cosmos.Uint) Coin {
 // NewCoins create a new Coins structure
 func NewCoins(coins ...Coin) Coins {
 	result := make(Coins, len(coins))
-	for i, c := range coins {
-		result[i] = c
-	}
+	copy(result, coins)
 	return result
 }
 
@@ -241,6 +239,9 @@ func (cs Coins) Add(coin Coin) Coins {
 	return append(cs, coin)
 }
 
+// This overwrites cs by changing its slice-referenced values,
+// so it is recommended to use destination := make(Coins, len(source))
+// and copy(destination, source) first.
 func (cs Coins) Adds(coins Coins) Coins {
 	for _, c := range coins {
 		cs = cs.Add(c)

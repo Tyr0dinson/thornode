@@ -1,10 +1,13 @@
-image: registry.gitlab.com/thorchain/thornode:builder-v1@sha256:6a7fb4e4ba636ca8ae6b7db93ae8838a8393ddbc8dfc2b99eb706fb18f50d635
+image: registry.gitlab.com/thorchain/thornode:builder-v2@sha256:eda7a8670a92b3178b2f947f692794c19e307073cdef4ad2a28ccf8dba2a7054
 
 workflow:
-  rules:
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH
+  rules: &rules
     - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "api"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "webide"
 
 cache:
   paths:
@@ -23,9 +26,23 @@ before_script:
   - export GOPATH="$CI_PROJECT_DIR/.cache"
 
 stages:
+  - generate
   - test
   - build
   - smoke-test
+
+generate:
+  cache: []
+  stage: generate
+  image: docker:20.10.12
+  services:
+    - docker:20.10.12-dind
+  artifacts:
+    untracked: true
+  before_script:
+    - apk -U add bash curl findutils git go jq make protoc wget
+  script:
+    - PATH="$PATH:/root/go/bin" make protob-docker smoke-protob-docker openapi
 
 unit-tests:
   stage: test
@@ -34,7 +51,6 @@ unit-tests:
     - schedules
   coverage: '/total:\s+\(statements\)\s+(\d+.\d+\%)/'
   before_script:
-    - make protob
     - go get github.com/boumenot/gocover-cobertura
     - go get gotest.tools/gotestsum
   script:
@@ -61,10 +77,10 @@ lint:
     - testnet-multichain
     - chaosnet-multichain
   before_script:
-    - git fetch origin develop $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - git fetch origin develop
     - ./scripts/trunk check download
   script:
-    - make lint
+    - make lint-ci
 
 build-thornode:
   stage: build
@@ -95,6 +111,28 @@ build-thornode:
     - make docker-gitlab-build
     - make docker-gitlab-push
 
+build-smoke:
+  stage: build
+  image: docker:20.10.12
+  only:
+    - develop
+  services:
+    - docker:20.10.12-dind
+  before_script:
+    # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
+    - |
+      for i in $(seq 1 30)
+      do
+          docker info && break
+          echo "Waiting for docker to start"
+          sleep 1s
+      done
+    - apk -U add make git jq curl protoc
+    - make docker-gitlab-login
+  script:
+    - make smoke-build-image
+    - make smoke-push-image
+
 smoke-test:
   stage: smoke-test
   cache: {}
@@ -111,8 +149,6 @@ smoke-test:
   environment:
     name: integration
   variables:
-    HEIMDALL_REPO: https://gitlab.com/thorchain/heimdall.git
-    HEIMDALL_IMAGE: registry.gitlab.com/thorchain/heimdall:develop
     MIDGARD_REPO: https://gitlab.com/thorchain/midgard.git
     MIDGARD_IMAGE: registry.gitlab.com/thorchain/midgard:develop
     THOR_BLOCK_TIME: 0.8s
@@ -120,7 +156,7 @@ smoke-test:
     TERRA_BLOCK_TIME: 0.8s
     GAIA_BLOCK_TIME: 0.8s
     BLOCK_SCANNER_BACKOFF: 0.8s
-    ETH_BLOCK_TIME: "0"
+    ETH_BLOCK_TIME: "1"
   before_script:
     # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
     - |
@@ -131,42 +167,36 @@ smoke-test:
           sleep 1s
       done
     - apk -U add git make protoc
-    - (git clone --single-branch -b $CI_COMMIT_REF_NAME $HEIMDALL_REPO && cd ./heimdall && IMAGE_NAME=$HEIMDALL_IMAGE make build && cd ..) || (git clone --single-branch -b develop $HEIMDALL_REPO && docker pull $HEIMDALL_IMAGE)
     - (git clone --single-branch -b $CI_COMMIT_REF_NAME $MIDGARD_REPO && cd ./midgard && IMAGE_NAME=$MIDGARD_IMAGE make build && cd ..) || (git clone --single-branch -b develop $MIDGARD_REPO && docker pull $MIDGARD_IMAGE)
-    - docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
   script:
-    - cd ./heimdall && IMAGE_NAME=$HEIMDALL_IMAGE make smoke
+    - make smoke
   after_script:
     - ./scripts/docker_logs.sh
-
-gosec-sast:
-  stage: test
-  rules:
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH
-    - if: $CI_MERGE_REQUEST_ID
-
-secret_detection:
-  stage: test
-  rules:
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH
-    - if: $CI_MERGE_REQUEST_ID
 
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
 
+# NOTE: The following included jobs have internal rule definitions that need to be
+# overwritten for them to trigger on merge requests. We overwrite all with the default
+# workflow rule set.
+
+gosec-sast:
+  stage: test
+  rules: *rules
+
+secret_detection:
+  stage: test
+  rules: *rules
+
 semgrep:
   stage: test
+  rules: *rules
   image: returntocorp/semgrep-agent:v1
   script: semgrep-agent --gitlab-json > gl-sast-report.json || true
   variables:
     SEMGREP_RULES: >-
       https://semgrep.dev/s/heimdallthor:insecure-logging
-  rules:
-    - if: $CI_MERGE_REQUEST_IID
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   artifacts:
     reports:
       sast: gl-sast-report.json

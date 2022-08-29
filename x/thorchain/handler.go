@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/common/tokenlist"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -141,7 +142,7 @@ func getMsgSwapFromMemo(memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress) 
 	if memo.Destination.IsEmpty() {
 		memo.Destination = tx.Tx.FromAddress
 	}
-	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), signer), nil
+	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetOrderType(), signer), nil
 }
 
 func getMsgWithdrawFromMemo(memo WithdrawLiquidityMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -242,6 +243,7 @@ func processOneTxInV63(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 		newMsg, err = getMsgWithdrawFromMemo(m, tx, signer)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
+		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
@@ -285,7 +287,12 @@ func processOneTxInV63(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, 
 	// MsgAddLiquidity & MsgSwap has a new version of validateBasic
 	switch m := newMsg.(type) {
 	case *MsgAddLiquidity:
-		return newMsg, m.ValidateBasicV63()
+		switch {
+		case keeper.GetVersion().GTE(semver.MustParse("1.93.0")):
+			return newMsg, m.ValidateBasicV93()
+		default:
+			return newMsg, m.ValidateBasicV63()
+		}
 	case *MsgSwap:
 		return newMsg, m.ValidateBasicV63()
 	}
@@ -303,7 +310,7 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 func fuzzyAssetMatchV83(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
 	asset := origAsset.GetLayer1Asset()
 	// if its already an exact match, return it immediately
-	if keeper.PoolExist(ctx, asset) {
+	if keeper.PoolExist(ctx, asset.GetLayer1Asset()) {
 		return origAsset
 	}
 
@@ -358,4 +365,72 @@ func fuzzyAssetMatchV83(ctx cosmos.Context, keeper keeper.Keeper, origAsset comm
 	winner.Asset.Synth = origAsset.Synth
 
 	return winner.Asset
+}
+
+func externalAssetMatch(version semver.Version, chain common.Chain, hint string) string {
+	switch {
+	case version.GTE(semver.MustParse("1.95.0")):
+		return externalAssetMatchV95(version, chain, hint)
+	case version.GTE(semver.MustParse("1.93.0")):
+		return externalAssetMatchV93(version, chain, hint)
+	default:
+		return hint
+	}
+}
+
+func externalAssetMatchV95(version semver.Version, chain common.Chain, hint string) string {
+	if len(hint) == 0 {
+		return hint
+	}
+	if chain.IsEVM() {
+		// find all potential matches
+		matches := []string{}
+		for _, token := range tokenlist.GetEVMTokenList(chain, version).Tokens {
+			if strings.HasSuffix(strings.ToLower(token.Address), strings.ToLower(hint)) {
+				matches = append(matches, token.Address)
+				if len(matches) > 1 {
+					break
+				}
+			}
+		}
+		// if we only have one match, lets go with it, otherwise leave the
+		// user's input alone. It may still work, if it doesn't, should get the
+		// gas asset instead of the erc20 desired.
+		if len(matches) == 1 {
+			return matches[0]
+		}
+
+		return hint
+	}
+	return hint
+}
+
+func externalAssetMatchV93(version semver.Version, chain common.Chain, hint string) string {
+	if len(hint) == 0 {
+		return hint
+	}
+	switch chain {
+	case common.ETHChain:
+		// find all potential matches
+		matches := []string{}
+		for _, token := range tokenlist.GetETHTokenList(version).Tokens {
+			if strings.HasSuffix(strings.ToLower(token.Address), strings.ToLower(hint)) {
+				matches = append(matches, token.Address)
+				if len(matches) > 1 {
+					break
+				}
+			}
+		}
+
+		// if we only have one match, lets go with it, otherwise leave the
+		// user's input alone. It may still work, if it doesn't, should get the
+		// gas asset instead of the erc20 desired.
+		if len(matches) == 1 {
+			return matches[0]
+		}
+
+		return hint
+	default:
+		return hint
+	}
 }

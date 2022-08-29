@@ -253,20 +253,20 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 	c.Assert(refundBond(ctx, tx, na.NodeAddress, cosmos.ZeroUint(), &na, mgr), IsNil)
 
 	// fail to get vault should return an error
-	na.UpdateStatus(NodeStandby, common.BlockHeight(ctx))
+	na.UpdateStatus(NodeStandby, ctx.BlockHeight())
 	keeper1.na = na
 	mgr.K = keeper1
 	c.Assert(refundBond(ctx, tx, na.NodeAddress, cosmos.ZeroUint(), &na, mgr), NotNil)
 
 	// if the vault is not a yggdrasil pool , it should return an error
-	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Coins = common.Coins{}
 	keeper1.ygg = ygg
 	mgr.K = keeper1
 	c.Assert(refundBond(ctx, tx, na.NodeAddress, cosmos.ZeroUint(), &na, mgr), NotNil)
 
 	// fail to get pool should fail
-	ygg = NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(27*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(27*common.One)),
@@ -295,7 +295,7 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 	na.Bond = cosmos.NewUint(12098 * common.One)
 	pk := GetRandomPubKey()
 	na.PubKeySet.Secp256k1 = pk
-	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(3946*common.One)),
@@ -337,7 +337,7 @@ func (s *HelperSuite) TestRefundBondDisableRequestToLeaveNode(c *C) {
 	na.Bond = cosmos.NewUint(12098 * common.One)
 	pk := GetRandomPubKey()
 	na.PubKeySet.Secp256k1 = pk
-	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(3946*common.One)),
@@ -372,129 +372,6 @@ func (s *HelperSuite) TestRefundBondDisableRequestToLeaveNode(c *C) {
 	expectedPoolBNB := cosmos.NewUint(167 * common.One).Sub(cosmos.NewUint(27 * common.One))
 	c.Assert(p.BalanceAsset.Equal(expectedPoolBNB), Equals, true, Commentf("expected BNB in pool %s , however we got %s", expectedPoolBNB, p.BalanceAsset))
 	c.Assert(keeper.na.Status == NodeDisabled, Equals, true)
-}
-
-func (s *HelperSuite) TestEnableNextPool(c *C) {
-	var err error
-	ctx, k := setupKeeperForTest(c)
-	mgr := NewDummyMgrWithKeeper(k)
-	c.Assert(err, IsNil)
-	pool := NewPool()
-	pool.Asset = common.BNBAsset
-	pool.Status = PoolAvailable
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-
-	pool = NewPool()
-	pool.Asset = common.BTCAsset
-	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(50 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(50 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-
-	ethAsset, err := common.NewAsset("ETH.ETH")
-	c.Assert(err, IsNil)
-	pool = NewPool()
-	pool.Asset = ethAsset
-	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(40 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(40 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-
-	xmrAsset, err := common.NewAsset("XMR.XMR")
-	c.Assert(err, IsNil)
-	pool = NewPool()
-	pool.Asset = xmrAsset
-	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(40 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(0 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-
-	// usdAsset
-	usdAsset, err := common.NewAsset("BNB.TUSDB")
-	c.Assert(err, IsNil)
-	pool = NewPool()
-	pool.Asset = usdAsset
-	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(140 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(0 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-	// should enable BTC
-	c.Assert(cyclePools(ctx, 100, 1, 0, mgr), IsNil)
-	pool, err = k.GetPool(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(pool.Status, Equals, PoolAvailable)
-
-	// should enable ETH
-	c.Assert(cyclePools(ctx, 100, 1, 0, mgr), IsNil)
-	pool, err = k.GetPool(ctx, ethAsset)
-	c.Assert(err, IsNil)
-	c.Check(pool.Status, Equals, PoolAvailable)
-
-	// should NOT enable XMR, since it has no assets
-	c.Assert(cyclePools(ctx, 100, 1, 10*common.One, mgr), IsNil)
-	pool, err = k.GetPool(ctx, xmrAsset)
-	c.Assert(err, IsNil)
-	c.Assert(pool.IsEmpty(), Equals, false)
-	c.Check(pool.Status, Equals, PoolStaged)
-	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(30*common.One))
-}
-
-func (s *HelperSuite) TestAbandonPool(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	mgr := NewDummyMgrWithKeeper(k)
-	usdAsset, err := common.NewAsset("BNB.TUSDB")
-	c.Assert(err, IsNil)
-	pool := NewPool()
-	pool.Asset = usdAsset
-	pool.Status = PoolStaged
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	c.Assert(k.SetPool(ctx, pool), IsNil)
-
-	vault := GetRandomVault()
-	vault.Coins = common.Coins{
-		common.NewCoin(usdAsset, cosmos.NewUint(100*common.One)),
-		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-	}
-	c.Assert(k.SetVault(ctx, vault), IsNil)
-
-	runeAddr := GetRandomRUNEAddress()
-	bnbAddr := GetRandomBNBAddress()
-	lp := LiquidityProvider{
-		Asset:        usdAsset,
-		RuneAddress:  runeAddr,
-		AssetAddress: bnbAddr,
-		Units:        cosmos.ZeroUint(),
-		PendingRune:  cosmos.ZeroUint(),
-		PendingAsset: cosmos.ZeroUint(),
-	}
-	k.SetLiquidityProvider(ctx, lp)
-
-	// cycle pools
-	c.Assert(cyclePools(ctx, 100, 1, 100*common.One, mgr), IsNil)
-
-	// check pool was deleted
-	pool, err = k.GetPool(ctx, usdAsset)
-	c.Assert(err, IsNil)
-	c.Assert(pool.BalanceRune.IsZero(), Equals, true)
-	c.Assert(pool.BalanceAsset.IsZero(), Equals, true)
-
-	// check vault remove pool asset
-	vault, err = k.GetVault(ctx, vault.PubKey)
-	c.Assert(err, IsNil)
-	c.Assert(vault.HasAsset(usdAsset), Equals, false)
-	c.Assert(vault.CoinLength(), Equals, 1)
-
-	// check that liquidity provider got removed
-	count := 0
-	iterator := k.GetLiquidityProviderIterator(ctx, usdAsset)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		count++
-	}
-	c.Assert(count, Equals, 0)
 }
 
 func (s *HelperSuite) TestDollarInRune(c *C) {
@@ -587,7 +464,7 @@ func newAddGasFeeTestHelper(c *C) addGasFeeTestHelper {
 
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-	yggVault := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	yggVault := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(mgr.Keeper().SetVault(ctx, yggVault), IsNil)
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
@@ -635,7 +512,7 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 					},
 					Status:         types.Status_done,
 					OutHashes:      nil,
-					BlockHeight:    common.BlockHeight(helper.ctx),
+					BlockHeight:    helper.ctx.BlockHeight(),
 					Signers:        []string{helper.na.NodeAddress.String()},
 					ObservedPubKey: helper.na.PubKeySet.Secp256k1,
 				}
@@ -670,7 +547,7 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 					},
 					Status:         types.Status_done,
 					OutHashes:      nil,
-					BlockHeight:    common.BlockHeight(helper.ctx),
+					BlockHeight:    helper.ctx.BlockHeight(),
 					Signers:        []string{helper.na.NodeAddress.String()},
 					ObservedPubKey: helper.na.PubKeySet.Secp256k1,
 				}
@@ -734,7 +611,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	}, "swap:BNB.BNB:"+GetRandomBNBAddress().String())
 	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
 	c.Assert(err, IsNil)
-	m, err := getMsgSwapFromMemo(memo.(SwapMemo), NewObservedTx(tx, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
+	m, err := getMsgSwapFromMemo(memo.(SwapMemo), NewObservedTx(tx, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
 	txAddLiquidity := common.NewTx(txID, GetRandomBTCAddress(), GetRandomBTCAddress(), common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100))), common.Gas{
@@ -744,7 +621,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(err, IsNil)
 	mAddExternal, err := getMsgAddLiquidityFromMemo(ctx,
 		memoAddExternal.(AddLiquidityMemo),
-		NewObservedTx(txAddLiquidity, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)),
+		NewObservedTx(txAddLiquidity, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()),
 		GetRandomBech32Addr())
 
 	c.Assert(err, IsNil)
@@ -755,13 +632,13 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	c.Assert(err, IsNil)
 	mAddRUNE, err := getMsgAddLiquidityFromMemo(ctx,
 		memoAddRUNE.(AddLiquidityMemo),
-		NewObservedTx(txAddRUNE, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)),
+		NewObservedTx(txAddRUNE, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()),
 		GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
 	mgr.Keeper().SetTHORName(ctx, THORName{
 		Name:              "testtest",
-		ExpireBlockHeight: common.BlockHeight(ctx) + 1024,
+		ExpireBlockHeight: ctx.BlockHeight() + 1024,
 		Owner:             GetRandomBech32Addr(),
 		PreferredAsset:    common.BNBAsset,
 		Aliases: []THORNameAlias{
@@ -776,7 +653,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	}, "swap:BNB.BNB:testtest")
 	memoWithThorname, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txWithThorname.Memo)
 	c.Assert(err, IsNil)
-	mWithThorname, err := getMsgSwapFromMemo(memoWithThorname.(SwapMemo), NewObservedTx(txWithThorname, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
+	mWithThorname, err := getMsgSwapFromMemo(memoWithThorname.(SwapMemo), NewObservedTx(txWithThorname, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
 	txSynth := common.NewTx(txID, GetRandomTHORAddress(), GetRandomTHORAddress(),
@@ -785,7 +662,7 @@ func (s *HelperSuite) TestIsTradingHalt(c *C) {
 		"swap:ETH.ETH:"+GetRandomTHORAddress().String())
 	memoRedeemSynth, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txSynth.Memo)
 	c.Assert(err, IsNil)
-	mRedeemSynth, err := getMsgSwapFromMemo(memoRedeemSynth.(SwapMemo), NewObservedTx(txSynth, common.BlockHeight(ctx), GetRandomPubKey(), common.BlockHeight(ctx)), GetRandomBech32Addr())
+	mRedeemSynth, err := getMsgSwapFromMemo(memoRedeemSynth.(SwapMemo), NewObservedTx(txSynth, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()), GetRandomBech32Addr())
 	c.Assert(err, IsNil)
 
 	c.Assert(isTradingHalt(ctx, m, mgr), Equals, false)
@@ -863,4 +740,193 @@ func (s *HelperSuite) TestUpdateTxOutGas(c *C) {
 	}
 
 	c.Assert(didUpdate, Equals, true)
+}
+
+func (s *HelperSuite) TestPOLPoolValue(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	c.Assert(err, IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(2000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(1600)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	coin := common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(10*common.One))
+	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, coin), IsNil)
+
+	lps := LiquidityProviders{
+		{
+			Asset:             btcPool.Asset,
+			RuneAddress:       GetRandomBNBAddress(),
+			AssetAddress:      GetRandomBTCAddress(),
+			LastAddHeight:     5,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+		{
+			Asset:             btcPool.Asset,
+			RuneAddress:       polAddress,
+			AssetAddress:      common.NoAddress,
+			LastAddHeight:     10,
+			Units:             btcPool.LPUnits.QuoUint64(2),
+			PendingRune:       cosmos.ZeroUint(),
+			PendingAsset:      cosmos.ZeroUint(),
+			AssetDepositValue: cosmos.ZeroUint(),
+			RuneDepositValue:  cosmos.ZeroUint(),
+		},
+	}
+	for _, lp := range lps {
+		mgr.Keeper().SetLiquidityProvider(ctx, lp)
+	}
+
+	value, err := polPoolValue(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Check(value.Uint64(), Equals, uint64(150023441162), Commentf("%d", value.Uint64()))
+}
+
+func (s *HelperSuite) TestSecurityBond(c *C) {
+	nas := make(NodeAccounts, 0)
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(0), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(10), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(30), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(30), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(60), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+		NodeAccount{Bond: cosmos.NewUint(50)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(100), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+		NodeAccount{Bond: cosmos.NewUint(50)},
+		NodeAccount{Bond: cosmos.NewUint(60)},
+	}
+	c.Assert(getEffectiveSecurityBond(nas).Uint64(), Equals, uint64(100), Commentf("%d", getEffectiveSecurityBond(nas).Uint64()))
+}
+
+func (s *HelperSuite) TestGetHardBondCap(c *C) {
+	nas := make(NodeAccounts, 0)
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(0), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(10), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(20), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(20), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(30), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+		NodeAccount{Bond: cosmos.NewUint(50)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(40), Commentf("%d", getHardBondCap(nas).Uint64()))
+
+	nas = NodeAccounts{
+		NodeAccount{Bond: cosmos.NewUint(10)},
+		NodeAccount{Bond: cosmos.NewUint(20)},
+		NodeAccount{Bond: cosmos.NewUint(30)},
+		NodeAccount{Bond: cosmos.NewUint(40)},
+		NodeAccount{Bond: cosmos.NewUint(50)},
+		NodeAccount{Bond: cosmos.NewUint(60)},
+	}
+	c.Assert(getHardBondCap(nas).Uint64(), Equals, uint64(40), Commentf("%d", getHardBondCap(nas).Uint64()))
+}
+
+func (HandlerSuite) TestIsSignedByActiveNodeAccounts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	r := isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{})
+	c.Check(r, Equals, false,
+		Commentf("empty signers should return false"))
+
+	nodeAddr := GetRandomBech32Addr()
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{nodeAddr})
+	c.Check(r, Equals, false,
+		Commentf("empty node account should return false"))
+
+	nodeAccount1 := GetRandomValidatorNode(NodeWhiteListed)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{nodeAccount1.NodeAddress})
+	c.Check(r, Equals, false,
+		Commentf("non-active node account should return false"))
+
+	nodeAccount1.Status = NodeActive
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{nodeAccount1.NodeAddress})
+	c.Check(r, Equals, true,
+		Commentf("active node account should return true"))
+
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{nodeAccount1.NodeAddress, nodeAddr})
+	c.Check(r, Equals, false,
+		Commentf("should return false if any signer is not an active validator"))
+
+	nodeAccount1.Type = NodeTypeVault
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount1), IsNil)
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{nodeAccount1.NodeAddress})
+	c.Check(r, Equals, false,
+		Commentf("non-validator node should return false"))
+
+	asgardAddr := mgr.Keeper().GetModuleAccAddress(AsgardName)
+	r = isSignedByActiveNodeAccounts(ctx, mgr.Keeper(), []cosmos.AccAddress{asgardAddr})
+	c.Check(r, Equals, true,
+		Commentf("asgard module address should return true"))
 }

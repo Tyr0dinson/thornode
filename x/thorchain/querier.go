@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	q "gitlab.com/thorchain/thornode/x/thorchain/query"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -29,6 +30,14 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryPool(ctx, path[1:], req, mgr)
 		case q.QueryPools.Key:
 			return queryPools(ctx, req, mgr)
+		case q.QueryBucket.Key:
+			return queryBucket(ctx, path[1:], req, mgr)
+		case q.QueryBuckets.Key:
+			return queryBuckets(ctx, req, mgr)
+		case q.QueryBucketLiquidityProviders.Key:
+			return queryLiquidityProviders(ctx, path[1:], req, mgr)
+		case q.QueryBucketLiquidityProvider.Key:
+			return queryLiquidityProvider(ctx, path[1:], req, mgr)
 		case q.QueryLiquidityProviders.Key:
 			return queryLiquidityProviders(ctx, path[1:], req, mgr)
 		case q.QueryLiquidityProvider.Key:
@@ -57,6 +66,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryInboundAddresses(ctx, path[1:], req, mgr)
 		case q.QueryNetwork.Key:
 			return queryNetwork(ctx, mgr)
+		case q.QueryPOL.Key:
+			return queryPOL(ctx, mgr)
 		case q.QueryBalanceModule.Key:
 			return queryBalanceModule(ctx, path[1:], mgr)
 		case q.QueryVaultsAsgard.Key:
@@ -366,24 +377,45 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return nil, fmt.Errorf("fail to get vault: %w", err)
 	}
-	type NetworkResp struct {
-		BondRewardRune  cosmos.Uint `json:"bond_reward_rune"` // The total amount of awarded rune for bonders
-		TotalBondUnits  cosmos.Uint `json:"total_bond_units"` // Total amount of bond units
-		TotalReserve    cosmos.Uint `json:"total_reserve"`
-		BurnedBep2Rune  cosmos.Uint `json:"burned_bep_2_rune"`
-		BurnedErc20Rune cosmos.Uint `json:"burned_erc_20_rune"`
-	}
-	result := NetworkResp{
-		BondRewardRune:  data.BondRewardRune,
-		TotalBondUnits:  data.TotalBondUnits,
-		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName),
-		BurnedBep2Rune:  data.BurnedBep2Rune,
-		BurnedErc20Rune: data.BurnedErc20Rune,
+	result := openapi.NetworkResponse{
+		BondRewardRune:  data.BondRewardRune.String(),
+		TotalBondUnits:  data.TotalBondUnits.String(),
+		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
+		BurnedBep2Rune:  data.BurnedBep2Rune.String(),
+		BurnedErc20Rune: data.BurnedErc20Rune.String(),
 	}
 
 	res, err := json.MarshalIndent(result, "", "	")
 	if err != nil {
 		ctx.Logger().Error("fail to marshal network data to json", "error", err)
+		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
+	}
+	return res, nil
+}
+
+func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
+	data, err := mgr.Keeper().GetPOL(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get POL", "error", err)
+		return nil, fmt.Errorf("fail to get POL: %w", err)
+	}
+	polValue, err := polPoolValue(ctx, mgr)
+	if err != nil {
+		ctx.Logger().Error("fail to fetch POL value", "error", err)
+		return nil, fmt.Errorf("fail to fetch POL value: %w", err)
+	}
+	pnl := data.PnL(polValue)
+	result := openapi.POLResponse{
+		RuneDeposited:  data.RuneDeposited.String(),
+		RuneWithdrawn:  data.RuneWithdrawn.String(),
+		Value:          polValue.String(),
+		Pnl:            pnl.String(),
+		CurrentDeposit: data.CurrentDeposit().String(),
+	}
+
+	res, err := json.MarshalIndent(result, "", "	")
+	if err != nil {
+		ctx.Logger().Error("fail to marshal protocol owned liquidity data to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
 	}
 	return res, nil
@@ -396,15 +428,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		return nil, fmt.Errorf("fail to get active vaults: %w", err)
 	}
 
-	type address struct {
-		Chain   common.Chain   `json:"chain,omitempty"`
-		PubKey  common.PubKey  `json:"pub_key,omitempty"`
-		Address common.Address `json:"address,omitempty"`
-		Router  common.Address `json:"router,omitempty"`
-		Halted  bool           `json:"halted"`
-		GasRate cosmos.Uint    `json:"gas_rate,omitempty"`
-	}
-	var resp []address
+	var resp []openapi.InboundAddress
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	if mgr.Keeper() == nil {
@@ -434,16 +458,16 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		gasRate := mgr.GasMgr().GetGasRate(ctx, chain)
 		// because THORNode is using 1e8, while GWei in ETH is in 1e9, thus the minimum THORNode can represent is 10Gwei
 		// here convert the gas rate to Gwei , so api user don't need to convert it , make it easier for people to understand
-		if chain.Equals(common.ETHChain) {
+		if chain.IsEVM() {
 			gasRate = gasRate.MulUint64(10)
 		}
-		addr := address{
-			Chain:   chain,
-			PubKey:  vault.PubKey,
-			Address: vaultAddress,
-			Router:  cc.Router,
+		addr := openapi.InboundAddress{
+			Chain:   wrapString(chain.String()),
+			PubKey:  wrapString(vault.PubKey.String()),
+			Address: wrapString(vaultAddress.String()),
+			Router:  wrapString(cc.Router.String()),
 			Halted:  isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, chain),
-			GasRate: gasRate,
+			GasRate: wrapString(gasRate.String()),
 		}
 
 		resp = append(resp, addr)
@@ -490,6 +514,11 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 	bp.Adjust(nodeAcc.Bond)
 
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get all active node account: %w", err)
+	}
+
 	result := NewQueryNodeAccount(nodeAcc)
 	result.SlashPoints = slashPts
 	result.Jail = jail
@@ -510,20 +539,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 			return nil, fmt.Errorf("no active vaults")
 		}
 
-		// Determine current bond-weighted hard cap
-		constAccessor := mgr.GetConstants()
-
-		minBondInRune, err := mgr.Keeper().GetMimir(ctx, constants.MinimumBondInRune.String())
-		if minBondInRune < 0 || err != nil {
-			minBondInRune = constAccessor.GetInt64Value(constants.MinimumBondInRune)
-		}
-
-		validatorMaxRewardRatio, err := mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
-		if validatorMaxRewardRatio < 0 || err != nil {
-			validatorMaxRewardRatio = constAccessor.GetInt64Value(constants.ValidatorMaxRewardRatio)
-		}
-
-		bondHardCap := cosmos.NewUint(uint64(validatorMaxRewardRatio)).MulUint64(uint64(minBondInRune))
+		bondHardCap := getHardBondCap(active)
 		totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get total effective bond: %w", err)
@@ -596,7 +612,7 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 	}
 
 	// Find number of blocks since the last churn (the last bond reward payout)
-	totalActiveBlocks := common.BlockHeight(ctx) - lastChurnHeight
+	totalActiveBlocks := ctx.BlockHeight() - lastChurnHeight
 
 	// find number of blocks they were well behaved (ie active - slash points)
 	earnedBlocks := totalActiveBlocks - slashPts
@@ -610,8 +626,8 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 	}
 
 	// reward = totalBondReward * (naEffectiveBond / totalEffectiveBond) * (unslashed blocks since last churn / blocks since last churn)
-	reward := common.GetShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
-	reward = common.GetShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
+	reward := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
+	reward = common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 	return reward, nil
 }
 
@@ -644,6 +660,11 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
 
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get all active node account: %w", err)
+	}
+
 	network, err := mgr.Keeper().GetNetwork(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get network: %w", err)
@@ -657,23 +678,10 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		return nil, fmt.Errorf("no active vaults")
 	}
 
-	// Determine current bond-weighted hard cap
-	constAccessor := mgr.GetConstants()
-
-	minBondInRune, err := mgr.Keeper().GetMimir(ctx, constants.MinimumBondInRune.String())
-	if minBondInRune < 0 || err != nil {
-		minBondInRune = constAccessor.GetInt64Value(constants.MinimumBondInRune)
-	}
-
-	validatorMaxRewardRatio, err := mgr.Keeper().GetMimir(ctx, constants.ValidatorMaxRewardRatio.String())
-	if validatorMaxRewardRatio < 0 || err != nil {
-		validatorMaxRewardRatio = constAccessor.GetInt64Value(constants.ValidatorMaxRewardRatio)
-	}
-
-	bondHardCap := cosmos.NewUint(uint64(validatorMaxRewardRatio)).MulUint64(uint64(minBondInRune))
+	bondHardCap := getHardBondCap(active)
 	totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate total effective bond: %w", err)
+		return nil, fmt.Errorf("fail to get total effective bond: %w", err)
 	}
 
 	lastChurnHeight := vaults[0].BlockHeight
@@ -744,6 +752,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 	if len(path) == 0 {
 		return nil, errors.New("asset not provided")
 	}
+	path[0] = strings.Replace(path[0], "_", "/", 1)
 	asset, err := common.NewAsset(path[0])
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
@@ -770,6 +779,7 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 	if len(path) < 2 {
 		return nil, errors.New("asset/lp not provided")
 	}
+	path[0] = strings.Replace(path[0], "_", "/", 1)
 	asset, err := common.NewAsset(path[0])
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
@@ -789,6 +799,78 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		ctx.Logger().Error("fail to marshal liquidity provider to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal liquidity provider to json: %w", err)
+	}
+	return res, nil
+}
+
+func queryBuckets(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	buckets := make([]openapi.Bucket, 0)
+	iterator := mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var bucket Pool
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &bucket); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal bucket: %w", err)
+		}
+		// ignore bucket if no liquidity provider units
+		if bucket.LPUnits.IsZero() {
+			continue
+		}
+
+		if !bucket.Asset.IsVaultAsset() {
+			continue
+		}
+
+		p := openapi.Bucket{
+			BalanceAsset: bucket.BalanceAsset.String(),
+			Asset:        bucket.Asset.String(),
+			LPUnits:      bucket.LPUnits.String(),
+			Status:       bucket.Status.String(),
+		}
+		buckets = append(buckets, p)
+	}
+	res, err := json.MarshalIndent(buckets, "", "	")
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal buckets result to json: %w", err)
+	}
+	return res, nil
+}
+
+// nolint: unparam
+func queryBucket(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	if len(path) == 0 {
+		return nil, errors.New("asset not provided")
+	}
+	path[0] = strings.Replace(path[0], "_", "/", 1)
+	asset, err := common.NewAsset(path[0])
+	if err != nil {
+		ctx.Logger().Error("fail to parse asset", "error", err)
+		return nil, fmt.Errorf("could not parse asset: %w", err)
+	}
+
+	if !asset.IsVaultAsset() {
+		return nil, fmt.Errorf("given asset is a pool asset: %s", asset)
+	}
+
+	bucket, err := mgr.Keeper().GetPool(ctx, asset)
+	if err != nil {
+		ctx.Logger().Error("fail to get bucket", "error", err)
+		return nil, fmt.Errorf("could not get bucket: %w", err)
+	}
+	if bucket.IsEmpty() {
+		return nil, fmt.Errorf("bucket: %s doesn't exist", path[0])
+	}
+
+	b := openapi.Bucket{
+		BalanceAsset: bucket.BalanceAsset.String(),
+		Asset:        bucket.Asset.String(),
+		LPUnits:      bucket.LPUnits.String(),
+		Status:       bucket.Status.String(),
+	}
+
+	res, err := json.MarshalIndent(b, "", "	")
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal result to JSON: %w", err)
 	}
 	return res, nil
 }
@@ -815,30 +897,18 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
-	p := struct {
-		BalanceRune         cosmos.Uint  `json:"balance_rune"`
-		BalanceAsset        cosmos.Uint  `json:"balance_asset"`
-		Asset               common.Asset `json:"asset"`
-		LPUnits             cosmos.Uint  `json:"LP_units"`
-		PoolUnits           cosmos.Uint  `json:"pool_units"`
-		Status              PoolStatus   `json:"status,omitempty"`
-		Decimals            int64        `json:"decimals,omitempty"`
-		SynthUnits          cosmos.Uint  `json:"synth_units"`
-		SynthSupply         cosmos.Uint  `json:"synth_supply"`
-		PendingInboundRune  cosmos.Uint  `json:"pending_inbound_rune"`
-		PendingInboundAsset cosmos.Uint  `json:"pending_inbound_asset"`
-	}{
-		BalanceRune:         pool.BalanceRune,
-		BalanceAsset:        pool.BalanceAsset,
-		Asset:               pool.Asset,
-		LPUnits:             pool.LPUnits,
-		PoolUnits:           pool.GetPoolUnits(),
-		Status:              pool.Status,
-		Decimals:            pool.Decimals,
-		SynthUnits:          pool.SynthUnits,
-		SynthSupply:         synthSupply,
-		PendingInboundRune:  pool.PendingInboundRune,
-		PendingInboundAsset: pool.PendingInboundAsset,
+	p := &openapi.Pool{
+		BalanceRune:         pool.BalanceRune.String(),
+		BalanceAsset:        pool.BalanceAsset.String(),
+		Asset:               pool.Asset.String(),
+		LPUnits:             pool.LPUnits.String(),
+		PoolUnits:           pool.GetPoolUnits().String(),
+		Status:              pool.Status.String(),
+		Decimals:            wrapInt64(pool.Decimals),
+		SynthUnits:          pool.SynthUnits.String(),
+		SynthSupply:         synthSupply.String(),
+		PendingInboundRune:  pool.PendingInboundRune.String(),
+		PendingInboundAsset: pool.PendingInboundAsset.String(),
 	}
 
 	res, err := json.MarshalIndent(p, "", "	")
@@ -849,21 +919,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	type pp struct {
-		BalanceRune         cosmos.Uint  `json:"balance_rune"`
-		BalanceAsset        cosmos.Uint  `json:"balance_asset"`
-		Asset               common.Asset `json:"asset"`
-		LPUnits             cosmos.Uint  `json:"LP_units"`
-		PoolUnits           cosmos.Uint  `json:"pool_units"`
-		Status              PoolStatus   `json:"status,omitempty"`
-		Decimals            int64        `json:"decimals,omitempty"`
-		SynthUnits          cosmos.Uint  `json:"synth_units"`
-		SynthSupply         cosmos.Uint  `json:"synth_supply"`
-		PendingInboundRune  cosmos.Uint  `json:"pending_inbound_rune"`
-		PendingInboundAsset cosmos.Uint  `json:"pending_inbound_asset"`
-	}
-
-	pools := make([]pp, 0)
+	pools := make([]openapi.Pool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -875,21 +931,25 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			continue
 		}
 
+		if pool.Asset.IsVaultAsset() {
+			continue
+		}
+
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
-		p := pp{
-			BalanceRune:         pool.BalanceRune,
-			BalanceAsset:        pool.BalanceAsset,
-			Asset:               pool.Asset,
-			LPUnits:             pool.LPUnits,
-			PoolUnits:           pool.GetPoolUnits(),
-			Status:              pool.Status,
-			Decimals:            pool.Decimals,
-			SynthUnits:          pool.SynthUnits,
-			SynthSupply:         synthSupply,
-			PendingInboundRune:  pool.PendingInboundRune,
-			PendingInboundAsset: pool.PendingInboundAsset,
+		p := openapi.Pool{
+			BalanceRune:         pool.BalanceRune.String(),
+			BalanceAsset:        pool.BalanceAsset.String(),
+			Asset:               pool.Asset.String(),
+			LPUnits:             pool.LPUnits.String(),
+			PoolUnits:           pool.GetPoolUnits().String(),
+			Status:              pool.Status.String(),
+			Decimals:            wrapInt64(pool.Decimals),
+			SynthUnits:          pool.SynthUnits.String(),
+			SynthSupply:         synthSupply.String(),
+			PendingInboundRune:  pool.PendingInboundRune.String(),
+			PendingInboundAsset: pool.PendingInboundAsset.String(),
 		}
 		pools = append(pools, p)
 	}
@@ -963,7 +1023,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 	}
 	keysignMetric, err := mgr.Keeper().GetTssKeysignMetric(ctx, hash)
 	if err != nil {
-		ctx.Logger().Error("fatil to get keysign metrics", "error", err)
+		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 	result := struct {
 		ObservedTx     `json:"observed_tx"`
@@ -991,7 +1051,7 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 		return nil, fmt.Errorf("fail to parse block height: %w", err)
 	}
 
-	if height > common.BlockHeight(ctx) {
+	if height > ctx.BlockHeight() {
 		return nil, fmt.Errorf("block height not available yet")
 	}
 
@@ -1052,7 +1112,7 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 		return nil, fmt.Errorf("fail to parse block height: %w", err)
 	}
 
-	if height > common.BlockHeight(ctx) {
+	if height > ctx.BlockHeight() {
 		return nil, fmt.Errorf("block height not available yet")
 	}
 
@@ -1110,7 +1170,7 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
+	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	query := QueryQueue{
 		ScheduledOutboundValue: cosmos.ZeroUint(),
 	}
@@ -1125,7 +1185,7 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		query.Swap++
 	}
 
-	for height := startHeight; height <= common.BlockHeight(ctx); height++ {
+	for height := startHeight; height <= ctx.BlockHeight(); height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
@@ -1153,13 +1213,13 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		txOutDelayMax = constAccessor.GetInt64Value(constants.TxOutDelayMax)
 	}
 
-	for height := common.BlockHeight(ctx) + 1; height <= common.BlockHeight(ctx)+txOutDelayMax; height++ {
+	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
 		value, err := mgr.Keeper().GetTxOutValue(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > common.BlockHeight(ctx)+maxTxOutOffset && value.IsZero() {
+		if height > ctx.BlockHeight()+maxTxOutOffset && value.IsZero() {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -1213,7 +1273,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			Chain:            c,
 			LastChainHeight:  chainHeight,
 			LastSignedHeight: signed,
-			Thorchain:        common.BlockHeight(ctx),
+			Thorchain:        ctx.BlockHeight(),
 		})
 	}
 
@@ -1236,11 +1296,13 @@ func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuer
 }
 
 func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	v, hasV := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !hasV {
+		// re-compute version if not stored
+		v = mgr.Keeper().GetLowestActiveVersion(ctx)
+	}
 	ver := QueryVersion{
-		// Querier needs to use GetLowestActiveVersion for historical version information
-		// (for efficiency, only for a query which needs it),
-		// since not recreating all managers with BeginBlock in managers.go .
-		Current: mgr.Keeper().GetLowestActiveVersion(ctx),
+		Current: v,
 		Next:    mgr.Keeper().GetMinJoinVersion(ctx),
 		Querier: constants.SWVersion,
 	}
@@ -1438,13 +1500,13 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	if maxTxOutOffset < 0 || err != nil {
 		maxTxOutOffset = constAccessor.GetInt64Value(constants.MaxTxOutOffset)
 	}
-	for height := common.BlockHeight(ctx) + 1; height <= common.BlockHeight(ctx)+17280; height++ {
+	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+17280; height++ {
 		txOut, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			continue
 		}
-		if height > common.BlockHeight(ctx)+maxTxOutOffset && len(txOut.TxArray) == 0 {
+		if height > ctx.BlockHeight()+maxTxOutOffset && len(txOut.TxArray) == 0 {
 			// we've hit our max offset, and an empty block, we can assume the
 			// rest will be empty as well
 			break
@@ -1465,9 +1527,9 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := common.BlockHeight(ctx) - signingTransactionPeriod
+	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	var result []TxOutItem
-	for height := startHeight; height <= common.BlockHeight(ctx); height++ {
+	for height := startHeight; height <= ctx.BlockHeight(); height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
@@ -1545,4 +1607,18 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		KeysignMetric: keysignMetric,
 	}
 	return json.MarshalIndent(m, "", "	")
+}
+
+func wrapString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func wrapInt64(d int64) *int64 {
+	if d == 0 {
+		return nil
+	}
+	return &d
 }

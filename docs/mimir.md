@@ -83,6 +83,7 @@
 `StagedPoolCost`: Number of rune (1e8 notation) that a stage pool is deducted on each pool cycle.
 `KillSwitchStart`: Block height to start to kill BEP2 and ERC20 RUNE
 `KillSwitchDuration`: Duration (in blocks) until switching is deprecated
+`MinimumPoolLiquidityFee`: Minimum liquidity fee an active pool should accumulate to avoid being demoted, set to 0 to disable demote pool based on liquidity fee
 
 ## Miscellaneous
 
@@ -95,5 +96,12 @@
 
 ### Router Upgrading (DO NOT TOUCH!)
 
+#### Old keys (pre 1.94.0)
+
 `MimirRecallFund`: Recalls Chain funds, typically used for router upgrades only
 `MimirUpgradeContract`: Upgrades contract, typically used for router upgrades only
+
+#### New keys (1.94.0 and on)
+
+`MimirRecallFund<CHAIN>`: Recalls Chain funds, typically used for router upgrades only
+`MimirUpgradeContract<CHAIN>`: Upgrades contract, typically used for router upgrades only

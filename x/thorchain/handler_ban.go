@@ -49,7 +49,7 @@ func (h BanHandler) validateV1(ctx cosmos.Context, msg MsgBan) error {
 		return err
 	}
 
-	if !isSignedByActiveNodeAccounts(ctx, h.mgr, msg.GetSigners()) {
+	if !isSignedByActiveNodeAccounts(ctx, h.mgr.Keeper(), msg.GetSigners()) {
 		return cosmos.ErrUnauthorized(errNotAuthorized.Error())
 	}
 
@@ -151,7 +151,7 @@ func (h BanHandler) handleV1(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, er
 		return &cosmos.Result{}, nil
 	}
 
-	voter.BlockHeight = common.BlockHeight(ctx)
+	voter.BlockHeight = ctx.BlockHeight()
 	h.mgr.Keeper().SetBanVoter(ctx, voter)
 
 	toBan.ForcedToLeave = true

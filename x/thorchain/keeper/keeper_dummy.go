@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 var kaboom = errors.New("Kaboom!!!")
@@ -28,6 +29,11 @@ func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
 }
 
 func (k KVStoreDummy) GetVersion() semver.Version { return semver.MustParse("9999999.0.0") }
+func (k KVStoreDummy) GetVersionWithCtx(ctx cosmos.Context) (semver.Version, bool) {
+	return semver.MustParse("9999999.0.0"), true
+}
+func (k KVStoreDummy) SetVersionWithCtx(ctx cosmos.Context, v semver.Version) {}
+
 func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, key string) string {
 	return fmt.Sprintf("%s/1/%s", prefix, key)
 }
@@ -36,6 +42,10 @@ func (k KVStoreDummy) GetStoreVersion(ctx cosmos.Context) int64      { return 1 
 func (k KVStoreDummy) SetStoreVersion(ctx cosmos.Context, ver int64) {}
 
 func (k KVStoreDummy) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
+func (k KVStoreDummy) GetBalanceOfModule(ctx cosmos.Context, moduleName, denom string) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
@@ -285,6 +295,12 @@ func (k KVStoreDummy) GetPoolLiquidityFees(_ cosmos.Context, _ uint64, _ common.
 	return cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetRollingPoolLiquidityFee(ctx cosmos.Context, asset common.Asset) (uint64, error) {
+	return 0, kaboom
+}
+
+func (k KVStoreDummy) ResetRollingPoolLiquidityFee(ctx cosmos.Context, asset common.Asset) {}
+
 func (k KVStoreDummy) GetChains(_ cosmos.Context) (common.Chains, error)  { return nil, kaboom }
 func (k KVStoreDummy) SetChains(_ cosmos.Context, _ common.Chains)        {}
 func (k KVStoreDummy) GetVaultIterator(_ cosmos.Context) cosmos.Iterator  { return nil }
@@ -315,6 +331,14 @@ func (k KVStoreDummy) AddPoolFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error
 func (k KVStoreDummy) AddBondFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
 func (k KVStoreDummy) GetNetwork(_ cosmos.Context) (Network, error)              { return Network{}, kaboom }
 func (k KVStoreDummy) SetNetwork(_ cosmos.Context, _ Network) error              { return kaboom }
+
+func (k KVStoreDummy) GetPOL(_ cosmos.Context) (ProtocolOwnedLiquidity, error) {
+	return ProtocolOwnedLiquidity{}, kaboom
+}
+
+func (k KVStoreDummy) SetPOL(_ cosmos.Context, _ ProtocolOwnedLiquidity) error {
+	return kaboom
+}
 
 func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
 }
@@ -352,6 +376,50 @@ func (k KVStoreDummy) RemoveSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ i
 func (k KVStoreDummy) GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ int) (MsgSwap, error) {
 	return MsgSwap{}, kaboom
 }
+
+func (k KVStoreDummy) HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ int) bool {
+	return false
+}
+func (k KVStoreDummy) SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) RemoveOrderBookItem(ctx cosmos.Context, _ common.TxID) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error) {
+	return MsgSwap{}, kaboom
+}
+
+func (k KVStoreDummy) HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool { return false }
+func (k KVStoreDummy) GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error) {
+	return false, kaboom
+}
+
+func (k KVStoreDummy) RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) SetOrderBookProcessor(ctx cosmos.Context, record uint64) error {
+	return kaboom
+}
+
+// GetOrderBookProcessor - get a list of asset pairs to process
+func (k KVStoreDummy) GetOrderBookProcessor(ctx cosmos.Context) (uint64, error) {
+	return 0, kaboom
+}
+
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
 func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64)   {}
 func (k KVStoreDummy) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {

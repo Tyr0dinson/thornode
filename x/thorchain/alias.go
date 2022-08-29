@@ -58,6 +58,10 @@ const (
 	AddPendingLiquidity      = types.PendingLiquidityType_add
 	WithdrawPendingLiquidity = types.PendingLiquidityType_withdraw
 
+	// Order Type
+	MarketOrder = types.OrderType_market
+	LimitOrder  = types.OrderType_limit
+
 	// Memos
 	TxSwap            = mem.TxSwap
 	TxAdd             = mem.TxAdd
@@ -78,6 +82,7 @@ const (
 var (
 	NewPool                        = types.NewPool
 	NewNetwork                     = types.NewNetwork
+	NewProtocolOwnedLiquidity      = types.NewProtocolOwnedLiquidity
 	NewObservedTx                  = types.NewObservedTx
 	NewTssVoter                    = types.NewTssVoter
 	NewBanVoter                    = types.NewBanVoter
@@ -281,6 +286,7 @@ type (
 	BondProviders                  = types.BondProviders
 	BondProvider                   = types.BondProvider
 	Network                        = types.Network
+	ProtocolOwnedLiquidity         = types.ProtocolOwnedLiquidity
 	VaultStatus                    = types.VaultStatus
 	GasPool                        = types.GasPool
 	EventGas                       = types.EventGas

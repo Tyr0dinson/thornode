@@ -52,7 +52,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	}
 
 	cv := mgr.GetConstants()
-	height := common.BlockHeight(ctx)
+	height := ctx.BlockHeight()
 	if height < (lp.LastAddHeight + cv.GetInt64Value(constants.LiquidityLockUpBlocks)) {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawWithin24Hours
 	}
@@ -60,7 +60,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	ctx.Logger().Info("pool before withdraw", "pool units", pool.GetPoolUnits(), "balance RUNE", poolRune, "balance asset", poolAsset)
 	ctx.Logger().Info("liquidity provider before withdraw", "liquidity provider unit", fLiquidityProviderUnit)
 
-	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.Chain))
+	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
 	assetToWithdraw := assetToWithdrawV89(msg, lp, pauseAsym)
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
@@ -82,7 +82,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 		ilpDisabled = 0
 	}
 	// only when Pool is in Available status will apply impermanent loss protection
-	if fullProtectionLine > 0 && pool.Status == PoolAvailable && !(ilpDisabled > 0) { // if protection line is zero, no imp loss protection is given
+	if fullProtectionLine > 0 && pool.Status == PoolAvailable && !(ilpDisabled > 0 && !pool.Asset.IsVaultAsset()) { // if protection line is zero, no imp loss protection is given
 		lastAddHeight := lp.LastAddHeight
 		if lastAddHeight < pool.StatusSince {
 			lastAddHeight = pool.StatusSince
@@ -103,14 +103,21 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 		}
 	}
 
-	withdrawRune, withDrawAsset, unitAfter, err := calculateWithdrawV91(pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, extraUnits, msg.BasisPoints, assetToWithdraw)
-	if err != nil {
-		ctx.Logger().Error("fail to withdraw", "error", err)
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+	var withdrawRune, withDrawAsset, unitAfter cosmos.Uint
+	if pool.Asset.IsVaultAsset() {
+		withdrawRune, withDrawAsset, unitAfter = calculateVaultWithdrawV1(pool.GetPoolUnits(), poolAsset, originalLiquidityProviderUnits, msg.BasisPoints)
+	} else {
+		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdrawV91(pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, extraUnits, msg.BasisPoints, assetToWithdraw)
+		if err != nil {
+			ctx.Logger().Error("fail to withdraw", "error", err)
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+		}
 	}
-	if (withdrawRune.Equal(poolRune) && !withDrawAsset.Equal(poolAsset)) || (!withdrawRune.Equal(poolRune) && withDrawAsset.Equal(poolAsset)) {
-		ctx.Logger().Error("fail to withdraw: cannot withdraw 100% of only one side of the pool")
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+	if !pool.Asset.IsVaultAsset() {
+		if (withdrawRune.Equal(poolRune) && !withDrawAsset.Equal(poolAsset)) || (!withdrawRune.Equal(poolRune) && withDrawAsset.Equal(poolAsset)) {
+			ctx.Logger().Error("fail to withdraw: cannot withdraw 100% of only one side of the pool")
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
+		}
 	}
 	withDrawAsset = cosmos.RoundToDecimal(withDrawAsset, pool.Decimals)
 	gasAsset := cosmos.ZeroUint()
@@ -147,7 +154,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 
 	ctx.Logger().Info("pool after withdraw", "pool unit", pool.GetPoolUnits(), "balance RUNE", pool.BalanceRune, "balance asset", pool.BalanceAsset)
 
-	lp.LastWithdrawHeight = common.BlockHeight(ctx)
+	lp.LastWithdrawHeight = ctx.BlockHeight()
 	maxPts := cosmos.NewUint(uint64(MaxWithdrawBasisPoints))
 	lp.RuneDepositValue = common.SafeSub(lp.RuneDepositValue, common.GetSafeShare(msg.BasisPoints, maxPts, lp.RuneDepositValue))
 	lp.AssetDepositValue = common.SafeSub(lp.AssetDepositValue, common.GetSafeShare(msg.BasisPoints, maxPts, lp.AssetDepositValue))
@@ -189,6 +196,17 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	return withdrawRune, withDrawAsset, protectionRuneAmount, common.SafeSub(originalLiquidityProviderUnits, unitAfter), gasAsset, nil
 }
 
+func calculateVaultWithdrawV1(vaultUnits, assetAmt, lpUnits, withdrawBasisPoints cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+	if vaultUnits.IsZero() || lpUnits.IsZero() || assetAmt.IsZero() || withdrawBasisPoints.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()
+	}
+
+	unitsToClaim := common.GetSafeShare(withdrawBasisPoints, cosmos.NewUint(MaxWithdrawBasisPoints), lpUnits)
+	unitAfter := common.SafeSub(lpUnits, unitsToClaim)
+	withdrawAsset := common.GetSafeShare(unitsToClaim, vaultUnits, assetAmt)
+	return cosmos.ZeroUint(), withdrawAsset, unitAfter
+}
+
 func calculateWithdrawV91(poolUnits, poolRune, poolAsset, lpUnits, extraUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if poolUnits.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
@@ -226,8 +244,8 @@ func calcImpLossV91(lp LiquidityProvider, withdrawBasisPoints cosmos.Uint, prote
 		A0 = assetDepositValue; R0 = runeDepositValue;
 
 		liquidityUnits = units the member wishes to redeem after applying withdrawBasisPoints
-		A1 = GetShare(liquidityUnits, lpUnits, assetDepth);
-		R1 = GetShare(liquidityUnits, lpUnits, runeDepth);
+		A1 = GetUncappedShare(liquidityUnits, lpUnits, assetDepth);
+		R1 = GetUncappedShare(liquidityUnits, lpUnits, runeDepth);
 		P1 = R1/A1
 		coverage = ((A0 * P1) + R0) - ((A1 * P1) + R1) => ((A0 * R1/A1) + R0) - (R1 + R1)
 	*/

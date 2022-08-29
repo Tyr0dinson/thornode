@@ -18,7 +18,6 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum/types"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
@@ -26,6 +25,7 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 )
 
@@ -41,7 +41,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	thorchain.SetupConfigForTest()
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
-	cfg := config.ClientConfiguration{
+	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       "localhost",
 		SignerName:      "bob",
@@ -59,8 +59,8 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func getConfigForTest(rpcHost string) config.BlockScannerConfiguration {
-	return config.BlockScannerConfiguration{
+func getConfigForTest(rpcHost string) config.BifrostBlockScannerConfiguration {
+	return config.BifrostBlockScannerConfiguration{
 		RPCHost:                    rpcHost,
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
@@ -70,7 +70,7 @@ func getConfigForTest(rpcHost string) config.BlockScannerConfiguration {
 		MaxHTTPRequestRetry:        3,
 		BlockHeightDiscoverBackoff: time.Second,
 		BlockRetryInterval:         time.Second,
-		SuggestedFeeVersion:        1,
+		SuggestedFeeVersion:        2,
 	}
 }
 
@@ -187,7 +187,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	c.Assert(err, IsNil)
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
-	bridge, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
+	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       u.Host,
 		SignerName:      "bob",
@@ -327,7 +327,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	u, err := url.Parse(server.URL)
 	c.Assert(err, IsNil)
 
-	cfg := config.ClientConfiguration{
+	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       u.Host,
 		SignerName:      "bob",
@@ -560,7 +560,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(ethClient, NotNil)
 	storage, err := blockscanner.NewBlockScannerStorage("")
 	c.Assert(err, IsNil)
-	bridge, err := thorclient.NewThorchainBridge(config.ClientConfiguration{
+	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       server.Listener.Addr().String(),
 		SignerName:      "bob",
@@ -653,7 +653,7 @@ func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
 	// empty blocks should not count
 	bs.updateGasPriceV2([]*big.Int{})
 	c.Assert(len(bs.gasCache), Equals, 39)
-	c.Assert(bs.gasPrice.Cmp(big.NewInt(0)), Equals, 0)
+	c.Assert(bs.gasPrice.Cmp(big.NewInt(initialGasPrice)), Equals, 0)
 
 	// now we should get the average of the 25th percentile gas (2)
 	bs.updateGasPriceV2([]*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3), big.NewInt(4)})
