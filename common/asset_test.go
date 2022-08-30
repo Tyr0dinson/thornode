@@ -41,14 +41,14 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(asset.Equals(RuneNative), Equals, true)
 
-	// parse abbreviation
-	asset, err = NewAsset("a")
-	c.Assert(err, IsNil)
-	c.Check(asset.Ticker.String(), Equals, "A")
-
+	// parse single character
 	asset, err = NewAsset("bc")
 	c.Assert(err, IsNil)
-	c.Check(asset.Ticker.String(), Equals, "BC")
+	c.Assert(asset, Equals, RuneNative)
+	c.Check(asset.Ticker.String(), Equals, "A")
+	c.Check(asset.Symbol, IsNil)
+	c.Check(asset.Chain.Equals(THORChain), Equals, true)
+
 	// ETH test
 	asset, err = NewAsset("eth.knc")
 	c.Assert(err, IsNil)
@@ -92,37 +92,4 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Check(asset.Equals(BTCAsset), Equals, false)
 	c.Check(asset.IsEmpty(), Equals, false)
 	c.Check(asset.String(), Equals, "BTC/BTC")
-
-	// GetAssetFromAbbreviation test
-	abbrevAsset, _ := NewAsset("a")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, AVAXAsset)
-	abbrevAsset, _ = NewAsset("A")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, AVAXAsset)
-	abbrevAsset, _ = NewAsset("B")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, BTCAsset)
-	abbrevAsset, _ = NewAsset("bc")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, BCHAsset)
-	abbrevAsset, _ = NewAsset("bN")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, BNBAsset)
-
-	abbrevAsset, _ = NewAsset("abc123")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, EmptyAsset)
-	abbrevAsset, _ = NewAsset("")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, EmptyAsset)
-	abbrevAsset, _ = NewAsset("RUNE")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, EmptyAsset)
-	abbrevAsset, _ = NewAsset("ETH")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, EmptyAsset)
-	abbrevAsset, _ = NewAsset("BNB")
-	asset = abbrevAsset.GetAssetFromAbbreviation(GetCurrentVersion())
-	c.Check(asset, Equals, EmptyAsset)
 }

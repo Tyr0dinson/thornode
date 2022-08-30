@@ -244,25 +244,19 @@ func (a Asset) MimirString() string {
 	return a.Chain.String() + "-" + a.Symbol.String()
 }
 
-// GetAssetFromAbbreviation returns the asset that matches the abbreviation stored in Asset.Symbol
+// GetAssetFromAbbreviation returns the asset that matches the given abbreviation
 // returns EmptyAsset if no match is found
-func (a Asset) GetAssetFromAbbreviation(version semver.Version) Asset {
+func GetAssetFromAbbreviation(abbrev string, version semver.Version) Asset {
 	switch {
 	case version.GTE(semver.MustParse("1.97.0")):
-		return getAssetFromAbbreviation97(a)
+		return getAssetFromAbbreviation97(abbrev)
 	default:
 		return EmptyAsset
 	}
 }
 
-func getAssetFromAbbreviation97(asset Asset) Asset {
-	// If the chain was explicitly set in the memo (e.g. CHAIN.SYMBOL), don't try to match
-	// If no chain is set in the memo (e.g. SYMBOL), THORChain will be the default, so attempt to match
-	// the abbreviation
-	if !asset.Chain.IsTHORChain() {
-		return EmptyAsset
-	}
-	switch strings.ToUpper(asset.Symbol.String()) {
+func getAssetFromAbbreviation97(abbrev string) Asset {
+	switch abbrev {
 	case "A":
 		return AVAXAsset
 	case "B":
