@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-die() {
-  echo "ERR: $*"
-  exit 1
-}
+source ./scripts/utils.sh
 
 ./scripts/check-build-env.sh
 
 # check docs version
-version=$(cat version)
-if ! grep "^  version: ${version}" openapi/openapi.yaml; then
-  die "docs version (openapi/openapi.yaml) does not match version file ${version}"
+VERSION=$(cat version)
+if ! grep "^  version: ${VERSION}" openapi/openapi.yaml; then
+  die "docs version (openapi/openapi.yaml) does not match version file ${VERSION}"
+fi
+
+# Check that the root `version` file was not downgraded.
+CUR_VERSION=$(version "$VERSION")
+PREV_VERSION=$(version "$(git show origin/develop:version)")
+if [ "$CUR_VERSION" -lt "$PREV_VERSION" ]; then
+  die "Cannot downgrade version from ${PREV_VERSION} to ${CUR_VERSION}"
 fi
 
 # Check that no .pb.go files were added.

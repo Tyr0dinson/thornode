@@ -1,6 +1,8 @@
 #!/bin/bash
-
 # set -ex
+
+source ./scripts/utils.sh
+
 echo "Linting handlers file"
 
 handlers=$(ls -1 x/thorchain/handler_*)
@@ -35,4 +37,17 @@ for f in $handlers; do
     exit 1
   fi
   echo "Handler: $f... OK"
+done
+
+# Check that any new code does not add a handler that is
+# less than or equal to the current repository version.
+REPO_VERSION=$(version "$(cat version)")
+for V in $(git diff origin/develop | sed -nE 's/^\+.*\.GTE\(.*\.MustParse\("([0-9.]+)".*/\1/p'); do
+  HANDLER_VERSION=$(version "$V")
+  if [ "$HANDLER_VERSION" -le "$REPO_VERSION" ]; then
+    cat <<EOF
+ERROR: Bad version introduced. $V is less than or equal to current repo version ($(cat version))
+EOF
+    exit 1
+  fi
 done

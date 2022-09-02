@@ -2,7 +2,7 @@
 # Check that the build environment is set up properly for this repo.
 set -euo pipefail
 
-version() { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
+source ./scripts/utils.sh
 
 # Check Go version.
 GO_VER=$(go version | grep -Eo 'go[0-9.]+' | sed -e s/go//)
