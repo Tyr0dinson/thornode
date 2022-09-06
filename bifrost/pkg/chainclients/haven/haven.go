@@ -24,7 +24,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
-	"gitlab.com/thorchain/thornode/bifrost/config"
+	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -38,7 +38,7 @@ import (
 // Client observes bitcoin chain and allows to sign and broadcast tx
 type Client struct {
 	logger                    zerolog.Logger
-	cfg                       config.ChainConfiguration
+	cfg                       config.BifrostChainConfiguration
 	walletAddr                common.Address
 	processedMemPool          map[string]bool
 	signedTxOut               map[string]TxOutWitness
@@ -101,7 +101,7 @@ const (
 // NewClient generates a new Client
 func NewClient(
 	thorKeys *thorclient.Keys,
-	cfg config.ChainConfiguration,
+	cfg config.BifrostChainConfiguration,
 	server *tssp.TssServer,
 	bridge *thorclient.ThorchainBridge,
 	pkm pubkeymanager.PubKeyValidator,
@@ -256,7 +256,7 @@ func (c *Client) Stop() {
 }
 
 // GetConfig - get the chain configuration
-func (c *Client) GetConfig() config.ChainConfiguration {
+func (c *Client) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg
 }
 

@@ -8,7 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/dogecoin"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/gaia"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/terra"
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/avalanche"

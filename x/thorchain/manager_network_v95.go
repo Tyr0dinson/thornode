@@ -59,7 +59,7 @@ func (vm *NetworkMgrV95) processGenesisSetup(ctx cosmos.Context) error {
 			common.AVAXChain,
 			common.GAIAChain,
 		}
-		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
+		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, "", supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
 		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
@@ -442,7 +442,7 @@ func (vm *NetworkMgrV95) addPOLLiquidity(
 		return err
 	}
 
-	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "")
+	tx := common.NewTx(common.BlankTxID, "", polAddress, asgardAddress, coins, nil, "")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
 	_, err := handler(ctx, msg)
 	if err != nil {
@@ -485,7 +485,7 @@ func (vm *NetworkMgrV95) removePOLLiquidity(
 	basisPts := common.GetSafeShare(runeAmt, lpRune, cosmos.NewUint(10_000))
 
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.OneUint()))
-	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "")
+	tx := common.NewTx(common.BlankTxID, "", polAddress, asgardAddress, coins, nil, "")
 	msg := NewMsgWithdrawLiquidity(
 		tx,
 		polAddress,

@@ -119,6 +119,10 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		return NewAddress(str)
 	case BTCChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
 		var net *chaincfg.Params
 		switch chainNetwork {
 		case MockNet:
@@ -172,6 +176,10 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		return NewAddress(addr.String())
 	case BCHChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
 		var net *bchchaincfg.Params
 		switch chainNetwork {
 		case MockNet:

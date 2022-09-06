@@ -84,7 +84,7 @@ func (h TssHandler) handleV92(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Resul
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, "", chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
 			vault.Membership = voter.PubKeys
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -284,7 +284,7 @@ func (h TssHandler) handleV73(ctx cosmos.Context, msg MsgTssPool) (*cosmos.Resul
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(common.BlockHeight(ctx), InitVault, vaultType, voter.PoolPubKey, "", chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, "", chains.Strings(), h.mgr.Keeper().GetChainContracts(ctx, chains))
 			vault.Membership = voter.PubKeys
 
 			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {

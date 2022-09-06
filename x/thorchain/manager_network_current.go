@@ -453,7 +453,7 @@ func (vm *NetworkMgrV96) addPOLLiquidity(
 		return err
 	}
 
-	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "")
+	tx := common.NewTx(common.BlankTxID, "", polAddress, asgardAddress, coins, nil, "")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
 	_, err := handler(ctx, msg)
 	if err != nil {
@@ -496,7 +496,7 @@ func (vm *NetworkMgrV96) removePOLLiquidity(
 	basisPts := common.GetSafeShare(runeAmt, lpRune, cosmos.NewUint(10_000))
 
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.OneUint()))
-	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "")
+	tx := common.NewTx(common.BlankTxID, "", polAddress, asgardAddress, coins, nil, "")
 	msg := NewMsgWithdrawLiquidity(
 		tx,
 		polAddress,
