@@ -19,6 +19,7 @@ bifrost:
       - GAIA
       - LTC
       - TERRA
+      - XHV
   thorchain:
     chain_id: thorchain
     chain_host: localhost:1317
@@ -50,6 +51,7 @@ bifrost:
     rendezvous: asgard
     p2p_port: 5040
     info_address: ":6040"
+    info_address_mn: ":5030"
     bootstrap_peers: ""
     external_ip: ""
   chains:
@@ -121,6 +123,12 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: BCH
+    xhv:
+      <<: *default-chain
+      chain_id: XHV
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: XHV
 
 ########################################################################################
 # Thor

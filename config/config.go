@@ -174,6 +174,22 @@ func Init() {
 		"ETH_START_BLOCK_HEIGHT",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.XHV.rpc_host",
+		"XHV_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XHV.wallet_rpc_host",
+		"XHV_WALLET_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XHV.block_scanner.rpc_host",
+		"XHV_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XHV.block_scanner.start_block_height",
+		"XHV_START_BLOCK_HEIGHT",
+	))
+	assert(viper.BindEnv(
 		"bifrost.chains.AVAX.rpc_host",
 		"AVAX_HOST",
 	))

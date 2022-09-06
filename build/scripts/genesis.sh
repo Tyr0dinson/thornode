@@ -41,7 +41,7 @@ if [ "$SEED" = "$(hostname)" ]; then
     NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
 
     init_chain "$NODE_ADDRESS"
-    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
+    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_CRYPTONOTE" "$NODE_IP_ADDRESS"
 
     # disable default bank transfer, and opt to use our own custom one
     disable_bank_send
