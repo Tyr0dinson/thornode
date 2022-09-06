@@ -34,7 +34,7 @@ import (
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
-	tssp "gitlab.com/thorchain/tss/go-tss/tss"
+	tssp "github.com/akildemir/go-tss/tss"
 )
 
 const (
