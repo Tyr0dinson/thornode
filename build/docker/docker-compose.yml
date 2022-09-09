@@ -128,7 +128,6 @@ services:
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       XHV_HOST: ${XHV_HOST:-http://haven:17750}
       XHV_WALLET_HOST: ${XHV_WALLET_HOST:-http://haven-wallet:6061/json_rpc}
-      TERRA_HOST: ${TERRA_HOST:-http://terra:26657}
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
       THOR_BLOCK_TIME: ${THOR_BLOCK_TIME:-5s}
@@ -265,6 +264,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-cat:1317
       CHAIN_RPC: thornode-cat:26657
+      XHV_WALLET_HOST: http://haven-wallet-cat:6061/json_rpc
     ports:
       - 5040
       - 6040
@@ -283,6 +283,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-dog:1317
       CHAIN_RPC: thornode-dog:26657
+      XHV_WALLET_HOST: http://haven-wallet-dog:6061/json_rpc
     ports:
       - 5040
       - 6040
@@ -301,6 +302,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-fox:1317
       CHAIN_RPC: thornode-fox:26657
+      XHV_WALLET_HOST: http://haven-wallet-fox:6061/json_rpc
     ports:
       - 5040
       - 6040
@@ -319,6 +321,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-pig:1317
       CHAIN_RPC: thornode-pig:26657
+      XHV_WALLET_HOST: http://haven-wallet-pig:6061/json_rpc
     ports:
       - 5040
       - 6040
@@ -327,6 +330,72 @@ services:
       - bifrost-pig:/var/data/bifrost
       - thornode-pig:/root/.thornode
     command: ["bifrost"]
+
+  ######################################################################################
+  # Haven Extras
+  ######################################################################################
+
+  # ------------------------------ haven-wallet ------------------------------
+
+  haven-wallet: &haven-wallet
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: registry.gitlab.com/thorchain/devops/haven-core:latest
+    restart: unless-stopped
+    volumes:
+      - "./mocknet:/mocknet"
+    ports:
+      - 6061:6061
+    environment:
+      XHV_HOST: ${XHV_HOST:-http://haven:17750}
+    command: /mocknet/init-haven-wallet.sh
+
+  # ------------------------------ haven-wallet-smoke-test ------------------------------
+
+  haven-wallet-smoke-test:
+    <<: *haven-wallet
+    ports:
+      - 5051:5051
+    command: /mocknet/init-haven-wallet-smoke.sh
+
+  ######################################################################################
+  # Haven Extras Cluster
+  ######################################################################################
+
+  # ------------------------------ haven-wallet ------------------------------
+
+  haven-wallet-cat:
+    <<: *haven-wallet
+    profiles:
+      - mocknet-cluster
+    hostname: haven-wallet-cat
+    ports:
+      - 6061
+
+  haven-wallet-dog:
+    <<: *haven-wallet
+    profiles:
+      - mocknet-cluster
+    hostname: haven-wallet-dog
+    ports:
+      - 6061
+
+  haven-wallet-fox:
+    <<: *haven-wallet
+    profiles:
+      - mocknet-cluster
+    hostname: haven-wallet-fox
+    ports:
+      - 6061
+
+  haven-wallet-pig:
+    <<: *haven-wallet
+    profiles:
+      - mocknet-cluster
+    hostname: haven-wallet-pig
+    ports:
+      - 6061
 
   ######################################################################################
   # Mock Clients
@@ -413,6 +482,7 @@ services:
   haven:
     profiles:
       - mocknet
+      - mocknet-cluster
     image: registry.gitlab.com/thorchain/devops/haven-core:latest
     restart: unless-stopped
     volumes:
@@ -422,37 +492,6 @@ services:
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-1}
     command: /mocknet/init-haven.sh
-
-  # ------------------------------ haven-wallet ------------------------------
-
-  haven-wallet:
-    profiles:
-      - mocknet
-      - validator
-    image: registry.gitlab.com/thorchain/devops/haven-core:latest
-    restart: unless-stopped
-    volumes:
-      - "./mocknet:/mocknet"
-    ports:
-      - 6061:6061
-    environment:
-      XHV_HOST: ${XHV_HOST:-http://haven:17750}
-    command: /mocknet/init-haven-wallet.sh
-
-  # ------------------------------ haven-wallet-smoke-test ------------------------------
-
-  haven-wallet-smoke-test:
-    profiles:
-      - smoke-tests
-    image: registry.gitlab.com/thorchain/devops/haven-core:latest
-    restart: unless-stopped
-    volumes:
-      - "./mocknet:/mocknet"
-    ports:
-      - 5051:5051
-    environment:
-      XHV_HOST: ${XHV_HOST:-http://haven:17750}
-    command: /mocknet/init-haven-wallet-smoke.sh
 
   # ------------------------------ ethereum ------------------------------
 
