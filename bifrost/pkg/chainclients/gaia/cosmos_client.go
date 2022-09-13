@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	tssp "github.com/akildemir/go-tss/tss"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -25,7 +26,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/tendermint/crypto"
-	tssp "github.com/akildemir/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"

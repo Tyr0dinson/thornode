@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	tssp "github.com/akildemir/go-tss/tss"
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/runners"
@@ -34,7 +35,6 @@ import (
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
-	tssp "github.com/akildemir/go-tss/tss"
 )
 
 const (

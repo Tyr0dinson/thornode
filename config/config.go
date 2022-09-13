@@ -653,7 +653,7 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
-	WalletRPCHost		string							 `mapstructure:"wallet_rpc_host"`
+	WalletRPCHost       string                           `mapstructure:"wallet_rpc_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
@@ -720,7 +720,7 @@ type BifrostTSSConfiguration struct {
 	Rendezvous     string   `mapstructure:"rendezvous"`
 	P2PPort        int      `mapstructure:"p2p_port"`
 	InfoAddress    string   `mapstructure:"info_address"`
-	InfoAddressMn    string   `mapstructure:"info_address_mn"`
+	InfoAddressMn  string   `mapstructure:"info_address_mn"`
 	ExternalIP     string   `mapstructure:"external_ip"`
 }
 

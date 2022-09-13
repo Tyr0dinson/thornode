@@ -24,8 +24,8 @@ import (
 type Address string
 
 const (
-	NoAddress   = Address("")
-	NoopAddress = Address("noop")
+	NoAddress                     = Address("")
+	NoopAddress                   = Address("noop")
 	ThorChainMainnetAddressLength = 43
 	ThorChainTestnetAddressLength = 44
 )

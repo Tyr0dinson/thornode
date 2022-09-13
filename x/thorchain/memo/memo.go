@@ -365,15 +365,15 @@ func ExtractAddresses(chain common.Chain, addr string) (firstAddr string, second
 			if len(addr) > common.ThorChainMainnetAddressLength {
 				secondAddr = addr[common.ThorChainMainnetAddressLength:]
 			}
-		} else if strings.HasPrefix(addr, "tthor") {
+			return
+		}
+		if strings.HasPrefix(addr, "tthor") {
 			firstAddr = addr[:common.ThorChainTestnetAddressLength]
 			if len(addr) > common.ThorChainTestnetAddressLength {
 				secondAddr = addr[common.ThorChainTestnetAddressLength:]
 			}
-		} else {
-			firstAddr = addr
+			return
 		}
-		return
 	}
 
 	firstAddr = addr
