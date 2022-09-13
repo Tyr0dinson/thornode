@@ -490,6 +490,7 @@ func (s *HandlerWithdrawSuite) TestWithdrawLiquidityHandlerWithSwap(c *C) {
 	btcAddr := GetRandomBTCAddress()
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		btcAddr,
 		runeAddr,
 		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One*5))},

@@ -875,6 +875,7 @@ components:
         - coins
         - routers
         - addresses
+        - cryptonote
       properties:
         block_height:
           type: integer
@@ -923,6 +924,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VaultAddress"
+        cryptonote:
+          type: string
 
     VaultRouter:
       type: object
@@ -949,6 +952,7 @@ components:
       required:
         - pub_key
         - routers
+        - cryptonote
       properties:
         pub_key:
           type: string
@@ -957,6 +961,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VaultRouter"
+        cryptonote:
+          type: string
 
     Tx:
       type: object
@@ -987,6 +993,9 @@ components:
         memo:
           type: string
           example: "ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
+        tx_key:
+          type: string
+          example: w1d7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tcadtyqaxzaq
 
     LastBlock:
       type: object

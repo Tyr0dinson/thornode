@@ -102,9 +102,9 @@ func newTssKeysignHandlerTestHelper(c *C) tssKeysignFailHandlerTestHelper {
 		FailReason: "whatever",
 		BlameNodes: []Node{members[0], members[1]},
 	}
-	asgardVault := NewVault(common.BlockHeight(ctx), ActiveVault, AsgardVault, GetRandomPubKey(), "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	asgardVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(keeperHelper.SetVault(ctx, asgardVault), IsNil)
-	retiringVault := NewVault(common.BlockHeight(ctx), RetiringVault, AsgardVault, GetRandomPubKey(), "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	retiringVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	for _, item := range members {
 		retiringVault.Membership = append(retiringVault.Membership, item.Pubkey)
 	}

@@ -409,6 +409,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandlerWithSwap(c *C) {
 	btcAddr := GetRandomBTCAddress()
 	tx := common.NewTx(
 		GetRandomTxHash(),
+		"",
 		btcAddr,
 		runeAddr,
 		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One*5))},
@@ -808,6 +809,7 @@ func (HandlerAddLiquiditySuite) TestSynthValidate(c *C) {
 
 	tx := common.NewTx(
 		addTxHash,
+		"",
 		addr,
 		addr,
 		common.Coins{common.NewCoin(asset, cosmos.NewUint(1000*common.One))},

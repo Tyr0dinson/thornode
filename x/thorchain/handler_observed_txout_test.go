@@ -288,7 +288,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
 
-	ygg := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Membership = []string{pk.String()}
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
@@ -385,7 +385,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
 
-	ygg := NewVault(common.BlockHeight(ctx), ActiveVault, YggdrasilVault, pk, "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pk, "", common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	ygg.Membership = []string{pk.String()}
 	ygg.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),

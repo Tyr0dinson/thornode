@@ -410,7 +410,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	c.Assert(err, IsNil)
 
 	txIn := NewObservedTx(
-		common.NewTx(GetRandomTxHash(), GetRandomTHORAddress(), GetRandomTHORAddress(),
+		common.NewTx(GetRandomTxHash(), "", GetRandomTHORAddress(), GetRandomTHORAddress(),
 			common.Coins{
 				common.NewCoin(common.RuneNative, cosmos.NewUint(2000000000)),
 			},

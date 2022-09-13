@@ -18,14 +18,15 @@ import (
 	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/bifrost/config"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/config"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -40,7 +41,7 @@ type HavenSuite struct {
 	client *Client
 	server *httptest.Server
 	bridge *thorclient.ThorchainBridge
-	cfg    config.ChainConfiguration
+	cfg    config.BifrostChainConfiguration
 	m      *metrics.Metrics
 	keys   *thorclient.Keys
 }
@@ -54,7 +55,7 @@ var m *metrics.Metrics
 func GetMetricForTest(c *C) *metrics.Metrics {
 	if m == nil {
 		var err error
-		m, err = metrics.NewMetrics(config.MetricsConfiguration{
+		m, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
 			Enabled:      false,
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
@@ -77,13 +78,13 @@ func (s *HavenSuite) SetUpSuite(c *C) {
 
 func (s *HavenSuite) SetUpTest(c *C) {
 	s.m = GetMetricForTest(c)
-	s.cfg = config.ChainConfiguration{
+	s.cfg = config.BifrostChainConfiguration{
 		ChainID:     "XHV",
 		UserName:    bob,
 		Password:    password,
 		DisableTLS:  true,
 		HTTPostMode: true,
-		BlockScanner: config.BlockScannerConfiguration{
+		BlockScanner: config.BifrostBlockScannerConfiguration{
 			StartBlockHeight: 1, // avoids querying thorchain for block height
 		},
 	}
@@ -92,7 +93,7 @@ func (s *HavenSuite) SetUpTest(c *C) {
 	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	thordir := filepath.Join(os.TempDir(), ns, ".thorcli")
-	cfg := config.ClientConfiguration{
+	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       "localhost",
 		SignerName:      bob,
@@ -221,9 +222,9 @@ func (s *HavenSuite) TestGetHeight(c *C) {
 func (s *HavenSuite) TestGetBlock(c *C) {
 	block, err := GetBlock(1072521)
 	c.Assert(err, IsNil)
-	c.Assert(block.Block_Header.Hash, Equals, "b61ae0c02de22209eb2d707c47638d497649357de10cea3d361f91425cd17849")
-	c.Assert(block.Tx_Hashes[0], Equals, "dde09739f16de9cd2b8c51f0258fa3816377fcbf7a60c19a6d5f162f1ea24270")
-	c.Assert(len(block.Tx_Hashes), Equals, 1)
+	c.Assert(block.BlockHeader.Hash, Equals, "b61ae0c02de22209eb2d707c47638d497649357de10cea3d361f91425cd17849")
+	c.Assert(block.TxHashes[0], Equals, "dde09739f16de9cd2b8c51f0258fa3816377fcbf7a60c19a6d5f162f1ea24270")
+	c.Assert(len(block.TxHashes), Equals, 1)
 }
 
 func (s *HavenSuite) TestGetTxs(c *C) {
@@ -283,7 +284,7 @@ func (s *HavenSuite) TestGetOutput(c *C) {
 	c.Assert(json.Unmarshal(txContent, &tx), IsNil)
 	c.Assert(err, IsNil)
 	tx.Hash = "a6413fe6e76ea529351dbd8bdf0ebc38344a43a14a4973fa1d11b048ad9fd330"
-	tx.Block_Height = 72
+	tx.BlockHeight = 72
 
 	// set the tx pubkey
 	var txPubKey [32]byte
@@ -326,18 +327,18 @@ func (s *HavenSuite) TestProcessReOrg(c *C) {
 	c.Assert(reorgedItems, IsNil)
 
 	// add one UTXO which will trigger the re-org process next
-	previousHeight := block.Block_Header.Height - 1
-	blockMeta := NewBlockMeta(ttypes.GetRandomTxHash().String(), previousHeight, ttypes.GetRandomTxHash().String())
+	previousHeight := int64(block.BlockHeader.Height - 1)
+	blockMeta := utxo.NewBlockMeta(ttypes.GetRandomTxHash().String(), previousHeight, ttypes.GetRandomTxHash().String())
 	hash := "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241"
 	blockMeta.AddCustomerTransaction(hash)
-	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(previousHeight, blockMeta), IsNil)
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(previousHeight, blockMeta), IsNil)
 	s.client.globalErrataQueue = make(chan types.ErrataBlock, 1)
 	reorgedItems, err = s.client.processReorg(block)
 	c.Assert(err, IsNil)
 	c.Assert(reorgedItems, NotNil)
 	// make sure there is errata block in the queue
 	c.Assert(s.client.globalErrataQueue, HasLen, 1)
-	blockMeta, err = s.client.blockMetaAccessor.GetBlockMeta(previousHeight)
+	blockMeta, err = s.client.temporalStorage.GetBlockMeta(previousHeight)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
 }
@@ -541,10 +542,10 @@ func (s *HavenSuite) TestOnObservedTxIn(c *C) {
 			},
 		},
 	}
-	blockMeta := NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 1, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
-	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+	blockMeta := utxo.NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 1, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
 	s.client.OnObservedTxIn(txIn.TxArray[0], 1)
-	blockMeta, err := s.client.blockMetaAccessor.GetBlockMeta(1)
+	blockMeta, err := s.client.temporalStorage.GetBlockMeta(1)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
 
@@ -565,10 +566,10 @@ func (s *HavenSuite) TestOnObservedTxIn(c *C) {
 			},
 		},
 	}
-	blockMeta = NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 2, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
-	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+	blockMeta = utxo.NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 2, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
 	s.client.OnObservedTxIn(txIn.TxArray[0], 2)
-	blockMeta, err = s.client.blockMetaAccessor.GetBlockMeta(2)
+	blockMeta, err = s.client.temporalStorage.GetBlockMeta(2)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
 
@@ -600,13 +601,13 @@ func (s *HavenSuite) TestOnObservedTxIn(c *C) {
 			},
 		},
 	}
-	blockMeta = NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 3, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
-	c.Assert(s.client.blockMetaAccessor.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+	blockMeta = utxo.NewBlockMeta("000000001ab8a8484eb89f04b87d90eb88e2cbb2829e84eb36b966dcb28af90b", 3, "00000000ffa57c95f4f226f751114e9b24fdf8dbe2dbc02a860da9320bebd63e")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
 	for _, item := range txIn.TxArray {
 		s.client.OnObservedTxIn(item, 3)
 	}
 
-	blockMeta, err = s.client.blockMetaAccessor.GetBlockMeta(3)
+	blockMeta, err = s.client.temporalStorage.GetBlockMeta(3)
 	c.Assert(err, IsNil)
 	c.Assert(blockMeta, NotNil)
 }

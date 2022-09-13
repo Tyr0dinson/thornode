@@ -137,7 +137,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV92(c *C) {
 	storeMgr := newStoreMgr(mgr)
 	ustAsset, err := common.NewAsset("TERRA.UST")
 	c.Assert(err, IsNil)
-	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), "", []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
 	}, nil)
@@ -147,7 +147,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV92(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
+	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), "", []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
 	}, nil)
@@ -233,7 +233,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, poolLuna), IsNil)
 	ustAsset, err := common.NewAsset("TERRA.UST")
 	c.Assert(err, IsNil)
-	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
+	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), "", []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
 	}, nil)
@@ -243,7 +243,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
+	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), "", []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
 	}, nil)
@@ -253,7 +253,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
 
-	vaultYgg := NewVault(1024, ActiveVault, YggdrasilVault, GetRandomPubKey(), []string{
+	vaultYgg := NewVault(1024, ActiveVault, YggdrasilVault, GetRandomPubKey(), "", []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
 	}, nil)
