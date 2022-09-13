@@ -30,6 +30,9 @@ var (
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
 )
 
+// For XHV chain
+const CryptonoteDataLength = 128 // as hex string
+
 type SigningAlgo string
 
 // Chain is an alias of string , represent a block chain
@@ -133,6 +136,8 @@ func (c Chain) GetGasAsset() Asset {
 	case ETHChain:
 		return ETHAsset
 	case XHVChain:
+		// TODO: gas asset is actually whatever the deposited or withdrawed asset is.
+		// Either this function should take a paremeter of txIn/txIn-Coin or it has to be handled by the caller?
 		return XHVAsset
 	case TERRAChain:
 		return LUNAAsset

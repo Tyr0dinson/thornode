@@ -197,13 +197,13 @@ func (s *KeySign) RemoteSign(msg []byte, poolPubKey string) ([]byte, []byte, err
 	}
 }
 
-func (s *KeySign) RemoteSignMn(msg []byte, poolPubKey string, keygenHeight, rpcAddress string) (string, string, error) {
+func (s *KeySign) RemoteSignCryptonote(msg []byte, poolPubKey string, keygenHeight, rpcAddress string) (string, string, error) {
 	if len(msg) == 0 {
 		return "", "", nil
 	}
 
 	encodedMsg := base64.StdEncoding.EncodeToString(msg)
-	txKey, txID, err := s.toLocalTSSSignerMn(encodedMsg, poolPubKey, keygenHeight, rpcAddress)
+	txKey, txID, err := s.toLocalTSSSignerCryptonote(encodedMsg, poolPubKey, keygenHeight, rpcAddress)
 	if err != nil {
 		return "", "", fmt.Errorf("fail to moenro tss sign: %w", err)
 	}
@@ -416,7 +416,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, tasks []*tssKeySignTask) {
 }
 
 // toLocalTSSSigner will send the request to local monero wallet rpc
-func (s *KeySign) toLocalTSSSignerMn(encodedTx string, poolPubKey string, keygenHeight, rpcAddress string) (string, string, error) {
+func (s *KeySign) toLocalTSSSignerCryptonote(encodedTx string, poolPubKey string, keygenHeight, rpcAddress string) (string, string, error) {
 	tssMsg := mnTssKeysign.Request{
 		EncodedTx:    encodedTx,
 		RpcAddress:   rpcAddress,

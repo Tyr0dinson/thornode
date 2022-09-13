@@ -36,34 +36,22 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 	sender := common.NoAddress
 	affPts := cosmos.ZeroUint()
 	if len(parts) >= 3 && len(parts[2]) > 0 {
-		if asset.Chain == common.XHVChain {
+		firstAddr, secondAddr := ExtractAddresses(asset.Chain, parts[2])
+		// first address is lp associative address.
+		if len(firstAddr) > 0 {
 			if keeper == nil {
-				// extract then actual dest address
-				// thor address is 44 char fixed-string
-				addr, err = common.NewAddress(parts[2][:44])
+				addr, err = common.NewAddress(firstAddr)
 			} else {
-				// if the address isd haven + rune
-				if len(parts[2]) > 100 {
-					addr, err = FetchAddress(ctx, keeper, parts[2][:44], asset.Chain)
-				} else {
-					addr, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
-				}
-			}
-		} else {
-			if keeper == nil {
-				addr, err = common.NewAddress(parts[2])
-			} else {
-				addr, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
+				addr, err = FetchAddress(ctx, keeper, firstAddr, asset.Chain)
 			}
 		}
-		if err != nil {
-			return AddLiquidityMemo{}, err
+		// second address is for sender if it exist
+		if len(secondAddr) > 0 {
+			sender, err = common.NewAddress(secondAddr)
+			if err != nil {
+				return AddLiquidityMemo{}, err
+			}
 		}
-	}
-
-	// this sender will be populated for only haven/monero chains
-	if asset.Chain == common.XHVChain && len(parts[2]) > 100 {
-		sender, err = common.NewAddress(parts[2][44:])
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}

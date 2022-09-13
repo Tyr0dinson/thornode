@@ -26,6 +26,8 @@ type Address string
 const (
 	NoAddress   = Address("")
 	NoopAddress = Address("noop")
+	ThorChainMainnetAddressLength = 43
+	ThorChainTestnetAddressLength = 44
 )
 
 var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9]*$")

@@ -355,6 +355,8 @@ services:
 
   haven-wallet-smoke-test:
     <<: *haven-wallet
+    profiles:
+      - smoke-tests
     ports:
       - 5051:5051
     command: /mocknet/init-haven-wallet-smoke.sh

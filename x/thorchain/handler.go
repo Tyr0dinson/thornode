@@ -77,10 +77,7 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
-	// TODO: uncomment this line once THORNames is deployed (post version
-	// 0.57.0). If this is done, gas is paid with deposit handler, so we'll
-	// need to charge for gas, but not twice
-	// m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
+
 	return m
 }
 

@@ -355,3 +355,27 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 
 	return common.NoAddress, fmt.Errorf("%s is not recognizable", name)
 }
+
+// ExtractAddresses disjoints the thor and xhv address(for now) from memo data
+func ExtractAddresses(chain common.Chain, addr string) (firstAddr string, secondAddr string) {
+	if chain == common.XHVChain {
+		// thor vs. tthor
+		if strings.HasPrefix(addr, "thor") {
+			firstAddr = addr[:common.ThorChainMainnetAddressLength]
+			if len(addr) > common.ThorChainMainnetAddressLength {
+				secondAddr = addr[common.ThorChainMainnetAddressLength:]
+			}
+		} else if strings.HasPrefix(addr, "tthor") {
+			firstAddr = addr[:common.ThorChainTestnetAddressLength]
+			if len(addr) > common.ThorChainTestnetAddressLength {
+				secondAddr = addr[common.ThorChainTestnetAddressLength:]
+			}
+		} else {
+			firstAddr = addr
+		}
+		return
+	}
+
+	firstAddr = addr
+	return
+}

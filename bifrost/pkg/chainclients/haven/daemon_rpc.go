@@ -4,154 +4,139 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 )
 
-type GetInfo struct {
-	Result GetInfoResult
-}
-
-type GetBlockResult struct {
-	Result Block
-}
-
-type GetInfoResult struct {
-	Alt_Blocks_Count            int
-	Bloc_Size_Limit             uint
-	Block_Size_Median           uint
-	Block_Weight_Limit          uint
-	Block_Weight_Median         uint
-	Bootstrap_Daemon_Address    string
-	Cumulative_Difficulty       int
-	Cumulative_Difficulty_Top64 int
-	Database_Size               int
-	Difficulty                  uint64
-	Difficulty_Top64            uint64
-	Free_Space                  uint64
-	Grey_Peerlist_Size          int
-	Height                      int64 // use int64 instead of uint64 since thorchain uses int64(not to convert each time). Shouln't be a problem for a long time for haven anyways :)
-	Height_Without_Bootstrap    uint64
-	Incoming_Connections_Count  int
-	Mainnet                     bool
-	Nettype                     string
-	Offline                     bool
-	Outgoing_Connections_Count  int
-	Rpc_Connections_Count       int
-	Stagenet                    bool
-	Start_Time                  int
-	Status                      string
-	Target                      int
-	Target_Height               int
-	Testnet                     bool
-	Top_Block_Hash              string
-	Tx_Count                    int
-	Tx_Pool_Size                int
-	Untrusted                   bool
-	Update_Available            bool
-	Version                     string
-	Was_Bootstrap_Ever_Used     bool
-	White_Peerlist_Size         int
-	Wide_Cumulative_Difficulty  string
-	Wide_Difficulty             string
-}
-
-type Reward struct {
-	Amount    uint64 `json:"amount"`
-	AssetType string `json:"asset_type"`
+type ChainInfo struct {
+	AltBlocksCount            uint64 `json:"alt_blocks_count"`
+	BlockSizeLimit            uint64 `json:"block_size_limit"`
+	BlockSizeMedian           uint64 `json:"block_size_median"`
+	BlockWeightLimit          uint64 `json:"block_weight_limit"`
+	BlockWeightMedian         uint64 `json:"block_weight_median"`
+	BootstrapDaemonAddress    string `json:"bootstrap_faemon_address"`
+	CumulativeDifficulty      uint64 `json:"cumulative_difficulty"`
+	CumulativeDifficultyTop64 uint64 `json:"cumulative_difficulty_Top64"`
+	DatabaseSize              uint64 `json:"database_size"`
+	Difficulty                uint64 `json:"difficulty"`
+	DifficultyTop64           uint64 `json:"difficulty_top64"`
+	FreeSpace                 uint64 `json:"free_space"`
+	GreyPeerlistSize          uint64 `json:"grey_peerlist_size"`
+	Height                    uint64 `json:"height"`
+	HeightWithoutBootstrap    uint64 `json:"height_without_bootstrap"`
+	IncomingConnectionsCount  uint64 `json:"incoming_connections_count"`
+	Mainnet                   bool   `json:"mainnet"`
+	Nettype                   string `json:"nettype"`
+	Offline                   bool   `json:"offline"`
+	OutgoingConnectionsCount  uint64 `json:"outgoing_connections_count"`
+	RpcConnectionsCount       uint64 `json:"rpc_connections_count"`
+	Stagenet                  bool   `json:"stagenet"`
+	Start_Time                uint64 `json:"start_time"`
+	Status                    string `json:"status"`
+	Target                    uint64 `json:"target"`
+	Target_Height             uint64 `json:"target_height"`
+	Testnet                   bool   `json:"testnet"`
+	TopBlockHash              string `json:"top_block_hash"`
+	TxCount                   uint64 `json:"tx_count"`
+	TxPoolSize                uint64 `json:"tx_pool_size"`
+	Untrusted                 bool   `json:"untrusted"`
+	UpdateAvailable           bool   `json:"update_available"`
+	Version                   string `json:"version"`
+	WasBootstrapEverUsed      bool   `json:"was_bootstrap_ever_used"`
+	WhitePeerlistSize         uint64 `json:"white_peerlist_size"`
+	WideCumulativeDifficulty  string `json:"wide_cumulative_difficulty"`
+	WideDifficulty            string `json:"wide_difficulty"`
 }
 
 type BlockHeader struct {
-	Block_Size    int
-	Depth         int
-	Difficulty    uint64
-	Hash          string
-	Height        int64
-	Major_version int
-	Minor_version int
-	Nonce         uint64
-	Num_txes      int
-	Orphan_status bool
-	Prev_Hash     string
-	Rewards       []Reward
-	Timestamp     uint64
+	BlockSize    uint64 `json:"block_size"`
+	Depth        uint64 `json:"depth"`
+	Difficulty   uint64 `json:"difficulty"`
+	Hash         string `json:"hash"`
+	Height       uint64 `json:"height"`
+	Majorversion uint64 `json:"major_version"`
+	Minorversion uint64 `json:"minor_version"`
+	Nonce        uint64 `json:"nonce"`
+	TxCount      uint64 `json:"num_txes"`
+	Orphanstatus bool   `json:"orphan_status"`
+	PrevHash     string `json:"prev_Hash"`
+	Rewards      []struct {
+		Amount    uint64 `json:"amount"`
+		AssetType string `json:"asset_type"`
+	} `json:"rewards"`
+	Timestamp uint64 `json:"timestamp"`
 }
 
 type Block struct {
-	Blob          string
-	Block_Header  BlockHeader
-	Json          string
-	Miner_Tx_Hash string
-	Status        string
-	Untrusted     bool
-	Tx_Hashes     []string
+	Blob        string      `json:"blob"`
+	BlockHeader BlockHeader `json:"block_header"`
+	Json        string      `json:"json"`
+	MinerTxHash string      `json:"miner_tx_hash"`
+	Status      string      `json:"status"`
+	Untrusted   bool        `json:"untrusted"`
+	TxHashes    []string    `json:"tx_hashes"`
 }
 
 type VinKey struct {
-	Amount      uint64
-	Key_Offsets []uint64
-	K_Image     string
-}
-
-type VinEntry struct {
-	Key      VinKey
-	Onshore  VinKey
-	Offshore VinKey
-}
-
-type Target struct {
-	Key        string
-	Offshore   string
-	Xasset     string
-	asset_type string
-}
-
-type VoutEntry struct {
-	Amount uint64
-	Target Target
-}
-
-type RctSignatures struct {
-	Type           int
-	TxnFee         uint64
-	TxnOffshoreFee uint64
-	EcdhInfo       []map[string]string
-	OutPk          []string
+	Amount     uint64   `json:"amount"`
+	KeyOffsets []uint64 `json:"key_offsets"`
+	KeyImage   string   `json:"k_image"`
 }
 
 type RawTx struct {
-	Hash                string
-	Version             int
-	Output_Unlock_Times []uint64
-	Vin                 []VinEntry
-	Vout                []VoutEntry
-	Extra               []byte
-	Rct_Signatures      RctSignatures
-	Block_Height        int64
+	Hash              string   `json:"hash"`
+	Version           uint64   `json:"version"`
+	OutputUnlockTimes []uint64 `json:"output_unlock_times"`
+	Vin               []struct {
+		Key      VinKey `json:"key"`
+		Onshore  VinKey `json:"onshore"`
+		Offshore VinKey `json:"offshore"`
+	}
+	Vout []struct {
+		Amount uint64
+		Target struct {
+			Key       string `json:"key"`
+			Offshore  string `json:"offshore"`
+			Xasset    string `json:"xasset"`
+			AssetType string `json:"asset_type"`
+		}
+	}
+	Extra         []byte `json:"extra"`
+	RctSignatures struct {
+		Type           uint64              `json:"type"`
+		TxnFee         uint64              `json:"txnFee"`
+		TxnOffshoreFee uint64              `json:"txnOffshoreFee"`
+		EcdhInfo       []map[string]string `json:"ecdhInfo"`
+		OutPk          []string            `json:"outPk"`
+	} `json:"rct_signatures"`
+	BlockHeight uint64 `json:"block_height"`
 }
 
 type BroadcastTxResponse struct {
-	Credits             uint
-	Double_Spend        bool
-	Fee_Too_Low         bool
-	Invalid_Input       bool
-	Invalid_Output      bool
-	Low_Mixin           bool
-	Not_Relayed         bool
-	Overspend           bool
-	Reason              string
-	Sanity_Check_Failed bool
-	Status              string
-	Too_Big             bool
-	Too_Few_Outputs     bool
-	Top_Hash            string
-	Untrusted           bool
+	Credits           uint64 `json:"credits"`
+	DoubleSpend       bool   `json:"double_spend"`
+	FeeTooLow         bool   `json:"fee_too_low"`
+	InvalidInput      bool   `json:"invalid_input"`
+	InvalidOutput     bool   `json:"invalid_output"`
+	LowMixin          bool   `json:"low_mixin"`
+	NotRelayed        bool   `json:"not_telayed"`
+	Overspend         bool   `json:"overspend"`
+	Reason            string `json:"reason"`
+	SanityCheckFailed bool   `json:"sanity_check_failed"`
+	Status            string `json:"status"`
+	TooBig            bool   `json:"too_big"`
+	TooFewOutputs     bool   `json:"too_few_outputs"`
+	TopHash           string `json:"top_hash"`
+	Untrusted         bool   `json:"untrusted"`
 }
 
 var DaemonHost = ""
 
-func getChainInfo() (GetInfoResult, error) {
-	var reply GetInfo
+const ContentType = "application/json"
+
+func getChainInfo() (ChainInfo, error) {
+	reply := struct {
+		Result ChainInfo `json:"result"`
+	}{}
 
 	// prepare body
 	requestBody, err := json.Marshal(map[string]interface{}{"json_rpc": 2.0, "id": 0, "method": "get_info"})
@@ -160,18 +145,14 @@ func getChainInfo() (GetInfoResult, error) {
 	}
 
 	// execute request
-	resp, err := http.Post(DaemonHost+"/json_rpc", "application/json", bytes.NewBuffer(requestBody))
+	resp, err := http.Post(DaemonHost+"/json_rpc", ContentType, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return reply.Result, fmt.Errorf("getChainInfo() Http Error: %+v", err)
 	}
 	defer resp.Body.Close()
 
 	// read and parse the returned response
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return reply.Result, fmt.Errorf("getChainInfo() Reading response Error: %+v", err)
-	}
-	err = json.Unmarshal(body, &reply)
+	err = json.NewDecoder(resp.Body).Decode(&reply)
 	if err != nil {
 		return reply.Result, fmt.Errorf("getChainInfo() Unmarshaling Response Error: %+v", err)
 	}
@@ -180,7 +161,7 @@ func getChainInfo() (GetInfoResult, error) {
 }
 
 // GetHeight gets the height of the haven blockchain
-func GetChainHeight() (int64, error) {
+func GetChainHeight() (uint64, error) {
 	chainInfo, err := getChainInfo()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get chain height: %+v", err)
@@ -190,7 +171,9 @@ func GetChainHeight() (int64, error) {
 }
 
 func GetBlock(height int64) (Block, error) {
-	var reply GetBlockResult
+	reply := struct {
+		Result Block `json:"result"`
+	}{}
 
 	// prepare body
 	params := map[string]int64{"height": height}
@@ -200,18 +183,14 @@ func GetBlock(height int64) (Block, error) {
 	}
 
 	// execute request
-	resp, err := http.Post(DaemonHost+"/json_rpc", "application/json", bytes.NewBuffer(requestBody))
+	resp, err := http.Post(DaemonHost+"/json_rpc", ContentType, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return reply.Result, fmt.Errorf("getBlock() Http Error: %+v", err)
 	}
 	defer resp.Body.Close()
 
 	// read and parse the returned response
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return reply.Result, fmt.Errorf("getBlock() Reading response Error: %+v", err)
-	}
-	err = json.Unmarshal(body, &reply)
+	err = json.NewDecoder(resp.Body).Decode(&reply)
 	if err != nil {
 		return reply.Result, fmt.Errorf("getBlock() Unmarshaling Response Error: %+v", err)
 	}
@@ -227,45 +206,39 @@ func GetTxs(txs []string) (rawTxs []RawTx, missedTxs []string, err error) {
 		return
 	}
 
-	resp, err := http.Post(DaemonHost+"/get_transactions", "application/json", bytes.NewBuffer(requestBody))
+	resp, err := http.Post(DaemonHost+"/get_transactions", ContentType, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-
 	txResult := struct {
-		Missed_Tx   []string
-		Status      string
-		Txs_As_Json []string
-		Txs         []struct {
-			Block_Height int64
-			Tx_Hash      string
-		}
+		MissedTxs []string `json:"missed_tx"`
+		Status    string   `json:"status"`
+		TxsAsJson []string `json:"txs_as_json"`
+		Txs       []struct {
+			BlockHeight uint64 `json:"block_height"`
+			TxHash      string `json:"tx_hash"`
+		} `json:"txs"`
 	}{}
 
-	// parse the returned result
-	err = json.Unmarshal(body, &txResult)
+	err = json.NewDecoder(resp.Body).Decode(&txResult)
 	if err != nil {
 		return
 	}
 
 	// parse each tx in the result and save
-	for ind, jsonTx := range txResult.Txs_As_Json {
+	for ind, jsonTx := range txResult.TxsAsJson {
 		var rawTx RawTx
 		err = json.Unmarshal([]byte(jsonTx), &rawTx)
 		if err != nil {
 			return
 		}
-		rawTx.Block_Height = txResult.Txs[ind].Block_Height
-		rawTx.Hash = txResult.Txs[ind].Tx_Hash
+		rawTx.BlockHeight = txResult.Txs[ind].BlockHeight
+		rawTx.Hash = txResult.Txs[ind].TxHash
 		rawTxs = append(rawTxs, rawTx)
 	}
-	missedTxs = txResult.Missed_Tx
+	missedTxs = txResult.MissedTxs
 
 	return
 }
@@ -277,26 +250,20 @@ func GetPoolTxs() ([]RawTx, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("getPoolTxs() Reading response Error: %+v", err)
-	}
-
+	// parse response
 	result := struct {
 		Transactions []struct {
 			Hash   string `json:"id_hash"`
 			AsJson string `json:"tx_json"`
 		} `json:"transactions"`
 	}{}
-	var rawTxs []RawTx
-
-	// parse the returned result
-	err = json.Unmarshal(body, &result)
+	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
 		return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
 	}
 
 	// parse the txs
+	var rawTxs []RawTx
 	for _, tx := range result.Transactions {
 		var rawTx RawTx
 		err = json.Unmarshal([]byte(tx.AsJson), &rawTx)
@@ -304,7 +271,7 @@ func GetPoolTxs() ([]RawTx, error) {
 			return nil, fmt.Errorf("getPoolTxs() Unmarshaling Response Error: %+v", err)
 		}
 		rawTx.Hash = tx.Hash
-		rawTx.Block_Height = 0 // they are in pool, so don't have block height
+		rawTx.BlockHeight = 0 // they are in pool, so don't have block height
 		rawTxs = append(rawTxs, rawTx)
 	}
 
@@ -321,7 +288,7 @@ func SendRawTransaction(txHash string) BroadcastTxResponse {
 		return reply
 	}
 
-	resp, err := http.Post(DaemonHost+"/sendrawtransaction", "application/json", bytes.NewBuffer(requestBody))
+	resp, err := http.Post(DaemonHost+"/sendrawtransaction", ContentType, bytes.NewBuffer(requestBody))
 	if err != nil {
 		reply.Status = "Http Error"
 		reply.Reason = fmt.Sprintf("%+v", err)
@@ -329,15 +296,8 @@ func SendRawTransaction(txHash string) BroadcastTxResponse {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		reply.Status = "Read Error"
-		reply.Reason = fmt.Sprintf("%+v", err)
-		return reply
-	}
-
-	// parse the returned result
-	err = json.Unmarshal(body, &reply)
+	// parse response
+	err = json.NewDecoder(resp.Body).Decode(&reply)
 	if err != nil {
 		reply.Status = "Unmarshaling Response Error"
 		reply.Reason = fmt.Sprintf("%+v", err)
