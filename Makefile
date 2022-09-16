@@ -99,10 +99,6 @@ lint-ci:
 	@go run tools/analyze/main.go ./common/... ./constants/... ./x/...
 	@./scripts/trunk check --all --no-progress --monitor=false
 
-clean:
-	rm -rf ~/.thor*
-	rm -f ${GOBIN}/{generate,thornode,bifrost}
-
 # ------------------------------ Testing ------------------------------
 
 test-coverage:
@@ -149,7 +145,7 @@ docker-gitlab-build:
 
 # ------------------------------ Smoke Tests ------------------------------
 
-SMOKE_DOCKER_OPTS = --network=host --rm -e RUNE=THOR.RUNE -e LOGLEVEL=INFO -e PYTHONPATH=/app -w /app
+SMOKE_DOCKER_OPTS = --network=host --rm -e RUNE=THOR.RUNE -e LOGLEVEL=INFO -e PYTHONPATH=/app -w /app -v ${PWD}/test/smoke:/app
 
 smoke-unit-test:
 	@docker run ${SMOKE_DOCKER_OPTS} \

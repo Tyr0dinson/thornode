@@ -1,6 +1,7 @@
 package avalanche
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	_ "embed"
 
@@ -33,6 +35,7 @@ import (
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	memo "gitlab.com/thorchain/thornode/x/thorchain/memo"
+	"golang.org/x/sync/semaphore"
 )
 
 // SolvencyReporter is to report solvency info to THORNode
@@ -45,8 +48,10 @@ var routerContractABI string
 var erc20ContractABI string
 
 const (
-	BlockCacheSize  = 6000
-	MaxContractGas  = 80000
+	BlockCacheSize           = 6000
+	MaxContractGas           = 80000
+	GasPriceResolution int64 = 250000000000 // wei per gas unit (250 gwei)
+
 	avaxToken       = "0x0000000000000000000000000000000000000000"
 	defaultDecimals = 18 // on AVAX, consolidate all decimals to 18, in Wei
 	tenGwei         = 10000000000
@@ -258,9 +263,20 @@ func (a *AvalancheScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
-	for _, tx := range block.Transactions() {
+	sem := semaphore.NewWeighted(a.cfg.Concurrency)
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+
+	processTx := func(tx *etypes.Transaction) {
+		defer wg.Done()
+		if err := sem.Acquire(context.Background(), 1); err != nil {
+			a.logger.Err(err).Msg("fail to acquire semaphore")
+			return
+		}
+		defer sem.Release(1)
+
 		if tx.To() == nil {
-			continue
+			return
 		}
 		// just try to remove the transaction hash from key value store
 		// it doesn't matter whether the transaction is ours or not , success or failure
@@ -272,21 +288,31 @@ func (a *AvalancheScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 		txInItem, err := a.getTxInItem(tx)
 		if err != nil {
 			a.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
-			continue
+			return
 		}
 		if txInItem == nil {
-			continue
+			return
 		}
 		// sometimes if a transaction failed due to gas problem , it will have no `to` address
 		if len(txInItem.To) == 0 {
-			continue
+			return
 		}
 		if len([]byte(txInItem.Memo)) > constants.MaxMemoSize {
-			continue
+			return
 		}
 		txInItem.BlockHeight = block.Number().Int64()
+		mu.Lock()
 		txInbound.TxArray = append(txInbound.TxArray, *txInItem)
+		mu.Unlock()
 	}
+
+	// process txs in parallel
+	for _, tx := range block.Transactions() {
+		wg.Add(1)
+		go processTx(tx)
+	}
+	wg.Wait()
+
 	if len(txInbound.TxArray) == 0 {
 		a.logger.Debug().Int64("block", int64(block.NumberU64())).Msg("no tx need to be processed in this block")
 		return stypes.TxIn{}, nil
@@ -369,7 +395,19 @@ func (a *AvalancheScanner) updateGasPrice(prices []*big.Int) {
 	std.Sqrt(std)
 
 	// mean + 3x standard deviation of the 25th percentile fee over blocks
-	a.gasPrice = mean.Add(mean, std.Mul(std, big.NewInt(3)))
+	mean.Add(mean, std.Mul(std, big.NewInt(3)))
+
+	// round the price up to avoid fee noise
+	resolution := big.NewInt(GasPriceResolution)
+	if mean.Cmp(resolution) != 1 {
+		a.gasPrice = resolution
+	} else {
+		mean.Sub(mean, big.NewInt(1))
+		mean.Quo(mean, big.NewInt(GasPriceResolution))
+		mean.Add(mean, big.NewInt(1))
+		mean.Mul(mean, big.NewInt(GasPriceResolution))
+		a.gasPrice = mean
+	}
 
 	// record metrics
 	gasPriceFloat, _ := new(big.Float).SetInt64(a.gasPrice.Int64()).Float64()
@@ -386,19 +424,21 @@ func (a *AvalancheScanner) reportNetworkFee(height int64) {
 		return
 	}
 
-	// gas price to 1e8
-	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100)).Uint64()
-
-	// skip posting if the fee has not changed
-	if tcGasPrice == a.lastReportedGasPrice {
+	// skip fee if less than 1 resolution away from the last
+	feeDelta := new(big.Int).Sub(gasPrice, big.NewInt(int64(a.lastReportedGasPrice)))
+	feeDelta.Abs(feeDelta)
+	if feeDelta.Cmp(big.NewInt(GasPriceResolution)) != 1 {
 		return
 	}
 
+	// gas price to 1e8
+	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100))
+
 	// post to thorchain
-	if _, err := a.bridge.PostNetworkFee(height, common.AVAXChain, MaxContractGas, tcGasPrice); err != nil {
+	if _, err := a.bridge.PostNetworkFee(height, common.AVAXChain, MaxContractGas, tcGasPrice.Uint64()); err != nil {
 		a.logger.Err(err).Msg("fail to post AVAX chain single transfer fee to THORNode")
 	} else {
-		a.lastReportedGasPrice = tcGasPrice
+		a.lastReportedGasPrice = gasPrice.Uint64()
 	}
 }
 

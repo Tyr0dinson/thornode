@@ -74,6 +74,8 @@ type KeeperPool interface {
 	SetPool(ctx cosmos.Context, pool Pool) error
 	PoolExist(ctx cosmos.Context, asset common.Asset) bool
 	RemovePool(ctx cosmos.Context, asset common.Asset)
+	SetPoolLUVI(ctx cosmos.Context, asset common.Asset, luvi cosmos.Uint)
+	GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmos.Uint, error)
 }
 
 type KeeperLastHeight interface {
@@ -248,8 +250,8 @@ type KeeperOrderBooks interface {
 	GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error)
 	HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
 	RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
-	SetOrderBookProcessor(_ cosmos.Context, _ uint64) error
-	GetOrderBookProcessor(_ cosmos.Context) (uint64, error)
+	SetOrderBookProcessor(_ cosmos.Context, _ []bool) error
+	GetOrderBookProcessor(_ cosmos.Context) ([]bool, error)
 }
 
 type KeeperMimir interface {

@@ -69,7 +69,7 @@ require (
 	github.com/Workiva/go-datastructures v1.0.52 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
-	github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac
+	github.com/akildemir/go-tss v0.0.0-20220916090103-282ec3c668d3
 	github.com/akildemir/moneroTss v0.0.0-20220829135053-16792b36d8ae
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
@@ -262,11 +262,13 @@ require (
 	nhooyr.io/websocket v1.8.6 // indirect
 )
 
+require github.com/jinzhu/copier v0.3.5
+
 require golang.org/x/mod v0.6.0-dev.0.20211013180041-c96bc1413d57 // indirect
 
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
-	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.2
+	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.3
 	github.com/cosmos/ledger-cosmos-go => github.com/thorchain/ledger-thorchain-go v0.12.1
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1

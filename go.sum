@@ -106,6 +106,8 @@ github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBA
 github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5/go.mod h1:SkGFH1ia65gfNATL8TAiHDNxPzPdmEL5uirI2Uyuz6c=
 github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac h1:mdq+vmt7lgPrZY9rXeQnjDn19ky6iC7Dwqy9Wm3ExFQ=
 github.com/akildemir/go-tss v0.0.0-20220617112844-4830c595e2ac/go.mod h1:rvm9ak03WetcpAbv8NBMrLoLSZ1Gb0viSlnbRAcfZKE=
+github.com/akildemir/go-tss v0.0.0-20220916090103-282ec3c668d3 h1:915TdxD1zBym9Y23W9ubIGUVA86uHzJbZyweEkQH+E0=
+github.com/akildemir/go-tss v0.0.0-20220916090103-282ec3c668d3/go.mod h1:cv9zUHCg6celDZSyk2nWPyzkW+aCc0i7niyk7NU7XPw=
 github.com/akildemir/moneroTss v0.0.0-20220829135053-16792b36d8ae h1:KJY0OJZKhZ3UG4hfpYWuTHpLOezcml8JsnWx7g9y938=
 github.com/akildemir/moneroTss v0.0.0-20220829135053-16792b36d8ae/go.mod h1:PuvOTQksdYs3kAq9foGXbquApmoOkZ1COnTB+QhcnvM=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
@@ -730,6 +732,8 @@ github.com/jessevdk/go-flags v0.0.0-20181221193153-c0795c8afcf4/go.mod h1:4FA24M
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
 github.com/jhump/protoreflect v1.9.0 h1:npqHz788dryJiR/l6K/RUQAyh2SwV91+d1dnh4RjO9w=
 github.com/jhump/protoreflect v1.9.0/go.mod h1:7GcYQDdMU/O/BBrl/cX6PNHpXh6cenjd8pneu5yW7Tg=
+github.com/jinzhu/copier v0.3.5 h1:GlvfUwHk62RokgqVNvYsku0TATCF7bAHVwEXoBh3iJg=
+github.com/jinzhu/copier v0.3.5/go.mod h1:DfbEm0FYsaqBcKcFuvmOZb218JkPGtvSHsKg8S8hyyg=
 github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af/go.mod h1:Nht3zPeWKUH0NzdCt2Blrr5ys8VGpn0CEB0cQHVjt7k=
 github.com/jmhodges/levigo v1.0.0 h1:q5EC36kV79HWeTBWsod3mG11EgStG3qArTKcvlksN1U=
 github.com/jmhodges/levigo v1.0.0/go.mod h1:Q6Qx+uH3RAqyK4rFQroq9RL7mdkABMcfhEI+nNuzMJQ=
@@ -1466,8 +1470,8 @@ gitlab.com/thorchain/bifrost/txscript v0.0.0-20210123055850-29da989e6f5a h1:EfAU
 gitlab.com/thorchain/bifrost/txscript v0.0.0-20210123055850-29da989e6f5a/go.mod h1:/Nfggqg/zV7NKOaUX0HSl4afe2bZqeoWB99MsRbXK94=
 gitlab.com/thorchain/binance-sdk v1.2.3-0.20210117202539-d569b6b9ba5d h1:GGPSI9gU22zW75m1YO7ZEMFtVEI5NgyK4g17CIXFjqI=
 gitlab.com/thorchain/binance-sdk v1.2.3-0.20210117202539-d569b6b9ba5d/go.mod h1:SW01IZMpqlPNPdhHnn99qnJNvg8ll/agyyW7p85npwY=
-gitlab.com/thorchain/tss/tss-lib v0.1.2 h1:ZVjr2lKxDCwCEXmacmT4EjChjeDsER4Cv7/RValj20w=
-gitlab.com/thorchain/tss/tss-lib v0.1.2/go.mod h1:pEM3W/1inIzmdQn9IY9pA0MkG1bTGKhsSivxizeyyt4=
+gitlab.com/thorchain/tss/tss-lib v0.1.3 h1:59eItN0HPi/Cv9xyMIoposGXVLCXJlVuwBUckpAdq40=
+gitlab.com/thorchain/tss/tss-lib v0.1.3/go.mod h1:pEM3W/1inIzmdQn9IY9pA0MkG1bTGKhsSivxizeyyt4=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.5/go.mod h1:G5EMThwa9y8QZGBClrRx5EY+Yw9kAhnjy3bSjsnlVTQ=

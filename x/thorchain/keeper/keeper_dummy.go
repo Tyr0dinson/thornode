@@ -164,6 +164,12 @@ func (k KVStoreDummy) GetPools(_ cosmos.Context) (Pools, error)        { return 
 func (k KVStoreDummy) SetPool(_ cosmos.Context, _ Pool) error          { return kaboom }
 func (k KVStoreDummy) PoolExist(_ cosmos.Context, _ common.Asset) bool { return false }
 func (k KVStoreDummy) RemovePool(_ cosmos.Context, _ common.Asset)     {}
+
+func (k KVStoreDummy) SetPoolLUVI(ctx cosmos.Context, asset common.Asset, luvi cosmos.Uint) {}
+func (k KVStoreDummy) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
 func (k KVStoreDummy) GetLiquidityProviderIterator(_ cosmos.Context, _ common.Asset) cosmos.Iterator {
 	return nil
 }
@@ -411,13 +417,13 @@ func (k KVStoreDummy) RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) SetOrderBookProcessor(ctx cosmos.Context, record uint64) error {
+func (k KVStoreDummy) SetOrderBookProcessor(ctx cosmos.Context, record []bool) error {
 	return kaboom
 }
 
 // GetOrderBookProcessor - get a list of asset pairs to process
-func (k KVStoreDummy) GetOrderBookProcessor(ctx cosmos.Context) (uint64, error) {
-	return 0, kaboom
+func (k KVStoreDummy) GetOrderBookProcessor(ctx cosmos.Context) ([]bool, error) {
+	return nil, kaboom
 }
 
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
