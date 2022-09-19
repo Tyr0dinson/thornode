@@ -104,6 +104,13 @@ def main():
         help="Only perform liquidity adds to seed the mocknet",
     )
 
+    parser.add_argument(
+        "--swaps-only",
+        default=False,
+        type=bool,
+        help="Only perform mocknet swaps (requires pools to be created with --bootstrap-only)",
+    )
+
     args = parser.parse_args()
 
     txn_list = "data/smoke_test_transactions.json"
@@ -131,6 +138,7 @@ def main():
         args.bitcoin_reorg,
         args.ethereum_reorg,
         args.bootstrap_only,
+        args.swaps_only
     )
     try:
         smoker.run()
@@ -160,6 +168,7 @@ class Smoker:
         bitcoin_reorg=False,
         ethereum_reorg=False,
         bootstrap_only=False,
+        swaps_only=False
     ):
         self.binance = Binance()
         self.gaia = Gaia()
@@ -222,10 +231,11 @@ class Smoker:
 
         self.generate_balances = gen_balances
         self.fast_fail = fast_fail
-        self.no_verify = no_verify or bootstrap_only
+        self.no_verify = no_verify or bootstrap_only or swaps_only
         self.bitcoin_reorg = bitcoin_reorg
         self.ethereum_reorg = ethereum_reorg
         self.bootstrap_only = bootstrap_only
+        self.swaps_only = swaps_only
         self.thorchain_client.events = []
         self.exit = 0
 
@@ -533,7 +543,7 @@ class Smoker:
             if len(events) == len(sim_events) and pending_txs <= 0 and processed_events:
                 break
             time.sleep(0.3)
-        if pending_txs > 0:
+        if pending_txs > 0 and not self.no_verify:
             count_events = len(events) - old_event_count
             self.check_events(events[-count_events:], sim_events[-count_events:])
             msg = f"failed to send all outbound transactions {pending_txs}"
@@ -572,6 +582,12 @@ class Smoker:
                     and txn.to_address == "VAULT"
                     and (txn.chain != "THOR" or txn.coins[0].asset == "THOR.RUNE")
                 )
+            ):
+                continue
+
+            # only process swaps from provider one if running in swaps only mode
+            elif (
+                self.swaps_only and not txn.memo.startswith("SWAP")
             ):
                 continue
 

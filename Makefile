@@ -197,6 +197,13 @@ bootstrap-mocknet: $(SMOKE_PROTO_DIR)
 		registry.gitlab.com/thorchain/thornode:smoke \
 		python scripts/smoke.py --bootstrap-only=True
 
+swaps-mocknet: $(SMOKE_PROTO_DIR)
+	@docker run ${SMOKE_DOCKER_OPTS} \
+		-e BLOCK_SCANNER_BACKOFF=${BLOCK_SCANNER_BACKOFF} \
+		-v ${PWD}/test/smoke:/app \
+		registry.gitlab.com/thorchain/thornode:smoke \
+		python scripts/smoke.py --swaps-only=True
+
 ps-mocknet:
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
 	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
