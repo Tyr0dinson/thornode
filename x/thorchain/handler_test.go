@@ -692,6 +692,16 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 	result = fuzzyAssetMatch(ctx, k, check)
 	c.Check(result.Synth, Equals, true)
 	c.Check(result.Equals(p2.Asset.GetSyntheticAsset()), Equals, true)
+
+	check, _ = common.NewAsset("E")
+	result = fuzzyAssetMatch(ctx, k, check)
+	c.Check(result.Synth, Equals, false)
+	c.Check(result, Equals, common.ETHAsset)
+
+	check, _ = common.NewAsset("ABC123")
+	result = fuzzyAssetMatch(ctx, k, check)
+	c.Check(result.Synth, Equals, false)
+	c.Check(result, Equals, check)
 }
 
 func (s *HandlerSuite) TestMemoFetchAddress(c *C) {

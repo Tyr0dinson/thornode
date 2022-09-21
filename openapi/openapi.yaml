@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.109.0
+  version: 1.97.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -66,6 +66,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/PoolsResponse"
 
+  # ------------------------------ buckets ------------------------------
+
+  /thorchain/bucket/{asset}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/asset"
+    get:
+      description: Returns the bucket information for the provided asset.
+      operationId: bucket
+      tags:
+        - Buckets
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BucketResponse"
+
+  /thorchain/buckets:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns the bucket information for all assets.
+      operationId: buckets
+      tags:
+        - Buckets
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BucketsResponse"
+
   # # ------------------------------ liquidity providers ------------------------------
 
   /thorchain/pool/{asset}/liquidity_provider/{address}:
@@ -101,81 +136,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LiquidityProvidersResponse"
-
-  # # ------------------------------ savers ------------------------------
-
-  /thorchain/pool/{asset}/saver/{address}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/asset"
-      - $ref: "#/components/parameters/address"
-    get:
-      description: Returns the saver position given then savers pool and address.
-      operationId: saver
-      tags:
-        - Savers
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SaverResponse"
-
-  /thorchain/pool/{asset}/savers:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/asset"
-    get:
-      description: Returns all savers for the savers pool.
-      operationId: savers
-      tags:
-        - Savers
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SaversResponse"
-
-  # # ------------------------------ loans ------------------------------
-
-  /thorchain/pool/{asset}/borrower/{address}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/asset"
-      - $ref: "#/components/parameters/address"
-    get:
-      description: Returns the borrower position given the pool and address.
-      operationId: borrower
-      tags:
-        - Borrowers
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BorrowerResponse"
-
-  /thorchain/pool/{asset}/borrowers:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/asset"
-    get:
-      description: Returns all borrowers for the given pool.
-      operationId: borrowers
-      tags:
-        - Borrowers
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BorrowersResponse"
+                $ref: "#/components/schemas/LiquidityProviderResponse"
 
   # ------------------------------ transactions ------------------------------
 
@@ -201,23 +162,6 @@ paths:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
     get:
-      description: Deprecated - migrate to /thorchain/tx/details.
-      operationId: txSignersOld
-      tags:
-        - Transactions
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TxSignersResponse"
-
-  /thorchain/tx/details/{hash}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/hash"
-    get:
       description: Returns the signers for a provided inbound or outbound hash.
       operationId: txSigners
       tags:
@@ -228,41 +172,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TxDetailsResponse"
-
-  /thorchain/alpha/tx/stages/{hash}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/hash"
-    get:
-      description: Returns the processing stages of a provided inbound hash.
-      operationId: txStages
-      tags:
-        - Transactions
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TxStagesResponse"
-
-  /thorchain/alpha/tx/status/{hash}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/hash"
-    get:
-      description: Returns the status of a provided inbound hash.
-      operationId: txStatus
-      tags:
-        - Transactions
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TxStatusResponse"
+                $ref: "#/components/schemas/TxSignersResponse"
 
   # ------------------------------ nodes ------------------------------
 
@@ -333,7 +243,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VaultsResponse"
 
-  /thorchain/vault/{pubkey}:
+  /thorchain/vaults/{pubkey}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/pubkey"
@@ -534,22 +444,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueueResponse"
-
-  /thorchain/queue/swap:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-    get:
-      description: Returns the swap queue.
-      operationId: queueSwap
-      tags:
-        - Queue
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SwapQueueResponse"
 
   /thorchain/queue/scheduled:
     parameters:
@@ -764,280 +658,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/MimirResponse"
 
-  # ------------------------------ quotes ------------------------------
-
-  /thorchain/quote/swap:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - name: from_asset
-        in: query
-        description: the source asset
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: to_asset
-        in: query
-        description: the target asset
-        schema:
-          type: string
-          example: "ETH.ETH"
-      - name: amount
-        in: query
-        description: the source asset amount in 1e8 decimals
-        schema:
-          type: integer
-          format: int64
-          example: 1000000
-      - name: destination
-        in: query
-        description: the destination address, required to generate memo
-        schema:
-          type: string
-          example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
-      - name: from_address
-        in: query
-        description: the from address, required if the from asset is a synth
-        schema:
-          type: string
-          example: "thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
-      - name: tolerance_bps
-        in: query
-        description: the maximum basis points from the current feeless swap price to set the limit in the generated memo
-        schema:
-          type: integer
-          format: int64
-          example: 100
-      - name: affiliate_bps
-        in: query
-        description: the affiliate fee in basis points
-        schema:
-          type: integer
-          format: int64
-          example: 100
-      - name: affiliate
-        in: query
-        description: the affiliate (address or thorname)
-        schema:
-          type: string
-          example: "t"
-    get:
-      description: Provide a quote estimate for the provided swap.
-      operationId: quoteswap
-      tags:
-        - Quote
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuoteSwapResponse"
-
-  /thorchain/quote/saver/deposit:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - name: asset
-        in: query
-        description: the asset to deposit
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: amount
-        in: query
-        description: the source asset amount in 1e8 decimals
-        schema:
-          type: integer
-          format: int64
-          example: 1000000
-    get:
-      description: Provide a quote estimate for the provided saver deposit.
-      operationId: quotesaverdeposit
-      tags:
-        - Quote
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuoteSaverDepositResponse"
-
-  /thorchain/quote/saver/withdraw:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - name: asset
-        in: query
-        description: the asset to withdraw
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: address
-        in: query
-        description: the address for the position
-        schema:
-          type: string
-          example: "bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq"
-      - name: withdraw_bps
-        in: query
-        description: the basis points of the existing position to withdraw
-        schema:
-          type: integer
-          format: int64
-          example: 100
-    get:
-      description: Provide a quote estimate for the provided saver withdraw.
-      operationId: quotesaverwithdraw
-      tags:
-        - Quote
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuoteSaverWithdrawResponse"
-
-  /thorchain/quote/loan/open:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - name: asset
-        in: query
-        description: the collateral asset
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: amount
-        in: query
-        description: the collateral asset amount in 1e8 decimals
-        schema:
-          type: integer
-          format: int64
-          example: 1000000
-      - name: target_asset
-        in: query
-        description: the target asset to receive (loan denominated in TOR regardless)
-        schema:
-          type: string
-          example: "ETH.ETH"
-      - name: destination
-        in: query
-        description: the destination address, required to generate memo
-        schema:
-          type: string
-          example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
-      - name: min_out
-        in: query
-        description: the minimum amount of the target asset to accept
-        schema:
-          type: string
-          example: "1234"
-      - name: affiliate_bps
-        in: query
-        description: the affiliate fee in basis points
-        schema:
-          type: integer
-          format: int64
-          example: 100
-      - name: affiliate
-        in: query
-        description: the affiliate (address or thorname)
-        schema:
-          type: string
-          example: "t"
-    get:
-      description: Provide a quote estimate for the provided loan open.
-      operationId: quoteloanopen
-      tags:
-        - Quote
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuoteLoanOpenResponse"
-
-  /thorchain/quote/loan/close:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - name: asset
-        in: query
-        description: the asset used to repay the loan
-        schema:
-          type: string
-          example: "ETH.ETH"
-      - name: amount
-        in: query
-        description: the asset amount in 1e8 decimals
-        schema:
-          type: integer
-          format: int64
-          example: 1000000
-      - name: loan_asset
-        in: query
-        description: the collateral asset of the loan
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: loan_owner
-        in: query
-        description: the owner of the loan collateral
-        schema:
-          type: string
-          example: "BTC.BTC"
-      - name: min_out
-        in: query
-        description: the minimum amount of the target asset to accept
-        schema:
-          type: string
-          example: "1234"
-    get:
-      description: Provide a quote estimate for the provided loan close.
-      operationId: quoteloanclose
-      tags:
-        - Quote
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QuoteLoanCloseResponse"
-
-  # ------------------------------ invariants ------------------------------
-
-  /thorchain/invariant/{invariant}:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-      - $ref: "#/components/parameters/invariant"
-    get:
-      description: Returns result of running the given invariant.
-      operationId: invariant
-      tags:
-        - Invariants
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InvariantResponse"
-
-  /thorchain/invariants:
-    parameters:
-      - $ref: "#/components/parameters/queryHeight"
-    get:
-      description: Returns a list of available invariants.
-      operationId: invariants
-      tags:
-        - Invariants
-      responses:
-        200:
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InvariantsResponse"
+  # TODO: Deprecate?
+  # /thorchain/mimir/nodes:
 
 ########################################################################################
 # Components
@@ -1106,39 +728,40 @@ components:
         type: string
         example: "BTC"
 
-    invariant:
-      name: invariant
-      in: path
-      required: true
-      schema:
-        type: string
-        example: asgard
-
   # ------------------------------ schemas ------------------------------
 
   schemas:
     Pool:
       type: object
       required:
-        - asset
-        - status
-        - pending_inbound_asset
-        - pending_inbound_rune
-        - balance_asset
         - balance_rune
-        - pool_units
+        - balance_asset
+        - asset
         - LP_units
+        - pool_units
+        - status
         - synth_units
         - synth_supply
-        - savers_depth
-        - savers_units
-        - synth_mint_paused
-        - synth_supply_remaining
-        - loan_collateral
+        - pending_inbound_rune
+        - pending_inbound_asset
       properties:
+        balance_rune:
+          type: string
+          example: "13460619152985"
+        balance_asset:
+          type: string
+          example: "3197744873"
         asset:
           type: string
           example: "BTC.BTC"
+        LP_units:
+          type: string
+          description: the total pool liquidity provider units
+          example: "14694928607473"
+        pool_units:
+          type: string
+          description: the total pool units, this is the sum of LP and synth units
+          example: "14694928607473"
         status:
           type: string
           example: "Available"
@@ -1146,26 +769,6 @@ components:
           type: integer
           format: int64
           example: 6
-        pending_inbound_asset:
-          type: string
-          example: "101713319"
-        pending_inbound_rune:
-          type: string
-          example: "464993836"
-        balance_asset:
-          type: string
-          example: "3197744873"
-        balance_rune:
-          type: string
-          example: "13460619152985"
-        pool_units:
-          type: string
-          description: the total pool units, this is the sum of LP and synth units
-          example: "14694928607473"
-        LP_units:
-          type: string
-          description: the total pool liquidity provider units
-          example: "14694928607473"
         synth_units:
           type: string
           description: the total synth units in the pool
@@ -1174,72 +777,34 @@ components:
           type: string
           description: the total supply of synths for the asset
           example: "0"
-        savers_depth:
+        pending_inbound_rune:
           type: string
-          example: "199998"
-          description: the balance of L1 asset deposited into the Savers Vault
-        savers_units:
+          example: "464993836"
+        pending_inbound_asset:
           type: string
-          example: "199998"
-          description: the number of units owned by Savers
-        synth_mint_paused:
-          type: boolean
-          example: true
-          description: whether additional synths cannot be minted
-        synth_supply_remaining:
-          type: string
-          example: "123456"
-          description: the amount of synth supply remaining before the current max supply is reached
-        loan_collateral:
-          type: string
-          example: "123456"
-          description: the amount of collateral collects for loans
+          example: "101713319"
 
-    LiquidityProviderSummary:
+    Bucket:
       type: object
       required:
+        - balance_asset
         - asset
-        - units
-        - pending_rune
-        - pending_asset
-        - rune_deposit_value
-        - asset_deposit_value
+        - LP_units
+        - status
       properties:
+        balance_asset:
+          type: string
+          example: "3197744873"
         asset:
           type: string
-          example: "BNB.BNB"
-        rune_address:
+          example: "BTC/BTC"
+        LP_units:
           type: string
-          example: "thor1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        asset_address:
+          description: the total pool liquidity provider units
+          example: "14694928607473"
+        status:
           type: string
-          example: "bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        last_add_height:
-          type: integer
-          format: int64
-          example: 82745
-        last_withdraw_height:
-          type: integer
-          format: int64
-          example: 82745
-        units:
-          type: string
-          example: "0"
-        pending_rune:
-          type: string
-          example: "0"
-        pending_asset:
-          type: string
-          example: "242000000"
-        pending_tx_id:
-          type: string
-          example: "C4C876802xxxxxxxxxxBC408829878446A37011EBBA0C5CAA3DD64A548879CB228"
-        rune_deposit_value:
-          type: string
-          example: "0"
-        asset_deposit_value:
-          type: string
-          example: "0"
+          example: "Available"
 
     LiquidityProvider:
       type: object
@@ -1250,11 +815,6 @@ components:
         - pending_asset
         - rune_deposit_value
         - asset_deposit_value
-        - rune_redeem_value
-        - asset_redeem_value
-        - luvi_deposit_value
-        - luvi_redeem_value
-        - luvi_growth_pct
       properties:
         asset:
           type: string
@@ -1282,7 +842,7 @@ components:
         pending_asset:
           type: string
           example: "242000000"
-        pending_tx_id:
+        pending_tx_Id:
           type: string
           example: "C4C876802xxxxxxxxxxBC408829878446A37011EBBA0C5CAA3DD64A548879CB228"
         rune_deposit_value:
@@ -1291,97 +851,6 @@ components:
         asset_deposit_value:
           type: string
           example: "0"
-        rune_redeem_value:
-          type: string
-          example: "0"
-        asset_redeem_value:
-          type: string
-          example: "0"
-        luvi_deposit_value:
-          type: string
-          example: "0"
-        luvi_redeem_value:
-          type: string
-          example: "0"
-        luvi_growth_pct:
-          type: string
-          example: "0"
-
-    Saver:
-      type: object
-      required:
-        - asset
-        - asset_address
-        - units
-        - asset_deposit_value
-        - asset_redeem_value
-        - growth_pct
-      properties:
-        asset:
-          type: string
-          example: "BNB.BNB"
-        asset_address:
-          type: string
-          example: "bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        last_add_height:
-          type: integer
-          format: int64
-          example: 82745
-        last_withdraw_height:
-          type: integer
-          format: int64
-          example: 82745
-        units:
-          type: string
-          example: "0"
-        asset_deposit_value:
-          type: string
-          example: "0"
-        asset_redeem_value:
-          type: string
-          example: "0"
-        growth_pct:
-          type: string
-          example: "0.02"
-
-    Borrower:
-      type: object
-      required:
-        - owner
-        - asset
-        - debt_up
-        - debt_down
-        - collateral_up
-        - collateral_down
-        - last_open_height
-        - last_repay_height
-      properties:
-        owner:
-          type: string
-          example: "bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        asset:
-          type: string
-          example: "BNB.BNB"
-        debt_up:
-          type: string
-          example: "123456"
-        debt_down:
-          type: string
-          example: "123456"
-        collateral_up:
-          type: string
-          example: "123456"
-        collateral_down:
-          type: string
-          example: "123456"
-        last_open_height:
-          type: integer
-          format: int64
-          example: 82745
-        last_repay_height:
-          type: integer
-          format: int64
-          example: 82745
 
     Coin:
       type: object
@@ -1454,10 +923,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VaultAddress"
-        frozen:
-          type: array
-          items:
-            type: string
 
     VaultRouter:
       type: object
@@ -1523,60 +988,6 @@ components:
           type: string
           example: "ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
 
-    InboundAddress:
-      type: object
-      required:
-        - halted
-      properties:
-        chain:
-          type: string
-          example: "BTC"
-        pub_key:
-          type: string
-          example: "thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82"
-        address:
-          type: string
-          example: "bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46"
-        router:
-          type: string
-          example: "0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146"
-        halted:
-          type: boolean
-          example: false
-          description: Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
-        global_trading_paused:
-          type: boolean
-          example: false
-          description: "Returns true if trading is paused globally"
-        chain_trading_paused:
-          type: boolean
-          example: false
-          description: "Returns true if trading is paused for this chain"
-        chain_lp_actions_paused:
-          type: boolean
-          example: false
-          description: "Returns true if LP actions are paused for this chain"
-        gas_rate:
-          type: string
-          example: "214"
-          description: "The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9)."
-        gas_rate_units:
-          type: string
-          example: "satsperbyte"
-          description: "Units of the gas_rate."
-        outbound_tx_size:
-          type: string
-          example: "1000"
-          description: "Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts"
-        outbound_fee:
-          type: string
-          example: "428000"
-          description: "The total outbound fee charged to the user for outbound txs in the gas asset of the chain."
-        dust_threshold:
-          type: string
-          example: "10000"
-          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
-
     LastBlock:
       type: object
       required:
@@ -1617,12 +1028,7 @@ components:
           type: integer
           format: int64
           example: 7581334
-          description: same as external_observed_height, to be deprecated in favour of external_observed_height
-        external_observed_height:
-          type: integer
-          format: int64
-          example: 7581334
-          description: the block height on the external source chain when the transaction was observed, not provided if chain is THOR
+          description: the block height of the observed transaction on the source chain, not provided if chain is THOR
         signers:
           type: array
           items:
@@ -1639,12 +1045,7 @@ components:
           type: integer
           format: int64
           example: 7581334
-          description: same as external_confirmation_delay_height, to be deprecated in favour of external_confirmation_delay_height
-        external_confirmation_delay_height:
-          type: integer
-          format: int64
-          example: 7581334
-          description: the block height on the external source chain when confirmation counting will be complete, not provided if chain is THOR
+          description: the finalised height of the observed transaction on the source chain, not provided if chain is THOR
         aggregator:
           type: string
           description: the outbound aggregator to use, will also match a suffix
@@ -1657,51 +1058,6 @@ components:
           type: string
           description: the aggregator target asset limit provided to transferOutAndCall
           example: "0x0a44986b70527154e9F4290eC14e5f0D1C861822"
-
-    MsgSwap:
-      type: object
-      required:
-        - tx
-        - target_asset
-        - trade_target
-        - affiliate_basis_points
-      properties:
-        tx:
-          $ref: "#/components/schemas/Tx"
-        target_asset:
-          type: string
-          example: "ETH.ETH"
-          description: the asset to be swapped to
-        destination:
-          type: string
-          example: "0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b"
-          description: the destination address to receive the swap output
-        trade_target:
-          type: string
-          description: the minimum amount of output asset to receive (else cancelling and refunding the swap)
-        affiliate_address:
-          type: string
-          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
-          description: the affiliate address which will receive any affiliate fee
-        affiliate_basis_points:
-          type: string
-          description: the affiliate fee in basis points
-        signer:
-          type: string
-          description: the signer (sender) of the transaction
-        aggregator:
-          type: string
-          description: the contract address if an aggregator is specified for a non-THORChain SwapOut
-        aggregator_target_address:
-          type: string
-          description: the desired output asset of the aggregator SwapOut
-        aggregator_target_limit:
-          type: string
-          description: the minimum amount of SwapOut asset to receive (else cancelling the SwapOut and receiving THORChain's output)
-        order_type:
-          type: integer
-          format: int64
-          description: 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable)
 
     TxOutItem:
       type: object
@@ -1772,12 +1128,10 @@ components:
         - status
         - pub_key_set
         - validator_cons_pub_key
-        - peer_id
+        - bond
         - active_block_height
+        - bond_address
         - status_since
-        - node_operator_address
-        - total_bond
-        - bond_providers
         - signer_membership
         - requested_to_leave
         - forced_to_leave
@@ -1789,6 +1143,7 @@ components:
         - current_award
         - observe_chains
         - preflight_status
+        - bond_providers
       properties:
         node_address:
           type: string
@@ -1811,42 +1166,23 @@ components:
           type: string
           description: the consensus pub key for the node
           example: "thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew"
-        peer_id:
+        bond:
           type: string
-          description: the P2PID (:6040/p2pid endpoint) of the node
-          example: "16Uiu2HAmRgsiryer3pWCPJz18PQZDFFs1GBqCPGGJczrQXdoTBMk"
+          description: current node bond
+          example: "123456789"
         active_block_height:
           type: integer
           format: int64
           description: the block height at which the node became active
           example: 123456
+        bond_address:
+          type: string
+          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
         status_since:
           type: integer
           format: int64
           description: the block height of the current provided information for the node
           example: 100000
-        node_operator_address:
-          type: string
-          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
-        total_bond:
-          type: string
-          description: current node bond
-          example: "123456789"
-        bond_providers:
-          type: object
-          title: NodeBondProviders
-          properties:
-            node_operator_fee:
-              type: string
-              description: node operator fee in basis points
-            providers:
-              type: object
-              title: NodeBondProvider
-              properties:
-                bond_address:
-                  type: string
-                bond:
-                  type: string
         signer_membership:
           type: array
           description: the set of vault public keys of which the node is a member
@@ -1878,6 +1214,9 @@ components:
           type: object
           title: NodeJail
           properties:
+            node_address:
+              type: string
+              example: "tthor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
             release_height:
               type: integer
               format: int64
@@ -1924,84 +1263,22 @@ components:
               type: integer
               format: int64
               example: 0
-
-    KeygenMetric:
-      type: object
-      required:
-        - node_tss_times
-      properties:
-        pub_key:
-          type: string
-        node_tss_times:
-          type: array
-          items:
-            type: object
-            title: NodeKeygenMetric
-            properties:
-              address:
-                type: string
-              tss_time:
-                type: string
-
-    ThornameAlias:
-      type: object
-      properties:
-        chain:
-          type: string
-          example: "BTC"
-        address:
-          type: string
-          example: "bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46"
-
-    Thorname:
-      type: object
-      required:
-        - preferred_asset
-        - aliases
-      properties:
-        name:
-          type: string
-          example: "thor"
-        expire_block_height:
-          type: integer
-          format: int64
-          example: 1234
-        owner:
-          type: string
-          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
-        preferred_asset:
-          type: string
-          example: "BTC.BTC"
-        aliases:
-          type: array
-          items:
-            $ref: "#/components/schemas/ThornameAlias"
-
-    QuoteFees:
-      type: object
-      required:
-        - asset
-        - outbound
-        # TODO: require after migrating all quotes to new fee format
-        # - liquidity
-      properties:
-        asset:
-          type: string
-          example: "ETH.ETH"
-        affiliate:
-          type: string
-          example: "1234"
-        outbound:
-          type: string
-          example: "1234"
-        liquidity:
-          type: string
-          example: "1234"
-          description: liquidity fees paid to pools
-        total_bps:
-          type: string
-          example: "500"
-          description: total basis points in fees relative to amount out
+        bond_providers:
+          type: object
+          title: NodeBondProviders
+          properties:
+            node_address:
+              type: string
+            node_operator_fee:
+              type: string
+            providers:
+              type: object
+              title: NodeBondProvider
+              properties:
+                bond_address:
+                  type: string
+                bond:
+                  type: string
 
     # ------------------------------ responses ------------------------------
 
@@ -2013,49 +1290,28 @@ components:
       items:
         $ref: "#/components/schemas/Pool"
 
-    LiquidityProvidersResponse:
+    BucketResponse:
+      $ref: "#/components/schemas/Bucket"
+
+    BucketsResponse:
       type: array
       items:
-        $ref: "#/components/schemas/LiquidityProviderSummary"
+        $ref: "#/components/schemas/Bucket"
 
     LiquidityProviderResponse:
-      $ref: "#/components/schemas/LiquidityProvider"
-
-    SaverResponse:
-      $ref: "#/components/schemas/Saver"
-
-    SaversResponse:
       type: array
       items:
-        $ref: "#/components/schemas/Saver"
-
-    BorrowerResponse:
-      $ref: "#/components/schemas/Borrower"
-
-    BorrowersResponse:
-      type: array
-      items:
-        $ref: "#/components/schemas/Borrower"
+        $ref: "#/components/schemas/LiquidityProvider"
 
     TxResponse:
       type: object
       properties:
         observed_tx:
           $ref: "#/components/schemas/ObservedTx"
-        finalised_height:
-          type: integer
-          format: int64
-          example: 7581334
-          description: the thorchain height at which the outbound was finalised
-        outbound_height:
-          type: integer
-          format: int64
-          example: 1234
-          description: the thorchain height for which the outbound was scheduled
         keysign_metric:
           $ref: "#/components/schemas/TssKeysignMetric"
 
-    TxDetailsResponse: &tx-details-response
+    TxSignersResponse:
       type: object
       required:
         - tx
@@ -2079,11 +1335,11 @@ components:
         actions:
           type: array
           items:
-            $ref: "#/components/schemas/TxOutItem"
+            $ref: "#/components/schemas/ObservedTx"
         out_txs:
           type: array
           items:
-            $ref: "#/components/schemas/Tx"
+            type: string
         finalised_height:
           type: integer
           format: int64
@@ -2099,154 +1355,6 @@ components:
           type: integer
           format: int64
           example: 1234
-          description: the thorchain height for which the outbound was scheduled
-
-    TxSignersResponse: *tx-details-response
-
-    TxStagesResponse:
-      type: object
-      required:
-        - inbound_observed
-        - inbound_finalised
-      properties:
-        inbound_observed:
-          type: object
-          required:
-            - completed
-          properties:
-            started:
-              type: boolean
-              example: false
-              description: returns true if any nodes have observed the transaction
-            completed:
-              type: boolean
-              example: false
-              description: returns true if no transaction observation remains to be done
-        inbound_confirmation_counted:
-          type: object
-          required:
-            - completed
-          properties:
-            counting_start_height:
-              type: integer
-              format: int64
-              example: 1234
-              description: the THORChain block height when confirmation counting began
-            chain:
-              type: string
-              example: "BTC"
-              description: the external source chain for which confirmation counting takes place
-            external_observed_height:
-              type: integer
-              format: int64
-              example: 16042625
-              description: the block height on the external source chain when the transaction was observed
-            external_confirmation_delay_height:
-              type: integer
-              format: int64
-              example: 16042626
-              description: the block height on the external source chain when confirmation counting will be complete
-            remaining_confirmation_seconds:
-              type: integer
-              format: int64
-              example: 600
-              description: the estimated remaining seconds before confirmation counting completes
-            completed:
-              type: boolean
-              example: false
-              description: returns true if no transaction confirmation counting remains to be done
-        inbound_finalised:
-          type: object
-          required:
-            - completed
-          properties:
-            completed:
-              type: boolean
-              example: false
-              description: returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
-        swap_finalised:
-          type: object
-          required:
-            - completed
-          properties:
-            completed:
-              type: boolean
-              example: false
-              description: returns true if an inbound transaction's swap (successful or refunded) is no longer pending
-        outbound_delay:
-          type: object
-          required:
-            - completed
-          properties:
-            remaining_delay_blocks:
-              type: integer
-              format: int64
-              example: 5
-              description: the number of remaining THORChain blocks the outbound will be delayed
-            remaining_delay_seconds:
-              type: integer
-              format: int64
-              example: 30
-              description: the estimated remaining seconds of the outbound delay before it will be sent
-            completed:
-              type: boolean
-              example: false
-              description: returns true if no transaction outbound delay remains
-        outbound_signed:
-          type: object
-          required:
-            - completed
-          properties:
-            scheduled_outbound_height:
-              type: integer
-              format: int64
-              example: 1234
-              description: THORChain height for which the external outbound is scheduled
-            blocks_since_scheduled:
-              type: integer
-              format: int64
-              example: 1234
-              description: THORChain blocks since the scheduled outbound height
-            completed:
-              type: boolean
-              example: false
-              description: returns true if an external transaction has been signed and broadcast (and observed in its mempool)
-
-    TxStatusResponse:
-      type: object
-      required:
-        - stages
-      properties:
-        tx:
-          $ref: "#/components/schemas/Tx"
-        planned_out_txs:
-          type: array
-          items:
-            type: object
-            required:
-              - chain
-              - to_address
-              - coin
-              - refund
-            properties:
-              chain:
-                type: string
-                example: "BTC"
-              to_address:
-                type: string
-                example: "bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e"
-              coin:
-                $ref: "#/components/schemas/Coin"
-              refund:
-                type: boolean
-                example: false
-                description: returns true if the planned transaction has a refund memo
-        out_txs:
-          type: array
-          items:
-            $ref: "#/components/schemas/Tx"
-        stages:
-          $ref: "#/components/schemas/TxStagesResponse"
 
     NodeResponse:
       $ref: "#/components/schemas/Node"
@@ -2282,29 +1390,16 @@ components:
     NetworkResponse:
       type: object
       required:
-        # Since the querier uses an openapi. object, these will be displayed in alphabetical order,
-        # so the schema should also be in alphabetical order.
         - bond_reward_rune
-        - burned_bep_2_rune
-        - burned_erc_20_rune
         - total_bond_units
         - total_reserve
-        - vaults_migrating
-        - gas_spent_rune
-        - gas_withheld_rune
+        - burned_bep_2_rune
+        - burned_erc_20_rune
       properties:
         bond_reward_rune:
           type: string
           example: "857134475040"
           description: total amount of RUNE awarded to node operators
-        burned_bep_2_rune:
-          type: string
-          example: "674699077345087"
-          description: total of burned BEP2 RUNE
-        burned_erc_20_rune:
-          type: string
-          example: "66369401654835"
-          description: total of burned ERC20 RUNE
         total_bond_units:
           type: string
           example: "0"
@@ -2313,22 +1408,14 @@ components:
           type: string
           example: "21999180112172346"
           description: total reserve RUNE
-        vaults_migrating:
-          type: boolean
-          example: false
-          description: Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
-        gas_spent_rune:
+        burned_bep_2_rune:
           type: string
-          example: "1000000000"
-          description: Sum of the gas the network has spent to send outbounds
-        gas_withheld_rune:
+          example: "674699077345087"
+          description: total of burned BEP2 RUNE
+        burned_erc_20_rune:
           type: string
-          example: "1500000000"
-          description: Sum of the gas withheld from users to cover outbound gas
-        outbound_fee_multiplier:
-          type: string
-          example: "15000"
-          description: Current outbound fee multiplier, in basis points
+          example: "66369401654835"
+          description: total of burned ERC20 RUNE
 
     POLResponse:
       type: object
@@ -2363,7 +1450,29 @@ components:
     InboundAddressesResponse:
       type: array
       items:
-        $ref: "#/components/schemas/InboundAddress"
+        type: object
+        title: InboundAddress
+        required:
+          - halted
+        properties:
+          chain:
+            type: string
+            example: "BTC"
+          pub_key:
+            type: string
+            example: "thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82"
+          address:
+            type: string
+            example: "bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46"
+          gas_rate:
+            type: string
+            example: "214"
+          router:
+            type: string
+          halted:
+            type: boolean
+            example: false
+
     LastBlockResponse:
       type: array
       items:
@@ -2392,12 +1501,13 @@ components:
     ConstantsResponse:
       type: object
       properties:
-        int_64_values:
+        int64_values:
           type: object
           additionalProperties:
             type: string
           example:
             AsgardSize: 40
+            BadValidatorRate: 43200
         bool_values:
           type: object
           additionalProperties:
@@ -2451,11 +1561,6 @@ components:
           type: string
           description: scheduled outbound value in RUNE
 
-    SwapQueueResponse:
-      type: array
-      items:
-        $ref: "#/components/schemas/MsgSwap"
-
     OutboundResponse:
       type: array
       items:
@@ -2489,7 +1594,23 @@ components:
     KeygenMetricsResponse:
       type: array
       items:
-        $ref: "#/components/schemas/KeygenMetric"
+        type: object
+        title: KeygenMetric
+        required:
+          - node_tss_times
+        properties:
+          pub_key:
+            type: string
+          node_tss_times:
+            type: array
+            items:
+              type: object
+              title: NodeKeygenMetric
+              properties:
+                address:
+                  type: string
+                tss_time:
+                  type: string
 
     MetricsResponse:
       type: object
@@ -2510,7 +1631,22 @@ components:
     ThornameResponse:
       type: array
       items:
-        $ref: "#/components/schemas/Thorname"
+        type: object
+        title: Thorname
+        properties:
+          name:
+            type: string
+            example: "thor"
+          chain:
+            type: string
+            example: "BTC"
+          address:
+            type: string
+            example: "bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq"
+          expire_block_height:
+            type: integer
+            format: int64
+            example: 1234
 
     MimirResponse:
       type: object
@@ -2519,34 +1655,6 @@ components:
       example:
         NODEOPERATORFEE: 2000
         NUMBEROFNEWNODESPERCHURN: 2
-
-    InvariantResponse:
-      type: object
-      required:
-        - invariant
-        - broken
-        - msg
-      properties:
-        invariant:
-          type: string
-          example: asgard
-          description: The name of the invariant.
-        broken:
-          type: boolean
-          example: false
-          description: Returns true if the invariant is broken.
-        msg:
-          type: string
-          example: "insolvent: 200000rune\noversolvent: 1btc/btc"
-          description: Informative message about the invariant result.
-
-    InvariantsResponse:
-      type: object
-      properties:
-        invariants:
-          type: array
-          items:
-            type: string
 
     MimirNodesResponse:
       type: object
@@ -2564,201 +1672,3 @@ components:
                 format: int64
               signer:
                 type: string
-
-    baseQuoteResponse:
-      properties: &quote-properties
-        inbound_address:
-          type: string
-          description: the inbound address for the transaction on the source chain
-          example: "bc1qjk3xzu5slu7mtmc8jc9yed3zqvkhkttm700g9a"
-        inbound_confirmation_blocks:
-          type: integer
-          format: int64
-          description: the approximate number of source chain blocks required before processing
-        inbound_confirmation_seconds:
-          type: integer
-          format: int64
-          description: the approximate seconds for block confirmations required before processing
-        outbound_delay_blocks:
-          type: integer
-          format: int64
-          description: the number of thorchain blocks the outbound will be delayed
-        outbound_delay_seconds:
-          type: integer
-          format: int64
-          description: the approximate seconds for the outbound delay before it will be sent
-        fees:
-          $ref: "#/components/schemas/QuoteFees"
-        slippage_bps:
-          type: integer
-          format: int64
-          description: the total swap slippage in basis points
-        router:
-          type: string
-          description: the EVM chain router contract address
-          example: "0x3624525075b88B24ecc29CE226b0CEc1fFcB6976"
-        expiry:
-          type: integer
-          format: int64
-          description: expiration timestamp in unix seconds
-          example: 1671660285
-        warning:
-          type: string
-          description: static warning message
-          example: Do not cache this response. Do not send funds after the expiry.
-        notes:
-          type: string
-          description: chain specific quote notes
-          example: Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.
-        dust_threshold:
-          type: string
-          example: "10000"
-          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transctions with asset amounts lower than the dust_threshold are ignored.
-
-    QuoteSwapResponse:
-      type: object
-      required:
-        - inbound_address
-        - expected_amount_out
-        - outbound_delay_blocks
-        - outbound_delay_seconds
-        - fees
-        - slippage_bps
-        - warning
-        - notes
-        - expiry
-      properties:
-        <<: *quote-properties
-        memo:
-          type: string
-          description: generated memo for the swap
-          example: "=:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:1440450000:thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv:100"
-        expected_amount_out:
-          type: string
-          description: the amount of the target asset the user can expect to receive after fees
-          example: "10000"
-
-    QuoteSaverDepositResponse:
-      type: object
-      required:
-        - memo
-        - inbound_address
-        - expected_amount_out
-        - fees
-        - slippage_bps
-        - warning
-        - notes
-        - expiry
-      properties:
-        <<: *quote-properties
-        memo:
-          type: string
-          description: generated memo for the deposit
-          example: "+:ETH/ETH::thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv:100"
-        expected_amount_out:
-          type: string
-          description: migrate to expected_amount_deposit (will be deprecated in v1.104)
-          example: "10000"
-        expected_amount_deposit:
-          type: string
-          description: the amount of the target asset the user can expect to deposit after fees
-          example: "10000"
-
-    QuoteSaverWithdrawResponse:
-      type: object
-      required:
-        - inbound_address
-        - expected_amount_out
-        - dust_amount
-        - memo
-        - outbound_delay_blocks
-        - outbound_delay_seconds
-        - fees
-        - slippage_bps
-        - warning
-        - notes
-        - expiry
-      properties:
-        <<: *quote-properties
-        memo:
-          type: string
-          description: generated memo for the withdraw, the client can use this OR send the dust amount
-          example: "-:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:1440450000:thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv:100"
-        dust_amount:
-          type: string
-          description: the dust amount of the target asset the user should send to initialize the withdraw, the client can send this OR provide the memo
-          example: "10000"
-        expected_amount_out:
-          type: string
-          description: the amount of the target asset the user can expect to withdraw after fees in 1e8 decimals
-          example: "10000"
-
-    QuoteLoanOpenResponse:
-      type: object
-      required:
-        - inbound_address
-        - expected_amount_out
-        - expected_collateralization_ratio
-        - expected_collateral_up
-        - expected_debt_up
-        - outbound_delay_blocks
-        - outbound_delay_seconds
-        - fees
-        - warning
-        - notes
-        - expiry
-      properties:
-        <<: *quote-properties
-        memo:
-          type: string
-          description: generated memo for the loan open
-          example: "$+:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
-        expected_amount_out:
-          type: string
-          description: the amount of the target asset the user can expect to receive after fees in 1e8 decimals
-          example: "10000"
-        expected_collateralization_ratio:
-          type: string
-          description: the expected collateralization ratio in basis points
-          example: "30000"
-        expected_collateral_up:
-          type: string
-          description: the expected amount of collateral increase on the loan
-          example: "1000000"
-        expected_debt_up:
-          type: string
-          description: the expected amount of TOR debt increase on the loan
-          example: "1000000"
-
-    QuoteLoanCloseResponse:
-      type: object
-      required:
-        - inbound_address
-        - expected_amount_out
-        - expected_collateral_down
-        - expected_debt_down
-        - memo
-        - outbound_delay_blocks
-        - outbound_delay_seconds
-        - fees
-        - warning
-        - notes
-        - expiry
-      properties:
-        <<: *quote-properties
-        memo:
-          type: string
-          description: generated memo for the loan close
-          example: "$-:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
-        expected_amount_out:
-          type: string
-          description: the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
-          example: "10000"
-        expected_collateral_down:
-          type: string
-          description: the expected amount of collateral decrease on the loan
-          example: "1000000"
-        expected_debt_down:
-          type: string
-          description: the expected amount of TOR debt decrease on the loan
-          example: "1000000"
