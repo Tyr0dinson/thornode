@@ -41,6 +41,14 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(asset.Equals(RuneNative), Equals, true)
 
+	// parse single character
+	asset, err = NewAsset("bc")
+	c.Assert(err, IsNil)
+	c.Assert(asset, Equals, RuneNative)
+	c.Check(asset.Ticker.String(), Equals, "A")
+	c.Check(asset.Symbol, IsNil)
+	c.Check(asset.Chain.Equals(THORChain), Equals, true)
+
 	// ETH test
 	asset, err = NewAsset("eth.knc")
 	c.Assert(err, IsNil)

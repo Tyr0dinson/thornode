@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/blang/semver"
 	"github.com/gogo/protobuf/jsonpb"
 )
 
@@ -261,4 +262,40 @@ func ERC20RuneAsset() Asset {
 // Replace pool name "." with a "-" for Mimir key checking.
 func (a Asset) MimirString() string {
 	return a.Chain.String() + "-" + a.Symbol.String()
+}
+
+// GetAssetFromAbbreviation returns the asset that matches the given abbreviation
+// returns EmptyAsset if no match is found
+func GetAssetFromAbbreviation(abbrev string, version semver.Version) Asset {
+	switch {
+	case version.GTE(semver.MustParse("1.97.0")):
+		return getAssetFromAbbreviation97(abbrev)
+	default:
+		return EmptyAsset
+	}
+}
+
+func getAssetFromAbbreviation97(abbrev string) Asset {
+	switch abbrev {
+	case "A":
+		return AVAXAsset
+	case "B":
+		return BTCAsset
+	case "BC":
+		return BCHAsset
+	case "BN":
+		return BNBAsset
+	case "D":
+		return DOGEAsset
+	case "E":
+		return ETHAsset
+	case "G":
+		return ATOMAsset
+	case "L":
+		return LTCAsset
+	case "R":
+		return RuneNative
+	}
+
+	return EmptyAsset
 }

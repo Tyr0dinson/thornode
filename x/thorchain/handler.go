@@ -2,7 +2,6 @@ package thorchain
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/blang/semver"
@@ -21,21 +20,7 @@ type MsgHandler interface {
 
 // NewExternalHandler returns a handler for "thorchain" type messages.
 func NewExternalHandler(mgr Manager) cosmos.Handler {
-	return func(ctx cosmos.Context, msg cosmos.Msg) (_ *cosmos.Result, err error) {
-		// recover
-		if mgr.GetVersion().GTE(semver.MustParse("1.106.0")) {
-			defer func() {
-				if r := recover(); r != nil {
-					// print stack
-					stack := make([]byte, 1024)
-					length := runtime.Stack(stack, true)
-					ctx.Logger().Error("panic", "msg", msg)
-					fmt.Println(string(stack[:length]))
-					err = fmt.Errorf("panic: %v", r)
-				}
-			}()
-		}
-
+	return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
 		ctx = ctx.WithEventManager(cosmos.NewEventManager())
 		if mgr.GetVersion().LT(semver.MustParse("1.90.0")) {
 			_ = mgr.Keeper().GetLowestActiveVersion(ctx) // TODO: remove me on hard fork
@@ -150,8 +135,6 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgNoOp{}.Type()] = NewNoOpHandler(mgr)
 	m[MsgConsolidate{}.Type()] = NewConsolidateHandler(mgr)
 	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
-	m[MsgLoanOpen{}.Type()] = NewLoanOpenHandler(mgr)
-	m[MsgLoanRepayment{}.Type()] = NewLoanRepaymentHandler(mgr)
 	return m
 }
 
@@ -219,14 +202,6 @@ func getMsgLeaveFromMemo(memo LeaveMemo, tx ObservedTx, signer cosmos.AccAddress
 	return NewMsgLeave(tx.Tx, memo.GetAccAddress(), signer), nil
 }
 
-func getMsgLoanOpenFromMemo(memo LoanOpenMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	return NewMsgLoanOpen(tx.Tx.FromAddress, tx.Tx.Coins[0].Asset, tx.Tx.Coins[0].Amount, memo.TargetAddress, memo.TargetAsset, memo.GetMinOut(), memo.GetAffiliateAddress(), memo.GetAffiliateBasisPoints(), memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.DexTargetLimit, signer), nil
-}
-
-func getMsgLoanRepaymentFromMemo(memo LoanRepaymentMemo, coin common.Coin, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	return NewMsgLoanRepayment(memo.Owner, memo.Asset, coin, signer), nil
-}
-
 func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	coin := tx.Tx.Coins.GetCoin(common.RuneAsset())
 	return NewMsgBond(tx.Tx, memo.GetAccAddress(), coin.Amount, tx.Tx.FromAddress, memo.BondProviderAddress, signer, memo.NodeOperatorFee), nil
@@ -244,16 +219,13 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 }
 
 func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	switch {
-	case version.GTE(semver.MustParse("1.107.0")):
-		return processOneTxInV107(ctx, keeper, tx, signer)
-	case version.GTE(semver.MustParse("0.63.0")):
+	if version.GTE(semver.MustParse("0.63.0")) {
 		return processOneTxInV63(ctx, keeper, tx, signer)
 	}
 	return nil, errBadVersion
 }
 
-func processOneTxInV107(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV63(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
@@ -305,12 +277,6 @@ func processOneTxInV107(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 		newMsg = NewMsgConsolidate(tx, signer)
 	case ManageTHORNameMemo:
 		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
-	case LoanOpenMemo:
-		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
-		newMsg, err = getMsgLoanOpenFromMemo(m, tx, signer)
-	case LoanRepaymentMemo:
-		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
-		newMsg, err = getMsgLoanRepaymentFromMemo(m, tx.Tx.Coins[0], signer)
 	default:
 		return nil, errInvalidMemo
 	}
@@ -322,8 +288,6 @@ func processOneTxInV107(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 	switch m := newMsg.(type) {
 	case *MsgAddLiquidity:
 		switch {
-		case keeper.GetVersion().GTE(semver.MustParse("1.98.0")):
-			return newMsg, m.ValidateBasicV98()
 		case keeper.GetVersion().GTE(semver.MustParse("1.93.0")):
 			return newMsg, m.ValidateBasicV93()
 		default:
@@ -338,8 +302,8 @@ func processOneTxInV107(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) common.Asset {
 	version := keeper.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.103.0")):
-		return fuzzyAssetMatchV103(ctx, keeper, asset)
+	case version.GTE(semver.MustParse("1.97.9")):
+		return fuzzyAssetMatchV97(ctx, keeper, asset)
 	case version.GTE(semver.MustParse("1.83.0")):
 		return fuzzyAssetMatchV83(ctx, keeper, asset)
 	default:
@@ -347,15 +311,10 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 	}
 }
 
-func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
+func fuzzyAssetMatchV97(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
 	asset := origAsset.GetLayer1Asset()
-	// if it's already an exact match with successfully-added liquidity, return it immediately
-	pool, err := keeper.GetPool(ctx, asset)
-	if err != nil {
-		return origAsset
-	}
-	// Only check BalanceRune after checking the error so that no panic if there were an error.
-	if !pool.BalanceRune.IsZero() {
+	// if its already an exact match, return it immediately
+	if keeper.PoolExist(ctx, asset.GetLayer1Asset()) {
 		return origAsset
 	}
 
@@ -402,9 +361,67 @@ func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset com
 	// find the deepest pool
 	winner := NewPool()
 	for _, pool := range matches {
-		// Use LTE rather than LT so this function can only return origAsset or a match,
-		// never NewPool()'s empty Asset.
-		if winner.BalanceRune.LTE(pool.BalanceRune) {
+		if winner.BalanceRune.LT(pool.BalanceRune) {
+			winner = pool
+		}
+	}
+
+	winner.Asset.Synth = origAsset.Synth
+
+	return winner.Asset
+}
+
+func fuzzyAssetMatchV83(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
+	asset := origAsset.GetLayer1Asset()
+	// if its already an exact match, return it immediately
+	if keeper.PoolExist(ctx, asset.GetLayer1Asset()) {
+		return origAsset
+	}
+
+	matches := make(Pools, 0)
+
+	iterator := keeper.GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := keeper.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			ctx.Logger().Error("fail to fetch pool", "asset", asset, "err", err)
+			continue
+		}
+
+		// check chain match
+		if !asset.Chain.Equals(pool.Asset.Chain) {
+			continue
+		}
+
+		// check ticker match
+		if !asset.Ticker.Equals(pool.Asset.Ticker) {
+			continue
+		}
+
+		// check symbol
+		parts := strings.Split(asset.Symbol.String(), "-")
+		// check if no symbol given (ie "USDT" or "USDT-")
+		if len(parts) < 2 || strings.EqualFold(parts[1], "") {
+			matches = append(matches, pool)
+			continue
+		}
+
+		if strings.HasSuffix(strings.ToLower(pool.Asset.Symbol.String()), strings.ToLower(parts[1])) {
+			matches = append(matches, pool)
+			continue
+		}
+	}
+
+	// if we found no matches, return the argument given
+	if len(matches) == 0 {
+		return origAsset
+	}
+
+	// find the deepest pool
+	winner := NewPool()
+	for _, pool := range matches {
+		if winner.BalanceRune.LT(pool.BalanceRune) {
 			winner = pool
 		}
 	}
