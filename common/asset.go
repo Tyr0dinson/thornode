@@ -39,8 +39,6 @@ var (
 	RuneNative            = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	RuneERC20Asset        = Asset{Chain: ETHChain, Symbol: "RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb", Ticker: "RUNE", Synth: false}
 	RuneERC20TestnetAsset = Asset{Chain: ETHChain, Symbol: "RUNE-0xd601c6A3a36721320573885A8d8420746dA3d7A0", Ticker: "RUNE", Synth: false}
-	TOR                   = Asset{Chain: THORChain, Symbol: "TOR", Ticker: "TOR", Synth: false}
-	THORBTC               = Asset{Chain: THORChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
 )
 
 // NewAsset parse the given input into Asset object
@@ -119,16 +117,6 @@ func (a Asset) GetSyntheticAsset() Asset {
 	}
 }
 
-// Get derived asset of asset
-func (a Asset) GetDerivedAsset() Asset {
-	return Asset{
-		Chain:  THORChain,
-		Symbol: a.Symbol,
-		Ticker: a.Ticker,
-		Synth:  false,
-	}
-}
-
 // Check if asset is a pegged asset
 func (a Asset) IsSyntheticAsset() bool {
 	return a.Synth
@@ -138,18 +126,10 @@ func (a Asset) IsVaultAsset() bool {
 	return a.IsSyntheticAsset()
 }
 
-// Check if asset is a derived asset
-func (a Asset) IsDerivedAsset() bool {
-	return !a.Synth && a.GetChain().IsTHORChain() && !a.IsRune()
-}
-
 // Native return native asset, only relevant on THORChain
 func (a Asset) Native() string {
 	if a.IsRune() {
 		return "rune"
-	}
-	if a.Equals(TOR) {
-		return "tor"
 	}
 	return strings.ToLower(a.String())
 }
@@ -264,25 +244,19 @@ func (a Asset) MimirString() string {
 	return a.Chain.String() + "-" + a.Symbol.String()
 }
 
-// GetAssetFromAbbreviation returns the asset that matches the abbreviation stored in Asset.Symbol
+// GetAssetFromAbbreviation returns the asset that matches the given abbreviation
 // returns EmptyAsset if no match is found
-func (a Asset) GetAssetFromAbbreviation(version semver.Version) Asset {
+func GetAssetFromAbbreviation(abbrev string, version semver.Version) Asset {
 	switch {
 	case version.GTE(semver.MustParse("1.97.0")):
-		return getAssetFromAbbreviation97(a)
+		return getAssetFromAbbreviation97(abbrev)
 	default:
 		return EmptyAsset
 	}
 }
 
-func getAssetFromAbbreviation97(asset Asset) Asset {
-	// If the chain was explicitly set in the memo (e.g. CHAIN.SYMBOL), don't try to match
-	// If no chain is set in the memo (e.g. SYMBOL), THORChain will be the default, so attempt to match
-	// the abbreviation
-	if !asset.Chain.IsTHORChain() {
-		return EmptyAsset
-	}
-	switch strings.ToUpper(asset.Symbol.String()) {
+func getAssetFromAbbreviation97(abbrev string) Asset {
+	switch abbrev {
 	case "A":
 		return AVAXAsset
 	case "B":
