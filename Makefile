@@ -22,12 +22,12 @@ GOBIN?=${GOPATH}/bin
 BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
 
 # image build settings
-BRANCH?=$(shell git rev-parse --abbrev-ref HEAD | sed -e 's/master/mocknet/g')
+BRANCH?=$(shell git rev-parse --abbrev-ref HEAD)
 GITREF=$(shell git rev-parse --short HEAD)
-BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD | sed -e 's/master/mocknet/g;s/develop/mocknet/g;s/testnet-multichain/testnet/g')
+BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD)
 ifdef CI_COMMIT_BRANCH # pull branch name from CI, if available
-	BRANCH=$(shell echo ${CI_COMMIT_BRANCH} | sed 's/master/mocknet/g')
-	BUILDTAG=$(shell echo ${CI_COMMIT_BRANCH} | sed -e 's/master/mocknet/g;s/develop/mocknet/g;s/testnet-multichain/testnet/g')
+	BRANCH=$(shell echo ${CI_COMMIT_BRANCH})
+	BUILDTAG=$(shell echo ${CI_COMMIT_BRANCH})
 endif
 
 all: lint install
@@ -124,9 +124,19 @@ test-race:
 test-watch:
 	@gow -c test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
+# ------------------------------ Test Sync ------------------------------
+
 test-sync-mainnet:
 	@BUILDTAG=mainnet BRANCH=mainnet $(MAKE) docker-gitlab-build
 	@docker run --rm -e CHAIN_ID=thorchain-mainnet-v1 -e NET=mainnet registry.gitlab.com/thorchain/thornode:mainnet
+
+test-sync-stagenet:
+	@BUILDTAG=stagenet BRANCH=stagenet $(MAKE) docker-gitlab-build
+	@docker run --rm -e CHAIN_ID=thorchain-stagenet-v2 -e NET=stagenet registry.gitlab.com/thorchain/thornode:stagenet
+
+test-sync-testnet:
+	@BUILDTAG=testnet BRANCH=testnet $(MAKE) docker-gitlab-build
+	@docker run --rm -e CHAIN_ID=thorchain-testnet-v2 -e NET=testnet registry.gitlab.com/thorchain/thornode:testnet
 
 # ------------------------------ Docker Build ------------------------------
 

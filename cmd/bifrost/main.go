@@ -16,7 +16,6 @@ import (
 
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	golog "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p-peerstore/addr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
@@ -129,7 +128,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create file state manager")
 	}
-	var bootstrapPeersfinal addr.AddrList
+	var bootstrapPeersfinal p2p.AddrList
 	savedPeers, err := stateManager.RetrieveP2PAddresses()
 	if err != nil {
 		bootstrapPeersfinal = bootstrapPeers
