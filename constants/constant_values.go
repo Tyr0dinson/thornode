@@ -89,6 +89,7 @@ const (
 	SynthYieldCycle
 	MinimumL1OutboundFeeUSD
 	MinimumPoolLiquidityFee
+	MinAffiliateCollectorValue
 )
 
 var nameToString = map[ConstantName]string{
@@ -171,6 +172,7 @@ var nameToString = map[ConstantName]string{
 	SynthYieldCycle:                    "SynthYieldCycle",
 	MinimumL1OutboundFeeUSD:            "MinimumL1OutboundFeeUSD",
 	MinimumPoolLiquidityFee:            "MinimumPoolLiquidityFee",
+	MinAffiliateCollectorValue:         "MinAffiliateCollectorValue",
 }
 
 // String implement fmt.stringer

@@ -24,3 +24,17 @@ message KeygenBlock {
   int64 height = 1;
   repeated Keygen keygens = 4 [(gogoproto.nullable) = false];
 }
+
+message AffiliateCollector {
+  string address = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string rune_amount = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+}
+
+
+During a swap:
+1. check thorname for preferred asset
+2. if there is one, then send rune to a holding module
+3. increment the rune amount in the affiliate collector 
+4. check if value of rune in affiliate collects is 10x(?) the gas fee
+5. if rune amount is greater than 10x gas fee, then swap to chain address in thorname
+6. zero the rune amount in the affiliate collector (and save)

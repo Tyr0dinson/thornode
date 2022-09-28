@@ -248,6 +248,26 @@ func (h DepositHandler) addSwapV65(ctx cosmos.Context, msg MsgSwap) {
 		}
 		// since native transaction fee has been charged to inbound from address, thus for affiliated fee , the network doesn't need to charge it again
 		coin := common.NewCoin(swapSourceAsset, amt)
+		thorname, err := h.mgr.Keeper().GetTHORName(ctx, msg.AffiliateAddress)
+		if err != nil {
+			ctx.Logger().Error("failed to get thorname", "msg", msg.AffiliateAddress, "error", err)
+		}
+		if err == nil && !thorname.PreferredAsset.IsEmpty() {
+			// fetch affiliate collector
+			affcol, err := h.mgr.Keeper().GetAffilaiteCollector(ctx, msg.AffiliateAddress)
+			if err != nil {
+				ctx.Logger().Error("failed to get affiliate collector", "msg", msg.AffiliateAddress, "error", err)
+			} else {
+				err := h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, AffiliateCollectorName, common.NewCoins(coin))
+				if err != nil {
+					ctx.Logger().Error("failed to send funds to affiliate collector", "error", err)
+				} else {
+					affcol.RuneAmount = affcol.RuneAmount.Add(coin.Amount)
+					h.mgr.Keeper().SetAffiliateCollector(ctx, affocl)
+				}
+			}
+			return
+		}
 		sdkErr := h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
 		if sdkErr != nil {
 			ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)

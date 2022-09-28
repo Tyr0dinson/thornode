@@ -74,6 +74,7 @@ func NewConstantValue010() *ConstantVals {
 			SynthYieldCycle:                    0,                  // number of blocks when the network pays out rewards to yield bearing synths
 			MinimumL1OutboundFeeUSD:            1000000,            // Minimum fee in USD to charge for LP swap, default to $0.01 , nodes need to vote it to a larger value
 			MinimumPoolLiquidityFee:            0,                  // Minimum liquidity fee made by the pool,active pool fail to meet this within a PoolCycle will be demoted
+			MinAffiliateCollectorValue:         1_000_000,          // the min amount of value the affiliate collector has collected to warrant a swap to preferred asset (in basis points)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

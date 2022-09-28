@@ -71,6 +71,7 @@ const (
 	prefixChainContract           kvTypes.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter           kvTypes.DbPrefix = "solvency_voter/"
 	prefixTHORName                kvTypes.DbPrefix = "thorname/"
+	prefixAffiliateCollector      kvTypes.DbPrefix = "affcol/"
 	prefixRollingPoolLiquidityFee kvTypes.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixVersion                 kvTypes.DbPrefix = "version/"
 )

@@ -87,10 +87,11 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
-		ModuleName:  {authtypes.Minter, authtypes.Burner},
-		AsgardName:  {},
-		BondName:    {},
-		ReserveName: {},
+		ModuleName:         {authtypes.Minter, authtypes.Burner},
+		AsgardName:         {},
+		BondName:           {},
+		ReserveName:        {},
+		AffiliateCollector: {},
 	})
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
@@ -157,10 +158,11 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
-		ModuleName:  {authtypes.Minter, authtypes.Burner},
-		AsgardName:  {},
-		BondName:    {},
-		ReserveName: {},
+		ModuleName:         {authtypes.Minter, authtypes.Burner},
+		AsgardName:         {},
+		BondName:           {},
+		ReserveName:        {},
+		AffiliateCollector: {},
 	})
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)

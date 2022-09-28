@@ -292,11 +292,13 @@ type KeeperSolvencyVoter interface {
 
 // NewKeeper creates new instances of the thorchain Keeper
 type KeeperTHORName interface {
-	THORNameExists(ctx cosmos.Context, _ string) bool
-	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
-	SetTHORName(ctx cosmos.Context, name THORName)
-	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
-	DeleteTHORName(ctx cosmos.Context, _ string) error
+	THORNameExists(_ cosmos.Context, _ string) bool
+	GetTHORName(_ cosmos.Context, _ string) (THORName, error)
+	SetTHORName(_ cosmos.Context, name THORName)
+	GetTHORNameIterator(_ cosmos.Context) cosmos.Iterator
+	DeleteTHORName(_ cosmos.Context, _ string) error
+	SetAffiliateCollector(_ cosmos.Context, _ AffiliateCollector)
+	GetAffiliateCollector(_ cosmos.Context, _ common.Address) (AffiliateCollector, error)
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
