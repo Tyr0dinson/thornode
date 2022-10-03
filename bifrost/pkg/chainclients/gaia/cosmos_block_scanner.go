@@ -56,7 +56,7 @@ const (
 	// GasCacheTransactions is the number of transactions over which we compute an average
 	// (mean) gas price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
-	GasCacheTransactions = 100
+	GasCacheTransactions = 10
 )
 
 var (
