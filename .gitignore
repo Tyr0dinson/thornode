@@ -13,7 +13,7 @@ observe
 *balances.json
 *.pb.go
 openapi/openapi.json
-openapi/gen/
+#openapi/gen/
 test/smoke/thornode_proto
 __pycache__
 

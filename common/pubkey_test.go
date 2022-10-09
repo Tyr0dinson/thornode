@@ -1,16 +1,24 @@
 package common
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
+	"testing"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	cs "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
+	"github.com/cosmos/cosmos-sdk/types"
+	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -397,4 +405,24 @@ func (s *PubKeyTestSuite) TestEquals(c *C) {
 	}.Equals(PubKeys{
 		pk1, pk2, pk3, pk4,
 	}), Equals, true)
+}
+func TestGetKeys(t *testing.T) {
+	config := cosmos.GetConfig()
+	config.SetBech32PrefixForAccount(cmd.Bech32PrefixAccAddr, cmd.Bech32PrefixAccPub)
+	config.SetBech32PrefixForValidator(cmd.Bech32PrefixValAddr, cmd.Bech32PrefixValPub)
+	config.SetBech32PrefixForConsensusNode(cmd.Bech32PrefixConsAddr, cmd.Bech32PrefixConsPub)
+	config.SetCoinType(cmd.THORChainCoinType)
+	config.SetPurpose(cmd.THORChainCoinPurpose)
+	types.SetCoinDenomRegex(func() string {
+		return cmd.DenomRegex
+	})
+	r := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
+	accts := simtypes.RandomAccounts(r, 10)
+	for idx, item := range accts {
+		bech32PubKey, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, item.PubKey)
+		spkey := item.PrivKey.(*cs.PrivKey)
+		hkey := hex.EncodeToString(spkey.GetKey())
+		t.Logf("PriKey %d: %s", idx, base64.StdEncoding.EncodeToString([]byte(hkey)))
+		t.Logf("PubKey %d: %s", idx, bech32PubKey)
+	}
 }

@@ -1,0 +1,2722 @@
+openapi: 3.0.0
+info:
+  contact:
+    email: devs@thorchain.org
+  description: Thornode REST API.
+  title: Thornode API
+  version: 1.98.0
+servers:
+- url: /
+paths:
+  /thorchain/ping:
+    get:
+      operationId: ping
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ping'
+          description: OK
+      tags:
+      - Health
+  /thorchain/pool/{asset}:
+    get:
+      description: Returns the pool information for the provided asset.
+      operationId: pool
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: asset
+        required: true
+        schema:
+          example: BTC.BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolResponse'
+          description: OK
+      tags:
+      - Pools
+  /thorchain/pools:
+    get:
+      description: Returns the pool information for all assets.
+      operationId: pools
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolsResponse'
+          description: OK
+      tags:
+      - Pools
+  /thorchain/bucket/{asset}:
+    get:
+      description: Returns the bucket information for the provided asset.
+      operationId: bucket
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: asset
+        required: true
+        schema:
+          example: BTC.BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BucketResponse'
+          description: OK
+      tags:
+      - Buckets
+  /thorchain/buckets:
+    get:
+      description: Returns the bucket information for all assets.
+      operationId: buckets
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BucketsResponse'
+          description: OK
+      tags:
+      - Buckets
+  /thorchain/pool/{asset}/liquidity_provider/{address}:
+    get:
+      description: Returns the liquidity provider information for an address and asset.
+      operationId: liquidityProvider
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: asset
+        required: true
+        schema:
+          example: BTC.BTC
+          type: string
+        style: simple
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiquidityProviderResponse'
+          description: OK
+      tags:
+      - Liquidity Providers
+  /thorchain/pool/{asset}/liquidity_providers:
+    get:
+      description: Returns all liquidity provider information for an asset.
+      operationId: liquidityProviders
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: asset
+        required: true
+        schema:
+          example: BTC.BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiquidityProviderResponse'
+          description: OK
+      tags:
+      - Liquidity Providers
+  /thorchain/tx/{hash}:
+    get:
+      description: Returns the observed transaction for a provided inbound or outbound
+        hash.
+      operationId: tx
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: hash
+        required: true
+        schema:
+          example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxResponse'
+          description: OK
+      tags:
+      - Transactions
+  /thorchain/tx/{hash}/signers:
+    get:
+      description: Returns the signers for a provided inbound or outbound hash.
+      operationId: txSigners
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: hash
+        required: true
+        schema:
+          example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TxSignersResponse'
+          description: OK
+      tags:
+      - Transactions
+  /thorchain/node/{address}:
+    get:
+      description: Returns node information for the provided node address.
+      operationId: node
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeResponse'
+          description: OK
+      tags:
+      - Nodes
+  /thorchain/nodes:
+    get:
+      description: Returns node information for all registered validators.
+      operationId: nodes
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodesResponse'
+          description: OK
+      tags:
+      - Nodes
+  /thorchain/vaults/asgard:
+    get:
+      description: Returns current asgard vaults.
+      operationId: asgard
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultsResponse'
+          description: OK
+      tags:
+      - Vaults
+  /thorchain/vaults/yggdrasil:
+    get:
+      description: Returns current yggdrasil vaults.
+      operationId: yggdrasil
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultsResponse'
+          description: OK
+      tags:
+      - Vaults
+  /thorchain/vaults/{pubkey}:
+    get:
+      description: Returns the vault for the provided pubkey.
+      operationId: vault
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: pubkey
+        required: true
+        schema:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultResponse'
+          description: OK
+      tags:
+      - Vaults
+  /thorchain/vaults/pubkeys:
+    get:
+      description: Returns all pubkeys for current vaults.
+      operationId: vaultPubkeys
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VaultPubkeysResponse'
+          description: OK
+      tags:
+      - Vaults
+  /thorchain/network:
+    get:
+      description: Returns network overview statistics.
+      operationId: network
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/pol:
+    get:
+      description: Returns protocol owned liquidity overview statistics.
+      operationId: pol
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/POLResponse'
+          description: OK
+      tags:
+      - POL
+  /thorchain/inbound_addresses:
+    get:
+      description: Returns the set of asgard addresses that should be used for inbound
+        transactions.
+      operationId: inboundAddresses
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundAddressesResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/lastblock:
+    get:
+      description: Returns the last block information for all chains.
+      operationId: lastblock
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastBlockResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/lastblock/{chain}:
+    get:
+      description: Returns the last block information for the provided chain.
+      operationId: lastblockChain
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: chain
+        required: true
+        schema:
+          example: BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastBlockResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/version:
+    get:
+      description: "Returns the network's current THORNode version, the network's\
+        \ next THORNode version, and the querier's THORNode version."
+      operationId: version
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/constants:
+    get:
+      description: "Returns constant configuration, can be overridden by mimir."
+      operationId: constants
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstantsResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/ragnarok:
+    get:
+      description: Returns a boolean indicating whether the chain is in ragnarok.
+      operationId: ragnarok
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                example: false
+                type: boolean
+          description: OK
+      tags:
+      - Network
+  /thorchain/ban/{address}:
+    get:
+      description: Returns the ban status for the provided node address.
+      operationId: ban
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BanResponse'
+          description: OK
+      tags:
+      - Network
+  /thorchain/queue:
+    get:
+      description: Returns queue statistics.
+      operationId: queue
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponse'
+          description: OK
+      tags:
+      - Queue
+  /thorchain/queue/scheduled:
+    get:
+      description: Returns the scheduled queue.
+      operationId: queueScheduled
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledResponse'
+          description: OK
+      tags:
+      - Queue
+  /thorchain/queue/outbound:
+    get:
+      description: Returns the outbound queue including estimated RUNE values.
+      operationId: queueOutbound
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundResponse'
+          description: OK
+      tags:
+      - Queue
+  /thorchain/keysign/{height}:
+    get:
+      description: Returns keysign information for the provided height - the height
+        being the first block a tx out item appears in the signed-but-unobserved outbound
+        queue.
+      operationId: keysign
+      parameters:
+      - explode: false
+        in: path
+        name: height
+        required: true
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeysignResponse'
+          description: OK
+      tags:
+      - TSS
+  /thorchain/keysign/{height}/{pubkey}:
+    get:
+      description: Returns keysign information for the provided height and pubkey
+        - the height being the block at which a tx out item is scheduled to be signed
+        and moved from the scheduled outbound queue to the outbound queue.
+      operationId: keysignPubkey
+      parameters:
+      - explode: false
+        in: path
+        name: height
+        required: true
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: simple
+      - explode: false
+        in: path
+        name: pubkey
+        required: true
+        schema:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeysignResponse'
+          description: OK
+      tags:
+      - TSS
+  /thorchain/metrics:
+    get:
+      description: Returns keygen and keysign metrics for current vaults.
+      operationId: metrics
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+          description: OK
+      tags:
+      - TSS
+  /thorchain/metric/keygen/{pubkey}:
+    get:
+      description: Returns keygen metrics for the provided vault pubkey.
+      operationId: metricsKeygen
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: pubkey
+        required: true
+        schema:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeygenMetricsResponse'
+          description: OK
+      tags:
+      - TSS
+  /thorchain/thorname/{name}:
+    get:
+      description: Returns addresses registered to the provided thorname.
+      operationId: thorname
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: the thornode to lookup
+        explode: false
+        in: path
+        name: name
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThornameResponse'
+          description: OK
+      tags:
+      - Thornames
+  /thorchain/mimir:
+    get:
+      description: Returns current active mimir configuration.
+      operationId: mimir
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirResponse'
+          description: OK
+      tags:
+      - Mimir
+  /thorchain/mimir/key/{key}:
+    get:
+      description: Returns current active mimir configuration for the provided key.
+      operationId: mimirKey
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: the mimir key to lookup
+        explode: false
+        in: path
+        name: key
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                format: int64
+                type: integer
+          description: OK
+      tags:
+      - Mimir
+  /thorchain/mimir/admin:
+    get:
+      description: Returns current admin mimir configuration.
+      operationId: mimirAdmin
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirResponse'
+          description: OK
+      tags:
+      - Mimir
+  /thorchain/mimir/nodes_all:
+    get:
+      description: Returns current node mimir votes.
+      operationId: mimirNodes
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirNodesResponse'
+          description: OK
+      tags:
+      - Mimir
+  /thorchain/mimir/node/{address}:
+    get:
+      description: Returns current node mimir configuration for the provided node
+        address.
+      operationId: mimirNode
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirResponse'
+          description: OK
+      tags:
+      - Mimir
+components:
+  parameters:
+    queryHeight:
+      description: "optional block height, defaults to current tip"
+      explode: true
+      in: query
+      name: height
+      required: false
+      schema:
+        format: int64
+        minimum: 0
+        type: integer
+      style: form
+    pathHeight:
+      explode: false
+      in: path
+      name: height
+      required: true
+      schema:
+        format: int64
+        minimum: 0
+        type: integer
+      style: simple
+    hash:
+      explode: false
+      in: path
+      name: hash
+      required: true
+      schema:
+        example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+        type: string
+      style: simple
+    asset:
+      explode: false
+      in: path
+      name: asset
+      required: true
+      schema:
+        example: BTC.BTC
+        type: string
+      style: simple
+    address:
+      explode: false
+      in: path
+      name: address
+      required: true
+      schema:
+        example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+        type: string
+      style: simple
+    pubkey:
+      explode: false
+      in: path
+      name: pubkey
+      required: true
+      schema:
+        example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        type: string
+      style: simple
+    chain:
+      explode: false
+      in: path
+      name: chain
+      required: true
+      schema:
+        example: BTC
+        type: string
+      style: simple
+  schemas:
+    Pool:
+      example:
+        synth_supply: "0"
+        pending_inbound_rune: "464993836"
+        decimals: 6
+        synth_units: "0"
+        LP_units: "14694928607473"
+        balance_rune: "13460619152985"
+        asset: BTC.BTC
+        pool_units: "14694928607473"
+        balance_asset: "3197744873"
+        status: Available
+        pending_inbound_asset: "101713319"
+      properties:
+        balance_rune:
+          example: "13460619152985"
+          type: string
+        balance_asset:
+          example: "3197744873"
+          type: string
+        asset:
+          example: BTC.BTC
+          type: string
+        LP_units:
+          description: the total pool liquidity provider units
+          example: "14694928607473"
+          type: string
+        pool_units:
+          description: "the total pool units, this is the sum of LP and synth units"
+          example: "14694928607473"
+          type: string
+        status:
+          example: Available
+          type: string
+        decimals:
+          example: 6
+          format: int64
+          type: integer
+        synth_units:
+          description: the total synth units in the pool
+          example: "0"
+          type: string
+        synth_supply:
+          description: the total supply of synths for the asset
+          example: "0"
+          type: string
+        pending_inbound_rune:
+          example: "464993836"
+          type: string
+        pending_inbound_asset:
+          example: "101713319"
+          type: string
+      required:
+      - LP_units
+      - asset
+      - balance_asset
+      - balance_rune
+      - pending_inbound_asset
+      - pending_inbound_rune
+      - pool_units
+      - status
+      - synth_supply
+      - synth_units
+      type: object
+    Bucket:
+      example:
+        LP_units: "14694928607473"
+        asset: BTC/BTC
+        balance_asset: "3197744873"
+        status: Available
+      properties:
+        balance_asset:
+          example: "3197744873"
+          type: string
+        asset:
+          example: BTC/BTC
+          type: string
+        LP_units:
+          description: the total pool liquidity provider units
+          example: "14694928607473"
+          type: string
+        status:
+          example: Available
+          type: string
+      required:
+      - LP_units
+      - asset
+      - balance_asset
+      - status
+      type: object
+    LiquidityProvider:
+      example:
+        pending_asset: "242000000"
+        asset_address: bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        last_withdraw_height: 82745
+        pending_tx_Id: C4C876802xxxxxxxxxxBC408829878446A37011EBBA0C5CAA3DD64A548879CB228
+        rune_address: thor1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        units: "0"
+        pending_rune: "0"
+        asset: BNB.BNB
+        asset_deposit_value: "0"
+        last_add_height: 82745
+        rune_deposit_value: "0"
+      properties:
+        asset:
+          example: BNB.BNB
+          type: string
+        rune_address:
+          example: thor1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          type: string
+        asset_address:
+          example: bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          type: string
+        last_add_height:
+          example: 82745
+          format: int64
+          type: integer
+        last_withdraw_height:
+          example: 82745
+          format: int64
+          type: integer
+        units:
+          example: "0"
+          type: string
+        pending_rune:
+          example: "0"
+          type: string
+        pending_asset:
+          example: "242000000"
+          type: string
+        pending_tx_Id:
+          example: C4C876802xxxxxxxxxxBC408829878446A37011EBBA0C5CAA3DD64A548879CB228
+          type: string
+        rune_deposit_value:
+          example: "0"
+          type: string
+        asset_deposit_value:
+          example: "0"
+          type: string
+      required:
+      - asset
+      - asset_deposit_value
+      - pending_asset
+      - pending_rune
+      - rune_deposit_value
+      - units
+      type: object
+    Coin:
+      example:
+        amount: "100000"
+        decimals: 6
+        asset: BTC.BTC
+      properties:
+        asset:
+          example: BTC.BTC
+          type: string
+        amount:
+          example: "100000"
+          type: string
+        decimals:
+          example: 6
+          format: int64
+          type: integer
+      required:
+      - amount
+      - asset
+      type: object
+    Vault:
+      example:
+        addresses:
+        - chain: BTC
+          address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+        - chain: BTC
+          address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+        coins:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        chains:
+        - chains
+        - chains
+        block_height: 0
+        membership:
+        - membership
+        - membership
+        type: AsgardVault
+        pub_key: pub_key
+        inbound_tx_count: 1
+        status_since: 6
+        pending_tx_block_heights:
+        - 5
+        - 5
+        outbound_tx_count: 5
+        routers:
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        status: status
+      properties:
+        block_height:
+          format: int64
+          type: integer
+        pub_key:
+          type: string
+        coins:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        type:
+          enum:
+          - AsgardVault
+          - YggdrasilVault
+          type: string
+        status:
+          type: string
+        status_since:
+          format: int64
+          type: integer
+        membership:
+          description: the list of node public keys which are members of the vault
+          items:
+            type: string
+          type: array
+        chains:
+          items:
+            type: string
+          type: array
+        inbound_tx_count:
+          format: int64
+          type: integer
+        outbound_tx_count:
+          format: int64
+          type: integer
+        pending_tx_block_heights:
+          items:
+            format: int64
+            type: integer
+          type: array
+        routers:
+          items:
+            $ref: '#/components/schemas/VaultRouter'
+          type: array
+        addresses:
+          items:
+            $ref: '#/components/schemas/VaultAddress'
+          type: array
+      required:
+      - addresses
+      - coins
+      - routers
+      type: object
+    VaultRouter:
+      example:
+        chain: ETH
+        router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+      properties:
+        chain:
+          example: ETH
+          type: string
+        router:
+          example: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          type: string
+      type: object
+    VaultAddress:
+      example:
+        chain: BTC
+        address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+      properties:
+        chain:
+          example: BTC
+          type: string
+        address:
+          example: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+          type: string
+      type: object
+    VaultInfo:
+      example:
+        routers:
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+      properties:
+        pub_key:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        routers:
+          items:
+            $ref: '#/components/schemas/VaultRouter'
+          type: array
+      required:
+      - pub_key
+      - routers
+      type: object
+    Tx:
+      example:
+        chain: BTC
+        coins:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        gas:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+        to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+        id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+        from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+      properties:
+        id:
+          example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+          type: string
+        chain:
+          example: BTC
+          type: string
+        from_address:
+          example: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          type: string
+        to_address:
+          example: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+          type: string
+        coins:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        gas:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        memo:
+          example: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+      required:
+      - coins
+      - gas
+      type: object
+    InboundAddress:
+      example:
+        outbound_tx_size: "1000"
+        halted: false
+        chain: BTC
+        router: 0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146
+        address: bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46
+        outbound_fee: "428000"
+        gas_rate: "214"
+        gas_rate_units: satsperbyte
+        pub_key: thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
+      properties:
+        chain:
+          example: BTC
+          type: string
+        pub_key:
+          example: thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
+          type: string
+        address:
+          example: bc1qn9esxuw8ca7ts8l6w66kdh800s09msvutydc46
+          type: string
+        router:
+          example: 0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146
+          type: string
+        halted:
+          example: false
+          type: boolean
+        gas_rate:
+          description: The minimum fee rate used by vaults to send outbound TXs. The
+            actual fee rate may be higher.
+          example: "214"
+          type: string
+        gas_rate_units:
+          description: Units of the gas_rate.
+          example: satsperbyte
+          type: string
+        outbound_tx_size:
+          description: "Avg size of outbound TXs on each chain. For UTXO chains it\
+            \ may be larger than average, as it takes into account vault consolidation\
+            \ txs, which can have many vouts"
+          example: "1000"
+          type: string
+        outbound_fee:
+          description: The total outbound fee charged to the user for outbound txs
+            on each chain
+          example: "428000"
+          type: string
+      required:
+      - halted
+      type: object
+    LastBlock:
+      example:
+        chain: chain
+        last_signed_out: 6
+        last_observed_in: 0
+        thorchain: 1
+      properties:
+        chain:
+          type: string
+        last_observed_in:
+          format: int64
+          type: integer
+        last_signed_out:
+          format: int64
+          type: integer
+        thorchain:
+          format: int64
+          type: integer
+      required:
+      - chain
+      - last_observed_in
+      - last_signed_out
+      - thorchain
+      type: object
+    ObservedTx:
+      example:
+        signers:
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        keysign_ms: 10000
+        tx:
+          chain: BTC
+          coins:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          gas:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+          id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+          from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+        aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+        out_hashes:
+        - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+        - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+        aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+        observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+        finalise_height: 7581334
+        block_height: 7581334
+        aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+        status: done
+      properties:
+        tx:
+          $ref: '#/components/schemas/Tx'
+        status:
+          enum:
+          - done
+          - incomplete
+          example: done
+          type: string
+        out_hashes:
+          items:
+            example: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            type: string
+          type: array
+        block_height:
+          description: "the block height of the observed transaction on the source\
+            \ chain, not provided if chain is THOR"
+          example: 7581334
+          format: int64
+          type: integer
+        signers:
+          items:
+            example: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+            type: string
+          type: array
+        observed_pub_key:
+          example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          type: string
+        keysign_ms:
+          example: 10000
+          format: int64
+          type: integer
+        finalise_height:
+          description: "the finalised height of the observed transaction on the source\
+            \ chain, not provided if chain is THOR"
+          example: 7581334
+          format: int64
+          type: integer
+        aggregator:
+          description: "the outbound aggregator to use, will also match a suffix"
+          example: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          type: string
+        aggregator_target:
+          description: the aggregator target asset provided to transferOutAndCall
+          example: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          type: string
+        aggregator_target_limit:
+          description: the aggregator target asset limit provided to transferOutAndCall
+          example: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          type: string
+      required:
+      - tx
+      type: object
+    TxOutItem:
+      example:
+        chain: ETH
+        gas_rate: 0
+        in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+        out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+        memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+        to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+        vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+        max_gas:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        coin:
+          amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        height: 1234
+      properties:
+        chain:
+          example: ETH
+          type: string
+        to_address:
+          example: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          type: string
+        vault_pub_key:
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        coin:
+          $ref: '#/components/schemas/Coin'
+        memo:
+          example: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          type: string
+        max_gas:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        gas_rate:
+          format: int64
+          type: integer
+        in_hash:
+          example: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          type: string
+        out_hash:
+          example: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          type: string
+        height:
+          example: 1234
+          format: int64
+          type: integer
+      required:
+      - chain
+      - coin
+      - height
+      - max_gas
+      - to_address
+      type: object
+    TssMetric:
+      example:
+        address: address
+        tss_time: 0
+      properties:
+        address:
+          type: string
+        tss_time:
+          format: int64
+          type: integer
+      type: object
+    TssKeysignMetric:
+      example:
+        tx_id: tx_id
+        node_tss_times:
+        - address: address
+          tss_time: 0
+        - address: address
+          tss_time: 0
+      properties:
+        tx_id:
+          type: string
+        node_tss_times:
+          items:
+            $ref: '#/components/schemas/TssMetric'
+          type: array
+      required:
+      - node_tss_times
+      type: object
+    Node:
+      example:
+        node_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        observe_chains:
+        - chain: BTC
+          height: 2000000
+        - chain: BTC
+          height: 2000000
+        bond_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        preflight_status:
+          reason: OK
+          code: 0
+          status: Ready
+        leave_height: 0
+        active_block_height: 123456
+        pub_key_set:
+          ed25519: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          secp256k1: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+        signer_membership:
+        - thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
+        - thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
+        ip_address: 10.20.30.40
+        jail:
+          reason: reason
+          node_address: tthor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          release_height: 1234
+        bond: "123456789"
+        version: 0.35.0
+        requested_to_leave: true
+        status_since: 100000
+        current_award: "123456"
+        slash_points: 42
+        forced_to_leave: true
+        validator_cons_pub_key: thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew
+        bond_providers:
+          node_address: node_address
+          node_operator_fee: node_operator_fee
+          providers:
+            bond_address: bond_address
+            bond: bond
+        status: Active
+      properties:
+        node_address:
+          example: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          type: string
+        status:
+          enum:
+          - Active
+          - Whitelisted
+          - Standby
+          - Disabled
+          example: Active
+          type: string
+        pub_key_set:
+          $ref: '#/components/schemas/NodePubKeySet'
+        validator_cons_pub_key:
+          description: the consensus pub key for the node
+          example: thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew
+          type: string
+        bond:
+          description: current node bond
+          example: "123456789"
+          type: string
+        active_block_height:
+          description: the block height at which the node became active
+          example: 123456
+          format: int64
+          type: integer
+        bond_address:
+          example: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          type: string
+        status_since:
+          description: the block height of the current provided information for the
+            node
+          example: 100000
+          format: int64
+          type: integer
+        signer_membership:
+          description: the set of vault public keys of which the node is a member
+          items:
+            example: thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82
+            type: string
+          type: array
+        requested_to_leave:
+          type: boolean
+        forced_to_leave:
+          description: "indicates whether the node has been forced to leave by the\
+            \ network, typically via ban"
+          type: boolean
+        leave_height:
+          example: 0
+          format: int64
+          type: integer
+        ip_address:
+          example: 10.20.30.40
+          type: string
+        version:
+          description: the currently set version of the node
+          example: 0.35.0
+          type: string
+        slash_points:
+          description: "the accumlated slash points, reset at churn but excessive\
+            \ slash points may carry over"
+          example: 42
+          format: int64
+          type: integer
+        jail:
+          $ref: '#/components/schemas/NodeJail'
+        current_award:
+          example: "123456"
+          type: string
+        observe_chains:
+          description: the last observed heights for all chain by the node
+          items:
+            $ref: '#/components/schemas/ChainHeight'
+          type: array
+        preflight_status:
+          $ref: '#/components/schemas/NodePreflightStatus'
+        bond_providers:
+          $ref: '#/components/schemas/NodeBondProviders'
+      required:
+      - active_block_height
+      - bond
+      - bond_address
+      - bond_providers
+      - current_award
+      - forced_to_leave
+      - ip_address
+      - jail
+      - leave_height
+      - node_address
+      - observe_chains
+      - preflight_status
+      - pub_key_set
+      - requested_to_leave
+      - signer_membership
+      - slash_points
+      - status
+      - status_since
+      - validator_cons_pub_key
+      - version
+      type: object
+    KeygenMetric:
+      example:
+        node_tss_times:
+        - address: address
+          tss_time: tss_time
+        - address: address
+          tss_time: tss_time
+        pub_key: pub_key
+      properties:
+        pub_key:
+          type: string
+        node_tss_times:
+          items:
+            $ref: '#/components/schemas/NodeKeygenMetric'
+          type: array
+      required:
+      - node_tss_times
+      type: object
+    Thorname:
+      example:
+        chain: BTC
+        address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+        name: thor
+        expire_block_height: 1234
+      properties:
+        name:
+          example: thor
+          type: string
+        chain:
+          example: BTC
+          type: string
+        address:
+          example: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+          type: string
+        expire_block_height:
+          example: 1234
+          format: int64
+          type: integer
+      type: object
+    PoolResponse:
+      $ref: '#/components/schemas/Pool'
+    PoolsResponse:
+      items:
+        $ref: '#/components/schemas/Pool'
+      type: array
+    BucketResponse:
+      $ref: '#/components/schemas/Bucket'
+    BucketsResponse:
+      items:
+        $ref: '#/components/schemas/Bucket'
+      type: array
+    LiquidityProviderResponse:
+      items:
+        $ref: '#/components/schemas/LiquidityProvider'
+      type: array
+    TxResponse:
+      example:
+        observed_tx:
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        keysign_metric:
+          tx_id: tx_id
+          node_tss_times:
+          - address: address
+            tss_time: 0
+          - address: address
+            tss_time: 0
+      properties:
+        observed_tx:
+          $ref: '#/components/schemas/ObservedTx'
+        keysign_metric:
+          $ref: '#/components/schemas/TssKeysignMetric'
+      type: object
+    TxSignersResponse:
+      example:
+        tx:
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        out_txs:
+        - out_txs
+        - out_txs
+        outbound_height: 1234
+        updated_vault: false
+        tx_id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+        actions:
+        - signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        - signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        txs:
+        - signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        - signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          out_hashes:
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          finalise_height: 7581334
+          block_height: 7581334
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          status: done
+        finalised_height: 7581334
+        height: 1234
+        reverted: false
+      properties:
+        tx_id:
+          example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+          type: string
+        tx:
+          $ref: '#/components/schemas/ObservedTx'
+        height:
+          example: 1234
+          format: int64
+          type: integer
+        txs:
+          items:
+            $ref: '#/components/schemas/ObservedTx'
+          type: array
+        actions:
+          items:
+            $ref: '#/components/schemas/ObservedTx'
+          type: array
+        out_txs:
+          items:
+            type: string
+          type: array
+        finalised_height:
+          description: the thorchain height at which the outbound was finalised
+          example: 7581334
+          format: int64
+          type: integer
+        updated_vault:
+          example: false
+          type: boolean
+        reverted:
+          example: false
+          type: boolean
+        outbound_height:
+          example: 1234
+          format: int64
+          type: integer
+      required:
+      - actions
+      - out_txs
+      - tx
+      - txs
+      type: object
+    NodeResponse:
+      $ref: '#/components/schemas/Node'
+    NodesResponse:
+      items:
+        $ref: '#/components/schemas/Node'
+      type: array
+    VaultsResponse:
+      items:
+        $ref: '#/components/schemas/Vault'
+      type: array
+    VaultResponse:
+      $ref: '#/components/schemas/Vault'
+    VaultPubkeysResponse:
+      example:
+        yggdrasil:
+        - routers:
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        - routers:
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        asgard:
+        - routers:
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        - routers:
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          - chain: ETH
+            router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+          pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+      properties:
+        asgard:
+          items:
+            $ref: '#/components/schemas/VaultInfo'
+          type: array
+        yggdrasil:
+          items:
+            $ref: '#/components/schemas/VaultInfo'
+          type: array
+      required:
+      - asgard
+      - yggdrasil
+      type: object
+    NetworkResponse:
+      example:
+        bond_reward_rune: "857134475040"
+        burned_bep_2_rune: "674699077345087"
+        total_bond_units: "0"
+        burned_erc_20_rune: "66369401654835"
+        total_reserve: "21999180112172346"
+      properties:
+        bond_reward_rune:
+          description: total amount of RUNE awarded to node operators
+          example: "857134475040"
+          type: string
+        total_bond_units:
+          description: total bonded RUNE
+          example: "0"
+          type: string
+        total_reserve:
+          description: total reserve RUNE
+          example: "21999180112172346"
+          type: string
+        burned_bep_2_rune:
+          description: total of burned BEP2 RUNE
+          example: "674699077345087"
+          type: string
+        burned_erc_20_rune:
+          description: total of burned ERC20 RUNE
+          example: "66369401654835"
+          type: string
+      required:
+      - bond_reward_rune
+      - burned_bep_2_rune
+      - burned_erc_20_rune
+      - total_bond_units
+      - total_reserve
+      type: object
+    POLResponse:
+      example:
+        current_deposit: "21999180112172346"
+        rune_deposited: "857134475040"
+        rune_withdrawn: "0"
+        value: "21999180112172346"
+        pnl: "21999180112172346"
+      properties:
+        rune_deposited:
+          description: total amount of RUNE deposited into the pools
+          example: "857134475040"
+          type: string
+        rune_withdrawn:
+          description: total amount of RUNE withdrawn from the pools
+          example: "0"
+          type: string
+        value:
+          description: total value of protocol's LP position in RUNE value
+          example: "21999180112172346"
+          type: string
+        pnl:
+          description: profit and loss of protocol owned liquidity
+          example: "21999180112172346"
+          type: string
+        current_deposit:
+          description: current amount of rune deposited
+          example: "21999180112172346"
+          type: string
+      required:
+      - current_deposit
+      - pnl
+      - rune_deposited
+      - rune_withdrawn
+      - value
+      type: object
+    InboundAddressesResponse:
+      items:
+        $ref: '#/components/schemas/InboundAddress'
+      type: array
+    LastBlockResponse:
+      items:
+        $ref: '#/components/schemas/LastBlock'
+      type: array
+    VersionResponse:
+      example:
+        next: 0.18.0
+        current: 0.17.0
+        querier: 0.16.0
+      properties:
+        current:
+          description: current version
+          example: 0.17.0
+          type: string
+        next:
+          description: next version
+          example: 0.18.0
+          type: string
+        querier:
+          description: querier version
+          example: 0.16.0
+          type: string
+      required:
+      - current
+      - next
+      - querier
+      type: object
+    ConstantsResponse:
+      example:
+        bool_values:
+          StrictBondLiquidityRatio: true
+        string_values:
+          DefaultPoolStatus: Staged
+        int64_values:
+          AsgardSize: 40
+          BadValidatorRate: 43200
+      properties:
+        int64_values:
+          additionalProperties:
+            type: string
+          example:
+            AsgardSize: 40
+            BadValidatorRate: 43200
+          type: object
+        bool_values:
+          additionalProperties:
+            type: string
+          example:
+            StrictBondLiquidityRatio: true
+          type: object
+        string_values:
+          additionalProperties:
+            type: string
+          example:
+            DefaultPoolStatus: Staged
+          type: object
+      type: object
+    BanResponse:
+      example:
+        signers:
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        node_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        block_height: 0
+      properties:
+        node_address:
+          example: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          type: string
+        block_height:
+          format: int64
+          type: integer
+        signers:
+          items:
+            example: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+            type: string
+          type: array
+      type: object
+    QueueResponse:
+      example:
+        internal: 0
+        swap: 0
+        outbound: 10
+        scheduled_outbound_value: scheduled_outbound_value
+      properties:
+        swap:
+          example: 0
+          format: int64
+          type: integer
+        outbound:
+          description: number of signed outbound tx in the queue
+          example: 10
+          format: int64
+          type: integer
+        internal:
+          example: 0
+          format: int64
+          type: integer
+        scheduled_outbound_value:
+          description: scheduled outbound value in RUNE
+          type: string
+      required:
+      - internal
+      - outbound
+      - scheduled_outbound_value
+      - swap
+      type: object
+    OutboundResponse:
+      items:
+        $ref: '#/components/schemas/TxOutItem'
+      type: array
+    ScheduledResponse:
+      items:
+        $ref: '#/components/schemas/TxOutItem'
+      type: array
+    KeysignResponse:
+      example:
+        signature: signature
+        keysign:
+          tx_array:
+          - chain: ETH
+            gas_rate: 0
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            max_gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            height: 1234
+          - chain: ETH
+            gas_rate: 0
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            max_gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            height: 1234
+          height: 0
+      properties:
+        keysign:
+          $ref: '#/components/schemas/KeysignInfo'
+        signature:
+          type: string
+      type: object
+    KeygenMetricsResponse:
+      items:
+        $ref: '#/components/schemas/KeygenMetric'
+      type: array
+    MetricsResponse:
+      example:
+        keygen:
+        - node_tss_times:
+          - address: address
+            tss_time: tss_time
+          - address: address
+            tss_time: tss_time
+          pub_key: pub_key
+        - node_tss_times:
+          - address: address
+            tss_time: tss_time
+          - address: address
+            tss_time: tss_time
+          pub_key: pub_key
+        keysign:
+          tx_id: tx_id
+          node_tss_times:
+          - address: address
+            tss_time: 0
+          - address: address
+            tss_time: 0
+      properties:
+        keygen:
+          items:
+            $ref: '#/components/schemas/KeygenMetric'
+          type: array
+        keysign:
+          $ref: '#/components/schemas/KeysignMetrics'
+      type: object
+    ThornameResponse:
+      items:
+        $ref: '#/components/schemas/Thorname'
+      type: array
+    MimirResponse:
+      additionalProperties:
+        type: string
+      example:
+        NODEOPERATORFEE: 2000
+        NUMBEROFNEWNODESPERCHURN: 2
+      type: object
+    MimirNodesResponse:
+      example:
+        mimirs:
+        - value: 0
+          key: key
+          signer: signer
+        - value: 0
+          key: key
+          signer: signer
+      properties:
+        mimirs:
+          items:
+            $ref: '#/components/schemas/MimirVote'
+          type: array
+      type: object
+    Ping:
+      example:
+        ping: pong
+      properties:
+        ping:
+          example: pong
+          type: string
+      title: Ping
+      type: object
+    NodePubKeySet:
+      example:
+        ed25519: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+        secp256k1: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+      properties:
+        secp256k1:
+          example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          type: string
+        ed25519:
+          example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          type: string
+      title: NodePubKeySet
+      type: object
+    NodeJail:
+      example:
+        reason: reason
+        node_address: tthor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        release_height: 1234
+      properties:
+        node_address:
+          example: tthor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          type: string
+        release_height:
+          example: 1234
+          format: int64
+          type: integer
+        reason:
+          type: string
+      title: NodeJail
+      type: object
+    ChainHeight:
+      example:
+        chain: BTC
+        height: 2000000
+      properties:
+        chain:
+          example: BTC
+          type: string
+        height:
+          example: 2000000
+          format: int64
+          type: integer
+      required:
+      - chain
+      - height
+      title: ChainHeight
+      type: object
+    NodePreflightStatus:
+      example:
+        reason: OK
+        code: 0
+        status: Ready
+      properties:
+        status:
+          description: the next status of the node
+          example: Ready
+          type: string
+        reason:
+          description: the reason for the transition to the next status
+          example: OK
+          type: string
+        code:
+          example: 0
+          format: int64
+          type: integer
+      required:
+      - code
+      - reason
+      - status
+      title: NodePreflightStatus
+      type: object
+    NodeBondProvider:
+      example:
+        bond_address: bond_address
+        bond: bond
+      properties:
+        bond_address:
+          type: string
+        bond:
+          type: string
+      title: NodeBondProvider
+      type: object
+    NodeBondProviders:
+      example:
+        node_address: node_address
+        node_operator_fee: node_operator_fee
+        providers:
+          bond_address: bond_address
+          bond: bond
+      properties:
+        node_address:
+          type: string
+        node_operator_fee:
+          type: string
+        providers:
+          $ref: '#/components/schemas/NodeBondProvider'
+      title: NodeBondProviders
+      type: object
+    NodeKeygenMetric:
+      example:
+        address: address
+        tss_time: tss_time
+      properties:
+        address:
+          type: string
+        tss_time:
+          type: string
+      title: NodeKeygenMetric
+      type: object
+    KeysignInfo:
+      example:
+        tx_array:
+        - chain: ETH
+          gas_rate: 0
+          in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          max_gas:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          height: 1234
+        - chain: ETH
+          gas_rate: 0
+          in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          max_gas:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          height: 1234
+        height: 0
+      properties:
+        height:
+          description: the block(s) in which a tx out item is scheduled to be signed
+            and moved from the scheduled outbound queue to the outbound queue
+          format: int64
+          type: integer
+        tx_array:
+          items:
+            $ref: '#/components/schemas/TxOutItem'
+          type: array
+      required:
+      - tx_array
+      title: KeysignInfo
+      type: object
+    KeysignMetrics:
+      example:
+        tx_id: tx_id
+        node_tss_times:
+        - address: address
+          tss_time: 0
+        - address: address
+          tss_time: 0
+      properties:
+        tx_id:
+          type: string
+        node_tss_times:
+          items:
+            $ref: '#/components/schemas/TssMetric'
+          type: array
+      title: KeysignMetrics
+      type: object
+    MimirVote:
+      example:
+        value: 0
+        key: key
+        signer: signer
+      properties:
+        key:
+          type: string
+        value:
+          format: int64
+          type: integer
+        signer:
+          type: string
+      title: MimirVote
+      type: object
