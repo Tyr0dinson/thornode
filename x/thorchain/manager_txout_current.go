@@ -111,6 +111,7 @@ func (tos *TxOutStorageV98) ClearOutboundItems(ctx cosmos.Context) {
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageV98) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	ctx.Logger().Debug("toi output before prepare tx", toi.Coin.Amount)
 	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
@@ -121,8 +122,12 @@ func (tos *TxOutStorageV98) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 
 	sumOut := cosmos.ZeroUint()
 	for _, o := range outputs {
+		ctx.Logger().Debug("o.Coin.Amount", o.Coin.Amount)
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
+
+	ctx.Logger().Debug("sumOut", sumOut)
+
 	if sumOut.LT(minOut) {
 		// **NOTE** this error string is utilized by the order book manager to
 		// catch the error. DO NOT change this error string without updating
