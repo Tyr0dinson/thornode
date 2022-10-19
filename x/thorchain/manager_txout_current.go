@@ -275,6 +275,9 @@ func (tos *TxOutStorageV98) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
 	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
+
+	ctx.Logger().Debug("transactionFeeRune", transactionFeeRune.String(), "transactionFeeAsset", transactionFeeAsset.String())
+
 	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get max gas asset", "error", err)
@@ -385,6 +388,8 @@ func (tos *TxOutStorageV98) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
+		ctx.Logger().Debug("output asset", outputs[i].Coin.Asset.String(), "output amt", outputs[i].Coin.Amount.String())
+
 		if outputs[i].MaxGas.IsEmpty() {
 			maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, outputs[i].Chain)
 			if err != nil {
@@ -431,6 +436,7 @@ func (tos *TxOutStorageV98) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 					}
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
+					ctx.Logger().Debug("output amt after network fee", outputs[i].Coin.Amount.String())
 					if outputs[i].Coin.Asset.IsSyntheticAsset() {
 						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
 						if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {

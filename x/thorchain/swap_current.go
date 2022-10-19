@@ -120,6 +120,8 @@ func (s *SwapperV98) Swap(ctx cosmos.Context,
 		var amt cosmos.Uint
 		// Here we use a swapTarget of 0 because the target is for the next swap asset in a double swap
 		amt, swapEvt, swapErr = s.swapOne(ctx, keeper, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), transactionFee, synthVirtualDepthMult)
+		ctx.Logger().Debug("swap1 assetAmt", amt)
+
 		if swapErr != nil {
 			return cosmos.ZeroUint(), swapEvents, swapErr
 		}
@@ -129,6 +131,8 @@ func (s *SwapperV98) Swap(ctx cosmos.Context,
 		swapEvents = append(swapEvents, swapEvt)
 	}
 	assetAmount, swapEvt, swapErr := s.swapOne(ctx, keeper, tx, target, destination, swapTarget, transactionFee, synthVirtualDepthMult)
+	ctx.Logger().Debug("swap2 assetAmt", assetAmount)
+
 	if swapErr != nil {
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
@@ -328,6 +332,8 @@ func (s *SwapperV98) swapOne(ctx cosmos.Context,
 	swapSlip = s.CalcSwapSlip(X, x)
 	emitAssets = s.CalcAssetEmission(X, x, Y)
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
+	ctx.Logger().Debug("emitAssets", emitAssets.String(), "liquidityFee", liquidityFee.String(), "swapSlip", swapSlip.String())
+
 	swapEvt.LiquidityFee = liquidityFee
 
 	if source.IsRune() {
