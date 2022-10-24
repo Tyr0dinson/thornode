@@ -1,3 +1,16 @@
+########################################################################################
+# Environment Checks
+########################################################################################
+
+CHECK_ENV:=$(shell ./scripts/check-env.sh)
+ifneq ($(CHECK_ENV),)
+$(error Check environment dependencies.)
+endif
+
+########################################################################################
+# Config
+########################################################################################
+
 .PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet ps-mocknet reset-mocknet logs-mocknet openapi
 
 # compiler flags
@@ -21,16 +34,20 @@ TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 GOBIN?=${GOPATH}/bin
 BINARIES=./cmd/thornode ./cmd/bifrost ./tools/generate
 
+# pull branch name from CI if unset and available
+ifdef CI_COMMIT_BRANCH
+	BRANCH?=$(shell echo ${CI_COMMIT_BRANCH})
+	BUILDTAG?=$(shell echo ${CI_COMMIT_BRANCH})
+endif
+
 # image build settings
 BRANCH?=$(shell git rev-parse --abbrev-ref HEAD)
 GITREF=$(shell git rev-parse --short HEAD)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD)
-ifdef CI_COMMIT_BRANCH # pull branch name from CI, if available
-	BRANCH=$(shell echo ${CI_COMMIT_BRANCH})
-	BUILDTAG=$(shell echo ${CI_COMMIT_BRANCH})
-endif
 
-all: lint install
+########################################################################################
+# Targets
+########################################################################################
 
 # ------------------------------ Generate ------------------------------
 
@@ -41,7 +58,7 @@ protob:
 
 protob-docker:
 	@docker run --rm -v $(shell pwd):/app -w /app \
-		registry.gitlab.com/thorchain/thornode:builder-v2@sha256:eda7a8670a92b3178b2f947f692794c19e307073cdef4ad2a28ccf8dba2a7054 \
+		registry.gitlab.com/thorchain/thornode:builder-v3@sha256:cd8a5f569e8978e7fdedb85039ddac3cf19cb5831c4823e9635b69c2b1ff6957 \
 		make protob
 
 smoke-protob:
@@ -58,7 +75,7 @@ smoke-protob:
 
 smoke-protob-docker:
 	@docker run --rm -v $(shell pwd):/app -w /app \
-		registry.gitlab.com/thorchain/thornode:builder-v2@sha256:eda7a8670a92b3178b2f947f692794c19e307073cdef4ad2a28ccf8dba2a7054 \
+		registry.gitlab.com/thorchain/thornode:builder-v3@sha256:cd8a5f569e8978e7fdedb85039ddac3cf19cb5831c4823e9635b69c2b1ff6957 \
 		sh -c 'make smoke-protob'
 
 $(SMOKE_PROTO_DIR):
@@ -74,10 +91,10 @@ openapi:
 
 # ------------------------------ Build ------------------------------
 
-build: protob
+build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
-install: protob
+install:
 	go install ${BUILD_FLAGS} ${BINARIES}
 
 tools:
@@ -189,16 +206,16 @@ smoke-remote-ci: reset-mocknet
 # ------------------------------ Single Node Mocknet ------------------------------
 
 cli-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml run --rm cli
+	@docker compose -f build/docker/docker-compose.yml run --rm cli
 
 run-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard up -d
 
 stop-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
 
 build-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build
 
 bootstrap-mocknet: $(SMOKE_PROTO_DIR)
 	@docker run ${SMOKE_DOCKER_OPTS} \
@@ -208,27 +225,27 @@ bootstrap-mocknet: $(SMOKE_PROTO_DIR)
 		python scripts/smoke.py --bootstrap-only=True
 
 ps-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
 
 logs-mocknet:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
 
 reset-mocknet: stop-mocknet run-mocknet
 
 # ------------------------------ Multi Node Mocknet ------------------------------
 
 run-mocknet-cluster:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard up -d
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard up -d
 
 stop-mocknet-cluster:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard down -v
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard down -v
 
 build-mocknet-cluster:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard build
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard build
 
 ps-mocknet-cluster:
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard images
-	@docker-compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard ps
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard images
+	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster

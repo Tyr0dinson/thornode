@@ -325,6 +325,8 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
+	case version.GTE(semver.MustParse("1.98.0")):
+		return newTxOutStorageV98(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.97.0")):
 		return newTxOutStorageV97(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.95.0")):
@@ -351,6 +353,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.98.0")):
+		return newNetworkMgrV98(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.96.0")):
 		return newNetworkMgrV96(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.95.0")):
@@ -405,6 +409,8 @@ func GetObserverManager(version semver.Version) (ObserverManager, error) {
 // GetPoolManager return an implementation of PoolManager
 func GetPoolManager(version semver.Version, keeper keeper.Keeper) (PoolManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.98.0")):
+		return newPoolMgrV98(keeper), nil
 	case version.GTE(semver.MustParse("1.95.0")):
 		return newPoolMgrV95(keeper), nil
 	case version.GTE(semver.MustParse("0.73.0")):

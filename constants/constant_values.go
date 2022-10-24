@@ -59,7 +59,9 @@ const (
 	NodePauseChainBlocks
 	MinSwapsPerBlock
 	MaxSwapsPerBlock
-	MaxSynthPerAssetDepth
+	EnableOrderBooks
+	MaxSynthPerAssetDepth // TODO: remove me on hard fork
+	MaxSynthPerPoolDepth
 	VirtualMultSynths
 	VirtualMultSynthsBasisPoints
 	MinSlashPointsForBadValidator
@@ -81,7 +83,8 @@ const (
 	MaxNodeToChurnOutForLowVersion
 	POLMaxNetworkDeposit
 	POLMaxPoolMovement
-	POLSynthUtilization
+	POLSynthUtilization // TODO: remove me on hard fork
+	POLTargetSynthPerPoolDepth
 	POLBuffer
 	RagnarokProcessNumOfLPPerIteration
 	SwapOutDexAggregationDisabled
@@ -142,9 +145,11 @@ var nameToString = map[ConstantName]string{
 	NodePauseChainBlocks:               "NodePauseChainBlocks",
 	MinSwapsPerBlock:                   "MinSwapsPerBlock",
 	MaxSwapsPerBlock:                   "MaxSwapsPerBlock",
+	EnableOrderBooks:                   "EnableOrderBooks",
 	VirtualMultSynths:                  "VirtualMultSynths",
 	VirtualMultSynthsBasisPoints:       "VirtualMultSynthsBasisPoints",
-	MaxSynthPerAssetDepth:              "MaxSynthPerAssetDepth",
+	MaxSynthPerAssetDepth:              "MaxSynthPerAssetDepth", // TODO: remove me on hard fork
+	MaxSynthPerPoolDepth:               "MaxSynthPerPoolDepth",
 	MinSlashPointsForBadValidator:      "MinSlashPointsForBadValidator",
 	FullImpLossProtectionBlocks:        "FullImpLossProtectionBlocks",
 	BondLockupPeriod:                   "BondLockupPeriod",
@@ -164,7 +169,8 @@ var nameToString = map[ConstantName]string{
 	SwapOutDexAggregationDisabled:      "SwapOutDexAggregationDisabled",
 	POLMaxNetworkDeposit:               "POLMaxNetworkDeposit",
 	POLMaxPoolMovement:                 "POLMaxPoolMovement",
-	POLSynthUtilization:                "POLSynthUtilization",
+	POLSynthUtilization:                "POLSynthUtilization", // TODO: remove me on hard fork
+	POLTargetSynthPerPoolDepth:         "POLTargetSynthPerPoolDepth",
 	POLBuffer:                          "POLBuffer",
 	RagnarokProcessNumOfLPPerIteration: "RagnarokProcessNumOfLPPerIteration",
 	SynthYieldBasisPoints:              "SynthYieldBasisPoints",

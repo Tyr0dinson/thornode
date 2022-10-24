@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	maxGasLimit = 200000
+	maxGasLimit = 400000
 )
 
 // AvalancheClient is a structure to sign and broadcast tx to the Avalanche C-Chain
@@ -554,6 +554,7 @@ func (c *AvalancheClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.M
 				c.logger.Info().Str("gas needed", gap.String()).Msg("yggdrasil returning funds")
 				avaxValue = avaxValue.Sub(avaxValue, gap)
 			} else {
+				// At this point, if this is is to an aggregator (which should be white-listed), allow the maximum gas.
 				if txOutItem.Aggregator == "" {
 					gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 					c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())

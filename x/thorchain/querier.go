@@ -30,18 +30,14 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryPool(ctx, path[1:], req, mgr)
 		case q.QueryPools.Key:
 			return queryPools(ctx, req, mgr)
-		case q.QueryBucket.Key:
-			return queryBucket(ctx, path[1:], req, mgr)
-		case q.QueryBuckets.Key:
-			return queryBuckets(ctx, req, mgr)
-		case q.QueryBucketLiquidityProviders.Key:
-			return queryLiquidityProviders(ctx, path[1:], req, mgr)
-		case q.QueryBucketLiquidityProvider.Key:
-			return queryLiquidityProvider(ctx, path[1:], req, mgr)
+		case q.QuerySavers.Key:
+			return queryLiquidityProviders(ctx, path[1:], req, mgr, true)
+		case q.QuerySaver.Key:
+			return queryLiquidityProvider(ctx, path[1:], req, mgr, true)
 		case q.QueryLiquidityProviders.Key:
-			return queryLiquidityProviders(ctx, path[1:], req, mgr)
+			return queryLiquidityProviders(ctx, path[1:], req, mgr, false)
 		case q.QueryLiquidityProvider.Key:
-			return queryLiquidityProvider(ctx, path[1:], req, mgr)
+			return queryLiquidityProvider(ctx, path[1:], req, mgr, false)
 		case q.QueryTxVoter.Key:
 			return queryTxVoters(ctx, path[1:], req, mgr)
 		case q.QueryTx.Key:
@@ -444,11 +440,17 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
 
+	isGlobalTradingPaused := isGlobalTradingHalted(ctx, mgr)
+
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chain == common.THORChain {
 			continue
 		}
+
+		isChainTradingPaused := isChainTradingHalted(ctx, mgr, chain)
+		isChainLpPaused := isLPPausedV1(ctx, chain, mgr)
+
 		vaultAddress, err := vault.PubKey.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
@@ -468,22 +470,24 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			gasRate = gasRate.MulUint64(10)
 		}
 
-		// The value returned from `GetGasRate` is 1.5x the internal fee value of the chain reported by Bifrost
-		// The user is charged 3x the internal value (see https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/manager_txout_current.go#L277)
-		// Thus the fee rate that the user is charged is 2x the `GetGasRate` (or 3x the internal fee value reported by Bifrost)
-		// Multiply by the TransactionSize reported by Bifrost, and this is the full outbound fee charged to the user
-		outboundFee := gasRate.MulUint64(2).MulUint64(networkFeeInfo.TransactionSize).String()
+		// Retrieve the value the network charges for outbound fees for this chain
+		// Note: If calculating the outbound fee of a non-gas asset outbound, the returned value must be converted to RUNE,
+		// then to the non-gas asset using the pool depths. That will be the value deducted from the non-gas asset outbound amount
+		outboundFee := mgr.GasMgr().GetFee(ctx, chain, chain.GetGasAsset())
 
 		addr := openapi.InboundAddress{
-			Chain:          wrapString(chain.String()),
-			PubKey:         wrapString(vault.PubKey.String()),
-			Address:        wrapString(vaultAddress.String()),
-			Router:         wrapString(cc.Router.String()),
-			Halted:         isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, chain),
-			GasRate:        wrapString(gasRate.String()),
-			GasRateUnits:   wrapString(chain.GetGasUnits()),
-			OutboundTxSize: wrapString(cosmos.NewUint(networkFeeInfo.TransactionSize).String()),
-			OutboundFee:    wrapString(outboundFee),
+			Chain:                wrapString(chain.String()),
+			PubKey:               wrapString(vault.PubKey.String()),
+			Address:              wrapString(vaultAddress.String()),
+			Router:               wrapString(cc.Router.String()),
+			Halted:               isGlobalTradingPaused || isChainTradingPaused,
+			GlobalTradingPaused:  &isGlobalTradingPaused,
+			ChainTradingPaused:   &isChainTradingPaused,
+			ChainLpActionsPaused: &isChainLpPaused,
+			GasRate:              wrapString(gasRate.String()),
+			GasRateUnits:         wrapString(chain.GetGasUnits()),
+			OutboundTxSize:       wrapString(cosmos.NewUint(networkFeeInfo.TransactionSize).String()),
+			OutboundFee:          wrapString(outboundFee.String()),
 		}
 
 		resp = append(resp, addr)
@@ -764,16 +768,25 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 }
 
 // queryLiquidityProviders
-func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+// isSavers is true if request is for the savers of a Savers Pool, if false the request is for an L1 pool
+func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs, isSavers bool) ([]byte, error) {
 	if len(path) == 0 {
 		return nil, errors.New("asset not provided")
 	}
-	path[0] = strings.Replace(path[0], "_", "/", 1)
+	if isSavers {
+		path[0] = strings.Replace(path[0], ".", "/", 1)
+	}
 	asset, err := common.NewAsset(path[0])
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
 	}
+	if isSavers && !asset.IsVaultAsset() {
+		return nil, fmt.Errorf("invalid request: requested pool is not a SaversPool")
+	} else if !isSavers && asset.IsVaultAsset() {
+		return nil, fmt.Errorf("invalid request: requested pool is a SaversPool")
+	}
+
 	var lps LiquidityProviders
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
 	defer iterator.Close()
@@ -791,16 +804,26 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 }
 
 // queryLiquidityProvider
-func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+// isSavers is true if request is for the savers of a Savers Pool, if false the request is for an L1 pool
+func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs, isSavers bool) ([]byte, error) {
 	if len(path) < 2 {
 		return nil, errors.New("asset/lp not provided")
 	}
-	path[0] = strings.Replace(path[0], "_", "/", 1)
+	if isSavers {
+		path[0] = strings.Replace(path[0], ".", "/", 1)
+	}
 	asset, err := common.NewAsset(path[0])
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
 	}
+
+	if isSavers && !asset.IsVaultAsset() {
+		return nil, fmt.Errorf("invalid request: requested pool is not a SaversPool")
+	} else if !isSavers && asset.IsVaultAsset() {
+		return nil, fmt.Errorf("invalid request: requested pool is a SaversPool")
+	}
+
 	addr, err := common.NewAddress(path[1])
 	if err != nil {
 		ctx.Logger().Error("fail to get parse address", "error", err)
@@ -815,77 +838,6 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		ctx.Logger().Error("fail to marshal liquidity provider to json", "error", err)
 		return nil, fmt.Errorf("fail to marshal liquidity provider to json: %w", err)
-	}
-	return res, nil
-}
-
-func queryBuckets(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	buckets := make([]openapi.Bucket, 0)
-	iterator := mgr.Keeper().GetPoolIterator(ctx)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var bucket Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &bucket); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal bucket: %w", err)
-		}
-		// ignore bucket if no liquidity provider units
-		if bucket.LPUnits.IsZero() {
-			continue
-		}
-
-		if !bucket.Asset.IsVaultAsset() {
-			continue
-		}
-
-		p := openapi.Bucket{
-			BalanceAsset: bucket.BalanceAsset.String(),
-			Asset:        bucket.Asset.String(),
-			LPUnits:      bucket.LPUnits.String(),
-			Status:       bucket.Status.String(),
-		}
-		buckets = append(buckets, p)
-	}
-	res, err := json.MarshalIndent(buckets, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal buckets result to json: %w", err)
-	}
-	return res, nil
-}
-
-func queryBucket(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	if len(path) == 0 {
-		return nil, errors.New("asset not provided")
-	}
-	path[0] = strings.Replace(path[0], "_", "/", 1)
-	asset, err := common.NewAsset(path[0])
-	if err != nil {
-		ctx.Logger().Error("fail to parse asset", "error", err)
-		return nil, fmt.Errorf("could not parse asset: %w", err)
-	}
-
-	if !asset.IsVaultAsset() {
-		return nil, fmt.Errorf("given asset is a pool asset: %s", asset)
-	}
-
-	bucket, err := mgr.Keeper().GetPool(ctx, asset)
-	if err != nil {
-		ctx.Logger().Error("fail to get bucket", "error", err)
-		return nil, fmt.Errorf("could not get bucket: %w", err)
-	}
-	if bucket.IsEmpty() {
-		return nil, fmt.Errorf("bucket: %s doesn't exist", path[0])
-	}
-
-	b := openapi.Bucket{
-		BalanceAsset: bucket.BalanceAsset.String(),
-		Asset:        bucket.Asset.String(),
-		LPUnits:      bucket.LPUnits.String(),
-		Status:       bucket.Status.String(),
-	}
-
-	res, err := json.MarshalIndent(b, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal result to JSON: %w", err)
 	}
 	return res, nil
 }
@@ -911,6 +863,8 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
+	isSaversPool := pool.Asset.IsVaultAsset()
+
 	p := &openapi.Pool{
 		BalanceRune:         pool.BalanceRune.String(),
 		BalanceAsset:        pool.BalanceAsset.String(),
@@ -923,6 +877,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		SynthSupply:         synthSupply.String(),
 		PendingInboundRune:  pool.PendingInboundRune.String(),
 		PendingInboundAsset: pool.PendingInboundAsset.String(),
+		IsSaversPool:        isSaversPool,
 	}
 
 	res, err := json.MarshalIndent(p, "", "	")
@@ -945,9 +900,9 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			continue
 		}
 
-		if pool.Asset.IsVaultAsset() {
-			continue
-		}
+		// Savers pools are the synthetic gas asset
+		isSaversPool := pool.Asset.IsVaultAsset()
+		isSaversPool = isSaversPool && pool.Asset.GetLayer1Asset().IsGasAsset()
 
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(mgr.GetVersion(), synthSupply)
@@ -964,6 +919,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			SynthSupply:         synthSupply.String(),
 			PendingInboundRune:  pool.PendingInboundRune.String(),
 			PendingInboundAsset: pool.PendingInboundAsset.String(),
+			IsSaversPool:        isSaversPool,
 		}
 		pools = append(pools, p)
 	}
@@ -1194,6 +1150,17 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	for ; iterator.Valid(); iterator.Next() {
 		var msg MsgSwap
 		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			continue
+		}
+		query.Swap++
+	}
+
+	iter2 := mgr.Keeper().GetOrderBookItemIterator(ctx)
+	defer iter2.Close()
+	for ; iter2.Valid(); iter2.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			ctx.Logger().Error("failed to load MsgSwap", "error", err)
 			continue
 		}
 		query.Swap++

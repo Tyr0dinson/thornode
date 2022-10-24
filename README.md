@@ -114,14 +114,26 @@ Emergency changes to the protocol may be difficult to coordinate, since there is
 
 Install dependencies, you may skip packages you already have.
 
+Linux:
+
 ```bash
 apt-get update
 apt-get install -y git make golang-go protobuf-compiler
 ```
 
+Mac:
+
+```bash
+brew install golang coreutils binutils diffutils findutils gnu-tar gnu-sed gawk grep make git protobuf
+
+# Follow post-setup instructions...
+# Your $PATH should look something like this
+export PATH=/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/opt/gnu-sed/libexec/gnubin:opt/homebrew/opt/libpq/bin:/opt/homebrew/opt/findutils/libexec/gnubin:$GOPATH/bin:/usr/local/bin:$PATH
+```
+
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
-Ensure you have a recent version of go ([scripts/check-build-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-build-env.sh#L7-9)) and enabled go modules.<br/>
+Ensure you have a recent version of go ([scripts/check-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-env.sh#L46-48)) and enabled go modules.<br/>
 Add `GOBIN` to your `PATH`.
 
 ```bash
@@ -140,8 +152,7 @@ cd thornode
 Install via this `make` command.
 
 ```bash
-make openapi
-make install
+make openapi protob-docker install
 ```
 
 Once you've installed `thornode`, check that they are there.

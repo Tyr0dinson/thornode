@@ -7,6 +7,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,19 +43,7 @@ var (
 
 	// config is the global configuration, it should never be returned by reference.
 	config Config
-
-	rpcPort = 26657
-	p2pPort = 26656
 )
-
-func init() {
-	// set ports based on network
-	switch os.Getenv("NET") {
-	case "mainnet", "stagenet":
-		rpcPort = 27147
-		p2pPort = 27146
-	}
-}
 
 type Config struct {
 	Thornode Thornode `mapstructure:"thor"`
@@ -262,7 +252,6 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
-	assert(viper.BindEnv("bifrost.chains.ETH.block_scanner.suggested_fee_version", "ETH_SUGGESTED_FEE_VERSION"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 
 	// always override from environment
@@ -326,6 +315,11 @@ func InitBifrost() {
 
 	// set signer password explicitly from environment variable
 	config.Bifrost.Thorchain.SignerPasswd = os.Getenv("SIGNER_PASSWD")
+
+	// set bootstrap peers from seeds endpoint if unset
+	if len(config.Bifrost.TSS.BootstrapPeers) == 0 {
+		config.Bifrost.TSS.BootstrapPeers = resolveAddrs(getSeedAddrs())
+	}
 }
 
 func InitThornode(ctx context.Context) {
@@ -386,44 +380,293 @@ func InitThornode(ctx context.Context) {
 	thornodeFetchGenesis(seedAddrs)
 }
 
-func thornodeSeeds() (seedAddrs []string, tmSeeds []string) {
-	// use environment variable if set
-	seeds := os.Getenv("SEEDS")
+// -------------------------------------------------------------------------------------
+// Thornode
+// -------------------------------------------------------------------------------------
 
-	// default to endpoint provided seeds if not provided
-	seedEndpoints := map[string]string{
-		"mainnet": "https://seed.thorchain.info",
-		"testnet": "https://testnet.seed.thorchain.info",
+type Thornode struct {
+	AutoStateSync struct {
+		Enabled bool `mapstructure:"enabled"`
+
+		// BlockBuffer is the number of blocks in the past we will automatically reference
+		// for the trust state from one of the configured RPC endpoints.
+		BlockBuffer int64 `mapstructure:"block_buffer"`
+
+		// Peers will be used to template the persistent peers in the Tendermint P2P config
+		// on the first launch. These peers are static and typically provided by benevolent
+		// community members, since the statesync snapshot creation is very expensive and
+		// cannot be enabled on nodes unless they are willing to fall behind for a few hours
+		// while the snapshots create. Once the initial snapshot is recovered, subsequent
+		// restarts will unset the fixed persistent peers to free up peer slots on nodes
+		// that are known statesync providers.
+		Peers []string `mapstructure:"peers"`
+	} `mapstructure:"auto_state_sync"`
+
+	API struct {
+		LimitCount    float64       `mapstructure:"limit_count"`
+		LimitDuration time.Duration `mapstructure:"limit_duration"`
+	} `mapstructure:"api"`
+
+	// Cosmos contains values used in templating the Cosmos app.toml.
+	Cosmos struct {
+		Pruning         string `mapstructure:"pruning"`
+		HaltHeight      int64  `mapstructure:"halt_height"`
+		MinRetainBlocks int64  `mapstructure:"min_retain_blocks"`
+
+		Telemetry struct {
+			Enabled                 bool  `mapstructure:"enabled"`
+			PrometheusRetentionTime int64 `mapstructure:"prometheus_retention_time"`
+		} `mapstructure:"telemetry"`
+
+		API struct {
+			Enable            bool `mapstructure:"enable"`
+			EnabledUnsafeCORS bool `mapstructure:"enabled_unsafe_cors"`
+		} `mapstructure:"api"`
+
+		StateSync struct {
+			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
+			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
+		} `mapstructure:"state_sync"`
+	} `mapstructure:"cosmos"`
+
+	// Tendermint contains values used in templating the Tendermint config.toml.
+	Tendermint struct {
+		Consensus struct {
+			TimeoutCommit time.Duration `mapstructure:"timeout_commit"`
+		} `mapstructure:"consensus"`
+
+		Log struct {
+			Level  string `mapstructure:"level"`
+			Format string `mapstructure:"format"`
+		} `mapstructure:"log"`
+
+		RPC struct {
+			ListenAddress     string `mapstructure:"listen_address"`
+			CORSAllowedOrigin string `mapstructure:"cors_allowed_origin"`
+		} `mapstructure:"rpc"`
+
+		P2P struct {
+			ExternalAddress     string `mapstructure:"external_address"`
+			ListenAddress       string `mapstructure:"listen_address"`
+			PersistentPeers     string `mapstructure:"persistent_peers"`
+			AddrBookStrict      bool   `mapstructure:"addr_book_strict"`
+			MaxNumInboundPeers  int64  `mapstructure:"max_num_inbound_peers"`
+			MaxNumOutboundPeers int64  `mapstructure:"max_num_outbound_peers"`
+			AllowDuplicateIP    bool   `mapstructure:"allow_duplicate_ip"`
+			Seeds               string `mapstructure:"seeds"`
+		} `mapstructure:"p2p"`
+
+		StateSync struct {
+			Enable      bool   `mapstructure:"enable"`
+			RPCServers  string `mapstructure:"rpc_servers"`
+			TrustHeight int64  `mapstructure:"trust_height"`
+			TrustHash   string `mapstructure:"trust_hash"`
+			TrustPeriod string `mapstructure:"trust_period"`
+		} `mapstructure:"state_sync"`
+
+		Instrumentation struct {
+			Prometheus bool `mapstructure:"prometheus"`
+		} `mapstructure:"instrumentation"`
+	} `mapstructure:"tendermint"`
+}
+
+// -------------------------------------------------------------------------------------
+// Bifrost
+// -------------------------------------------------------------------------------------
+
+type Bifrost struct {
+	Signer    BifrostSignerConfiguration                 `mapstructure:"signer"`
+	Thorchain BifrostClientConfiguration                 `mapstructure:"thorchain"`
+	Metrics   BifrostMetricsConfiguration                `mapstructure:"metrics"`
+	Chains    map[common.Chain]BifrostChainConfiguration `mapstructure:"chains"`
+	TSS       BifrostTSSConfiguration                    `mapstructure:"tss"`
+	BackOff   BifrostBackOff                             `mapstructure:"back_off"`
+}
+
+type BifrostSignerConfiguration struct {
+	SignerDbPath  string                           `mapstructure:"signer_db_path"`
+	BlockScanner  BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
+	RetryInterval time.Duration                    `mapstructure:"retry_interval"`
+}
+
+type BifrostBackOff struct {
+	InitialInterval     time.Duration `mapstructure:"initial_interval"`
+	RandomizationFactor float64       `mapstructure:"randomization_factor"`
+	Multiplier          float64       `mapstructure:"multiplier"`
+	MaxInterval         time.Duration `mapstructure:"max_interval"`
+	MaxElapsedTime      time.Duration `mapstructure:"max_elapsed_time"`
+}
+
+type BifrostChainConfiguration struct {
+	ChainID             common.Chain                     `mapstructure:"chain_id"`
+	ChainHost           string                           `mapstructure:"chain_host"`
+	ChainNetwork        string                           `mapstructure:"chain_network"`
+	UserName            string                           `mapstructure:"username"`
+	Password            string                           `mapstructure:"password"`
+	RPCHost             string                           `mapstructure:"rpc_host"`
+	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
+	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
+	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
+	DisableTLS          bool                             `mapstructure:"disable_tls"`    // Bitcoin core does not provide TLS by default
+	BlockScanner        BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
+	BackOff             BifrostBackOff                   `mapstructure:"back_off"`
+	OptToRetire         bool                             `mapstructure:"opt_to_retire"` // don't emit support for this chain during keygen process
+	ParallelMempoolScan int                              `mapstructure:"parallel_mempool_scan"`
+	Disabled            bool                             `mapstructure:"disabled"`
+}
+
+func (b *BifrostChainConfiguration) Validate() {
+	if b.RPCHost == "" {
+		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
 	}
-	switch os.Getenv("NET") {
-	case "stagenet":
-		seeds = "stagenet-seed.ninerealms.com"
-	default:
-		if endpoint, ok := seedEndpoints[os.Getenv("NET")]; ok && seeds == "" {
-			log.Info().Msg("seeds not provided, initializing automatically...")
+}
 
-			// trunk-ignore(golangci-lint/gosec): variable url is safe here
-			res, err := http.Get(endpoint)
+type BifrostBlockScannerConfiguration struct {
+	RPCHost                    string        `mapstructure:"rpc_host"`
+	StartBlockHeight           int64         `mapstructure:"start_block_height"`
+	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
+	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
+	HTTPRequestReadTimeout     time.Duration `mapstructure:"http_request_read_timeout"`
+	HTTPRequestWriteTimeout    time.Duration `mapstructure:"http_request_write_timeout"`
+	MaxHTTPRequestRetry        int           `mapstructure:"max_http_request_retry"`
+	BlockHeightDiscoverBackoff time.Duration `mapstructure:"block_height_discover_back_off"`
+	BlockRetryInterval         time.Duration `mapstructure:"block_retry_interval"`
+	EnforceBlockHeight         bool          `mapstructure:"enforce_block_height"`
+	DBPath                     string        `mapstructure:"db_path"`
+	ChainID                    common.Chain  `mapstructure:"chain_id"`
+
+	// The following configuration values apply only to a subset of chains.
+
+	// CosmosGRPCHost is the <host>:<port> of the gRPC endpoint of the Cosmos SDK chain.
+	CosmosGRPCHost string `mapstructure:"cosmos_grpc_host"`
+
+	// CosmosGRPCTLS is a boolean value indicating whether the gRPC host is using TLS.
+	CosmosGRPCTLS bool `mapstructure:"cosmos_grpc_tls"`
+
+	// GasCacheBlocks is the number of blocks worth of gas price data cached to determine
+	// the gas price reported to Thorchain.
+	GasCacheBlocks int `mapstructure:"gas_cache_blocks"`
+
+	// Concurrency is the number of goroutines used for RPC requests on data within a
+	// block - e.g. transactions, receipts, logs, etc. Blocks are processed sequentially.
+	Concurrency int64 `mapstructure:"concurrency"`
+
+	// GasPriceResolution is the resolution of price per gas unit in the base asset of the
+	// chain (wei, tavax, uatom, satoshi, etc) and is transitively the floor price.
+	GasPriceResolution int64 `mapstructure:"gas_price_resolution"`
+}
+
+func (b *BifrostBlockScannerConfiguration) Validate() {
+	if b.RPCHost == "" {
+		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
+	}
+}
+
+type BifrostClientConfiguration struct {
+	ChainID         common.Chain `mapstructure:"chain_id" `
+	ChainHost       string       `mapstructure:"chain_host"`
+	ChainRPC        string       `mapstructure:"chain_rpc"`
+	ChainHomeFolder string       `mapstructure:"chain_home_folder"`
+	SignerName      string       `mapstructure:"signer_name"`
+	SignerPasswd    string
+	BackOff         BifrostBackOff `mapstructure:"back_off"`
+}
+
+type BifrostMetricsConfiguration struct {
+	Enabled      bool           `mapstructure:"enabled"`
+	PprofEnabled bool           `mapstructure:"pprof_enabled"`
+	ListenPort   int            `mapstructure:"listen_port"`
+	ReadTimeout  time.Duration  `mapstructure:"read_timeout"`
+	WriteTimeout time.Duration  `mapstructure:"write_timeout"`
+	Chains       []common.Chain `mapstructure:"chains"`
+}
+
+type BifrostTSSConfiguration struct {
+	BootstrapPeers []string `mapstructure:"bootstrap_peers"`
+	Rendezvous     string   `mapstructure:"rendezvous"`
+	P2PPort        int      `mapstructure:"p2p_port"`
+	InfoAddress    string   `mapstructure:"info_address"`
+	ExternalIP     string   `mapstructure:"external_ip"`
+}
+
+// GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
+func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
+	var addrs []maddr.Multiaddr
+
+	for _, ip := range c.BootstrapPeers {
+		if len(ip) == 0 {
+			continue
+		}
+
+		// fetch the p2pid
+		res, err := http.Get(fmt.Sprintf("http://%s:6040/p2pid", ip))
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get p2p id")
+			continue
+		}
+
+		// read the response
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to read p2p id response")
+			continue
+		}
+		res.Body.Close()
+
+		// format the multiaddr
+		peerMultiAddr := fmt.Sprintf("/ip4/%s/tcp/5040/ipfs/%s", ip, string(body))
+
+		addr, err := maddr.NewMultiaddr(peerMultiAddr)
+		if err != nil {
+			log.Error().Err(err).Str("addr", peerMultiAddr).Msg("failed to parse multiaddr")
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+
+	if len(addrs) == 0 {
+		log.Error().Msg("no bootstrap peers found")
+		assertBifrostHasSeeds()
+	} else {
+		log.Info().Interface("peers", addrs).Msg("bootstrap peers")
+	}
+	return addrs, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------------------
+
+func resolveAddrs(addrs []string) []string {
+	resolvedAddrs := []string{}
+	for _, addr := range addrs {
+		if net.ParseIP(addr) == nil {
+			ips, err := net.LookupHost(addr)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to get seeds")
-				return
+				log.Warn().Err(err).Msg("failed to resolve address")
+			} else {
+				resolvedAddrs = append(resolvedAddrs, ips[0]) // just take the first
 			}
-
-			// unmarshal seeds response
-			var seedsResponse []string
-			dec := json.NewDecoder(res.Body)
-			err = dec.Decode(&seedsResponse)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to unmarshal seeds response")
-				return
-			}
-
-			// set seeds to lookup ids
-			seeds = strings.Join(seedsResponse, ",")
+		} else {
+			resolvedAddrs = append(resolvedAddrs, addr)
 		}
 	}
 
-	seedAddrs = strings.Split(seeds, ",")
+	return resolvedAddrs
+}
+
+func thornodeSeeds() (seedAddrs []string, tmSeeds []string) {
+	// use environment variable if set
+	seeds := os.Getenv("SEEDS")
+	if seeds != "" {
+		seedAddrs = strings.Split(seeds, ",")
+	} else {
+		log.Info().Msg("seeds not provided, initializing automatically...")
+		seedAddrs = getSeedAddrs()
+	}
+
+	// resolve any hostnames
+	seedAddrs = resolveAddrs(seedAddrs)
 
 	// initialize seed with their node id if the network matches
 	wg := sync.WaitGroup{}
@@ -596,213 +839,4 @@ func thornodeFetchGenesis(seeds []string) {
 		time.Sleep(SeedRetryBackoff)
 		log.Info().Msg("retrying to fetch genesis...")
 	}
-}
-
-// -------------------------------------------------------------------------------------
-// Thornode
-// -------------------------------------------------------------------------------------
-
-type Thornode struct {
-	AutoStateSync struct {
-		Enabled bool `mapstructure:"enabled"`
-
-		// BlockBuffer is the number of blocks in the past we will automatically reference
-		// for the trust state from one of the configured RPC endpoints.
-		BlockBuffer int64 `mapstructure:"block_buffer"`
-
-		// Peers will be used to template the persistent peers in the Tendermint P2P config
-		// on the first launch. These peers are static and typically provided by benevolent
-		// community members, since the statesync snapshot creation is very expensive and
-		// cannot be enabled on nodes unless they are willing to fall behind for a few hours
-		// while the snapshots create. Once the initial snapshot is recovered, subsequent
-		// restarts will unset the fixed persistent peers to free up peer slots on nodes
-		// that are known statesync providers.
-		Peers []string `mapstructure:"peers"`
-	} `mapstructure:"auto_state_sync"`
-
-	API struct {
-		LimitCount    float64       `mapstructure:"limit_count"`
-		LimitDuration time.Duration `mapstructure:"limit_duration"`
-	} `mapstructure:"api"`
-
-	// Cosmos contains values used in templating the Cosmos app.toml.
-	Cosmos struct {
-		Pruning         string `mapstructure:"pruning"`
-		HaltHeight      int64  `mapstructure:"halt_height"`
-		MinRetainBlocks int64  `mapstructure:"min_retain_blocks"`
-
-		Telemetry struct {
-			Enabled                 bool  `mapstructure:"enabled"`
-			PrometheusRetentionTime int64 `mapstructure:"prometheus_retention_time"`
-		} `mapstructure:"telemetry"`
-
-		API struct {
-			Enable            bool `mapstructure:"enable"`
-			EnabledUnsafeCORS bool `mapstructure:"enabled_unsafe_cors"`
-		} `mapstructure:"api"`
-
-		StateSync struct {
-			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
-			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
-		} `mapstructure:"state_sync"`
-	} `mapstructure:"cosmos"`
-
-	// Tendermint contains values used in templating the Tendermint config.toml.
-	Tendermint struct {
-		Consensus struct {
-			TimeoutCommit time.Duration `mapstructure:"timeout_commit"`
-		} `mapstructure:"consensus"`
-
-		Log struct {
-			Level  string `mapstructure:"level"`
-			Format string `mapstructure:"format"`
-		} `mapstructure:"log"`
-
-		RPC struct {
-			ListenAddress     string `mapstructure:"listen_address"`
-			CORSAllowedOrigin string `mapstructure:"cors_allowed_origin"`
-		} `mapstructure:"rpc"`
-
-		P2P struct {
-			ExternalAddress     string `mapstructure:"external_address"`
-			ListenAddress       string `mapstructure:"listen_address"`
-			PersistentPeers     string `mapstructure:"persistent_peers"`
-			AddrBookStrict      bool   `mapstructure:"addr_book_strict"`
-			MaxNumInboundPeers  int64  `mapstructure:"max_num_inbound_peers"`
-			MaxNumOutboundPeers int64  `mapstructure:"max_num_outbound_peers"`
-			AllowDuplicateIP    bool   `mapstructure:"allow_duplicate_ip"`
-			Seeds               string `mapstructure:"seeds"`
-		} `mapstructure:"p2p"`
-
-		StateSync struct {
-			Enable      bool   `mapstructure:"enable"`
-			RPCServers  string `mapstructure:"rpc_servers"`
-			TrustHeight int64  `mapstructure:"trust_height"`
-			TrustHash   string `mapstructure:"trust_hash"`
-			TrustPeriod string `mapstructure:"trust_period"`
-		} `mapstructure:"state_sync"`
-
-		Instrumentation struct {
-			Prometheus bool `mapstructure:"prometheus"`
-		} `mapstructure:"instrumentation"`
-	} `mapstructure:"tendermint"`
-}
-
-// -------------------------------------------------------------------------------------
-// Bifrost
-// -------------------------------------------------------------------------------------
-
-type Bifrost struct {
-	Signer    BifrostSignerConfiguration                 `mapstructure:"signer"`
-	Thorchain BifrostClientConfiguration                 `mapstructure:"thorchain"`
-	Metrics   BifrostMetricsConfiguration                `mapstructure:"metrics"`
-	Chains    map[common.Chain]BifrostChainConfiguration `mapstructure:"chains"`
-	TSS       BifrostTSSConfiguration                    `mapstructure:"tss"`
-	BackOff   BifrostBackOff                             `mapstructure:"back_off"`
-}
-
-type BifrostSignerConfiguration struct {
-	SignerDbPath  string                           `mapstructure:"signer_db_path"`
-	BlockScanner  BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
-	RetryInterval time.Duration                    `mapstructure:"retry_interval"`
-}
-
-type BifrostBackOff struct {
-	InitialInterval     time.Duration `mapstructure:"initial_interval"`
-	RandomizationFactor float64       `mapstructure:"randomization_factor"`
-	Multiplier          float64       `mapstructure:"multiplier"`
-	MaxInterval         time.Duration `mapstructure:"max_interval"`
-	MaxElapsedTime      time.Duration `mapstructure:"max_elapsed_time"`
-}
-
-type BifrostChainConfiguration struct {
-	ChainID             common.Chain                     `mapstructure:"chain_id"`
-	ChainHost           string                           `mapstructure:"chain_host"`
-	ChainNetwork        string                           `mapstructure:"chain_network"`
-	UserName            string                           `mapstructure:"username"`
-	Password            string                           `mapstructure:"password"`
-	RPCHost             string                           `mapstructure:"rpc_host"`
-	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
-	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
-	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
-	DisableTLS          bool                             `mapstructure:"disable_tls"`    // Bitcoin core does not provide TLS by default
-	BlockScanner        BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
-	BackOff             BifrostBackOff                   `mapstructure:"back_off"`
-	OptToRetire         bool                             `mapstructure:"opt_to_retire"` // don't emit support for this chain during keygen process
-	ParallelMempoolScan int                              `mapstructure:"parallel_mempool_scan"`
-	Disabled            bool                             `mapstructure:"disabled"`
-}
-
-func (b *BifrostChainConfiguration) Validate() {
-	if b.RPCHost == "" {
-		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
-	}
-}
-
-type BifrostBlockScannerConfiguration struct {
-	RPCHost                    string        `mapstructure:"rpc_host"`
-	CosmosGRPCHost             string        `mapstructure:"cosmos_grpc_host"`
-	CosmosGRPCTLS              bool          `mapstructure:"cosmos_grpc_tls"`
-	StartBlockHeight           int64         `mapstructure:"start_block_height"`
-	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
-	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
-	HTTPRequestReadTimeout     time.Duration `mapstructure:"http_request_read_timeout"`
-	HTTPRequestWriteTimeout    time.Duration `mapstructure:"http_request_write_timeout"`
-	MaxHTTPRequestRetry        int           `mapstructure:"max_http_request_retry"`
-	BlockHeightDiscoverBackoff time.Duration `mapstructure:"block_height_discover_back_off"`
-	BlockRetryInterval         time.Duration `mapstructure:"block_retry_interval"`
-	EnforceBlockHeight         bool          `mapstructure:"enforce_block_height"`
-	DBPath                     string        `mapstructure:"db_path"`
-	ChainID                    common.Chain  `mapstructure:"chain_id"`
-	SuggestedFeeVersion        int           `mapstructure:"suggested_fee_version"`
-	GasCacheSize               int           `mapstructure:"gas_cache_size"`
-	Concurrency                int64         `mapstructure:"concurrency"`
-}
-
-func (b *BifrostBlockScannerConfiguration) Validate() {
-	if b.RPCHost == "" {
-		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
-	}
-}
-
-type BifrostClientConfiguration struct {
-	ChainID         common.Chain `mapstructure:"chain_id" `
-	ChainHost       string       `mapstructure:"chain_host"`
-	ChainRPC        string       `mapstructure:"chain_rpc"`
-	ChainHomeFolder string       `mapstructure:"chain_home_folder"`
-	SignerName      string       `mapstructure:"signer_name"`
-	SignerPasswd    string
-	BackOff         BifrostBackOff `mapstructure:"back_off"`
-}
-
-type BifrostMetricsConfiguration struct {
-	Enabled      bool           `mapstructure:"enabled"`
-	PprofEnabled bool           `mapstructure:"pprof_enabled"`
-	ListenPort   int            `mapstructure:"listen_port"`
-	ReadTimeout  time.Duration  `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration  `mapstructure:"write_timeout"`
-	Chains       []common.Chain `mapstructure:"chains"`
-}
-
-type BifrostTSSConfiguration struct {
-	BootstrapPeers []string `mapstructure:"bootstrap_peers"`
-	Rendezvous     string   `mapstructure:"rendezvous"`
-	P2PPort        int      `mapstructure:"p2p_port"`
-	InfoAddress    string   `mapstructure:"info_address"`
-	ExternalIP     string   `mapstructure:"external_ip"`
-}
-
-// GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
-func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
-	var addrs []maddr.Multiaddr
-	for _, item := range c.BootstrapPeers {
-		if len(item) > 0 {
-			addr, err := maddr.NewMultiaddr(item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse multi addr(%s): %w", item, err)
-			}
-			addrs = append(addrs, addr)
-		}
-	}
-	return addrs, nil
 }
