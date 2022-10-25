@@ -68,6 +68,7 @@ func (gm *GasMgrV94) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 		outboundTxFee = gm.constantsAccessor.GetInt64Value(constants.OutboundTransactionFee)
 	}
 	transactionFee := cosmos.NewUint(uint64(outboundTxFee))
+	ctx.Logger().Debug("Outbound fee debug", "OutboundTransactionFee", transactionFee)
 	// if the asset is Native RUNE , then we could just return the transaction Fee
 	// because transaction fee is always in native RUNE
 	if asset.IsRune() && chain.Equals(common.THORChain) {
@@ -115,6 +116,12 @@ func (gm *GasMgrV94) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 
 		minAsset = pool.RuneValueInAsset(minOutboundInRune)
 	}
+
+	ctx.Logger().Debug("Outbound fee debug",
+		"networkFee.TransactionFeeRate", cosmos.NewUint(networkFee.TransactionFeeRate).String(),
+		"networkFee.TransactionSize", cosmos.NewUint(networkFee.TransactionSize).String(),
+		"pool.Decimals", cosmos.NewUint(uint64(pool.Decimals)).String())
+
 	// Fee is calculated based on the network fee observed in previous block
 	// THORNode is going to charge 3 times the fee it takes to send out the tx
 	// 1.5 * fee will goes to vault
@@ -123,6 +130,8 @@ func (gm *GasMgrV94) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 		cosmos.NewUint(networkFee.TransactionSize*networkFee.TransactionFeeRate*3),
 		pool.Decimals,
 	)
+
+	ctx.Logger().Debug("Outbound fee debug", "fee", fee.String(), "min outbound fee in asset", minAsset.String())
 
 	// Ensure fee is always more than minAsset
 	if fee.LT(minAsset) {
@@ -142,6 +151,8 @@ func (gm *GasMgrV94) GetFee(ctx cosmos.Context, chain common.Chain, asset common
 	if asset.IsRune() {
 		return fee
 	}
+
+	ctx.Logger().Debug("Outbound fee debug", "fee rune value", fee.String())
 
 	// convert rune value into non-gas asset value
 	pool, err = gm.keeper.GetPool(ctx, asset)

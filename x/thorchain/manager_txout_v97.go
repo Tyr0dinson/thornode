@@ -111,6 +111,8 @@ func (tos *TxOutStorageV97) ClearOutboundItems(ctx cosmos.Context) {
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageV97) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	// TODO: delete
+	ctx.Logger().Debug("Swap Debug: toi output amount before prepare tx", "toi.Coin.Amount", toi.Coin.Amount)
 	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
@@ -121,8 +123,15 @@ func (tos *TxOutStorageV97) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 
 	sumOut := cosmos.ZeroUint()
 	for _, o := range outputs {
+		// TODO: remove
+		ctx.Logger().Debug("Swap Debug: after prepare tx", "o.Coin.Amount", o.Coin.Amount)
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
+
+	// TODO: remove
+	ctx.Logger().Debug("Swap Debug: total out amount", "sumOut", sumOut)
+	ctx.Logger().Debug("Swap Debug: user min amount", "minOut", minOut)
+
 	if sumOut.LT(minOut) {
 		// **NOTE** this error string is utilized by the order book manager to
 		// catch the error. DO NOT change this error string without updating
@@ -276,6 +285,9 @@ func (tos *TxOutStorageV97) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
 	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
 	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
+
+	// TODO: remove
+	ctx.Logger().Debug("Swap Debug: transaction fees", "transactionFeeRune", transactionFeeRune.String(), "transactionFeeAsset", transactionFeeAsset.String())
 	if err != nil {
 		ctx.Logger().Error("fail to get max gas asset", "error", err)
 	}
@@ -385,6 +397,8 @@ func (tos *TxOutStorageV97) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
+		// TODO: remove
+		ctx.Logger().Debug("Swap Debug: Prepare outbound", "output asset", outputs[i].Coin.Asset.String(), "output amt", outputs[i].Coin.Amount.String())
 		if outputs[i].MaxGas.IsEmpty() {
 			maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, outputs[i].Chain)
 			if err != nil {
@@ -431,6 +445,8 @@ func (tos *TxOutStorageV97) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) 
 					}
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
+					// TODO: remove
+					ctx.Logger().Debug("Swap Debug: Outbound amount less assetFee", "output amt", outputs[i].Coin.Amount.String())
 					if outputs[i].Coin.Asset.IsSyntheticAsset() {
 						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
 						if outputs[i].ModuleName == "" || outputs[i].ModuleName == AsgardName {

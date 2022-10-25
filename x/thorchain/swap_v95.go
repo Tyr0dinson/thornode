@@ -81,6 +81,8 @@ func (s *SwapperV95) Swap(ctx cosmos.Context,
 		if swapErr != nil {
 			return cosmos.ZeroUint(), swapEvents, swapErr
 		}
+		// TODO: remove
+		ctx.Logger().Debug("Swap debug: Double swap, first swap output", "assetAmt", amt)
 		tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), amt)}
 		tx.Gas = nil
 		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
@@ -90,6 +92,7 @@ func (s *SwapperV95) Swap(ctx cosmos.Context,
 	if swapErr != nil {
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
+	ctx.Logger().Debug("Swap debug: second swap output", "assetAmt", assetAmount)
 	swapEvents = append(swapEvents, swapEvt)
 	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) {
 		// **NOTE** this error string is utilized by the order book manager to
@@ -276,6 +279,9 @@ func (s *SwapperV95) swapOne(ctx cosmos.Context,
 	emitAssets = s.CalcAssetEmission(X, x, Y)
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
 	swapEvt.LiquidityFee = liquidityFee
+
+	// TODO: remove
+	ctx.Logger().Debug("Swap Debug: Swap results", "emitAssets", emitAssets.String(), "liquidityFee", liquidityFee.String(), "swapSlip", swapSlip.String())
 
 	if source.IsRune() {
 		swapEvt.LiquidityFeeInRune = pool.AssetValueInRune(liquidityFee)

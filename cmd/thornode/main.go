@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/cosmos/cosmos-sdk/types"
+	"github.com/rs/zerolog"
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 
@@ -15,6 +16,7 @@ import (
 
 func main() {
 	config := cosmos.GetConfig()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	config.SetBech32PrefixForAccount(prefix.Bech32PrefixAccAddr, prefix.Bech32PrefixAccPub)
 	config.SetBech32PrefixForValidator(prefix.Bech32PrefixValAddr, prefix.Bech32PrefixValPub)
 	config.SetBech32PrefixForConsensusNode(prefix.Bech32PrefixConsAddr, prefix.Bech32PrefixConsPub)

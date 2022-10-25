@@ -116,6 +116,28 @@ func (GasManagerTestSuiteV94) TestGetFee(c *C) {
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, networkFee), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain, common.BTCAsset)
 	c.Assert(fee.Uint64(), Equals, uint64(150000000))
+
+	// ETH Chain
+	c.Assert(k.SetPool(ctx, Pool{
+		BalanceRune:  cosmos.NewUint(580773674604887),
+		BalanceAsset: cosmos.NewUint(623372524064),
+		Asset:        common.ETHAsset,
+		Status:       PoolAvailable,
+	}), IsNil)
+	networkFee = NewNetworkFee(common.ETHChain, 80_000, 5)
+	gasRate := cosmos.RoundToDecimal(cosmos.NewUint(networkFee.TransactionFeeRate*3/2), common.ETHChain.GetGasAssetDecimal())
+	c.Assert(gasRate.String(), Equals, cosmos.NewUint(7).String())
+
+	fullGasRate := cosmos.RoundToDecimal(cosmos.NewUint(networkFee.TransactionFeeRate*3), common.ETHChain.GetGasAssetDecimal())
+	c.Assert(fullGasRate.String(), Equals, cosmos.NewUint(15).String())
+
+	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, networkFee), IsNil)
+	fee = gasMgr.GetFee(ctx, common.ETHChain, common.ETHAsset)
+	// c.Assert(fee.String(), Equals, cosmos.NewUint(uint64(1120000)).String())
+
+	feeTest := cosmos.RoundToDecimal(cosmos.NewUint(5*80_000*3), 0)
+	c.Assert(feeTest.String(), Equals, cosmos.NewUint(uint64(1120000)).String())
+
 }
 
 func (GasManagerTestSuiteV94) TestDifferentValidations(c *C) {

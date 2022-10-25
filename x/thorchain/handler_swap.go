@@ -184,7 +184,8 @@ func (h SwapHandler) handleV98(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result,
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
 	transactionFee := h.mgr.GasMgr().GetFee(ctx, msg.TargetAsset.GetChain(), common.RuneAsset())
-	ctx.Logger().Debug("Outbound transaciton fee", "transactionFee", transactionFee.String())
+	// TODO: uncomment
+	// ctx.Logger().Debug("Swap Debug: Outbound transaction fee", "transactionFee", transactionFee.String())
 
 	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynthsBasisPoints.String())
 	if synthVirtualDepthMult < 1 || err != nil {
