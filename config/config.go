@@ -7,6 +7,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,6 +29,11 @@ import (
 // Config
 // -------------------------------------------------------------------------------------
 
+const (
+	MaxSeedRetries   = 3
+	SeedRetryBackoff = time.Second * 5
+)
+
 var (
 	//go:embed default.yaml
 	defaultConfig []byte
@@ -36,19 +43,7 @@ var (
 
 	// config is the global configuration, it should never be returned by reference.
 	config Config
-
-	rpcPort = 26657
-	p2pPort = 26656
 )
-
-func init() {
-	// set ports based on network
-	switch os.Getenv("NET") {
-	case "mainnet", "stagenet":
-		rpcPort = 27147
-		p2pPort = 27146
-	}
-}
 
 type Config struct {
 	Thornode Thornode `mapstructure:"thor"`
@@ -257,7 +252,6 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
-	assert(viper.BindEnv("bifrost.chains.ETH.block_scanner.suggested_fee_version", "ETH_SUGGESTED_FEE_VERSION"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 
 	// always override from environment
@@ -321,6 +315,11 @@ func InitBifrost() {
 
 	// set signer password explicitly from environment variable
 	config.Bifrost.Thorchain.SignerPasswd = os.Getenv("SIGNER_PASSWD")
+
+	// set bootstrap peers from seeds endpoint if unset
+	if len(config.Bifrost.TSS.BootstrapPeers) == 0 {
+		config.Bifrost.TSS.BootstrapPeers = resolveAddrs(getSeedAddrs())
+	}
 }
 
 func InitThornode(ctx context.Context) {
@@ -339,7 +338,8 @@ func InitThornode(ctx context.Context) {
 	}
 
 	// dynamically set seeds
-	config.Thornode.Tendermint.P2P.Seeds = thornodeSeeds()
+	seedAddrs, tmSeeds := thornodeSeeds()
+	config.Thornode.Tendermint.P2P.Seeds = strings.Join(tmSeeds, ",")
 
 	// dynamically set rpc listen address
 	config.Thornode.Tendermint.RPC.ListenAddress = fmt.Sprintf("tcp://0.0.0.0:%d", rpcPort)
@@ -375,142 +375,9 @@ func InitThornode(ctx context.Context) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to render app.toml")
 	}
-}
 
-func thornodeSeeds() string {
-	// use environment variable if set
-	seedIPs := os.Getenv("SEEDS")
-
-	// default to endpoint provided seeds if not provided
-	seedEndpoints := map[string]string{
-		"mainnet":  "https://seed.thorchain.info",
-		"stagenet": "https://stagenet-seed.ninerealms.com",
-		"testnet":  "https://testnet.seed.thorchain.info",
-	}
-	if endpoint, ok := seedEndpoints[os.Getenv("NET")]; ok && seedIPs == "" {
-		log.Info().Msg("seeds not provided, initializing automatically...")
-
-		// trunk-ignore(golangci-lint/gosec): variable url is safe here
-		res, err := http.Get(endpoint)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to get seeds")
-			return ""
-		}
-
-		// unmarshal seeds response
-		var seedsResponse []string
-		dec := json.NewDecoder(res.Body)
-		err = dec.Decode(&seedsResponse)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to unmarshal seeds response")
-			return ""
-		}
-
-		// set seeds to lookup ids
-		seedIPs = strings.Join(seedsResponse, ",")
-	}
-
-	// initialize seed with their node id if the network matches
-	wg := sync.WaitGroup{}
-	mu := sync.Mutex{}
-	seeds := []string{}
-	for _, seed := range strings.Split(seedIPs, ",") {
-		wg.Add(1)
-		go func(seedIP string) {
-			defer wg.Done()
-
-			// get node status
-			res, err := http.Get(fmt.Sprintf("http://%s:%d/status", seedIP, rpcPort))
-			if err != nil {
-				log.Error().Err(err).Msg("failed to get node status")
-				return
-			}
-
-			// decode status response
-			type status struct {
-				Result struct {
-					NodeInfo struct {
-						ID      string `json:"id"`
-						Network string `json:"network"`
-					} `json:"node_info"`
-				} `json:"result"`
-			}
-			var s status
-			dec := json.NewDecoder(res.Body)
-			err = dec.Decode(&s)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to decode node status")
-				return
-			}
-
-			// skip if the node is not on the same network
-			if s.Result.NodeInfo.Network != os.Getenv("CHAIN_ID") {
-				log.Error().
-					Str("network", s.Result.NodeInfo.Network).
-					Str("expected", os.Getenv("CHAIN_ID")).
-					Msg("node is not on the same network")
-				return
-			}
-
-			// update seeds
-			mu.Lock()
-			seeds = append(seeds, fmt.Sprintf("%s@%s:%d", s.Result.NodeInfo.ID, seedIP, p2pPort))
-			mu.Unlock()
-		}(seed)
-	}
-	wg.Wait()
-
-	log.Info().Msgf("found %d p2p seeds", len(seeds))
-	return strings.Join(seeds, ",")
-}
-
-func thornodeAutoStateSync(ctx context.Context) {
-	// if we already have a state assume we have a snapshot and skip
-	dataDir := os.ExpandEnv("$HOME/.thornode/data/state.db")
-	if _, err := os.Stat(dataDir); err == nil {
-		log.Info().Msg("data directory detected, skipping auto statesync configuration")
-		return
-	}
-
-	for _, host := range strings.Split(config.Thornode.Tendermint.StateSync.RPCServers, ",") {
-		log.Info().Msgf("auto statesync enabled, determining trust height via %s", host)
-
-		client, err := tmhttp.New(host, "")
-		if err != nil {
-			log.Err(err).Str("host", host).Msg("failed to create tendermint client")
-			continue
-		}
-
-		// get the height of the expected snapshot
-		status, err := client.Status(ctx)
-		if err != nil {
-			log.Err(err).Str("host", host).Msg("failed to get status")
-			continue
-		}
-		height := status.SyncInfo.LatestBlockHeight - config.Thornode.AutoStateSync.BlockBuffer
-
-		// get the hash of the trust block
-		block, err := client.Block(ctx, &height)
-		if err != nil {
-			log.Err(err).Str("host", host).Int64("height", height).Msg("failed to get block")
-			continue
-		}
-		hash := block.BlockID.Hash.String()
-
-		// set the trusted hash and height in tendermint
-		log.Info().Int64("height", height).Str("hash", hash).Msg("setting automatic statesync trust")
-		config.Thornode.Tendermint.StateSync.Enable = true
-		config.Thornode.Tendermint.StateSync.TrustHeight = height
-		config.Thornode.Tendermint.StateSync.TrustHash = hash
-
-		// set the persistent peers in tendermint to the known auto statesync peers
-		config.Thornode.Tendermint.P2P.PersistentPeers = strings.Join(config.Thornode.AutoStateSync.Peers, ",")
-
-		// success
-		return
-	}
-
-	log.Fatal().Msg("failed to determine statesync trust height from any rpc host")
+	// fetch genesis
+	thornodeFetchGenesis(seedAddrs)
 }
 
 // -------------------------------------------------------------------------------------
@@ -656,8 +523,6 @@ func (b *BifrostChainConfiguration) Validate() {
 
 type BifrostBlockScannerConfiguration struct {
 	RPCHost                    string        `mapstructure:"rpc_host"`
-	CosmosGRPCHost             string        `mapstructure:"cosmos_grpc_host"`
-	CosmosGRPCTLS              bool          `mapstructure:"cosmos_grpc_tls"`
 	StartBlockHeight           int64         `mapstructure:"start_block_height"`
 	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`
@@ -669,9 +534,26 @@ type BifrostBlockScannerConfiguration struct {
 	EnforceBlockHeight         bool          `mapstructure:"enforce_block_height"`
 	DBPath                     string        `mapstructure:"db_path"`
 	ChainID                    common.Chain  `mapstructure:"chain_id"`
-	SuggestedFeeVersion        int           `mapstructure:"suggested_fee_version"`
-	GasCacheSize               int           `mapstructure:"gas_cache_size"`
-	Concurrency                int64         `mapstructure:"concurrency"`
+
+	// The following configuration values apply only to a subset of chains.
+
+	// CosmosGRPCHost is the <host>:<port> of the gRPC endpoint of the Cosmos SDK chain.
+	CosmosGRPCHost string `mapstructure:"cosmos_grpc_host"`
+
+	// CosmosGRPCTLS is a boolean value indicating whether the gRPC host is using TLS.
+	CosmosGRPCTLS bool `mapstructure:"cosmos_grpc_tls"`
+
+	// GasCacheBlocks is the number of blocks worth of gas price data cached to determine
+	// the gas price reported to Thorchain.
+	GasCacheBlocks int `mapstructure:"gas_cache_blocks"`
+
+	// Concurrency is the number of goroutines used for RPC requests on data within a
+	// block - e.g. transactions, receipts, logs, etc. Blocks are processed sequentially.
+	Concurrency int64 `mapstructure:"concurrency"`
+
+	// GasPriceResolution is the resolution of price per gas unit in the base asset of the
+	// chain (wei, tavax, uatom, satoshi, etc) and is transitively the floor price.
+	GasPriceResolution int64 `mapstructure:"gas_price_resolution"`
 }
 
 func (b *BifrostBlockScannerConfiguration) Validate() {
@@ -710,14 +592,251 @@ type BifrostTSSConfiguration struct {
 // GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
 func (c BifrostTSSConfiguration) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
 	var addrs []maddr.Multiaddr
-	for _, item := range c.BootstrapPeers {
-		if len(item) > 0 {
-			addr, err := maddr.NewMultiaddr(item)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse multi addr(%s): %w", item, err)
-			}
-			addrs = append(addrs, addr)
+
+	for _, ip := range c.BootstrapPeers {
+		if len(ip) == 0 {
+			continue
 		}
+
+		// fetch the p2pid
+		res, err := http.Get(fmt.Sprintf("http://%s:6040/p2pid", ip))
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get p2p id")
+			continue
+		}
+
+		// read the response
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to read p2p id response")
+			continue
+		}
+		res.Body.Close()
+
+		// format the multiaddr
+		peerMultiAddr := fmt.Sprintf("/ip4/%s/tcp/5040/ipfs/%s", ip, string(body))
+
+		addr, err := maddr.NewMultiaddr(peerMultiAddr)
+		if err != nil {
+			log.Error().Err(err).Str("addr", peerMultiAddr).Msg("failed to parse multiaddr")
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+
+	if len(addrs) == 0 {
+		log.Error().Msg("no bootstrap peers found")
+		assertBifrostHasSeeds()
+	} else {
+		log.Info().Interface("peers", addrs).Msg("bootstrap peers")
 	}
 	return addrs, nil
+}
+
+// -------------------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------------------
+
+func resolveAddrs(addrs []string) []string {
+	resolvedAddrs := []string{}
+	for _, addr := range addrs {
+		if net.ParseIP(addr) == nil {
+			ips, err := net.LookupHost(addr)
+			if err != nil {
+				log.Warn().Err(err).Msg("failed to resolve address")
+			} else {
+				resolvedAddrs = append(resolvedAddrs, ips[0]) // just take the first
+			}
+		} else {
+			resolvedAddrs = append(resolvedAddrs, addr)
+		}
+	}
+
+	return resolvedAddrs
+}
+
+func thornodeSeeds() (seedAddrs []string, tmSeeds []string) {
+	// use environment variable if set
+	seeds := os.Getenv("SEEDS")
+	if seeds != "" {
+		seedAddrs = strings.Split(seeds, ",")
+	} else {
+		log.Info().Msg("seeds not provided, initializing automatically...")
+		seedAddrs = getSeedAddrs()
+	}
+
+	// resolve any hostnames
+	seedAddrs = resolveAddrs(seedAddrs)
+
+	// initialize seed with their node id if the network matches
+	wg := sync.WaitGroup{}
+	mu := sync.Mutex{}
+
+	for try := 0; try < MaxSeedRetries; try++ {
+		for _, seed := range seedAddrs {
+			wg.Add(1)
+			go func(seedIP string) {
+				defer wg.Done()
+
+				// get node status
+				res, err := http.Get(fmt.Sprintf("http://%s:%d/status", seedIP, rpcPort))
+				if err != nil {
+					log.Error().Err(err).Msg("failed to get node status")
+					return
+				}
+
+				// decode status response
+				type status struct {
+					Result struct {
+						NodeInfo struct {
+							ID      string `json:"id"`
+							Network string `json:"network"`
+						} `json:"node_info"`
+					} `json:"result"`
+				}
+				var s status
+				dec := json.NewDecoder(res.Body)
+				err = dec.Decode(&s)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to decode node status")
+					return
+				}
+
+				// skip if the node is not on the same network
+				if s.Result.NodeInfo.Network != os.Getenv("CHAIN_ID") {
+					log.Error().
+						Str("network", s.Result.NodeInfo.Network).
+						Str("expected", os.Getenv("CHAIN_ID")).
+						Msg("node is not on the same network")
+					return
+				}
+
+				// update seeds
+				mu.Lock()
+				tmSeeds = append(tmSeeds, fmt.Sprintf("%s@%s:%d", s.Result.NodeInfo.ID, seedIP, p2pPort))
+				mu.Unlock()
+			}(seed)
+		}
+		wg.Wait()
+
+		// retry a few times if we have no seeds
+		if len(tmSeeds) > 0 {
+			break
+		}
+		log.Info().Msg("retrying to fetch seeds...")
+		time.Sleep(SeedRetryBackoff)
+	}
+
+	log.Info().Msgf("found %d p2p seeds", len(tmSeeds))
+	return
+}
+
+func thornodeAutoStateSync(ctx context.Context) {
+	// if we already have a state assume we have a snapshot and skip
+	dataDir := os.ExpandEnv("$HOME/.thornode/data/state.db")
+	if _, err := os.Stat(dataDir); err == nil {
+		log.Info().Msg("data directory detected, skipping auto statesync configuration")
+		return
+	}
+
+	for _, host := range strings.Split(config.Thornode.Tendermint.StateSync.RPCServers, ",") {
+		log.Info().Msgf("auto statesync enabled, determining trust height via %s", host)
+
+		client, err := tmhttp.New(host, "")
+		if err != nil {
+			log.Err(err).Str("host", host).Msg("failed to create tendermint client")
+			continue
+		}
+
+		// get the height of the expected snapshot
+		status, err := client.Status(ctx)
+		if err != nil {
+			log.Err(err).Str("host", host).Msg("failed to get status")
+			continue
+		}
+		height := status.SyncInfo.LatestBlockHeight - config.Thornode.AutoStateSync.BlockBuffer
+
+		// get the hash of the trust block
+		block, err := client.Block(ctx, &height)
+		if err != nil {
+			log.Err(err).Str("host", host).Int64("height", height).Msg("failed to get block")
+			continue
+		}
+		hash := block.BlockID.Hash.String()
+
+		// set the trusted hash and height in tendermint
+		log.Info().Int64("height", height).Str("hash", hash).Msg("setting automatic statesync trust")
+		config.Thornode.Tendermint.StateSync.Enable = true
+		config.Thornode.Tendermint.StateSync.TrustHeight = height
+		config.Thornode.Tendermint.StateSync.TrustHash = hash
+
+		// set the persistent peers in tendermint to the known auto statesync peers
+		config.Thornode.Tendermint.P2P.PersistentPeers = strings.Join(config.Thornode.AutoStateSync.Peers, ",")
+
+		// success
+		return
+	}
+
+	log.Fatal().Msg("failed to determine statesync trust height from any rpc host")
+}
+
+func thornodeFetchGenesis(seeds []string) {
+	home := os.ExpandEnv("$HOME/.thornode")
+	genesisPath := filepath.Join(home, "config", "genesis.json")
+
+	// check to see if we already have a genesis file
+	if fi, err := os.Stat(genesisPath); !os.IsNotExist(err) || (fi != nil && fi.Size() == 0) {
+		log.Info().Msg("genesis file already exists, skipping fetch")
+		return
+	}
+
+	// iterate peers until we succeed in fetching genesis
+	for try := 0; try < MaxSeedRetries; try++ {
+		for _, seed := range seeds {
+			res, err := http.Get(fmt.Sprintf("http://%s:%d/genesis", seed, rpcPort))
+			if err != nil || res.StatusCode != http.StatusOK {
+				log.Error().Err(err).Str("seed", seed).Msg("failed to fetch genesis")
+				continue
+			}
+
+			// decode genesis response
+			type genesisResponse struct {
+				Result struct {
+					Genesis interface{} `json:"genesis"`
+				} `json:"result"`
+			}
+			var g genesisResponse
+			dec := json.NewDecoder(res.Body)
+			err = dec.Decode(&g)
+			if err != nil {
+				log.Error().Err(err).Str("seed", seed).Msg("failed to decode genesis")
+				continue
+			}
+
+			// open genesis file
+			err = os.MkdirAll(filepath.Dir(genesisPath), 0o755)
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to create genesis directory")
+			}
+			f, err := os.OpenFile(genesisPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to create genesis file")
+			}
+
+			// encode back to file
+			enc := json.NewEncoder(f)
+			err = enc.Encode(g.Result.Genesis)
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to write genesis file")
+			}
+
+			// success
+			f.Close()
+			log.Info().Msg("genesis file fetched")
+			return
+		}
+
+		time.Sleep(SeedRetryBackoff)
+		log.Info().Msg("retrying to fetch genesis...")
+	}
 }

@@ -1,4 +1,4 @@
-image: registry.gitlab.com/thorchain/thornode:builder-v2@sha256:eda7a8670a92b3178b2f947f692794c19e307073cdef4ad2a28ccf8dba2a7054
+image: registry.gitlab.com/thorchain/thornode:builder-v3@sha256:cd8a5f569e8978e7fdedb85039ddac3cf19cb5831c4823e9635b69c2b1ff6957
 
 workflow:
   rules: &rules
@@ -110,6 +110,9 @@ build-thornode:
   script:
     - make docker-gitlab-build
     - make docker-gitlab-push
+    # also push mocknet from develop
+    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
+    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
 
 build-smoke:
   stage: build
@@ -136,7 +139,7 @@ build-smoke:
 smoke-test:
   stage: smoke-test
   cache: {}
-  image: docker/compose:alpine-1.29.2
+  image: docker:20.10.12
   services:
     - docker:20.10.12-dind
   artifacts:
@@ -166,12 +169,23 @@ smoke-test:
           echo "Waiting for docker to start"
           sleep 1s
       done
-    - apk -U add git make protoc
+    - apk -U add git make protoc bash
     - (git clone --single-branch -b $CI_COMMIT_REF_NAME $MIDGARD_REPO && cd ./midgard && IMAGE_NAME=$MIDGARD_IMAGE make build && cd ..) || (git clone --single-branch -b develop $MIDGARD_REPO && docker pull $MIDGARD_IMAGE)
+    - |
+      PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
+      mkdir -p $(dirname $PLUGIN)
+      wget https://github.com/docker/compose/releases/download/v2.11.1/docker-compose-linux-x86_64 -O $PLUGIN
+      chmod +x $PLUGIN
+
   script:
     - make smoke
   after_script:
-    - ./scripts/docker_logs.sh
+    - mkdir logs
+    - docker ps -a >./logs/ps.log 2>&1
+    - |
+      for name in $(docker ps --format '{{.Names}}'); do
+        docker logs "$name" >"./logs/$name.log" 2>&1
+      done
 
 include:
   - template: Security/SAST.gitlab-ci.yml
@@ -180,10 +194,6 @@ include:
 # NOTE: The following included jobs have internal rule definitions that need to be
 # overwritten for them to trigger on merge requests. We overwrite all with the default
 # workflow rule set.
-
-gosec-sast:
-  stage: test
-  rules: *rules
 
 secret_detection:
   stage: test

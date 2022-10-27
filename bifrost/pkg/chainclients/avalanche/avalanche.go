@@ -13,7 +13,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
-	ecore "github.com/ethereum/go-ethereum/core"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ethclient "github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hashicorp/go-multierror"
@@ -38,7 +37,7 @@ import (
 )
 
 const (
-	maxGasLimit = 200000
+	maxGasLimit = 400000
 )
 
 // AvalancheClient is a structure to sign and broadcast tx to the Avalanche C-Chain
@@ -555,6 +554,7 @@ func (c *AvalancheClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.M
 				c.logger.Info().Str("gas needed", gap.String()).Msg("yggdrasil returning funds")
 				avaxValue = avaxValue.Sub(avaxValue, gap)
 			} else {
+				// At this point, if this is is to an aggregator (which should be white-listed), allow the maximum gas.
 				if txOutItem.Aggregator == "" {
 					gasRate = gasOut.Div(gasOut, big.NewInt(int64(estimatedGas)))
 					c.logger.Info().Msgf("based on estimated gas unit (%d) , total gas will be %s, which is more than %s, so adjust gas rate to %s", estimatedGas, totalGas.String(), gasOut.String(), gasRate.String())
@@ -663,8 +663,9 @@ func (c *AvalancheClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) 
 	}
 	ctx, cancel := c.getContext()
 	defer cancel()
-	if err := c.ethClient.SendTransaction(ctx, tx); err != nil && err.Error() != ecore.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
-		return "", err
+	if err := c.ethClient.SendTransaction(ctx, tx); err != nil {
+		c.logger.Error().Stringer("txid", tx.Hash()).Err(err).Msg("failed to send transaction")
+		return "", nil
 	}
 	txID := tx.Hash().String()
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("hash", txID).Msg("broadcast tx to AVAX C-Chain")

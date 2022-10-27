@@ -48,8 +48,8 @@ var routerContractABI string
 var erc20ContractABI string
 
 const (
-	BlockCacheSize  = 6000
-	MaxContractGas  = 80000
+	MaxContractGas = 80000
+
 	avaxToken       = "0x0000000000000000000000000000000000000000"
 	defaultDecimals = 18 // on AVAX, consolidate all decimals to 18, in Wei
 	tenGwei         = 10000000000
@@ -86,9 +86,6 @@ type AvalancheScanner struct {
 
 	vaultABI *abi.ABI
 	erc20ABI *abi.ABI
-
-	gasCacheBlocks uint64
-	blockLag       uint64
 }
 
 // Creates a new instance of AvalancheScanner
@@ -161,9 +158,7 @@ func NewAVAXScanner(cfg config.BifrostBlockScannerConfiguration,
 		whitelistTokens:      whitelistTokens.Tokens,
 		signerCacheManager:   signerCacheManager,
 
-		gasCacheBlocks: uint64(cfg.GasCacheSize),
-		blockLag:       0,
-		tokenManager:   tokenManager,
+		tokenManager: tokenManager,
 	}, nil
 }
 
@@ -178,7 +173,7 @@ func (a *AvalancheScanner) GetHeight() (int64, error) {
 	if err != nil {
 		return -1, err
 	}
-	return height - int64(a.blockLag), nil
+	return height, nil
 }
 
 func (a *AvalancheScanner) GetNonce(addr string) (uint64, error) {
@@ -359,41 +354,38 @@ func (a *AvalancheScanner) updateGasPrice(prices []*big.Int) {
 		return
 	}
 
-	// find the 25th percentile gas price in the block
+	// find the median gas price in the block
 	sort.Slice(prices, func(i, j int) bool { return prices[i].Cmp(prices[j]) == -1 })
-	gasPrice := prices[len(prices)/4]
+	gasPrice := prices[len(prices)/2]
 
 	// add to the cache
 	a.gasCache = append(a.gasCache, gasPrice)
-	if len(a.gasCache) > int(a.gasCacheBlocks) {
-		a.gasCache = a.gasCache[(len(a.gasCache) - int(a.gasCacheBlocks)):]
+	if len(a.gasCache) > a.cfg.GasCacheBlocks {
+		a.gasCache = a.gasCache[(len(a.gasCache) - a.cfg.GasCacheBlocks):]
 	}
 
 	// skip update unless cache is full
-	if len(a.gasCache) < int(a.gasCacheBlocks) {
+	if len(a.gasCache) < a.cfg.GasCacheBlocks {
 		return
 	}
 
-	// compute the mean of the 25th percentiles in the cache
-	sum := new(big.Int)
-	for _, fee := range a.gasCache {
-		sum.Add(sum, fee)
+	// compute the median of the median prices in the cache
+	medians := []*big.Int{}
+	medians = append(medians, a.gasCache...)
+	sort.Slice(medians, func(i, j int) bool { return medians[i].Cmp(medians[j]) == -1 })
+	median := medians[len(medians)/2]
+
+	// round the price up to avoid fee noise
+	resolution := big.NewInt(a.cfg.GasPriceResolution)
+	if median.Cmp(resolution) != 1 {
+		a.gasPrice = resolution
+	} else {
+		median.Sub(median, big.NewInt(1))
+		median.Quo(median, big.NewInt(a.cfg.GasPriceResolution))
+		median.Add(median, big.NewInt(1))
+		median.Mul(median, big.NewInt(a.cfg.GasPriceResolution))
+		a.gasPrice = median
 	}
-	mean := new(big.Int).Quo(sum, big.NewInt(int64(a.gasCacheBlocks)))
-
-	// compute the standard deviation of the 25th percentiles in cache
-	std := new(big.Int)
-	for _, fee := range a.gasCache {
-		v := new(big.Int).Sub(fee, mean)
-		v.Mul(v, v)
-		std.Add(std, v)
-	}
-
-	std.Quo(std, big.NewInt(int64(a.gasCacheBlocks)))
-	std.Sqrt(std)
-
-	// mean + 3x standard deviation of the 25th percentile fee over blocks
-	a.gasPrice = mean.Add(mean, std.Mul(std, big.NewInt(3)))
 
 	// record metrics
 	gasPriceFloat, _ := new(big.Float).SetInt64(a.gasPrice.Int64()).Float64()
@@ -410,19 +402,21 @@ func (a *AvalancheScanner) reportNetworkFee(height int64) {
 		return
 	}
 
-	// gas price to 1e8
-	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100)).Uint64()
-
-	// skip posting if the fee has not changed
-	if tcGasPrice == a.lastReportedGasPrice {
+	// skip fee if less than 1 resolution away from the last
+	feeDelta := new(big.Int).Sub(gasPrice, big.NewInt(int64(a.lastReportedGasPrice)))
+	feeDelta.Abs(feeDelta)
+	if a.lastReportedGasPrice != 0 && feeDelta.Cmp(big.NewInt(a.cfg.GasPriceResolution)) != 1 {
 		return
 	}
 
+	// gas price to 1e8
+	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100))
+
 	// post to thorchain
-	if _, err := a.bridge.PostNetworkFee(height, common.AVAXChain, MaxContractGas, tcGasPrice); err != nil {
+	if _, err := a.bridge.PostNetworkFee(height, common.AVAXChain, MaxContractGas, tcGasPrice.Uint64()); err != nil {
 		a.logger.Err(err).Msg("fail to post AVAX chain single transfer fee to THORNode")
 	} else {
-		a.lastReportedGasPrice = tcGasPrice
+		a.lastReportedGasPrice = gasPrice.Uint64()
 	}
 }
 
