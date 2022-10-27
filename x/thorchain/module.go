@@ -154,6 +154,9 @@ func (am AppModule) NewQuerierHandler() sdk.Querier {
 
 // BeginBlock called when a block get proposed
 func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
+	if ctx.BlockHeight() == 7971846 {
+		return
+	}
 	info := req.GetLastCommitInfo()
 	var existingValidators []string
 	for _, v := range info.GetVotes() {
@@ -211,6 +214,10 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 
 // EndBlock called when a block get committed
 func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.ValidatorUpdate {
+	if ctx.BlockHeight() == 7971846 {
+		validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)
+		return validators
+	}
 	ctx.Logger().Debug("End Block", "height", req.Height)
 	if am.mgr.GetVersion().LT(semver.MustParse("1.90.0")) {
 		_ = am.mgr.Keeper().GetLowestActiveVersion(ctx) // TODO: remove me on hard fork
@@ -220,10 +227,8 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 	}
 
 	if am.mgr.GetVersion().GTE(semver.MustParse("1.98.0")) {
-		if ctx.BlockHeight() <= 7971846 {
-			if err := am.mgr.OrderBookMgr().EndBlock(ctx, am.mgr); err != nil {
-				ctx.Logger().Error("fail to process order books", "error", err)
-			}
+		if err := am.mgr.OrderBookMgr().EndBlock(ctx, am.mgr); err != nil {
+			ctx.Logger().Error("fail to process order books", "error", err)
 		}
 	}
 

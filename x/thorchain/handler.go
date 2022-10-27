@@ -35,6 +35,9 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", legacyMsg.Type())
 			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
+		if ctx.BlockHeight() == 7971846 {
+			return &cosmos.Result{}, nil
+		}
 		result, err := h.Run(ctx, msg)
 		if err != nil {
 			return nil, err
@@ -96,6 +99,9 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 		if !ok {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", legacyMsg.Type())
 			return nil, cosmos.ErrUnknownRequest(errMsg)
+		}
+		if ctx.BlockHeight() == 7971846 {
+			return &cosmos.Result{}, nil
 		}
 		if version.GTE(semver.MustParse("1.88.1")) {
 			// CacheContext() returns a context which caches all changes and only forwards
