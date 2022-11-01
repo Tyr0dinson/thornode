@@ -95,6 +95,7 @@ var Queries = []Query{
 	QueryInboundAddresses,
 	QueryNetwork,
 	QueryPOL,
+	QueryQuoteSwap,
 	QueryBalanceModule,
 	QueryVaultsAsgard,
 	QueryVaultsYggdrasil,
