@@ -70,6 +70,7 @@ func (s *SwapperV90) Swap(ctx cosmos.Context,
 	dexAggTargetAsset string,
 	dexAggLimit *cosmos.Uint,
 	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
+	dryRun bool,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
 

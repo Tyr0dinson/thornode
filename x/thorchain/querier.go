@@ -62,6 +62,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryInboundAddresses(ctx, path[1:], req, mgr)
 		case q.QueryNetwork.Key:
 			return queryNetwork(ctx, mgr)
+		case q.QueryQuoteSwap.Key:
+			return queryQuoteSwap(ctx, req, mgr)
 		case q.QueryPOL.Key:
 			return queryPOL(ctx, mgr)
 		case q.QueryBalanceModule.Key:
@@ -387,6 +389,38 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
 	}
 	return res, nil
+}
+
+func queryQuoteSwap(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// REQUEST
+	// {
+	//   "fromAsset": "BTC.BTC",
+	//   "toAsset": "ETH.ETH",
+	//   "amount": 1.0, // in fromAsset decimals
+	//   "affiliateFee": 10 // OPTIONAL in bps
+	//   "affiliateAddress": "thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv" // OPTIONAL
+	//   "tolerance": 300 // OPTIONAL in bps, used to determine the min amount (combining both slip and gas fees)
+	// }
+
+	// RESPONSE
+	// {
+	//   "memo": "=:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:1440450000:thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv:100",
+	//   "inboundAddress": "bc1q4weqxfkzcgjzvc6txupxp2kjkrrnkvf09nm3h4", // the inbound address for the BTC asset to be sent to
+	//   "minAmount": 14.4045 // in toAsset decimals, the minimum amount the user will receive
+	//   "fees": { // in toAsset decimals
+	//     "affiliate": 0.015,
+	//     "outbound": 0.06,
+	//     "slippage": 0.003
+	//   },
+	//   "blocksUntilConfirmation": 10 // num blocks until confirmation, UIs can multiply this by 6block/sec to achieve rough ETA
+	// }
+
+	_, err := GetSwapper(mgr.GetVersion())
+	if err != nil {
+		return nil, err
+	}
+
+	return req.Data, nil
 }
 
 func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {

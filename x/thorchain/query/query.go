@@ -51,6 +51,7 @@ var (
 	QueryNode                = Query{Key: "node", EndpointTemplate: "/%s/node/{%s}"}
 	QueryInboundAddresses    = Query{Key: "inboundaddresses", EndpointTemplate: "/%s/inbound_addresses"}
 	QueryNetwork             = Query{Key: "network", EndpointTemplate: "/%s/network"}
+	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/quote/swap"}
 	QueryPOL                 = Query{Key: "pol", EndpointTemplate: "/%s/pol"}
 	QueryBalanceModule       = Query{Key: "balancemodule", EndpointTemplate: "/%s/balance/module/{%s}"}
 	QueryVaultsAsgard        = Query{Key: "vaultsasgard", EndpointTemplate: "/%s/vaults/asgard"}
