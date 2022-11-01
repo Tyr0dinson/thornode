@@ -1,3 +1,4 @@
+from audioop import add
 import base64
 import logging
 import threading
@@ -261,11 +262,23 @@ class ThorchainState:
         """
         self.network_fees = fees
 
+    def get_pool_with_savers(self, asset):
+        """
+        Fetch a specific pool by asset. Returns savers vault pool if synth asset is passed in
+        """
+        for pool in self.pools:
+            if pool.asset == asset:
+                return pool
+
+        return Pool(asset)
+
     def get_pool(self, asset):
         """
-        Fetch a specific pool by asset
+        Fetch a specific pool by asset. Returns L1 pool if synth asset is passed in
         """
-        asset = Asset(asset).get_layer1_asset()
+        asset = Asset(asset)
+        if asset.is_synth:
+            asset = asset.get_layer1_asset()
         for pool in self.pools:
             if pool.asset == asset:
                 return pool
@@ -363,6 +376,23 @@ class ThorchainState:
             return Gaia.coin
         if chain == "ETH":
             return Ethereum.coin
+        return None
+    
+    def get_dush_threshold(self, chain):
+        if chain == "BNB":
+            return 0
+        if chain == "BTC":
+            return Bitcoin.dust_threshold
+        if chain == "BCH":
+            return BitcoinCash.dust_threshold
+        if chain == "LTC":
+            return Litecoin.dust_threshold
+        if chain == "DOGE":
+            return Dogecoin.dust_threshold
+        if chain == "GAIA":
+            return 0
+        if chain == "ETH":
+            return 0
         return None
 
     def get_gas(self, chain, tx):
@@ -753,6 +783,36 @@ class ThorchainState:
         if txs:
             txs.sort(key=lambda tx: tx.custom_hash(self.vault_pubkey))
 
+    def get_savers_memo(self, tx):
+        tx_amt = 0
+        chain = None
+        for coin in tx.coins:
+            # check we have gas liquidity
+            chain = coin.asset.get_chain()
+            gas_asset = self.get_gas_asset(chain)
+            # native THORChain doesn't have savers
+            if chain == RUNE.get_chain():
+                return ""
+            elif coin.asset != gas_asset:
+                continue
+            else:
+                tx_amt += coin.amount
+
+        dust_threshold = self.get_dush_threshold(chain)
+
+        if tx_amt < dust_threshold:
+            return ""
+
+        gas_asset = self.get_gas_asset(chain)
+        synth_asset = gas_asset.get_synth_asset()
+        bps = tx_amt - dust_threshold
+        if bps == 0:
+            return ""
+        elif bps <= 10_000:
+            return f"WITHDRAW:{synth_asset}:{bps}"
+        else:
+            return f"ADD:{synth_asset}"
+
     def handle(self, tx):
         """
         This is a router that sends a transaction to the correct handler.
@@ -764,6 +824,11 @@ class ThorchainState:
         """
         tx = deepcopy(tx)  # copy of transaction
         out_txs = []
+
+        # If memo is empty see if we can create a savers memo
+        if tx.memo == "":
+            tx.memo = self.get_savers_memo(tx)
+            print("tx.memo: ", tx.memo)
 
         if tx.chain == "THOR":
             self.reserve += self.rune_fee
@@ -870,9 +935,9 @@ class ThorchainState:
         if asset.is_rune():
             return self.refund(tx, 105, "asset cannot be rune: unknown request")
 
-        # cant have synth asset
-        if asset.is_synth:
-            return self.refund(tx, 1, "fail to validate add liquidity")
+        # # cant have synth asset
+        # if asset.is_synth:
+        #     return self.refund(tx, 1, "fail to validate add liquidity")
 
         # check that we have one rune and one asset
         if len(tx.coins) > 2:
@@ -888,7 +953,16 @@ class ThorchainState:
                             tx, 105, "did not find both coins: unknown request"
                         )
 
-        pool = self.get_pool(asset)
+        deposit_coins = tx.coins
+        pool = self.get_pool_with_savers(asset)
+
+        if asset != tx.coins[0].asset and asset.is_synth:
+            # first do the swap from asset -> synth asset
+            tx.memo = f"SWAP:{asset}"
+            swap_outbound = self.handle_swap(tx)
+            deposit_coins = swap_outbound[0].coins
+
+        tx.coins = deposit_coins
 
         orig_rune_amt = 0
         orig_asset_amt = 0
@@ -1709,12 +1783,17 @@ class Pool(Jsonable):
 
         lp.pending_rune = 0
         lp.pending_asset = 0
-        units = self._calc_liquidity_units(
-            self.rune_balance,
-            self.asset_balance,
-            rune_amt,
-            asset_amt,
-        )
+        units = 0
+        if asset.is_synth:
+            rune_amt = 0
+            vault_units, units = self._calc_vault_units(self.pool_units, self.asset_balance, asset_amt)
+        else:
+            units = self._calc_liquidity_units(
+                self.rune_balance,
+                self.asset_balance,
+                rune_amt,
+                asset_amt,
+            )
 
         self.add(rune_amt, asset_amt)
         self.lp_units += units
@@ -1745,6 +1824,15 @@ class Pool(Jsonable):
         self.lp_units -= units
         self.sub(rune_amt, asset_amt)
         return units, rune_amt, asset_amt
+
+    def _calc_vault_units(self, oldVaultUnits, vaultAmt, addAmt):
+        if oldVaultUnits == 0 or vaultAmt == 0:
+            return (addAmt, addAmt)
+        if addAmt == 0:
+            return (oldVaultUnits, 0)
+        
+        saverUnits = get_share(addAmt, vaultAmt, oldVaultUnits)
+        return (oldVaultUnits + saverUnits, saverUnits)
 
     def _calc_liquidity_units(self, R, A, r, a):
         """

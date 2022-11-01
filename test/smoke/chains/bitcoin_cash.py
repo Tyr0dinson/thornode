@@ -219,6 +219,7 @@ class BitcoinCash(GenericChain):
     chain = "BCH"
     coin = Asset("BCH.BCH")
     rune_fee = 2000000
+    dust_threshold = 10_000
 
     @classmethod
     def _calculate_gas(cls, pool, txn):

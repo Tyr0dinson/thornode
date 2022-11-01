@@ -226,7 +226,7 @@ class Asset(str, Jsonable):
     def __eq__(self, other):
         if isinstance(other, str):
             other = Asset(other)
-        return self.chain == other.chain and self.symbol == other.symbol
+        return self.chain == other.chain and self.symbol == other.symbol and self.is_synth == other.is_synth
 
     def __str__(self):
         div = "."

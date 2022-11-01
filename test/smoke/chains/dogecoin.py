@@ -249,6 +249,7 @@ class Dogecoin(GenericChain):
     chain = "DOGE"
     coin = Asset("DOGE.DOGE")
     rune_fee = 2000000
+    dust_threshold = 100_000_000
 
     @classmethod
     def _calculate_gas(cls, pool, txn):

@@ -1620,27 +1620,25 @@ class TestThorchainState(unittest.TestCase):
             "",
         )
         outbound = thorchain.handle(tx)
-        self.assertEqual(len(outbound), 1)
+        self.assertEqual(len(outbound), 0)
 
-        # check refund event generated for provider with no memo
-        expected_events += [
+        # check memoless savers tx goes through
+        expected_events = [
             Event(
-                "fee",
+                "add_liquidity",
                 [
-                    {"tx_id": "TODO"},
-                    {"coins": "112500 BNB.BNB"},
-                    {"pool_deduct": "37471896"},
-                ],
-            ),
-            Event(
-                "refund",
-                [
-                    {"code": "105"},
-                    {"reason": "memo can't be empty"},
-                    *tx.get_attributes(),
+                    {"pool": "BNB/BNB"},
+                    {"liquidity_provider_units": ""},
+                    {"rune_address": ""},
+                    {"rune_amount": "0"},
+                    {"asset_amount": "150000000"},
+                    {"asset_address": "PROVIDER-1"},
+                    {"BNB_txid": "TODO"},
+                    {"THOR_txid": "TODO"},
                 ],
             ),
         ]
+        print("thorchain.events: ", thorchain.events[0])
         self.assertEqual(thorchain.events, expected_events)
 
     def test_withdraw_bep2(self):
