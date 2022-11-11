@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	types2 "github.com/cosmos/cosmos-sdk/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/tendermint/tendermint/abci/types"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -104,6 +104,12 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryTssMetric(ctx, path[1:], req, mgr)
 		case q.QueryTHORName.Key:
 			return queryTHORName(ctx, path[1:], req, mgr)
+		case q.QueryQuoteSwap.Key:
+			return queryQuoteSwap(ctx, path[1:], req, mgr)
+		case q.QueryQuoteSaverDeposit.Key:
+			return queryQuoteSaverDeposit(ctx, path[1:], req, mgr)
+		case q.QueryQuoteSaverWithdraw.Key:
+			return queryQuoteSaverWithdraw(ctx, path[1:], req, mgr)
 		default:
 			return nil, cosmos.ErrUnknownRequest(
 				fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
@@ -132,7 +138,7 @@ func queryBalanceModule(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 	balance := struct {
 		Name    string            `json:"name"`
 		Address cosmos.AccAddress `json:"address"`
-		Coins   types2.Coins      `json:"coins"`
+		Coins   sdk.Coins         `json:"coins"`
 	}{
 		Name:    moduleName,
 		Address: modAddr,
@@ -151,7 +157,23 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		return nil, ErrInternal(err, "fail to fetch THORName")
 	}
 
-	res, err := json.MarshalIndent(name, "", "	")
+	// convert to openapi types
+	aliases := []openapi.ThornameAlias{}
+	for _, alias := range name.Aliases {
+		aliases = append(aliases, openapi.ThornameAlias{
+			Chain:   wrapString(alias.Chain.String()),
+			Address: wrapString(alias.Address.String()),
+		})
+	}
+	resp := openapi.Thorname{
+		Name:              wrapString(name.Name),
+		ExpireBlockHeight: wrapInt64(name.ExpireBlockHeight),
+		Owner:             wrapString(name.Owner.String()),
+		PreferredAsset:    name.PreferredAsset.String(),
+		Aliases:           aliases,
+	}
+
+	res, err := json.MarshalIndent(resp, "", "	")
 	if err != nil {
 		return nil, ErrInternal(err, "fail to marshal response to json")
 	}
@@ -488,6 +510,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			GasRateUnits:         wrapString(chain.GetGasUnits()),
 			OutboundTxSize:       wrapString(cosmos.NewUint(networkFeeInfo.TransactionSize).String()),
 			OutboundFee:          wrapString(outboundFee.String()),
+			DustThreshold:        wrapString(chain.DustThreshold().String()),
 		}
 
 		resp = append(resp, addr)
@@ -860,10 +883,21 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	if pool.IsEmpty() {
 		return nil, fmt.Errorf("pool: %s doesn't exist", path[0])
 	}
+
+	// Get Savers Vault for this L1 pool if it's a gas asset
+	saversAsset := pool.Asset.GetSyntheticAsset()
+	saversPool, err := mgr.Keeper().GetPool(ctx, saversAsset)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal savers vault: %w", err)
+	}
+
+	saversDepth := saversPool.BalanceAsset
+	saversUnits := saversPool.LPUnits
+
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
-	isSaversPool := pool.Asset.IsVaultAsset()
+	synthMintPausedErr := isSynthMintPaused(ctx, mgr, saversAsset, cosmos.ZeroUint())
 
 	p := &openapi.Pool{
 		BalanceRune:         pool.BalanceRune.String(),
@@ -875,9 +909,11 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		Decimals:            wrapInt64(pool.Decimals),
 		SynthUnits:          pool.SynthUnits.String(),
 		SynthSupply:         synthSupply.String(),
+		SaversDepth:         saversDepth.String(),
+		SaversUnits:         saversUnits.String(),
+		SynthMintPaused:     synthMintPausedErr != nil,
 		PendingInboundRune:  pool.PendingInboundRune.String(),
 		PendingInboundAsset: pool.PendingInboundAsset.String(),
-		IsSaversPool:        isSaversPool,
 	}
 
 	res, err := json.MarshalIndent(p, "", "	")
@@ -900,12 +936,25 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			continue
 		}
 
-		// Savers pools are the synthetic gas asset
-		isSaversPool := pool.Asset.IsVaultAsset()
-		isSaversPool = isSaversPool && pool.Asset.GetLayer1Asset().IsGasAsset()
+		// Ignore synth asset pool (savers). Info will be on the L1 pool
+		if pool.Asset.IsVaultAsset() {
+			continue
+		}
+
+		// Get Savers Vault
+		saversAsset := pool.Asset.GetSyntheticAsset()
+		saversPool, err := mgr.Keeper().GetPool(ctx, saversAsset)
+		if err != nil {
+			return nil, fmt.Errorf("fail to unmarshal savers vault: %w", err)
+		}
+
+		saversDepth := saversPool.BalanceAsset
+		saversUnits := saversPool.LPUnits
 
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+
+		synthMintPausedErr := isSynthMintPaused(ctx, mgr, pool.Asset, cosmos.ZeroUint())
 
 		p := openapi.Pool{
 			BalanceRune:         pool.BalanceRune.String(),
@@ -917,9 +966,11 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			Decimals:            wrapInt64(pool.Decimals),
 			SynthUnits:          pool.SynthUnits.String(),
 			SynthSupply:         synthSupply.String(),
+			SaversDepth:         saversDepth.String(),
+			SaversUnits:         saversUnits.String(),
+			SynthMintPaused:     synthMintPausedErr != nil,
 			PendingInboundRune:  pool.PendingInboundRune.String(),
 			PendingInboundAsset: pool.PendingInboundAsset.String(),
-			IsSaversPool:        isSaversPool,
 		}
 		pools = append(pools, p)
 	}
@@ -1597,6 +1648,10 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	return json.MarshalIndent(m, "", "	")
 }
 
+// -------------------------------------------------------------------------------------
+// Generic Helpers
+// -------------------------------------------------------------------------------------
+
 func wrapString(s string) *string {
 	if s == "" {
 		return nil
@@ -1609,4 +1664,33 @@ func wrapInt64(d int64) *int64 {
 		return nil
 	}
 	return &d
+}
+
+func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, error) {
+	// validate
+	err := msg.ValidateBasic()
+	if err != nil {
+		return nil, fmt.Errorf("failed validate: %w", err)
+	}
+
+	// intercept events and avoid modifying state
+	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
+	em := cosmos.NewEventManager()
+	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+
+	// disable logging
+	ctx = ctx.WithLogger(nullLogger)
+
+	// simulate the message handler
+	_, err = NewInternalHandler(mgr)(ctx, msg)
+	return em.Events(), err
+}
+
+func eventMap(e sdk.Event) map[string]string {
+	m := map[string]string{}
+	m["type"] = e.Type
+	for _, a := range e.Attributes {
+		m[string(a.Key)] = string(a.Value)
+	}
+	return m
 }

@@ -74,7 +74,8 @@ type TxOutStore interface {
 	GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error)
 	TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error)
 	UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error
-	GetOutboundItemByToAddress(_ cosmos.Context, _ common.Address) []TxOutItem
+	GetOutboundItemByToAddress(cosmos.Context, common.Address) []TxOutItem
+	CalcTxOutHeight(cosmos.Context, semver.Version, TxOutItem) (int64, error)
 }
 
 // ObserverManager define the method to manage observes
@@ -218,7 +219,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to get vault manager: %w", err)
 	}
 
-	mgr.poolMgr, err = GetPoolManager(v, mgr.K)
+	mgr.poolMgr, err = GetPoolManager(v)
 	if err != nil {
 		return fmt.Errorf("fail to get pool manager: %w", err)
 	}
@@ -301,14 +302,16 @@ func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkee
 
 // GetGasManager return GasManager
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
-	constAcessor := constants.GetConstantValues(version)
+	constAccessor := constants.GetConstantValues(version)
 	switch {
+	case version.GTE(semver.MustParse("1.99.0")):
+		return newGasMgrV99(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.94.0")):
-		return newGasMgrV94(constAcessor, keeper), nil
+		return newGasMgrV94(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.89.0")):
-		return newGasMgrV89(constAcessor, keeper), nil
+		return newGasMgrV89(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("0.81.0")):
-		return newGasMgrV81(constAcessor, keeper), nil
+		return newGasMgrV81(constAccessor, keeper), nil
 	}
 	return nil, errInvalidVersion
 }
@@ -353,6 +356,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.99.0")):
+		return newNetworkMgrV99(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.98.0")):
 		return newNetworkMgrV98(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.96.0")):
@@ -407,14 +412,14 @@ func GetObserverManager(version semver.Version) (ObserverManager, error) {
 }
 
 // GetPoolManager return an implementation of PoolManager
-func GetPoolManager(version semver.Version, keeper keeper.Keeper) (PoolManager, error) {
+func GetPoolManager(version semver.Version) (PoolManager, error) {
 	switch {
 	case version.GTE(semver.MustParse("1.98.0")):
-		return newPoolMgrV98(keeper), nil
+		return newPoolMgrV98(), nil
 	case version.GTE(semver.MustParse("1.95.0")):
-		return newPoolMgrV95(keeper), nil
+		return newPoolMgrV95(), nil
 	case version.GTE(semver.MustParse("0.73.0")):
-		return newPoolMgrV73(keeper), nil
+		return newPoolMgrV73(), nil
 	}
 	return nil, errInvalidVersion
 }

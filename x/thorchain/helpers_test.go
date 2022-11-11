@@ -603,6 +603,41 @@ func (s *HelperSuite) TestEmitPoolStageCostEvent(c *C) {
 	c.Assert(found, Equals, true)
 }
 
+func (s *HelperSuite) TestIsSynthMintPause(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	mgr.Keeper().SetMimir(ctx, constants.MaxSynthPerPoolDepth.String(), 1500)
+
+	pool := types.Pool{
+		Asset:        common.BTCAsset,
+		BalanceAsset: cosmos.NewUint(100 * common.One),
+		BalanceRune:  cosmos.NewUint(100 * common.One),
+	}
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	coins := cosmos.NewCoins(cosmos.NewCoin("btc/btc", cosmos.NewInt(29*common.One))) // 29% utilization
+	c.Assert(mgr.coinKeeper.MintCoins(ctx, ModuleName, coins), IsNil)
+
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.ZeroUint()), IsNil)
+
+	// A swap that outputs 0.5 synth BTC would not surpass the synth utilization cap (29% -> 29.5%)
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.NewUint(0.5*common.One)), IsNil)
+	// A swap that outputs 1 synth BTC would not surpass the synth utilization cap (29% -> 30%)
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.NewUint(1*common.One)), IsNil)
+	// A swap that outputs 1.1 synth BTC would surpass the synth utilization cap (29% -> 30.1%)
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.NewUint(1.1*common.One)), NotNil)
+
+	coins = cosmos.NewCoins(cosmos.NewCoin("btc/btc", cosmos.NewInt(1*common.One))) // 30% utilization
+	c.Assert(mgr.coinKeeper.MintCoins(ctx, ModuleName, coins), IsNil)
+
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.ZeroUint()), IsNil)
+
+	coins = cosmos.NewCoins(cosmos.NewCoin("btc/btc", cosmos.NewInt(1*common.One))) // 31% utilization
+	c.Assert(mgr.coinKeeper.MintCoins(ctx, ModuleName, coins), IsNil)
+
+	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.ZeroUint()), NotNil)
+}
+
 func (s *HelperSuite) TestIsTradingHalt(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	txID := GetRandomTxHash()

@@ -249,6 +249,78 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 	return ""
 }
 
+// DustThreshold returns the min dust threshold for each chain
+// The min dust threshold defines the lower end of the withdraw range of memoless savers txs
+// The native coin value provided in a memoless tx defines a basis points amount of Withdraw or Add to a savers position as follows:
+// Withdraw range: (dust_threshold + 1) -> (dust_threshold + 10_000)
+// Add range: dust_threshold -> Inf
+// NOTE: these should all be in 8 decimal places
+func (c Chain) DustThreshold() cosmos.Uint {
+	switch c {
+	case BTCChain, LTCChain, BCHChain:
+		return cosmos.NewUint(10_000)
+	case DOGEChain:
+		return cosmos.NewUint(100_000_000)
+	case ETHChain, AVAXChain, GAIAChain, BNBChain:
+		return cosmos.NewUint(0)
+	default:
+		return cosmos.NewUint(0)
+	}
+}
+
+// MaxMemoLength returns the max memo length for each chain. Returns 0 if no max is configured.
+func (c Chain) MaxMemoLength() int {
+	switch c {
+	case BTCChain, LTCChain, BCHChain, DOGEChain:
+		return 80
+	default:
+		return 0
+	}
+}
+
+// DefaultCoinbase returns the default coinbase address for each chain, returns 0 if no
+// coinbase emission is used. This is used used at the time of writing as a fallback
+// value in Bifrost, and for inbound confirmation count estimates in the quote APIs.
+func (c Chain) DefaultCoinbase() float64 {
+	switch c {
+	case BTCChain:
+		return 6.25
+	case LTCChain:
+		return 12.5
+	case BCHChain:
+		return 6.25
+	case DOGEChain:
+		return 10000
+	default:
+		return 0
+	}
+}
+
+func (c Chain) ApproximateBlockMilliseconds() int64 {
+	switch c {
+	case BTCChain:
+		return 600_000
+	case LTCChain:
+		return 150_000
+	case BCHChain:
+		return 600_000
+	case DOGEChain:
+		return 60_000
+	case ETHChain:
+		return 15_000
+	case AVAXChain:
+		return 3_000
+	case BNBChain:
+		return 500
+	case GAIAChain:
+		return 6_000
+	case THORChain:
+		return 6_000
+	default:
+		return 0
+	}
+}
+
 // Has check whether chain c is in the list
 func (chains Chains) Has(c Chain) bool {
 	for _, ch := range chains {
