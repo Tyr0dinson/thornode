@@ -282,6 +282,7 @@ func (vm *NetworkMgrV99) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 // paySaverYield - takes a pool asset and total rune collected in yield to the pool, then pays out savers their proportion of yield based on its size (relative to dual side LPs) and the SynthYieldBasisPoints
 func (vm *NetworkMgrV99) paySaverYield(ctx cosmos.Context, asset common.Asset, runeAmt cosmos.Uint) error {
+	fmt.Printf("Pay Synth Yield: %s, %d\n", asset.runeAmt.String())
 	pool, err := vm.k.GetPool(ctx, asset.GetLayer1Asset())
 	if err != nil {
 		return err
@@ -297,6 +298,7 @@ func (vm *NetworkMgrV99) paySaverYield(ctx cosmos.Context, asset common.Asset, r
 	if err != nil {
 		return err
 	}
+	fmt.Printf("SaverB: %+v\n", saver)
 
 	if saver.BalanceAsset.IsZero() || saver.LPUnits.IsZero() {
 		return nil
@@ -316,10 +318,12 @@ func (vm *NetworkMgrV99) paySaverYield(ctx cosmos.Context, asset common.Asset, r
 	}
 
 	assetAmt := pool.RuneValueInAsset(runeAmt)
+	fmt.Printf("AssetAmt: %d\n", assetAmt.Uint64())
 	// get the portion of the assetAmt based on the pool depth (asset * 2) and
 	// the saver asset balance
 	earnings := common.GetSafeShare(saver.BalanceAsset, pool.BalanceAsset.MulUint64(2), assetAmt)
 	earnings = common.GetSafeShare(cosmos.NewUint(uint64(basisPts)), cosmos.NewUint(10_000), earnings)
+	fmt.Printf("Earnings: %d\n", earnings.Uint64())
 	if earnings.IsZero() {
 		return nil
 	}
@@ -1055,6 +1059,7 @@ func (vm *NetworkMgrV99) UpdateNetwork(ctx cosmos.Context, constAccessor constan
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
+			fmt.Printf("Paying Saver yield: Position A")
 			if err := vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
 			}
@@ -1240,6 +1245,7 @@ func (vm *NetworkMgrV99) deductPoolRewardDeficit(ctx cosmos.Context, pools Pools
 			continue
 		}
 		poolDeficit := vm.calcPoolDeficit(lpDeficit, totalLiquidityFees, poolFees)
+		fmt.Printf("Paying Saver yield: Position B")
 		if err := vm.paySaverYield(ctx, pool.Asset, common.SafeSub(poolFees, poolDeficit)); err != nil {
 			ctx.Logger().Error("fail to pay saver yield", "error", err)
 		}
