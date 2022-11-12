@@ -313,6 +313,7 @@ func (vm *NetworkMgrV99) paySaverYield(ctx cosmos.Context, asset common.Asset, r
 			return err
 		}
 	}
+	fmt.Printf("BasisPts: %d\n", basisPts)
 	if basisPts <= 0 {
 		return nil
 	}
@@ -1038,6 +1039,7 @@ func (vm *NetworkMgrV99) UpdateNetwork(ctx cosmos.Context, constAccessor constan
 
 	var evtPools []PoolAmt
 
+	fmt.Printf("Total Pool Rewards: %d\n", totalPoolRewards.Uint64())
 	if !totalPoolRewards.IsZero() { // If Pool Rewards to hand out
 		var rewardAmts []cosmos.Uint
 		var rewardPools []Pool
