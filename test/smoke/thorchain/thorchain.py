@@ -18,10 +18,7 @@ from utils.common import (
 
 from chains.aliases import get_alias, get_alias_address, get_aliases
 from chains.bitcoin import Bitcoin
-from chains.litecoin import Litecoin
-from chains.dogecoin import Dogecoin
 from chains.gaia import Gaia
-from chains.bitcoin_cash import BitcoinCash
 from chains.ethereum import Ethereum
 from chains.binance import Binance
 from chains.thorchain import Thorchain
@@ -353,12 +350,6 @@ class ThorchainState:
             return Binance.coin
         if chain == "BTC":
             return Bitcoin.coin
-        if chain == "BCH":
-            return BitcoinCash.coin
-        if chain == "LTC":
-            return Litecoin.coin
-        if chain == "DOGE":
-            return Dogecoin.coin
         if chain == "GAIA":
             return Gaia.coin
         if chain == "ETH":

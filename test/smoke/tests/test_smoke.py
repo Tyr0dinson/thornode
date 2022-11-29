@@ -8,10 +8,7 @@ from copy import deepcopy
 
 from chains.binance import Binance
 from chains.bitcoin import Bitcoin
-from chains.litecoin import Litecoin
-from chains.dogecoin import Dogecoin
 from chains.gaia import Gaia
-from chains.bitcoin_cash import BitcoinCash
 from chains.ethereum import Ethereum
 from thorchain.thorchain import ThorchainState, Event
 from utils.breakpoint import Breakpoint
@@ -68,10 +65,7 @@ class TestSmoke(unittest.TestCase):
         snaps = []
         bnb = Binance()  # init local binance chain
         btc = Bitcoin()  # init local bitcoin chain
-        ltc = Litecoin()  # init local litecoin chain
-        doge = Dogecoin()  # init local dogecoin chain
         gaia = Gaia()  # init local gaia chain
-        bch = BitcoinCash()  # init local bitcoin cash chain
         eth = Ethereum()  # init local ethereum chain
         thorchain = ThorchainState()  # init local thorchain
         thorchain.network_fees = {  # init fixed network fees
@@ -98,14 +92,8 @@ class TestSmoke(unittest.TestCase):
                 bnb.transfer(txn)  # send transfer on binance chain
             if txn.chain == Bitcoin.chain:
                 btc.transfer(txn)  # send transfer on bitcoin chain
-            if txn.chain == Litecoin.chain:
-                ltc.transfer(txn)  # send transfer on litecoin chain
-            if txn.chain == Dogecoin.chain:
-                doge.transfer(txn)  # send transfer on dogecoin chain
             if txn.chain == Gaia.chain:
                 gaia.transfer(txn)  # send transfer on gaia chain
-            if txn.chain == BitcoinCash.chain:
-                bch.transfer(txn)  # send transfer on bitcoin cash chain
             if txn.chain == Ethereum.chain:
                 eth.transfer(txn)  # send transfer on ethereum chain
                 # convert the coin amount to thorchain amount which is 1e8
@@ -123,14 +111,8 @@ class TestSmoke(unittest.TestCase):
                     bnb.transfer(txn)  # send outbound txns back to Binance
                 if txn.chain == Bitcoin.chain:
                     btc.transfer(txn)  # send outbound txns back to Bitcoin
-                if txn.chain == Litecoin.chain:
-                    ltc.transfer(txn)  # send outbound txns back to Litecoin
-                if txn.chain == Dogecoin.chain:
-                    doge.transfer(txn)  # send outbound txns back to Dogecoin
                 if txn.chain == Gaia.chain:
                     gaia.transfer(txn)  # send outbound txns back to Gaia
-                if txn.chain == BitcoinCash.chain:
-                    bch.transfer(txn)  # send outbound txns back to Bitcoin Cash
                 if txn.chain == Ethereum.chain:
                     temp_txn = deepcopy(txn)
                     for idx, c in enumerate(temp_txn.coins):

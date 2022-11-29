@@ -11,9 +11,6 @@ from utils.segwit_addr import decode_address
 from chains.binance import Binance, MockBinance
 from chains.gaia import Gaia, MockGaia
 from chains.bitcoin import Bitcoin, MockBitcoin
-from chains.litecoin import Litecoin, MockLitecoin
-from chains.bitcoin_cash import BitcoinCash, MockBitcoinCash
-from chains.dogecoin import Dogecoin, MockDogecoin
 from chains.ethereum import Ethereum, MockEthereum
 from chains.thorchain import Thorchain, MockThorchain
 from thorchain.thorchain import ThorchainState, ThorchainClient
@@ -46,21 +43,6 @@ def main():
         "--bitcoin",
         default="http://thorchain:password@localhost:18443",
         help="Regtest bitcoin server",
-    )
-    parser.add_argument(
-        "--bitcoin-cash",
-        default="http://thorchain:password@localhost:28443",
-        help="Regtest bitcoin cash server",
-    )
-    parser.add_argument(
-        "--litecoin",
-        default="http://thorchain:password@localhost:38443",
-        help="Regtest litecoin server",
-    )
-    parser.add_argument(
-        "--dogecoin",
-        default="http://thorchain:password@localhost:18332",
-        help="Regtest dogecoin server",
     )
     parser.add_argument(
         "--ethereum",
@@ -118,9 +100,6 @@ def main():
         args.binance,
         args.gaia,
         args.bitcoin,
-        args.bitcoin_cash,
-        args.litecoin,
-        args.dogecoin,
         args.ethereum,
         args.thorchain,
         health,
@@ -164,9 +143,6 @@ class Smoker:
         self.binance = Binance()
         self.gaia = Gaia()
         self.bitcoin = Bitcoin()
-        self.bitcoin_cash = BitcoinCash()
-        self.litecoin = Litecoin()
-        self.dogecoin = Dogecoin()
         self.ethereum = Ethereum()
         self.thorchain = Thorchain()
         self.thorchain_state = ThorchainState()
@@ -191,21 +167,6 @@ class Smoker:
         self.mock_bitcoin = MockBitcoin(btc)
         bitcoin_address = MockBitcoin.get_address_from_pubkey(raw_pubkey)
         self.mock_bitcoin.set_vault_address(bitcoin_address)
-
-        # setup bitcoin cash
-        self.mock_bitcoin_cash = MockBitcoinCash(bch)
-        bitcoin_cash_address = MockBitcoinCash.get_address_from_pubkey(raw_pubkey)
-        self.mock_bitcoin_cash.set_vault_address(bitcoin_cash_address)
-
-        # setup litecoin
-        self.mock_litecoin = MockLitecoin(ltc)
-        litecoin_address = MockLitecoin.get_address_from_pubkey(raw_pubkey)
-        self.mock_litecoin.set_vault_address(litecoin_address)
-
-        # setup dogecoin
-        self.mock_dogecoin = MockDogecoin(doge)
-        dogecoin_address = MockDogecoin.get_address_from_pubkey(raw_pubkey)
-        self.mock_dogecoin.set_vault_address(dogecoin_address)
 
         # setup ethereum
         self.mock_ethereum = MockEthereum(eth)
@@ -367,12 +328,6 @@ class Smoker:
             return self.mock_binance.transfer(txn)
         if txn.chain == Bitcoin.chain:
             return self.mock_bitcoin.transfer(txn)
-        if txn.chain == BitcoinCash.chain:
-            return self.mock_bitcoin_cash.transfer(txn)
-        if txn.chain == Litecoin.chain:
-            return self.mock_litecoin.transfer(txn)
-        if txn.chain == Dogecoin.chain:
-            return self.mock_dogecoin.transfer(txn)
         if txn.chain == Ethereum.chain:
             return self.mock_ethereum.transfer(txn)
         if txn.chain == Gaia.chain:
@@ -390,12 +345,6 @@ class Smoker:
             return self.gaia.transfer(txn)
         if txn.chain == Bitcoin.chain:
             return self.bitcoin.transfer(txn)
-        if txn.chain == BitcoinCash.chain:
-            return self.bitcoin_cash.transfer(txn)
-        if txn.chain == Litecoin.chain:
-            return self.litecoin.transfer(txn)
-        if txn.chain == Dogecoin.chain:
-            return self.dogecoin.transfer(txn)
         if txn.chain == Ethereum.chain:
             tx_copy = deepcopy(txn)
             return self.ethereum.transfer(tx_copy)
@@ -409,23 +358,15 @@ class Smoker:
         """
         btc = self.mock_bitcoin.block_stats
         bch = self.mock_bitcoin_cash.block_stats
-        ltc = self.mock_litecoin.block_stats
-        doge = self.mock_dogecoin.block_stats
         gaia = self.mock_gaia.block_stats
         fees = {
             "BNB": self.mock_binance.singleton_gas,
             "ETH": self.mock_ethereum.gas_price * self.mock_ethereum.default_gas,
             "BTC": btc["tx_size"] * btc["tx_rate"],
-            "LTC": ltc["tx_size"] * ltc["tx_rate"],
-            "BCH": bch["tx_size"] * bch["tx_rate"],
-            "DOGE": doge["tx_size"] * doge["tx_rate"],
             "GAIA": gaia["tx_size"] * gaia["tx_rate"],
         }
         self.thorchain_state.set_network_fees(fees)
         self.thorchain_state.set_btc_tx_rate(btc["tx_rate"])
-        self.thorchain_state.set_bch_tx_rate(bch["tx_rate"])
-        self.thorchain_state.set_ltc_tx_rate(ltc["tx_rate"])
-        self.thorchain_state.set_doge_tx_rate(doge["tx_rate"])
         self.thorchain_state.set_gaia_tx_rate(gaia["tx_rate"])
 
     def sim_trigger_tx(self, txn):
@@ -621,11 +562,6 @@ class Smoker:
             self.check_binance()
             self.check_cosmos(self.gaia, self.mock_gaia)
             self.check_chain(self.bitcoin, self.mock_bitcoin, self.bitcoin_reorg)
-            self.check_chain(self.litecoin, self.mock_litecoin, self.bitcoin_reorg)
-            self.check_chain(self.dogecoin, self.mock_dogecoin, self.bitcoin_reorg)
-            self.check_chain(
-                self.bitcoin_cash, self.mock_bitcoin_cash, self.bitcoin_reorg
-            )
             self.check_ethereum()
 
             if RUNE.get_chain() == "THOR":
