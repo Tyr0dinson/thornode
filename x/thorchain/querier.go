@@ -392,15 +392,25 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	data, err := mgr.Keeper().GetNetwork(ctx)
 	if err != nil {
-		ctx.Logger().Error("fail to get vault", "error", err)
-		return nil, fmt.Errorf("fail to get vault: %w", err)
+		ctx.Logger().Error("fail to get network", "error", err)
+		return nil, fmt.Errorf("fail to get network: %w", err)
 	}
+
+	vaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+	}
+	vaultsMigrating := (len(vaults) != 0)
+
 	result := openapi.NetworkResponse{
+		// Due to using openapi. this will be displayed in alphabetical order,
+		// so its schema (and order here) should also be in alphabetical order.
 		BondRewardRune:  data.BondRewardRune.String(),
-		TotalBondUnits:  data.TotalBondUnits.String(),
-		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
 		BurnedBep2Rune:  data.BurnedBep2Rune.String(),
 		BurnedErc20Rune: data.BurnedErc20Rune.String(),
+		TotalBondUnits:  data.TotalBondUnits.String(),
+		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
+		VaultsMigrating: vaultsMigrating,
 	}
 
 	res, err := json.MarshalIndent(result, "", "	")
@@ -564,8 +574,18 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 
 	result := NewQueryNodeAccount(nodeAcc)
 	result.SlashPoints = slashPts
-	result.Jail = jail
-	result.BondProviders = bp
+
+	result.Jail = Jail{
+		// Since redundant, leave out the node address
+		ReleaseHeight: jail.ReleaseHeight,
+		Reason:        jail.Reason,
+	}
+
+	result.BondProviders = BondProviders{
+		// Since redundant, leave out the node address
+		NodeOperatorFee: bp.NodeOperatorFee,
+		Providers:       bp.Providers,
+	}
 
 	// CurrentAward is an estimation of reward for node in active status
 	// Node in other status should not have current reward
@@ -754,7 +774,11 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node jail: %w", err)
 		}
-		result[i].Jail = jail
+		result[i].Jail = Jail{
+			// Since redundant, leave out the node address
+			ReleaseHeight: jail.ReleaseHeight,
+			Reason:        jail.Reason,
+		}
 		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
@@ -774,11 +798,17 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		} else {
 			result[i].PreflightStatus = preflightCheckResult
 		}
-		result[i].BondProviders, err = mgr.Keeper().GetBondProviders(ctx, result[i].NodeAddress)
+
+		bp, err := mgr.Keeper().GetBondProviders(ctx, result[i].NodeAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
-		result[i].BondProviders.Adjust(result[i].Bond)
+		bp.Adjust(na.Bond)
+		result[i].BondProviders = BondProviders{
+			// Since redundant, leave out the node address
+			NodeOperatorFee: bp.NodeOperatorFee,
+			Providers:       bp.Providers,
+		}
 	}
 
 	res, err := json.MarshalIndent(result, "", "	")
@@ -810,6 +840,17 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		return nil, fmt.Errorf("invalid request: requested pool is a SaversPool")
 	}
 
+	poolAsset := asset
+	if isSavers {
+		poolAsset = asset.GetSyntheticAsset()
+	}
+
+	pool, err := mgr.Keeper().GetPool(ctx, poolAsset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "error", err)
+		return nil, fmt.Errorf("fail to get pool: %w", err)
+	}
+
 	var lps LiquidityProviders
 	var savers []QuerySaver
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
@@ -820,7 +861,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		if !isSavers {
 			lps = append(lps, lp)
 		} else {
-			savers = append(savers, NewQuerySaver(lp))
+			savers = append(savers, NewQuerySaver(lp, pool))
 		}
 	}
 	var res []byte
@@ -868,11 +909,23 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 		return nil, fmt.Errorf("fail to liquidity provider: %w", err)
 	}
 
+	poolAsset := asset
+	if isSavers {
+		poolAsset = asset.GetSyntheticAsset()
+	}
+
+	pool, err := mgr.Keeper().GetPool(ctx, poolAsset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "error", err)
+		return nil, fmt.Errorf("fail to get pool: %w", err)
+	}
+
 	var res []byte
 	if !isSavers {
-		res, err = json.MarshalIndent(lp, "", "	")
+		synthSupply := mgr.Keeper().GetTotalSupply(ctx, poolAsset.GetSyntheticAsset())
+		res, err = json.MarshalIndent(NewQueryLiquidityProvider(lp, pool, synthSupply, mgr.GetVersion()), "", "	")
 	} else {
-		saver := NewQuerySaver(lp)
+		saver := NewQuerySaver(lp, pool)
 		res, err = json.MarshalIndent(saver, "", "	")
 	}
 	if err != nil {
