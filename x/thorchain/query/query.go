@@ -75,6 +75,9 @@ var (
 	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
 	QueryQuoteSaverDeposit   = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
 	QueryQuoteSaverWithdraw  = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
+	QueryTokensWhitelisted   = Query{Key: "whitelistedtokens", EndpointTemplate: "/%s/tokens/whitelisted"}
+	QueryTokensDexAgg        = Query{Key: "whitelistedtokens", EndpointTemplate: "/%s/tokens/dexagg"}
+	QueryDexAggregators      = Query{Key: "dexaggregators", EndpointTemplate: "/%s/aggregators"}
 )
 
 // Queries all queries
@@ -121,4 +124,7 @@ var Queries = []Query{
 	QueryQuoteSwap,
 	QueryQuoteSaverDeposit,
 	QueryQuoteSaverWithdraw,
+	QueryTokensWhitelisted,
+	QueryTokensDexAgg,
+	QueryDexAggregators,
 }

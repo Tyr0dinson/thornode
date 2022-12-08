@@ -10,8 +10,9 @@ import (
 )
 
 type Aggregator struct {
-	Chain   common.Chain
-	Address string
+	Chain       common.Chain
+	Address     string
+	Description string
 }
 
 // FetchDexAggregator - fetches a dex aggregator address that matches the given chain and suffix

@@ -1718,6 +1718,15 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	return json.MarshalIndent(m, "", "	")
 }
 
+func queryTokensWhitelisted(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+}
+
+func queryTokensDexAgg(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+}
+
+func queryAggregators(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+}
+
 // -------------------------------------------------------------------------------------
 // Generic Helpers
 // -------------------------------------------------------------------------------------
