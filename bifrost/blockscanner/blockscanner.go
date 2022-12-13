@@ -114,28 +114,44 @@ func (b *BlockScanner) scanMempool() {
 	defer b.wg.Done()
 
 	for {
+		// scan the mempool at most ~4x per block to reduce races on chains with longer block time
+		time.Sleep(time.Duration(b.cfg.ChainID.ApproximateBlockMilliseconds()) / 4 * time.Millisecond)
+
 		select {
 		case <-b.stopChan:
 			return
 		default:
-			// mempool scan will continue even the chain get halted , thus the network can still aware of outbound transaction
-			// during chain halt
-			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
-			currentBlock := preBlockHeight + 1
-			txInMemPool, err := b.chainScanner.FetchMemPool(currentBlock)
+			// get the height of the chain before the mempool scan
+			preChainHeight, err := b.chainScanner.GetHeight()
+			if err != nil {
+				b.logger.Error().Err(err).Msg("fail to get chain height")
+			}
+
+			// scan the mempool assuming all transactions will be observed in the next block
+			txInMemPool, err := b.chainScanner.FetchMemPool(preChainHeight + 1)
 			if err != nil {
 				b.logger.Error().Err(err).Msg("fail to fetch MemPool")
 			}
+
 			if len(txInMemPool.TxArray) > 0 {
+				// get the height of the chain after the mempool scan
+				postChainHeight, err := b.chainScanner.GetHeight()
+				if err != nil {
+					b.logger.Error().Err(err).Int("observations", len(txInMemPool.TxArray)).Msg("fail to get chain height")
+					break
+				}
+
+				// skip observations if newer block exists since assumed chain height may be wrong
+				if postChainHeight != preChainHeight {
+					b.logger.Warn().Int("observations", len(txInMemPool.TxArray)).Msg("newer block exists, skipping observations")
+					break
+				}
+
 				select {
 				case <-b.stopChan:
 					return
 				case b.globalTxsQueue <- txInMemPool:
 				}
-			} else {
-				// nothing in the mempool or for some chain like BNB & ETH, which doesn't need to scan
-				// mempool , back off here
-				time.Sleep(constants.ThorchainBlockTime)
 			}
 		}
 	}
