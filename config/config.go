@@ -545,6 +545,9 @@ type BifrostBlockScannerConfiguration struct {
 	DBPath                     string        `mapstructure:"db_path"`
 	ChainID                    common.Chain  `mapstructure:"chain_id"`
 
+	// MempoolScanInterval is the interval to scan the mempool for new transactions.
+	MempoolScanInterval time.Duration `mapstructure:"mempool_scan_interval"`
+
 	// The following configuration values apply only to a subset of chains.
 
 	// CosmosGRPCHost is the <host>:<port> of the gRPC endpoint of the Cosmos SDK chain.
