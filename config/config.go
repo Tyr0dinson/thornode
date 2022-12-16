@@ -508,21 +508,21 @@ type BifrostBackOff struct {
 }
 
 type BifrostChainConfiguration struct {
-	ChainID             common.Chain                     `mapstructure:"chain_id"`
-	ChainHost           string                           `mapstructure:"chain_host"`
-	ChainNetwork        string                           `mapstructure:"chain_network"`
-	UserName            string                           `mapstructure:"username"`
-	Password            string                           `mapstructure:"password"`
-	RPCHost             string                           `mapstructure:"rpc_host"`
-	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
-	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
-	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
-	DisableTLS          bool                             `mapstructure:"disable_tls"`    // Bitcoin core does not provide TLS by default
-	BlockScanner        BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
-	BackOff             BifrostBackOff                   `mapstructure:"back_off"`
-	OptToRetire         bool                             `mapstructure:"opt_to_retire"` // don't emit support for this chain during keygen process
-	ParallelMempoolScan int                              `mapstructure:"parallel_mempool_scan"`
-	Disabled            bool                             `mapstructure:"disabled"`
+	ChainID          common.Chain                     `mapstructure:"chain_id"`
+	ChainHost        string                           `mapstructure:"chain_host"`
+	ChainNetwork     string                           `mapstructure:"chain_network"`
+	UserName         string                           `mapstructure:"username"`
+	Password         string                           `mapstructure:"password"`
+	RPCHost          string                           `mapstructure:"rpc_host"`
+	CosmosGRPCHost   string                           `mapstructure:"cosmos_grpc_host"`
+	CosmosGRPCTLS    bool                             `mapstructure:"cosmos_grpc_tls"`
+	HTTPostMode      bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
+	DisableTLS       bool                             `mapstructure:"disable_tls"`    // Bitcoin core does not provide TLS by default
+	BlockScanner     BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
+	BackOff          BifrostBackOff                   `mapstructure:"back_off"`
+	OptToRetire      bool                             `mapstructure:"opt_to_retire"` // don't emit support for this chain during keygen process
+	ParallelTxLookup int                              `mapstructure:"parallel_tx_lookup"`
+	Disabled         bool                             `mapstructure:"disabled"`
 }
 
 func (b *BifrostChainConfiguration) Validate() {
@@ -544,9 +544,6 @@ type BifrostBlockScannerConfiguration struct {
 	EnforceBlockHeight         bool          `mapstructure:"enforce_block_height"`
 	DBPath                     string        `mapstructure:"db_path"`
 	ChainID                    common.Chain  `mapstructure:"chain_id"`
-
-	// MempoolScanInterval is the interval to scan the mempool for new transactions.
-	MempoolScanInterval time.Duration `mapstructure:"mempool_scan_interval"`
 
 	// The following configuration values apply only to a subset of chains.
 

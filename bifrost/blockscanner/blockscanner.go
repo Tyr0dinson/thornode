@@ -114,8 +114,6 @@ func (b *BlockScanner) scanMempool() {
 	defer b.wg.Done()
 
 	for {
-		time.Sleep(b.cfg.MempoolScanInterval)
-
 		select {
 		case <-b.stopChan:
 			return
@@ -133,24 +131,13 @@ func (b *BlockScanner) scanMempool() {
 			}
 
 			if len(txInMemPool.TxArray) > 0 {
-				// get the height of the chain after the mempool scan
-				postChainHeight, err := b.chainScanner.GetHeight()
-				if err != nil {
-					b.logger.Error().Err(err).Int("observations", len(txInMemPool.TxArray)).Msg("fail to get chain height")
-					break
-				}
-
-				// skip observations if newer block exists since assumed chain height may be wrong
-				if postChainHeight != preChainHeight {
-					b.logger.Warn().Int("observations", len(txInMemPool.TxArray)).Msg("newer block exists, skipping observations")
-					break
-				}
-
 				select {
 				case <-b.stopChan:
 					return
 				case b.globalTxsQueue <- txInMemPool:
 				}
+			} else {
+				time.Sleep(constants.ThorchainBlockTime)
 			}
 		}
 	}
@@ -247,10 +234,15 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 
-			// enable this one , so we could see how far it is behind
-			if currentBlock%100 == 0 {
+			// log current height once per minute
+			blocksPerMinute := int64(time.Minute / time.Millisecond / time.Duration(b.cfg.ChainID.ApproximateBlockMilliseconds()))
+			if blocksPerMinute == 0 {
+				blocksPerMinute = 1
+			}
+			if currentBlock%blocksPerMinute == 0 {
 				b.logger.Info().Int64("block height", currentBlock).Int("txs", len(txIn.TxArray)).Msg("scan block")
 			}
+
 			atomic.AddInt64(&b.previousBlock, 1)
 			// if current block height is less than 50 blocks behind the tip , then it should catch up soon, should be safe to mark block scanner as healthy
 			// if the block scanner is too far away from tip , should not mark the block scanner as healthy , otherwise it might cause , reschedule and double send

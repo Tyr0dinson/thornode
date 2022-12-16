@@ -48,10 +48,15 @@ const (
 	BlockCacheSize      = 144
 	MaximumConfirmation = 99999999
 	MaxAsgardAddresses  = 100
+
 	// EstimateAverageTxSize for THORChain the estimate tx size is hard code to 1000 here , as most of time it will spend 1 input, have 3 output
 	// which is average at 250 vbytes , however asgard will consolidate UTXOs , which will take up to 1000 vbytes
 	EstimateAverageTxSize = 1000
-	MaxMempoolScanPerTry  = 500
+
+	// MaxMempoolScanPerTry is the maximum number of mempool transactions that will be
+	// scanned per iteration. If this number is too high, it can cause the mempool
+	// transactions to be observed at an older block height if a newer one exists.
+	MaxMempoolScanPerTry = 100
 )
 
 // Client observes bitcoin chain and allows to sign and broadcast tx
@@ -509,11 +514,13 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		Chain:   c.GetChain(),
 		MemPool: true,
 	}
-	maxWorker := c.cfg.ParallelMempoolScan
+	maxWorker := c.cfg.ParallelTxLookup
 	if maxWorker == 0 {
 		// set default worker to 5
 		maxWorker = 5
 	}
+	c.logger.Info().Msgf("extracting %d mempool txs with %d in parallel", len(hashes), maxWorker)
+
 	sem := semaphore.NewWeighted(int64(maxWorker))
 	g, _ := errgroup.WithContext(context.Background())
 	total := 0
@@ -571,11 +578,23 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 
 // FetchMemPool retrieves txs from mempool
 func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
+	// log duration
+	start := time.Now()
+	defer func() {
+		c.logger.Info().Msgf("time to fetch mempool for height %d: %s", height, time.Since(start).String())
+	}()
+
 	return c.getMemPool(height)
 }
 
 // FetchTxs retrieves txs for a block height
 func (c *Client) FetchTxs(height int64) (types.TxIn, error) {
+	// log duration
+	start := time.Now()
+	defer func() {
+		c.logger.Info().Msgf("time to fetch txs for height %d: %s", height, time.Since(start).String())
+	}()
+
 	txIn := types.TxIn{
 		Chain:   common.BTCChain,
 		TxArray: nil,
@@ -864,37 +883,72 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		Chain:   c.GetChain(),
 		MemPool: false,
 	}
+
+	maxWorker := c.cfg.ParallelTxLookup
+	if maxWorker == 0 {
+		// set default worker to 5
+		maxWorker = 5
+	}
+	sem := semaphore.NewWeighted(int64(maxWorker))
 	var txItems []types.TxInItem
-	for idx, tx := range block.Tx {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(len(block.Tx))
+
+	c.logger.Info().Msgf("extracting %d block txs with %d in parallel", len(block.Tx), maxWorker)
+
+	for _, tx := range block.Tx {
 		// mempool transaction get committed to block , thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
-		txInItem, err := c.getTxIn(&block.Tx[idx], block.Height, false)
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get TxInItem")
-			continue
-		}
-		if txInItem.IsEmpty() {
-			continue
-		}
-		if txInItem.Coins.IsEmpty() {
-			continue
-		}
-		if txInItem.Coins[0].Amount.LT(c.chain.DustThreshold()) {
-			continue
-		}
-		exist, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
-		if err != nil {
-			c.logger.Err(err).Msgf("fail to determinate whether hash(%s) had been observed before", txInItem.Tx)
-		}
-		if !exist {
-			c.logger.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-			if err := c.temporalStorage.UntrackObservedTx(txInItem.Tx); err != nil {
-				c.logger.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
+
+		// fanout to retrieve txs in parallel
+		go func(tx btcjson.TxRawResult) {
+			defer wg.Done()
+			if err := sem.Acquire(context.TODO(), 1); err != nil {
+				c.logger.Err(err).Msg("fail to acquire semaphore")
+				return
 			}
-			continue
-		}
-		txItems = append(txItems, txInItem)
+			defer sem.Release(1)
+
+			// get tx in
+			txInItem, err := c.getTxIn(&tx, block.Height, false)
+			if err != nil {
+				c.logger.Err(err).Msgf("fail to get tx in item from tx: %s", tx.Hash)
+				return
+			}
+
+			// skip if tx is empty or below dust threshold
+			if txInItem.IsEmpty() {
+				return
+			}
+			if txInItem.Coins.IsEmpty() {
+				return
+			}
+			if txInItem.Coins[0].Amount.LT(c.chain.DustThreshold()) {
+				return
+			}
+
+			exist, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
+			if err != nil {
+				c.logger.Err(err).Msgf("fail to determinate whether hash(%s) had been observed before", txInItem.Tx)
+			}
+			if !exist {
+				c.logger.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
+				if err := c.temporalStorage.UntrackObservedTx(txInItem.Tx); err != nil {
+					c.logger.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
+				}
+				return
+			}
+
+			mu.Lock()
+			txItems = append(txItems, txInItem)
+			mu.Unlock()
+		}(tx)
 	}
+	wg.Wait()
+
+	c.logger.Info().Int("txs", len(txItems)).Msg("extracted txs from block")
+
 	txIn.TxArray = txItems
 	txIn.Count = strconv.Itoa(len(txItems))
 	return txIn, nil

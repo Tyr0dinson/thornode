@@ -505,7 +505,7 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 		Chain:   c.GetChain(),
 		MemPool: true,
 	}
-	maxWorker := c.cfg.ParallelMempoolScan
+	maxWorker := c.cfg.ParallelTxLookup
 	if maxWorker == 0 {
 		// set default worker to 5
 		maxWorker = 5
@@ -776,7 +776,7 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 		PreviousHash:  block.PreviousHash,
 		NextHash:      block.NextHash,
 	}
-	maxWorker := c.cfg.ParallelMempoolScan
+	maxWorker := c.cfg.ParallelTxLookup
 	if maxWorker == 0 {
 		// set default worker to 5
 		maxWorker = 5

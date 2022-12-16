@@ -66,22 +66,17 @@ bifrost:
         http_request_write_timeout: 30s
         max_http_request_retry: 10
         db_path: /var/data/bifrost/observer
-        mempool_scan_interval: 6s
     btc: &default-chain
       chain_id: BTC
       username: thorchain
       password: password
       http_post_mode: 1
       disable_tls: 1
-      parallel_mempool_scan: 5
+      parallel_tx_lookup: 5
       block_scanner:
         <<: *default-block-scanner
         chain_id: BTC
         block_height_discover_back_off: 5s
-        # mempool scanning causes excess load on the bitcoin daemon, current
-        # OBSERVATIONDELAYFLEXIBILITY on mainnet is 20 (~120s), so we'll set
-        # this to half that
-        mempool_scan_interval: 60s
     eth:
       <<: *default-chain
       chain_id: ETH
