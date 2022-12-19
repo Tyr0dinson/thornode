@@ -801,6 +801,8 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) 
 		return types.TxInItem{}, nil
 	}
 	sender, err := c.getSender(tx)
+	c.logger.Debug().Str("tx", tx.Hash).Str("sender", sender).Msg("got sender")
+
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to get sender from tx: %w", err)
 	}
@@ -979,6 +981,7 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 // txs with max 2 outputs with values
 // an exception need to be made for consolidate tx , because consolidate tx will be send from asgard back asgard itself
 func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate bool) (btcjson.Vout, error) {
+	isOutbound := c.isAsgardAddress(sender)
 	for _, vout := range tx.Vout {
 		if strings.EqualFold(vout.ScriptPubKey.Type, "nulldata") {
 			continue
@@ -987,12 +990,21 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 		if len(addresses) != 1 {
 			return btcjson.Vout{}, fmt.Errorf("no vout address available")
 		}
+		c.logger.Debug().Str("extractedAddresses", addresses[0]).Msg("output addresses")
 		if vout.Value > 0 {
 			if consolidate && addresses[0] == sender {
 				return vout, nil
 			}
 			if !consolidate && addresses[0] != sender {
-				return vout, nil
+				// If it's an outbound tx the destination address doesn't need to be an Asgard vault, just return
+				if isOutbound {
+					return vout, nil
+				}
+
+				// If it's an inbound, the destination needs to be an Asgard vault
+				if !isOutbound && c.isAsgardAddress(addresses[0]) {
+					return vout, nil
+				}
 			}
 		}
 	}

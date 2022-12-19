@@ -75,6 +75,20 @@ func (s *BitcoinSuite) SetUpSuite(c *C) {
 	s.keys = thorclient.NewKeysWithKeybase(kb, bob, password)
 }
 
+func (s *BitcoinSuite) registerAsgards() {
+	// Register some "Asgard Vaults" - addresses taken from the test fixture JSON files
+	asgard1, _ := common.NewAddress("mr6ioeUxNMoavbr2VjaSbPAovzzgDT7Su9")
+	asgard2, _ := common.NewAddress("tb1qkyz83pc3n7gvel73nhys9ntfhrnwpv5jp3nk07")
+	asgard3, _ := common.NewAddress("2NDjjkSKgcJQwKb8ezsh8bXsqYsyyb6BLfj")
+	asgard4, _ := common.NewAddress("2N3Fs2cm9DAYLUjk5DzNbfgwnRjgAUh5735")
+	asgard5, _ := common.NewAddress("myrZ8nCQov8jC2B1QxWNoA6kPk9otVbL3r")
+	asgard6, _ := common.NewAddress("mhMQKTS9XdyumMdYQSzy71mE4SpuXA2ENS")
+	asgard7, _ := common.NewAddress("tb1qdxxlx4r4jk63cve3rjpj428m26xcukjn5yegff")
+	asgard8, _ := common.NewAddress("n3jYBjCzgGNydQwf83Hz6GBzGBhMkKfgL1")
+	asgard9, _ := common.NewAddress("tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6")
+	s.client.asgardAddresses = []common.Address{asgard1, asgard2, asgard3, asgard4, asgard5, asgard6, asgard7, asgard8, asgard9}
+}
+
 func (s *BitcoinSuite) SetUpTest(c *C) {
 	s.m = GetMetricForTest(c)
 	s.cfg = config.BifrostChainConfiguration{
@@ -165,6 +179,7 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	c.Assert(s.client, NotNil)
+	s.registerAsgards()
 }
 
 func (s *BitcoinSuite) TearDownTest(_ *C) {
