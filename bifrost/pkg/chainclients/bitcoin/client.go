@@ -990,7 +990,6 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 		if len(addresses) != 1 {
 			return btcjson.Vout{}, fmt.Errorf("no vout address available")
 		}
-		c.logger.Debug().Str("extractedAddresses", addresses[0]).Msg("output addresses")
 		if vout.Value > 0 {
 			if consolidate && addresses[0] == sender {
 				return vout, nil
