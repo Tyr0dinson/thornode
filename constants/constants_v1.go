@@ -19,6 +19,10 @@ func NewConstantValue010() *ConstantVals {
 			MinimumNodesForBFT:                 4,                  // Minimum node count to keep network running. Below this, Ragnarök is performed.
 			DesiredValidatorSet:                100,                // desire validator set
 			AsgardSize:                         40,                 // desired node operators in an asgard vault
+			DerivedDepthBasisPts:               0,                  // Basis points to increase/decrease derived pool depth (10k == 1x)
+			DerivedMinDepth:                    100,                // in basis points, min derived pool depth
+			MaxAnchorSlip:                      1500,               // basis points of rune depth to trigger pausing a derived virtual pool
+			MaxAnchorBlocks:                    300,                // max blocks to accumulate swap slips in anchor pools
 			FundMigrationInterval:              360,                // number of blocks THORNode will attempt to move funds from a retiring vault to an active one
 			ChurnInterval:                      43200,              // How many blocks THORNode try to rotate validators
 			ChurnRetryInterval:                 720,                // How many blocks until we retry a churn (only if we haven't had a successful churn in ChurnInterval blocks
@@ -47,6 +51,7 @@ func NewConstantValue010() *ConstantVals {
 			JailTimeKeysign:                    60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
 			NodePauseChainBlocks:               720,                // number of blocks that a node can pause/resume a global chain halt
 			NodeOperatorFee:                    500,                // Node operator fee
+			EnableDerivedAssets:                0,                  // enable/disable swapping of derived assets
 			MinSwapsPerBlock:                   10,                 // process all swaps if queue is less than this number
 			MaxSwapsPerBlock:                   100,                // max swaps to process per block
 			EnableOrderBooks:                   0,                  // enable order books instead of swap queue
@@ -77,6 +82,7 @@ func NewConstantValue010() *ConstantVals {
 			SynthYieldCycle:                    0,                  // number of blocks when the network pays out rewards to yield bearing synths
 			MinimumL1OutboundFeeUSD:            1000000,            // Minimum fee in USD to charge for LP swap, default to $0.01 , nodes need to vote it to a larger value
 			MinimumPoolLiquidityFee:            0,                  // Minimum liquidity fee made by the pool,active pool fail to meet this within a PoolCycle will be demoted
+			ILPCutoff:                          0,                  // the cutoff height for impermanent loss protection
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

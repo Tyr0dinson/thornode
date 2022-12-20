@@ -13,6 +13,7 @@ const (
 	ReserveName      = types.ReserveName
 	AsgardName       = types.AsgardName
 	BondName         = types.BondName
+	LendingName      = types.LendingName
 	RouterKey        = types.RouterKey
 	StoreKey         = types.StoreKey
 	DefaultCodespace = types.DefaultCodespace
@@ -61,6 +62,10 @@ const (
 	// Order Type
 	MarketOrder = types.OrderType_market
 	LimitOrder  = types.OrderType_limit
+
+	// Mint/Burn type
+	MintSupplyType = types.MintBurnSupplyType_mint
+	BurnSupplyType = types.MintBurnSupplyType_burn
 
 	// Memos
 	TxSwap            = mem.TxSwap
@@ -133,14 +138,17 @@ var (
 	NewEventPoolBalanceChanged     = types.NewEventPoolBalanceChanged
 	NewEventPendingLiquidity       = types.NewEventPendingLiquidity
 	NewEventTHORName               = types.NewEventTHORName
+	NewEventMintBurn               = types.NewEventMintBurn
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
 	NewMsgMigrate                  = types.NewMsgMigrate
 	NewMsgRagnarok                 = types.NewMsgRagnarok
+	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
 	NewQueryNodeAccount            = types.NewQueryNodeAccount
 	NewQueryTxOutItem              = types.NewQueryTxOutItem
-	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
+	NewQueryTxStages               = types.NewQueryTxStages
+	NewQueryTxStatus               = types.NewQueryTxStatus
 	NewQuerySaver                  = types.NewQuerySaver
 	ModuleCdc                      = types.ModuleCdc
 	RegisterCodec                  = types.RegisterCodec
@@ -251,6 +259,8 @@ type (
 	QueryVaultPubKeyContract       = types.QueryVaultPubKeyContract
 	QueryNodeAccount               = types.QueryNodeAccount
 	QueryTxOutItem                 = types.QueryTxOutItem
+	QueryTxStages                  = types.QueryTxStages
+	QueryTxStatus                  = types.QueryTxStatus
 	QuerySaver                     = types.QuerySaver
 	QueryChainAddress              = types.QueryChainAddress
 	PoolStatus                     = types.PoolStatus

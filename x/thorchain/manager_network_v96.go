@@ -190,6 +190,10 @@ func (vm *NetworkMgrV96) calcSynthYield(ctx cosmos.Context, mgr Manager, yieldPt
 	return earnings
 }
 
+func (vm *NetworkMgrV96) BeginBlock(ctx cosmos.Context, mgr Manager) error {
+	return nil
+}
+
 // EndBlock move funds from retiring asgard vaults
 func (vm *NetworkMgrV96) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	if ctx.BlockHeight() == genesisBlockHeight {
@@ -1265,7 +1269,6 @@ func (vm *NetworkMgrV96) getPoolShare(incentiveCurve int64, totalProvidedLiquidi
 // pool is in proportion to the amount of fees it accrued:
 //
 // deduction = (poolFees / totalLiquidityFees) * lpDeficit
-//
 func (vm *NetworkMgrV96) deductPoolRewardDeficit(ctx cosmos.Context, pools Pools, totalLiquidityFees, lpDeficit cosmos.Uint) ([]PoolAmt, error) {
 	poolAmts := make([]PoolAmt, 0)
 	for _, pool := range pools {

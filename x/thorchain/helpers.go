@@ -693,14 +693,16 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.102.0")):
+		return isSynthMintPausedV102(ctx, mgr, targetAsset, outputAmt)
 	case version.GTE(semver.MustParse("1.99.0")):
-		return isSynthMintPaused99(ctx, mgr, targetAsset, outputAmt)
+		return isSynthMintPausedV99(ctx, mgr, targetAsset, outputAmt)
 	default:
 		return nil
 	}
 }
 
-func isSynthMintPaused99(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
+func isSynthMintPausedV99(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	maxSynths, err := mgr.Keeper().GetMimir(ctx, constants.MaxSynthPerPoolDepth.String())
 	if maxSynths < 0 || err != nil {
 		maxSynths = mgr.GetConstants().GetInt64Value(constants.MaxSynthPerPoolDepth)
@@ -723,6 +725,43 @@ func isSynthMintPaused99(ctx cosmos.Context, mgr Manager, targetAsset common.Ass
 	}
 
 	return nil
+}
+
+func isSynthMintPausedV102(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
+	remaining, err := getSynthSupplyRemainingV102(ctx, mgr, targetAsset)
+	if err != nil {
+		return err
+	}
+
+	if remaining.LT(outputAmt) {
+		return fmt.Errorf("insufficient synth capacity: want=%d have=%d", outputAmt.Uint64(), remaining.Uint64())
+	}
+
+	return nil
+}
+
+func getSynthSupplyRemainingV102(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, error) {
+	maxSynths, err := mgr.Keeper().GetMimir(ctx, constants.MaxSynthPerPoolDepth.String())
+	if maxSynths < 0 || err != nil {
+		maxSynths = mgr.GetConstants().GetInt64Value(constants.MaxSynthPerPoolDepth)
+	}
+
+	synthSupply := mgr.Keeper().GetTotalSupply(ctx, asset.GetSyntheticAsset())
+	pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), ErrInternal(err, "fail to get pool")
+	}
+
+	if pool.BalanceAsset.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("pool(%s) has zero asset balance", pool.Asset.String())
+	}
+
+	maxSynthSupply := cosmos.NewUint(uint64(maxSynths)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
+	if maxSynthSupply.LT(synthSupply) {
+		return cosmos.ZeroUint(), fmt.Errorf("synth supply over target (%d/%d)", synthSupply.Uint64(), maxSynthSupply.Uint64())
+	}
+
+	return maxSynthSupply.Sub(synthSupply), nil
 }
 
 func isLPPaused(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
@@ -748,25 +787,36 @@ func isLPPausedV1(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 	return false
 }
 
-// DollarInRune gets the amount of rune that is equal to 1 USD
 func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.102.0")):
+		return DollarInRuneV102(ctx, mgr)
+	default:
+		return DollarInRuneV1(ctx, mgr)
+	}
+}
+
+// gets the amount of rune that is equal to 1 USD
+func DollarInRuneV102(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 	// check for mimir override
 	dollarInRune, err := mgr.Keeper().GetMimir(ctx, "DollarInRune")
 	if err == nil && dollarInRune > 0 {
 		return cosmos.NewUint(uint64(dollarInRune))
 	}
 
-	busd, _ := common.NewAsset("BNB.BUSD-BD1")
-	usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
-	usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
-	usdAssets := []common.Asset{busd, usdc, usdt}
+	usdAssets := getAnchors(ctx, mgr.Keeper(), common.TOR)
 
-	usd := make([]cosmos.Uint, 0)
-	for _, asset := range usdAssets {
+	return anchorMedian(ctx, mgr, usdAssets)
+}
+
+func anchorMedian(ctx cosmos.Context, mgr Manager, assets []common.Asset) cosmos.Uint {
+	p := make([]cosmos.Uint, 0)
+	for _, asset := range assets {
 		if isGlobalTradingHalted(ctx, mgr) || isChainTradingHalted(ctx, mgr, asset.Chain) {
 			continue
 		}
-		pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
 			continue
@@ -774,34 +824,65 @@ func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 		if pool.Status != PoolAvailable {
 			continue
 		}
-		value := pool.AssetValueInRune(cosmos.NewUint(common.One))
+		// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
+		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
 		if !value.IsZero() {
-			usd = append(usd, value)
+			p = append(p, value)
 		}
 	}
+	return getMedian(p)
+}
 
-	if len(usd) == 0 {
+func getMedian(vals []cosmos.Uint) cosmos.Uint {
+	switch len(vals) {
+	case 0:
 		return cosmos.ZeroUint()
+	case 1:
+		return vals[0]
 	}
 
-	sort.SliceStable(usd, func(i, j int) bool {
-		return usd[i].Uint64() < usd[j].Uint64()
+	sort.SliceStable(vals, func(i, j int) bool {
+		return vals[i].Uint64() < vals[j].Uint64()
 	})
 
 	// calculate median of our USD figures
 	var median cosmos.Uint
-	if len(usd)%2 > 0 {
+	if len(vals)%2 > 0 {
 		// odd number of figures in our slice. Take the middle figure. Since
 		// slices start with an index of zero, just need to length divide by two.
-		medianSpot := len(usd) / 2
-		median = usd[medianSpot]
+		medianSpot := len(vals) / 2
+		median = vals[medianSpot]
 	} else {
 		// even number of figures in our slice. Average the middle two figures.
-		pt1 := usd[len(usd)/2-1]
-		pt2 := usd[len(usd)/2]
+		pt1 := vals[len(vals)/2-1]
+		pt2 := vals[len(vals)/2]
 		median = pt1.Add(pt2).QuoUint64(2)
 	}
 	return median
+}
+
+func getAnchors(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) []common.Asset {
+	if asset.GetChain().IsTHORChain() {
+		assets := make([]common.Asset, 0)
+		pools, err := keeper.GetPools(ctx)
+		if err != nil {
+			ctx.Logger().Error("unable to fetch pools for anchor", "error", err)
+			return assets
+		}
+		for _, pool := range pools {
+			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
+			val, err := keeper.GetMimir(ctx, mimirKey)
+			if err != nil {
+				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
+				continue
+			}
+			if val > 0 {
+				assets = append(assets, pool.Asset)
+			}
+		}
+		return assets
+	}
+	return []common.Asset{asset.GetLayer1Asset()}
 }
 
 func telem(input cosmos.Uint) float32 {
@@ -909,7 +990,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// get 1 RUNE price in USD
-	runeUSDPrice := 1 / telem(DollarInRune(ctx, mgr))
+	runeUSDPrice := telem(DollarInRune(ctx, mgr).QuoUint64(constants.DollarMulti))
 	telemetry.SetGauge(runeUSDPrice, "thornode", "price", "usd", "thor", "rune")
 
 	// emit pool metrics

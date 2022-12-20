@@ -38,7 +38,13 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryLiquidityProviders(ctx, path[1:], req, mgr, false)
 		case q.QueryLiquidityProvider.Key:
 			return queryLiquidityProvider(ctx, path[1:], req, mgr, false)
+		case q.QueryTxStages.Key:
+			return queryTxStages(ctx, path[1:], req, mgr)
+		case q.QueryTxStatus.Key:
+			return queryTxStatus(ctx, path[1:], req, mgr)
 		case q.QueryTxVoter.Key:
+			return queryTxVoters(ctx, path[1:], req, mgr)
+		case q.QueryTxVoterOld.Key:
 			return queryTxVoters(ctx, path[1:], req, mgr)
 		case q.QueryTx.Key:
 			return queryTx(ctx, path[1:], req, mgr)
@@ -118,13 +124,18 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 	}
 }
 
-func queryRagnarok(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	ragnarokInProgress := mgr.Keeper().RagnarokInProgress(ctx)
-	res, err := json.MarshalIndent(ragnarokInProgress, "", "	")
+func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
+	res, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
-		return nil, ErrInternal(err, "fail to marshal response to json")
+		ctx.Logger().Error("fail to marshal response to json", "error", err)
+		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
 	}
 	return res, nil
+}
+
+func queryRagnarok(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
+	ragnarokInProgress := mgr.Keeper().RagnarokInProgress(ctx)
+	return jsonify(ctx, ragnarokInProgress)
 }
 
 func queryBalanceModule(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
@@ -144,11 +155,7 @@ func queryBalanceModule(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		Address: modAddr,
 		Coins:   bal,
 	}
-	res, err := json.MarshalIndent(balance, "", "	")
-	if err != nil {
-		return nil, ErrInternal(err, "fail to marshal response to json")
-	}
-	return res, nil
+	return jsonify(ctx, balance)
 }
 
 func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -173,11 +180,7 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		Aliases:           aliases,
 	}
 
-	res, err := json.MarshalIndent(resp, "", "	")
-	if err != nil {
-		return nil, ErrInternal(err, "fail to marshal response to json")
-	}
-	return res, nil
+	return jsonify(ctx, resp)
 }
 
 func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
@@ -211,12 +214,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		Routers:               v.Routers,
 		Addresses:             getVaultChainAddress(ctx, v),
 	}
-	res, err := json.MarshalIndent(resp, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, resp)
 }
 
 func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -252,13 +250,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	res, err := json.MarshalIndent(vaultsWithFunds, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-
-	return res, nil
+	return jsonify(ctx, vaultsWithFunds)
 }
 
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
@@ -381,12 +373,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 		}
 	}
-	res, err := json.MarshalIndent(resp, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal pubkeys response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, resp)
 }
 
 func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -413,12 +400,7 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		VaultsMigrating: vaultsMigrating,
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal network data to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -441,12 +423,7 @@ func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		CurrentDeposit: data.CurrentDeposit().String(),
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal protocol owned liquidity data to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -526,13 +503,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		resp = append(resp, addr)
 	}
 
-	res, err := json.MarshalIndent(resp, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal current pool address to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal current pool address to json: %w", err)
-	}
-
-	return res, nil
+	return jsonify(ctx, resp)
 }
 
 // queryNode return the Node information related to the request node address
@@ -644,12 +615,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	} else {
 		result.PreflightStatus = preflightCheckResult
 	}
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("fail to marshal node account to json: %w", err)
-	}
-
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
@@ -811,13 +777,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		}
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal observers to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal observers to json: %w", err)
-	}
-
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 // queryLiquidityProviders
@@ -833,6 +793,9 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
+	}
+	if asset.IsDerivedAsset() {
+		return nil, fmt.Errorf("must not be a derived asset")
 	}
 	if isSavers && !asset.IsVaultAsset() {
 		return nil, fmt.Errorf("invalid request: requested pool is not a SaversPool")
@@ -890,6 +853,10 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		ctx.Logger().Error("fail to get parse asset", "error", err)
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
+	}
+
+	if asset.IsDerivedAsset() {
+		return nil, fmt.Errorf("must not be a derived asset")
 	}
 
 	if isSavers && !asset.IsVaultAsset() {
@@ -968,29 +935,27 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
 	synthMintPausedErr := isSynthMintPaused(ctx, mgr, saversAsset, cosmos.ZeroUint())
+	synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, saversAsset)
 
 	p := &openapi.Pool{
-		BalanceRune:         pool.BalanceRune.String(),
-		BalanceAsset:        pool.BalanceAsset.String(),
-		Asset:               pool.Asset.String(),
-		LPUnits:             pool.LPUnits.String(),
-		PoolUnits:           pool.GetPoolUnits().String(),
-		Status:              pool.Status.String(),
-		Decimals:            wrapInt64(pool.Decimals),
-		SynthUnits:          pool.SynthUnits.String(),
-		SynthSupply:         synthSupply.String(),
-		SaversDepth:         saversDepth.String(),
-		SaversUnits:         saversUnits.String(),
-		SynthMintPaused:     synthMintPausedErr != nil,
-		PendingInboundRune:  pool.PendingInboundRune.String(),
-		PendingInboundAsset: pool.PendingInboundAsset.String(),
+		BalanceRune:          pool.BalanceRune.String(),
+		BalanceAsset:         pool.BalanceAsset.String(),
+		Asset:                pool.Asset.String(),
+		LPUnits:              pool.LPUnits.String(),
+		PoolUnits:            pool.GetPoolUnits().String(),
+		Status:               pool.Status.String(),
+		Decimals:             wrapInt64(pool.Decimals),
+		SynthUnits:           pool.SynthUnits.String(),
+		SynthSupply:          synthSupply.String(),
+		SaversDepth:          saversDepth.String(),
+		SaversUnits:          saversUnits.String(),
+		SynthMintPaused:      synthMintPausedErr != nil,
+		SynthSupplyRemaining: synthSupplyRemaining.String(),
+		PendingInboundRune:   pool.PendingInboundRune.String(),
+		PendingInboundAsset:  pool.PendingInboundAsset.String(),
 	}
 
-	res, err := json.MarshalIndent(p, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal result to JSON: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, p)
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1025,45 +990,51 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		pool.CalcUnits(mgr.GetVersion(), synthSupply)
 
 		synthMintPausedErr := isSynthMintPaused(ctx, mgr, pool.Asset, cosmos.ZeroUint())
+		synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, pool.Asset)
 
 		p := openapi.Pool{
-			BalanceRune:         pool.BalanceRune.String(),
-			BalanceAsset:        pool.BalanceAsset.String(),
-			Asset:               pool.Asset.String(),
-			LPUnits:             pool.LPUnits.String(),
-			PoolUnits:           pool.GetPoolUnits().String(),
-			Status:              pool.Status.String(),
-			Decimals:            wrapInt64(pool.Decimals),
-			SynthUnits:          pool.SynthUnits.String(),
-			SynthSupply:         synthSupply.String(),
-			SaversDepth:         saversDepth.String(),
-			SaversUnits:         saversUnits.String(),
-			SynthMintPaused:     synthMintPausedErr != nil,
-			PendingInboundRune:  pool.PendingInboundRune.String(),
-			PendingInboundAsset: pool.PendingInboundAsset.String(),
+			BalanceRune:          pool.BalanceRune.String(),
+			BalanceAsset:         pool.BalanceAsset.String(),
+			Asset:                pool.Asset.String(),
+			LPUnits:              pool.LPUnits.String(),
+			PoolUnits:            pool.GetPoolUnits().String(),
+			Status:               pool.Status.String(),
+			Decimals:             wrapInt64(pool.Decimals),
+			SynthUnits:           pool.SynthUnits.String(),
+			SynthSupply:          synthSupply.String(),
+			SaversDepth:          saversDepth.String(),
+			SaversUnits:          saversUnits.String(),
+			SynthMintPaused:      synthMintPausedErr != nil,
+			SynthSupplyRemaining: synthSupplyRemaining.String(),
+			PendingInboundRune:   pool.PendingInboundRune.String(),
+			PendingInboundAsset:  pool.PendingInboundAsset.String(),
 		}
 		pools = append(pools, p)
 	}
-	res, err := json.MarshalIndent(pools, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal pools result to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, pools)
 }
 
-func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+func extractVoter(ctx cosmos.Context, path []string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {
 	if len(path) == 0 {
-		return nil, errors.New("tx id not provided")
+		return "", ObservedTxVoter{}, errors.New("tx id not provided")
 	}
 	hash, err := common.NewTxID(path[0])
 	if err != nil {
 		ctx.Logger().Error("fail to parse tx id", "error", err)
-		return nil, fmt.Errorf("fail to parse tx id: %w", err)
+		return "", ObservedTxVoter{}, fmt.Errorf("fail to parse tx id: %w", err)
 	}
 	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
-		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
+		return "", ObservedTxVoter{}, fmt.Errorf("fail to get observed tx voter: %w", err)
+	}
+	return hash, voter, nil
+}
+
+func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	hash, voter, err := extractVoter(ctx, path, mgr)
+	if err != nil {
+		return nil, err
 	}
 	// when tx in voter doesn't exist , double check tx out voter
 	if len(voter.Txs) == 0 {
@@ -1076,27 +1047,41 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		}
 	}
 
-	res, err := json.MarshalIndent(voter, "", "	")
+	return jsonify(ctx, voter)
+}
+
+func queryTxStages(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// First, get the ObservedTxVoter of interest.
+	_, voter, err := extractVoter(ctx, path, mgr)
 	if err != nil {
-		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)
+		return nil, err
 	}
-	return res, nil
+	// when no TxIn voter don't check TxOut voter, as TxOut THORChain observation or not matters little to the user once signed and broadcast
+	// Rather than a "tx: %s doesn't exist" result, allow a response to an existing-but-unobserved hash with Observation.Started 'false'.
+
+	result := NewQueryTxStages(ctx, voter)
+
+	return jsonify(ctx, result)
+}
+
+func queryTxStatus(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// First, get the ObservedTxVoter of interest.
+	_, voter, err := extractVoter(ctx, path, mgr)
+	if err != nil {
+		return nil, err
+	}
+	// when no TxIn voter don't check TxOut voter, as TxOut THORChain observation or not matters little to the user once signed and broadcast
+	// Rather than a "tx: %s doesn't exist" result, allow a response to an existing-but-unobserved hash with Stages.Observation.Started 'false'.
+
+	result := NewQueryTxStatus(ctx, voter)
+
+	return jsonify(ctx, result)
 }
 
 func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	if len(path) == 0 {
-		return nil, errors.New("tx id not provided")
-	}
-	hash, err := common.NewTxID(path[0])
+	hash, voter, err := extractVoter(ctx, path, mgr)
 	if err != nil {
-		ctx.Logger().Error("fail to parse tx id", "error", err)
-		return nil, fmt.Errorf("fail to parse tx id: %w", err)
-	}
-	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
-	if err != nil {
-		ctx.Logger().Error("fail to get observed tx voter", "error", err)
-		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
+		return nil, err
 	}
 	if len(voter.Txs) == 0 {
 		voter, err = mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
@@ -1123,27 +1108,28 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		KeysignMetrics: *keysignMetric,
 	}
 	result.ObservedTx = voter.GetTx(nodeAccounts)
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
-func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+func extractBlockHeight(ctx cosmos.Context, path []string) (int64, error) {
 	if len(path) == 0 {
-		return nil, errors.New("block height not provided")
+		return -1, errors.New("block height not provided")
 	}
-	var err error
 	height, err := strconv.ParseInt(path[0], 0, 64)
 	if err != nil {
 		ctx.Logger().Error("fail to parse block height", "error", err)
-		return nil, fmt.Errorf("fail to parse block height: %w", err)
+		return -1, fmt.Errorf("fail to parse block height: %w", err)
 	}
-
 	if height > ctx.BlockHeight() {
-		return nil, fmt.Errorf("block height not available yet")
+		return -1, fmt.Errorf("block height not available yet")
+	}
+	return height, nil
+}
+
+func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	height, err := extractBlockHeight(ctx, path)
+	if err != nil {
+		return nil, err
 	}
 
 	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, height)
@@ -1184,27 +1170,13 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 		Signature:   base64.StdEncoding.EncodeToString(sig),
 	}
 
-	res, err := json.MarshalIndent(query, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal keygen block to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal keygen block to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, query)
 }
 
 func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	if len(path) == 0 {
-		return nil, errors.New("block height not provided")
-	}
-	var err error
-	height, err := strconv.ParseInt(path[0], 0, 64)
+	height, err := extractBlockHeight(ctx, path)
 	if err != nil {
-		ctx.Logger().Error("fail to parse block height", "error", err)
-		return nil, fmt.Errorf("fail to parse block height: %w", err)
-	}
-
-	if height > ctx.BlockHeight() {
-		return nil, fmt.Errorf("block height not available yet")
+		return nil, err
 	}
 
 	pk := common.EmptyPubKey
@@ -1249,12 +1221,7 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 		Signature: base64.StdEncoding.EncodeToString(sig),
 	}
 
-	res, err := json.MarshalIndent(query, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal tx hash to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal tx hash to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, query)
 }
 
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
@@ -1329,12 +1296,7 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		query.ScheduledOutboundValue = query.ScheduledOutboundValue.Add(value)
 	}
 
-	res, err := json.MarshalIndent(query, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal out queue to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal out queue to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, query)
 }
 
 func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1379,22 +1341,12 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 		})
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal query response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryConstantValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	constAccessor := mgr.GetConstants()
-	res, err := json.MarshalIndent(constAccessor, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal constant values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal constant values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, constAccessor)
 }
 
 func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1408,12 +1360,7 @@ func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr 
 		Next:    mgr.Keeper().GetMinJoinVersion(ctx),
 		Querier: constants.SWVersion,
 	}
-	res, err := json.MarshalIndent(ver, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal version to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal version to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, ver)
 }
 
 func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1424,13 +1371,7 @@ func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery,
 	if err != nil {
 		return nil, fmt.Errorf("fail to get mimir with key:%s, err : %w", path[0], err)
 	}
-
-	res, err := json.MarshalIndent(v, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir value to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, v)
 }
 
 func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1466,12 +1407,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 		values[k] = v
 	}
 
-	res, err := json.MarshalIndent(values, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, values)
 }
 
 func queryMimirAdminValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1487,12 +1423,7 @@ func queryMimirAdminValues(ctx cosmos.Context, path []string, req abci.RequestQu
 		k := strings.TrimPrefix(string(iter.Key()), "mimir//")
 		values[k] = value.GetValue()
 	}
-	res, err := json.MarshalIndent(values, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, values)
 }
 
 func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1508,12 +1439,7 @@ func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.Reques
 		mimirs.Mimirs = append(mimirs.Mimirs, m.Mimirs...)
 	}
 
-	res, err := json.MarshalIndent(mimirs, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, mimirs)
 }
 
 func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1539,12 +1465,7 @@ func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQu
 		}
 	}
 
-	res, err := json.MarshalIndent(values, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, values)
 }
 
 func queryMimirNodeValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1570,12 +1491,7 @@ func queryMimirNodeValues(ctx cosmos.Context, path []string, req abci.RequestQue
 		}
 	}
 
-	res, err := json.MarshalIndent(values, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal mimir values to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal mimir values to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, values)
 }
 
 func queryBan(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1594,12 +1510,7 @@ func queryBan(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgr
 		return nil, fmt.Errorf("fail to get ban voter: %w", err)
 	}
 
-	res, err := json.MarshalIndent(ban, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal ban voter to json", "error", err)
-		return nil, fmt.Errorf("fail to ban voter to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, ban)
 }
 
 func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -1625,12 +1536,7 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal scheduled outbound tx to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal scheduled outbound tx to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -1651,12 +1557,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal pending outbound tx to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal pending outbound tx to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1676,11 +1577,7 @@ func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQue
 		}
 		result = append(result, m)
 	}
-	res, err := json.MarshalIndent(result, "", "	")
-	if err != nil {
-		return nil, fmt.Errorf("fail to marshal keygen metrics to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, result)
 }
 
 func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {

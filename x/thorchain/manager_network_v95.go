@@ -74,6 +74,10 @@ func (vm *NetworkMgrV95) processGenesisSetup(ctx cosmos.Context) error {
 	return nil
 }
 
+func (vm *NetworkMgrV95) BeginBlock(ctx cosmos.Context, mgr Manager) error {
+	return nil
+}
+
 // EndBlock move funds from retiring asgard vaults
 func (vm *NetworkMgrV95) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	if ctx.BlockHeight() == genesisBlockHeight {
@@ -1130,7 +1134,6 @@ func (vm *NetworkMgrV95) getPoolShare(incentiveCurve int64, totalProvidedLiquidi
 // pool is in proportion to the amount of fees it accrued:
 //
 // deduction = (poolFees / totalLiquidityFees) * lpDeficit
-//
 func (vm *NetworkMgrV95) deductPoolRewardDeficit(ctx cosmos.Context, pools Pools, totalLiquidityFees, lpDeficit cosmos.Uint) ([]PoolAmt, error) {
 	poolAmts := make([]PoolAmt, 0)
 	for _, pool := range pools {

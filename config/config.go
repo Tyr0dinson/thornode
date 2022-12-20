@@ -389,6 +389,9 @@ func InitThornode(ctx context.Context) {
 // -------------------------------------------------------------------------------------
 
 type Thornode struct {
+	// NodeRelayURL is the URL of the node relay service.
+	NodeRelayURL string `mapstructure:"node_relay_url"`
+
 	AutoStateSync struct {
 		Enabled bool `mapstructure:"enabled"`
 
@@ -668,7 +671,7 @@ func resolveAddrs(addrs []string) []string {
 	return resolvedAddrs
 }
 
-func thornodeSeeds() (seedAddrs []string, tmSeeds []string) {
+func thornodeSeeds() (seedAddrs, tmSeeds []string) {
 	// use environment variable if set
 	seeds := os.Getenv("SEEDS")
 	if seeds != "" {
