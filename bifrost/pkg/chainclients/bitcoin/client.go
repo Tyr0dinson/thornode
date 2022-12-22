@@ -904,16 +904,11 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 
 // ignoreTx checks if we can already ignore a tx according to preset rules
 //
-// we expect array of "vout" for a BTC to have this format
-// OP_RETURN is mandatory only on inbound tx
-// vout:0 is our vault
-// vout:1 is any any change back to themselves
-// vout:2 is OP_RETURN (first 80 bytes)
-// vout:3 is OP_RETURN (next 80 bytes)
-//
 // Rules to ignore a tx are:
-// - count vouts > 4
-// - count vouts with coins (value) > 2
+// - # of VOUTs > 4
+// - No VOUTs with coins (value)
+// - More than two addresses in the first two VOUTs
+// - LockTime > 0
 func (c *Client) ignoreTx(tx *btcjson.TxRawResult) bool {
 	if len(tx.Vin) == 0 || len(tx.Vout) == 0 || len(tx.Vout) > 4 {
 		return true
@@ -941,10 +936,7 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult) bool {
 	if countWithOutput == 0 {
 		return true
 	}
-	// there are more than two output with value in it, not THORChain format
-	if countWithOutput > 2 {
-		return true
-	}
+
 	return false
 }
 
@@ -973,13 +965,16 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 	return addresses
 }
 
-// getOutput retrieve the correct output for both inbound
-// outbound tx.
-// logic is if FROM == TO then its an outbound change output
-// back to the vault and we need to select the other output
-// as Bifrost already filtered the txs to only have here
-// txs with max 2 outputs with values
-// an exception need to be made for consolidate tx , because consolidate tx will be send from asgard back asgard itself
+// getOutput retrieve the correct output for both inbound and outbound tx:
+
+// Outbound TXs (sender is an Asgard vault):
+// - If it's a consolidate tx AND VOUT sender/receiver are the same
+// 		- return that VOUT (consolidate txs are sent from Asgards back to themselves)
+// - Else it's not a consolidate tx
+// 		- return the first VOUT where the sender/receiver are different (normal outbound)
+// Not an Outbound (sender is NOT an Asgard Vault):
+// - return first VOUT going to an Asgard vault (normal inbound)
+// - if no VOUT goes to an Asgard vault, return an empty VOUT
 func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate bool) (btcjson.Vout, error) {
 	isOutbound := c.isAsgardAddress(sender)
 	for _, vout := range tx.Vout {
@@ -990,7 +985,7 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 		if len(addresses) != 1 {
 			return btcjson.Vout{}, fmt.Errorf("no vout address available")
 		}
-		c.logger.Debug().Str("extractedAddresses", addresses[0]).Msg("output addresses")
+
 		if vout.Value > 0 {
 			if consolidate && addresses[0] == sender {
 				return vout, nil

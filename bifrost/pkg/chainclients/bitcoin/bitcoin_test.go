@@ -209,14 +209,14 @@ func (s *BitcoinSuite) TestFetchTxs(c *C) {
 	txs, err := s.client.FetchTxs(0)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.BTCChain)
-	c.Assert(txs.Count, Equals, "13")
+	c.Assert(txs.Count, Equals, "15")
 	c.Assert(txs.TxArray[0].BlockHeight, Equals, int64(1696761))
 	c.Assert(txs.TxArray[0].Tx, Equals, "24ed2d26fd5d4e0e8fa86633e40faf1bdfc8d1903b1cd02855286312d48818a2")
 	c.Assert(txs.TxArray[0].Sender, Equals, "tb1qdxxlx4r4jk63cve3rjpj428m26xcukjn5yegff")
 	c.Assert(txs.TxArray[0].To, Equals, "mv4rnyY3Su5gjcDNzbMLKBQkBicCtHUtFB")
 	c.Assert(txs.TxArray[0].Coins.EqualsEx(common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000000))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(22705334))}), Equals, true)
-	c.Assert(len(txs.TxArray), Equals, 13)
+	c.Assert(len(txs.TxArray), Equals, 15)
 }
 
 func (s *BitcoinSuite) TestGetSender(c *C) {
@@ -453,7 +453,7 @@ func (s *BitcoinSuite) TestIgnoreTx(c *C) {
 	ignored = s.client.ignoreTx(&tx)
 	c.Assert(ignored, Equals, true)
 
-	// invalid tx > 2 vout with coins we only expect 2 max
+	// valid TX with > 2 VOUTs with value
 	tx = btcjson.TxRawResult{
 		Vin: []btcjson.Vin{
 			{
@@ -495,7 +495,7 @@ func (s *BitcoinSuite) TestIgnoreTx(c *C) {
 		},
 	}
 	ignored = s.client.ignoreTx(&tx)
-	c.Assert(ignored, Equals, true)
+	c.Assert(ignored, Equals, false)
 
 	// valid tx == 2 vout with coins, 1 to vault, 1 with change back to user
 	tx = btcjson.TxRawResult{
@@ -1034,10 +1034,17 @@ func (s *BitcoinSuite) TestGetOutput(c *C) {
 			},
 		},
 	}
+	// Test normal outbound from Asgard, should choose the VOUT not to itself
 	out, err := s.client.getOutput("tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6", &tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(out.ScriptPubKey.Addresses[0], Equals, "tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835")
 	c.Assert(out.Value, Equals, 1.49655603)
+
+	// Test get output for consolidate tx, should return the VOUT to itself
+	out, err = s.client.getOutput("tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6", &tx, true)
+	c.Assert(err, IsNil)
+	c.Assert(out.ScriptPubKey.Addresses[0], Equals, "tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6")
+	c.Assert(out.Value, Equals, 0.00195384)
 
 	tx = btcjson.TxRawResult{
 		Vin: []btcjson.Vin{
@@ -1170,6 +1177,93 @@ func (s *BitcoinSuite) TestGetOutput(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(out.ScriptPubKey.Addresses[0], Equals, "tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6")
 	c.Assert(out.Value, Equals, 1.49655603)
+
+	tx = btcjson.TxRawResult{
+		Vin: []btcjson.Vin{
+			{
+				Txid: "5b0876dcc027d2f0c671fc250460ee388df39697c3ff082007b6ddd9cb9a7513",
+				Vout: 1,
+			},
+		},
+		Vout: []btcjson.Vout{
+			{
+				Value: 1.49655603,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835"},
+				},
+			},
+			{
+				Value: 2.4356,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"2MtJ2k7ikmQi4GwR5jxhNi4AfWyn2yEtqBZ"},
+				},
+			},
+			{
+				Value: 0.97865,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"2N4aqVUpFtbHU8XRSpf98Afqaj9ERaj2Zup"},
+				},
+			},
+			{
+				Value: 0.00195384,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6"},
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 74686f72636861696e3a636f6e736f6c6964617465",
+					Type: "nulldata",
+				},
+			},
+		},
+	}
+
+	// Test normal inbound, should grab the VOUT to Asgard
+	out, err = s.client.getOutput("tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835", &tx, false)
+	c.Assert(err, IsNil)
+	c.Assert(out.ScriptPubKey.Addresses[0], Equals, "tb1qkq7weysjn6ljc2ywmjmwp8ttcckg8yyxjdz5k6")
+	c.Assert(out.Value, Equals, 0.00195384)
+
+	tx = btcjson.TxRawResult{
+		Vin: []btcjson.Vin{
+			{
+				Txid: "5b0876dcc027d2f0c671fc250460ee388df39697c3ff082007b6ddd9cb9a7513",
+				Vout: 1,
+			},
+		},
+		Vout: []btcjson.Vout{
+			{
+				Value: 1.49655603,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835"},
+				},
+			},
+			{
+				Value: 2.4356,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"2MtJ2k7ikmQi4GwR5jxhNi4AfWyn2yEtqBZ"},
+				},
+			},
+			{
+				Value: 0.97865,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"2N4aqVUpFtbHU8XRSpf98Afqaj9ERaj2Zup"},
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 74686f72636861696e3a636f6e736f6c6964617465",
+					Type: "nulldata",
+				},
+			},
+		},
+	}
+
+	// Not an outbound and no VOUT to Asgard, should return empty VOUT and error
+	out, err = s.client.getOutput("tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835", &tx, false)
+	c.Assert(err, NotNil)
+	c.Assert(len(out.ScriptPubKey.Addresses), Equals, 0)
 }
 
 func (s *BitcoinSuite) TestIsValidUTXO(c *C) {
