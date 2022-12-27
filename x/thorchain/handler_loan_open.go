@@ -70,6 +70,13 @@ func (h LoanOpenHandler) validateV103(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("loans are currently paused")
 	}
 
+	// Circuit Breaker: check if we're hit the max supply
+	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxAmt, _ := h.mgr.Keeper().GetMimir(ctx, "MaxRuneSupply")
+	if maxAmt > 0 && supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
+		return fmt.Errorf("loans are currently paused, due to rune supply cap")
+	}
+
 	// ensure collateral pool exists
 	if !h.mgr.Keeper().PoolExist(ctx, msg.CollateralAsset) {
 		return fmt.Errorf("collateral asset does not have a pool")
