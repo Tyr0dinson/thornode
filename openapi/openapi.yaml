@@ -177,7 +177,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/BorrowersResponse"
 
-
   # ------------------------------ transactions ------------------------------
 
   /thorchain/tx/{hash}:
