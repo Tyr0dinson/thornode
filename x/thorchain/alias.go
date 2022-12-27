@@ -281,6 +281,8 @@ type (
 	Pools                          = types.Pools
 	LiquidityProvider              = types.LiquidityProvider
 	LiquidityProviders             = types.LiquidityProviders
+	Loan                           = types.Loan
+	Loans                          = types.Loans
 	ObservedTxs                    = types.ObservedTxs
 	ObservedTx                     = types.ObservedTx
 	ObservedTxVoter                = types.ObservedTxVoter
