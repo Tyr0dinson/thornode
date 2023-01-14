@@ -176,13 +176,7 @@ func (ob *OrderBookV114) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg M
 		swapper = newSwapperV92()
 	}
 
-	// account for affiliate fee
 	source := msg.Tx.Coins[0]
-	if !msg.AffiliateBasisPoints.IsZero() {
-		maxBasisPoints := cosmos.NewUint(10_000)
-		source.Amount = common.GetSafeShare(common.SafeSub(maxBasisPoints, msg.AffiliateBasisPoints), maxBasisPoints, source.Amount)
-	}
-
 	target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
 	var emit cosmos.Uint
 	switch {
@@ -374,37 +368,13 @@ func (ob *OrderBookV114) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	for i := int64(0); i < ob.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock); i++ {
 		pick := swaps[i]
-		var msg, affiliateSwap MsgSwap
+		var msg MsgSwap
 		if err := copier.Copy(&msg, &pick.msg); err != nil {
 			ctx.Logger().Error("fail copy msg", "msg", msg.Tx.String(), "error", err)
 			continue
 		}
-		if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
-			affiliateAmt := common.GetSafeShare(
-				msg.AffiliateBasisPoints,
-				cosmos.NewUint(10000),
-				msg.Tx.Coins[0].Amount,
-			)
-			msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, affiliateAmt)
 
-			affiliateSwap = *NewMsgSwap(
-				msg.Tx,
-				common.RuneAsset(),
-				msg.AffiliateAddress,
-				cosmos.ZeroUint(),
-				common.NoAddress,
-				cosmos.ZeroUint(),
-				"",
-				"", nil,
-				MarketOrder,
-				msg.Signer,
-			)
-			if affiliateSwap.Tx.Coins[0].Amount.GTE(affiliateAmt) {
-				affiliateSwap.Tx.Coins[0].Amount = affiliateAmt
-			}
-		}
-
-		// make the primary swap
+		// make the swap
 		_, err := handler(ctx, &msg)
 		if err != nil {
 			switch pick.msg.OrderType {
@@ -423,28 +393,6 @@ func (ob *OrderBookV114) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			}
 		} else {
 			todo = todo.findMatchingTrades(genTradePair(msg.Tx.Coins[0].Asset, msg.TargetAsset), pairs)
-			if !affiliateSwap.Tx.IsEmpty() {
-				// if asset sent in is native rune, no need
-				if affiliateSwap.Tx.Coins[0].Asset.IsNativeRune() {
-					toAddress, err := msg.AffiliateAddress.AccAddress()
-					if err != nil {
-						ctx.Logger().Error("fail to convert address into AccAddress", "msg", msg.AffiliateAddress, "error", err)
-						continue
-					}
-					// since native transaction fee has been charged to inbound from address, thus for affiliated fee , the network doesn't need to charge it again
-					coin := common.NewCoin(common.RuneAsset(), affiliateSwap.Tx.Coins[0].Amount)
-					sdkErr := mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
-					if sdkErr != nil {
-						ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", coin.Asset)
-					}
-				} else {
-					// make the affiliate fee swap
-					_, err := handler(ctx, &affiliateSwap)
-					if err != nil {
-						ctx.Logger().Error("fail to execute affiliate swap", "msg", affiliateSwap.Tx.String(), "error", err)
-					}
-				}
-			}
 		}
 		if err := ob.k.RemoveOrderBookItem(ctx, pick.msg.Tx.ID); err != nil {
 			ctx.Logger().Error("fail to remove order book item", "msg", pick.msg.Tx.String(), "error", err)
