@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.102.0
+  version: 1.103.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -975,7 +975,7 @@ components:
         synth_mint_paused:
           type: boolean
           example: true
-          description: whether additional synths cannot be minted (will be deprecated in v1.103)
+          description: whether additional synths cannot be minted
         synth_supply_remaining:
           type: string
           example: "123456"
@@ -1318,7 +1318,7 @@ components:
         dust_threshold:
           type: string
           example: "10000"
-          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transctions with asset amounts lower than the dust_thresold are ignored.
+          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
 
     LastBlock:
       type: object
@@ -1819,6 +1819,15 @@ components:
               type: boolean
               example: false
               description: returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
+        swap_finalised:
+          type: object
+          required:
+            - completed
+          properties:
+            completed:
+              type: boolean
+              example: false
+              description: returns true if an inbound transaction's swap (successful or refunded) is no longer pending
         outbound_delay:
           type: object
           required:
@@ -2169,6 +2178,9 @@ components:
         - outbound_delay_seconds
         - fees
         - slippage_bps
+        - warning
+        - notes
+        - expiry
       properties:
         inbound_address:
           type: string
@@ -2204,6 +2216,27 @@ components:
           type: integer
           format: int64
           description: the swap slippage in basis points
+        router:
+          type: string
+          description: the EVM chain router contract address
+          example: "0x3624525075b88B24ecc29CE226b0CEc1fFcB6976"
+        expiry:
+          type: integer
+          format: int64
+          description: expiration timestamp in unix seconds
+          example: 1671660285
+        warning:
+          type: string
+          description: static warning message
+          example: Do not cache this response. Do not send funds after the expiry.
+        notes:
+          type: string
+          description: chain specific quote notes
+          example: Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.
+        dust_threshold:
+          type: string
+          example: "10000"
+          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transctions with asset amounts lower than the dust_threshold are ignored.
 
     QuoteSaverDepositResponse:
       type: object
@@ -2213,6 +2246,9 @@ components:
         - expected_amount_out
         - fees
         - slippage_bps
+        - warning
+        - notes
+        - expiry
       properties:
         inbound_address:
           type: string
@@ -2223,6 +2259,10 @@ components:
           description: generated memo for the deposit
           example: "+:ETH/ETH::thor17gw75axcnr8747pkanye45pnrwk7p9c3cqncsv:100"
         expected_amount_out:
+          type: string
+          description: migrate to expected_amount_deposit (will be deprecated in v1.104)
+          example: "10000"
+        expected_amount_deposit:
           type: string
           description: the minimum amount of the target asset the user can expect to deposit after fees
           example: "10000"
@@ -2240,6 +2280,23 @@ components:
           type: integer
           format: int64
           description: the swap slippage in basis points
+        expiry:
+          type: integer
+          format: int64
+          description: expiration timestamp in unix seconds
+          example: 1671660285
+        warning:
+          type: string
+          description: static warning message
+          example: Do not cache this response. Do not send funds after the expiry.
+        notes:
+          type: string
+          description: chain specific quote notes
+          example: Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.
+        dust_threshold:
+          type: string
+          example: "10000"
+          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transctions with asset amounts lower than the dust_threshold are ignored.
 
     QuoteSaverWithdrawResponse:
       type: object
@@ -2252,6 +2309,9 @@ components:
         - outbound_delay_seconds
         - fees
         - slippage_bps
+        - warning
+        - notes
+        - expiry
       properties:
         inbound_address:
           type: string
@@ -2283,3 +2343,20 @@ components:
           type: integer
           format: int64
           description: the swap slippage in basis points
+        expiry:
+          type: integer
+          format: int64
+          description: expiration timestamp in unix seconds
+          example: 1671660285
+        warning:
+          type: string
+          description: static warning message
+          example: Do not cache this response. Do not send funds after the expiry.
+        notes:
+          type: string
+          description: chain specific quote notes
+          example: Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions.
+        dust_threshold:
+          type: string
+          example: "10000"
+          description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transctions with asset amounts lower than the dust_threshold are ignored.

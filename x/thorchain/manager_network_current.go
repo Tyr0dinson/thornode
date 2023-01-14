@@ -176,94 +176,107 @@ func (vm *NetworkMgrV102) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
+	for _, asset := range layer1Assets {
+		vm.SpawnDerivedAsset(ctx, asset, mgr)
+	}
+
+	return nil
+}
+
+func (vm *NetworkMgrV102) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+	if !asset.IsGasAsset() && !asset.Equals(common.TOR) {
+		return
+	}
+
 	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
 	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthBasisPts)
 	minDepthPts := fetchConfigInt64(ctx, mgr, constants.DerivedMinDepth)
 
-	for _, asset := range layer1Assets {
-		dPool, err := mgr.Keeper().GetPool(ctx, asset)
-		if err != nil {
-			vm.suspendVirtualPool(ctx, mgr, dPool, err)
-			continue
-		}
-
-		if dPool.IsEmpty() {
-			// when gas pool is not ready yet
-			if !asset.Equals(common.TOR) {
-				continue
-			}
-
-			dPool.Asset = asset.GetDerivedAsset()
-		}
-
-		if depthBasisPts == 0 {
-			vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("derived pools have been disabled"))
-			continue
-		}
-
-		totalRuneDepth, price, slippage := vm.calcAnchor(ctx, mgr, asset)
-		if totalRuneDepth.IsZero() {
-			vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("no anchor pools available"))
-			continue
-		}
-		if price.IsZero() {
-			vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("fail to get asset price (%s)", asset))
-			continue
-		}
-
-		minRuneDepth := common.GetSafeShare(cosmos.NewUint(uint64(minDepthPts)), cosmos.NewUint(10000), totalRuneDepth)
-		runeDepth := common.GetUncappedShare(cosmos.NewUint(uint64(depthBasisPts)), cosmos.NewUint(10000), totalRuneDepth)
-		// adjust rune depth by median slippage. This is so high volume trading
-		// causes the derived virtual pool to become more shallow making price
-		// manipulation profitability significantly harder
-		reverseSlip := common.SafeSub(cosmos.NewUint(uint64(maxAnchorSlip)), slippage)
-		runeDepth = common.GetSafeShare(reverseSlip, cosmos.NewUint(uint64(maxAnchorSlip)), runeDepth)
-		if runeDepth.LT(minRuneDepth) {
-			runeDepth = minRuneDepth
-		}
-		assetDepth := runeDepth.Mul(price).QuoUint64(uint64(constants.DollarMulti * common.One))
-
-		dPool.Asset = asset.GetDerivedAsset()
-		if dPool.Status != PoolAvailable {
-			poolEvt := NewEventPool(dPool.Asset, PoolAvailable)
-			if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
-				return fmt.Errorf("fail to emit pool event: %w", err)
-			}
-			telemetry.IncrCounterWithLabels(
-				[]string{"thornode", "derived_asset", "available"},
-				float32(1),
-				[]metrics.Label{telemetry.NewLabel("pool", dPool.Asset.String())},
-			)
-		}
-		dPool.Status = PoolAvailable
-		dPool.StatusSince = ctx.BlockHeight()
-
-		// emit an event for midgard
-		runeAmt := common.SafeSub(runeDepth, dPool.BalanceRune)
-		assetAmt := common.SafeSub(assetDepth, dPool.BalanceAsset)
-		assetAdd, runeAdd := true, true
-		if dPool.BalanceAsset.GT(assetDepth) {
-			assetAdd = false
-			assetAmt = common.SafeSub(dPool.BalanceAsset, assetDepth)
-		}
-		if dPool.BalanceRune.GT(runeDepth) {
-			runeAdd = false
-			runeAmt = common.SafeSub(dPool.BalanceRune, runeDepth)
-		}
-		mod := NewPoolMod(dPool.Asset, runeAmt, runeAdd, assetAmt, assetAdd)
-		emitPoolBalanceChangedEvent(ctx, mod, "derived pool adjustment", mgr)
-
-		dPool.BalanceAsset = assetDepth
-		dPool.BalanceRune = runeDepth
-
-		if err := mgr.Keeper().SetPool(ctx, dPool); err != nil {
-			vm.suspendVirtualPool(ctx, mgr, dPool, err)
-			continue
-		}
-
+	dPool, err := mgr.Keeper().GetPool(ctx, asset)
+	if err != nil {
+		vm.suspendVirtualPool(ctx, mgr, dPool, err)
+		ctx.Logger().Error("failed to fetch pool", "asset", asset, "err", err)
+		return
 	}
 
-	return nil
+	if !asset.IsGasAsset() {
+		vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("asset is not a gas asset"))
+	}
+
+	if dPool.IsEmpty() {
+		// when gas pool is not ready yet
+		if !asset.Equals(common.TOR) {
+			return
+		}
+
+		dPool.Asset = asset.GetDerivedAsset()
+	}
+
+	if depthBasisPts == 0 {
+		vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("derived pools have been disabled"))
+		return
+	}
+
+	totalRuneDepth, price, slippage := vm.calcAnchor(ctx, mgr, asset)
+	if totalRuneDepth.IsZero() {
+		vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("no anchor pools available"))
+		return
+	}
+	if price.IsZero() {
+		vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("fail to get asset price (%s)", asset))
+		return
+	}
+
+	minRuneDepth := common.GetSafeShare(cosmos.NewUint(uint64(minDepthPts)), cosmos.NewUint(10000), totalRuneDepth)
+	runeDepth := common.GetUncappedShare(cosmos.NewUint(uint64(depthBasisPts)), cosmos.NewUint(10000), totalRuneDepth)
+	// adjust rune depth by median slippage. This is so high volume trading
+	// causes the derived virtual pool to become more shallow making price
+	// manipulation profitability significantly harder
+	reverseSlip := common.SafeSub(cosmos.NewUint(uint64(maxAnchorSlip)), slippage)
+	runeDepth = common.GetSafeShare(reverseSlip, cosmos.NewUint(uint64(maxAnchorSlip)), runeDepth)
+	if runeDepth.LT(minRuneDepth) {
+		runeDepth = minRuneDepth
+	}
+	assetDepth := runeDepth.Mul(price).QuoUint64(uint64(constants.DollarMulti * common.One))
+
+	dPool.Asset = asset.GetDerivedAsset()
+	if dPool.Status != PoolAvailable {
+		poolEvt := NewEventPool(dPool.Asset, PoolAvailable)
+		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
+			ctx.Logger().Error("fail to emit pool event", "asset", asset, "err", err)
+			return
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "derived_asset", "available"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("pool", dPool.Asset.String())},
+		)
+	}
+	dPool.Status = PoolAvailable
+	dPool.StatusSince = ctx.BlockHeight()
+
+	// emit an event for midgard
+	runeAmt := common.SafeSub(runeDepth, dPool.BalanceRune)
+	assetAmt := common.SafeSub(assetDepth, dPool.BalanceAsset)
+	assetAdd, runeAdd := true, true
+	if dPool.BalanceAsset.GT(assetDepth) {
+		assetAdd = false
+		assetAmt = common.SafeSub(dPool.BalanceAsset, assetDepth)
+	}
+	if dPool.BalanceRune.GT(runeDepth) {
+		runeAdd = false
+		runeAmt = common.SafeSub(dPool.BalanceRune, runeDepth)
+	}
+	mod := NewPoolMod(dPool.Asset, runeAmt, runeAdd, assetAmt, assetAdd)
+	emitPoolBalanceChangedEvent(ctx, mod, "derived pool adjustment", mgr)
+
+	dPool.BalanceAsset = assetDepth
+	dPool.BalanceRune = runeDepth
+
+	if err := mgr.Keeper().SetPool(ctx, dPool); err != nil {
+		vm.suspendVirtualPool(ctx, mgr, dPool, err)
+		return
+	}
 }
 
 // EndBlock move funds from retiring asgard vaults
@@ -312,6 +325,8 @@ func (vm *NetworkMgrV102) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			return nil
 		}
 	}
+
+	migrationRounds := mgr.GetConstants().GetInt64Value(constants.ChurnMigrateRounds)
 
 	for _, vault := range retiring {
 		if !vault.HasFunds() {
@@ -374,14 +389,14 @@ func (vm *NetworkMgrV102) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				// signer, to successfully send these funds while respecting
 				// gas requirements (so it'll actually send slightly less)
 				amt := coin.Amount
-				if nth < 5 { // migrate partial funds 4 times
+				if nth < migrationRounds { // migrate partial funds 4 times (migrationRounds is 5 in mainnet)
 					// each round of migration, we are increasing the amount 20%.
 					// Round 1 = 20%
 					// Round 2 = 40%
 					// Round 3 = 60%
 					// Round 4 = 80%
 					// Round 5 = 100%
-					amt = amt.MulUint64(uint64(nth)).QuoUint64(5)
+					amt = amt.MulUint64(uint64(nth)).QuoUint64(uint64(migrationRounds))
 				}
 				amt = cosmos.RoundToDecimal(amt, coin.Decimals)
 
@@ -404,7 +419,7 @@ func (vm *NetworkMgrV102) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 					// the left amount is not enough to pay for gas, likely only dust left, the network can't migrate it across
 					// and this will only happen after 5th round
-					if amt.IsZero() && nth > 5 {
+					if amt.IsZero() && nth > migrationRounds {
 						ctx.Logger().Info("left coin is not enough to pay for gas, thus burn it", "coin", coin, "gas", gasAmount)
 						vault.SubFunds(common.Coins{
 							coin,
