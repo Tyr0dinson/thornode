@@ -58,8 +58,8 @@ func NewConstantValue010() *ConstantVals {
 			MaxSynthPerPoolDepth:               1700,               // percentage (in basis points) of how many synths are allowed relative to pool depth of the related pool
 			MinSlashPointsForBadValidator:      100,                // The minimum slash point
 			FullImpLossProtectionBlocks:        1440000,            // number of blocks before a liquidity provider gets 100% impermanent loss protection
-			MinCR:                              100,                // Minimum collateralization ratio
-			MaxCR:                              600,                // Maximum collateralization ratio
+			MinCR:                              10_000,             // Minimum collateralization ratio (basis pts)
+			MaxCR:                              60_000,             // Maximum collateralization ratio (basis pts)
 			PauseLoans:                         1,                  // pause opening new loans and repaying loans
 			LoanRepaymentMaturity:              0,                  // number of blocks before loan has reached maturity and can be repaid
 			CRPoolMultiplier:                   10_000,             // CR calculates from this basis points multipler of the pool depth

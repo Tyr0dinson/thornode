@@ -96,8 +96,6 @@ func getHandlerMappingV104(mgr Manager) map[string]MsgHandler {
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
-	m[MsgLoanOpen{}.Type()] = NewLoanOpenHandler(mgr)
-	m[MsgLoanRepayment{}.Type()] = NewLoanRepaymentHandler(mgr)
 	return m
 }
 
@@ -156,6 +154,8 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgNoOp{}.Type()] = NewNoOpHandler(mgr)
 	m[MsgConsolidate{}.Type()] = NewConsolidateHandler(mgr)
 	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
+	m[MsgLoanOpen{}.Type()] = NewLoanOpenHandler(mgr)
+	m[MsgLoanRepayment{}.Type()] = NewLoanRepaymentHandler(mgr)
 	return m
 }
 

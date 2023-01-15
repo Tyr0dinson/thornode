@@ -208,7 +208,7 @@ func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
 			return err
 		}
 
-		tx := common.NewTx(txID, lendingAddr, common.NoAddress, common.NewCoins(torCoin), nil, "Open Loan Swap")
+		tx := common.NewTx(txID, lendingAddr, lendingAddr, common.NewCoins(torCoin), nil, "noop")
 		// we do NOT pass affiliate info here as it was already taken out on the swap of the collateral to derived asset
 		swapMsg := NewMsgSwap(tx, msg.TargetAsset, msg.TargetAddress, zero, common.NoAddress, zero, msg.Aggregator, msg.AggregatorTargetAddress, &msg.AggregatorTargetLimit, 0, msg.Signer)
 		if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
@@ -231,10 +231,9 @@ func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
 }
 
 func (h LoanOpenHandler) getCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint {
-	// (maxCR * 100 -minCR * 100) / (b / a) + minCR * 100
-	// We apply a 100 multiplier to get get two decimals points in the math (ie return 100.77 instead of 100)
+	// (maxCR - minCR) / (b / a) + minCR
 	// NOTE: a should include the collateral currently being deposited
-	crCalc := cosmos.NewUint(uint64(maxCR*100 - minCR*100))
+	crCalc := cosmos.NewUint(uint64(maxCR - minCR))
 	cr := common.GetUncappedShare(a, b, crCalc)
-	return cr.AddUint64(uint64(minCR * 100))
+	return cr.AddUint64(uint64(minCR))
 }
