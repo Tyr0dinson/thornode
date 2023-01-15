@@ -103,12 +103,13 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	pool.BalanceRune = cosmos.NewUint(1022440798362209)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	tor := NewPool()
-	tor.Asset = common.TOR
-	tor.Status = PoolAvailable
-	tor.BalanceRune = cosmos.NewUint(433267688964312)
-	tor.BalanceAsset = cosmos.NewUint(314031308608965)
-	c.Assert(mgr.Keeper().SetPool(ctx, tor), IsNil)
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	busd := NewPool()
+	busd.Asset, _ = common.NewAsset("BNB.BUSD-BD1")
+	busd.Status = PoolAvailable
+	busd.BalanceRune = cosmos.NewUint(433267688964312)
+	busd.BalanceAsset = cosmos.NewUint(314031308608965)
+	c.Assert(mgr.Keeper().SetPool(ctx, busd), IsNil)
 
 	vault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)

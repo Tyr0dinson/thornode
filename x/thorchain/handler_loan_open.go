@@ -54,13 +54,13 @@ func (h LoanOpenHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 
 func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.103.0")) {
-		return h.validateV103(ctx, msg)
+	if version.GTE(semver.MustParse("1.104.0")) {
+		return h.validateV104(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanOpenHandler) validateV103(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) validateV104(ctx cosmos.Context, msg MsgLoanOpen) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -97,13 +97,13 @@ func (h LoanOpenHandler) validateV103(ctx cosmos.Context, msg MsgLoanOpen) error
 
 func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.103.0")) {
-		return h.handleV103(ctx, msg)
+	if version.GTE(semver.MustParse("1.104.0")) {
+		return h.handleV104(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanOpenHandler) handleV103(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
 	zero := cosmos.ZeroUint()
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.CollateralAsset)
 	if err != nil {

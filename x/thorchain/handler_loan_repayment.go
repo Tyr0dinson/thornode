@@ -54,13 +54,13 @@ func (h LoanRepaymentHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 
 func (h LoanRepaymentHandler) validate(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.103.0")) {
-		return h.validateV103(ctx, msg)
+	if version.GTE(semver.MustParse("1.104.0")) {
+		return h.validateV104(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanRepaymentHandler) validateV103(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) validateV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -95,23 +95,23 @@ func (h LoanRepaymentHandler) validateV103(ctx cosmos.Context, msg MsgLoanRepaym
 
 func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.103.0")) {
-		return h.handleV103(ctx, msg)
+	if version.GTE(semver.MustParse("1.104.0")) {
+		return h.handleV104(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanRepaymentHandler) handleV103(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) handleV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.Coin.Asset.Equals(common.TOR) {
-		return h.repayV103(ctx, msg)
+		return h.repayV104(ctx, msg)
 	} else {
-		return h.swapV103(ctx, msg)
+		return h.swapV104(ctx, msg)
 	}
 }
 
-func (h LoanRepaymentHandler) repayV103(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) repayV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
@@ -128,6 +128,7 @@ func (h LoanRepaymentHandler) repayV103(ctx cosmos.Context, msg MsgLoanRepayment
 		return err
 	}
 
+	fmt.Printf("Repay: %+v\n", loan)
 	redeem := common.GetSafeShare(msg.Coin.Amount, loan.Debt(), loan.Collateral())
 	if redeem.IsZero() {
 		return fmt.Errorf("redeem cannot be zero")
@@ -198,7 +199,7 @@ func (h LoanRepaymentHandler) repayV103(ctx cosmos.Context, msg MsgLoanRepayment
 	return nil
 }
 
-func (h LoanRepaymentHandler) swapV103(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) swapV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
 		ctx.Logger().Error("fail to get lending address", "error", err)
@@ -236,6 +237,7 @@ func (h LoanRepaymentHandler) swapV103(ctx cosmos.Context, msg MsgLoanRepayment)
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
 	tx := common.NewTx(txID, lendAddr, lendAddr, common.NewCoins(msg.Coin), common.Gas{fakeGas}, memo)
 	swapMsg := NewMsgSwap(tx, common.TOR, lendAddr, cosmos.ZeroUint(), lendAddr, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
+	fmt.Printf("MsgSwap: %+v\n", swapMsg)
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 		return err

@@ -66,13 +66,13 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.103.0")) {
-		return getHandlerMappingV103(mgr)
+	if version.GTE(semver.MustParse("1.104.0")) {
+		return getHandlerMappingV104(mgr)
 	}
 	return getHandlerMappingV65(mgr)
 }
 
-func getHandlerMappingV103(mgr Manager) map[string]MsgHandler {
+func getHandlerMappingV104(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 
@@ -249,15 +249,15 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 
 func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.103.0")):
-		return processOneTxInV103(ctx, keeper, tx, signer)
+	case version.GTE(semver.MustParse("1.104.0")):
+		return processOneTxInV104(ctx, keeper, tx, signer)
 	case version.GTE(semver.MustParse("0.63.0")):
 		return processOneTxInV63(ctx, keeper, tx, signer)
 	}
 	return nil, errBadVersion
 }
 
-func processOneTxInV103(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV104(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
@@ -342,8 +342,8 @@ func processOneTxInV103(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) common.Asset {
 	version := keeper.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.103.0")):
-		return fuzzyAssetMatchV103(ctx, keeper, asset)
+	case version.GTE(semver.MustParse("1.104.0")):
+		return fuzzyAssetMatchV104(ctx, keeper, asset)
 	case version.GTE(semver.MustParse("1.83.0")):
 		return fuzzyAssetMatchV83(ctx, keeper, asset)
 	default:
@@ -351,7 +351,7 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 	}
 }
 
-func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
+func fuzzyAssetMatchV104(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
 	asset := origAsset.GetLayer1Asset()
 	// if it's already an exact match with successfully-added liquidity, return it immediately
 	pool, err := keeper.GetPool(ctx, asset)
