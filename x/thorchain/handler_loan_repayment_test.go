@@ -96,6 +96,7 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithTOR(c *C) {
 
 func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
