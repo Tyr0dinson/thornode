@@ -184,7 +184,17 @@ func (vm *NetworkMgrV104) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 }
 
 func (vm *NetworkMgrV104) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {
-	if !asset.IsGasAsset() && !asset.Equals(common.TOR) {
+	var err error
+	layer1 := asset
+	if layer1.IsDerivedAsset() && !asset.Equals(common.TOR) {
+		// NOTE: if the symbol of a derived asset isn't the chain, this won't work
+		// (ie TERRA.LUNA)
+		layer1.Chain, err = common.NewChain(layer1.Symbol.String())
+		if err != nil {
+			return
+		}
+	}
+	if !asset.Equals(common.TOR) && !layer1.IsGasAsset() {
 		return
 	}
 
@@ -192,10 +202,10 @@ func (vm *NetworkMgrV104) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthBasisPts)
 	minDepthPts := fetchConfigInt64(ctx, mgr, constants.DerivedMinDepth)
 
-	dPool, err := mgr.Keeper().GetPool(ctx, asset)
+	dPool, err := mgr.Keeper().GetPool(ctx, layer1)
 	if err != nil {
 		vm.suspendVirtualPool(ctx, mgr, dPool, err)
-		ctx.Logger().Error("failed to fetch pool", "asset", asset, "err", err)
+		ctx.Logger().Error("failed to fetch pool", "asset", asset.GetDerivedAsset(), "err", err)
 		return
 	}
 
@@ -213,7 +223,7 @@ func (vm *NetworkMgrV104) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 		return
 	}
 
-	totalRuneDepth, price, slippage := vm.calcAnchor(ctx, mgr, asset)
+	totalRuneDepth, price, slippage := vm.calcAnchor(ctx, mgr, layer1)
 	if totalRuneDepth.IsZero() {
 		vm.suspendVirtualPool(ctx, mgr, dPool, fmt.Errorf("no anchor pools available"))
 		return

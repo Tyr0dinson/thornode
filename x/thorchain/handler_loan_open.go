@@ -82,15 +82,32 @@ func (h LoanOpenHandler) validateV104(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("collateral asset does not have a pool")
 	}
 
-	// ensure collateral is a gas asset
-	if !msg.CollateralAsset.IsGasAsset() {
-		return fmt.Errorf("collateral is not a gas asset")
+	///////////////////////////////////////////////////////////////////////////
+	// ensure the total collateral is hard capped relative to the pool depth //
+	///////////////////////////////////////////////////////////////////////////
+	multi := fetchConfigInt64(ctx, h.mgr, constants.CRPoolMultiplier)
+	// convert collateral asset back to layer1 asset
+	// NOTE: if the symbol of a derived asset isn't the chain, this won't work
+	// (ie TERRA.LUNA)
+	var err error
+	msg.CollateralAsset.Chain, err = common.NewChain(msg.CollateralAsset.Symbol.String())
+	if err != nil {
+		return err
 	}
-
-	// ensure target asset is a pool
-	if !h.mgr.Keeper().PoolExist(ctx, msg.TargetAsset) {
-		return fmt.Errorf("target asset does not have a pool")
+	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, msg.CollateralAsset)
+	if err != nil {
+		return err
 	}
+	pool, err := h.mgr.Keeper().GetPool(ctx, msg.CollateralAsset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "error", err)
+		return err
+	}
+	multiDepth := common.GetUncappedShare(cosmos.NewUint(uint64(multi)), cosmos.NewUint(10_000), pool.BalanceAsset)
+	if multiDepth.LT(totalCollateral.Add(msg.CollateralAmount)) {
+		return fmt.Errorf("maximum of loan collateral has been reached")
+	}
+	///////////////////////////////////////////////////////////////////////////
 
 	return nil
 }
@@ -104,7 +121,27 @@ func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 }
 
 func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+	// if the inbound asset is TOR, then lets repay the loan. If not, lets
+	// swap first and try again later
+	if msg.CollateralAsset.IsDerivedAsset() {
+		return h.openLoanV104(ctx, msg)
+	} else {
+		return h.swapV104(ctx, msg)
+	}
+}
+
+func (h LoanOpenHandler) openLoanV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+	var err error
 	zero := cosmos.ZeroUint()
+
+	// convert collateral asset back to layer1 asset
+	// NOTE: if the symbol of a derived asset isn't the chain, this won't work
+	// (ie TERRA.LUNA)
+	msg.CollateralAsset.Chain, err = common.NewChain(msg.CollateralAsset.Symbol.String())
+	if err != nil {
+		return err
+	}
+
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.CollateralAsset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool", "error", err)
@@ -198,7 +235,7 @@ func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
 		if err := h.mgr.Keeper().MintToModule(ctx, ModuleName, torCoin); err != nil {
 			return fmt.Errorf("fail to mint loan tor debt: %w", err)
 		}
-		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(torCoin)); err != nil {
+		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(torCoin)); err != nil {
 			return fmt.Errorf("fail to send TOR vault funds: %w", err)
 		}
 
@@ -236,4 +273,50 @@ func (h LoanOpenHandler) getCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint
 	crCalc := cosmos.NewUint(uint64(maxCR - minCR))
 	cr := common.GetUncappedShare(a, b, crCalc)
 	return cr.AddUint64(uint64(minCR))
+}
+
+func (h LoanOpenHandler) swapV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
+	if err != nil {
+		ctx.Logger().Error("fail to get lending address", "error", err)
+		return err
+	}
+
+	// Construct a fake TX hash, doesn't seem like i can get the real one
+	// from cosmos
+	sb := strings.Builder{}
+	sb.WriteString("swap open loan")
+	sb.WriteString(msg.Owner.String())
+	sb.WriteString(msg.CollateralAsset.String())
+	sb.WriteString(msg.CollateralAmount.String())
+	sb.WriteString(msg.Signer.String())
+	sb.WriteString(fmt.Sprintf("%d", ctx.BlockHeight()))
+	hash := sha256.New()
+	_, err = hash.Write([]byte(sb.String()))
+	if err != nil {
+		return fmt.Errorf("fail to get fictional txID: %w", err)
+	}
+	str := hex.EncodeToString(hash.Sum(nil))
+	txID, err := common.NewTxID(str)
+	if err != nil {
+		return err
+	}
+	// ensure TxID does NOT have a collision with another swap, this could
+	// happen if the user submits two identical loan requests in the same
+	// block
+	_, err = h.mgr.Keeper().GetSwapQueueItem(ctx, txID, 0)
+	if err == nil { // err should be NOT NIL
+		return fmt.Errorf("txn hash conflict")
+	}
+
+	memo := fmt.Sprintf("loan+:%s:%s:%d:%s:%d:%s:%s:%d", msg.TargetAsset, msg.TargetAddress, msg.MinOut.Uint64(), msg.AffiliateAddress, msg.AffiliateBasisPoints.Uint64(), msg.Aggregator, msg.AggregatorTargetAddress, msg.AggregatorTargetLimit.Uint64())
+	fakeGas := common.NewCoin(msg.CollateralAsset.GetChain().GetGasAsset(), cosmos.OneUint())
+	tx := common.NewTx(txID, msg.Owner, AsgardName, common.NewCoins(common.NewCoin(msg.CollateralAsset, msg.CollateralAmount)), common.Gas{fakeGas}, memo)
+	swapMsg := NewMsgSwap(tx, msg.CollateralAsset.GetDerivedAsset(), lendAddr, cosmos.ZeroUint(), lendAddr, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
+	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
+		ctx.Logger().Error("fail to add swap to queue", "error", err)
+		return err
+	}
+
+	return nil
 }

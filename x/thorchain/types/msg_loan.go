@@ -39,7 +39,7 @@ func (m *MsgLoanOpen) ValidateBasic() error {
 	if m.CollateralAsset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("collateral asset cannot be empty")
 	}
-	if !m.CollateralAsset.IsGasAsset() {
+	if (!m.CollateralAsset.IsGasAsset() && !m.CollateralAsset.IsDerivedAsset()) || m.CollateralAsset.Equals(common.TOR) {
 		return fmt.Errorf("unsupported collateral pool")
 	}
 	if m.CollateralAmount.IsZero() {

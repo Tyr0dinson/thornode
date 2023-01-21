@@ -128,7 +128,6 @@ func (h LoanRepaymentHandler) repayV104(ctx cosmos.Context, msg MsgLoanRepayment
 		return err
 	}
 
-	fmt.Printf("Repay: %+v\n", loan)
 	redeem := common.GetSafeShare(msg.Coin.Amount, loan.Debt(), loan.Collateral())
 	if redeem.IsZero() {
 		return fmt.Errorf("redeem cannot be zero")
@@ -237,7 +236,6 @@ func (h LoanRepaymentHandler) swapV104(ctx cosmos.Context, msg MsgLoanRepayment)
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
 	tx := common.NewTx(txID, lendAddr, lendAddr, common.NewCoins(msg.Coin), common.Gas{fakeGas}, memo)
 	swapMsg := NewMsgSwap(tx, common.TOR, lendAddr, cosmos.ZeroUint(), lendAddr, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
-	fmt.Printf("MsgSwap: %+v\n", swapMsg)
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 		return err

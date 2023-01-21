@@ -262,6 +262,25 @@ func (h SwapHandler) handleV104(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
 			return nil, err
 		}
+	case TxLoanOpen:
+		m, ok := mem.(LoanOpenMemo)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast loan open memo")
+		}
+		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
+		msg.Tx.Coins = common.NewCoins(common.NewCoin(
+			msg.TargetAsset, emit,
+		))
+		obTx := ObservedTx{Tx: msg.Tx}
+		msg, err := getMsgLoanOpenFromMemo(m, obTx, msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		openLoanHandler := NewLoanOpenHandler(h.mgr)
+		_, err = openLoanHandler.Run(ctx, msg) // fire and forget
+		if err != nil {
+			ctx.Logger().Error("swap handler failed to open loan", "error", err)
+		}
 	case TxLoanRepayment:
 		m, ok := mem.(LoanRepaymentMemo)
 		if !ok {

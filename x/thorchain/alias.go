@@ -83,6 +83,7 @@ const (
 	TxLeave           = mem.TxLeave
 	TxWithdraw        = mem.TxWithdraw
 	TxTHORName        = mem.TxTHORName
+	TxLoanOpen        = mem.TxLoanOpen
 	TxLoanRepayment   = mem.TxLoanRepayment
 )
 
