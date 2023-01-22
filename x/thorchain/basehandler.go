@@ -25,19 +25,18 @@ type BaseHandler[M MsgType] struct {
 	handlers   LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]
 }
 
-
 // Sadly Go's type system is still primitive and does not allow for generics in
 // type aliases, so the following cleaner convenience type does not work:
 //
-//   type Validators[M MsgType] = LadderDispatch[func(cosmos.Context, Manager, M) error]
+//	type Validators[M MsgType] = LadderDispatch[func(cosmos.Context, Manager, M) error]
 //
 // See https://github.com/golang/go/issues/46477 for ongoing discussion.
 //
 // Instead we use these thin convenience functions to do the same type wrapping:
-//
 func NewValidators[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
 	return LadderDispatch[func(cosmos.Context, Manager, M) error]{}
 }
+
 func NewHandlers[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)] {
 	return LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]{}
 }
@@ -55,12 +54,12 @@ func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 		h.logger(ctx, *msg)
 	}
 	if err := h.validate(ctx, *msg); err != nil {
-		ctx.Logger().Error(typeof(m) + " failed validation", "error", err)
+		ctx.Logger().Error(typeof(m)+" failed validation", "error", err)
 		return nil, err
 	}
 	result, err := h.handle(ctx, *msg)
 	if err != nil {
-		ctx.Logger().Error(typeof(m) + " failed handler", "error", err)
+		ctx.Logger().Error(typeof(m)+" failed handler", "error", err)
 	}
 	return result, err
 }
