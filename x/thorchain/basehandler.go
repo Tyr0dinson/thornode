@@ -19,17 +19,12 @@ type BaseHandler[M MsgType] struct {
 	TypedHandler[M]
 
 	mgr        Manager
-	converter  func(msg cosmos.Msg) (*M, bool)
+	converter  func(cosmos.Msg) (*M, bool)
+	logger     func(cosmos.Context, M)
 	validators LadderDispatch[func(cosmos.Context, Manager, M) error]
-	handlers   LadderDispatch[func(cosmos.Context, Manager, M) error]
+	handlers   LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]
 }
 
-func NewValidators[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
-	return LadderDispatch[func(cosmos.Context, Manager, M) error]{}
-}
-func NewHandlers[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
-	return LadderDispatch[func(cosmos.Context, Manager, M) error]{}
-}
 
 // Sadly Go's type system is still primitive and does not allow for generics in
 // type aliases, so the following cleaner convenience type does not work:
@@ -37,6 +32,15 @@ func NewHandlers[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) er
 //   type Validators[M MsgType] = LadderDispatch[func(cosmos.Context, Manager, M) error]
 //
 // See https://github.com/golang/go/issues/46477 for ongoing discussion.
+//
+// Instead we use these thin convenience functions to do the same type wrapping:
+//
+func NewValidators[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
+	return LadderDispatch[func(cosmos.Context, Manager, M) error]{}
+}
+func NewHandlers[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)] {
+	return LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]{}
+}
 
 func typeof(v interface{}) string {
 	return fmt.Sprintf("%T", v)
@@ -47,7 +51,9 @@ func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	ctx.Logger().Info("received " + typeof(m))
+	if h.logger != nil {
+		h.logger(ctx, *msg)
+	}
 	if err := h.validate(ctx, *msg); err != nil {
 		ctx.Logger().Error(typeof(m) + " failed validation", "error", err)
 		return nil, err
@@ -61,22 +67,18 @@ func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 
 func (h BaseHandler[M]) validate(ctx cosmos.Context, msg M) error {
 	version := h.mgr.GetVersion()
-	handler := h.validators.Get(version)
-	if handler != nil {
-		return handler(ctx, h.mgr, msg)
+	validator := h.validators.Get(version)
+	if validator == nil {
+		return errBadVersion
 	}
-	return errBadVersion
+	return validator(ctx, h.mgr, msg)
 }
 
 func (h BaseHandler[M]) handle(ctx cosmos.Context, msg M) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	handler := h.handlers.Get(version)
 	if handler != nil {
-		err := handler(ctx, h.mgr, msg)
-		if err != nil {
-			return nil, err
-		}
-		return &cosmos.Result{}, nil
+		return handler(ctx, h.mgr, msg)
 	}
 	// handlerNoCosmos := h.handlersNC.Get(version)
 	// if handlerNoCosmos != nil {
