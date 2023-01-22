@@ -18,9 +18,9 @@ type TssHandler = BaseHandler[MsgTssPool]
 // NewTssHandler create a new handler to process MsgTssPool
 func NewTssHandler(mgr Manager) BaseHandler[MsgTssPool] {
 	return BaseHandler[MsgTssPool]{
-		mgr: mgr,
+		mgr:       mgr,
 		converter: func(m cosmos.Msg) (*MsgTssPool, bool) { msg, ok := m.(*MsgTssPool); return msg, ok },
-		logger: nil,
+		logger:    nil,
 		validators: NewValidators[MsgTssPool]().
 			Register("0.71.0", MsgTssPool_validateV71),
 		handlers: NewHandlers[MsgTssPool]().
