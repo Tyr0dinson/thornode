@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -17,6 +19,19 @@ type MemoSuite struct{}
 func TestPackage(t *testing.T) { TestingT(t) }
 
 var _ = Suite(&MemoSuite{})
+
+type TestMemoKeeper struct {
+	keeper.KVStoreDummy
+	version semver.Version
+}
+
+func (k *TestMemoKeeper) GetMimir(_ cosmos.Context, key string) (int64, error) {
+	return 10_000, nil
+}
+
+func (k *TestMemoKeeper) GetVersion() semver.Version {
+	return k.version
+}
 
 func (s *MemoSuite) SetUpSuite(c *C) {
 	types.SetupConfigForTest()
@@ -33,8 +48,9 @@ func (s *MemoSuite) TestTxType(c *C) {
 
 func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	ctx := cosmos.Context{}
-	k := kv1.KVStore{}
-	k.SetVersion(kv1.GetCurrentVersion())
+	k := &TestMemoKeeper{
+		version: kv1.GetCurrentVersion(),
+	}
 
 	// happy paths
 	memo, err := ParseMemoWithTHORNames(ctx, k, "d:"+common.RuneAsset().String())
@@ -333,16 +349,16 @@ func (s *MemoSuite) TestParse(c *C) {
 	// swap memo parsing
 	memo, err = ParseMemoWithTHORNames(ctx, k, "swap:bnb:bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:100:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
 	c.Assert(err, NotNil)
-	m, ok := memo.(*SwapMemo)
+	sm, ok := memo.(*SwapMemo)
 	c.Assert(ok, Equals, true)
-	c.Assert(m.GetAffiliateBasisPoints().Uint64(), Equals, uint64(20_000))
+	c.Assert(sm.GetAffiliateBasisPoints().Uint64(), Equals, uint64(20_000))
 
-	// swap memo parsing
+	// add memo parsing
 	memo, err = ParseMemoWithTHORNames(ctx, k, "add:bnb.bnb:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
 	c.Assert(err, NotNil)
-	m, ok = memo.(*SwapMemo)
+	am, ok := memo.(*AddLiquidityMemo)
 	c.Assert(ok, Equals, true)
-	c.Assert(m.GetAffiliateBasisPoints().Uint64(), Equals, uint64(20_000))
+	c.Assert(am.AffiliateBasisPoints.Uint64(), Equals, uint64(20_000))
 
 	// unhappy paths
 	memo, err = ParseMemoWithTHORNames(ctx, k, "")
