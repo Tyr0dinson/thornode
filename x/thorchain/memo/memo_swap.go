@@ -123,7 +123,6 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 	destination := common.NoAddress
 	affAddr := common.NoAddress
 	affPts := cosmos.ZeroUint()
-
 	if strings.EqualFold(parts[0], "limito") || strings.EqualFold(parts[0], "lo") {
 		order = types.OrderType_limit
 	}
