@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -124,6 +125,12 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 	destination := common.NoAddress
 	affAddr := common.NoAddress
 	affPts := cosmos.ZeroUint()
+
+	maxAffFeeBasisPoints, err := keeper.GetMimir(ctx, constants.MaxAffiliateFeeBasisPoints.String())
+	if maxAffFeeBasisPoints < 0 || err != nil {
+		maxAffFeeBasisPoints = 10_000
+	}
+
 	if strings.EqualFold(parts[0], "limito") || strings.EqualFold(parts[0], "lo") {
 		order = types.OrderType_limit
 	}
@@ -161,6 +168,9 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 		pts, err := strconv.ParseUint(parts[5], 10, 64)
 		if err != nil {
 			return SwapMemo{}, err
+		}
+		if pts > uint64(maxAffFeeBasisPoints) {
+			pts = uint64(maxAffFeeBasisPoints)
 		}
 		affPts = cosmos.NewUint(pts)
 	}
