@@ -1,8 +1,7 @@
 package thorchain
 
 import (
-	"strconv"
-
+	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -27,6 +26,15 @@ func NewAddLiquidityMemo(asset common.Asset, addr, affAddr common.Address, affPt
 }
 
 func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+	switch {
+	case keeper.GetVersion().GTE(semver.MustParse("1.104.0")):
+		return ParseAddLiquidityMemoV104(ctx, keeper, asset, parts)
+	default:
+		return ParseAddLiquidityMemoV1(ctx, keeper, asset, parts)
+	}
+}
+
+func ParseAddLiquidityMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
 	var err error
 	addr := common.NoAddress
 	affAddr := common.NoAddress
@@ -51,11 +59,10 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
-		pts, err := strconv.ParseUint(parts[4], 10, 64)
+		affPts, err = ParseAffiliateBasisPoints(ctx, keeper, parts[4])
 		if err != nil {
 			return AddLiquidityMemo{}, err
 		}
-		affPts = cosmos.NewUint(pts)
 	}
 	return NewAddLiquidityMemo(asset, addr, affAddr, affPts), nil
 }

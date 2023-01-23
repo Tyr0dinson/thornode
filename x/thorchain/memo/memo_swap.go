@@ -158,7 +158,10 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 			return SwapMemo{}, err
 		}
 
-		affPts = ParseAffiliateBasisPoints(ctx, keeper, parts[5])
+		affPts, err = ParseAffiliateBasisPoints(ctx, keeper, parts[5])
+		if err != nil {
+			return SwapMemo{}, err
+		}
 	}
 
 	if len(parts) > 6 && len(parts[6]) > 0 {

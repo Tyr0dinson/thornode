@@ -366,7 +366,7 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 	return common.NoAddress, fmt.Errorf("%s is not recognizable", name)
 }
 
-func ParseAffiliateBasisPoints(ctx cosmos.Context, keeper keeper.Keeper, affBasisPoints string) cosmos.Uint {
+func ParseAffiliateBasisPoints(ctx cosmos.Context, keeper keeper.Keeper, affBasisPoints string) (cosmos.Uint, error) {
 	maxAffFeeBasisPoints, err := keeper.GetMimir(ctx, constants.MaxAffiliateFeeBasisPoints.String())
 	if maxAffFeeBasisPoints < 0 || maxAffFeeBasisPoints > 10_000 || err != nil {
 		maxAffFeeBasisPoints = 10_000
@@ -374,10 +374,10 @@ func ParseAffiliateBasisPoints(ctx cosmos.Context, keeper keeper.Keeper, affBasi
 
 	pts, err := strconv.ParseUint(affBasisPoints, 10, 64)
 	if err != nil {
-		return cosmos.ZeroUint()
+		return cosmos.ZeroUint(), err
 	}
 	if pts > uint64(maxAffFeeBasisPoints) {
 		pts = uint64(maxAffFeeBasisPoints)
 	}
-	return cosmos.NewUint(pts)
+	return cosmos.NewUint(pts), nil
 }
