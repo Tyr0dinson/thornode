@@ -26,6 +26,9 @@ func NewAddLiquidityMemo(asset common.Asset, addr, affAddr common.Address, affPt
 }
 
 func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+	if keeper == nil {
+		return ParseAddLiquidityMemoV1(ctx, keeper, asset, parts)
+	}
 	switch {
 	case keeper.GetVersion().GTE(semver.MustParse("1.104.0")):
 		return ParseAddLiquidityMemoV104(ctx, keeper, asset, parts)
