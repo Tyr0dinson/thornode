@@ -2,14 +2,12 @@ package thorchain
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -126,11 +124,6 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 	affAddr := common.NoAddress
 	affPts := cosmos.ZeroUint()
 
-	maxAffFeeBasisPoints, err := keeper.GetMimir(ctx, constants.MaxAffiliateFeeBasisPoints.String())
-	if maxAffFeeBasisPoints < 0 || err != nil {
-		maxAffFeeBasisPoints = 10_000
-	}
-
 	if strings.EqualFold(parts[0], "limito") || strings.EqualFold(parts[0], "lo") {
 		order = types.OrderType_limit
 	}
@@ -165,14 +158,8 @@ func ParseSwapMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.As
 		if err != nil {
 			return SwapMemo{}, err
 		}
-		pts, err := strconv.ParseUint(parts[5], 10, 64)
-		if err != nil {
-			return SwapMemo{}, err
-		}
-		if pts > uint64(maxAffFeeBasisPoints) {
-			pts = uint64(maxAffFeeBasisPoints)
-		}
-		affPts = cosmos.NewUint(pts)
+
+		affPts = ParseAffiliateBasisPoints(ctx, keeper, parts[5])
 	}
 
 	if len(parts) > 6 && len(parts[6]) > 0 {
