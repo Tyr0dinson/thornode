@@ -381,11 +381,11 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Check(baseMemo.GetBlockHeight(), Equals, int64(0))
 
 	// swap memo parsing
-	memo, err = ParseMemoWithTHORNames(ctx, k, "swap:bnb:bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:100:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
+	_, err = ParseMemoWithTHORNames(ctx, k, "swap:bnb:bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:100:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
 	c.Assert(err, NotNil)
 
 	// add memo parsing
-	memo, err = ParseMemoWithTHORNames(ctx, k, "add:bnb.bnb:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
+	_, err = ParseMemoWithTHORNames(ctx, k, "add:bnb.bnb:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:20000") // aff fee too high
 	c.Assert(err, NotNil)
 
 	// unhappy paths
