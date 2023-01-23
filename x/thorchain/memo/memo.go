@@ -367,9 +367,12 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 }
 
 func ParseAffiliateBasisPoints(ctx cosmos.Context, keeper keeper.Keeper, affBasisPoints string) (cosmos.Uint, error) {
-	maxAffFeeBasisPoints, err := keeper.GetMimir(ctx, constants.MaxAffiliateFeeBasisPoints.String())
-	if maxAffFeeBasisPoints < 0 || maxAffFeeBasisPoints > 10_000 || err != nil {
-		maxAffFeeBasisPoints = 10_000
+	maxAffFeeBasisPoints := int64(10_000)
+	if keeper != nil {
+		mimirMaxAffFeeBasisPoints, err := keeper.GetMimir(ctx, constants.MaxAffiliateFeeBasisPoints.String())
+		if mimirMaxAffFeeBasisPoints >= 0 && mimirMaxAffFeeBasisPoints <= 10_000 && err == nil {
+			maxAffFeeBasisPoints = mimirMaxAffFeeBasisPoints
+		}
 	}
 
 	pts, err := strconv.ParseUint(affBasisPoints, 10, 64)
@@ -377,7 +380,7 @@ func ParseAffiliateBasisPoints(ctx cosmos.Context, keeper keeper.Keeper, affBasi
 		return cosmos.ZeroUint(), err
 	}
 	if pts > uint64(maxAffFeeBasisPoints) {
-		pts = uint64(maxAffFeeBasisPoints)
+		return cosmos.ZeroUint(), fmt.Errorf("affiliate fee basis points:(%s) is larger than maximum(%d)", affBasisPoints, maxAffFeeBasisPoints)
 	}
 	return cosmos.NewUint(pts), nil
 }
