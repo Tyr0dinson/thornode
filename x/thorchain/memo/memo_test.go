@@ -480,3 +480,39 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
 }
+
+func (s *MemoSuite) TestFetchAddress(c *C) {
+	ctx := s.ctx
+	k := s.k
+
+	thorAddr := kv1.GetRandomTHORAddress()
+	bnbAddr := kv1.GetRandomBNBAddress()
+
+	bnbAlias := kv1.THORNameAlias{
+		Chain:   common.BNBChain,
+		Address: bnbAddr,
+	}
+	thorAlias := kv1.THORNameAlias{
+		Chain:   common.THORChain,
+		Address: thorAddr,
+	}
+
+	tn := kv1.NewTHORName("test", 1_000_000, []types.THORNameAlias{bnbAlias, thorAlias})
+	tn.Owner = sdk.AccAddress(thorAddr)
+
+	k.SetTHORName(ctx, tn)
+
+	// If adding to Savers, thorname should resolve to the thorname's corresponding L1 address
+	m := "+:bnb/bnb::test:10"
+	memo, err := ParseMemoWithTHORNames(ctx, k, m)
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.String(), Equals, fmt.Sprintf("+:BNB/BNB::%s:10", bnbAddr))
+
+	// If adding to L1, thorname should resolve to the thorname's RUNE address
+	m = "+:bnb.bnb::test:10"
+	memo, err = ParseMemoWithTHORNames(ctx, k, m)
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.String(), Equals, fmt.Sprintf("+:BNB.BNB::%s:10", thorAddr))
+}
