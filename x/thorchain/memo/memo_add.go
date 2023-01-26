@@ -36,6 +36,7 @@ func (m AddLiquidityMemo) String() string {
 	if !m.Address.IsEmpty() {
 		last = 3
 	}
+
 	if !m.AffiliateAddress.IsEmpty() {
 		last = 5
 	}
@@ -57,6 +58,8 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 		return ParseAddLiquidityMemoV1(ctx, keeper, asset, parts)
 	}
 	switch {
+	case keeper.GetVersion().GTE(semver.MustParse("1.105.0")):
+		return ParseAddLiquidityMemoV105(ctx, keeper, asset, parts)
 	case keeper.GetVersion().GTE(semver.MustParse("1.104.0")):
 		return ParseAddLiquidityMemoV104(ctx, keeper, asset, parts)
 	default:
@@ -64,7 +67,7 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 	}
 }
 
-func ParseAddLiquidityMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+func ParseAddLiquidityMemoV105(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
 	var err error
 	addr := common.NoAddress
 	affAddr := common.NoAddress
@@ -84,7 +87,12 @@ func ParseAddLiquidityMemoV104(ctx cosmos.Context, keeper keeper.Keeper, asset c
 		if keeper == nil {
 			affAddr, err = common.NewAddress(parts[3])
 		} else {
-			affAddr, err = FetchAddress(ctx, keeper, parts[3], common.THORChain)
+			affAddrChain := common.THORChain
+			// If depositing into Savers, try to get the associated L1 address of the THORName
+			if asset.IsVaultAsset() {
+				affAddrChain = asset.GetLayer1Asset().GetChain()
+			}
+			affAddr, err = FetchAddress(ctx, keeper, parts[3], affAddrChain)
 		}
 		if err != nil {
 			return AddLiquidityMemo{}, err
