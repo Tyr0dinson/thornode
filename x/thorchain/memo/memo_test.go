@@ -515,4 +515,11 @@ func (s *MemoSuite) TestFetchAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, fmt.Sprintf("+:BNB.BNB::%s:10", thorAddr))
+
+	// Adding to Savers, but thorname doesn't have an alias for the L1 chain, return empty aff address
+	m = "+:btc/btc::test:10"
+	memo, err = ParseMemoWithTHORNames(ctx, k, m)
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.String(), Equals, "+:BTC/BTC")
 }
