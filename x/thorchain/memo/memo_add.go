@@ -36,7 +36,6 @@ func (m AddLiquidityMemo) String() string {
 	if !m.Address.IsEmpty() {
 		last = 3
 	}
-
 	if !m.AffiliateAddress.IsEmpty() {
 		last = 5
 	}
