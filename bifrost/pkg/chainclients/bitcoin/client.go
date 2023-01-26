@@ -969,9 +969,11 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 
 // Outbound TXs (sender is an Asgard vault):
 // - If it's a consolidate tx AND VOUT sender/receiver are the same
-// 		- return that VOUT (consolidate txs are sent from Asgards back to themselves)
+//   - return that VOUT (consolidate txs are sent from Asgards back to themselves)
+//
 // - Else it's not a consolidate tx
-// 		- return the first VOUT where the sender/receiver are different (normal outbound)
+//   - return the first VOUT where the sender/receiver are different (normal outbound)
+//
 // Not an Outbound (sender is NOT an Asgard Vault):
 // - return first VOUT going to an Asgard vault (normal inbound)
 // - if no VOUT goes to an Asgard vault, return an empty VOUT
