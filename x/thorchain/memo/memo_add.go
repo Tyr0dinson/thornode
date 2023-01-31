@@ -16,7 +16,9 @@ type AddLiquidityMemo struct {
 	AffiliateBasisPoints cosmos.Uint
 }
 
-func (m AddLiquidityMemo) GetDestination() common.Address { return m.Address }
+func (m AddLiquidityMemo) GetDestination() common.Address       { return m.Address }
+func (m AddLiquidityMemo) GetAffiliateAddress() common.Address  { return m.AffiliateAddress }
+func (m AddLiquidityMemo) GetAffiliateBasisPoints() cosmos.Uint { return m.AffiliateBasisPoints }
 
 func (m AddLiquidityMemo) String() string {
 	txType := m.TxType.String()
@@ -99,6 +101,9 @@ func ParseAddLiquidityMemoV105(ctx cosmos.Context, keeper keeper.Keeper, asset c
 		affPts, err = ParseAffiliateBasisPoints(ctx, keeper, parts[4])
 		if err != nil {
 			return AddLiquidityMemo{}, err
+		}
+		if affAddr.Equals(common.NoAddress) {
+			affPts = cosmos.ZeroUint()
 		}
 	}
 	return NewAddLiquidityMemo(asset, addr, affAddr, affPts), nil

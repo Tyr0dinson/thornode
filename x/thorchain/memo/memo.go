@@ -173,6 +173,8 @@ type Memo interface {
 	GetDexAggregator() string
 	GetDexTargetAddress() string
 	GetDexTargetLimit() *cosmos.Uint
+	GetAffiliateAddress() common.Address
+	GetAffiliateBasisPoints() cosmos.Uint
 }
 
 type MemoBase struct {
@@ -180,23 +182,25 @@ type MemoBase struct {
 	Asset  common.Asset
 }
 
-func (m MemoBase) String() string                   { return "" }
-func (m MemoBase) GetType() TxType                  { return m.TxType }
-func (m MemoBase) IsType(tx TxType) bool            { return m.TxType.Equals(tx) }
-func (m MemoBase) GetAsset() common.Asset           { return m.Asset }
-func (m MemoBase) GetAmount() cosmos.Uint           { return cosmos.ZeroUint() }
-func (m MemoBase) GetDestination() common.Address   { return "" }
-func (m MemoBase) GetSlipLimit() cosmos.Uint        { return cosmos.ZeroUint() }
-func (m MemoBase) GetTxID() common.TxID             { return "" }
-func (m MemoBase) GetAccAddress() cosmos.AccAddress { return cosmos.AccAddress{} }
-func (m MemoBase) GetBlockHeight() int64            { return 0 }
-func (m MemoBase) IsOutbound() bool                 { return m.TxType.IsOutbound() }
-func (m MemoBase) IsInbound() bool                  { return m.TxType.IsInbound() }
-func (m MemoBase) IsInternal() bool                 { return m.TxType.IsInternal() }
-func (m MemoBase) IsEmpty() bool                    { return m.TxType.IsEmpty() }
-func (m MemoBase) GetDexAggregator() string         { return "" }
-func (m MemoBase) GetDexTargetAddress() string      { return "" }
-func (m MemoBase) GetDexTargetLimit() *cosmos.Uint  { return nil }
+func (m MemoBase) String() string                       { return "" }
+func (m MemoBase) GetType() TxType                      { return m.TxType }
+func (m MemoBase) IsType(tx TxType) bool                { return m.TxType.Equals(tx) }
+func (m MemoBase) GetAsset() common.Asset               { return m.Asset }
+func (m MemoBase) GetAmount() cosmos.Uint               { return cosmos.ZeroUint() }
+func (m MemoBase) GetDestination() common.Address       { return "" }
+func (m MemoBase) GetSlipLimit() cosmos.Uint            { return cosmos.ZeroUint() }
+func (m MemoBase) GetTxID() common.TxID                 { return "" }
+func (m MemoBase) GetAccAddress() cosmos.AccAddress     { return cosmos.AccAddress{} }
+func (m MemoBase) GetBlockHeight() int64                { return 0 }
+func (m MemoBase) IsOutbound() bool                     { return m.TxType.IsOutbound() }
+func (m MemoBase) IsInbound() bool                      { return m.TxType.IsInbound() }
+func (m MemoBase) IsInternal() bool                     { return m.TxType.IsInternal() }
+func (m MemoBase) IsEmpty() bool                        { return m.TxType.IsEmpty() }
+func (m MemoBase) GetDexAggregator() string             { return "" }
+func (m MemoBase) GetDexTargetAddress() string          { return "" }
+func (m MemoBase) GetDexTargetLimit() *cosmos.Uint      { return nil }
+func (m MemoBase) GetAffiliateAddress() common.Address  { return common.NoAddress }
+func (m MemoBase) GetAffiliateBasisPoints() cosmos.Uint { return cosmos.ZeroUint() }
 
 func parseBase(memo string) (MemoBase, []string, error) {
 	parts := strings.Split(memo, ":")

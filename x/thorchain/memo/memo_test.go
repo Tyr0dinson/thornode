@@ -508,6 +508,7 @@ func (s *MemoSuite) TestFetchAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, fmt.Sprintf("+:BNB/BNB::%s:10", bnbAddr))
+	c.Check(memo.GetAffiliateBasisPoints().Uint64(), Equals, cosmos.NewUint(10).Uint64())
 
 	// If adding to L1, thorname should resolve to the thorname's RUNE address
 	m = "+:bnb.bnb::test:10"
@@ -515,11 +516,13 @@ func (s *MemoSuite) TestFetchAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, fmt.Sprintf("+:BNB.BNB::%s:10", thorAddr))
+	c.Check(memo.GetAffiliateBasisPoints().Uint64(), Equals, cosmos.NewUint(10).Uint64())
 
-	// Adding to Savers, but thorname doesn't have an alias for the L1 chain, return empty aff address
+	// Adding to Savers, but thorname doesn't have an alias for the L1 chain, return empty aff address and 0 aff basis points
 	m = "+:btc/btc::test:10"
 	memo, err = ParseMemoWithTHORNames(ctx, k, m)
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BTC/BTC")
+	c.Check(memo.GetAffiliateBasisPoints().Uint64(), Equals, cosmos.ZeroUint().Uint64())
 }

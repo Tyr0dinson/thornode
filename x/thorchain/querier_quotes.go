@@ -93,11 +93,11 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 	return common.NoAddress, fmt.Errorf("no thorname alias for chain %s", chain)
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount sdk.Uint) (affiliate common.Address, memo string, bps, newAmount sdk.Uint, err error) {
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount sdk.Uint, chain common.Chain) (affiliate common.Address, memo string, bps, newAmount sdk.Uint, err error) {
 	// parse affiliate
 	memo = "" // do not resolve thorname for the memo
 	if len(params[affiliateParam]) > 0 {
-		affiliate, err = quoteParseAddress(ctx, mgr, params[affiliateParam][0], common.THORChain)
+		affiliate, err = quoteParseAddress(ctx, mgr, params[affiliateParam][0], chain)
 		if err != nil {
 			err = fmt.Errorf("bad affiliate address: %w", err)
 			return
@@ -326,7 +326,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, swapAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, swapAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount, common.THORChain)
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
@@ -524,9 +524,13 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount, asset.GetLayer1Asset().Chain)
 	if err != nil {
 		return quoteErrorResponse(err)
+	}
+	// Affiliate address must equal L1 chain of Savers Vault
+	if !affiliate.GetChain().Equals(asset.GetLayer1Asset().Chain) {
+		return quoteErrorResponse(fmt.Errorf("affiliate address: %s doesn't match L1 chain of savers vault: %s", affiliate.String(), asset.GetLayer1Asset().Chain))
 	}
 
 	// create the memo
