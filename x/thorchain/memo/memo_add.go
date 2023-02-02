@@ -59,8 +59,8 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 		return ParseAddLiquidityMemoV1(ctx, keeper, asset, parts)
 	}
 	switch {
-	case keeper.GetVersion().GTE(semver.MustParse("1.105.0")):
-		return ParseAddLiquidityMemoV105(ctx, keeper, asset, parts)
+	case keeper.GetVersion().GTE(semver.MustParse("1.106.0")):
+		return ParseAddLiquidityMemoV106(ctx, keeper, asset, parts)
 	case keeper.GetVersion().GTE(semver.MustParse("1.104.0")):
 		return ParseAddLiquidityMemoV104(ctx, keeper, asset, parts)
 	default:
@@ -68,7 +68,7 @@ func ParseAddLiquidityMemo(ctx cosmos.Context, keeper keeper.Keeper, asset commo
 	}
 }
 
-func ParseAddLiquidityMemoV105(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
+func ParseAddLiquidityMemoV106(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (AddLiquidityMemo, error) {
 	var err error
 	addr := common.NoAddress
 	affAddr := common.NoAddress
