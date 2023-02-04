@@ -54,13 +54,13 @@ func (h LoanRepaymentHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 
 func (h LoanRepaymentHandler) validate(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.104.0")) {
-		return h.validateV104(ctx, msg)
+	if version.GTE(semver.MustParse("1.106.0")) {
+		return h.validateV106(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanRepaymentHandler) validateV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) validateV106(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -95,23 +95,23 @@ func (h LoanRepaymentHandler) validateV104(ctx cosmos.Context, msg MsgLoanRepaym
 
 func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.104.0")) {
-		return h.handleV104(ctx, msg)
+	if version.GTE(semver.MustParse("1.106.0")) {
+		return h.handleV106(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanRepaymentHandler) handleV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) handleV106(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.Coin.Asset.Equals(common.TOR) {
-		return h.repayV104(ctx, msg)
+		return h.repayV106(ctx, msg)
 	} else {
-		return h.swapV104(ctx, msg)
+		return h.swapV106(ctx, msg)
 	}
 }
 
-func (h LoanRepaymentHandler) repayV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) repayV106(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
@@ -198,7 +198,7 @@ func (h LoanRepaymentHandler) repayV104(ctx cosmos.Context, msg MsgLoanRepayment
 	return nil
 }
 
-func (h LoanRepaymentHandler) swapV104(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) swapV106(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
 		ctx.Logger().Error("fail to get lending address", "error", err)

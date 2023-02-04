@@ -66,13 +66,13 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.104.0")) {
-		return getHandlerMappingV104(mgr)
+	if version.GTE(semver.MustParse("1.106.0")) {
+		return getHandlerMappingV106(mgr)
 	}
 	return getHandlerMappingV65(mgr)
 }
 
-func getHandlerMappingV104(mgr Manager) map[string]MsgHandler {
+func getHandlerMappingV106(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 
@@ -249,15 +249,15 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 
 func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.104.0")):
-		return processOneTxInV104(ctx, keeper, tx, signer)
+	case version.GTE(semver.MustParse("1.106.0")):
+		return processOneTxInV106(ctx, keeper, tx, signer)
 	case version.GTE(semver.MustParse("0.63.0")):
 		return processOneTxInV63(ctx, keeper, tx, signer)
 	}
 	return nil, errBadVersion
 }
 
-func processOneTxInV104(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV106(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)

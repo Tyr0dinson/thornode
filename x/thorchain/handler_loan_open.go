@@ -54,13 +54,13 @@ func (h LoanOpenHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 
 func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.104.0")) {
-		return h.validateV104(ctx, msg)
+	if version.GTE(semver.MustParse("1.106.0")) {
+		return h.validateV106(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanOpenHandler) validateV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) validateV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -114,23 +114,23 @@ func (h LoanOpenHandler) validateV104(ctx cosmos.Context, msg MsgLoanOpen) error
 
 func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("1.104.0")) {
-		return h.handleV104(ctx, msg)
+	if version.GTE(semver.MustParse("1.106.0")) {
+		return h.handleV106(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h LoanOpenHandler) handleV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) handleV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.CollateralAsset.IsDerivedAsset() {
-		return h.openLoanV104(ctx, msg)
+		return h.openLoanV106(ctx, msg)
 	} else {
-		return h.swapV104(ctx, msg)
+		return h.swapV106(ctx, msg)
 	}
 }
 
-func (h LoanOpenHandler) openLoanV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 	var err error
 	zero := cosmos.ZeroUint()
 
@@ -275,7 +275,7 @@ func (h LoanOpenHandler) getCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint
 	return cr.AddUint64(uint64(minCR))
 }
 
-func (h LoanOpenHandler) swapV104(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) swapV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
 		ctx.Logger().Error("fail to get lending address", "error", err)
