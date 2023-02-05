@@ -45,8 +45,13 @@ func typeof(v interface{}) string {
 	return fmt.Sprintf("%T", v)
 }
 
+func convert[M any](m cosmos.Msg) (M, bool) {
+	msg, ok := m.(M)
+	return msg, ok
+}
+
 func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
-	msg, ok := h.converter(m)
+	msg, ok := convert[*M](m)
 	if !ok {
 		return nil, errInvalidMessage
 	}

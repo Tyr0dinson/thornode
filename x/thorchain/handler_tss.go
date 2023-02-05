@@ -19,7 +19,6 @@ type TssHandler = BaseHandler[MsgTssPool]
 func NewTssHandler(mgr Manager) BaseHandler[MsgTssPool] {
 	return BaseHandler[MsgTssPool]{
 		mgr:       mgr,
-		converter: func(m cosmos.Msg) (*MsgTssPool, bool) { msg, ok := m.(*MsgTssPool); return msg, ok },
 		logger:    MsgTssPool_logging,
 		validators: NewValidators[MsgTssPool]().
 			Register("0.71.0", MsgTssPool_validateV71),

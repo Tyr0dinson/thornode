@@ -15,7 +15,6 @@ import (
 func NewSendHandler(mgr Manager) BaseHandler[MsgSend] {
 	return BaseHandler[MsgSend]{
 		mgr:       mgr,
-		converter: func(m cosmos.Msg) (*MsgSend, bool) { msg, ok := m.(*MsgSend); return msg, ok },
 		logger:    MsgSend_logger,
 		validators: NewValidators[MsgSend]().
 			Register("1.87.0", MsgSend_validateV87).
