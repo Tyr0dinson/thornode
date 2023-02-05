@@ -19,7 +19,6 @@ type BaseHandler[M MsgType] struct {
 	TypedHandler[M]
 
 	mgr        Manager
-	converter  func(cosmos.Msg) (*M, bool)
 	logger     func(cosmos.Context, M)
 	validators LadderDispatch[func(cosmos.Context, Manager, M) error]
 	handlers   LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]
