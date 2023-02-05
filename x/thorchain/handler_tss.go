@@ -18,8 +18,8 @@ type TssHandler = BaseHandler[MsgTssPool]
 // NewTssHandler create a new handler to process MsgTssPool
 func NewTssHandler(mgr Manager) BaseHandler[MsgTssPool] {
 	return BaseHandler[MsgTssPool]{
-		mgr:       mgr,
-		logger:    MsgTssPool_logging,
+		mgr:    mgr,
+		logger: MsgTssPool_logging,
 		validators: NewValidators[MsgTssPool]().
 			Register("0.71.0", MsgTssPool_validateV71),
 		handlers: NewHandlers[MsgTssPool]().
