@@ -178,3 +178,60 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(totalCollateral.Uint64(), Equals, uint64(99761992))
 }
+
+// ensure the when the swap to derived asset fails, it causes a refund
+func (s *HandlerLoanSuite) TestLoanSwapFails(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(128)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(83830778633)
+	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// generate derived asset pool for btc
+	pool.Asset = pool.Asset.GetDerivedAsset()
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	busd, err := common.NewAsset("BNB.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceAsset = cosmos.NewUint(433267688964312)
+	busdPool.BalanceRune = cosmos.NewUint(314031308608965)
+	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 0)
+
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000000000))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	// set max gas
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 10, 10)), IsNil)
+
+	owner, _ := common.NewAddress("bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
+
+	handler := NewLoanOpenHandler(mgr)
+
+	// unhappy path
+	receiver, _ := common.NewAddress("bcrt1qdn665723epwlg8u2mk7rg4yp7n72mzwqzuv9ye")
+	signer, _ := cosmos.AccAddressFromBech32("tthor1qxcgl07dm3vvewwxag7u0q7nq2uk984v60xpl0")
+	msg := NewMsgLoanOpen(owner, common.BTCAsset, cosmos.NewUint(1e8), receiver, common.BTCAsset, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", cosmos.ZeroUint(), signer)
+	c.Assert(handler.handle(ctx, *msg), IsNil)
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+
+	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
+	c.Assert(err, IsNil)
+	c.Check(loan.DebtUp.Uint64(), Equals, uint64(0), Commentf("%d", loan.DebtUp.Uint64()))
+	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(0), Commentf("%d", loan.CollateralUp.Uint64()))
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	item := items[0]
+	c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(100000000), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.ToAddress.String(), Equals, "bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
+}
