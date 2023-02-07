@@ -176,16 +176,6 @@ func getSaversAffFee(affAddr common.Address, affFeeBp cosmos.Uint, depositAmt co
 	if affAddr != common.NoAddress && !affFeeBp.IsZero() {
 		affiliateFee = common.GetUncappedShare(affFeeBp, cosmos.NewUint(10_000), depositAmt)
 		affiliateFee = affiliateFee.Mul(depositAmt).Quo(depositAmt)
-<<<<<<< HEAD
-=======
-
-		// // undo the approximate slip fee since the affiliate fee is taken first
-		// factor := sdk.NewUint(10_000)
-		// for _, s := range swaps {
-		// 	factor.Add(sdk.NewUintFromString(s["swap_slip"]))
-		// }
-		// affiliateFee = affiliateFee.Mul(factor).Quo(sdk.NewUint(10_000))
->>>>>>> 6062454a2 (savers aff fee)
 	}
 	return affiliateFee
 }
