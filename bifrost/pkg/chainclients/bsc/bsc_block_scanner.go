@@ -449,7 +449,7 @@ func (a *BSCScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeAVAXGas(txGasPrice, tx.Gas())
+	txInItem.Gas = common.MakeBSCGas(txGasPrice, tx.Gas())
 	txInItem.Gas[0].Asset = common.BEP20BNBAsset
 
 	if txInItem.Coins.IsEmpty() {
@@ -514,7 +514,7 @@ func (a *BSCScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 			}
 		}
 		if isDirectlyToRouter {
-			// it is important to keep this part outside the above loop, as when we do router upgrade, which might generate multiple deposit event, along with tx that has avax value in it
+			// it is important to keep this part outside the above loop, as when we do router upgrade, which might generate multiple deposit event, along with tx that has bnb value in it
 			bnbValue := cosmos.NewUintFromBigInt(tx.Value())
 			if !bnbValue.IsZero() {
 				bnbValue = a.tokenManager.ConvertAmount(bnbToken, tx.Value())
@@ -526,12 +526,12 @@ func (a *BSCScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	}
 	a.logger.Info().Str("tx hash", txInItem.Tx).Str("gas price", tx.GasPrice().String()).Uint64("gas used", receipt.GasUsed).Uint64("tx status", receipt.Status).Msg("txInItem parsed from smart contract")
 
-	// under no circumstance AVAX gas price will be less than 1 Gwei, unless it is in dev environment
+	// under no circumstance BNB gas price will be less than 1 Gwei, unless it is in dev environment
 	txGasPrice := tx.GasPrice()
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeAVAXGas(txGasPrice, receipt.GasUsed)
+	txInItem.Gas = common.MakeBSCGas(txGasPrice, receipt.GasUsed)
 	if txInItem.Coins.IsEmpty() {
 		return nil, nil
 	}
@@ -568,7 +568,7 @@ func (a *BSCScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		Sender: strings.ToLower(fromAddr.String()),
 		To:     strings.ToLower(tx.To().String()),
 		Coins:  common.NewCoins(common.NewCoin(common.BEP20BNBAsset, cosmos.NewUint(1))),
-		Gas:    common.MakeAVAXGas(txGasPrice, tx.Gas()),
+		Gas:    common.MakeBSCGas(txGasPrice, tx.Gas()),
 	}
 }
 
@@ -577,7 +577,7 @@ func (a *BSCScanner) convertAmount(token string, amt *big.Int) cosmos.Uint {
 	return a.tokenManager.ConvertAmount(token, amt)
 }
 
-// IsAVAX return true if the token address equals to bnbToken address
-func IsAVAX(token string) bool {
+// IsBSC return true if the token address equals to bnbToken address
+func IsBSC(token string) bool {
 	return strings.EqualFold(token, bnbToken)
 }

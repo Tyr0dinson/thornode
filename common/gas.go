@@ -94,6 +94,20 @@ func MakeAVAXGas(gasPrice *big.Int, gas uint64) Gas {
 	}
 }
 
+// MakeBSCGas return the gas for BSC
+func MakeBSCGas(gasPrice *big.Int, gas uint64) Gas {
+	unroundedGasAmt := cosmos.NewUint(gas).Mul(cosmos.NewUintFromBigInt(gasPrice))
+	roundedGasAmt := unroundedGasAmt.QuoUint64(One * 100)
+	if unroundedGasAmt.GT(roundedGasAmt.MulUint64(One * 100)) {
+		// Round gas amount up rather than down,
+		// to increase rather than decrease solvency.
+		roundedGasAmt = roundedGasAmt.Add(cosmos.NewUint(1))
+	}
+	return Gas{
+		{Asset: BEP20BNBAsset, Amount: roundedGasAmt},
+	}
+}
+
 // Valid return nil when it is valid, otherwise return an error
 func (g Gas) Valid() error {
 	for _, coin := range g {

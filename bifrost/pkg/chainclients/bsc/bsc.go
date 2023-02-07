@@ -273,7 +273,7 @@ func (c *BSCClient) GetBalances(addr string, height *big.Int) (common.Coins, err
 			continue
 		}
 		asset := common.BEP20BNBAsset
-		if !IsAVAX(token.Address) {
+		if !IsBSC(token.Address) {
 			asset, err = common.NewAsset(fmt.Sprintf("AVAX.%s-%s", token.Symbol, token.Address))
 			if err != nil {
 				return nil, err
@@ -375,7 +375,7 @@ func (c *BSCClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 		tokenAddr = getTokenAddressFromAsset(coin.Asset)
 		value = value.Add(value, coin.Amount.BigInt())
 		value = c.convertSigningAmount(value, tokenAddr)
-		if IsAVAX(tokenAddr) {
+		if IsBSC(tokenAddr) {
 			bnbValue = value
 		}
 	}
@@ -423,7 +423,7 @@ func (c *BSCClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 		if txOutItem.Aggregator != "" || txOutItem.AggregatorTargetAsset != "" {
 			return nil, hasRouterUpdated, nil, fmt.Errorf("migration / yggdrasil+ can't use aggregator")
 		}
-		if IsAVAX(tokenAddr) {
+		if IsBSC(tokenAddr) {
 			data, err = c.vaultABI.Pack("transferOut", toAddr, ecommon.HexToAddress(tokenAddr), value, txOutItem.Memo)
 			if err != nil {
 				return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
@@ -452,7 +452,7 @@ func (c *BSCClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 		for _, item := range txOutItem.Coins {
 			assetAddr := getTokenAddressFromAsset(item.Asset)
 			assetAmt := c.convertSigningAmount(item.Amount.BigInt(), assetAddr)
-			if IsAVAX(assetAddr) {
+			if IsBSC(assetAddr) {
 				bnbValue = assetAmt
 				continue
 			}
