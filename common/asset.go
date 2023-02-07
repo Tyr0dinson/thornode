@@ -18,6 +18,8 @@ var (
 	ATOMAsset = Asset{Chain: GAIAChain, Symbol: "ATOM", Ticker: "ATOM", Synth: false}
 	// BNBAsset BNB
 	BNBAsset = Asset{Chain: BNBChain, Symbol: "BNB", Ticker: "BNB", Synth: false}
+	// BEP20BNBAsset BNB (on Binance Chain)
+	BEP20BNBAsset = Asset{Chain: BSCChain, Symbol: "BNB", Ticker: "BNB", Synth: false}
 	// BTCAsset BTC
 	BTCAsset = Asset{Chain: BTCChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
 	// LTCAsset BTC

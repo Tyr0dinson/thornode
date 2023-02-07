@@ -1,0 +1,11 @@
+{
+  "name": "Testnet Tokens",
+  "logoURI": "",
+  "keywords": ["bsc"],
+  "version": {
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  },
+  "tokens": []
+}
