@@ -13,7 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-func MsgTssPool_handleV92(ctx cosmos.Context, mgr Manager, msg MsgTssPool) (*cosmos.Result, error) {
+func MsgTssPool_handleV92(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", mgr.GetVersion())
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())
@@ -213,7 +213,7 @@ func MsgTssPool_handleV92(ctx cosmos.Context, mgr Manager, msg MsgTssPool) (*cos
 	return &cosmos.Result{}, nil
 }
 
-func MsgTssPool_handleV73(ctx cosmos.Context, mgr Manager, msg MsgTssPool) (*cosmos.Result, error) {
+func MsgTssPool_handleV73(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", mgr.GetVersion())
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())

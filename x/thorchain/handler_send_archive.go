@@ -6,7 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-func MsgSend_validateV1(ctx cosmos.Context, mgr Manager, msg MsgSend) error {
+func MsgSend_validateV1(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

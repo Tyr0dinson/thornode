@@ -12,19 +12,19 @@ import (
 )
 
 // NewSendHandler create a new instance of SendHandler
-func NewSendHandler(mgr Manager) BaseHandler[MsgSend] {
-	return BaseHandler[MsgSend]{
+func NewSendHandler(mgr Manager) BaseHandler[*MsgSend] {
+	return BaseHandler[*MsgSend]{
 		mgr:    mgr,
 		logger: MsgSend_logger,
-		validators: NewValidators[MsgSend]().
+		validators: NewValidators[*MsgSend]().
 			Register("1.87.0", MsgSend_validateV87).
 			Register("0.1.0", MsgSend_validateV1),
-		handlers: NewHandlers[MsgSend]().
+		handlers: NewHandlers[*MsgSend]().
 			Register("0.1.0", MsgSend_handleV1),
 	}
 }
 
-func MsgSend_validateV87(ctx cosmos.Context, mgr Manager, msg MsgSend) error {
+func MsgSend_validateV87(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -40,11 +40,11 @@ func MsgSend_validateV87(ctx cosmos.Context, mgr Manager, msg MsgSend) error {
 	return nil
 }
 
-func MsgSend_logger(ctx cosmos.Context, msg MsgSend) {
+func MsgSend_logger(ctx cosmos.Context, msg *MsgSend) {
 	ctx.Logger().Info("receive MsgSend", "from", msg.FromAddress, "to", msg.ToAddress, "coins", msg.Amount)
 }
 
-func MsgSend_handleV1(ctx cosmos.Context, mgr Manager, msg MsgSend) (*cosmos.Result, error) {
+func MsgSend_handleV1(ctx cosmos.Context, mgr Manager, msg *MsgSend) (*cosmos.Result, error) {
 	haltHeight, err := mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)

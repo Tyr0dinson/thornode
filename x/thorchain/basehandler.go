@@ -6,16 +6,14 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-type MsgType = interface{}
-
-type TypedHandler[M MsgType] interface {
+type TypedHandler[M cosmos.Msg] interface {
 	MsgHandler
 
 	validate(ctx cosmos.Context, msg M) error
 	handle(ctx cosmos.Context, msg M) (*cosmos.Result, error)
 }
 
-type BaseHandler[M MsgType] struct {
+type BaseHandler[M cosmos.Msg] struct {
 	TypedHandler[M]
 
 	mgr        Manager
@@ -32,11 +30,11 @@ type BaseHandler[M MsgType] struct {
 // See https://github.com/golang/go/issues/46477 for ongoing discussion.
 //
 // Instead we use these thin convenience functions to do the same type wrapping:
-func NewValidators[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
+func NewValidators[M cosmos.Msg]() LadderDispatch[func(cosmos.Context, Manager, M) error] {
 	return LadderDispatch[func(cosmos.Context, Manager, M) error]{}
 }
 
-func NewHandlers[M MsgType]() LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)] {
+func NewHandlers[M cosmos.Msg]() LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)] {
 	return LadderDispatch[func(cosmos.Context, Manager, M) (*cosmos.Result, error)]{}
 }
 
@@ -44,24 +42,19 @@ func typeof(v interface{}) string {
 	return fmt.Sprintf("%T", v)
 }
 
-func convert[M any](m cosmos.Msg) (M, bool) {
-	msg, ok := m.(M)
-	return msg, ok
-}
-
 func (h BaseHandler[M]) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
-	msg, ok := convert[*M](m)
+	msg, ok := m.(M)
 	if !ok {
 		return nil, errInvalidMessage
 	}
-	if err := h.validate(ctx, *msg); err != nil {
+	if err := h.validate(ctx, msg); err != nil {
 		ctx.Logger().Error(typeof(m)+" failed validation", "error", err)
 		return nil, err
 	}
 	if h.logger != nil {
-		h.logger(ctx, *msg)
+		h.logger(ctx, msg)
 	}
-	result, err := h.handle(ctx, *msg)
+	result, err := h.handle(ctx, msg)
 	if err != nil {
 		ctx.Logger().Error(typeof(m)+" failed handler", "error", err)
 	}

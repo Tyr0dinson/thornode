@@ -13,27 +13,27 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type TssHandler = BaseHandler[MsgTssPool]
+type TssHandler = BaseHandler[*MsgTssPool]
 
 // NewTssHandler create a new handler to process MsgTssPool
-func NewTssHandler(mgr Manager) BaseHandler[MsgTssPool] {
-	return BaseHandler[MsgTssPool]{
+func NewTssHandler(mgr Manager) BaseHandler[*MsgTssPool] {
+	return BaseHandler[*MsgTssPool]{
 		mgr:    mgr,
 		logger: MsgTssPool_logging,
-		validators: NewValidators[MsgTssPool]().
+		validators: NewValidators[*MsgTssPool]().
 			Register("0.71.0", MsgTssPool_validateV71),
-		handlers: NewHandlers[MsgTssPool]().
+		handlers: NewHandlers[*MsgTssPool]().
 			Register("1.93.0", MsgTssPool_handleV93).
 			Register("1.92.0", MsgTssPool_handleV92).
 			Register("0.73.0", MsgTssPool_handleV73),
 	}
 }
 
-func MsgTssPool_logging(ctx cosmos.Context, msg MsgTssPool) {
+func MsgTssPool_logging(ctx cosmos.Context, msg *MsgTssPool) {
 	ctx.Logger().Info("handleMsgTssPool request", "ID:", msg.ID)
 }
 
-func MsgTssPool_validateV71(ctx cosmos.Context, mgr Manager, msg MsgTssPool) error {
+func MsgTssPool_validateV71(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func validateSigner(ctx cosmos.Context, mgr Manager, signer cosmos.AccAddress) e
 	return nil
 }
 
-func MsgTssPool_handleV93(ctx cosmos.Context, mgr Manager, msg MsgTssPool) (*cosmos.Result, error) {
+func MsgTssPool_handleV93(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", mgr.GetVersion())
 	if !msg.Blame.IsEmpty() {
 		ctx.Logger().Error(msg.Blame.String())
@@ -293,7 +293,7 @@ func MsgTssPool_handleV93(ctx cosmos.Context, mgr Manager, msg MsgTssPool) (*cos
 	return &cosmos.Result{}, nil
 }
 
-func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg MsgTssPool, voter TssVoter) {
+func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter TssVoter) {
 	// if the voter doesn't reach 2/3 majority consensus , this method should not take any actions
 	if !voter.HasConsensus() || !msg.IsSuccess() {
 		return
