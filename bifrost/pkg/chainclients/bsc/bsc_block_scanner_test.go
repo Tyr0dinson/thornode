@@ -474,7 +474,6 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	c.Assert(txInItem.To, Equals, "0x6F2744B3a9eba0C5929AAdc9e81183a48B9221FC")
 	c.Assert(txInItem.Memo, Equals, "ADD:BSC.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D:tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej")
 	c.Assert(txInItem.Tx, Equals, "08053d250f3897e1e27b29dc97bb71a7f99809a5dfd052117ea335c2ee0f55e5")
-	// c.Assert(txInItem.Coins[0].Asset.String(), Equals, "BSC.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
 	c.Assert(txInItem.Coins[0].Amount.Uint64(), Equals, cosmos.NewUint(100000000).Uint64())
 
 	// smart contract - transferOut
