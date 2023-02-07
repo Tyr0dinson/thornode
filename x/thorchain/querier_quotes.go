@@ -170,6 +170,23 @@ func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (
 	return asset, nil
 }
 
+func getSaversAffFee(affAddr common.Address, affFeeBp cosmos.Uint, depositAmt cosmos.Uint) cosmos.Uint {
+	// approximate the affiliate fee in the target asset
+	affiliateFee := sdk.ZeroUint()
+	if affAddr != common.NoAddress && !affFeeBp.IsZero() {
+		affiliateFee = common.GetUncappedShare(affFeeBp, cosmos.NewUint(10_000), depositAmt)
+		affiliateFee = affiliateFee.Mul(depositAmt).Quo(depositAmt)
+
+		// // undo the approximate slip fee since the affiliate fee is taken first
+		// factor := sdk.NewUint(10_000)
+		// for _, s := range swaps {
+		// 	factor.Add(sdk.NewUintFromString(s["swap_slip"]))
+		// }
+		// affiliateFee = affiliateFee.Mul(factor).Quo(sdk.NewUint(10_000))
+	}
+	return affiliateFee
+}
+
 func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgSwap) (res *openapi.QuoteSwapResponse, emitAmount, outboundFeeAmount sdk.Uint, err error) {
 	// if the generated memo is too long for the source chain send error
 	maxMemoLength := msg.Tx.Coins[0].Asset.Chain.MaxMemoLength()
@@ -544,15 +561,18 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		return quoteErrorResponse(fmt.Errorf("bad amount: %w", err))
 	}
 
-	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount, asset.GetLayer1Asset().Chain)
+	// parse affiliateAddr
+	affiliateAddr, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount, asset.GetLayer1Asset().Chain)
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
+
+	// Savers deposit aff fees is just an Add to a Savers position for the affiliate in the same vault, not a swap to $RUNE
 	// Affiliate address must equal L1 chain of Savers Vault
-	if !affiliate.GetChain().Equals(asset.GetLayer1Asset().Chain) {
-		return quoteErrorResponse(fmt.Errorf("affiliate address: %s doesn't match L1 chain of savers vault: %s", affiliate.String(), asset.GetLayer1Asset().Chain))
+	if !affiliateAddr.GetChain().Equals(asset.GetLayer1Asset().Chain) {
+		return quoteErrorResponse(fmt.Errorf("affiliate address: %s doesn't match L1 chain of savers vault: %s", affiliateAddr.String(), asset.GetLayer1Asset().Chain))
 	}
+	affFee := getSaversAffFee(affiliateAddr, affiliateBps, amount)
 
 	// create the memo
 	memo := &SwapMemo{
@@ -561,8 +581,8 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 			Asset:  asset.GetSyntheticAsset(),
 		},
 		SlipLimit:            sdk.ZeroUint(),
-		AffiliateAddress:     common.Address(affiliateMemo),
-		AffiliateBasisPoints: affiliateBps,
+		AffiliateAddress:     common.NoAddress,
+		AffiliateBasisPoints: cosmos.ZeroUint(),
 	}
 
 	// use random destination address
@@ -594,8 +614,8 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		},
 		TargetAsset:          asset.GetSyntheticAsset(),
 		TradeTarget:          sdk.ZeroUint(),
-		AffiliateAddress:     affiliate,
-		AffiliateBasisPoints: affiliateBps,
+		AffiliateAddress:     common.NoAddress,
+		AffiliateBasisPoints: cosmos.ZeroUint(),
 		Destination:          destination,
 	}
 
@@ -604,6 +624,8 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("failed to simulate swap: %w", err))
 	}
+
+	swapRes.Fees.Affiliate = affFee.String()
 
 	// generate deposit memo
 	depositMemoComponents := []string{
@@ -614,7 +636,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		affiliateBps.String(),
 	}
 	depositMemo := strings.Join(depositMemoComponents[:2], ":")
-	if affiliate != common.NoAddress && !affiliateBps.IsZero() {
+	if affiliateAddr != common.NoAddress && !affiliateBps.IsZero() {
 		depositMemo = strings.Join(depositMemoComponents, ":")
 	}
 
