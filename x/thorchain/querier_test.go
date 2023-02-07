@@ -139,7 +139,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *QuerierSuite) TestVaultss(c *C) {
+func (s *QuerierSuite) TestVaults(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	querier := NewQuerier(mgr, s.kb)
 	path := []string{"pools"}
@@ -826,4 +826,15 @@ func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
 	// Failure example.
 	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"
 	c.Assert(getPeerIDFromPubKey("nonsense"), Equals, expectedErrorString)
+}
+
+func (s *QuerierSuite) TestHandleAffiliate(c *C) {
+	urlVals := map[string][]string{
+		affiliateParam:    []string{"testname"},
+		affiliateBpsParam: []string{"30"},
+	}
+	amt := cosmos.NewUint(100_000)
+	affiliateAddr, _, _, _, err := quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.THORChain)
+	c.Assert(err, NotNil)
+	c.Assert(affiliateAddr, Equals, common.NoAddress)
 }
