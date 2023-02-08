@@ -259,6 +259,27 @@ func (h WithdrawLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgWithdraw
 		}
 	}
 
+	// any extra non-rune in the transaction will be donated to its pool, if existing
+	for _, withdrawalCoin := range msg.Tx.Coins {
+		if withdrawalCoin.IsEmpty() || withdrawalCoin.Asset == common.RuneAsset() {
+			continue
+		}
+
+		withdrawalCoinPool, err := h.mgr.Keeper().GetPool(ctx, withdrawalCoin.Asset)
+		if err != nil {
+			return nil, ErrInternal(err, "fail to get pool")
+		}
+
+		if withdrawalCoinPool.IsEmpty() {
+			continue
+		}
+
+		withdrawalCoinPool.BalanceAsset = withdrawalCoinPool.BalanceAsset.Add(withdrawalCoin.Amount)
+		if err := h.mgr.Keeper().SetPool(ctx, withdrawalCoinPool); err != nil {
+			return nil, ErrInternal(err, "fail to save pool to key value store")
+		}
+	}
+
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "withdraw", "implossprotection"},
 		telem(impLossProtection),
