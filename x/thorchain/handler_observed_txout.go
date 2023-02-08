@@ -8,6 +8,7 @@ import (
 	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -251,17 +252,35 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 
 			// Set the reason according to the type of message.
 			var reason string = ""
-			switch m.(type) {
-			case *MsgOutboundTx, *MsgRefundTx:
+			switch msgPointer := m.(type) {
+			case *MsgOutboundTx:
 				reason = "failed_outbound"
+
+				inTxID := msgPointer.InTxID
+				// send security alert for events that are not evm burn
+				if !isOutboundFakeGasTX(tx) {
+					report := fmt.Sprintf("missing tx out in=%s", inTxID)
+					if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, report)); err != nil {
+						ctx.Logger().Error("fail to emit security event", "error", err)
+					}
+				}
+			case *MsgRefundTx:
+				reason = "failed_outbound"
+
+				inTxID := msgPointer.InTxID
+				// send security alert for events that are not evm burn
+				if !isOutboundFakeGasTX(tx) {
+					report := fmt.Sprintf("missing tx out in=%s", inTxID)
+					if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, report)); err != nil {
+						ctx.Logger().Error("fail to emit security event", "error", err)
+					}
+				}
 			case *MsgConsolidate:
 				reason = "failed_consolidation"
 			case *MsgMigrate:
 				reason = "failed_migration"
 			case *MsgRagnarok:
 				reason = "failed_ragnarok"
-			case *MsgYggdrasil:
-				reason = "failed_yggdrasil_return"
 			}
 			if err := h.slashV128(ctx, tx, reason); err != nil {
 				ctx.Logger().Error("slash failed:", "error", err)
@@ -320,16 +339,58 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 	return &cosmos.Result{}, nil
 }
 
+// isOutboundFakeGasTX returns true if the observed outbound which is missing an inbound is a "fake" tx sent purposely by bifrost
+// this occurs on EVM chains where an outbound cannot be sent generally due to out of gas failures. In these cases, bifrost
+// signs an outbound with the gas spent on the failure so that it can be accounted for.
+// Checks are:
+// - must only have one coin in outbound
+// - chain of coin must be an EVM chain
+// - coin asset must be the gas asset
+// - coin amount must be 1
+func isOutboundFakeGasTX(tx ObservedTx) bool {
+	isLenCoins1 := len(tx.Tx.Coins) == 1
+	if !isLenCoins1 {
+		return false
+	}
+	asset := tx.Tx.Coins[0].Asset
+	isChainEVM := asset.Chain.IsEVM()
+	if !isChainEVM {
+		return false
+	}
+	gasAsset := asset.Chain.GetGasAsset()
+	isAssetGasAsset := asset.Equals(gasAsset)
+	if !isAssetGasAsset {
+		return false
+	}
+
+	if !tx.Tx.Coins[0].Amount.Equal(types.NewUint(1)) {
+		return false
+	}
+
+	return true
+}
+
 func (h ObservedTxOutHandler) slashV128(ctx cosmos.Context, tx ObservedTx, reason string) error {
 	toSlash := make(common.Coins, len(tx.Tx.Coins))
 	copy(toSlash, tx.Tx.Coins)
-	toSlash = toSlash.Adds(tx.Tx.Gas.ToCoins())
+	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
 
 	if reason != "" {
 		ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 			telemetry.NewLabel("reason", reason),
 			telemetry.NewLabel("chain", string(tx.Tx.Chain)),
 		}))
+	}
+
+	// Record the loss of the observed funds from the vault.
+	vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault", "error", err)
+	} else {
+		vault.SubFunds(toSlash)
+		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+		}
 	}
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)

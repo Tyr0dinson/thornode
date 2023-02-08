@@ -1,15 +1,12 @@
 package thorchain
 
 import (
-	"context"
+	"fmt"
 
-	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 )
 
 // MigrateHandler is a handler to process MsgMigrate
@@ -66,19 +63,6 @@ func (h MigrateHandler) handle(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Resu
 	}
 }
 
-func (h MigrateHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
-	toSlash := make(common.Coins, len(tx.Tx.Coins))
-	copy(toSlash, tx.Tx.Coins)
-	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
-
-	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
-		telemetry.NewLabel("reason", "failed_migration"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
-	}))
-
-	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
-}
-
 func (h MigrateHandler) handleV128(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.mgr.Keeper().GetTxOut(ctx, msg.BlockHeight)
@@ -131,10 +115,10 @@ func (h MigrateHandler) handleV128(ctx cosmos.Context, msg MsgMigrate) (*cosmos.
 	}
 
 	if shouldSlash {
-		ctx.Logger().Info("slash node account,migration has no matched txout", "outbound tx", msg.Tx.Tx)
-		if err := h.slashV96(ctx, msg.Tx); err != nil {
-			return nil, ErrInternal(err, "fail to slash account")
-		}
+		ctx.Logger().Info("slash vault, migration has no matched tx out item", "outbound tx", msg.Tx.Tx)
+
+		// Send back an error to signal the observed txout should trigger no state changes other than a slash
+		return nil, fmt.Errorf("slash vault, migration has no matched tx out item")
 	}
 
 	if err := h.mgr.Keeper().SetLastSignedHeight(ctx, msg.BlockHeight); err != nil {

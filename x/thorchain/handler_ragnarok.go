@@ -1,11 +1,9 @@
 package thorchain
 
 import (
-	"context"
+	"fmt"
 
-	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -66,19 +64,6 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 	default:
 		return nil, errBadVersion
 	}
-}
-
-func (h RagnarokHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
-	toSlash := make(common.Coins, len(tx.Tx.Coins))
-	copy(toSlash, tx.Tx.Coins)
-	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
-
-	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
-		telemetry.NewLabel("reason", "failed_ragnarok"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
-	}))
-
-	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
 }
 
 func (h RagnarokHandler) handleV128(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
@@ -150,9 +135,10 @@ func (h RagnarokHandler) handleV128(ctx cosmos.Context, msg MsgRagnarok) (*cosmo
 	}
 
 	if shouldSlash {
-		if err := h.slashV96(ctx, msg.Tx); err != nil {
-			return nil, ErrInternal(err, "fail to slash account")
-		}
+		ctx.Logger().Info("slash vault, ragnarok has no matched tx out item", "outbound tx", msg.Tx)
+
+		// Send back an error to signal the observed txout should trigger no state changes other than a slash
+		return nil, fmt.Errorf("slash vault, ragnarok has no matched tx out item")
 	}
 
 	if err := h.mgr.Keeper().SetLastSignedHeight(ctx, msg.BlockHeight); err != nil {

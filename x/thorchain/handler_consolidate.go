@@ -1,15 +1,11 @@
 package thorchain
 
 import (
-	"context"
+	"fmt"
 
-	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 
-	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 )
 
 // ConsolidateHandler handles transactions the network sends to itself, to consolidate UTXOs
@@ -53,19 +49,6 @@ func (h ConsolidateHandler) validateV1(ctx cosmos.Context, msg MsgConsolidate) e
 	return msg.ValidateBasic()
 }
 
-func (h ConsolidateHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
-	toSlash := make(common.Coins, len(tx.Tx.Coins))
-	copy(toSlash, tx.Tx.Coins)
-	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
-
-	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
-		telemetry.NewLabel("reason", "failed_consolidation"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
-	}))
-
-	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
-}
-
 func (h ConsolidateHandler) handle(ctx cosmos.Context, msg MsgConsolidate) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
@@ -99,9 +82,9 @@ func (h ConsolidateHandler) handleV128(ctx cosmos.Context, msg MsgConsolidate) (
 
 	if shouldSlash {
 		ctx.Logger().Info("slash vault, invalid consolidation", "tx", msg.ObservedTx.Tx)
-		if err := h.slashV96(ctx, msg.ObservedTx); err != nil {
-			return nil, ErrInternal(err, "fail to slash account")
-		}
+
+		// Send back an error to signal the observed txout should trigger no state changes other than a slash
+		return nil, fmt.Errorf("slash vault, invalid consolidation")
 	}
 
 	return &cosmos.Result{}, nil

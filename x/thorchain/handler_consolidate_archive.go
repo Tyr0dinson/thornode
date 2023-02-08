@@ -6,9 +6,23 @@ import (
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
+
+func (h ConsolidateHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
+	toSlash := make(common.Coins, len(tx.Tx.Coins))
+	copy(toSlash, tx.Tx.Coins)
+	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
+
+	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
+		telemetry.NewLabel("reason", "failed_consolidation"),
+		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+	}))
+
+	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
+}
 
 func (h ConsolidateHandler) slashV1(ctx cosmos.Context, tx ObservedTx) error {
 	toSlash := tx.Tx.Coins.Adds_deprecated(tx.Tx.Gas.ToCoins())

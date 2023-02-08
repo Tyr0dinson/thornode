@@ -11,6 +11,19 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
+func (h MigrateHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
+	toSlash := make(common.Coins, len(tx.Tx.Coins))
+	copy(toSlash, tx.Tx.Coins)
+	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
+
+	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+		telemetry.NewLabel("reason", "failed_migration"),
+		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+	}))
+
+	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
+}
+
 func (h MigrateHandler) slashV1(ctx cosmos.Context, tx ObservedTx) error {
 	toSlash := tx.Tx.Coins.Adds_deprecated(tx.Tx.Gas.ToCoins())
 
