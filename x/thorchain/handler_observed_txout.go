@@ -223,12 +223,6 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 			continue
 		}
 
-		// Apply Gas fees
-		if err := addGasFees(ctx, h.mgr, tx); err != nil {
-			ctx.Logger().Error("fail to add gas fee", "error", err)
-			continue
-		}
-
 		// add addresses to observing addresses. This is used to detect
 		// active/inactive observing node accounts
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txOut.GetSigners())
@@ -245,20 +239,57 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 				}
 			}
 		}
+
+		// Thanks to CacheContext, if the handler returns an error
+		// it will have caused no state changes.
+		// Take an error as a reason to reimburse the transaction's gas
+		// together with it in the form of a bond slash,
+		// and not from the Reserve.
 		_, err = handler(ctx, m)
 		if err != nil {
 			ctx.Logger().Error("handler failed:", "error", err)
+
+			// Set the reason according to the type of message.
+			var reason string = ""
+			switch m.(type) {
+			case *MsgOutboundTx, *MsgRefundTx:
+				reason = "failed_outbound"
+			case *MsgConsolidate:
+				reason = "failed_consolidation"
+			case *MsgMigrate:
+				reason = "failed_migration"
+			case *MsgRagnarok:
+				reason = "failed_ragnarok"
+			case *MsgYggdrasil:
+				reason = "failed_yggdrasil_return"
+			}
+			if err := h.slashV128(ctx, tx, reason); err != nil {
+				ctx.Logger().Error("slash failed:", "error", err)
+			}
 			continue
 		}
-		voter.SetDone()
-		h.mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
-		// process the msg first , and then deduct the fund from vault last
-		// If sending from one of our vaults, decrement coins
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
 			continue
 		}
+		// Apply Gas fees
+		if err := addGasFees(ctx, h.mgr, tx); err != nil {
+			ctx.Logger().Error("fail to add gas fee", "error", err)
+			continue
+		}
+		// addGasFees deducts from the vault, so Get the vault again.
+		vault, err = h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "error", err)
+			continue
+		}
+
+		voter.SetDone()
+		h.mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+		// process the msg first , and then deduct the fund from vault last
+		// If sending from one of our vaults, decrement coins
 		vault.SubFunds(tx.Tx.Coins)
 		vault.OutboundTxCount++
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
@@ -287,6 +318,21 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 		}
 	}
 	return &cosmos.Result{}, nil
+}
+
+func (h ObservedTxOutHandler) slashV128(ctx cosmos.Context, tx ObservedTx, reason string) error {
+	toSlash := make(common.Coins, len(tx.Tx.Coins))
+	copy(toSlash, tx.Tx.Coins)
+	toSlash = toSlash.Adds(tx.Tx.Gas.ToCoins())
+
+	if reason != "" {
+		ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+			telemetry.NewLabel("reason", reason),
+			telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		}))
+	}
+
+	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
 }
 
 // ObservedTxOutAnteHandler called by the ante handler to gate mempool entry
