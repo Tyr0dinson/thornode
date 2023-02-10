@@ -174,7 +174,7 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 
 	collateralValueInRune := pool.AssetValueInRune(msg.CollateralAmount)
 	collateralValueInTOR := collateralValueInRune.Mul(price).QuoUint64(1e8)
-	debt := collateralValueInTOR.Quo(cr).MulUint64(100)
+	debt := collateralValueInTOR.Quo(cr).MulUint64(10_000)
 	ctx.Logger().Info("Loan Details", "collateral", common.NewCoin(msg.CollateralAsset, msg.CollateralAmount), "debt", debt.Uint64(), "rune price", price.Uint64(), "colRune", collateralValueInRune.Uint64(), "colTOR", collateralValueInTOR.Uint64())
 
 	// sanity checks

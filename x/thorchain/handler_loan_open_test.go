@@ -101,7 +101,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 
 	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
 	c.Assert(err, IsNil)
-	c.Check(loan.DebtUp.Uint64(), Equals, uint64(16649202600), Commentf("%d", loan.DebtUp.Uint64()))
+	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1664920260000), Commentf("%d", loan.DebtUp.Uint64()))
 	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(99761992), Commentf("%d", loan.CollateralUp.Uint64()))
 	c.Check(loan.LastOpenHeight, Equals, int64(128), Commentf("%d", loan.LastOpenHeight))
 
@@ -162,7 +162,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 
 	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
 	c.Assert(err, IsNil)
-	c.Check(loan.DebtUp.Uint64(), Equals, uint64(16649202600), Commentf("%d", loan.DebtUp.Uint64()))
+	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1664920260000), Commentf("%d", loan.DebtUp.Uint64()))
 	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(99761992), Commentf("%d", loan.CollateralUp.Uint64()))
 	c.Check(loan.LastOpenHeight, Equals, int64(128), Commentf("%d", loan.LastOpenHeight))
 
@@ -172,7 +172,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	c.Check(outs[0].Coin.Asset.String(), Equals, "THOR.BTC")
 	c.Check(outs[0].Coin.Amount.Uint64(), Equals, uint64(99761992), Commentf("%d", outs[0].Coin.Amount.Uint64()))
 	c.Check(outs[1].Coin.Asset.Equals(common.TOR), Equals, true)
-	c.Check(outs[1].Coin.Amount.Uint64(), Equals, uint64(16649202600), Commentf("%d", outs[1].Coin.Amount.Uint64()))
+	c.Check(outs[1].Coin.Amount.Uint64(), Equals, uint64(1664920260000), Commentf("%d", outs[1].Coin.Amount.Uint64()))
 
 	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)

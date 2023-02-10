@@ -50,6 +50,7 @@ func ParseLoanOpenMemo(ctx cosmos.Context, keeper keeper.Keeper, targetAsset com
 	var targetAddress common.Address
 	affAddr := common.NoAddress
 	affPts := cosmos.ZeroUint()
+	minOut := cosmos.ZeroUint()
 	var dexAgg, dexTargetAddr string
 	dexTargetLimit := cosmos.ZeroUint()
 	if len(parts) <= 2 {
@@ -65,11 +66,13 @@ func ParseLoanOpenMemo(ctx cosmos.Context, keeper keeper.Keeper, targetAsset com
 		return LoanOpenMemo{}, err
 	}
 
-	min, err := strconv.ParseUint(parts[3], 10, 64)
-	if err != nil {
-		return LoanOpenMemo{}, err
+	if len(parts) > 3 && len(parts[3]) > 0 {
+		minOutUint, err := strconv.ParseUint(parts[3], 10, 64)
+		if err != nil {
+			return LoanOpenMemo{}, err
+		}
+		minOut = cosmos.NewUint(minOutUint)
 	}
-	minOut := cosmos.NewUint(min)
 
 	if len(parts) > 4 && len(parts[4]) > 0 && len(parts[5]) > 0 {
 		if keeper == nil {

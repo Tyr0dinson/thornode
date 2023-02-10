@@ -214,12 +214,16 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
-	memo, err = ParseMemoWithTHORNames(ctx, k, "$+:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej:45:bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:1000:aggie:aggtar:55")
+	memo, err = ParseMemoWithTHORNames(ctx, k, "$+:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxLoanOpen), Equals, true)
 	c.Check(memo.IsType(TxLoanOpen), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
+
+	memo, err = ParseMemoWithTHORNames(ctx, k, "$+:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej:45:bnb1lejrrtta9cgr49fuh7ktu3sddhe0ff7wenlpn6:1000:aggie:aggtar:55")
+	c.Assert(err, IsNil)
 	m, ok := memo.(LoanOpenMemo)
 	c.Assert(ok, Equals, true)
 	c.Check(m.MinOut.Uint64(), Equals, uint64(45))
