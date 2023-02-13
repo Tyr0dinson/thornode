@@ -565,7 +565,6 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	if !affiliateAddr.GetChain().Equals(asset.GetLayer1Asset().Chain) {
 		return quoteErrorResponse(fmt.Errorf("affiliate address: %s doesn't match L1 chain of savers vault: %s", affiliateAddr.String(), asset.GetLayer1Asset().Chain))
 	}
-	affFee := getSaversAffFee(affiliateAddr, affiliateBps, amount)
 
 	// Savers deposit aff fees is just an Add to a Savers position for the affiliate in the same vault, not a swap to $RUNE
 	// Affiliate address must equal L1 chain of Savers Vault
