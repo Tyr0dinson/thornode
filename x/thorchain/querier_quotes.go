@@ -565,7 +565,6 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	if !affiliateAddr.GetChain().Equals(asset.GetLayer1Asset().Chain) {
 		return quoteErrorResponse(fmt.Errorf("affiliate address: %s doesn't match L1 chain of savers vault: %s", affiliateAddr.String(), asset.GetLayer1Asset().Chain))
 	}
-	affFee := getSaversAffFee(affiliateAddr, affiliateBps, amount)
 
 	// create the memo
 	memo := &SwapMemo{
@@ -618,6 +617,8 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		return quoteErrorResponse(fmt.Errorf("failed to simulate swap: %w", err))
 	}
 
+	// Aff fee will be taken out of ouput from the swap to synth
+	affFee := getSaversAffFee(affiliateAddr, affiliateBps, cosmos.NewUintFromString(swapRes.ExpectedAmountOut))
 	swapRes.Fees.Affiliate = affFee.String()
 
 	// generate deposit memo
