@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/query"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -829,12 +830,52 @@ func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
 }
 
 func (s *QuerierSuite) TestHandleAffiliate(c *C) {
+	// happy path with L1 address as Savers affiliate
 	urlVals := map[string][]string{
-		affiliateParam:    []string{"testname"},
+		affiliateParam:    []string{"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
 		affiliateBpsParam: []string{"30"},
 	}
 	amt := cosmos.NewUint(100_000)
-	affiliateAddr, _, _, _, err := quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.THORChain)
+	affiliateAddr, memo, bps, newAmt, err := quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.DOGEChain)
+	c.Assert(err, IsNil)
+	c.Assert(affiliateAddr.String(), Equals, "D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc")
+	c.Assert(memo, Equals, "D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc")
+	c.Assert(bps.Uint64(), Equals, uint64(30))
+	c.Assert(newAmt.Uint64(), Equals, uint64(99_700))
+
+	// affiliate bps too high
+	urlVals = map[string][]string{
+		affiliateParam:    []string{"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
+		affiliateBpsParam: []string{"10_001"},
+	}
+	_, _, _, _, err = quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.DOGEChain)
 	c.Assert(err, NotNil)
-	c.Assert(affiliateAddr, Equals, common.NoAddress)
+
+	// Add thorname
+	thorAddr := kv1.GetRandomRUNEAddress()
+	bnbAddr := kv1.GetRandomBNBAddress()
+
+	bnbAlias := kv1.THORNameAlias{
+		Chain:   common.BNBChain,
+		Address: bnbAddr,
+	}
+	thorAlias := kv1.THORNameAlias{
+		Chain:   common.THORChain,
+		Address: thorAddr,
+	}
+
+	tn := kv1.NewTHORName("test", 1_000_000, []types.THORNameAlias{bnbAlias, thorAlias})
+	tn.Owner = types2.AccAddress(thorAddr)
+	s.k.SetTHORName(s.ctx, tn)
+
+	// should work with thorname mapped to L1 address
+	urlVals = map[string][]string{
+		affiliateParam:    []string{"test"},
+		affiliateBpsParam: []string{"30"},
+	}
+	affiliateAddr, memo, bps, newAmt, err = quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.BNBChain)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "test")
+	c.Assert(bps.Uint64(), Equals, uint64(30))
+	c.Assert(newAmt.Uint64(), Equals, uint64(99_700))
 }

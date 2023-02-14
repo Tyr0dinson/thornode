@@ -22,7 +22,9 @@ import (
 	"gitlab.com/thorchain/tss/go-tss/conversion"
 )
 
-var initManager = func(mgr *Mgrs, ctx cosmos.Context) {}
+var initManager = func(mgr *Mgrs, ctx cosmos.Context) {
+	_ = mgr.BeginBlock(ctx)
+}
 
 // NewQuerier is the module level router for state queries
 func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
