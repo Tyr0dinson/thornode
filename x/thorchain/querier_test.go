@@ -832,8 +832,8 @@ func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
 func (s *QuerierSuite) TestHandleAffiliate(c *C) {
 	// happy path with L1 address as Savers affiliate
 	urlVals := map[string][]string{
-		affiliateParam:    []string{"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
-		affiliateBpsParam: []string{"30"},
+		affiliateParam:    {"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
+		affiliateBpsParam: {"30"},
 	}
 	amt := cosmos.NewUint(100_000)
 	affiliateAddr, memo, bps, newAmt, err := quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.DOGEChain)
@@ -845,8 +845,8 @@ func (s *QuerierSuite) TestHandleAffiliate(c *C) {
 
 	// affiliate bps too high
 	urlVals = map[string][]string{
-		affiliateParam:    []string{"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
-		affiliateBpsParam: []string{"10_001"},
+		affiliateParam:    {"D7FJUbJ9Wx2WSooDhh9aDHGiGHTRmKcAHc"},
+		affiliateBpsParam: {"10_001"},
 	}
 	_, _, _, _, err = quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.DOGEChain)
 	c.Assert(err, NotNil)
@@ -870,10 +870,11 @@ func (s *QuerierSuite) TestHandleAffiliate(c *C) {
 
 	// should work with thorname mapped to L1 address
 	urlVals = map[string][]string{
-		affiliateParam:    []string{"test"},
-		affiliateBpsParam: []string{"30"},
+		affiliateParam:    {"test"},
+		affiliateBpsParam: {"30"},
 	}
 	affiliateAddr, memo, bps, newAmt, err = quoteHandleAffiliate(s.ctx, s.mgr, urlVals, amt, common.BNBChain)
+	c.Assert(affiliateAddr.String(), Equals, bnbAddr.String())
 	c.Assert(err, IsNil)
 	c.Assert(memo, Equals, "test")
 	c.Assert(bps.Uint64(), Equals, uint64(30))

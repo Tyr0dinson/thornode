@@ -617,7 +617,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		return quoteErrorResponse(fmt.Errorf("failed to simulate swap: %w", err))
 	}
 
-	// Aff fee will be taken out of ouput from the swap to synth
+	// Aff fee will be taken out of output from the swap to synth
 	affFee := getSaversAffFee(affiliateAddr, affiliateBps, cosmos.NewUintFromString(swapRes.ExpectedAmountOut))
 	swapRes.Fees.Affiliate = affFee.String()
 
