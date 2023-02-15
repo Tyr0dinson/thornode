@@ -291,14 +291,14 @@
           },
           "status": "Active",
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz",
-          "version": "1.105.0"
+          "version": "1.106.0"
         }
       ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "pools": null,
       "reserve_contributors": null,
-      "store_version": "105",
+      "store_version": "106",
       "tx_outs": null,
       "vaults": [
         {
@@ -354,6 +354,6 @@
     },
     "version": {}
   },
-  "genesis_time": "2023-02-07T22:02:04.62111449Z",
+  "genesis_time": "2023-02-15T19:50:56.953855172Z",
   "initial_height": "2"
 }

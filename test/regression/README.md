@@ -191,7 +191,7 @@ If stuck set `DEBUG=1` to output the entire log output from the `thornode` proce
 DEBUG=1 RUN=my-test make test-regression
 ```
 
-Setting `EXPORT=1` will force overwrite the exported genesis after the test:
+Setting `EXPORT=1` will force overwrite the exported genesis after the test. If your test is failing with `exports differ`, you likely changed the final state by adding operations/creating new blocks since you first ran the regression suite. Running this command will update the expected end state:
 
 ```bash
 EXPORT=1 make test-regression

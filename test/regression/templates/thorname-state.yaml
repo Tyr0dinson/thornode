@@ -5,7 +5,7 @@ genesis:
       THORNames:
         - name: tn1
           owner: {{ addr_thor_dog }}
-          expire_block_height: 1_000_000
+          expire_block_height: "1000000"
           aliases:
             - address: {{ addr_thor_cat }}
               chain: "THOR"
