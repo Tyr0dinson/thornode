@@ -1,0 +1,13 @@
+type: state
+genesis:
+  app_state:
+    thorchain:
+      THORNames:
+        - name: tn1
+          owner: {{ addr_thor_dog }}
+          expire_block_height: 1_000_000
+          aliases:
+            - address: {{ addr_thor_cat }}
+              chain: "THOR"
+            - address: {{ addr_btc_cat }}
+              chain: "BTC"

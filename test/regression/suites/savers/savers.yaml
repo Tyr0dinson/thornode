@@ -2,6 +2,8 @@
 ---
 {{ template "btc-pool-state.yaml" }}
 ---
+{{ template "thorname-state.yaml" }}
+---
 type: create-blocks
 count: 1
 ---
@@ -225,3 +227,36 @@ description: outbound should have been observed
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+########################################################################################
+# Savers Affiliate w/ THORName
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_pig }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "+:BTC/BTC::tn1:30"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: Savers position should have been created for affiliate
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_cat }}
+asserts:
+  - .|length == 0
+---
