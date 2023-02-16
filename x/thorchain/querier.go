@@ -847,7 +847,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	for ; iterator.Valid(); iterator.Next() {
 		var loan Loan
 		mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &loan)
-		if loan.Collateral().IsZero() && loan.Debt().IsZero() {
+		if loan.CollateralUp.Equal(loan.CollateralDown) && loan.DebtUp.Equal(loan.DebtDown) {
 			continue
 		}
 		loans = append(loans, loan)

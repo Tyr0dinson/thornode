@@ -178,7 +178,7 @@ func (h LoanRepaymentHandler) repayV106(ctx cosmos.Context, msg MsgLoanRepayment
 	}
 
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
-	tx := common.NewTx(txID, lendAddr, lendAddr, common.NewCoins(common.NewCoin(msg.CollateralAsset, redeem)), common.Gas{fakeGas}, "noop")
+	tx := common.NewTx(txID, lendAddr, lendAddr, common.NewCoins(common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), redeem)), common.Gas{fakeGas}, "noop")
 	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)

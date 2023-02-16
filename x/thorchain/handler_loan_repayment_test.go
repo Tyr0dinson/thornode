@@ -113,13 +113,16 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, busd), IsNil)
 
 	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	// set max gas
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 10, 10)), IsNil)
 
-	// mint TOR to burn later
-	coin := common.NewCoin(common.TOR, cosmos.NewUint(1000*common.One))
+	// mint thor.btc collaterl
+	coin := common.NewCoin(common.BTCAsset.GetDerivedAsset(), cosmos.NewUint(common.One))
 	err := mgr.Keeper().MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
-	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(coin))
+	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(coin))
 	c.Assert(err, IsNil)
 
 	owner, _ := common.NewAddress("bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
@@ -136,10 +139,19 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	msg := NewMsgLoanRepayment(owner, common.BTCAsset, common.NewCoin(common.BTCAsset, cosmos.NewUint(1e8/2)), signer)
 	ctx = ctx.WithBlockHeight(2 * 1440000)
 	c.Check(handler.handle(ctx, *msg), IsNil)
-	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil) // swap into TOR
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil) // swap out into collateral
 
 	loan, err = mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
 	c.Assert(err, IsNil)
 	c.Check(loan.DebtDown.Uint64(), Equals, uint64(440233604542), Commentf("%d", loan.DebtDown.Uint64()))
 	c.Check(loan.CollateralDown.Uint64(), Equals, uint64(44023360), Commentf("%d", loan.CollateralDown.Uint64()))
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	item := items[0]
+	c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(43931109), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.ToAddress.String(), Equals, "bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
 }
