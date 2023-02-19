@@ -224,6 +224,25 @@ func NewQueryNodeAccount(na NodeAccount) QueryNodeAccount {
 	}
 }
 
+// QueryNodeTotalBondSummary holds a node total bond summary
+type QueryNodeTotalBondSummary struct {
+	NodeAddress cosmos.AccAddress `json:"node_address"`
+	TotalBond   cosmos.Uint       `json:"total_bond"`
+}
+
+// QueryNodeBondSummary holds a bond provider's node bond summary
+type QueryNodeBondSummary struct {
+	NodeAddress cosmos.AccAddress `json:"node_address"`
+	Bond        cosmos.Uint       `json:"bond"`
+}
+
+// QueryBondProviderSummary holds a summary of all a bond provider's bonds
+type QueryBondProviderSummary struct {
+	BondAddress string                 `json:"bond_address"`
+	TotalBond   cosmos.Uint            `json:"total_bond"`
+	Nodes       []QueryNodeBondSummary `json:"nodes"`
+}
+
 // QueryObservedTx holds all the information related to the ObservedTx
 type QueryObservedTx struct {
 	Tx                              common.Tx     `json:"tx"`

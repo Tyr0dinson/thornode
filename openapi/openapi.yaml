@@ -262,6 +262,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/NodesResponse"
 
+  /thorchain/alpha/nodes/all_node_bonds:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns all non-zero total node bonds.
+      operationId: nodesallnodebonds
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodesAllNodeBondsResponse"
+
+  /thorchain/alpha/nodes/all_provider_bonds:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns all non-zero bond provider bonds.
+      operationId: nodesallproviderbonds
+      tags:
+        - Nodes
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodesAllProviderBondsResponse"
+
   # ------------------------------ vaults ------------------------------
 
   /thorchain/vaults/asgard:
@@ -1690,6 +1722,53 @@ components:
               format: int64
               example: 0
 
+    NodeTotalBondSummary:
+      type: object
+      required:
+        - node_address
+        - total_bond
+      properties:
+        node_address:
+          type: string
+          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
+        total_bond:
+          type: string
+          description: node's current total bond
+          example: "123456789"
+
+    NodeBondSummary:
+      type: object
+      required:
+        - node_address
+        - bond
+      properties:
+        node_address:
+          type: string
+          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
+        bond:
+          type: string
+          description: bond provider's current bond for a node
+          example: "123456789"
+
+    BondProviderSummary:
+      type: object
+      required:
+        - bond_address
+        - total_bond
+        - nodes
+      properties:
+        bond_address:
+          type: string
+          example: "thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5"
+        total_bond:
+          type: string
+          description: total bond provider bond
+          example: "123456789"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeBondSummary"
+
     KeygenMetric:
       type: object
       required:
@@ -1998,6 +2077,16 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/Node"
+
+    NodesAllNodeBondsResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/NodeTotalBondSummary"
+
+    NodesAllProviderBondsResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/BondProviderSummary"
 
     VaultsResponse:
       type: array

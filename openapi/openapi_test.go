@@ -53,12 +53,15 @@ func (Test) TestJSONSpec(c *C) {
 	assertJSONStructTagsMatch(c, types.QueryTxStatus{}, gen.TxStatusResponse{})
 
 	// nodes
-	assertJSONStructTagsMatch(c, types.QueryNodeAccountPreflightCheck{}, gen.NodePreflightStatus{})
 	assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
-	assertJSONStructTagsMatch(c, types.QueryChainHeight{}, gen.ChainHeight{})
 	// As node_address is omitted from the jail display,
 	// skip assertJSONStructTagsMatch for types.Jail{} / gen.NodeJail{}
 	// so that the spec can match the display.
+	assertJSONStructTagsMatch(c, types.QueryNodeAccountPreflightCheck{}, gen.NodePreflightStatus{})
+	assertJSONStructTagsMatch(c, types.QueryChainHeight{}, gen.ChainHeight{})
+	assertJSONStructTagsMatch(c, types.QueryNodeTotalBondSummary{}, gen.NodeTotalBondSummary{})
+	assertJSONStructTagsMatch(c, types.QueryNodeBondSummary{}, gen.NodeBondSummary{})
+	assertJSONStructTagsMatch(c, types.QueryBondProviderSummary{}, gen.BondProviderSummary{})
 
 	// tss
 	assertJSONStructTagsMatch(c, types.NodeTssTime{}, gen.NodeKeygenMetric{})

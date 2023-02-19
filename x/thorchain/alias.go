@@ -261,6 +261,9 @@ type (
 	QueryVaultsPubKeys             = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract       = types.QueryVaultPubKeyContract
 	QueryNodeAccount               = types.QueryNodeAccount
+	QueryNodeTotalBondSummary      = types.QueryNodeTotalBondSummary
+	QueryNodeBondSummary           = types.QueryNodeBondSummary
+	QueryBondProviderSummary       = types.QueryBondProviderSummary
 	QueryObservedTx                = types.QueryObservedTx
 	QueryTxOutItem                 = types.QueryTxOutItem
 	QueryTxSigners                 = types.QueryTxSigners

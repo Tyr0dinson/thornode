@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,10 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryNode(ctx, path[1:], req, mgr)
 		case q.QueryNodes.Key:
 			return queryNodes(ctx, path[1:], req, mgr)
+		case q.QueryNodesAllNodeBonds.Key:
+			return queryNodesAllNodeBonds(ctx, path[1:], req, mgr)
+		case q.QueryNodesAllProviderBonds.Key:
+			return queryNodesAllProviderBonds(ctx, path[1:], req, mgr)
 		case q.QueryInboundAddresses.Key:
 			return queryInboundAddresses(ctx, path[1:], req, mgr)
 		case q.QueryNetwork.Key:
@@ -822,6 +827,98 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			Providers:       bp.Providers,
 		}
 	}
+
+	return jsonify(ctx, result)
+}
+
+// queryNodesAllNodeBonds returns all non-zero node total bonds
+func queryNodesAllNodeBonds(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	nodeAccounts, err := mgr.Keeper().ListValidatorsWithBond(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+
+	var result []QueryNodeTotalBondSummary
+	for _, na := range nodeAccounts {
+		result = append(result, QueryNodeTotalBondSummary{NodeAddress: na.NodeAddress, TotalBond: na.Bond})
+	}
+
+	// Sort by total bond size descending.
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].TotalBond.GT(result[j].TotalBond)
+	})
+
+	return jsonify(ctx, result)
+}
+
+// queryNodesAllProviderBonds returns all non-zero bond provider bonds
+func queryNodesAllProviderBonds(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	nodeAccounts, err := mgr.Keeper().ListValidatorsWithBond(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get node accounts: %w", err)
+	}
+
+	// Map the node bonds by bond provider.
+	bondProviders := map[string][]QueryNodeBondSummary{}
+	var bondAddress string
+	var bp BondProviders
+	var nodeBondSummary QueryNodeBondSummary
+	for _, na := range nodeAccounts {
+		bp, err = mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get bond providers: %w", err)
+		}
+
+		if len(bp.Providers) == 0 {
+			// When the providers list is empty, the node operator should be the only bond provider.
+			// Having used ListValidatorsWithBond, the total bond should be non-zero.
+			bondAddress = na.BondAddress.String()
+			nodeBondSummary.NodeAddress = na.NodeAddress
+			nodeBondSummary.Bond = na.Bond
+
+			bondProviders[bondAddress] = append(bondProviders[bondAddress], nodeBondSummary)
+		} else {
+			bp.Adjust(na.Bond)
+			for _, provider := range bp.Providers {
+				if provider.Bond.IsZero() {
+					// Only display providers' non-zero node bonds, not unbonded whitelisting.
+					continue
+				}
+
+				bondAddress = provider.BondAddress.String()
+				nodeBondSummary.NodeAddress = na.NodeAddress
+				nodeBondSummary.Bond = provider.Bond
+
+				bondProviders[bondAddress] = append(bondProviders[bondAddress], nodeBondSummary)
+			}
+		}
+	}
+
+	// Convert the map to a slice and sort by bond size descending.
+	var bondProviderSummary QueryBondProviderSummary
+	var result []QueryBondProviderSummary
+	// analyze-ignore(map-iteration)
+	for provider := range bondProviders {
+		bondProviderSummary.BondAddress = provider
+		bondProviderSummary.Nodes = bondProviders[provider]
+
+		// Sort by bond size descending.
+		sort.SliceStable(bondProviderSummary.Nodes, func(i, j int) bool {
+			return bondProviderSummary.Nodes[i].Bond.GT(bondProviderSummary.Nodes[j].Bond)
+		})
+
+		bondProviderSummary.TotalBond = cosmos.ZeroUint()
+		for _, node := range bondProviderSummary.Nodes {
+			bondProviderSummary.TotalBond = bondProviderSummary.TotalBond.Add(node.Bond)
+		}
+
+		result = append(result, bondProviderSummary)
+	}
+
+	// Sort by total bond size descending.
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].TotalBond.GT(result[j].TotalBond)
+	})
 
 	return jsonify(ctx, result)
 }

@@ -33,52 +33,54 @@ func (q Query) Path(args ...string) string {
 
 // query endpoints supported by the thorchain Querier
 var (
-	QueryPool                = Query{Key: "pool", EndpointTemplate: "/%s/pool/{%s}"}
-	QueryPools               = Query{Key: "pools", EndpointTemplate: "/%s/pools"}
-	QueryLiquidityProviders  = Query{Key: "lps", EndpointTemplate: "/%s/pool/{%s}/liquidity_providers"}
-	QueryLiquidityProvider   = Query{Key: "lp", EndpointTemplate: "/%s/pool/{%s}/liquidity_provider/{%s}"}
-	QuerySavers              = Query{Key: "savers", EndpointTemplate: "/%s/pool/{%s}/savers"}
-	QuerySaver               = Query{Key: "saver", EndpointTemplate: "/%s/pool/{%s}/saver/{%s}"}
-	QueryTx                  = Query{Key: "tx", EndpointTemplate: "/%s/tx/{%s}"}
-	QueryTxVoterOld          = Query{Key: "txvoterold", EndpointTemplate: "/%s/tx/{%s}/signers"}
-	QueryTxVoter             = Query{Key: "txvoter", EndpointTemplate: "/%s/tx/details/{%s}"}
-	QueryTxStages            = Query{Key: "txstages", EndpointTemplate: "/%s/alpha/tx/stages/{%s}"}
-	QueryTxStatus            = Query{Key: "txstatus", EndpointTemplate: "/%s/alpha/tx/status/{%s}"}
-	QueryKeysignArray        = Query{Key: "keysign", EndpointTemplate: "/%s/keysign/{%s}"}
-	QueryKeysignArrayPubkey  = Query{Key: "keysignpubkey", EndpointTemplate: "/%s/keysign/{%s}/{%s}"}
-	QueryKeygensPubkey       = Query{Key: "keygenspubkey", EndpointTemplate: "/%s/keygen/{%s}/{%s}"}
-	QueryQueue               = Query{Key: "outqueue", EndpointTemplate: "/%s/queue"}
-	QueryHeights             = Query{Key: "heights", EndpointTemplate: "/%s/lastblock"}
-	QueryChainHeights        = Query{Key: "chainheights", EndpointTemplate: "/%s/lastblock/{%s}"}
-	QueryNodes               = Query{Key: "nodes", EndpointTemplate: "/%s/nodes"}
-	QueryNode                = Query{Key: "node", EndpointTemplate: "/%s/node/{%s}"}
-	QueryInboundAddresses    = Query{Key: "inboundaddresses", EndpointTemplate: "/%s/inbound_addresses"}
-	QueryNetwork             = Query{Key: "network", EndpointTemplate: "/%s/network"}
-	QueryPOL                 = Query{Key: "pol", EndpointTemplate: "/%s/pol"}
-	QueryBalanceModule       = Query{Key: "balancemodule", EndpointTemplate: "/%s/balance/module/{%s}"}
-	QueryVaultsAsgard        = Query{Key: "vaultsasgard", EndpointTemplate: "/%s/vaults/asgard"}
-	QueryVaultsYggdrasil     = Query{Key: "vaultsyggdrasil", EndpointTemplate: "/%s/vaults/yggdrasil"}
-	QueryVault               = Query{Key: "vault", EndpointTemplate: "/%s/vault/{%s}"}
-	QueryVaultPubkeys        = Query{Key: "vaultpubkeys", EndpointTemplate: "/%s/vaults/pubkeys"}
-	QueryConstantValues      = Query{Key: "constants", EndpointTemplate: "/%s/constants"}
-	QueryVersion             = Query{Key: "version", EndpointTemplate: "/%s/version"}
-	QueryMimirValues         = Query{Key: "mimirs", EndpointTemplate: "/%s/mimir"}
-	QueryMimirWithKey        = Query{Key: "mimirwithkey", EndpointTemplate: "/%s/mimir/key/{%s}"}
-	QueryMimirAdminValues    = Query{Key: "adminmimirs", EndpointTemplate: "/%s/mimir/admin"}
-	QueryMimirNodesValues    = Query{Key: "nodesmimirs", EndpointTemplate: "/%s/mimir/nodes"}
-	QueryMimirNodesAllValues = Query{Key: "nodesmimirsall", EndpointTemplate: "/%s/mimir/nodes_all"}
-	QueryMimirNodeValues     = Query{Key: "nodemimirs", EndpointTemplate: "/%s/mimir/node/{%s}"}
-	QueryBan                 = Query{Key: "ban", EndpointTemplate: "/%s/ban/{%s}"}
-	QueryRagnarok            = Query{Key: "ragnarok", EndpointTemplate: "/%s/ragnarok"}
-	QueryPendingOutbound     = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
-	QueryScheduledOutbound   = Query{Key: "scheduledoutbound", EndpointTemplate: "/%s/queue/scheduled"}
-	QuerySwapQueue           = Query{Key: "swapqueue", EndpointTemplate: "/%s/queue/swap"}
-	QueryTssKeygenMetrics    = Query{Key: "tss_keygen_metric", EndpointTemplate: "/%s/metric/keygen/{%s}"}
-	QueryTssMetrics          = Query{Key: "tss_metric", EndpointTemplate: "/%s/metrics"}
-	QueryTHORName            = Query{Key: "thorname", EndpointTemplate: "/%s/thorname/{%s}"}
-	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
-	QueryQuoteSaverDeposit   = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
-	QueryQuoteSaverWithdraw  = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
+	QueryPool                  = Query{Key: "pool", EndpointTemplate: "/%s/pool/{%s}"}
+	QueryPools                 = Query{Key: "pools", EndpointTemplate: "/%s/pools"}
+	QueryLiquidityProviders    = Query{Key: "lps", EndpointTemplate: "/%s/pool/{%s}/liquidity_providers"}
+	QueryLiquidityProvider     = Query{Key: "lp", EndpointTemplate: "/%s/pool/{%s}/liquidity_provider/{%s}"}
+	QuerySavers                = Query{Key: "savers", EndpointTemplate: "/%s/pool/{%s}/savers"}
+	QuerySaver                 = Query{Key: "saver", EndpointTemplate: "/%s/pool/{%s}/saver/{%s}"}
+	QueryTx                    = Query{Key: "tx", EndpointTemplate: "/%s/tx/{%s}"}
+	QueryTxVoterOld            = Query{Key: "txvoterold", EndpointTemplate: "/%s/tx/{%s}/signers"}
+	QueryTxVoter               = Query{Key: "txvoter", EndpointTemplate: "/%s/tx/details/{%s}"}
+	QueryTxStages              = Query{Key: "txstages", EndpointTemplate: "/%s/alpha/tx/stages/{%s}"}
+	QueryTxStatus              = Query{Key: "txstatus", EndpointTemplate: "/%s/alpha/tx/status/{%s}"}
+	QueryKeysignArray          = Query{Key: "keysign", EndpointTemplate: "/%s/keysign/{%s}"}
+	QueryKeysignArrayPubkey    = Query{Key: "keysignpubkey", EndpointTemplate: "/%s/keysign/{%s}/{%s}"}
+	QueryKeygensPubkey         = Query{Key: "keygenspubkey", EndpointTemplate: "/%s/keygen/{%s}/{%s}"}
+	QueryQueue                 = Query{Key: "outqueue", EndpointTemplate: "/%s/queue"}
+	QueryHeights               = Query{Key: "heights", EndpointTemplate: "/%s/lastblock"}
+	QueryChainHeights          = Query{Key: "chainheights", EndpointTemplate: "/%s/lastblock/{%s}"}
+	QueryNode                  = Query{Key: "node", EndpointTemplate: "/%s/node/{%s}"}
+	QueryNodes                 = Query{Key: "nodes", EndpointTemplate: "/%s/nodes"}
+	QueryNodesAllNodeBonds     = Query{Key: "nodesallnodebonds", EndpointTemplate: "/%s/alpha/nodes/all_node_bonds"}
+	QueryNodesAllProviderBonds = Query{Key: "nodesallproviderbonds", EndpointTemplate: "/%s/alpha/nodes/all_provider_bonds"}
+	QueryInboundAddresses      = Query{Key: "inboundaddresses", EndpointTemplate: "/%s/inbound_addresses"}
+	QueryNetwork               = Query{Key: "network", EndpointTemplate: "/%s/network"}
+	QueryPOL                   = Query{Key: "pol", EndpointTemplate: "/%s/pol"}
+	QueryBalanceModule         = Query{Key: "balancemodule", EndpointTemplate: "/%s/balance/module/{%s}"}
+	QueryVaultsAsgard          = Query{Key: "vaultsasgard", EndpointTemplate: "/%s/vaults/asgard"}
+	QueryVaultsYggdrasil       = Query{Key: "vaultsyggdrasil", EndpointTemplate: "/%s/vaults/yggdrasil"}
+	QueryVault                 = Query{Key: "vault", EndpointTemplate: "/%s/vault/{%s}"}
+	QueryVaultPubkeys          = Query{Key: "vaultpubkeys", EndpointTemplate: "/%s/vaults/pubkeys"}
+	QueryConstantValues        = Query{Key: "constants", EndpointTemplate: "/%s/constants"}
+	QueryVersion               = Query{Key: "version", EndpointTemplate: "/%s/version"}
+	QueryMimirValues           = Query{Key: "mimirs", EndpointTemplate: "/%s/mimir"}
+	QueryMimirWithKey          = Query{Key: "mimirwithkey", EndpointTemplate: "/%s/mimir/key/{%s}"}
+	QueryMimirAdminValues      = Query{Key: "adminmimirs", EndpointTemplate: "/%s/mimir/admin"}
+	QueryMimirNodesValues      = Query{Key: "nodesmimirs", EndpointTemplate: "/%s/mimir/nodes"}
+	QueryMimirNodesAllValues   = Query{Key: "nodesmimirsall", EndpointTemplate: "/%s/mimir/nodes_all"}
+	QueryMimirNodeValues       = Query{Key: "nodemimirs", EndpointTemplate: "/%s/mimir/node/{%s}"}
+	QueryBan                   = Query{Key: "ban", EndpointTemplate: "/%s/ban/{%s}"}
+	QueryRagnarok              = Query{Key: "ragnarok", EndpointTemplate: "/%s/ragnarok"}
+	QueryPendingOutbound       = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
+	QueryScheduledOutbound     = Query{Key: "scheduledoutbound", EndpointTemplate: "/%s/queue/scheduled"}
+	QuerySwapQueue             = Query{Key: "swapqueue", EndpointTemplate: "/%s/queue/swap"}
+	QueryTssKeygenMetrics      = Query{Key: "tss_keygen_metric", EndpointTemplate: "/%s/metric/keygen/{%s}"}
+	QueryTssMetrics            = Query{Key: "tss_metric", EndpointTemplate: "/%s/metrics"}
+	QueryTHORName              = Query{Key: "thorname", EndpointTemplate: "/%s/thorname/{%s}"}
+	QueryQuoteSwap             = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
+	QueryQuoteSaverDeposit     = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
+	QueryQuoteSaverWithdraw    = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
 
 	// queries only available on regtest builds
 	QueryExport      = Query{Key: "export", EndpointTemplate: "/%s/export"}
@@ -105,6 +107,8 @@ var Queries = []Query{
 	QueryChainHeights,
 	QueryNode,
 	QueryNodes,
+	QueryNodesAllNodeBonds,
+	QueryNodesAllProviderBonds,
 	QueryInboundAddresses,
 	QueryNetwork,
 	QueryPOL,
