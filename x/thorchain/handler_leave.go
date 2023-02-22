@@ -73,13 +73,17 @@ func (h LeaveHandler) validateV1(ctx cosmos.Context, msg MsgLeave) error {
 
 func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.76.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return h.handleV108(ctx, msg)
+	case version.GTE(semver.MustParse("0.76.0")):
 		return h.handleV76(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func (h LeaveHandler) handleV76(ctx cosmos.Context, msg MsgLeave) error {
+func (h LeaveHandler) handleV108(ctx cosmos.Context, msg MsgLeave) error {
 	nodeAcc, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, "fail to get node account by bond address")
