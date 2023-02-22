@@ -96,9 +96,22 @@ func (h LeaveHandler) handleV108(ctx cosmos.Context, msg MsgLeave) error {
 	}
 	// THORNode add the node to leave queue
 
+	// Increment any message RUNE before carrying out unbonding.
 	coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
 	if !coin.IsEmpty() {
 		nodeAcc.Bond = nodeAcc.Bond.Add(coin.Amount)
+
+		bp, err := h.mgr.Keeper().GetBondProviders(ctx, nodeAcc.NodeAddress)
+		if err != nil {
+			return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", nodeAcc.NodeAddress))
+		}
+		// No need to Adjust, only incrementing together with node bond if applicable.
+		if bp.Has(msg.Signer) {
+			bp.Bond(coin.Amount, msg.Signer)
+		}
+		if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+			return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
+		}
 	}
 	bondAddr, err := nodeAcc.BondAddress.AccAddress()
 	if err != nil {

@@ -215,6 +215,27 @@ func (h UnBondHandler) handleV108(ctx cosmos.Context, msg MsgUnBond) error {
 		return ErrInternal(err, "fail to parse from address")
 	}
 
+	// Increment any message RUNE before carrying out unbonding/removal.
+	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
+	if !coin.IsEmpty() {
+		na.Bond = na.Bond.Add(coin.Amount)
+		if err := h.mgr.Keeper().SetNodeAccount(ctx, na); err != nil {
+			return ErrInternal(err, "fail to save node account to key value store")
+		}
+
+		bp, err := h.mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+		if err != nil {
+			return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", na.NodeAddress))
+		}
+		// No need to Adjust, only incrementing together with node bond if applicable.
+		if bp.Has(msg.Signer) {
+			bp.Bond(coin.Amount, msg.Signer)
+		}
+		if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+			return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
+		}
+	}
+
 	// remove/unbonding bond provider
 	// check that 1) requester is node operator, 2) references
 	if msg.BondAddress.Equals(na.BondAddress) && !msg.BondProviderAddress.Empty() {
@@ -228,6 +249,7 @@ func (h UnBondHandler) handleV108(ctx cosmos.Context, msg MsgUnBond) error {
 			return ErrInternal(err, "fail to refund bond")
 		}
 		if !bondAddr.Equals(msg.BondProviderAddress) {
+			// Get updated providers from after the refundBond.
 			bp, err := h.mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
 			if err != nil {
 				return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", na.NodeAddress))
@@ -243,14 +265,6 @@ func (h UnBondHandler) handleV108(ctx cosmos.Context, msg MsgUnBond) error {
 		}
 	} else if err := refundBond(ctx, msg.TxIn, from, msg.Amount, &na, h.mgr); err != nil {
 		return ErrInternal(err, "fail to unbond")
-	}
-
-	coin := msg.TxIn.Coins.GetCoin(common.RuneAsset())
-	if !coin.IsEmpty() {
-		na.Bond = na.Bond.Add(coin.Amount)
-		if err := h.mgr.Keeper().SetNodeAccount(ctx, na); err != nil {
-			return ErrInternal(err, "fail to save node account to key value store")
-		}
 	}
 
 	return nil
