@@ -115,6 +115,8 @@ func (h UnBondHandler) validateV88(ctx cosmos.Context, msg MsgUnBond) error {
 func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return h.handleV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.92.0")):
 		return h.handleV92(ctx, msg)
 	case version.GTE(semver.MustParse("0.81.0")):
@@ -124,7 +126,7 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	}
 }
 
-func (h UnBondHandler) handleV92(ctx cosmos.Context, msg MsgUnBond) error {
+func (h UnBondHandler) handleV108(ctx cosmos.Context, msg MsgUnBond) error {
 	na, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
