@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -111,6 +112,17 @@ func (k *TestRagnarokKeeperHappyPath) SetNodeAccount(_ cosmos.Context, na NodeAc
 	return nil
 }
 
+func (k *TestRagnarokKeeperHappyPath) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
+	if k.activeNodeAccount.NodeAddress.Equals(addr) {
+		return k.activeNodeAccount, nil
+	}
+	return NodeAccount{}, nil
+}
+
+func (k *TestRagnarokKeeperHappyPath) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
+	return NodeAccounts{k.activeNodeAccount}, nil
+}
+
 func (k *TestRagnarokKeeperHappyPath) GetPool(_ cosmos.Context, _ common.Asset) (Pool, error) {
 	return k.pool, nil
 }
@@ -170,36 +182,37 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 }
 
 func (HandlerRagnarokSuite) TestSlash(c *C) {
-	ctx, _ := setupKeeperForTest(c)
+	ctx, keeper := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(keeper)
+	mgr.slasher = newSlasherV92(keeper, NewDummyEventMgr())
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
 	retireVault := GetRandomVault()
+	vaultCoin := common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One))
+	retireVault.AddFunds(common.NewCoins(vaultCoin))
+	retireVault.Membership = []string{
+		na.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retireVault), IsNil)
 
 	newVault := GetRandomVault()
-	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
-	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, newVault), IsNil)
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	na := GetRandomValidatorNode(NodeActive)
-	na.Bond = cosmos.NewUint(100 * common.One)
-	retireVault.Membership = []string{
-		na.PubKeySet.Secp256k1.String(),
-	}
-	keeper := &TestRagnarokKeeperHappyPath{
-		activeNodeAccount: na,
-		newVault:          newVault,
-		retireVault:       retireVault,
-		txout:             txout,
-		pool:              pool,
-	}
-	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	c.Assert(err, IsNil)
+	addr, err := retireVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
-	mgr := NewDummyMgrWithKeeper(keeper)
-	mgr.slasher = newSlasherV75(keeper, NewDummyEventMgr())
-	handler := NewRagnarokHandler(mgr)
+	handler := NewInternalHandler(mgr)
 
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -213,8 +226,27 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 		Gas:         BNBGasFeeSingleton,
 	}, 1, retireVault.PubKey, 1)
 
-	msgRagnarok := NewMsgRagnarok(tx, 1, keeper.activeNodeAccount.NodeAddress)
-	_, err = handler.handle(ctx, *msgRagnarok)
+	msgRagnarok := NewMsgRagnarok(tx, 1, na.NodeAddress)
+	_, err = handler(ctx, msgRagnarok)
+	c.Assert(err, NotNil)
+	// The internal handler returns an error, not approving the observed txout as authorised.
+	c.Assert(strings.Contains(err.Error(), "slash vault, ragnarok has no matched tx out item"), Equals, true, Commentf(err.Error()))
+
+	obsTxOutHandler := NewObservedTxOutHandler(mgr)
+	obsTxOutMsg := NewMsgObservedTxOut([]ObservedTx{msgRagnarok.Tx}, msgRagnarok.Signer)
+	_, err = obsTxOutHandler.Run(ctx, obsTxOutMsg)
 	c.Assert(err, IsNil)
-	c.Assert(keeper.activeNodeAccount.Bond.Equal(cosmos.NewUint(9999942214)), Equals, true, Commentf("%d", keeper.activeNodeAccount.Bond.Uint64()))
+
+	na, err = mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	retireVault, err = mgr.Keeper().GetVault(ctx, retireVault.PubKey)
+	c.Assert(err, IsNil)
+	vaultCoin = retireVault.Coins.GetCoin(common.BNBAsset)
+	pool, err = mgr.Keeper().GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+
+	c.Check(na.Bond.Equal(cosmos.NewUint(9999942214)), Equals, true, Commentf("%d", na.Bond.Uint64()))
+	c.Check(vaultCoin.Amount.Equal(cosmos.NewUint(9999961476)), Equals, true, Commentf("%d", vaultCoin.Amount.Uint64()))
+	c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(9999961476)), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Check(pool.BalanceRune.Equal(cosmos.NewUint(10000038524)), Equals, true, Commentf("%d", pool.BalanceRune.Uint64()))
 }

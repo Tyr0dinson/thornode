@@ -1,7 +1,8 @@
 package thorchain
 
 import (
-	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -128,11 +129,13 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 	pool.LPUnits = pool.BalanceRune
 
 	version := GetCurrentVersion()
-	asgardVault := GetRandomVault()
-	asgardVault.Membership = []string{asgardVault.PubKey.String()}
-	addr, err := asgardVault.PubKey.GetAddress(common.BNBChain)
 	yggVault := GetRandomVault()
 	yggVault.Membership = []string{yggVault.PubKey.String()}
+	c.Assert(k.SetVault(ctx, yggVault), IsNil)
+	asgardVault := GetRandomVault()
+	asgardVault.Membership = []string{yggVault.PubKey.String()}
+	c.Assert(k.SetVault(ctx, asgardVault), IsNil)
+	addr, err := asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
@@ -242,7 +245,8 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 			runner: func(handler RefundHandler, helper refundTxHandlerTestHelper, msg cosmos.Msg) (*cosmos.Result, error) {
 				return handler.Run(helper.ctx, msg)
 			},
-			expectedResult: nil,
+			// Actually ' for (%s)', but unable to predict the random inbound hash.
+			expectedResult: fmt.Errorf("slash vault, no matched tx out item"),
 		},
 	}
 
@@ -265,9 +269,10 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 		msg := tc.messageCreator(helper, tx)
 		_, err = tc.runner(handler, helper, msg)
 		if tc.expectedResult == nil {
-			c.Check(err, IsNil)
+			c.Check(err, IsNil, Commentf(tc.name))
 		} else {
-			c.Check(errors.Is(err, tc.expectedResult), Equals, true, Commentf("name:%s", tc.name))
+			// Using 'Contains' due to being unable to predict the random inbound hash.
+			c.Check(strings.Contains(err.Error(), tc.expectedResult.Error()), Equals, true, Commentf("Name: %s, Err: %s", tc.name, err))
 		}
 	}
 }
@@ -302,27 +307,37 @@ func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 
 func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	handler := NewInternalHandler(helper.mgr)
+	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.THORChain)
+	// Note that this is common.THORChain rather than common.BNBChain for slash calculation convenience.
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
 			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)),
+			// Note that this is common.RuneAsset() rather than common.BNBAsset for slash calculation convenience.
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),
 		FromAddress: fromAddr,
 		ToAddress:   helper.inboundTx.Tx.FromAddress,
 		Gas:         BNBGasFeeSingleton,
-	}, helper.ctx.BlockHeight(), helper.nodeAccount.PubKeySet.Secp256k1, helper.ctx.BlockHeight())
+	}, helper.ctx.BlockHeight(), helper.asgardVault.PubKey, helper.ctx.BlockHeight())
 	// expectedBond := helper.nodeAccount.Bond.Sub(cosmos.NewUint(common.One * 2).Add(BNBGasFeeSingleton[0].Amount).MulUint64(3).QuoUint64(2))
 	expectedBond := cosmos.NewUint(9699945439)
 	expectedVaultTotalReserve := cosmos.NewUint(7766279631552373170)
 	// valid outbound message, with event, with txout
 	outMsg := NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
-	_, err = handler.Run(helper.ctx, outMsg)
+	_, err = handler(helper.ctx, outMsg)
+	c.Assert(err, NotNil)
+	// The internal handler returns an error, not approving the observed txout as authorised.
+	c.Assert(strings.Contains(err.Error(), "slash vault, no matched tx out item"), Equals, true, Commentf(err.Error()))
+
+	obsTxOutHandler := NewObservedTxOutHandler(helper.mgr)
+	obsTxOutMsg := NewMsgObservedTxOut([]ObservedTx{outMsg.Tx}, outMsg.Signer)
+	_, err = obsTxOutHandler.Run(helper.ctx, obsTxOutMsg)
 	c.Assert(err, IsNil)
+
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true, Commentf("%d/%d", na.Bond.Uint64(), expectedBond.Uint64()))
@@ -333,26 +348,34 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *
 
 func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.mgr)
+	handler := NewInternalHandler(helper.mgr)
 	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),
 		FromAddress: fromAddr,
 		ToAddress:   helper.inboundTx.Tx.FromAddress,
 		Gas:         BNBGasFeeSingleton,
-	}, helper.ctx.BlockHeight(), helper.nodeAccount.PubKeySet.Secp256k1, helper.ctx.BlockHeight())
+	}, helper.ctx.BlockHeight(), helper.asgardVault.PubKey, helper.ctx.BlockHeight())
 	expectedBond := cosmos.NewUint(9700704420)
 	// slash one BNB and one rune
 	outMsg := NewMsgRefundTx(tx, helper.inboundTx.Tx.ID, helper.nodeAccount.NodeAddress)
-	_, err = handler.Run(helper.ctx, outMsg)
+	_, err = handler(helper.ctx, outMsg)
+	c.Assert(err, NotNil)
+	// The internal handler returns an error, not approving the observed txout as authorised.
+	c.Assert(strings.Contains(err.Error(), "slash vault, no matched tx out item"), Equals, true, Commentf(err.Error()))
+
+	obsTxOutHandler := NewObservedTxOutHandler(helper.mgr)
+	obsTxOutMsg := NewMsgObservedTxOut([]ObservedTx{outMsg.Tx}, outMsg.Signer)
+	_, err = obsTxOutHandler.Run(helper.ctx, obsTxOutMsg)
 	c.Assert(err, IsNil)
+
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true, Commentf("Bond: %d != %d", na.Bond.Uint64(), expectedBond.Uint64()))
@@ -360,21 +383,21 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSla
 
 func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSlash(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
-	handler := NewRefundHandler(helper.mgr)
+	handler := NewInternalHandler(helper.mgr)
 	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
 		Chain: common.BNBChain,
 		Coins: common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(1*common.One)),
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)),
 		},
 		Memo:        NewRefundMemo(helper.inboundTx.Tx.ID).String(),
 		FromAddress: fromAddr,
 		ToAddress:   helper.inboundTx.Tx.FromAddress,
 		Gas:         BNBGasFeeSingleton,
-	}, helper.ctx.BlockHeight(), helper.nodeAccount.PubKeySet.Secp256k1, helper.ctx.BlockHeight())
+	}, helper.ctx.BlockHeight(), helper.asgardVault.PubKey, helper.ctx.BlockHeight())
 
 	expectedBond := cosmos.NewUint(9700704420)
 	// expected 0.5 slashed RUNE be added to reserve
@@ -385,8 +408,16 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSl
 
 	// given the outbound tx doesn't have relevant OservedTxVoter in system , thus it should be slashed with 1.5 * the full amount of assets
 	outMsg := NewMsgRefundTx(tx, tx.Tx.ID, helper.nodeAccount.NodeAddress)
-	_, err = handler.Run(helper.ctx, outMsg)
+	_, err = handler(helper.ctx, outMsg)
+	c.Assert(err, NotNil)
+	// The internal handler returns an error, not approving the observed txout as authorised.
+	c.Assert(strings.Contains(err.Error(), "slash vault, no matched tx out item"), Equals, true, Commentf(err.Error()))
+
+	obsTxOutHandler := NewObservedTxOutHandler(helper.mgr)
+	obsTxOutMsg := NewMsgObservedTxOut([]ObservedTx{outMsg.Tx}, outMsg.Signer)
+	_, err = obsTxOutHandler.Run(helper.ctx, obsTxOutMsg)
 	c.Assert(err, IsNil)
+
 	na, err := helper.keeper.GetNodeAccount(helper.ctx, helper.nodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(na.Bond.Equal(expectedBond), Equals, true, Commentf("Bond: %d != %d", na.Bond.Uint64(), expectedBond.Uint64()))

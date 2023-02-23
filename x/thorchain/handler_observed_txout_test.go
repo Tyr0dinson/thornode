@@ -351,9 +351,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_499)
 	// As this was a failed transaction, both Amount 1 and Gas 37500 (being slashed) subtracted from the pool.
 	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 224_999)
-	// Gas 37500 SHOULD NOT be subtracted form the pool a second time (and reimbursed by the Reserve),
-	// but with the current code is anyway.
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_499)
+	// Gas 37500 should not be subtracted from the pool a second time (and reimbursed by the Reserve).
 
 	// make sure the coin has been subtract from the vault
 	c.Check(vault.Coins.GetCoin(common.BNBAsset).Amount.Equal(cosmos.NewUint(19999962499)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.BNBAsset).Amount.Uint64()))
