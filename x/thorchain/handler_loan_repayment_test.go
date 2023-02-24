@@ -72,6 +72,13 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithTOR(c *C) {
 	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(coin))
 	c.Assert(err, IsNil)
 
+	// mint derived btc to transfer later
+	dCoin := common.NewCoin(common.BTCAsset.GetDerivedAsset(), cosmos.NewUint(1e8))
+	err = mgr.Keeper().MintToModule(ctx, ModuleName, dCoin)
+	c.Assert(err, IsNil)
+	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(dCoin))
+	c.Assert(err, IsNil)
+
 	loan := NewLoan(owner, common.BTCAsset, 0)
 	loan.CollateralUp = cosmos.NewUint(1e8)
 	loan.DebtUp = cosmos.NewUint(10 * common.One)
@@ -102,14 +109,16 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	pool.Asset = common.BTCAsset
 	pool.BalanceAsset = cosmos.NewUint(83830778633)
 	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	busd := NewPool()
 	busd.Asset, _ = common.NewAsset("BNB.BUSD-BD1")
 	busd.Status = PoolAvailable
 	busd.BalanceRune = cosmos.NewUint(433267688964312)
 	busd.BalanceAsset = cosmos.NewUint(314031308608965)
+	busd.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busd), IsNil)
 
 	vault := GetRandomVault()
@@ -122,7 +131,7 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	coin := common.NewCoin(common.BTCAsset.GetDerivedAsset(), cosmos.NewUint(common.One))
 	err := mgr.Keeper().MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
-	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(coin))
+	err = mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(coin))
 	c.Assert(err, IsNil)
 
 	owner, _ := common.NewAddress("bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")

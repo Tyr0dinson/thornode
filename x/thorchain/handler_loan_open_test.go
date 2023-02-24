@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type HandlerLoanSuite struct{}
@@ -68,6 +69,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	pool.Asset = common.BTCAsset
 	pool.BalanceAsset = cosmos.NewUint(83830778633)
 	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// generate derived asset pool for btc
@@ -81,8 +83,9 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	busdPool.Status = PoolAvailable
 	busdPool.BalanceAsset = cosmos.NewUint(433267688964312)
 	busdPool.BalanceRune = cosmos.NewUint(314031308608965)
+	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
 
 	vault := GetRandomVault()
@@ -93,10 +96,11 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	handler := NewLoanOpenHandler(mgr)
 
 	// happy path
+	txid, _ := common.NewTxID("29FC8D032CF17380AA1DC86F85A479CA9433E85887A9317C5D70D87EF56EAFAA")
 	receiver, _ := common.NewAddress("bcrt1qdn665723epwlg8u2mk7rg4yp7n72mzwqzuv9ye")
 	signer, _ := cosmos.AccAddressFromBech32("tthor1qxcgl07dm3vvewwxag7u0q7nq2uk984v60xpl0")
 	msg := NewMsgLoanOpen(owner, common.BTCAsset, cosmos.NewUint(1e8), receiver, common.BTCAsset, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", cosmos.ZeroUint(), signer)
-	c.Assert(handler.handle(ctx, *msg), IsNil)
+	c.Assert(handler.handle(ctx.WithValue(constants.CtxLoanTxID, txid), *msg), IsNil)
 	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
 
 	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
@@ -105,10 +109,9 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(99761992), Commentf("%d", loan.CollateralUp.Uint64()))
 	c.Check(loan.LastOpenHeight, Equals, int64(128), Commentf("%d", loan.LastOpenHeight))
 
-	hash, _ := common.NewTxID("29FC8D032CF17380AA1DC86F85A479CA9433E85887A9317C5D70D87EF56EAFAA")
-	swap, err := mgr.Keeper().GetSwapQueueItem(ctx, hash, 0)
+	swap, err := mgr.Keeper().GetSwapQueueItem(ctx, txid, 0)
 	c.Assert(err, IsNil)
-	c.Check(swap.Tx.ID.Equals(hash), Equals, true)
+	c.Check(swap.Tx.ID.Equals(txid), Equals, true)
 	c.Check(swap.Destination.Equals(receiver), Equals, true)
 	c.Check(swap.TargetAsset.Equals(common.BTCAsset), Equals, true)
 	c.Check(swap.TradeTarget.IsZero(), Equals, true)
@@ -132,6 +135,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	pool.Asset = common.BTCAsset
 	pool.BalanceAsset = cosmos.NewUint(83830778633)
 	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
@@ -141,8 +145,9 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	busdPool.Status = PoolAvailable
 	busdPool.BalanceAsset = cosmos.NewUint(433267688964312)
 	busdPool.BalanceRune = cosmos.NewUint(314031308608965)
+	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	mgr.Keeper().SetMimir(ctx, "EnableDerivedAssets", 1)    // enable derived assets
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
 
@@ -201,8 +206,9 @@ func (s *HandlerLoanSuite) TestLoanSwapFails(c *C) {
 	busdPool.Status = PoolAvailable
 	busdPool.BalanceAsset = cosmos.NewUint(433267688964312)
 	busdPool.BalanceRune = cosmos.NewUint(314031308608965)
+	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 0)
 
 	vault := GetRandomVault()

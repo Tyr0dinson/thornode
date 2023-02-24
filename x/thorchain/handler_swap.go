@@ -271,12 +271,21 @@ func (h SwapHandler) handleV106(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		msg.Tx.Coins = common.NewCoins(common.NewCoin(
 			msg.TargetAsset, emit,
 		))
+
+		// The transaction id set on the tx in the message is the reversed txid of the
+		// inbound tx - here we reverse it back to the original txid and set it in the
+		// context, which is used in the second run of the handler so that the memo on the
+		// outbound transaction matches the id of the inbound which opened the loan.
+		txid := common.TxID(msg.Tx.ID.String()).Reverse()
+		ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
+
 		obTx := ObservedTx{Tx: msg.Tx}
 		msg, err := getMsgLoanOpenFromMemo(m, obTx, msg.Signer)
 		if err != nil {
 			return nil, err
 		}
 		openLoanHandler := NewLoanOpenHandler(h.mgr)
+
 		_, err = openLoanHandler.Run(ctx, msg) // fire and forget
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to open loan", "error", err)
@@ -287,6 +296,14 @@ func (h SwapHandler) handleV106(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 			return nil, fmt.Errorf("fail to cast loan repayment memo")
 		}
 		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
+
+		// The transaction id set on the tx in the message is the reversed txid of the
+		// inbound tx - here we reverse it back to the original txid and set it in the
+		// context, which is used in the second run of the handler so that the memo on the
+		// outbound transaction matches the id of the inbound which closed the loan.
+		txid := common.TxID(msg.Tx.ID.String()).Reverse()
+		ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
+
 		msg, err := getMsgLoanRepaymentFromMemo(m, common.NewCoin(common.TOR, emit), msg.Signer)
 		if err != nil {
 			return nil, err

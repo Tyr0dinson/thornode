@@ -1,10 +1,7 @@
 package thorchain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/blang/semver"
 
@@ -121,6 +118,13 @@ func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 }
 
 func (h LoanOpenHandler) handleV106(ctx cosmos.Context, msg MsgLoanOpen) error {
+	// inject txid into the context if unset
+	var err error
+	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
+	if err != nil {
+		return err
+	}
+
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.CollateralAsset.IsDerivedAsset() {
@@ -182,8 +186,14 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("debt cannot be zero")
 	}
 
+	// if the user has over-repayed the loan, credit the difference on the next open
+	cumulativeDebt := debt
+	if loan.DebtDown.GT(loan.DebtUp) {
+		cumulativeDebt = cumulativeDebt.Add(loan.DebtDown.Sub(loan.DebtUp))
+	}
+
 	// update Loan record
-	loan.DebtUp = loan.DebtUp.Add(debt)
+	loan.DebtUp = loan.DebtUp.Add(cumulativeDebt)
 	loan.CollateralUp = loan.CollateralUp.Add(msg.CollateralAmount)
 	loan.LastOpenHeight = ctx.BlockHeight()
 
@@ -191,7 +201,7 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 		toi := TxOutItem{
 			Chain:      msg.TargetAsset.GetChain(),
 			ToAddress:  msg.TargetAddress,
-			Coin:       common.NewCoin(common.TOR, debt),
+			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
 		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
@@ -202,26 +212,11 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 			return errFailAddOutboundTx
 		}
 	} else {
-		// Construct a fake TX hash, doesn't seem like i can get the real one
-		// from cosmos
-		sb := strings.Builder{}
-		sb.WriteString(msg.Owner.String())
-		sb.WriteString(msg.CollateralAsset.String())
-		sb.WriteString(msg.CollateralAmount.String())
-		sb.WriteString(msg.TargetAddress.String())
-		sb.WriteString(msg.TargetAsset.String())
-		sb.WriteString(msg.Signer.String())
-		sb.WriteString(fmt.Sprintf("%d", ctx.BlockHeight()))
-		hash := sha256.New()
-		_, err := hash.Write([]byte(sb.String()))
-		if err != nil {
-			return fmt.Errorf("fail to get fictional txID: %w", err)
+		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
+		if !ok {
+			return fmt.Errorf("fail to get txid")
 		}
-		str := hex.EncodeToString(hash.Sum(nil))
-		txID, err := common.NewTxID(str)
-		if err != nil {
-			return err
-		}
+
 		// ensure TxID does NOT have a collision with another swap, this could
 		// happen if the user submits two identical loan requests in the same
 		// block
@@ -230,7 +225,7 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 			return fmt.Errorf("txn hash conflict")
 		}
 
-		torCoin := common.NewCoin(common.TOR, debt)
+		torCoin := common.NewCoin(common.TOR, cumulativeDebt)
 
 		if err := h.mgr.Keeper().MintToModule(ctx, ModuleName, torCoin); err != nil {
 			return fmt.Errorf("fail to mint loan tor debt: %w", err)
@@ -282,25 +277,13 @@ func (h LoanOpenHandler) swapV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 		return err
 	}
 
-	// Construct a fake TX hash, doesn't seem like i can get the real one
-	// from cosmos
-	sb := strings.Builder{}
-	sb.WriteString("swap open loan")
-	sb.WriteString(msg.Owner.String())
-	sb.WriteString(msg.CollateralAsset.String())
-	sb.WriteString(msg.CollateralAmount.String())
-	sb.WriteString(msg.Signer.String())
-	sb.WriteString(fmt.Sprintf("%d", ctx.BlockHeight()))
-	hash := sha256.New()
-	_, err = hash.Write([]byte(sb.String()))
-	if err != nil {
-		return fmt.Errorf("fail to get fictional txID: %w", err)
+	// the first swap has a reversed txid
+	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
+	if !ok {
+		return fmt.Errorf("fail to get txid")
 	}
-	str := hex.EncodeToString(hash.Sum(nil))
-	txID, err := common.NewTxID(str)
-	if err != nil {
-		return err
-	}
+	txID = txID.Reverse()
+
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block

@@ -1,8 +1,11 @@
 package thorchain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	math "math"
 	"sort"
 	"strings"
 
@@ -832,6 +835,12 @@ func anchorMedian(ctx cosmos.Context, mgr Manager, assets []common.Asset) cosmos
 		}
 		// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
 		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+
+		// convert to 1e8 to handle cases where anchors may have different decimals
+		if mgr.GetVersion().GTE(semver.MustParse("1.106.0")) {
+			value = value.MulUint64(common.One).QuoUint64(uint64(math.Pow10(int(pool.Decimals))))
+		}
+
 		if !value.IsZero() {
 			p = append(p, value)
 		}
@@ -877,6 +886,7 @@ func getAnchors(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) []
 		}
 		for _, pool := range pools {
 			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
+			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
 			val, err := keeper.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
@@ -1222,4 +1232,22 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 	}
 
 	return nil
+}
+
+// storeContextTxID stores the current transaction id at the provided context key.
+func storeContextTxID(ctx cosmos.Context, key interface{}) (cosmos.Context, error) {
+	if ctx.Value(key) == nil {
+		hash := sha256.New()
+		_, err := hash.Write(ctx.TxBytes())
+		if err != nil {
+			return ctx, fmt.Errorf("fail to get txid: %w", err)
+		}
+		txid := hex.EncodeToString(hash.Sum(nil))
+		txID, err := common.NewTxID(txid)
+		if err != nil {
+			return ctx, fmt.Errorf("fail to get txid: %w", err)
+		}
+		ctx = ctx.WithValue(key, txID)
+	}
+	return ctx, nil
 }

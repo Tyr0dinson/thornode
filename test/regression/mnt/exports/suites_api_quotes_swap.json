@@ -350,6 +350,7 @@
           "units": "100000000000"
         }
       ],
+      "loans": [],
       "mimirs": [],
       "msg_swaps": [],
       "network": {
@@ -485,6 +486,6 @@
     },
     "version": {}
   },
-  "genesis_time": "2023-02-10T00:23:10.010063732Z",
+  "genesis_time": "2023-02-24T04:05:21.933307654Z",
   "initial_height": "11"
 }

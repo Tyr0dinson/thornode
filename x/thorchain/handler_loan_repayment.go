@@ -1,10 +1,7 @@
 package thorchain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/blang/semver"
 
@@ -102,6 +99,13 @@ func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) e
 }
 
 func (h LoanRepaymentHandler) handleV106(ctx cosmos.Context, msg MsgLoanRepayment) error {
+	// inject txid into the context if unset
+	var err error
+	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
+	if err != nil {
+		return err
+	}
+
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.Coin.Asset.Equals(common.TOR) {
@@ -150,25 +154,11 @@ func (h LoanRepaymentHandler) repayV106(ctx cosmos.Context, msg MsgLoanRepayment
 		}
 	}
 
-	// Construct a fake TX hash, doesn't seem like i can get the real one
-	// from cosmos
-	sb := strings.Builder{}
-	sb.WriteString("send back collateral")
-	sb.WriteString(msg.Owner.String())
-	sb.WriteString(msg.CollateralAsset.String())
-	sb.WriteString(msg.Coin.String())
-	sb.WriteString(msg.Signer.String())
-	sb.WriteString(fmt.Sprintf("%d", ctx.BlockHeight()))
-	hash := sha256.New()
-	_, err = hash.Write([]byte(sb.String()))
-	if err != nil {
-		return fmt.Errorf("fail to get fictional txID: %w", err)
+	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
+	if !ok {
+		return fmt.Errorf("fail to get txid")
 	}
-	str := hex.EncodeToString(hash.Sum(nil))
-	txID, err := common.NewTxID(str)
-	if err != nil {
-		return err
-	}
+
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block
@@ -177,8 +167,17 @@ func (h LoanRepaymentHandler) repayV106(ctx cosmos.Context, msg MsgLoanRepayment
 		return fmt.Errorf("txn hash conflict")
 	}
 
+	coins := common.NewCoins(common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), redeem))
+
+	// transfer derived asset from the lending to asgard before swap to L1 collateral
+	err = h.mgr.Keeper().SendFromModuleToModule(ctx, LendingName, AsgardName, coins)
+	if err != nil {
+		ctx.Logger().Error("fail to send from lending to asgard", "error", err)
+		return err
+	}
+
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
-	tx := common.NewTx(txID, lendAddr, lendAddr, common.NewCoins(common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), redeem)), common.Gas{fakeGas}, "noop")
+	tx := common.NewTx(txID, lendAddr, lendAddr, coins, common.Gas{fakeGas}, "noop")
 	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
@@ -205,25 +204,13 @@ func (h LoanRepaymentHandler) swapV106(ctx cosmos.Context, msg MsgLoanRepayment)
 		return err
 	}
 
-	// Construct a fake TX hash, doesn't seem like i can get the real one
-	// from cosmos
-	sb := strings.Builder{}
-	sb.WriteString("swap repayment")
-	sb.WriteString(msg.Owner.String())
-	sb.WriteString(msg.CollateralAsset.String())
-	sb.WriteString(msg.Coin.String())
-	sb.WriteString(msg.Signer.String())
-	sb.WriteString(fmt.Sprintf("%d", ctx.BlockHeight()))
-	hash := sha256.New()
-	_, err = hash.Write([]byte(sb.String()))
-	if err != nil {
-		return fmt.Errorf("fail to get fictional txID: %w", err)
+	// the first swap has a reversed txid
+	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
+	if !ok {
+		return fmt.Errorf("fail to get txid")
 	}
-	str := hex.EncodeToString(hash.Sum(nil))
-	txID, err := common.NewTxID(str)
-	if err != nil {
-		return err
-	}
+	txID = txID.Reverse()
+
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block

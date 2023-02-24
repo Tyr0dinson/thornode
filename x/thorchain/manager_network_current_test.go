@@ -976,7 +976,7 @@ func (s *NetworkManagerV106TestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
@@ -986,6 +986,7 @@ func (s *NetworkManagerV106TestSuite) TestSpawnDerivedAssets(c *C) {
 	pool.Status = PoolAvailable
 	pool.BalanceRune = cosmos.NewUint(187493559385369)
 	pool.BalanceAsset = cosmos.NewUint(925681680182301)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	bnb, err := common.NewAsset("BNB.BNB")
@@ -996,6 +997,7 @@ func (s *NetworkManagerV106TestSuite) TestSpawnDerivedAssets(c *C) {
 	pool.Status = PoolAvailable
 	pool.BalanceRune = cosmos.NewUint(110119961610327)
 	pool.BalanceAsset = cosmos.NewUint(2343330836117)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// happy path
@@ -1049,7 +1051,7 @@ func (s *NetworkManagerV106TestSuite) TestSpawnDerivedAssetsBasisPoints(c *C) {
 	vault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB.BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 
@@ -1058,6 +1060,7 @@ func (s *NetworkManagerV106TestSuite) TestSpawnDerivedAssetsBasisPoints(c *C) {
 	pool.Status = PoolAvailable
 	pool.BalanceRune = cosmos.NewUint(187493559385369)
 	pool.BalanceAsset = cosmos.NewUint(925681680182301)
+	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// test that DerivedDepthBasisPts affects the pool depth

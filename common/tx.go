@@ -54,6 +54,15 @@ func (tx TxID) String() string {
 	return string(tx)
 }
 
+// Reverse returns a reversed version of the TxID
+func (tx TxID) Reverse() TxID {
+	t := make([]rune, 64)
+	for i := 0; i < 64; i++ {
+		t[i] = rune(tx[63-i])
+	}
+	return TxID(string(t))
+}
+
 // Txs a list of Tx
 type Txs []Tx
 
