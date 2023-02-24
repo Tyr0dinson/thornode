@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -33,17 +35,29 @@ func (tos *MockTxOutDummy) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, er
 func (s *HandlerLoanSuite) TestLoanValidate(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
+	fmt.Println("********************************")
+	defer fmt.Println("********************************")
+
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
-	pool.BalanceAsset = cosmos.NewUint(83830778633)
+	pool.BalanceAsset = cosmos.NewUint(1483635061994)
+	pool.BalanceRune = cosmos.NewUint(271672185683320)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	pool = NewPool()
 	pool.Asset = common.BTCAsset
-	pool.BalanceAsset = cosmos.NewUint(83830778633)
-	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	pool.BalanceAsset = cosmos.NewUint(91654142078)
+	pool.BalanceRune = cosmos.NewUint(1290645477848949)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
+	// reduce the supply of rune
+	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ModuleName)
+	c.Assert(mgr.Keeper().BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneAsset(), bal)), IsNil)
+	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
+	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
+	mgr.Keeper().SetMimir(ctx, "LENDING-BNB-BNB", 1)
+	mgr.Keeper().SetMimir(ctx, "LENDING-BTC-BTC", 1)
 	owner := GetRandomBNBAddress()
 
 	handler := NewLoanOpenHandler(mgr)
@@ -105,7 +119,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 
 	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
 	c.Assert(err, IsNil)
-	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1664920260000), Commentf("%d", loan.DebtUp.Uint64()))
+	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1674743290000), Commentf("%d", loan.DebtUp.Uint64()))
 	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(99761992), Commentf("%d", loan.CollateralUp.Uint64()))
 	c.Check(loan.LastOpenHeight, Equals, int64(128), Commentf("%d", loan.LastOpenHeight))
 
@@ -167,7 +181,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 
 	loan, err := mgr.Keeper().GetLoan(ctx, common.BTCAsset, owner)
 	c.Assert(err, IsNil)
-	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1664920260000), Commentf("%d", loan.DebtUp.Uint64()))
+	c.Check(loan.DebtUp.Uint64(), Equals, uint64(1674743290000), Commentf("%d", loan.DebtUp.Uint64()))
 	c.Check(loan.CollateralUp.Uint64(), Equals, uint64(99761992), Commentf("%d", loan.CollateralUp.Uint64()))
 	c.Check(loan.LastOpenHeight, Equals, int64(128), Commentf("%d", loan.LastOpenHeight))
 
@@ -177,7 +191,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	c.Check(outs[0].Coin.Asset.String(), Equals, "THOR.BTC")
 	c.Check(outs[0].Coin.Amount.Uint64(), Equals, uint64(99761992), Commentf("%d", outs[0].Coin.Amount.Uint64()))
 	c.Check(outs[1].Coin.Asset.Equals(common.TOR), Equals, true)
-	c.Check(outs[1].Coin.Amount.Uint64(), Equals, uint64(1664920260000), Commentf("%d", outs[1].Coin.Amount.Uint64()))
+	c.Check(outs[1].Coin.Amount.Uint64(), Equals, uint64(1674743290000), Commentf("%d", outs[1].Coin.Amount.Uint64()))
 
 	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)

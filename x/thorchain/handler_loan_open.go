@@ -71,7 +71,7 @@ func (h LoanOpenHandler) validateV106(ctx cosmos.Context, msg MsgLoanOpen) error
 	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	maxAmt, _ := h.mgr.Keeper().GetMimir(ctx, "MaxRuneSupply")
 	if maxAmt > 0 && supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
-		return fmt.Errorf("loans are currently paused, due to rune supply cap")
+		return fmt.Errorf("loans are currently paused, due to rune supply cap (%d/%d)", supply.Uint64(), maxAmt)
 	}
 
 	// ensure collateral pool exists
@@ -79,32 +79,52 @@ func (h LoanOpenHandler) validateV106(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("collateral asset does not have a pool")
 	}
 
-	///////////////////////////////////////////////////////////////////////////
-	// ensure the total collateral is hard capped relative to the pool depth //
-	///////////////////////////////////////////////////////////////////////////
-	multi := fetchConfigInt64(ctx, h.mgr, constants.CRPoolMultiplier)
+	// The lending key for the ETH.ETH pool would be LENDING-ETH-ETH .
+	key := "LENDING-" + msg.CollateralAsset.MimirString()
+	val, err := h.mgr.Keeper().GetMimir(ctx, key)
+	if err != nil {
+		ctx.Logger().Error("fail to fetch LENDING key", "pool", msg.CollateralAsset.String(), "error", err)
+		return err
+	}
+	if val == 0 {
+		return fmt.Errorf("Lending is not available for this collateral asset")
+	}
+
 	// convert collateral asset back to layer1 asset
 	// NOTE: if the symbol of a derived asset isn't the chain, this won't work
 	// (ie TERRA.LUNA)
-	var err error
 	msg.CollateralAsset.Chain, err = common.NewChain(msg.CollateralAsset.Symbol.String())
 	if err != nil {
 		return err
 	}
+
 	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, msg.CollateralAsset)
 	if err != nil {
 		return err
+	}
+	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
+	if err != nil {
+		return err
+	}
+	if totalRune.IsZero() {
+		return fmt.Errorf("no liquidity, lending unavailable")
+	}
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
+	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	if totalAvailableRuneForProtocol.IsZero() {
+		return fmt.Errorf("no availability (0), lending unavailable")
 	}
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.CollateralAsset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool", "error", err)
 		return err
 	}
-	multiDepth := common.GetUncappedShare(cosmos.NewUint(uint64(multi)), cosmos.NewUint(10_000), pool.BalanceAsset)
-	if multiDepth.LT(totalCollateral.Add(msg.CollateralAmount)) {
-		return fmt.Errorf("maximum of loan collateral has been reached")
+	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
+	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
+	if totalCollateral.Add(msg.CollateralAmount).GT(totalAvailableAssetForPool) {
+		return fmt.Errorf("no availability (%d/%d), lending unavailable", totalCollateral.Add(msg.CollateralAmount).Uint64(), totalAvailableAssetForPool.Uint64())
 	}
-	///////////////////////////////////////////////////////////////////////////
 
 	return nil
 }
@@ -160,16 +180,34 @@ func (h LoanOpenHandler) openLoanV106(ctx cosmos.Context, msg MsgLoanOpen) error
 	if err != nil {
 		return err
 	}
+	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
+	if err != nil {
+		return err
+	}
+	if totalRune.IsZero() {
+		return fmt.Errorf("no liquidity, lending unavailable")
+	}
 
 	// get configs
 	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinCR)
 	maxCR := fetchConfigInt64(ctx, h.mgr, constants.MaxCR)
-	multi := fetchConfigInt64(ctx, h.mgr, constants.CRPoolMultiplier)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
-	multiDepth := common.GetUncappedShare(cosmos.NewUint(uint64(multi)), cosmos.NewUint(10_000), pool.BalanceAsset)
-	cr := h.getCR(totalCollateral.Add(msg.CollateralAmount), multiDepth, minCR, maxCR)
+	currentRuneSupply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxRuneSupply, _ := h.mgr.Keeper().GetMimir(ctx, "MaxRuneSupply")
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
+	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	if totalAvailableRuneForProtocol.IsZero() {
+		return fmt.Errorf("no availability (0), lending unavailable")
+	}
+	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
+	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
+	if totalCollateral.Add(msg.CollateralAmount).GT(totalAvailableAssetForPool) {
+		return fmt.Errorf("no availability (%d/%d), lending unavailable", totalCollateral.Add(msg.CollateralAmount).Uint64(), totalAvailableAssetForPool.Uint64())
+	}
+	cr := h.getCR(totalCollateral.Add(msg.CollateralAmount), totalAvailableAssetForPool, minCR, maxCR)
 
 	price := DollarInRune(ctx, h.mgr).QuoUint64(constants.DollarMulti)
 	if price.IsZero() {
@@ -302,4 +340,33 @@ func (h LoanOpenHandler) swapV106(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 
 	return nil
+}
+
+// getTotalLiquidityRUNE we have in all pools
+func (h LoanOpenHandler) getTotalLiquidityRUNELoanPools(ctx cosmos.Context) (cosmos.Uint, error) {
+	pools, err := h.mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)
+	}
+	total := cosmos.ZeroUint()
+	for _, p := range pools {
+		// ignore suspended pools
+		if p.Status == PoolSuspended {
+			continue
+		}
+		if p.Asset.IsVaultAsset() {
+			continue
+		}
+
+		key := "LENDING-" + p.Asset.MimirString()
+		val, err := h.mgr.Keeper().GetMimir(ctx, key)
+		if err != nil {
+			continue
+		}
+		if val == 0 {
+			continue
+		}
+		total = total.Add(p.BalanceRune)
+	}
+	return total, nil
 }

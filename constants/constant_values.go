@@ -82,7 +82,7 @@ const (
 	MaxCR
 	PauseLoans
 	LoanRepaymentMaturity
-	CRPoolMultiplier
+	LendingLever
 	PermittedSolvencyGap
 	NodeOperatorFee
 	ValidatorMaxRewardRatio
@@ -196,7 +196,7 @@ var nameToString = map[ConstantName]string{
 	MaxCR:                              "MaxCR",
 	PauseLoans:                         "PauseLoans",
 	LoanRepaymentMaturity:              "LoanRepaymentMaturity",
-	CRPoolMultiplier:                   "CRPoolMultiplier",
+	LendingLever:                       "LendingLever",
 }
 
 // String implement fmt.stringer
