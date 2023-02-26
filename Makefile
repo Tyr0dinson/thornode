@@ -153,6 +153,7 @@ test-race:
 # ------------------------------ Test Regressions ------------------------------
 
 test-regression:
+	@docker rmi thornode-regtest || (exit 0) # Always remove previously-built image to not exhaust disk capacity.
 	@DOCKER_BUILDKIT=1 docker build -t thornode-regtest -f ci/Dockerfile.regtest .
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR \
