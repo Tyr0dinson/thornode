@@ -9,6 +9,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+// TODO: Remove Kraken checks on next hard fork.
 const KRAKEN string = "ReleaseTheKraken"
 
 // GetMimir get a mimir value from key value store
@@ -29,16 +30,19 @@ func (k KVStore) GetMimir(ctx cosmos.Context, key string) (int64, error) {
 		}
 	}
 
-	// if we have the kraken, mimir is no more, ignore him
-	if k.haveKraken(ctx) {
-		return -1, nil
-	}
+	// TODO: Remove Kraken checks on next hard fork.
+	// The Kraken functionality has been removed, but we need to maintain
+	// the same KVStore cost accounting. So always check, but ignore the
+	// value.
+	ignored := k.haveKraken(ctx)
+	_ = ignored
 
 	record := int64(-1)
 	_, err := k.getInt64(ctx, k.GetKey(ctx, prefixMimir, key), &record)
 	return record, err
 }
 
+// TODO: Remove Kraken checks on next hard fork.
 // haveKraken - check to see if we have "released the kraken"
 func (k KVStore) haveKraken(ctx cosmos.Context) bool {
 	record := int64(-1)
@@ -48,9 +52,12 @@ func (k KVStore) haveKraken(ctx cosmos.Context) bool {
 
 // SetMimir save a mimir value to key value store
 func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
-	// if we have the kraken, mimir is no more, ignore him
-	if k.haveKraken(ctx) {
-		return
+	// TODO: Remove Kraken checks on next hard fork.
+	if ignored := k.haveKraken(ctx); ignored {
+		// The Kraken functionality has been removed, but we need to maintain
+		// the same KVStore cost accounting. So always check, but ignore the
+		// value.
+		_ = ignored
 	}
 	k.setInt64(ctx, k.GetKey(ctx, prefixMimir, key), value)
 }

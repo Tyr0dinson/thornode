@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 // TssHandler handle MsgTssPool
@@ -57,7 +58,7 @@ func (h TssHandler) validateV71(ctx cosmos.Context, msg MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -371,4 +372,11 @@ func (h TssHandler) judgeLateSigner(ctx cosmos.Context, msg MsgTssPool, voter Ts
 			}
 		}
 	}
+}
+
+// TssAnteHandler called by the ante handler to gate mempool entry
+// and also during deliver. Store changes will persist if this function
+// succeeds, regardless of the success of the transaction.
+func TssAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgTssPool) error {
+	return nil
 }

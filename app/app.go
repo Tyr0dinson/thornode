@@ -63,7 +63,7 @@ import (
 
 var (
 	// DefaultNodeHome default home directories for the application daemon
-	DefaultNodeHome = func(appName string) string {
+	DefaultNodeHome = func() string {
 		return os.ExpandEnv("$HOME/.thornode")
 	}
 
@@ -276,15 +276,18 @@ func New(
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
 	app.SetBeginBlocker(app.BeginBlocker)
-	anteHandler, err := ante.NewAnteHandler(ante.HandlerOptions{
+
+	anteHandler, err := NewAnteHandler(AnteHandlerOptions{
 		AccountKeeper:   app.AccountKeeper,
 		BankKeeper:      app.BankKeeper,
 		SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
 		SignModeHandler: encodingConfig.TxConfig.SignModeHandler(),
+		THORChainKeeper: app.thorchainKeeper,
 	})
 	if err != nil {
 		tmos.Exit(err.Error())
 	}
+
 	app.SetAnteHandler(anteHandler)
 	app.SetEndBlocker(app.EndBlocker)
 
@@ -301,17 +304,6 @@ func New(
 
 // Name returns the name of the App
 func (app *THORChainApp) Name() string { return app.BaseApp.Name() }
-
-// BeginBlocker application updates every begin block
-func (app *THORChainApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
-	res := app.mm.BeginBlock(ctx, req)
-	return res
-}
-
-// EndBlocker application updates every end block
-func (app *THORChainApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
-	return app.mm.EndBlock(ctx, req)
-}
 
 // InitChainer application update at chain initialization
 func (app *THORChainApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
