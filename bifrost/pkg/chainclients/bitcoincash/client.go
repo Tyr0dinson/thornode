@@ -132,6 +132,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.BifrostChainConfiguration, 
 		ksWrapper:             ksWrapper,
 		bridge:                bridge,
 		nodePubKey:            nodePubKey,
+		lastFeeRate:           0,
 		minRelayFeeSats:       1000, // 1000 sats is the default minimal relay fee
 		tssKeySigner:          tssKm,
 		wg:                    &sync.WaitGroup{},
@@ -719,16 +720,19 @@ func (c *Client) sendNetworkFee(height int64) error {
 		feeRate = 2
 	}
 
-	c.m.GetGauge(metrics.GasPrice(common.BCHChain)).Set(float64(feeRate))
-	if c.lastFeeRate != feeRate {
-		c.m.GetCounter(metrics.GasPriceChange(common.BCHChain)).Inc()
+	if feeRate == c.lastFeeRate {
+		return nil
 	}
 
-	c.lastFeeRate = feeRate
+	c.m.GetGauge(metrics.GasPrice(common.BCHChain)).Set(float64(feeRate))
+	c.m.GetCounter(metrics.GasPriceChange(common.BCHChain)).Inc()
+
 	txid, err := c.bridge.PostNetworkFee(height, common.BCHChain, uint64(EstimateAverageTxSize), feeRate)
 	if err != nil {
 		return fmt.Errorf("fail to post network fee to thornode: %w", err)
 	}
+
+	c.lastFeeRate = feeRate
 	c.logger.Debug().Str("txid", txid.String()).Msg("send network fee to THORNode successfully")
 	return nil
 }
