@@ -73,6 +73,12 @@ pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig 
 
 The `dog` mnemonic is a special case and will be used as the mnemonic for the default simulation validator, and as the mimir admin.
 
+TC Addresses (useful for looking up balances etc.)
+dog - tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m
+cat - tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej
+fox - tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr
+pig - tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u
+
 ### State Definition
 
 The state definition can be any valid data to deep merge with the default generated genesis file before initializing the simulation validator. There can be multiple `state` operations at the beginning of a test case. In practice this like just contains some pools and LP records which can be easily copied from some network state to simplify the starting state for the simulation:

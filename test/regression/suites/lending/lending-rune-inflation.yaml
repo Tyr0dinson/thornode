@@ -82,7 +82,7 @@ txs:
       from_address: {{ addr_btc_fox }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "500000" # 0.5% of pool
+        - amount: "5000000" # 1% of pool
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -101,8 +101,8 @@ description: borrower should be recorded
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_up == "495049"
-  - .[0]|.debt_up == "490140000"
+  - .[0]|.collateral_up == "4545945"
+  - .[0]|.debt_up == "4133120000"
   - .[0]|.collateral_down == "0"
   - .[0]|.debt_down == "0"
   - .[0]|.owner == "{{ addr_btc_fox }}"
@@ -116,51 +116,11 @@ count: 1
 ########################################################################################
 ---
 type: tx-deposit
-signer: {{ addr_thor_fox }}
+signer: {{ addr_thor_cat }}
 coins:
-  - amount: "50000000000"
+  - amount: "2400000000000"
     asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
----
-type: create-blocks
-count: 1
----
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "50000000000"
-    asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
----
-type: create-blocks
-count: 1
----
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "50000000000"
-    asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
----
-type: create-blocks
-count: 1
----
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "50000000000"
-    asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
----
-type: create-blocks
-count: 1
----
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "50000000000"
-    asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+memo: "=:BTC.BTC:{{ addr_btc_cat }}"
 ---
 type: create-blocks
 count: 1
