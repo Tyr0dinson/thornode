@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -118,7 +117,7 @@ func Init() {
 		"THOR_BLOCK_TIME",
 	))
 	assert(viper.BindEnv(
-		"thornode.tendermint.consensus.timeout_commit",
+		"thor.tendermint.consensus.timeout_commit",
 		"THOR_BLOCK_TIME",
 	))
 	assert(viper.BindEnv("bifrost.tss.bootstrap_peers", "PEER"))
@@ -381,7 +380,11 @@ func InitThornode(ctx context.Context) {
 	}
 
 	// fetch genesis
-	thornodeFetchGenesis(seedAddrs)
+	if len(seedAddrs) > 0 {
+		thornodeFetchGenesis(seedAddrs)
+	} else {
+		log.Warn().Msg("no seeds, skipping genesis fetch")
+	}
 }
 
 // -------------------------------------------------------------------------------------
@@ -494,9 +497,10 @@ type Bifrost struct {
 }
 
 type BifrostSignerConfiguration struct {
-	SignerDbPath  string                           `mapstructure:"signer_db_path"`
-	BlockScanner  BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
-	RetryInterval time.Duration                    `mapstructure:"retry_interval"`
+	BackupKeyshares bool                             `mapstructure:"backup_keyshares"`
+	SignerDbPath    string                           `mapstructure:"signer_db_path"`
+	BlockScanner    BifrostBlockScannerConfiguration `mapstructure:"block_scanner"`
+	RetryInterval   time.Duration                    `mapstructure:"retry_interval"`
 }
 
 type BifrostBackOff struct {
@@ -592,11 +596,12 @@ type BifrostMetricsConfiguration struct {
 }
 
 type BifrostTSSConfiguration struct {
-	BootstrapPeers []string `mapstructure:"bootstrap_peers"`
-	Rendezvous     string   `mapstructure:"rendezvous"`
-	P2PPort        int      `mapstructure:"p2p_port"`
-	InfoAddress    string   `mapstructure:"info_address"`
-	ExternalIP     string   `mapstructure:"external_ip"`
+	BootstrapPeers               []string `mapstructure:"bootstrap_peers"`
+	Rendezvous                   string   `mapstructure:"rendezvous"`
+	P2PPort                      int      `mapstructure:"p2p_port"`
+	InfoAddress                  string   `mapstructure:"info_address"`
+	ExternalIP                   string   `mapstructure:"external_ip"`
+	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
 }
 
 // GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr
@@ -683,6 +688,12 @@ func thornodeSeeds() (seedAddrs, tmSeeds []string) {
 
 	// resolve any hostnames
 	seedAddrs = resolveAddrs(seedAddrs)
+
+	// skip further steps if there were no seeds to check
+	if len(seedAddrs) == 0 {
+		log.Warn().Msg("no seeds found")
+		return
+	}
 
 	// initialize seed with their node id if the network matches
 	wg := sync.WaitGroup{}

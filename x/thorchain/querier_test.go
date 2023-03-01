@@ -370,7 +370,7 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	result, err = s.querier(s.ctx, []string{query.QueryTxVoter.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	var voter ObservedTxVoter
+	var voter QueryTxSigners
 	c.Assert(json.Unmarshal(result, &voter), IsNil)
 	c.Assert(voter.Valid(), IsNil)
 }
@@ -434,8 +434,8 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	result, err = s.querier(s.ctx, []string{query.QueryTx.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
 	var newTx struct {
-		ObservedTx    `json:"observed_tx"`
-		KeygenMetrics types.TssKeysignMetric `json:"keysign_metric,omitempty"`
+		QueryObservedTx `json:"observed_tx"`
+		KeysignMetrics  types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}
 	c.Assert(json.Unmarshal(result, &newTx), IsNil)
 	c.Assert(newTx.Valid(), IsNil)
@@ -816,4 +816,14 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 	c.Assert(r.Current.String(), Equals, "4.5.6",
 		Commentf("query should use stored version"))
+}
+
+func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
+	// Success example, secp256k1 pubkey from Mocknet node tthor1jgnk2mg88m57csrmrlrd6c3qe4lag3e33y2f3k
+	var mocknetPubKey common.PubKey = "tthorpub1addwnpepqt8tnluxnk3y5quyq952klgqnlmz2vmaynm40fp592s0um7ucvjh5lc2l2z"
+	c.Assert(getPeerIDFromPubKey(mocknetPubKey), Equals, "16Uiu2HAm9LeTqHJWSa67eHNZzSz3yKb64dbj7A4V1Ckv9hXyDkQR")
+
+	// Failure example.
+	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"
+	c.Assert(getPeerIDFromPubKey("nonsense"), Equals, expectedErrorString)
 }

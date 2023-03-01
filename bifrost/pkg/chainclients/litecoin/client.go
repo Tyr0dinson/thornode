@@ -3,14 +3,17 @@ package litecoin
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/ltcsuite/ltcd/btcec"
 	"github.com/ltcsuite/ltcd/btcjson"
@@ -51,7 +54,10 @@ const (
 	EstimateAverageTxSize = 250
 	gasCacheBlocks        = 10
 	MaxMempoolScanPerTry  = 500
+	litecoind19Str        = "0.19.0"
 )
+
+var litecoinBadSemVerRegex = regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 
 // Client observes litecoin chain and allows to sign and broadcast tx
 type Client struct {
@@ -82,6 +88,8 @@ type Client struct {
 	signerCacheManager      *signercache.CacheManager
 	stopchan                chan struct{}
 	lastSolvencyCheckHeight int64
+	isBitcoindPost19        bool
+	defaultMaxFee           []byte
 }
 
 // NewClient generates a new Client
@@ -95,6 +103,11 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.BifrostChainConfiguration, 
 	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create litecoin rpc client: %w", err)
+	}
+	isPostVersion19, err := IsLitecoinDaemonPostVersion19(client)
+	if err != nil {
+		log.Logger.Err(err).Msg("fail check whether litecoin daemon is post version 19")
+		return nil, fmt.Errorf("fail to check litecoin daemon version,err:%w", err)
 	}
 	tssKm, err := tss.NewKeySign(server, bridge)
 	if err != nil {
@@ -140,6 +153,7 @@ func NewClient(thorKeys *thorclient.Keys, cfg config.BifrostChainConfiguration, 
 		stopchan:              make(chan struct{}),
 		consolidateInProgress: atomic.NewBool(false),
 		currentBlockHeight:    atomic.NewInt64(0),
+		isBitcoindPost19:      isPostVersion19,
 	}
 
 	var path string // if not set later, will in memory storage
@@ -189,6 +203,36 @@ func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
+}
+
+// IsLitecoinDaemonPostVersion19 get the network information from RPC endpoint , and determine whether the LTC daemon
+// version is after 0.19.0, since a few RPC endpoint changed after `0.19.0`, specifically sendrawtransaction
+func IsLitecoinDaemonPostVersion19(client *rpcclient.Client) (bool, error) {
+	networkInfo, err := client.GetNetworkInfo()
+	if err != nil {
+		return false, fmt.Errorf("fail to get network info: %w", err)
+	}
+	version := strings.TrimPrefix(
+		strings.TrimSuffix(networkInfo.SubVersion, "/"),
+		"/LitecoinCore:",
+	)
+	version = strings.TrimPrefix(version, "/Satoshi:")
+
+	// fix litecoin improper semver usage (0.21.2.2) by replacing the last dot
+	if litecoinBadSemVerRegex.MatchString(version) {
+		version = strings.ReplaceAll(version, ".", "-")
+		version = strings.Replace(version, "-", ".", 2)
+	}
+
+	chainVersion, err := semver.Make(version)
+	if err != nil {
+		log.Logger.Err(err).Msg("fail to parse version")
+		return false, fmt.Errorf("fail to parse version,err: %w", err)
+	}
+	if chainVersion.GTE(semver.MustParse(litecoind19Str)) {
+		return true, nil
+	}
+	return false, nil
 }
 
 // GetConfig - get the chain configuration
@@ -536,7 +580,7 @@ func (c *Client) getMemPool(height int64) (types.TxIn, error) {
 			}
 			txInItem, err := c.getTxIn(result, height, true)
 			if err != nil {
-				c.logger.Error().Err(err).Msg("fail to get TxInItem")
+				c.logger.Debug().Err(err).Msg("fail to get TxInItem")
 				return nil
 			}
 			if txInItem.IsEmpty() {
@@ -837,7 +881,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		c.removeFromMemPoolCache(tx.Hash)
 		txInItem, err := c.getTxIn(&block.Tx[idx], block.Height, false)
 		if err != nil {
-			c.logger.Err(err).Msg("fail to get TxInItem")
+			c.logger.Debug().Err(err).Msg("fail to get TxInItem")
 			continue
 		}
 		if txInItem.IsEmpty() {
@@ -1031,8 +1075,42 @@ func (c *Client) registerAddressInWalletAsWatch(pkey common.PubKey) error {
 	if err != nil {
 		return fmt.Errorf("fail to get LTC address from pubkey(%s): %w", pkey, err)
 	}
+	if c.isBitcoindPost19 {
+		err = c.createWallet("")
+		if err != nil {
+			return err
+		}
+	}
 	c.logger.Info().Msgf("import address: %s", addr.String())
 	return c.client.ImportAddressRescan(addr.String(), "", false)
+}
+
+func (c *Client) createWallet(name string) error {
+	walletNameJSON, err := json.Marshal(name)
+	if err != nil {
+		return err
+	}
+	falseJSON, err := json.Marshal(false)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.client.RawRequest("createwallet", []json.RawMessage{
+		walletNameJSON,
+		falseJSON,
+		falseJSON,
+		json.RawMessage([]byte("\"\"")),
+		falseJSON,
+		falseJSON,
+	})
+	if err != nil {
+		// ignore code -4 which means wallet already exists
+		if strings.HasPrefix(err.Error(), "-4") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // RegisterPublicKey register the given pubkey to litecoin wallet

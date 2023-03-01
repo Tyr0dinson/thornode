@@ -19,11 +19,23 @@ import (
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	q "gitlab.com/thorchain/thornode/x/thorchain/query"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+)
+
+var (
+	initManager   = func(mgr *Mgrs, ctx cosmos.Context) {}
+	optionalQuery = func(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+		return nil, cosmos.ErrUnknownRequest(
+			fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
+		)
+	}
 )
 
 // NewQuerier is the module level router for state queries
 func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) (res []byte, err error) {
+		initManager(mgr, ctx) // NOOP except regtest
+
 		defer telemetry.MeasureSince(time.Now(), path[0])
 		switch path[0] {
 		case q.QueryPool.Key:
@@ -104,6 +116,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryPendingOutbound(ctx, mgr)
 		case q.QueryScheduledOutbound.Key:
 			return queryScheduledOutbound(ctx, mgr)
+		case q.QuerySwapQueue.Key:
+			return querySwapQueue(ctx, mgr)
 		case q.QueryTssKeygenMetrics.Key:
 			return queryTssKeygenMetric(ctx, path[1:], req, mgr)
 		case q.QueryTssMetrics.Key:
@@ -117,9 +131,7 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 		case q.QueryQuoteSaverWithdraw.Key:
 			return queryQuoteSaverWithdraw(ctx, path[1:], req, mgr)
 		default:
-			return nil, cosmos.ErrUnknownRequest(
-				fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
-			)
+			return optionalQuery(ctx, path, req, mgr)
 		}
 	}
 }
@@ -149,6 +161,16 @@ func checkPending(ctx cosmos.Context, mgr *Mgrs, voter ObservedTxVoter) (bool, b
 	}
 
 	return isSwap, isPending
+}
+
+func getPeerIDFromPubKey(pubkey common.PubKey) string {
+	peerID, err := conversion.GetPeerIDFromPubKey(pubkey.String())
+	if err != nil {
+		// Don't break the entire endpoint if something goes wrong with the Peer ID derivation.
+		return err.Error()
+	}
+
+	return peerID.String()
 }
 
 func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
@@ -357,13 +379,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	res, err := json.MarshalIndent(respVaults, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal vaults response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-
-	return res, nil
+	return jsonify(ctx, respVaults)
 }
 
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
@@ -571,6 +587,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 
 	result := NewQueryNodeAccount(nodeAcc)
+	result.PeerID = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
 
 	result.Jail = Jail{
@@ -747,12 +764,14 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			// ignore the node , it left and also has very little bond
 			continue
 		}
+
 		slashPts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node slash points: %w", err)
 		}
 
 		result[i] = NewQueryNodeAccount(na)
+		result[i].PeerID = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
 		result[i].SlashPoints = slashPts
 		if na.Status == NodeActive {
 			reward, err := getNodeCurrentRewards(ctx, mgr, na, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
@@ -854,17 +873,11 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 			savers = append(savers, NewQuerySaver(lp, pool))
 		}
 	}
-	var res []byte
 	if !isSavers {
-		res, err = json.MarshalIndent(lps, "", "	")
+		return jsonify(ctx, lps)
 	} else {
-		res, err = json.MarshalIndent(savers, "", "	")
+		return jsonify(ctx, savers)
 	}
-	if err != nil {
-		ctx.Logger().Error("fail to marshal liquidity providers to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal liquidity providers to json: %w", err)
-	}
-	return res, nil
 }
 
 // queryLiquidityProvider
@@ -914,19 +927,14 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 		return nil, fmt.Errorf("fail to get pool: %w", err)
 	}
 
-	var res []byte
 	if !isSavers {
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, poolAsset.GetSyntheticAsset())
-		res, err = json.MarshalIndent(NewQueryLiquidityProvider(lp, pool, synthSupply, mgr.GetVersion()), "", "	")
+		liqp := NewQueryLiquidityProvider(lp, pool, synthSupply, mgr.GetVersion())
+		return jsonify(ctx, liqp)
 	} else {
 		saver := NewQuerySaver(lp, pool)
-		res, err = json.MarshalIndent(saver, "", "	")
+		return jsonify(ctx, saver)
 	}
-	if err != nil {
-		ctx.Logger().Error("fail to marshal liquidity provider to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal liquidity provider to json: %w", err)
-	}
-	return res, nil
 }
 
 func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1074,7 +1082,9 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		}
 	}
 
-	return jsonify(ctx, voter)
+	result := NewQueryTxSigners(voter)
+
+	return jsonify(ctx, result)
 }
 
 func queryTxStages(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -1133,12 +1143,16 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 	result := struct {
-		ObservedTx     `json:"observed_tx"`
-		KeysignMetrics types.TssKeysignMetric `json:"keysign_metric"`
+		QueryObservedTx `json:"observed_tx"`
+		FinalisedHeight int64                  `json:"finalised_height,omitempty"`
+		OutboundHeight  int64                  `json:"outbound_height,omitempty"`
+		KeysignMetrics  types.TssKeysignMetric `json:"keysign_metric"`
 	}{
-		KeysignMetrics: *keysignMetric,
+		FinalisedHeight: voter.FinalisedHeight,
+		OutboundHeight:  voter.OutboundHeight,
+		KeysignMetrics:  *keysignMetric,
 	}
-	result.ObservedTx = voter.GetTx(nodeAccounts)
+	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(nodeAccounts))
 	return jsonify(ctx, result)
 }
 
@@ -1586,6 +1600,22 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				result = append(result, tx)
 			}
 		}
+	}
+
+	return jsonify(ctx, result)
+}
+
+func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
+	var result []MsgSwap
+
+	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			continue
+		}
+		result = append(result, msg)
 	}
 
 	return jsonify(ctx, result)

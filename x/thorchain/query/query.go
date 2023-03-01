@@ -72,12 +72,17 @@ var (
 	QueryRagnarok            = Query{Key: "ragnarok", EndpointTemplate: "/%s/ragnarok"}
 	QueryPendingOutbound     = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
 	QueryScheduledOutbound   = Query{Key: "scheduledoutbound", EndpointTemplate: "/%s/queue/scheduled"}
+	QuerySwapQueue           = Query{Key: "swapqueue", EndpointTemplate: "/%s/queue/swap"}
 	QueryTssKeygenMetrics    = Query{Key: "tss_keygen_metric", EndpointTemplate: "/%s/metric/keygen/{%s}"}
 	QueryTssMetrics          = Query{Key: "tss_metric", EndpointTemplate: "/%s/metrics"}
 	QueryTHORName            = Query{Key: "thorname", EndpointTemplate: "/%s/thorname/{%s}"}
 	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
 	QueryQuoteSaverDeposit   = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
 	QueryQuoteSaverWithdraw  = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
+
+	// queries only available on regtest builds
+	QueryExport      = Query{Key: "export", EndpointTemplate: "/%s/export"}
+	QueryBlockEvents = Query{Key: "blockevents", EndpointTemplate: "/%s/blockevents"}
 )
 
 // Queries all queries
@@ -121,10 +126,13 @@ var Queries = []Query{
 	QueryRagnarok,
 	QueryPendingOutbound,
 	QueryScheduledOutbound,
+	QuerySwapQueue,
 	QueryTssMetrics,
 	QueryTssKeygenMetrics,
 	QueryTHORName,
 	QueryQuoteSwap,
 	QueryQuoteSaverDeposit,
 	QueryQuoteSaverWithdraw,
+	QueryExport,
+	QueryBlockEvents,
 }

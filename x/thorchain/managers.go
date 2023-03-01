@@ -362,6 +362,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.106.0")):
+		return newNetworkMgrV106(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.102.0")):
 		return newNetworkMgrV102(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.99.0")):
@@ -395,6 +397,8 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.106.0")):
+		return newValidatorMgrV106(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.103.0")):
 		return newValidatorMgrV103(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.95.0")):
