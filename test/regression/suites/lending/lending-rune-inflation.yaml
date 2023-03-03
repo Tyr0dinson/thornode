@@ -71,6 +71,24 @@ asserts:
   - .|length == 5
 ---
 ########################################################################################
+# Set MaxAnchorBlocks to 1 so that the derived pools dont contract
+########################################################################################
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: MaxAnchorBlocks
+value: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: max anchor blocks mimir should be set
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .MAXANCHORBLOCKS == 1
+---
+########################################################################################
 # open loan btc -> rune
 ########################################################################################
 type: tx-observed-in
@@ -82,7 +100,7 @@ txs:
       from_address: {{ addr_btc_fox }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "5000000" # 1% of pool
+        - amount: "50000000" # 10% of pool
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -101,8 +119,8 @@ description: borrower should be recorded
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_up == "4545945"
-  - .[0]|.debt_up == "4133120000"
+  - .[0]|.collateral_up == "25925925"
+  - .[0]|.debt_up == "13443070000"
   - .[0]|.collateral_down == "0"
   - .[0]|.debt_down == "0"
   - .[0]|.owner == "{{ addr_btc_fox }}"
@@ -111,8 +129,8 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Rune price falls relative to asset
-# add swap rune to btc 
+# Rune price decrease
+# Swap rune to BTC.BTC
 ########################################################################################
 ---
 type: tx-deposit
@@ -120,10 +138,10 @@ signer: {{ addr_thor_cat }}
 coins:
   - amount: "2400000000000"
     asset: "rune"
-memo: "=:BTC.BTC:{{ addr_btc_cat }}"
+memo: "=:ETH.USDC-0X9999999999999999999999999999999999999999:{{ addr_eth_cat }}"
 ---
 type: create-blocks
-count: 1
+count: 2 # go two blocks 1 beyond the MAXANCHORBLOCKS
 ---
 ########################################################################################
 # Close Loan with RUNE
