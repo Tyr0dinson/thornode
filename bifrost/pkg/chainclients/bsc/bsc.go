@@ -47,7 +47,7 @@ type BSCClient struct {
 	localPubKey             common.PubKey
 	kw                      *evm.KeySignWrapper
 	ethClient               *ethclient.Client
-	avaxScanner             *BSCScanner
+	bscScanner              *BSCScanner
 	bridge                  *thorclient.ThorchainBridge
 	blockScanner            *blockscanner.BlockScanner
 	vaultABI                *abi.ABI
@@ -164,12 +164,12 @@ func NewBSCClient(thorKeys *thorclient.Keys,
 	}
 
 	c.signerCacheManager = signerCacheManager
-	c.avaxScanner, err = NewBSCScanner(c.cfg.BlockScanner, storage, chainID, ethClient, rpcClient, c.bridge, m, pubkeyMgr, c.ReportSolvency, signerCacheManager)
+	c.bscScanner, err = NewBSCScanner(c.cfg.BlockScanner, storage, chainID, ethClient, rpcClient, c.bridge, m, pubkeyMgr, c.ReportSolvency, signerCacheManager)
 	if err != nil {
-		return c, fmt.Errorf("fail to create avax block scanner: %w", err)
+		return c, fmt.Errorf("fail to create bsc block scanner: %w", err)
 	}
 
-	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, storage, m, c.bridge, c.avaxScanner)
+	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, storage, m, c.bridge, c.bscScanner)
 	if err != nil {
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
 	}
@@ -198,7 +198,7 @@ func getChainID(client *ethclient.Client, timeout time.Duration) (*big.Int, erro
 	return chainID, err
 }
 
-// Start to monitor the AVAX C-Chain
+// Start to monitor the Binance Smart Chain
 func (c *BSCClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
@@ -209,7 +209,7 @@ func (c *BSCClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue cha
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
-// Stop monitoring the AVAX C-Chain
+// Stop monitoring the Binance Smart Chain
 func (c *BSCClient) Stop() {
 	c.tssKeySigner.Stop()
 	c.blockScanner.Stop()
@@ -222,7 +222,7 @@ func (c *BSCClient) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }
 
-// GetConfig return the configurations used by AVAX chain client
+// GetConfig return the configurations used by BSC chain client
 func (c *BSCClient) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg
 }
@@ -232,9 +232,9 @@ func (c *BSCClient) GetChain() common.Chain {
 	return c.chain
 }
 
-// GetHeight gets height from avax scanner
+// GetHeight gets height from BSC scanner
 func (c *BSCClient) GetHeight() (int64, error) {
-	return c.avaxScanner.GetHeight()
+	return c.bscScanner.GetHeight()
 }
 
 // GetBalance call smart contract to find out the balance of the given address and token
@@ -245,7 +245,7 @@ func (c *BSCClient) GetBalance(addr, token string, height *big.Int) (*big.Int, e
 		return nil, fmt.Errorf("fail to get contract address")
 	}
 
-	return c.avaxScanner.tokenManager.GetBalance(addr, token, height, contractAddresses[0].String())
+	return c.bscScanner.tokenManager.GetBalance(addr, token, height, contractAddresses[0].String())
 }
 
 // GetAddress returns the current signer address, it will be bech32 encoded address
@@ -261,7 +261,7 @@ func (c *BSCClient) GetAddress(poolPubKey common.PubKey) string {
 // GetBalances gets all the balances of the given address
 func (c *BSCClient) GetBalances(addr string, height *big.Int) (common.Coins, error) {
 	// for all the tokens the chain client has dealt with before
-	tokens, err := c.avaxScanner.GetTokens()
+	tokens, err := c.bscScanner.GetTokens()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all the tokens: %w", err)
 	}
@@ -274,22 +274,22 @@ func (c *BSCClient) GetBalances(addr string, height *big.Int) (common.Coins, err
 		}
 		asset := common.BEP20BNBAsset
 		if !IsBSC(token.Address) {
-			asset, err = common.NewAsset(fmt.Sprintf("AVAX.%s-%s", token.Symbol, token.Address))
+			asset, err = common.NewAsset(fmt.Sprintf("BSC.%s-%s", token.Symbol, token.Address))
 			if err != nil {
 				return nil, err
 			}
 		}
-		bal := c.avaxScanner.convertAmount(token.Address, balance)
+		bal := c.bscScanner.convertAmount(token.Address, balance)
 		coins = append(coins, common.NewCoin(asset, bal))
 	}
 
 	return coins.Distinct(), nil
 }
 
-// GetAccount gets account by address in avax client
+// GetAccount gets account by address in BSC client
 func (c *BSCClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
 	addr := c.GetAddress(pk)
-	nonce, err := c.avaxScanner.GetNonce(addr)
+	nonce, err := c.bscScanner.GetNonce(addr)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -303,7 +303,7 @@ func (c *BSCClient) GetAccount(pk common.PubKey, height *big.Int) (common.Accoun
 
 // GetAccountByAddress return account information
 func (c *BSCClient) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
-	nonce, err := c.avaxScanner.GetNonce(address)
+	nonce, err := c.bscScanner.GetNonce(address)
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -324,7 +324,7 @@ func (c *BSCClient) GetGasFee(gas uint64) common.Gas {
 
 // GetGasPrice gets gas price from eth scanner
 func (c *BSCClient) GetGasPrice() *big.Int {
-	gasPrice := c.avaxScanner.GetGasPrice()
+	gasPrice := c.bscScanner.GetGasPrice()
 	return gasPrice
 }
 
@@ -334,11 +334,11 @@ func (c *BSCClient) getSmartContractAddr(pubkey common.PubKey) common.Address {
 
 func (c *BSCClient) getSmartContractByAddress(addr common.Address) common.Address {
 	for _, pk := range c.pubkeyMgr.GetPubKeys() {
-		avaxAddr, err := pk.GetAddress(common.BSCChain)
+		bscAddr, err := pk.GetAddress(common.BSCChain)
 		if err != nil {
 			return common.NoAddress
 		}
-		if avaxAddr.Equals(addr) {
+		if bscAddr.Equals(addr) {
 			return c.pubkeyMgr.GetContract(common.BSCChain, pk)
 		}
 	}
@@ -354,7 +354,7 @@ func getTokenAddressFromAsset(asset common.Asset) string {
 }
 
 func (c *BSCClient) convertSigningAmount(amt *big.Int, token string) *big.Int {
-	return c.avaxScanner.tokenManager.ConvertSigningAmount(amt, token)
+	return c.bscScanner.tokenManager.ConvertSigningAmount(amt, token)
 }
 
 func (c *BSCClient) convertThorchainAmountToWei(amt *big.Int) *big.Int {
@@ -396,7 +396,7 @@ func (c *BSCClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 			}
 			c.logger.Info().Msgf("aggregator target asset address: %s", txOutItem.AggregatorTargetAsset)
 			if bnbValue.Uint64() == 0 {
-				return nil, hasRouterUpdated, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is AVAX")
+				return nil, hasRouterUpdated, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is BNB")
 			}
 			targetLimit := txOutItem.AggregatorTargetLimit
 			if targetLimit == nil {
@@ -488,7 +488,7 @@ func (c *BSCClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo) (
 
 	fromAddr, err := txOutItem.VaultPubKey.GetAddress(common.BSCChain)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get AVAX address for pub key(%s): %w", txOutItem.VaultPubKey, err)
+		return nil, fmt.Errorf("fail to get BSC address for pub key(%s): %w", txOutItem.VaultPubKey, err)
 	}
 
 	txData, hasRouterUpdated, bnbValue, err := c.getOutboundTxData(txOutItem, memo, contractAddr)
@@ -499,7 +499,7 @@ func (c *BSCClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo) (
 		bnbValue = cosmos.ZeroUint().BigInt()
 	}
 
-	nonce, err := c.avaxScanner.GetNonce(fromAddr.String())
+	nonce, err := c.bscScanner.GetNonce(fromAddr.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to fetch account(%s) nonce : %w", fromAddr, err)
 	}
@@ -514,15 +514,15 @@ func (c *BSCClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo) (
 	// outbound tx always send to smart contract address
 	estimatedbnbValue := big.NewInt(0)
 	if bnbValue.Uint64() > 0 {
-		// when the AVAX value is non-zero, here override it with a fixed value to estimate gas
-		// when AVAX value is non-zero, if we send the real value for estimate gas, sometimes it will fail, for many reasons, a few I saw during test
+		// when the BNB value is non-zero, here override it with a fixed value to estimate gas
+		// when BNB value is non-zero, if we send the real value for estimate gas, sometimes it will fail, for many reasons, a few I saw during test
 		// 1. insufficient fund
 		// 2. gas required exceeds allowance
-		// as long as we pass in an AVAX value , which we almost guarantee it will not exceed the AVAX balance , so we can avoid the above two errors
+		// as long as we pass in an BNB value , which we almost guarantee it will not exceed the BNB balance , so we can avoid the above two errors
 		estimatedbnbValue = estimatedbnbValue.SetInt64(21000)
 	}
 	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedbnbValue, MaxContractGas, gasRate, txData)
-	estimatedGas, err := c.avaxScanner.ethRpc.EstimateGas(fromAddr.String(), createdTx)
+	estimatedGas, err := c.bscScanner.ethRpc.EstimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas
 		// the returned error is `execution reverted`
@@ -591,7 +591,7 @@ func (c *BSCClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo) (
 // SignTx signs the the given TxArrayItem
 func (c *BSCClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, error) {
 	if !tx.Chain.Equals(common.BSCChain) {
-		return nil, fmt.Errorf("chain %s is not support by AVAX chain client", tx.Chain)
+		return nil, fmt.Errorf("chain %s is not support by BSC chain client", tx.Chain)
 	}
 
 	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
@@ -655,7 +655,7 @@ func (c *BSCClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, heigh
 	return nil, fmt.Errorf("fail to sign tx: %w", err)
 }
 
-// BroadcastTx decodes tx using rlp and broadcasts to the AVAX C-Chain
+// BroadcastTx decodes tx using rlp and broadcasts to the Binance Smart Chain
 func (c *BSCClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
 	tx := &etypes.Transaction{}
 	if err := tx.UnmarshalJSON(hexTx); err != nil {
@@ -668,7 +668,7 @@ func (c *BSCClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (strin
 		return "", nil
 	}
 	txID := tx.Hash().String()
-	c.logger.Info().Str("memo", txOutItem.Memo).Str("hash", txID).Msg("broadcast tx to AVAX C-Chain")
+	c.logger.Info().Str("memo", txOutItem.Memo).Str("hash", txID).Msg("broadcast tx to Binance Smart Chain")
 
 	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txID); err != nil {
 		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
@@ -686,12 +686,12 @@ func (c *BSCClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (strin
 	return txID, nil
 }
 
-// GetConfirmationCount - AVAX C-Chain has instant finality, so return 0
+// GetConfirmationCount - Binance Smart Chain has instant finality, so return 0
 func (c *BSCClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	return 0
 }
 
-// ConfirmationCountReady - AVAX C-Chain has instant finality, THORChain can accept the tx instantly
+// ConfirmationCountReady - Binance Smart Chain has instant finality, THORChain can accept the tx instantly
 func (c *BSCClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 	return true
 }
@@ -714,13 +714,13 @@ func (c *BSCClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 	}
 }
 
-func (c *BSCClient) ReportSolvency(avaxBlockHeight int64) error {
-	if !c.ShouldReportSolvency(avaxBlockHeight) {
+func (c *BSCClient) ReportSolvency(bscBlockHeight int64) error {
+	if !c.ShouldReportSolvency(bscBlockHeight) {
 		return nil
 	}
 	// when block scanner is not healthy , falling behind , we don't report solvency , unless the request is coming from
 	// auto-unhalt solvency runner
-	if !c.IsBlockScannerHealthy() && avaxBlockHeight == c.avaxScanner.currentBlockHeight {
+	if !c.IsBlockScannerHealthy() && bscBlockHeight == c.bscScanner.currentBlockHeight {
 		return nil
 	}
 	asgardVaults, err := c.bridge.GetAsgards()
@@ -728,12 +728,12 @@ func (c *BSCClient) ReportSolvency(avaxBlockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 	for _, asgard := range asgardVaults {
-		acct, err := c.GetAccount(asgard.PubKey, new(big.Int).SetInt64(avaxBlockHeight))
+		acct, err := c.GetAccount(asgard.PubKey, new(big.Int).SetInt64(bscBlockHeight))
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
 		}
-		if runners.IsVaultSolvent(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.avaxScanner.lastReportedGasPrice)) && c.IsBlockScannerHealthy() {
+		if runners.IsVaultSolvent(acct, asgard, cosmos.NewUint(3*MaxContractGas*c.bscScanner.lastReportedGasPrice)) && c.IsBlockScannerHealthy() {
 			// when vault is solvent, don't need to report solvency
 			// when block scanner is not healthy , usually that means the chain is halted, in that scenario , we continue to report solvency
 			continue
@@ -741,7 +741,7 @@ func (c *BSCClient) ReportSolvency(avaxBlockHeight int64) error {
 		c.logger.Info().Str("asgard pubkey", asgard.PubKey.String()).Interface("coins", acct.Coins).Msg("Reporting solvency")
 		select {
 		case c.globalSolvencyQueue <- stypes.Solvency{
-			Height: avaxBlockHeight,
+			Height: bscBlockHeight,
 			Chain:  common.BSCChain,
 			PubKey: asgard.PubKey,
 			Coins:  acct.Coins,
@@ -750,12 +750,12 @@ func (c *BSCClient) ReportSolvency(avaxBlockHeight int64) error {
 			c.logger.Info().Msg("fail to send solvency info to THORChain, timeout")
 		}
 	}
-	c.lastSolvencyCheckHeight = avaxBlockHeight
+	c.lastSolvencyCheckHeight = bscBlockHeight
 	return nil
 }
 
 // ShouldReportSolvency with given block height, should chain client report Solvency to THORNode?
-// AVAX C-Chain blocktime is around 2 seconds
+// Binance Smart Chain blocktime is around 2 seconds
 func (c *BSCClient) ShouldReportSolvency(height int64) bool {
 	return height%100 == 0
 }

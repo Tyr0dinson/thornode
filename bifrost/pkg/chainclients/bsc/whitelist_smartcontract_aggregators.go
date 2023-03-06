@@ -8,7 +8,7 @@ import (
 func LatestAggregatorContracts() []common.Address {
 	addrs := []common.Address{}
 	for _, agg := range aggregators.DexAggregators(common.LatestVersion) {
-		if agg.Chain.Equals(common.AVAXChain) {
+		if agg.Chain.Equals(common.BSCChain) {
 			addrs = append(addrs, common.Address(agg.Address))
 		}
 	}

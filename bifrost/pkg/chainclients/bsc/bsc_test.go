@@ -256,8 +256,8 @@ func (s *BSCSuite) TestConvertSigningAmount(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(a, NotNil)
-	c.Assert(a.avaxScanner.tokenManager.SaveTokenMeta("TKN", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483", 18), IsNil)
-	c.Assert(a.avaxScanner.tokenManager.SaveTokenMeta("TKX", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF482", 8), IsNil)
+	c.Assert(a.bscScanner.tokenManager.SaveTokenMeta("TKN", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483", 18), IsNil)
+	c.Assert(a.bscScanner.tokenManager.SaveTokenMeta("TKX", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF482", 8), IsNil)
 	result := a.convertSigningAmount(big.NewInt(100), "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483")
 	c.Assert(result.Uint64(), Equals, uint64(100*common.One*100))
 	result = a.convertSigningAmount(big.NewInt(100000000), "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF482")
@@ -267,7 +267,7 @@ func (s *BSCSuite) TestConvertSigningAmount(c *C) {
 func TestGetTokenAddressFromAsset(t *testing.T) {
 	token := getTokenAddressFromAsset(common.BEP20BNBAsset)
 	assert.Equal(t, token, bnbToken)
-	a, err := common.NewAsset("AVAX.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
+	a, err := common.NewAsset("BSC.TKN-0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
 	assert.Equal(t, err, nil)
 	token = getTokenAddressFromAsset(a)
 	assert.Equal(t, token, "0X333C3310824B7C685133F2BEDB2CA4B8B4DF633D")
@@ -325,15 +325,15 @@ func (s *BSCSuite) TestClient(c *C) {
     "tx_array": [
         {
             "vault_pub_key": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
-            "chain": "AVAX",
+            "chain": "BSC",
             "to_address": "0xde0b295669a9fd93d5f28d9ec85e40f4cb697bae",
             "coin": {
-                "asset": "AVAX.AVAX",
+                "asset": "BSC.BNB",
                 "amount": "194765912"
             },
             "max_gas": [
                 {
-                    "asset": "AVAX.AVAX",
+                    "asset": "BSC.BNB",
                     "amount": "300000"
                 }
             ],
@@ -383,7 +383,7 @@ func (s *BSCSuite) TestGetAccount(c *C) {
 	c.Assert(b, NotNil)
 }
 
-func (s *BSCSuite) TestSignAVAXTx(c *C) {
+func (s *BSCSuite) TestSignBSCTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
@@ -403,7 +403,7 @@ func (s *BSCSuite) TestSignAVAXTx(c *C) {
 	addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.BSCChain)
 	c.Assert(err, IsNil)
 
-	// Not AVAX chain
+	// Not BSC chain
 	result, err := e.SignTx(stypes.TxOutItem{
 		Chain:       common.BTCChain,
 		ToAddress:   addr,
@@ -453,7 +453,7 @@ func (s *BSCSuite) TestSignAVAXTx(c *C) {
 		Chain:       common.BSCChain,
 		ToAddress:   addr,
 		VaultPubKey: e.localPubKey,
-		Memo:        "swap:AVAX.AVAX",
+		Memo:        "swap:BSC.BNB",
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
@@ -475,7 +475,7 @@ func (s *BSCSuite) TestSignAVAXTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	asset, err := common.NewAsset("AVAX.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
+	asset, err := common.NewAsset("BSC.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(err, IsNil)
 	// Outbound
 	result, err = e.SignTx(stypes.TxOutItem{

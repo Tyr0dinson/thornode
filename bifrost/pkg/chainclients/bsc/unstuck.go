@@ -22,13 +22,13 @@ import (
 // we want to try to push the tx through before that
 const TxWaitBlocks = 150
 
-// This process watches outbound TXs on AVAX to ensure they go
+// This process watches outbound TXs on BSC to ensure they go
 // through before being re-assigned to a different vault. C-Chain txs
 // can get stuck because of a sudden increase in gas prices, so this
 // process will re-broadcast the same tx with more gas to push it through
 func (c *BSCClient) unstuck() {
-	c.logger.Info().Msg("start AVAX chain unstuck process")
-	defer c.logger.Info().Msg("stop AVAX chain unstuck process")
+	c.logger.Info().Msg("start BSC chain unstuck process")
+	defer c.logger.Info().Msg("stop BSC chain unstuck process")
 	defer c.wg.Done()
 	for {
 		select {
@@ -47,7 +47,7 @@ func (c *BSCClient) unstuckAction() {
 		c.logger.Err(err).Msg("fail to get THORChain block height")
 		return
 	}
-	signedTxItems, err := c.avaxScanner.blockMetaAccessor.GetSignedTxItems()
+	signedTxItems, err := c.bscScanner.blockMetaAccessor.GetSignedTxItems()
 	if err != nil {
 		c.logger.Err(err).Msg("fail to get all signed tx items")
 		return
@@ -68,13 +68,13 @@ func (c *BSCClient) unstuckAction() {
 			continue
 		}
 		// remove it
-		if err := c.avaxScanner.blockMetaAccessor.RemoveSignedTxItem(item.Hash); err != nil {
+		if err := c.bscScanner.blockMetaAccessor.RemoveSignedTxItem(item.Hash); err != nil {
 			c.logger.Err(err).Str("tx hash", item.Hash).Str("vault", item.VaultPubKey).Msg("fail to remove signed tx item")
 		}
 	}
 }
 
-// unstuckTx is the method used to unstuck AVAX address
+// unstuckTx is the method used to unstuck BSC address
 // when unstuckTx return an err , then the same hash should retry otherwise it can be removed
 func (c *BSCClient) unstuckTx(vaultPubKey, hash string) error {
 	ctx, cancel := c.getContext()
@@ -82,7 +82,7 @@ func (c *BSCClient) unstuckTx(vaultPubKey, hash string) error {
 	tx, pending, err := c.ethClient.TransactionByHash(ctx, ecommon.HexToHash(hash))
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
-			c.logger.Err(err).Str("tx hash", hash).Msg("Transaction doesn't exist on AVAX chain anymore")
+			c.logger.Err(err).Str("tx hash", hash).Msg("Transaction doesn't exist on BSC chain anymore")
 			return nil
 		}
 		return fmt.Errorf("fail to get transaction by hash:%s, error:: %w", hash, err)
@@ -101,14 +101,14 @@ func (c *BSCClient) unstuckTx(vaultPubKey, hash string) error {
 	}
 	address, err := pubKey.GetAddress(common.BSCChain)
 	if err != nil {
-		c.logger.Err(err).Msg("fail to get AVAX address")
+		c.logger.Err(err).Msg("fail to get BSC address")
 		return nil
 	}
 
 	c.logger.Info().Str("tx hash", hash).Uint64("nonce", tx.Nonce()).Msg("cancel tx hash with nonce")
 	// double the current suggest gas price
 	currentGasRate := big.NewInt(1).Mul(c.GetGasPrice(), big.NewInt(2))
-	// inflate the originGasPrice by 10% as per AVAX chain, the transaction to cancel an existing tx in the mempool
+	// inflate the originGasPrice by 10% as per BSC chain, the transaction to cancel an existing tx in the mempool
 	// need to pay at least 10% more than the original price, otherwise it will not allow it.
 	// the error will be "replacement transaction underpriced"
 	// this is the way to get 110% of the original gas price
@@ -128,7 +128,7 @@ func (c *BSCClient) unstuckTx(vaultPubKey, hash string) error {
 	}
 	ctx, cancel = c.getContext()
 	defer cancel()
-	err = c.avaxScanner.ethClient.SendTransaction(ctx, broadcastTx)
+	err = c.bscScanner.ethClient.SendTransaction(ctx, broadcastTx)
 	if !isAcceptableError(err) {
 		return fmt.Errorf("fail to broadcast the cancel transaction, hash:%s , err: %w", hash, err)
 	}
@@ -139,7 +139,7 @@ func (c *BSCClient) unstuckTx(vaultPubKey, hash string) error {
 
 // AddSignedTxItem add the transaction to key value store
 func (c *BSCClient) AddSignedTxItem(hash string, height int64, vaultPubKey string) error {
-	return c.avaxScanner.blockMetaAccessor.AddSignedTxItem(evmtypes.SignedTxItem{
+	return c.bscScanner.blockMetaAccessor.AddSignedTxItem(evmtypes.SignedTxItem{
 		Hash:        hash,
 		Height:      height,
 		VaultPubKey: vaultPubKey,

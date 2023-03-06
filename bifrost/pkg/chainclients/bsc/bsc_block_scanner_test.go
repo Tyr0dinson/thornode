@@ -450,7 +450,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0x970e8128ab834e8eac17ab8e3812f010678cf791")
-	c.Assert(txInItem.To, Equals, "0x6F2744B3a9eba0C5929AAdc9e81183a48B9221FC")
+	c.Assert(txInItem.To, Equals, "0x17ab05351fc94a1a67bf3f56ddbb941ae6c63e25")
 	c.Assert(txInItem.Memo, Equals, "ADD:BSC.BNB:tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej")
 	c.Assert(txInItem.Tx, Equals, "c5df10917683a31c361218577d5e13ee9d7e29f8b92415f337a318942bd2c875")
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "BSC.BNB")
