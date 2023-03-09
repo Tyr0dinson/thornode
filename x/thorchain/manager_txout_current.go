@@ -178,14 +178,16 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 		}
 	}
 
-	// Add total outbound fee to the OutboundFeeSurplus
-	network, err := tos.keeper.GetNetwork(ctx)
-	if err != nil {
-		ctx.Logger().Error("fail to get network data", "error", err)
-	} else {
-		network.OutboundFeeSurplusRune += int64(totalOutboundFeeRune.Uint64())
-		if err := tos.keeper.SetNetwork(ctx, network); err != nil {
-			ctx.Logger().Error("fail to set network data", "error", err)
+	// Add total outbound fee to the OutboundFeeSurplus. totalOutboundFeeRune will be 0 if these are Migration outbounds
+	if !totalOutboundFeeRune.IsZero() {
+		network, err := tos.keeper.GetNetwork(ctx)
+		if err != nil {
+			ctx.Logger().Error("fail to get network data", "error", err)
+		} else {
+			network.OutboundFeeSurplusRune += int64(totalOutboundFeeRune.Uint64())
+			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
+				ctx.Logger().Error("fail to set network data", "error", err)
+			}
 		}
 	}
 
