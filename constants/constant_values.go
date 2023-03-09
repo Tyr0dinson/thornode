@@ -103,6 +103,7 @@ const (
 	ILPCutoff
 	ChurnMigrateRounds
 	MaxAffiliateFeeBasisPoints
+	TargetOutboundFeeSurplusRune
 )
 
 var nameToString = map[ConstantName]string{
@@ -199,6 +200,7 @@ var nameToString = map[ConstantName]string{
 	PauseLoans:                         "PauseLoans",
 	LoanRepaymentMaturity:              "LoanRepaymentMaturity",
 	LendingLever:                       "LendingLever",
+	TargetOutboundFeeSurplusRune:       "TargetOutboundFeeSurplusRune",
 }
 
 // String implement fmt.stringer

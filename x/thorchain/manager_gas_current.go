@@ -115,12 +115,24 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 
 		minAsset = pool.RuneValueInAsset(minOutboundInRune)
 	}
-	// Fee is calculated based on the network fee observed in previous block
-	// THORNode is going to charge 3 times the fee it takes to send out the tx
-	// 1.5 * fee will goes to vault
-	// 1.5 * fee will become the max gas used to send out the tx
+
+	network, err := gm.keeper.GetNetwork(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get network data", "error", err)
+	}
+
+	targetOutboundFeeSurplus, err := gm.keeper.GetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String())
+	if targetOutboundFeeSurplus < 0 || err != nil {
+		targetOutboundFeeSurplus = gm.constantsAccessor.GetInt64Value(constants.TargetOutboundFeeSurplusRune)
+	}
+
+	// Calculate outbound fee based on current fee multiplier
+	chainBaseFee := cosmos.NewDec(int64(networkFee.TransactionSize * networkFee.TransactionFeeRate))
+	feeMultiplier := gm.calcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundFeeSurplusRune)
+	finalFee := cosmos.NewUint(uint64(chainBaseFee.Mul(feeMultiplier).RoundInt64()))
+
 	fee := cosmos.RoundToDecimal(
-		cosmos.NewUint(networkFee.TransactionSize*networkFee.TransactionFeeRate*3),
+		finalFee,
 		pool.Decimals,
 	)
 
@@ -153,6 +165,23 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 		return transactionFee
 	}
 	return pool.RuneValueInAsset(fee)
+}
+
+// calcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
+func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplus int64, runeGasSurplus int64) cosmos.Dec {
+	// TODO: should these be mimir-able?
+	minMultiplierBP := cosmos.NewDec(1)
+	maxMultiplierBP := cosmos.NewDec(3)
+
+	if runeGasSurplus >= targetSurplus {
+		return minMultiplierBP
+	} else if runeGasSurplus <= 0 {
+		return maxMultiplierBP
+	} else {
+		currentSurplusDec := cosmos.NewDec(runeGasSurplus)
+		targetSurplusDec := cosmos.NewDec(targetSurplus)
+		return currentSurplusDec.Quo(targetSurplusDec) // progress to target surplus
+	}
 }
 
 // getRuneInAssetValue convert the transaction fee to asset value , when the given asset is synthetic , it will need to get
