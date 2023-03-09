@@ -82,6 +82,7 @@ func NewConstantValue010() *ConstantVals {
 			ILPCutoff:                          0,                  // the cutoff height for impermanent loss protection
 			ChurnMigrateRounds:                 5,                  // Number of rounds to migrate vaults during churn
 			MaxAffiliateFeeBasisPoints:         10_000,             // Max allowed affiliate fee basis points
+			TargetOutboundFeeSurplusRune:       10_000,             // Target amount of RUNE for Outbound Fee Surplus: the sum of the diff between outbound cost to user and outbound cost to network
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
