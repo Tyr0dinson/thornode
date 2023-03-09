@@ -822,7 +822,7 @@ func (s TxOutStoreV108Suite) TestAddOutTxItemSendingFromRetiredVault(c *C) {
 	c.Assert(msgs, HasLen, 1)
 }
 
-func (s TxOutStoreV107Suite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C) {
+func (s TxOutStoreV108Suite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C) {
 	// The historical context of this example:
 	// TxIn hash:  179BF41ED245E74F2B0A4B9B970ED1F5D11335B192641AE7268F7AA3C1ADB724
 	// finalised_height:  7243175
@@ -970,7 +970,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C)
 		// This Coin amount is an estimate, given slight changes to pool RUNE amount in a block.
 	}
 
-	txOutStore := newTxOutStorageV107(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	txOutStore := newTxOutStorageV108(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -999,7 +999,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_SecurityVersusOutboundNumber(c *C)
 	c.Assert(scheduledOutbounds, HasLen, 0)
 }
 
-func (s TxOutStoreV107Suite) TestAddOutTxItem_VaultStatusVersusOutboundNumber(c *C) {
+func (s TxOutStoreV108Suite) TestAddOutTxItem_VaultStatusVersusOutboundNumber(c *C) {
 	// Within this example vault bonds are treated as zero, using only assets to represent security.
 
 	SetupConfigForTest()
@@ -1093,7 +1093,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_VaultStatusVersusOutboundNumber(c 
 		// Cannot be fulfilled by any single vault
 	}
 
-	txOutStore := newTxOutStorageV107(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	txOutStore := newTxOutStorageV108(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)

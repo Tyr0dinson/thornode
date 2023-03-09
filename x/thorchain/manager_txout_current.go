@@ -451,7 +451,7 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		// get the lending address to avoid deducting the outbound fee
 		lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
 		if err != nil {
-			return nil, fmt.Errorf("fail to get lending address: %w", err)
+			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
 		}
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
