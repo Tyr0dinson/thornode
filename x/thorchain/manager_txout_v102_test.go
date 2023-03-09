@@ -1,11 +1,8 @@
 package thorchain
 
 import (
-<<<<<<< HEAD
 	"strings"
 
-=======
->>>>>>> ea267b051 (bump txout manager)
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -242,7 +239,6 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	gasMgr := newGasMgrV102(constAccessor, w.keeper)
-
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
