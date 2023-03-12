@@ -160,13 +160,31 @@ func (h SolvencyHandler) handleV110(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		ctx.Logger().Error("fail to get mimir", "error", err)
 	}
 
-	if !h.insolvencyCheckV79(ctx, vault, voter.Coins, voter.Chain) {
-		// here doesn't override HaltChain when the vault is solvent
-		// in some case even the vault is solvent , the network might need to halt by admin mimir
-		// admin mimir halt chain usually set the value to 1
-		if haltChain <= 1 {
-			return &cosmos.Result{}, nil
+	// If the chain was halted this block, leave it halted without overriding.
+	// (For instance if halted because of a different vault which is insolvent.)
+	// Also don't unhalt if the chain was manually halted for a future height
+	// or indefinitely ('1').
+	if haltChain >= ctx.BlockHeight() || haltChain == 1 {
+		return &cosmos.Result{}, nil
+	}
+
+	isInsolvent := h.insolvencyCheckV79(ctx, vault, voter.Coins, voter.Chain)
+
+	// If insolvent and already halted, leave the Mimir key unchanged as a record of since when it's been insolvent.
+	// If insolvent and unhalted, halt the chain.
+	if isInsolvent && haltChain <= 0 {
+		h.mgr.Keeper().SetMimir(ctx, haltChainKey, ctx.BlockHeight())
+		mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(ctx.BlockHeight(), 10))
+		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
+		ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
+	}
+
+	// If not insolvent and the chain is halted from an earlier block height, unhalt the chain.
+	// Even if a different vault is still insolvent, it can re-halt the chain in this or a later block.
+	// (An alternative approach would be for if an insolvent vault always updated a lower-height Mimir key to the current height.)
+	if !isInsolvent && haltChain > 1 {
 		// if the chain was halted by previous solvency checker, auto unhalt it
 		ctx.Logger().Info("auto un-halt", "chain", voter.Chain, "previous halt height", haltChain, "current block height", ctx.BlockHeight())
 		h.mgr.Keeper().SetMimir(ctx, haltChainKey, 0)
@@ -176,16 +194,6 @@ func (h SolvencyHandler) handleV110(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		}
 	}
 
-	if haltChain > 0 && haltChain < ctx.BlockHeight() {
-		// Trading already halt
-		return &cosmos.Result{}, nil
-	}
-	h.mgr.Keeper().SetMimir(ctx, haltChainKey, ctx.BlockHeight())
-	mimirEvent := NewEventSetMimir(strings.ToUpper(haltChainKey), strconv.FormatInt(ctx.BlockHeight(), 10))
-	if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
-		ctx.Logger().Error("fail to emit set_mimir event", "error", err)
-	}
-	ctx.Logger().Info("chain is insolvent, halt until it is resolved", "chain", voter.Chain)
 	return &cosmos.Result{}, nil
 }
 
