@@ -169,13 +169,8 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 	return pool.RuneValueInAsset(fee)
 }
 
-<<<<<<< HEAD
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
 func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
-=======
-// calcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
-func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
->>>>>>> e25d7ac7f (review comments + lint)
 	// Sanity check
 	if targetSurplusRune == 0 {
 		return cosmos.NewUint(uint64(maxMultiplier))
@@ -186,6 +181,7 @@ func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 
 	if surplusRune <= 0 {
 		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
+<<<<<<< HEAD
 	} else if surplusRune >= targetSurplusRune {
 		return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
 	}
@@ -197,16 +193,28 @@ func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 	// How many BPs to reduce the multiplier
 	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)), cosmos.NewUint(uint64(targetSurplusRune)))
 >>>>>>> e25d7ac7f (review comments + lint)
+=======
+	} // else if surplusRune >= targetSurplusRune {
+	//	return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
+	// }
+
+	// How many BPs to reduce the multiplier
+	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
+>>>>>>> a9a1656e3 (test)
 	multiplierBps := cosmos.NewUint(uint64(maxMultiplier)).Sub(multiplierReducedBps)
 
 	// Sanity checks
 	if multiplierBps.LT(cosmos.NewUint(uint64(minMultiplier))) {
 		return cosmos.NewUint(uint64(minMultiplier))
 <<<<<<< HEAD
+<<<<<<< HEAD
 	} else if multiplierBps.GT(cosmos.NewUint(uint64(maxMultiplier))) {
 =======
 	} else if multiplierBps.GT(cosmos.NewUint(uint64(minMultiplier))) {
 >>>>>>> e25d7ac7f (review comments + lint)
+=======
+	} else if multiplierBps.GT(cosmos.NewUint(uint64(maxMultiplier))) {
+>>>>>>> a9a1656e3 (test)
 		return cosmos.NewUint(uint64(maxMultiplier))
 	}
 
