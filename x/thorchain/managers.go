@@ -354,6 +354,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 	switch {
 	case version.GTE(semver.MustParse("1.108.0")):
 		return newTxOutStorageV108(keeper, constAccessor, eventMgr, gasManager), nil
+	case version.GTE(semver.MustParse("1.107.0")):
+		return newTxOutStorageV107(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.102.0")):
 		return newTxOutStorageV102(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.98.0")):
