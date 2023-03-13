@@ -181,40 +181,18 @@ func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 
 	if surplusRune <= 0 {
 		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
-<<<<<<< HEAD
 	} else if surplusRune >= targetSurplusRune {
 		return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
 	}
-<<<<<<< HEAD
-	// How many BPs to reduce the multiplier
-	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
-=======
-
-	// How many BPs to reduce the multiplier
-	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)), cosmos.NewUint(uint64(targetSurplusRune)))
->>>>>>> e25d7ac7f (review comments + lint)
-=======
-	} // else if surplusRune >= targetSurplusRune {
-	//	return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
-	// }
 
 	// How many BPs to reduce the multiplier
 	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
->>>>>>> a9a1656e3 (test)
 	multiplierBps := cosmos.NewUint(uint64(maxMultiplier)).Sub(multiplierReducedBps)
 
 	// Sanity checks
 	if multiplierBps.LT(cosmos.NewUint(uint64(minMultiplier))) {
 		return cosmos.NewUint(uint64(minMultiplier))
-<<<<<<< HEAD
-<<<<<<< HEAD
 	} else if multiplierBps.GT(cosmos.NewUint(uint64(maxMultiplier))) {
-=======
-	} else if multiplierBps.GT(cosmos.NewUint(uint64(minMultiplier))) {
->>>>>>> e25d7ac7f (review comments + lint)
-=======
-	} else if multiplierBps.GT(cosmos.NewUint(uint64(maxMultiplier))) {
->>>>>>> a9a1656e3 (test)
 		return cosmos.NewUint(uint64(maxMultiplier))
 	}
 
@@ -355,12 +333,8 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
-<<<<<<< HEAD
 			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
 			ctx.Logger().Info("append spent rune", "amt", runeGas.String())
-=======
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas)        // Add to the pool
->>>>>>> e25d7ac7f (review comments + lint)
 			network.OutboundGasSpentRune += int64(runeGas.Uint64()) // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
