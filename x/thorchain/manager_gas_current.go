@@ -121,15 +121,14 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 		ctx.Logger().Error("fail to get network data", "error", err)
 	}
 
-	targetOutboundFeeSurplus, err := gm.keeper.GetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String())
-	if targetOutboundFeeSurplus < 0 || err != nil {
-		targetOutboundFeeSurplus = gm.constantsAccessor.GetInt64Value(constants.TargetOutboundFeeSurplusRune)
-	}
+	targetOutboundFeeSurplus := fetchConfigInt64(ctx, gm.mgr, constants.TargetOutboundFeeSurplusRune)
+	maxMultiplierBasisPoints := fetchConfigInt64(ctx, gm.mgr, constants.MaxOutboundFeeMultiplierBasisPoints)
+	minMultiplierBasisPoints := fetchConfigInt64(ctx, gm.mgr, constants.MinOutboundFeeMultiplierBasisPoints)
 
 	// Calculate outbound fee based on current fee multiplier
-	chainBaseFee := cosmos.NewDec(int64(networkFee.TransactionSize * networkFee.TransactionFeeRate))
-	feeMultiplier := gm.calcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundFeeSurplusRune)
-	finalFee := cosmos.NewUint(uint64(chainBaseFee.Mul(feeMultiplier).RoundInt64()))
+	chainBaseFee := networkFee.TransactionSize * networkFee.TransactionFeeRate
+	feeMultiplierBps := gm.calcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundGasSpentRune, network.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
+	finalFee := common.GetUncappedShare(cosmos.NewUint(chainBaseFee), cosmos.NewUint(10_000), feeMultiplierBps)
 
 	fee := cosmos.RoundToDecimal(
 		finalFee,
@@ -168,20 +167,33 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 }
 
 // calcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
-func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplus int64, runeGasSurplus int64) cosmos.Dec {
-	// TODO: should these be mimir-able?
-	minMultiplierBP := cosmos.NewDec(1)
-	maxMultiplierBP := cosmos.NewDec(3)
-
-	if runeGasSurplus >= targetSurplus {
-		return minMultiplierBP
-	} else if runeGasSurplus <= 0 {
-		return maxMultiplierBP
-	} else {
-		currentSurplusDec := cosmos.NewDec(runeGasSurplus)
-		targetSurplusDec := cosmos.NewDec(targetSurplus)
-		return currentSurplusDec.Quo(targetSurplusDec) // progress to target surplus
+func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+	// Sanity check
+	if targetSurplusRune == 0 {
+		return cosmos.NewUint(uint64(maxMultiplier))
 	}
+
+	// Find current surplus (gas withheld from user - gas spent by the reserve)
+	surplusRune := gasWithheldRune - gasSpentRune
+
+	if surplusRune <= 0 {
+		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
+	} else if surplusRune >= targetSurplusRune {
+		return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
+	}
+
+	// How many BPs to reduce the multiplier
+	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)), cosmos.NewUint(uint64(targetSurplusRune)))
+	multiplierBps := cosmos.NewUint(uint64(maxMultiplier)).Sub(multiplierReducedBps)
+
+	// Sanity checks
+	if multiplierBps.LT(cosmos.NewUint(uint64(minMultiplier))) {
+		return cosmos.NewUint(uint64(minMultiplier))
+	} else if multiplierBps.GT(cosmos.NewUint(uint64(minMultiplier))) {
+		return cosmos.NewUint(uint64(maxMultiplier))
+	}
+
+	return multiplierBps
 }
 
 // getRuneInAssetValue convert the transaction fee to asset value , when the given asset is synthetic , it will need to get
@@ -318,8 +330,8 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas)          // Add to the pool
-			network.OutboundFeeSurplusRune -= int64(runeGas.Uint64()) // deduct $RUNE cost from outbound fee surplus
+			pool.BalanceRune = pool.BalanceRune.Add(runeGas)        // Add to the pool
+			network.OutboundGasSpentRune += int64(runeGas.Uint64()) // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
 			// no rune is added to the pool, sorry LPs!
