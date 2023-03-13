@@ -444,6 +444,10 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				return nil, cosmos.ZeroUint(), fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
 
+<<<<<<< HEAD
+=======
+			// TODO: Check GasRate used for actual outbound
+>>>>>>> 4af5c193d (review comments + lint)
 			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
 		}
 
@@ -608,6 +612,8 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				ctx.Logger().Error("fail to add pool fee to reserve", "error", err)
 			}
 		}
+
+		//
 	}
 
 	return finalOutput, finalRuneFee, nil

@@ -169,8 +169,13 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 	return pool.RuneValueInAsset(fee)
 }
 
+<<<<<<< HEAD
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
 func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+=======
+// calcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
+func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+>>>>>>> 4af5c193d (review comments + lint)
 	// Sanity check
 	if targetSurplusRune == 0 {
 		return cosmos.NewUint(uint64(maxMultiplier))
@@ -181,16 +186,29 @@ func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 
 	if surplusRune <= 0 {
 		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
+<<<<<<< HEAD
 	}
 
 	// How many BPs to reduce the multiplier
 	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
+=======
+	} else if surplusRune >= targetSurplusRune {
+		return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
+	}
+
+	// How many BPs to reduce the multiplier
+	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)), cosmos.NewUint(uint64(targetSurplusRune)))
+>>>>>>> 4af5c193d (review comments + lint)
 	multiplierBps := cosmos.NewUint(uint64(maxMultiplier)).Sub(multiplierReducedBps)
 
 	// Sanity checks
 	if multiplierBps.LT(cosmos.NewUint(uint64(minMultiplier))) {
 		return cosmos.NewUint(uint64(minMultiplier))
+<<<<<<< HEAD
 	} else if multiplierBps.GT(cosmos.NewUint(uint64(maxMultiplier))) {
+=======
+	} else if multiplierBps.GT(cosmos.NewUint(uint64(minMultiplier))) {
+>>>>>>> 4af5c193d (review comments + lint)
 		return cosmos.NewUint(uint64(maxMultiplier))
 	}
 
@@ -331,8 +349,12 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
+<<<<<<< HEAD
 			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
 			ctx.Logger().Info("append spent rune", "amt", runeGas.String())
+=======
+			pool.BalanceRune = pool.BalanceRune.Add(runeGas)        // Add to the pool
+>>>>>>> 4af5c193d (review comments + lint)
 			network.OutboundGasSpentRune += int64(runeGas.Uint64()) // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
