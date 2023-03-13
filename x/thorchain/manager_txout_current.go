@@ -178,13 +178,13 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 		}
 	}
 
-	// Add total outbound fee to the OutboundFeeSurplus. totalOutboundFeeRune will be 0 if these are Migration outbounds
+	// Add total outbound fee to the OutboundGasWithheldRune. totalOutboundFeeRune will be 0 if these are Migration outbounds
 	if !totalOutboundFeeRune.IsZero() {
 		network, err := tos.keeper.GetNetwork(ctx)
 		if err != nil {
 			ctx.Logger().Error("fail to get network data", "error", err)
 		} else {
-			network.OutboundFeeSurplusRune += int64(totalOutboundFeeRune.Uint64())
+			network.OutboundGasWithheldRune += int64(totalOutboundFeeRune.Uint64())
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
 				ctx.Logger().Error("fail to set network data", "error", err)
 			}
@@ -442,6 +442,8 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			if outputs[i].MaxGas.IsEmpty() && !outputs[i].Chain.Equals(common.THORChain) {
 				return nil, cosmos.ZeroUint(), fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
+
+			// TODO: Check GasRate used for actual outbound
 			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
 		}
 
@@ -600,6 +602,8 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				ctx.Logger().Error("fail to add pool fee to reserve", "error", err)
 			}
 		}
+
+		//
 	}
 
 	return finalOutput, finalRuneFee, nil
