@@ -1,11 +1,8 @@
 package thorchain
 
 import (
-<<<<<<< HEAD
 	"strings"
 
-=======
->>>>>>> ea267b051 (bump txout manager)
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
