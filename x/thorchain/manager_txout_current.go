@@ -608,6 +608,8 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				ctx.Logger().Error("fail to add pool fee to reserve", "error", err)
 			}
 		}
+
+		//
 	}
 
 	return finalOutput, finalRuneFee, nil
