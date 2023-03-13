@@ -178,9 +178,7 @@ func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 
 	if surplusRune <= 0 {
 		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
-	} // else if surplusRune >= targetSurplusRune {
-	//	return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
-	// }
+	}
 
 	// How many BPs to reduce the multiplier
 	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
