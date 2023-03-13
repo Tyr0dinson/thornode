@@ -37,6 +37,20 @@ func export(path string) error {
 		log.Fatal().Err(err).Msg("failed to decode export")
 	}
 
+	// ignore genesis time and version for comparison
+	delete(export, "genesis_time")
+	appState, _ := export["app_state"].(map[string]any)
+	thorchain, _ := appState["thorchain"].(map[string]any)
+	delete(thorchain, "store_version")
+
+	// ignore node account version for comparison
+	nodeAccounts, _ := thorchain["node_accounts"].([]interface{})
+	for i, na := range nodeAccounts {
+		na, _ := na.(map[string]interface{})
+		delete(na, "version")
+		nodeAccounts[i] = na
+	}
+
 	// encode export
 	out, err = json.MarshalIndent(export, "", "  ")
 	if err != nil {
@@ -122,14 +136,17 @@ func checkExportInvariants(genesis map[string]any) error {
 		}
 	}
 
-	// print any deficits
+	// print any discrepencies
 	for _, coin := range sumPoolAsset {
 		for _, vaultCoin := range sumVaultAsset {
-			if coin.Asset.Equals(vaultCoin.Asset) {
+			if coin.Asset.Equals(vaultCoin.Asset) && !coin.Amount.Equal(vaultCoin.Amount) {
 				if coin.Amount.GT(vaultCoin.Amount) {
-					fmt.Printf("%s vault deficit: %s\n", coin.Asset, coin.Amount.Sub(vaultCoin.Amount))
-					err = errors.New("vault deficit")
+					fmt.Printf("%s pool has %s more than its vaults\n", coin.Asset, common.SafeSub(vaultCoin.Amount, coin.Amount))
 				}
+				if vaultCoin.Amount.GT(coin.Amount) {
+					fmt.Printf("%s vaults have %s more than their pool\n", coin.Asset, common.SafeSub(vaultCoin.Amount, coin.Amount))
+				}
+				err = errors.New("pool discrepancy")
 			}
 		}
 	}
@@ -162,24 +179,6 @@ func checkExportChanges(newExport map[string]any, path string) error {
 	err = json.NewDecoder(f).Decode(&oldExport)
 	if err != nil {
 		log.Err(err).Msg("failed to decode existing export")
-	}
-
-	// ignore genesis time and version for comparison
-	newExport["genesis_time"] = oldExport["genesis_time"]
-	newAppState, _ := newExport["app_state"].(map[string]any)
-	oldAppState, _ := oldExport["app_state"].(map[string]any)
-	newThorchain, _ := newAppState["thorchain"].(map[string]any)
-	oldThorchain, _ := oldAppState["thorchain"].(map[string]any)
-	newThorchain["store_version"] = oldThorchain["store_version"]
-
-	// ignore node account version for comparison
-	newNodeAccounts, _ := newThorchain["node_accounts"].([]interface{})
-	oldNodeAccounts, _ := oldThorchain["node_accounts"].([]interface{})
-	for i, na := range newNodeAccounts {
-		na, _ := na.(map[string]interface{})
-		oldNa, _ := oldNodeAccounts[i].(map[string]interface{})
-		na["version"] = oldNa["version"]
-		newNodeAccounts[i] = na
 	}
 
 	// compare exports

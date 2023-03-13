@@ -9,6 +9,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/simapp"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	crisis "github.com/cosmos/cosmos-sdk/x/crisis/types"
 	"github.com/tendermint/tendermint/libs/log"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -167,6 +168,20 @@ func (k KVStoreDummy) RemovePool(_ cosmos.Context, _ common.Asset)     {}
 
 func (k KVStoreDummy) SetPoolLUVI(ctx cosmos.Context, asset common.Asset, luvi cosmos.Uint) {}
 func (k KVStoreDummy) GetPoolLUVI(ctx cosmos.Context, asset common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error) {
+	return Loan{}, kaboom
+}
+func (k KVStoreDummy) SetLoan(ctx cosmos.Context, _ Loan)                                 {}
+func (k KVStoreDummy) RemoveLoan(ctx cosmos.Context, _ Loan)                              {}
+func (k KVStoreDummy) SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) {}
+func (k KVStoreDummy) GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
 }
 
@@ -528,6 +543,10 @@ func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error
 func (k KVStoreDummy) SetTHORName(ctx cosmos.Context, name THORName)          {}
 func (k KVStoreDummy) GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) DeleteTHORName(ctx cosmos.Context, _ string) error      { return kaboom }
+
+func (k KVStoreDummy) InvariantRoutes() []crisis.InvarRoute {
+	return nil
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

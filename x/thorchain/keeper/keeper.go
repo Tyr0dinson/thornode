@@ -5,6 +5,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	crisis "github.com/cosmos/cosmos-sdk/x/crisis/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -39,10 +40,13 @@ type Keeper interface {
 	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
 	AddCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) error
 
+	InvariantRoutes() []crisis.InvarRoute
+
 	// Keeper Interfaces
 	KeeperPool
 	KeeperLastHeight
 	KeeperLiquidityProvider
+	KeeperLoan
 	KeeperNodeAccount
 	KeeperObserver
 	KeeperObservedTx
@@ -87,6 +91,15 @@ type KeeperLastHeight interface {
 	GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64, error)
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error)
+}
+
+type KeeperLoan interface {
+	GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator
+	GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error)
+	SetLoan(ctx cosmos.Context, _ Loan)
+	RemoveLoan(ctx cosmos.Context, _ Loan)
+	SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint)
+	GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error)
 }
 
 type KeeperLiquidityProvider interface {

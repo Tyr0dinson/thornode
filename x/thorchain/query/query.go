@@ -39,6 +39,8 @@ var (
 	QueryLiquidityProvider   = Query{Key: "lp", EndpointTemplate: "/%s/pool/{%s}/liquidity_provider/{%s}"}
 	QuerySavers              = Query{Key: "savers", EndpointTemplate: "/%s/pool/{%s}/savers"}
 	QuerySaver               = Query{Key: "saver", EndpointTemplate: "/%s/pool/{%s}/saver/{%s}"}
+	QueryBorrowers           = Query{Key: "borrowers", EndpointTemplate: "/%s/pool/{%s}/borrowers"}
+	QueryBorrower            = Query{Key: "borrower", EndpointTemplate: "/%s/pool/{%s}/borrower/{%s}"}
 	QueryTx                  = Query{Key: "tx", EndpointTemplate: "/%s/tx/{%s}"}
 	QueryTxVoterOld          = Query{Key: "txvoterold", EndpointTemplate: "/%s/tx/{%s}/signers"}
 	QueryTxVoter             = Query{Key: "txvoter", EndpointTemplate: "/%s/tx/details/{%s}"}
@@ -79,6 +81,8 @@ var (
 	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
 	QueryQuoteSaverDeposit   = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
 	QueryQuoteSaverWithdraw  = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
+	QueryInvariants          = Query{Key: "invariants", EndpointTemplate: "/%s/invariants"}
+	QueryInvariant           = Query{Key: "invariant", EndpointTemplate: "/%s/invariant/{%s}"}
 
 	// queries only available on regtest builds
 	QueryExport      = Query{Key: "export", EndpointTemplate: "/%s/export"}
@@ -93,6 +97,8 @@ var Queries = []Query{
 	QueryLiquidityProvider,
 	QuerySavers,
 	QuerySaver,
+	QueryBorrowers,
+	QueryBorrower,
 	QueryTxStages,
 	QueryTxStatus,
 	QueryTxVoter,
@@ -133,6 +139,8 @@ var Queries = []Query{
 	QueryQuoteSwap,
 	QueryQuoteSaverDeposit,
 	QueryQuoteSaverWithdraw,
+	QueryInvariants,
+	QueryInvariant,
 	QueryExport,
 	QueryBlockEvents,
 }

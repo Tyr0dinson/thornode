@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.106.0
+  version: 1.107.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -139,6 +139,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SaversResponse"
+
+  # # ------------------------------ loans ------------------------------
+
+  /thorchain/pool/{asset}/borrower/{address}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/asset"
+      - $ref: "#/components/parameters/address"
+    get:
+      description: Returns the borrower position given the pool and address.
+      operationId: borrower
+      tags:
+        - Borrowers
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BorrowerResponse"
+
+  /thorchain/pool/{asset}/borrowers:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/asset"
+    get:
+      description: Returns all borrowers for the given pool.
+      operationId: borrowers
+      tags:
+        - Borrowers
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BorrowersResponse"
 
   # ------------------------------ transactions ------------------------------
 
@@ -296,7 +333,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/VaultsResponse"
 
-  /thorchain/vaults/{pubkey}:
+  /thorchain/vault/{pubkey}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/pubkey"
@@ -860,6 +897,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/QuoteSaverWithdrawResponse"
 
+  # ------------------------------ invariants ------------------------------
+
+  /thorchain/invariant/{invariant}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/invariant"
+    get:
+      description: Returns result of running the given invariant.
+      operationId: invariant
+      tags:
+        - Invariants
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvariantResponse"
+
+  /thorchain/invariants:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns a list of available invariants.
+      operationId: invariants
+      tags:
+        - Invariants
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvariantsResponse"
+
 ########################################################################################
 # Components
 ########################################################################################
@@ -927,6 +999,14 @@ components:
         type: string
         example: "BTC"
 
+    invariant:
+      name: invariant
+      in: path
+      required: true
+      schema:
+        type: string
+        example: asgard
+
   # ------------------------------ schemas ------------------------------
 
   schemas:
@@ -947,6 +1027,7 @@ components:
         - savers_units
         - synth_mint_paused
         - synth_supply_remaining
+        - loan_collateral
       properties:
         balance_rune:
           type: string
@@ -1002,6 +1083,10 @@ components:
           type: string
           example: "123456"
           description: the amount of synth supply remaining before the current max supply is reached
+        loan_collateral:
+          type: string
+          example: "123456"
+          description: the amount of collateral collects for loans
 
     LiquidityProviderSummary:
       type: object
@@ -1151,6 +1236,45 @@ components:
         growth_pct:
           type: string
           example: "0.02"
+
+    Borrower:
+      type: object
+      required:
+        - owner
+        - asset
+        - debt_up
+        - debt_down
+        - collateral_up
+        - collateral_down
+        - last_open_height
+        - last_repay_height
+      properties:
+        owner:
+          type: string
+          example: "bnb1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        asset:
+          type: string
+          example: "BNB.BNB"
+        debt_up:
+          type: string
+          example: "123456"
+        debt_down:
+          type: string
+          example: "123456"
+        collateral_up:
+          type: string
+          example: "123456"
+        collateral_down:
+          type: string
+          example: "123456"
+        last_open_height:
+          type: integer
+          format: int64
+          example: 82745
+        last_repay_height:
+          type: integer
+          format: int64
+          example: 82745
 
     Coin:
       type: object
@@ -1785,6 +1909,14 @@ components:
       items:
         $ref: "#/components/schemas/Saver"
 
+    BorrowerResponse:
+      $ref: "#/components/schemas/Borrower"
+
+    BorrowersResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/Borrower"
+
     TxResponse:
       type: object
       properties:
@@ -1975,6 +2107,7 @@ components:
               - chain
               - to_address
               - coin
+              - refund
             properties:
               chain:
                 type: string
@@ -1984,6 +2117,10 @@ components:
                 example: "bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e"
               coin:
                 $ref: "#/components/schemas/Coin"
+              refund:
+                type: boolean
+                example: false
+                description: returns true if the planned transaction has a refund memo
         out_txs:
           type: array
           items:
@@ -2248,6 +2385,34 @@ components:
       example:
         NODEOPERATORFEE: 2000
         NUMBEROFNEWNODESPERCHURN: 2
+
+    InvariantResponse:
+      type: object
+      required:
+        - invariant
+        - broken
+        - msg
+      properties:
+        invariant:
+          type: string
+          example: asgard
+          description: The name of the invariant.
+        broken:
+          type: boolean
+          example: false
+          description: Returns true if the invariant is broken.
+        msg:
+          type: string
+          example: "insolvent: 200000rune\noversolvent: 1btc/btc"
+          description: Informative message about the invariant result.
+
+    InvariantsResponse:
+      type: object
+      properties:
+        invariants:
+          type: array
+          items:
+            type: string
 
     MimirNodesResponse:
       type: object

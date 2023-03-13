@@ -79,7 +79,7 @@ The state definition can be any valid data to deep merge with the default genera
 
 ```yaml
 type: state
-data:
+genesis:
   app_state:
     thorchain:
       pools:
@@ -147,9 +147,11 @@ type: tx-send
 from_address: {{ addr_thor_fox }}
 to_address: {{ addr_thor_cat }}
 amount:
-  - amount: "200000000"
-    asset: "rune"
+  - denom: "rune"
+    amount: "200000000"
 ```
+
+All transactions can optionally set a `sequence` parameter to override the transaction sequence - this is required if attempting to send multiple transactions from the same address in the same block.
 
 ### Create Blocks Definition
 

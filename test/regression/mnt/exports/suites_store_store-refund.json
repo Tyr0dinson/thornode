@@ -157,19 +157,10 @@
           ]
         },
         {
-          "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-          "coins": [
-            {
-              "amount": "100000000000",
-              "denom": "rune"
-            }
-          ]
-        },
-        {
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "40000000000000",
+              "amount": "35000000000000",
               "denom": "rune"
             }
           ]
@@ -191,6 +182,15 @@
               "denom": "rune"
             }
           ]
+        },
+        {
+          "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+          "coins": [
+            {
+              "amount": "5000000000000",
+              "denom": "rune"
+            }
+          ]
         }
       ],
       "denom_metadata": [],
@@ -204,7 +204,7 @@
           "denom": "btc/btc"
         },
         {
-          "amount": "50100000000000",
+          "amount": "50000000000000",
           "denom": "rune"
         },
         {
@@ -286,6 +286,7 @@
       "chain_contracts": [],
       "last_chain_heights": [],
       "liquidity_providers": null,
+      "loans": [],
       "mimirs": [],
       "msg_swaps": [],
       "network": {
@@ -307,15 +308,13 @@
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
-          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz",
-          "version": "1.106.0"
+          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "pools": null,
       "reserve_contributors": null,
-      "store_version": "106",
       "tx_outs": null,
       "vaults": [
         {
@@ -371,6 +370,5 @@
     },
     "version": {}
   },
-  "genesis_time": "2023-02-22T17:35:21.568014508Z",
   "initial_height": "2"
 }

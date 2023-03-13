@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -659,31 +661,6 @@ func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 	return false
 }
 
-// isChainHalted check whether the given chain is halt
-// chain halt is different as halt trading , when a chain is halt , there is no observation on the given chain
-// outbound will not be signed and broadcast
-func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
-	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
-	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
-		ctx.Logger().Info("global is halt")
-		return true
-	}
-
-	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
-	if err == nil && haltChain > ctx.BlockHeight() {
-		ctx.Logger().Info("node global is halt")
-		return true
-	}
-
-	mimirKey := fmt.Sprintf("Halt%sChain", chain)
-	haltChain, err = mgr.Keeper().GetMimir(ctx, mimirKey)
-	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
-		ctx.Logger().Info("chain is halt", "chain", chain)
-		return true
-	}
-	return false
-}
-
 // isSynthMintPaused fails validation if synth supply is already too high, relative to pool depth
 func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	version := mgr.GetVersion()
@@ -697,31 +674,6 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 	default:
 		return nil
 	}
-}
-
-func isSynthMintPausedV99(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
-	maxSynths, err := mgr.Keeper().GetMimir(ctx, constants.MaxSynthPerPoolDepth.String())
-	if maxSynths < 0 || err != nil {
-		maxSynths = mgr.GetConstants().GetInt64Value(constants.MaxSynthPerPoolDepth)
-	}
-
-	synthSupply := mgr.Keeper().GetTotalSupply(ctx, targetAsset.GetSyntheticAsset())
-	pool, err := mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
-	if err != nil {
-		return ErrInternal(err, "fail to get pool")
-	}
-
-	if pool.BalanceAsset.IsZero() {
-		return fmt.Errorf("pool(%s) has zero asset balance", pool.Asset.String())
-	}
-
-	synthSupplyAfterSwap := synthSupply.Add(outputAmt)
-	coverage := int64(synthSupplyAfterSwap.MulUint64(MaxWithdrawBasisPoints).Quo(pool.BalanceAsset.MulUint64(2)).Uint64())
-	if coverage > maxSynths {
-		return fmt.Errorf("synth quantity is too high relative to asset depth of related pool (%d/%d)", coverage, maxSynths)
-	}
-
-	return nil
 }
 
 func isSynthMintPausedV102(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
@@ -832,6 +784,7 @@ func anchorMedian(ctx cosmos.Context, mgr Manager, assets []common.Asset) cosmos
 		}
 		// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
 		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+
 		if !value.IsZero() {
 			p = append(p, value)
 		}
@@ -877,6 +830,7 @@ func getAnchors(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) []
 		}
 		for _, pool := range pools {
 			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
+			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
 			val, err := keeper.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
@@ -1222,4 +1176,22 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 	}
 
 	return nil
+}
+
+// storeContextTxID stores the current transaction id at the provided context key.
+func storeContextTxID(ctx cosmos.Context, key interface{}) (cosmos.Context, error) {
+	if ctx.Value(key) == nil {
+		hash := sha256.New()
+		_, err := hash.Write(ctx.TxBytes())
+		if err != nil {
+			return ctx, fmt.Errorf("fail to get txid: %w", err)
+		}
+		txid := hex.EncodeToString(hash.Sum(nil))
+		txID, err := common.NewTxID(txid)
+		if err != nil {
+			return ctx, fmt.Errorf("fail to get txid: %w", err)
+		}
+		ctx = ctx.WithValue(key, txID)
+	}
+	return ctx, nil
 }

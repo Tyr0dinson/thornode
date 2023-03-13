@@ -54,22 +54,22 @@ asserts:
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 1 }}'
-    chain: BTC
-    from_address: {{ addr_btc_dog }}
-    to_address: {{ addr_btc_fox }}
-    coins:
-      - amount: "959290"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10500"
-        asset: "BTC.BTC"
-    memo: "OUT:{{ native_txid -1 }}"
-  block_height: 2
-  finalise_height: 2
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "959290"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -92,29 +92,29 @@ params:
   amount: 5000000
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 4618647761
+  - .expected_amount_out|tonumber == 4618633817
   - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}"
   - .inbound_address == "{{ addr_btc_dog }}"
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 2 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10500"
-        asset: "BTC.BTC"
-    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
-  block_height: 3
-  finalise_height: 3
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -124,7 +124,7 @@ description: rune balance should increase after swap
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503616647761
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503616633817
 ---
 ########################################################################################
 # quote and swap rune to btc synth
@@ -137,7 +137,7 @@ params:
   to_asset: BTC/BTC
   amount: 1000000000
 asserts:
-  - .expected_amount_out|tonumber == 1066315
+  - .expected_amount_out|tonumber == 1066320
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -154,8 +154,8 @@ description: account should have spent rune and received synth btc
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502614647761
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1066315
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502614633817
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1066320
 ---
 ########################################################################################
 # quote and swap rune to btc synth with tolerance
@@ -180,7 +180,7 @@ params:
   amount: 100000000
   tolerance_bps: 300
 asserts:
-  - .expected_amount_out|tonumber == 104604
+  - .expected_amount_out|tonumber == 104605
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -197,8 +197,8 @@ description: account should have spent rune and received synth btc
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502512647761
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170919
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502512633817
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170925
 ---
 ########################################################################################
 # quote and swap rune to btc with tolerance and affiliate
@@ -228,8 +228,8 @@ params:
   affiliate: {{ addr_thor_pig }}
   affiliate_bps: 500
 asserts:
-  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:912629:{{ addr_thor_pig }}:500"
-  - .expected_amount_out|tonumber == 973550
+  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:912636:{{ addr_thor_pig }}:500"
+  - .expected_amount_out|tonumber == 973557
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -251,22 +251,22 @@ asserts:
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 3 }}'
-    chain: BTC
-    from_address: {{ addr_btc_dog }}
-    to_address: {{ addr_btc_fox }}
-    coins:
-      - amount: "973550"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10500"
-        asset: "BTC.BTC"
-    memo: "OUT:{{ native_txid -1 }}"
-  block_height: 4
-  finalise_height: 4
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "973557"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -276,6 +276,13 @@ description: outbound should have been observed
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+type: check
+description: affiliate should have more rune after swap
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 50000000
 ---
 ########################################################################################
 # quote and swap eth to btc with tolerance and affiliate
@@ -305,28 +312,28 @@ params:
   affiliate_bps: 500
   destination: {{ addr_btc_fox }}
 asserts:
-  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:895365:{{ addr_thor_pig }}:500"
-  - .expected_amount_out|tonumber == 936977
+  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:895371:{{ addr_thor_pig }}:500"
+  - .expected_amount_out|tonumber == 936984
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 4 }}'
-    chain: ETH
-    from_address: {{ addr_eth_fox }}
-    to_address: {{ addr_eth_dog }}
-    coins:
-      - amount: "10000000"
-        asset: "ETH.ETH"
-        decimals: 8
-    gas:
-      - amount: "100000"
-        asset: "ETH.ETH"
-    memo: "=:BTC.BTC:{{ addr_btc_fox }}:895365:{{ addr_thor_pig }}:500"
-  block_height: 5
-  finalise_height: 5
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "100000"
+          asset: "ETH.ETH"
+      memo: "=:BTC.BTC:{{ addr_btc_fox }}:895365:{{ addr_thor_pig }}:500"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -341,22 +348,22 @@ asserts:
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 5 }}'
-    chain: BTC
-    from_address: {{ addr_btc_dog }}
-    to_address: {{ addr_btc_fox }}
-    coins:
-      - amount: "936977"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10500"
-        asset: "BTC.BTC"
-    memo: "OUT:{{ observe_txid 4 }}"
-  block_height: 6
-  finalise_height: 6
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "936984"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 4 }}"
+    block_height: 6
+    finalise_height: 6
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -366,3 +373,98 @@ description: outbound should be scheduled
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+########################################################################################
+# quote and swap eth to rune with tolerance and thorname affiliate
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "1000000001"
+    denom: "rune"
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "~:xx:THOR:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: thorname "xx" should be registered
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+---
+type: check
+description: check swap quote from eth to rune with valid tolerance and thorname affiliate
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: ETH.ETH
+  to_asset: THOR.RUNE
+  amount: 10000000
+  tolerance_bps: 1000
+  affiliate: xx
+  affiliate_bps: 500
+  destination: {{ addr_thor_fox }}
+asserts:
+  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252263:xx:500"
+  - .expected_amount_out|tonumber == 912114321
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "100000"
+          asset: "ETH.ETH"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:838256119:xx:500"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: check
+description: establish balance before swap
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170925
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500508633816
+---
+type: check
+description: establish affiliate balance before swap
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 95019968
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: account should have more rune after swap
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170925
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2501420748137
+---
+type: check
+description: affiliate should have more rune after swap
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 141088304

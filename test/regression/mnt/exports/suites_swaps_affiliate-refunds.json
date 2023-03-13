@@ -138,7 +138,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "542029090",
+              "amount": "542027392",
               "denom": "rune"
             }
           ]
@@ -178,7 +178,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "199491395699",
+              "amount": "199490331921",
               "denom": "rune"
             }
           ]
@@ -187,7 +187,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "40000024171028",
+              "amount": "35000025280849",
               "denom": "rune"
             }
           ]
@@ -214,7 +214,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "404183",
+              "amount": "5000000359838",
               "denom": "rune"
             }
           ]
@@ -338,12 +338,13 @@
           "units": "100000000000"
         }
       ],
+      "loans": [],
       "mimirs": [],
       "msg_swaps": [],
       "network": {
         "LPIncomeSplit": "9601",
         "NodeIncomeSplit": "399",
-        "bond_reward_rune": "404183",
+        "bond_reward_rune": "359838",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
         "total_bond_units": "7"
@@ -372,8 +373,7 @@
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
-          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz",
-          "version": "1.105.0"
+          "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
       "observed_tx_in_voters": null,
@@ -383,7 +383,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100521000",
-          "balance_rune": "99488349038",
+          "balance_rune": "99487666092",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -394,7 +394,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100003046661",
+          "balance_rune": "100002665829",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -403,7 +403,6 @@
         }
       ],
       "reserve_contributors": null,
-      "store_version": "105",
       "tx_outs": null,
       "vaults": [
         {
@@ -473,6 +472,5 @@
     },
     "version": {}
   },
-  "genesis_time": "2023-02-07T22:02:48.9551364Z",
   "initial_height": "8"
 }
