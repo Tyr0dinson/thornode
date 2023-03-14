@@ -103,6 +103,7 @@ func (GasManagerTestSuiteV102) TestGetFee(c *C) {
 	c.Assert(k.SetPool(ctx, Pool{
 		BalanceRune:  cosmos.NewUint(500 * common.One),
 		BalanceAsset: cosmos.NewUint(500 * common.One),
+		Decimals:     8,
 		Asset:        busdAsset,
 		Status:       PoolAvailable,
 	}), IsNil)
