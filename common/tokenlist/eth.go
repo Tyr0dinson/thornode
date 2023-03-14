@@ -28,6 +28,9 @@ func init() {
 	if err := json.Unmarshal(ethtokens.ETHTokenListRawV101, &ethTokenListV101); err != nil {
 		panic(err)
 	}
+	if err := json.Unmarshal(ethtokens.ETHTokenListRawV108, &ethTokenListV108); err != nil {
+		panic(err)
+	}
 }
 
 func GetETHTokenList(version semver.Version) EVMTokenList {
