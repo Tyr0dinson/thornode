@@ -12,6 +12,7 @@ var (
 	ethTokenListV95  EVMTokenList
 	ethTokenListV97  EVMTokenList
 	ethTokenListV101 EVMTokenList
+	ethTokenListV108 EVMTokenList
 )
 
 func init() {
@@ -31,6 +32,8 @@ func init() {
 
 func GetETHTokenList(version semver.Version) EVMTokenList {
 	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return ethTokenListV108
 	case version.GTE(semver.MustParse("1.101.0")):
 		return ethTokenListV101
 	case version.GTE(semver.MustParse("1.97.0")):
