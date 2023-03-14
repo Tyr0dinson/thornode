@@ -29,7 +29,9 @@ func (s TxOutStoreV102Suite) TestAddGasFees(c *C) {
 
 func (s TxOutStoreV102Suite) TestEndBlock(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 
 	item := TxOutItem{
 		Chain:     common.BNBChain,
@@ -115,7 +117,9 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem(c *C) {
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
