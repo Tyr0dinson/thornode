@@ -96,7 +96,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 296654462
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 296689183
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -107,7 +107,7 @@ txs:
     from_address: {{ addr_btc_dog }}
     to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "4729000"
+      - amount: "4736000"
         asset: "BTC.BTC"
         decimals: 8
     gas:
@@ -165,7 +165,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 542027392
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 542131026
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -176,7 +176,7 @@ txs:
     from_address: {{ addr_btc_dog }}
     to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "4729000"
+      - amount: "4736000"
         asset: "BTC.BTC"
         decimals: 8
     gas:

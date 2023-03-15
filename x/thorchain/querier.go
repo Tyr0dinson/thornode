@@ -450,6 +450,8 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		TotalBondUnits:  data.TotalBondUnits.String(),
 		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
 		VaultsMigrating: vaultsMigrating,
+		GasSpentRune:    data.OutboundGasSpentRune,
+		GasWithheldRune: data.OutboundGasWithheldRune,
 	}
 
 	return jsonify(ctx, result)
