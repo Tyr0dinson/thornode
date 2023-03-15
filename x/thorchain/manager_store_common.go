@@ -250,8 +250,7 @@ func refundDroppedSwapOutFromRUNEV106(ctx cosmos.Context, mgr *Mgrs, droppedTx D
 	return nil
 }
 
-// When an ObservedTxInVoter has a single txout item swallowed by the vaults,
-// requeue it.
+// When an ObservedTxInVoter has dangling Actions items swallowed by the vaults, requeue them.
 func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.TxID) {
 	// Select the least secure ActiveVault Asgard for all outbounds.
 	// Even if it fails (as in if the version changed upon the keygens-complete block of a churn),
@@ -274,63 +273,57 @@ func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 			continue
 		}
 
-		// Confirm that the voter has only one dangling Actions item.
-		if len(voter.OutTxs) != len(voter.Actions)-1 {
-			ctx.Logger().Debug(fmt.Sprintf("Expected (%d) OutTxs for (%s), found (%d).", len(voter.Actions)-1, txID, len(voter.OutTxs)))
+		if len(voter.OutTxs) >= len(voter.Actions) {
+			ctx.Logger().Debug(fmt.Sprintf("(%d) OutTxs present for (%s), despite expecting fewer than the (%d) Actions.", len(voter.OutTxs), txID, len(voter.Actions)))
 			continue
 		}
 
-		// This is to be the index of the single dangling Actions item.
-		index := -1
-		// Determine which Actions item is dangling.
+		var indices []int
 		for i := range voter.Actions {
 			if isActionsItemDangling(voter, i) {
-				// Do not proceed if more than one Actions item in the voter appears to be dangling.
-				if index >= 0 {
-					ctx.Logger().Debug(fmt.Sprintf("Multiple dangling Actions items found for (%s).", txID))
-					index = -2
-					break
-				}
-
-				// Record the index of the dangling Actions item.
-				index = i
+				indices = append(indices, i)
 			}
 		}
-		if index < 0 {
-			// index -1 indicates no dangling item found; index -2 indicates multiple dangling items found (already logged).
-			if index == -1 {
-				ctx.Logger().Debug(fmt.Sprintf("No dangling Actions item found for (%s).", txID))
-			}
+		if len(indices) == 0 {
+			ctx.Logger().Debug(fmt.Sprintf("No dangling Actions item found for (%s).", txID))
 			continue
 		}
 
-		// Use a pointer to update the voter as well.
-		actionItem := &voter.Actions[index]
-
-		// Update the vault pubkey.
-		actionItem.VaultPubKey = vaultPubKey
+		if len(voter.Actions)-len(voter.OutTxs) != len(indices) {
+			ctx.Logger().Debug(fmt.Sprintf("(%d) Actions and (%d) OutTxs present for (%s), yet there appeared to be (%d) dangling Actions.", len(voter.Actions), len(voter.OutTxs), txID, len(indices)))
+			continue
+		}
 
 		// Update the voter's FinalisedHeight to give another MaxOutboundAttempts.
 		voter.FinalisedHeight = ctx.BlockHeight()
 		voter.OutboundHeight = ctx.BlockHeight()
 
-		// Update the Actions item's MaxGas and GasRate.
-		// Note that nothing in this function should require a GasManager BeginBlock.
-		gasCoin, err := mgr.GasMgr().GetMaxGas(ctx, actionItem.Chain)
-		if err != nil {
-			ctx.Logger().Error("fail to get max gas", "chain", actionItem.Chain, "error", err)
-			continue
-		}
-		actionItem.MaxGas = common.Gas{gasCoin}
-		actionItem.GasRate = int64(mgr.GasMgr().GetGasRate(ctx, actionItem.Chain).Uint64())
+		for _, index := range indices {
+			// Use a pointer to update the voter as well.
+			actionItem := &voter.Actions[index]
 
-		// UnSafeAddTxOutItem is used to queue the txout item directly, without for instance deducting another fee.
-		err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, *actionItem)
-		if err != nil {
-			ctx.Logger().Error("fail to add outbound tx", "error", err)
-			continue
+			// Update the vault pubkey.
+			actionItem.VaultPubKey = vaultPubKey
+
+			// Update the Actions item's MaxGas and GasRate.
+			// Note that nothing in this function should require a GasManager BeginBlock.
+			gasCoin, err := mgr.GasMgr().GetMaxGas(ctx, actionItem.Chain)
+			if err != nil {
+				ctx.Logger().Error("fail to get max gas", "chain", actionItem.Chain, "error", err)
+				continue
+			}
+			actionItem.MaxGas = common.Gas{gasCoin}
+			actionItem.GasRate = int64(mgr.GasMgr().GetGasRate(ctx, actionItem.Chain).Uint64())
+
+			// UnSafeAddTxOutItem is used to queue the txout item directly, without for instance deducting another fee.
+			err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, *actionItem)
+			if err != nil {
+				ctx.Logger().Error("fail to add outbound tx", "error", err)
+				continue
+			}
 		}
-		// Having added the txout item, set the updated voter.
+
+		// Having requeued all dangling Actions items, set the updated voter.
 		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	}
 }
