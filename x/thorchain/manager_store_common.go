@@ -3,7 +3,6 @@ package thorchain
 import (
 	"crypto/sha256"
 	"fmt"
-	"strings"
 
 	"github.com/blang/semver"
 
@@ -268,7 +267,6 @@ func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 	}
 	vaultPubKey := activeAsgards[0].PubKey
 
-txIDRange:
 	for _, txID := range txIDs {
 		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 		if err != nil {
@@ -285,41 +283,24 @@ txIDRange:
 		// This is to be the index of the single dangling Actions item.
 		index := -1
 		// Determine which Actions item is dangling.
-	actionsRange:
-		for i, toi := range voter.Actions {
-			// If any OutTxs item matches an Actions item, deem it to be not dangling.
-			for _, outboundTx := range voter.OutTxs {
-				// The comparison code is based on matchActionItem, as matchActionItem is unimportable.
-				// note: Coins.Contains will match amount as well
-				matchCoin := outboundTx.Coins.Contains(toi.Coin)
-				if !matchCoin && toi.Coin.Asset.Equals(toi.Chain.GetGasAsset()) {
-					asset := toi.Chain.GetGasAsset()
-					intendToSpend := toi.Coin.Amount.Add(toi.MaxGas.ToCoins().GetCoin(asset).Amount)
-					actualSpend := outboundTx.Coins.GetCoin(asset).Amount.Add(outboundTx.Gas.ToCoins().GetCoin(asset).Amount)
-					if intendToSpend.Equal(actualSpend) {
-						matchCoin = true
-					}
+		for i := range voter.Actions {
+			if isActionsItemDangling(voter, i) {
+				// Do not proceed if more than one Actions item in the voter appears to be dangling.
+				if index >= 0 {
+					ctx.Logger().Debug(fmt.Sprintf("Multiple dangling Actions items found for (%s).", txID))
+					index = -2
+					break
 				}
-				if strings.EqualFold(toi.Memo, outboundTx.Memo) &&
-					toi.ToAddress.Equals(outboundTx.ToAddress) &&
-					toi.Chain.Equals(outboundTx.Chain) &&
-					matchCoin {
-					// The Actions item is not dangling, so do not record its index.
-					continue actionsRange
-				}
-			}
 
-			// Do not proceed if more than one Actions item in the voter appears to be dangling.
-			if index >= 0 {
-				ctx.Logger().Debug(fmt.Sprintf("Multiple dangling Actions items found for (%s).", txID))
-				continue txIDRange
+				// Record the index of the dangling Actions item.
+				index = i
 			}
-
-			// Record the index of the dangling Actions item.
-			index = i
 		}
 		if index < 0 {
-			ctx.Logger().Debug(fmt.Sprintf("No dangling Actions item found for (%s).", txID))
+			// index -1 indicates no dangling item found; index -2 indicates multiple dangling items found (already logged).
+			if index == -1 {
+				ctx.Logger().Debug(fmt.Sprintf("No dangling Actions item found for (%s).", txID))
+			}
 			continue
 		}
 
