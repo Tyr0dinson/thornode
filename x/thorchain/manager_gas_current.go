@@ -61,7 +61,7 @@ func (gm *GasMgrV109) GetGas() common.Gas {
 }
 
 // GetFee retrieve the network fee information from kv store, and calculate the dynamic fee customer should pay
-// the return value is the amount of fee in RUNE
+// the return value is the amount of fee in asset
 func (gm *GasMgrV109) GetFee(ctx cosmos.Context, chain common.Chain, asset common.Asset) cosmos.Uint {
 	outboundTxFee, err := gm.keeper.GetMimir(ctx, constants.OutboundTransactionFee.String())
 	if outboundTxFee < 0 || err != nil {
@@ -100,18 +100,18 @@ func (gm *GasMgrV109) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 	if minOutboundUSD < 0 || err != nil {
 		minOutboundUSD = gm.constantsAccessor.GetInt64Value(constants.MinimumL1OutboundFeeUSD)
 	}
-	oneDollarRune := cosmos.ZeroUint()
+	runeUSDPrice := cosmos.ZeroUint()
 	// since gm.mgr get set at BeginBlock , so here add a safeguard incase gm.mgr is nil
 	if gm.mgr != nil {
-		oneDollarRune = DollarInRune(ctx, gm.mgr).QuoUint64(constants.DollarMulti)
+		runeUSDPrice = DollarInRune(ctx, gm.mgr).QuoUint64(constants.DollarMulti)
 	}
 	minAsset := cosmos.ZeroUint()
-	if !oneDollarRune.IsZero() {
+	if !runeUSDPrice.IsZero() {
 		// since MinOutboundUSD is in USD value , thus need to figure out how much RUNE
 		// here use GetShare instead GetSafeShare it is because minOutboundUSD can set to more than $1
 		minOutboundInRune := common.GetUncappedShare(cosmos.NewUint(uint64(minOutboundUSD)),
-			cosmos.NewUint(common.One),
-			oneDollarRune)
+			runeUSDPrice,
+			cosmos.NewUint(common.One))
 
 		minAsset = pool.RuneValueInAsset(minOutboundInRune)
 	}
