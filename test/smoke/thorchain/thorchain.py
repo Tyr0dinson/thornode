@@ -333,9 +333,7 @@ class ThorchainState:
             # figure out how much rune is an equal amount to gas.amount
             rune_amt = pool.get_asset_in_rune(gas.amount)
             self.reserve -= rune_amt  # take rune from the reserve
-            print("append spent rune: ", rune_amt)
             self.gas_spent_rune += rune_amt
-            print("self.gas_spent_rune: ", self.gas_spent_rune)
 
             pool.add(rune_amt, 0)  # replenish gas costs with rune
             pool.sub(0, gas.amount)  # subtract gas from pool
@@ -559,7 +557,7 @@ class ThorchainState:
                             print("gaia_max_gas: ", gaia_max_gas.amount)
                             print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
 
-                            gap = tx.max_gas[0].amount - gaia_max_gas
+                            gap = tx.max_gas[0].amount - gaia_max_gas.amount
                             gap = int(gap / 100) * 100
                             if gap > 0:
                                 coin.amount += gap
@@ -568,7 +566,7 @@ class ThorchainState:
 
                         if coin.asset.get_chain() == "ETH" and not asset_fee == 0:
                             if coin.asset.is_eth():
-                                tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
+                                tx.max_gas = [Coin(coin.asset, int(self.network_fees["ETH"] * 3/2))]
 
                             elif coin.asset.is_erc():
                                 fee_in_gas_asset = self.get_asset_fee(tx.chain)
@@ -616,9 +614,7 @@ class ThorchainState:
                 # add to the reserve / withheld gas only if there are outbounds
                 if len(outbounds) > 0:
                     self.reserve += rune_fee
-                    print("append withheld rune: ", rune_fee)
                     self.gas_withheld_rune += rune_fee
-                    print("self.gas_withheld_rune: ", self.gas_withheld_rune)
         return outbounds
 
     def _total_liquidity(self):
@@ -1086,10 +1082,11 @@ class ThorchainState:
         # get the fee that are supposed to be charged, this will only be
         # used if it is the last withdraw
         if asset == self.get_gas_asset(chain):
-            dynamic_fee = int(round(self.get_asset_fee(chain) / 2))
+            # dynamic_fee = int(round(self.get_asset_fee(chain)))
+            dynamic_fee = int(self.network_fees[chain] * 3/2)
         else:
             dynamic_fee = int(
-                round(pool.get_rune_in_asset(self.get_rune_fee(chain)) / 2)
+                round(pool.get_rune_in_asset(self.get_rune_fee(chain)))
             )
         tx_rune_gas = self.get_gas(RUNE.get_chain(), tx)
         withdraw_units, rune_amt, asset_amt = pool.withdraw(
@@ -1097,9 +1094,13 @@ class ThorchainState:
         )
         rune_amt += lp.pending_rune
 
+        print("dynamic_fee: ", dynamic_fee)
+
         # if this is our last liquidity provider of bnb, subtract a little BNB for gas.
         emit_asset = asset_amt
         outbound_asset_amt = asset_amt
+
+        print("outbound_asset_amt: ", outbound_asset_amt)
         self.btc_estimate_size = 255
         self.bch_estimate_size = 417
         self.ltc_estimate_size = 255
@@ -1117,9 +1118,11 @@ class ThorchainState:
                 asset_amt -= gas_amt
             elif pool.asset.is_eth():
                 gas = self.get_gas(asset.get_chain(), tx)
+                print("eth gas amount: ", gas.amount)
                 asset_amt -= dynamic_fee
                 outbound_asset_amt -= dynamic_fee
                 pool.asset_balance += gas.amount
+                print("final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_btc():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left

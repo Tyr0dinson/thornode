@@ -502,9 +502,7 @@ class Smoker:
                     # figure out which outbound event is which tx
                     for out in outbounds:
                         coin_o = out.coins_str()
-                        print("coin_o", coin_o)
                         coin_e = evt_t.get("coin")
-                        print("coin_e", coin_e)
 
                         if coin_o == coin_e:
                             self.thorchain_state.generate_outbound_events(txn, [out])
