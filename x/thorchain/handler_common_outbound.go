@@ -146,6 +146,8 @@ func (h CommonOutboundTxHandler) handleV98(ctx cosmos.Context, tx ObservedTx, in
 					asset := txOutItem.Chain.GetGasAsset()
 					intendToSpend := txOutItem.Coin.Amount.Add(txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount)
 					actualSpend := tx.Tx.Coins.GetCoin(asset).Amount.Add(tx.Tx.Gas.ToCoins().GetCoin(asset).Amount)
+					ctx.Logger().Info("txOut amount", "amt", txOutItem.Coin.Amount.String())
+					ctx.Logger().Info("tx amount", "amt", tx.Tx.Coins[0].Amount.String())
 					if intendToSpend.Equal(actualSpend) {
 						matchCoin = true
 						maxGasAmt := txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount

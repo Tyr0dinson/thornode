@@ -2205,6 +2205,10 @@ components:
           type: int64
           example: 1500000000
           description: Sum of the gas withheld from users to cover outbound gas
+        outbound_fee_multiplier:
+          type: string
+          example: "15000"
+          description: Current outbound fee multiplier, in basis points
 
     POLResponse:
       type: object

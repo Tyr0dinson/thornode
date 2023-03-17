@@ -441,17 +441,23 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 	vaultsMigrating := (len(vaults) != 0)
 
+	targetOutboundFeeSurplus := fetchConfigInt64(ctx, mgr, constants.TargetOutboundFeeSurplusRune)
+	maxMultiplierBasisPoints := fetchConfigInt64(ctx, mgr, constants.MaxOutboundFeeMultiplierBasisPoints)
+	minMultiplierBasisPoints := fetchConfigInt64(ctx, mgr, constants.MinOutboundFeeMultiplierBasisPoints)
+	outboundFeeMultiplier := mgr.gasMgr.CalcOutboundFeeMultiplier(targetOutboundFeeSurplus, data.OutboundGasSpentRune, data.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
+
 	result := openapi.NetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
 		// so its schema (and order here) should also be in alphabetical order.
-		BondRewardRune:  data.BondRewardRune.String(),
-		BurnedBep2Rune:  data.BurnedBep2Rune.String(),
-		BurnedErc20Rune: data.BurnedErc20Rune.String(),
-		TotalBondUnits:  data.TotalBondUnits.String(),
-		TotalReserve:    mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
-		VaultsMigrating: vaultsMigrating,
-		GasSpentRune:    data.OutboundGasSpentRune,
-		GasWithheldRune: data.OutboundGasWithheldRune,
+		BondRewardRune:        data.BondRewardRune.String(),
+		BurnedBep2Rune:        data.BurnedBep2Rune.String(),
+		BurnedErc20Rune:       data.BurnedErc20Rune.String(),
+		TotalBondUnits:        data.TotalBondUnits.String(),
+		TotalReserve:          mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
+		VaultsMigrating:       vaultsMigrating,
+		GasSpentRune:          data.OutboundGasSpentRune,
+		GasWithheldRune:       data.OutboundGasWithheldRune,
+		OutboundFeeMultiplier: wrapString(outboundFeeMultiplier.String()),
 	}
 
 	return jsonify(ctx, result)

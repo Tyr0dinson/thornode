@@ -56,6 +56,7 @@ type GasManager interface {
 	GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint
 	GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error)
 	SubGas(gas common.Gas)
+	CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint
 }
 
 // EventManager define methods need to be support to manage events

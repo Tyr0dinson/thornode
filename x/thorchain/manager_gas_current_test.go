@@ -187,47 +187,47 @@ func (GasManagerTestSuiteV108) TestOutboundFeeMultiplier(c *C) {
 	gasWithheld := int64(0)
 
 	// No surplus to start, should return maxMultiplier
-	m := gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m := gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
 
 	// More gas spent than withheld, use maxMultiplier
 	gasSpent = int64(1000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
 
 	// 10% surplus vs target, reduce multiplier by 10%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(110_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(19_500), Commentf("%d", m.Uint64()))
 
 	// 50% surplus vs target, reduce multiplier by 50%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(150_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(17_500), Commentf("%d", m.Uint64()))
 
 	// 75% surplus vs target, reduce multiplier by 75%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(175_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(16_250), Commentf("%d", m.Uint64()))
 
 	// 99% surplus vs target, reduce multiplier by 99%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(199_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_050), Commentf("%d", m.Uint64()))
 
 	// 100% surplus vs target, reduce multiplier by 100%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(200_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_000), Commentf("%d", m.Uint64()))
 
 	// 110% surplus vs target, still reduce multiplier by 100%
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(210_00000000)
-	m = gasMgr.calcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_000), Commentf("%d", m.Uint64()))
 }

@@ -305,3 +305,7 @@ func (gm *GasMgrV102) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 		gm.gasEvent.UpsertGasPool(gasPool)
 	}
 }
+
+func (gm *GasMgrV102) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+	return cosmos.ZeroUint()
+}

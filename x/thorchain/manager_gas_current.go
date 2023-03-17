@@ -127,8 +127,11 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 
 	// Calculate outbound fee based on current fee multiplier
 	chainBaseFee := networkFee.TransactionSize * networkFee.TransactionFeeRate
-	feeMultiplierBps := gm.calcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundGasSpentRune, network.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
+	ctx.Logger().Info("chain base fee", "fee", cosmos.NewUint(chainBaseFee).String())
+	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundGasSpentRune, network.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
+	ctx.Logger().Info("feeMultiplierBps", "bps", feeMultiplierBps.String())
 	finalFee := common.GetUncappedShare(cosmos.NewUint(chainBaseFee), cosmos.NewUint(10_000), feeMultiplierBps)
+	ctx.Logger().Info("finalFee", "amt", finalFee.String())
 
 	fee := cosmos.RoundToDecimal(
 		finalFee,
@@ -166,8 +169,8 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 	return pool.RuneValueInAsset(fee)
 }
 
-// calcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
-func (gm *GasMgrV108) calcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+// CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
+func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
 	// Sanity check
 	if targetSurplusRune == 0 {
 		return cosmos.NewUint(uint64(maxMultiplier))
@@ -328,7 +331,8 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas)        // Add to the pool
+			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
+			ctx.Logger().Info("append spent rune", "amt", runeGas.String())
 			network.OutboundGasSpentRune += int64(runeGas.Uint64()) // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
