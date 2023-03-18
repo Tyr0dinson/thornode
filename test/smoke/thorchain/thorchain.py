@@ -1158,10 +1158,13 @@ class ThorchainState:
                 estimate_gas_asset = (
                     int(self.ltc_tx_rate * 3 / 2) * self.ltc_estimate_size
                 )
+                print("estimate_gas_asset: ", estimate_gas_asset)
                 gas = Coin(gas.asset, estimate_gas_asset)
+                print("ltc outbound_asset_amt: ", outbound_asset_amt)
                 outbound_asset_amt -= int(estimate_gas_asset)
                 pool.asset_balance += dynamic_fee
                 asset_amt -= dynamic_fee
+                print("ltc final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_doge():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left
