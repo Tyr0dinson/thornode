@@ -1,0 +1,106 @@
+# This likely needs editing; consider questions of bond and balance.  Other questions:
+# How to get an address-specific Mocknet validator_cons_pub_key for the 'fish' and later nodes?
+# Particularly be careful of "panic: Cannot create validator set: duplicate entry Validator{".
+# Also consider copying piecemeal, according to desired number and status (compared to vault membership).
+type: state
+genesis:
+  initial_height: "0"
+  app_state:
+    thorchain:
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.2
+          node_address: {{ addr_thor_fox }}
+          bond_address: {{ addr_thor_fox }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5"
+            ed25519: "tthorpub1zcjduepqhu4l2kex363h3vtwzxtjhep28l888uuue5ms3czh9unlgm0p0kgs42gsuz"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqene73th796hyhqa45sevgrnjncr6jftglfkjk4l2xdjs035y805sud32km
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.3
+          node_address: {{ addr_thor_cat }}
+          bond_address: {{ addr_thor_cat }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu"
+            ed25519: "tthorpub1zcjduepqxgeswzgp3cnpv245sepz0utsw3qmr3k4rx6ppkzqsvqzulg0l3hsekzpyx"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqkylt7pps7afpuz4u2y3usflg5jemfu52zq5w2t4emf2ny3q9guuq5yph8h
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.4
+          node_address: {{ addr_thor_pig }}
+          bond_address: {{ addr_thor_pig }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqg0rpnr9y7csa6rzy73w7ldfhlf5kthmn77xzeqx68mueh9pest9vlvs93k"
+            ed25519: "tthorpub1zcjduepq0u3u7llwlzhfpxfwc5ye7445amrjpjma6m275za8mqvt3lakkprs6kykcw"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqjqwm5c75e8us7qsagv8dd0s7883g5fptmujdf0pnyzdpmz34r82srlg4vl
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.5
+          node_address: {{ addr_thor_fish }}
+          bond_address: {{ addr_thor_fish }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqw4clxzn0qlmpx3wqzwputnza4gdvpgh2musd9zzv6zhyr5zm6y820cgv83"
+            ed25519: "tthorpub1zcjduepqmkkk7dx7yenddq3rvpn308djlrjg9ldq5p6smgz9544q0amcmtlqnzk6a6"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.6
+          node_address: {{ addr_thor_wolf }}
+          bond_address: {{ addr_thor_wolf }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqt5ayg828h2wmjpag7vp8t0p2k04v3zze2jdhzmmjxewjrwtc8m4wgpj6zs"
+            ed25519: "tthorpub1zcjduepqp2rys3qgcsyx2rylrragjvwz9celx5wlt5uafu2shpy2y62qmqvq4f73ny"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.7
+          node_address: {{ addr_thor_mouse }}
+          bond_address: {{ addr_thor_mouse }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqf6uky8cs06qrpax6uf8zcq44a2a6l6gvn0nqmfpmyx3270q2g0qjnd77e5"
+            ed25519: "tthorpub1zcjduepqcdvnl2qtscj8zz7hnx6nk0eh66j0nd4ppcrvarxlpvgeh8ed9vyqa9gzsr"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.8
+          node_address: {{ addr_thor_hawk }}
+          bond_address: {{ addr_thor_hawk }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqw3ul84wcwfmlp6qe424yj5gyy7crrrfwftekje7qdwjpxty0umucg83u4q"
+            ed25519: "tthorpub1zcjduepqpez9x7a5rqdcpcnvhc7a0yn5shkclwyf96je76yfnmmju43l3vlq3xe4ya"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.9
+          node_address: {{ addr_thor_rabbit }}
+          bond_address: {{ addr_thor_rabbit }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqvfndn704y2pqrkqw2rwnsz3624p3lzethap9wfu4z25ttsprw24q9rknf4"
+            ed25519: "tthorpub1zcjduepq5787gkrg20gwsy5qqr9wunu8t7q076697ll4xm9ffdw25wnvv99qu364qg"
+          signer_membership: []
+          status: Active
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
