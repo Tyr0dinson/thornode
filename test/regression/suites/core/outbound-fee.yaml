@@ -37,7 +37,7 @@ txs:
     from_address: {{ addr_btc_dog }}
     to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "8998477"
+      - amount: "8250426"
         asset: "BTC.BTC"
         decimals: 8
     gas:
@@ -52,8 +52,14 @@ type: create-blocks
 count: 1
 ---
 type: check
+description: outbound should have been observed
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
 description: gas should be spent and updated
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .gas_spent_rune == 15323086
+  - .gas_spent_rune == 12582968
   - .gas_withheld_rune == 16784900
