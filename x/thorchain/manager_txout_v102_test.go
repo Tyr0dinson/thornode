@@ -29,7 +29,9 @@ func (s TxOutStoreV102Suite) TestAddGasFees(c *C) {
 
 func (s TxOutStoreV102Suite) TestEndBlock(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 
 	item := TxOutItem{
 		Chain:     common.BNBChain,
@@ -115,7 +117,9 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem(c *C) {
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -232,6 +236,10 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem(c *C) {
 func (s TxOutStoreV102Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c *C) {
 	SetupConfigForTest()
 	w := getHandlerTestWrapper(c, 1, true, true)
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	gasMgr := newGasMgrV102(constAccessor, w.keeper)
+
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
@@ -296,7 +304,7 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(80*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), gasMgr)
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -415,7 +423,9 @@ func (s TxOutStoreV102Suite) TestAddOutTxItemWithoutBFT(c *C) {
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(success, Equals, true)
@@ -628,7 +638,9 @@ func (s TxOutStoreV102Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtT
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(80*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -696,7 +708,9 @@ func (s TxOutStoreV102Suite) TestAddOutTxItemInteractionWithPool(c *C) {
 		InHash:    inTxID,
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
 	}
-	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	version := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(version)
+	txOutStore := newTxOutStorageV102(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV102(constAccessor, w.keeper))
 	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(success, Equals, true)

@@ -8,15 +8,15 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
-type GasManagerTestSuiteV102 struct{}
+type GasManagerTestSuiteV108 struct{}
 
-var _ = Suite(&GasManagerTestSuiteV102{})
+var _ = Suite(&GasManagerTestSuiteV108{})
 
-func (GasManagerTestSuiteV102) TestGasManagerV93(c *C) {
+func (GasManagerTestSuiteV108) TestGasManagerV93(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.K
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV102(constAccessor, k)
+	gasMgr := newGasMgrV108(constAccessor, k)
 	gasEvent := gasMgr.gasEvent
 	c.Assert(gasMgr, NotNil)
 	gasMgr.BeginBlock(mgr)
@@ -46,11 +46,11 @@ func (GasManagerTestSuiteV102) TestGasManagerV93(c *C) {
 	gasMgr.EndBlock(ctx, k, eventMgr)
 }
 
-func (GasManagerTestSuiteV102) TestGetFee(c *C) {
+func (GasManagerTestSuiteV108) TestGetFee(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV102(constAccessor, k)
+	gasMgr := newGasMgrV108(constAccessor, k)
 	gasMgr.BeginBlock(mgr)
 	fee := gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
 	defaultTxFee := uint64(constAccessor.GetInt64Value(constants.OutboundTransactionFee))
@@ -67,7 +67,7 @@ func (GasManagerTestSuiteV102) TestGetFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BNBChain, common.RuneAsset())
-	c.Assert(fee.Uint64(), Equals, bnbSingleTxFee.Uint64()*3, Commentf("%d vs %d", fee.Uint64(), bnbSingleTxFee.Uint64()*3))
+	c.Assert(fee.Uint64(), Equals, bnbSingleTxFee.Uint64()*2, Commentf("%d vs %d", fee.Uint64(), bnbSingleTxFee.Uint64()*3))
 
 	// BTC chain
 	networkFee = NewNetworkFee(common.BTCChain, 70, 50)
@@ -81,7 +81,7 @@ func (GasManagerTestSuiteV102) TestGetFee(c *C) {
 		Status:       PoolAvailable,
 	}), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain, common.RuneAsset())
-	c.Assert(fee.Uint64(), Equals, uint64(70*50*3))
+	c.Assert(fee.Uint64(), Equals, uint64(70*50*2))
 
 	// Synth asset (BTC/BTC)
 	sBTC, err := common.NewAsset("BTC/BTC")
@@ -117,14 +117,14 @@ func (GasManagerTestSuiteV102) TestGetFee(c *C) {
 	networkFee = NewNetworkFee(common.BTCChain, 1000, 50000)
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, networkFee), IsNil)
 	fee = gasMgr.GetFee(ctx, common.BTCChain, common.BTCAsset)
-	c.Assert(fee.Uint64(), Equals, uint64(150000000))
+	c.Assert(fee.Uint64(), Equals, uint64(100000000))
 }
 
-func (GasManagerTestSuiteV102) TestDifferentValidations(c *C) {
+func (GasManagerTestSuiteV108) TestDifferentValidations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV102(constAccessor, k)
+	gasMgr := newGasMgrV108(constAccessor, k)
 	gasMgr.BeginBlock(mgr)
 	helper := newGasManagerTestHelper(k)
 	eventMgr := newEventMgrV1()
@@ -155,10 +155,10 @@ func (GasManagerTestSuiteV102) TestDifferentValidations(c *C) {
 	gasMgr.EndBlock(ctx, helper, eventMgr)
 }
 
-func (GasManagerTestSuiteV102) TestGetMaxGas(c *C) {
+func (GasManagerTestSuiteV108) TestGetMaxGas(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
-	gasMgr := newGasMgrV102(constAccessor, k)
+	gasMgr := newGasMgrV108(constAccessor, k)
 	gasCoin, err := gasMgr.GetMaxGas(ctx, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Assert(gasCoin.Amount.IsZero(), Equals, true)
@@ -173,4 +173,61 @@ func (GasManagerTestSuiteV102) TestGetMaxGas(c *C) {
 	gasCoin, err = gasMgr.GetMaxGas(ctx, common.TERRAChain)
 	c.Assert(err, IsNil)
 	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(23400))
+}
+
+func (GasManagerTestSuiteV108) TestOutboundFeeMultiplier(c *C) {
+	_, k := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	gasMgr := newGasMgrV108(constAccessor, k)
+
+	targetSurplus := int64(100_00000000) // 100 $RUNE
+	minMultiplier := int64(15_000)
+	maxMultiplier := int64(20_000)
+	gasSpent := int64(0)
+	gasWithheld := int64(0)
+
+	// No surplus to start, should return maxMultiplier
+	m := gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
+
+	// More gas spent than withheld, use maxMultiplier
+	gasSpent = int64(1000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
+
+	// 10% surplus vs target, reduce multiplier by 10%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(110_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(19_500), Commentf("%d", m.Uint64()))
+
+	// 50% surplus vs target, reduce multiplier by 50%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(150_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(17_500), Commentf("%d", m.Uint64()))
+
+	// 75% surplus vs target, reduce multiplier by 75%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(175_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(16_250), Commentf("%d", m.Uint64()))
+
+	// 99% surplus vs target, reduce multiplier by 99%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(199_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(15_050), Commentf("%d", m.Uint64()))
+
+	// 100% surplus vs target, reduce multiplier by 100%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(200_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(15_000), Commentf("%d", m.Uint64()))
+
+	// 110% surplus vs target, still reduce multiplier by 100%
+	gasSpent = int64(100_00000000)
+	gasWithheld = int64(210_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, uint64(15_000), Commentf("%d", m.Uint64()))
 }
