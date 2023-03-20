@@ -131,7 +131,7 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageV108) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
-	outputs, err := tos.prepareTxOutItem(ctx, toi)
+	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
 	}
