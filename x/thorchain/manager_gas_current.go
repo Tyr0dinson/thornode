@@ -127,11 +127,8 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 
 	// Calculate outbound fee based on current fee multiplier
 	chainBaseFee := networkFee.TransactionSize * networkFee.TransactionFeeRate
-	ctx.Logger().Info("chain base fee", "fee", cosmos.NewUint(chainBaseFee).String())
 	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(targetOutboundFeeSurplus, network.OutboundGasSpentRune, network.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
-	ctx.Logger().Info("feeMultiplierBps", "bps", feeMultiplierBps.String())
 	finalFee := common.GetUncappedShare(cosmos.NewUint(chainBaseFee), cosmos.NewUint(10_000), feeMultiplierBps)
-	ctx.Logger().Info("finalFee", "amt", finalFee.String())
 
 	fee := cosmos.RoundToDecimal(
 		finalFee,
@@ -181,9 +178,9 @@ func (gm *GasMgrV108) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune,
 
 	if surplusRune <= 0 {
 		return cosmos.NewUint(uint64(maxMultiplier)) // Currently no surplus, use the maximum multiplier
-	} // else if surplusRune >= targetSurplusRune {
-	//	return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
-	// }
+	} else if surplusRune >= targetSurplusRune {
+		return cosmos.NewUint(uint64(minMultiplier)) // Already over target, return minimum multiplier
+	}
 
 	// How many BPs to reduce the multiplier
 	multiplierReducedBps := common.GetSafeShare(cosmos.NewUint(uint64(surplusRune)), cosmos.NewUint(uint64(targetSurplusRune)), cosmos.NewUint(uint64(maxMultiplier-minMultiplier)))
