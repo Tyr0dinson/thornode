@@ -197,6 +197,7 @@ class ThorchainState:
 
     rune_fee = 2000000
     synth_multiplier = 2
+    target_surplus = 10_000_00000000 # target outbound fee surplus
 
     def __init__(self):
         self.pools = []
@@ -207,6 +208,8 @@ class ThorchainState:
         self.bond_reward = 0
         self.vault_pubkey = None
         self.network_fees = {}
+        self.gas_spent_rune = 0
+        self.gas_withheld_rune = 0
         self.btc_estimate_size = 188
         self.bch_estimate_size = 269
         self.ltc_estimate_size = 188
@@ -330,6 +333,7 @@ class ThorchainState:
             # figure out how much rune is an equal amount to gas.amount
             rune_amt = pool.get_asset_in_rune(gas.amount)
             self.reserve -= rune_amt  # take rune from the reserve
+            self.gas_spent_rune += rune_amt
 
             pool.add(rune_amt, 0)  # replenish gas costs with rune
             pool.sub(0, gas.amount)  # subtract gas from pool
@@ -373,9 +377,7 @@ class ThorchainState:
     def get_max_gas(self, chain):
         if chain == "THOR":
             return Coin(RUNE, self.rune_fee)
-        rune_fee = self.get_rune_fee(chain)
         gas_asset = self.get_gas_asset(chain)
-        pool = self.get_pool(gas_asset)
         if chain == "BTC":
             amount = int(self.btc_tx_rate * 3 / 2) * self.btc_estimate_size
         if chain == "BCH":
@@ -388,8 +390,21 @@ class ThorchainState:
             amount = int(self.gaia_tx_rate * 3 / 2) * self.gaia_estimate_size
             amount = int(amount / 100) * 100  # round GAIA to 6 digits max
         if chain == "BNB":
-            amount = pool.get_rune_in_asset(int(rune_fee / 3))
+            amount = self.network_fees["BNB"]
         return Coin(gas_asset, amount)
+    
+    def _calc_outbound_fee_multiplier(self):
+        min_multiplier = 15_000
+        max_multiplier = 20_000
+        surplus = self.gas_withheld_rune - self.gas_spent_rune
+        if surplus <= 0:
+            return max_multiplier
+        elif surplus >= self.target_surplus:
+            return min_multiplier
+        else:
+            m_diff = max_multiplier - min_multiplier
+            m_reduced = get_share(surplus, self.target_surplus, m_diff)
+            return max_multiplier - m_reduced
 
     def get_rune_fee(self, chain):
         if chain not in self.network_fees:
@@ -401,14 +416,19 @@ class ThorchainState:
         pool = self.get_pool(gas_asset)
         if pool.asset_balance == 0 or pool.rune_balance == 0:
             return self.rune_fee
-        chain_fee = chain_fee * 3
+        multiplier_bps = self._calc_outbound_fee_multiplier()
+        print("MULTIPLIER: ", multiplier_bps)
+        chain_fee = get_share(multiplier_bps, 10_000, chain_fee)
         if chain == "GAIA":
             chain_fee = int(chain_fee / 100) * 100
         return pool.get_asset_in_rune(chain_fee)
 
     def get_asset_fee(self, chain):
         if chain in self.network_fees:
-            asset_fee = self.network_fees[chain] * 3
+            multiplier_bps = self._calc_outbound_fee_multiplier()
+            print("MULTIPLIER: ", multiplier_bps)
+            print("base fee: ", self.network_fees[chain])
+            asset_fee = get_share(multiplier_bps, 10_000, self.network_fees[chain])
             if chain == "GAIA":
                 asset_fee = int(asset_fee / 100) * 100
             return asset_fee
@@ -480,54 +500,64 @@ class ThorchainState:
                         self.set_pool(pool)
 
                         coin.amount -= asset_fee
-                        if coin.asset.is_btc() and not asset_fee == 0:
-                            tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
-                            gap = int(asset_fee / 2) - self.btc_estimate_size * int(
-                                self.btc_tx_rate * 3 / 2
-                            )
+                        if coin.asset.is_btc() and not coin.asset.is_synth_asset() and not asset_fee == 0:
+                            tx.max_gas = [Coin(coin.asset, int(self.network_fees["BTC"] * 3/2))]
+                            btc_max_gas = self.get_max_gas("BTC")
+
+                            print("btc_mas_gas: ", btc_max_gas.amount)
+                            print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
+                            gap = tx.max_gas[0].amount - btc_max_gas.amount
+                            print("gap: ", gap)
                             if gap > 0:
                                 coin.amount += gap
                             else:
                                 tx.gas = tx.max_gas
 
-                        if coin.asset.is_bch() and not asset_fee == 0:
-                            tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
-                            gap = int(asset_fee / 2) - self.bch_estimate_size * int(
-                                self.bch_tx_rate * 3 / 2
-                            )
+                        if coin.asset.is_bch() and not coin.asset.is_synth_asset() and not asset_fee == 0:
+                            tx.max_gas = [Coin(coin.asset, int(self.network_fees["BCH"] * 3/2))]
+                            bch_max_gas = self.get_max_gas("BCH")
+
+                            print("bch_max_gas: ", bch_max_gas.amount)
+                            print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
+                            gap = tx.max_gas[0].amount - bch_max_gas.amount
                             if gap > 0:
                                 coin.amount += gap
                             else:
                                 tx.gas = tx.max_gas
 
-                        if coin.asset.is_ltc() and not asset_fee == 0:
-                            tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
-                            gap = int(asset_fee / 2) - self.ltc_estimate_size * int(
-                                self.ltc_tx_rate * 3 / 2
-                            )
+                        if coin.asset.is_ltc() and not coin.asset.is_synth_asset() and not asset_fee == 0:
+                            tx.max_gas = [Coin(coin.asset, int(self.network_fees["LTC"] * 3/2))]
+                            ltc_max_gas = self.get_max_gas("LTC")
+
+                            print("ltc_max_gas: ", ltc_max_gas.amount)
+                            print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
+                            gap = tx.max_gas[0].amount - ltc_max_gas.amount
                             if gap > 0:
                                 coin.amount += gap
                             else:
                                 tx.gas = tx.max_gas
 
-                        if coin.asset.is_doge() and not asset_fee == 0:
-                            tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
-                            gap = int(asset_fee / 2) - self.doge_estimate_size * int(
-                                self.doge_tx_rate * 3 / 2
-                            )
+                        if coin.asset.is_doge() and not coin.asset.is_synth_asset() and not asset_fee == 0:
+                            tx.max_gas = [Coin(coin.asset, int(self.network_fees["DOGE"] * 3/2))]
+                            doge_max_gas = self.get_max_gas("DOGE")
+
+                            print("doge_max_gas: ", doge_max_gas.amount)
+                            print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
+                            gap = tx.max_gas[0].amount - doge_max_gas.amount
                             if gap > 0:
                                 coin.amount += gap
                             else:
                                 tx.gas = tx.max_gas
 
-                        if coin.asset.is_gaia() and not asset_fee == 0:
-                            asset_fee = int(asset_fee / 100) * 100
-                            tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
-
+                        if coin.asset.is_gaia()  and not coin.asset.is_synth_asset() and not asset_fee == 0:
+                            tx.max_gas = [Coin(coin.asset, int(self.network_fees["GAIA"] * 3/2))]
                             tx.max_gas[0].amount = int(tx.max_gas[0].amount / 100) * 100
-                            gap = int(asset_fee / 2) - self.gaia_estimate_size * int(
-                                self.gaia_tx_rate * 3 / 2
-                            )
+                            gaia_max_gas = self.get_max_gas("GAIA")
+
+                            print("gaia_max_gas: ", gaia_max_gas.amount)
+                            print("tx.mas_gas_assigned: ", tx.max_gas[0].amount)
+
+                            gap = tx.max_gas[0].amount - gaia_max_gas.amount
                             gap = int(gap / 100) * 100
                             if gap > 0:
                                 coin.amount += gap
@@ -536,7 +566,7 @@ class ThorchainState:
 
                         if coin.asset.get_chain() == "ETH" and not asset_fee == 0:
                             if coin.asset.is_eth():
-                                tx.max_gas = [Coin(coin.asset, int(asset_fee / 2))]
+                                tx.max_gas = [Coin(coin.asset, int(self.network_fees["ETH"] * 3/2))]
 
                             elif coin.asset.is_erc():
                                 fee_in_gas_asset = self.get_asset_fee(tx.chain)
@@ -578,9 +608,13 @@ class ThorchainState:
                     if coin.amount > 0:
                         tx.fee = Coin(coin.asset, asset_fee)
                         outbounds.append(tx)
+                    else:
+                        print("no asset coin amount!")
 
-                # add to the reserve
-                self.reserve += rune_fee
+                # add to the reserve / withheld gas only if there are outbounds
+                if len(outbounds) > 0:
+                    self.reserve += rune_fee
+                    self.gas_withheld_rune += rune_fee
         return outbounds
 
     def _total_liquidity(self):
@@ -1064,10 +1098,11 @@ class ThorchainState:
         # get the fee that are supposed to be charged, this will only be
         # used if it is the last withdraw
         if asset == self.get_gas_asset(chain):
-            dynamic_fee = int(round(self.get_asset_fee(chain) / 2))
+            # dynamic_fee = int(round(self.get_asset_fee(chain)))
+            dynamic_fee = int(self.network_fees[chain] * 3/2)
         else:
             dynamic_fee = int(
-                round(pool.get_rune_in_asset(self.get_rune_fee(chain)) / 2)
+                round(pool.get_rune_in_asset(self.get_rune_fee(chain)))
             )
         tx_rune_gas = self.get_gas(RUNE.get_chain(), tx)
         withdraw_units, rune_amt, asset_amt = pool.withdraw(
@@ -1075,9 +1110,13 @@ class ThorchainState:
         )
         rune_amt += lp.pending_rune
 
+        print("dynamic_fee: ", dynamic_fee)
+
         # if this is our last liquidity provider of bnb, subtract a little BNB for gas.
         emit_asset = asset_amt
         outbound_asset_amt = asset_amt
+
+        print("outbound_asset_amt: ", outbound_asset_amt)
         self.btc_estimate_size = 255
         self.bch_estimate_size = 417
         self.ltc_estimate_size = 255
@@ -1095,9 +1134,11 @@ class ThorchainState:
                 asset_amt -= gas_amt
             elif pool.asset.is_eth():
                 gas = self.get_gas(asset.get_chain(), tx)
+                print("eth gas amount: ", gas.amount)
                 asset_amt -= dynamic_fee
                 outbound_asset_amt -= dynamic_fee
                 pool.asset_balance += gas.amount
+                print("final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_btc():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left
@@ -1133,10 +1174,13 @@ class ThorchainState:
                 estimate_gas_asset = (
                     int(self.ltc_tx_rate * 3 / 2) * self.ltc_estimate_size
                 )
+                print("estimate_gas_asset: ", estimate_gas_asset)
                 gas = Coin(gas.asset, estimate_gas_asset)
+                print("ltc outbound_asset_amt: ", outbound_asset_amt)
                 outbound_asset_amt -= int(estimate_gas_asset)
                 pool.asset_balance += dynamic_fee
                 asset_amt -= dynamic_fee
+                print("ltc final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_doge():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left
@@ -1266,6 +1310,9 @@ class ThorchainState:
 
         source = tx.coins[0].asset
         target = asset
+        print("source: ", source)
+        print("target: ", target)
+        print("swap amount: ", tx.coins[0])
 
         # refund if we're trying to swap with the coin we given ie
         # swapping bnb with bnb
@@ -1284,6 +1331,7 @@ class ThorchainState:
             )
             return self.refund(tx, 105, reason)
         pool = self.get_pool(target)
+        print("pool: ", pool)
         if target.is_rune():
             pool = self.get_pool(source)
 
@@ -1366,6 +1414,8 @@ class ThorchainState:
 
         # check if we have enough to cover the fee
         rune_fee = self.get_rune_fee(target.get_chain())
+        asset_fee = self.get_asset_fee(target.get_chain())
+        
         in_coin = in_tx.coins[0]
         if in_coin.is_rune() and in_coin.amount <= rune_fee:
             return self.refund(tx, 108, "fail swap, not enough fee")
@@ -1403,6 +1453,10 @@ class ThorchainState:
         # save pools
         for pool in pools:
             self.set_pool(pool)
+
+        print("emit.amount: ", emit.amount)
+        print("rune_fee: ", rune_fee)
+        print("asset_fee: ", asset_fee)
 
         # get from address VAULT cross chain
         from_address = in_tx.to_address

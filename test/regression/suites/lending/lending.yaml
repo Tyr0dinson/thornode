@@ -191,7 +191,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "2839213"
+        - amount: "3479213"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -261,7 +261,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "471283"
+        - amount: "478283"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -316,7 +316,7 @@ asserts:
   - .[0]|.debt_up == "975320000"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_down == "989954" # should now be fully repaid
-  - .[0]|.debt_down == "4672882675" # over repaid
+  - .[0]|.debt_down == "4677551306" # over repaid
 ---
 type: check
 description: btc outbound should not be scheduled until next block
@@ -343,7 +343,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "456695"
+        - amount: "463695"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -400,11 +400,11 @@ description: borrower should be updated
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_up == "1484266"
-  - .[0]|.debt_up == "5161862675"
+  - .[0]|.collateral_up == "1484265"
+  - .[0]|.debt_up == "5166671306"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_down == "989954"
-  - .[0]|.debt_down == "4672882675"
+  - .[0]|.debt_down == "4677551306"
 ---
 type: check
 description: fox account balance should be unchanged
@@ -423,7 +423,7 @@ asserts:
   - .balances|length == 1
   # should receieve significantly more than the first open for the same amount since the
   # excess debt down will be credited on the subsequent open
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503836343850
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503840417506
 ---
 ########################################################################################
 # open loan btc -> rune again should not get extra credit on subsequent open
@@ -456,18 +456,18 @@ description: borrower should be updated
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_up == "1978382"
-  - .[0]|.debt_up == "5645842675"
+  - .[0]|.collateral_up == "1978381"
+  - .[0]|.debt_up == "5650781306"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_down == "989954"
-  - .[0]|.debt_down == "4672882675"
+  - .[0]|.debt_down == "4677551306"
 ---
 type: check
 description: fox account balance should be unchanged
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503836343850
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503840417506
 ---
 type: create-blocks
 count: 1
@@ -479,4 +479,4 @@ asserts:
   - .balances|length == 1
     # this time they should receieve a normal amount relative to the deposit since the
     # excess debt down was credited on the previous open
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504313689642
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504317890811
