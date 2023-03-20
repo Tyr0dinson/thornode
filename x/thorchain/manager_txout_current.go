@@ -200,6 +200,9 @@ func (tos *TxOutStorageV108) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 			ctx.Logger().Info("append withheld rune", "amt", totalOutboundFeeRune.String())
 			network.OutboundGasWithheldRune += int64(totalOutboundFeeRune.Uint64())
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
+				ctx.Logger().Error("fail to set network data", "error", err)
+			}
+		}
 	}
 
 	return true, nil
