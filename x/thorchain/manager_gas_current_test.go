@@ -228,5 +228,5 @@ func (GasManagerTestSuiteV108) TestOutboundFeeMultiplier(c *C) {
 	gasSpent = int64(100_00000000)
 	gasWithheld = int64(210_00000000)
 	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
-	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
+	c.Assert(m.Uint64(), Equals, uint64(15_000))
 }
