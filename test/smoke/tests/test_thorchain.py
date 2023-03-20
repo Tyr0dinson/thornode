@@ -388,14 +388,6 @@ class TestThorchainState(unittest.TestCase):
         # check refund event generated for swap with native RUNE
         expected_events = [
             Event(
-                "refund",
-                [
-                    {"code": "108"},
-                    {"reason": "BNB.BNB pool doesn't exist"},
-                    *tx.get_attributes(),
-                ],
-            ),
-            Event(
                 "fee",
                 [
                     {"tx_id": "TODO"},
@@ -403,6 +395,14 @@ class TestThorchainState(unittest.TestCase):
                     {"pool_deduct": "0"},
                 ],
             ),
+            Event(
+                "refund",
+                [
+                    {"code": "108"},
+                    {"reason": "BNB.BNB pool doesn't exist"},
+                    *tx.get_attributes(),
+                ],
+            )
         ]
         self.assertEqual(events, expected_events)
 
@@ -1595,19 +1595,19 @@ class TestThorchainState(unittest.TestCase):
         # check refund event generated for provider with no memo
         expected_events += [
             Event(
-                "refund",
-                [
-                    {"code": "105"},
-                    {"reason": "memo can't be empty"},
-                    *tx.get_attributes(),
-                ],
-            ),
-            Event(
                 "fee",
                 [
                     {"tx_id": "TODO"},
                     {"coins": "2000000 THOR.RUNE"},
                     {"pool_deduct": "0"},
+                ],
+            ),
+            Event(
+                "refund",
+                [
+                    {"code": "105"},
+                    {"reason": "memo can't be empty"},
+                    *tx.get_attributes(),
                 ],
             ),
         ]
