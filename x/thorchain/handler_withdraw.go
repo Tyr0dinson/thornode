@@ -47,8 +47,6 @@ func (h WithdrawLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos
 func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.validateV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.96.0")):
 		return h.validateV96(ctx, msg)
 	case version.GTE(semver.MustParse("0.80.0")):
@@ -58,13 +56,9 @@ func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLi
 	}
 }
 
-func (h WithdrawLiquidityHandler) validateV108(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
+func (h WithdrawLiquidityHandler) validateV96(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return errWithdrawFailValidation
-	}
-
-	if msg.Asset.IsDerivedAsset() {
-		return fmt.Errorf("cannot withdraw from a derived asset virtual pool")
 	}
 
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
