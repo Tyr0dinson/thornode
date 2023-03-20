@@ -588,6 +588,8 @@ class ThorchainState:
                     if coin.amount > 0:
                         tx.fee = Coin(coin.asset, asset_fee)
                         outbounds.append(tx)
+                    else:
+                        print("no asset coin amount!")
 
                 # add to the reserve / withheld gas only if there are outbounds
                 if len(outbounds) > 0:
@@ -1088,6 +1090,8 @@ class ThorchainState:
         )
         rune_amt += lp.pending_rune
 
+        print("dynamic_fee: ", dynamic_fee)
+
         # if this is our last liquidity provider of bnb, subtract a little BNB for gas.
         emit_asset = asset_amt
         outbound_asset_amt = asset_amt
@@ -1109,9 +1113,11 @@ class ThorchainState:
                 asset_amt -= gas_amt
             elif pool.asset.is_eth():
                 gas = self.get_gas(asset.get_chain(), tx)
+                print("eth gas amount: ", gas.amount)
                 asset_amt -= dynamic_fee
                 outbound_asset_amt -= dynamic_fee
                 pool.asset_balance += gas.amount
+                print("final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_btc():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left
@@ -1147,10 +1153,13 @@ class ThorchainState:
                 estimate_gas_asset = (
                     int(self.ltc_tx_rate * 3 / 2) * self.ltc_estimate_size
                 )
+                print("estimate_gas_asset: ", estimate_gas_asset)
                 gas = Coin(gas.asset, estimate_gas_asset)
+                print("ltc outbound_asset_amt: ", outbound_asset_amt)
                 outbound_asset_amt -= int(estimate_gas_asset)
                 pool.asset_balance += dynamic_fee
                 asset_amt -= dynamic_fee
+                print("ltc final outbound_asset_amt: ", outbound_asset_amt)
             elif pool.asset.is_doge():
                 # the last withdraw tx , it need to spend everything
                 # usually it is only 1 UTXO left
@@ -1280,6 +1289,9 @@ class ThorchainState:
 
         source = tx.coins[0].asset
         target = asset
+        print("source: ", source)
+        print("target: ", target)
+        print("swap amount: ", tx.coins[0])
 
         # refund if we're trying to swap with the coin we given ie
         # swapping bnb with bnb
@@ -1298,6 +1310,7 @@ class ThorchainState:
             )
             return self.refund(tx, 105, reason)
         pool = self.get_pool(target)
+        print("pool: ", pool)
         if target.is_rune():
             pool = self.get_pool(source)
 
@@ -1419,6 +1432,10 @@ class ThorchainState:
         # save pools
         for pool in pools:
             self.set_pool(pool)
+
+        print("emit.amount: ", emit.amount)
+        print("rune_fee: ", rune_fee)
+        print("asset_fee: ", asset_fee)
 
         # get from address VAULT cross chain
         from_address = in_tx.to_address
