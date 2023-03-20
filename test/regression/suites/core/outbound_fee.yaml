@@ -1,0 +1,59 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: no gas spent or withheld yet
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .gas_spent_rune == 0
+  - .gas_withheld_rune == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: gas should be withheld and updated
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .gas_withheld_rune == 16784900
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "8998477"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10500"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid -1 }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: gas should be spent and updated
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .gas_spent_rune == 15323086
+  - .gas_withheld_rune == 16784900
