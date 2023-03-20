@@ -184,7 +184,6 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 		if err != nil {
 			ctx.Logger().Error("fail to get network data", "error", err)
 		} else {
-			ctx.Logger().Info("append withheld rune", "amt", totalOutboundFeeRune.String())
 			network.OutboundGasWithheldRune += int64(totalOutboundFeeRune.Uint64())
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
 				ctx.Logger().Error("fail to set network data", "error", err)
@@ -483,9 +482,6 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
 					}
 
-					// TODO: remove
-					ctx.Logger().Info("asset fee", "amt", assetFee.String())
-
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
 					if outputs[i].Coin.Asset.IsSyntheticAsset() {
 						// burn the synth asset which used to pay for fee, that's only required when the synth is sending from asgard
@@ -570,9 +566,6 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// sanity check: ensure outbound amount respect asset decimals
 			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, toiPool.Decimals)
 		}
-
-		// TODO: remove
-		ctx.Logger().Info("final emit amt", "amt", outputs[i].Coin.Amount.String())
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {
 			// increment out number of out tx for this in tx
