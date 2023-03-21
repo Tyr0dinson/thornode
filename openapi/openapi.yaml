@@ -2198,12 +2198,12 @@ components:
           example: false
           description: Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
         gas_spent_rune:
-          type: int64
-          example: 1000000000
+          type: string
+          example: "1000000000"
           description: Sum of the gas the network has spent to send outbounds
         gas_withheld_rune:
-          type: int64
-          example: 1500000000
+          type: string
+          example: "1500000000"
           description: Sum of the gas withheld from users to cover outbound gas
         outbound_fee_multiplier:
           type: string

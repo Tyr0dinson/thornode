@@ -197,7 +197,7 @@ func (tos *TxOutStorageV108) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 		if err != nil {
 			ctx.Logger().Error("fail to get network data", "error", err)
 		} else {
-			network.OutboundGasWithheldRune += int64(totalOutboundFeeRune.Uint64())
+			network.OutboundGasWithheldRune = network.OutboundGasWithheldRune.Add(totalOutboundFeeRune)
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
 				ctx.Logger().Error("fail to set network data", "error", err)
 			}

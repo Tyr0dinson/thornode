@@ -1076,7 +1076,6 @@ class ThorchainState:
         # get the fee that are supposed to be charged, this will only be
         # used if it is the last withdraw
         if asset == self.get_gas_asset(chain):
-            # dynamic_fee = int(round(self.get_asset_fee(chain)))
             dynamic_fee = int(self.network_fees[chain] * 3/2)
         else:
             dynamic_fee = int(

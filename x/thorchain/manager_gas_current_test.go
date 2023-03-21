@@ -176,57 +176,57 @@ func (GasManagerTestSuiteV108) TestGetMaxGas(c *C) {
 }
 
 func (GasManagerTestSuiteV108) TestOutboundFeeMultiplier(c *C) {
-	_, k := setupKeeperForTest(c)
+	ctx, k := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 	gasMgr := newGasMgrV108(constAccessor, k)
 
-	targetSurplus := int64(100_00000000) // 100 $RUNE
-	minMultiplier := int64(15_000)
-	maxMultiplier := int64(20_000)
-	gasSpent := int64(0)
-	gasWithheld := int64(0)
+	targetSurplus := cosmos.NewUint(100_00000000) // 100 $RUNE
+	minMultiplier := cosmos.NewUint(15_000)
+	maxMultiplier := cosmos.NewUint(20_000)
+	gasSpent := cosmos.ZeroUint()
+	gasWithheld := cosmos.ZeroUint()
 
 	// No surplus to start, should return maxMultiplier
-	m := gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
-	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
+	m := gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, maxMultiplier.Uint64())
 
 	// More gas spent than withheld, use maxMultiplier
-	gasSpent = int64(1000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
-	c.Assert(m.Uint64(), Equals, uint64(maxMultiplier))
+	gasSpent = cosmos.NewUint(1000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	c.Assert(m.Uint64(), Equals, maxMultiplier.Uint64())
 
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(110_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(110_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(19_500), Commentf("%d", m.Uint64()))
 
 	// 50% surplus vs target, reduce multiplier by 50%
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(150_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(150_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(17_500), Commentf("%d", m.Uint64()))
 
 	// 75% surplus vs target, reduce multiplier by 75%
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(175_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(175_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(16_250), Commentf("%d", m.Uint64()))
 
 	// 99% surplus vs target, reduce multiplier by 99%
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(199_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(199_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_050), Commentf("%d", m.Uint64()))
 
 	// 100% surplus vs target, reduce multiplier by 100%
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(200_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(200_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_000), Commentf("%d", m.Uint64()))
 
 	// 110% surplus vs target, still reduce multiplier by 100%
-	gasSpent = int64(100_00000000)
-	gasWithheld = int64(210_00000000)
-	m = gasMgr.CalcOutboundFeeMultiplier(targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
+	gasSpent = cosmos.NewUint(100_00000000)
+	gasWithheld = cosmos.NewUint(210_00000000)
+	m = gasMgr.CalcOutboundFeeMultiplier(ctx, targetSurplus, gasSpent, gasWithheld, maxMultiplier, minMultiplier)
 	c.Assert(m.Uint64(), Equals, uint64(15_000))
 }

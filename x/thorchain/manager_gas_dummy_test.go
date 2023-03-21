@@ -25,7 +25,7 @@ func (m *DummyGasManager) GetFee(ctx cosmos.Context, chain common.Chain, _ commo
 	return cosmos.ZeroUint()
 }
 
-func (m *DummyGasManager) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+func (m *DummyGasManager) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
