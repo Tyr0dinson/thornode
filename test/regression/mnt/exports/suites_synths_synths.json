@@ -319,7 +319,7 @@
         "bond_reward_rune": "30791168",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
-        "outbound_gas_withheld_rune": "20025322",
+        "outbound_gas_withheld_rune": "14025766",
         "total_bond_units": "5"
       },
       "network_fees": [
