@@ -279,6 +279,6 @@ func (gm *GasMgrV89) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	}
 }
 
-func (gm *GasMgrV89) CalcOutboundFeeMultiplier(targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier int64) cosmos.Uint {
+func (gm *GasMgrV89) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint {
 	return cosmos.ZeroUint()
 }

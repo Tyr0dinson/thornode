@@ -441,10 +441,10 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 	vaultsMigrating := (len(vaults) != 0)
 
-	targetOutboundFeeSurplus := fetchConfigInt64(ctx, mgr, constants.TargetOutboundFeeSurplusRune)
-	maxMultiplierBasisPoints := fetchConfigInt64(ctx, mgr, constants.MaxOutboundFeeMultiplierBasisPoints)
-	minMultiplierBasisPoints := fetchConfigInt64(ctx, mgr, constants.MinOutboundFeeMultiplierBasisPoints)
-	outboundFeeMultiplier := mgr.gasMgr.CalcOutboundFeeMultiplier(targetOutboundFeeSurplus, data.OutboundGasSpentRune, data.OutboundGasWithheldRune, maxMultiplierBasisPoints, minMultiplierBasisPoints)
+	targetOutboundFeeSurplus := mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)
+	maxMultiplierBasisPoints := mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)
+	minMultiplierBasisPoints := mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
+	outboundFeeMultiplier := mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), data.OutboundGasSpentRune, data.OutboundGasWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
 	result := openapi.NetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
@@ -455,8 +455,8 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		TotalBondUnits:        data.TotalBondUnits.String(),
 		TotalReserve:          mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
 		VaultsMigrating:       vaultsMigrating,
-		GasSpentRune:          data.OutboundGasSpentRune,
-		GasWithheldRune:       data.OutboundGasWithheldRune,
+		GasSpentRune:          data.OutboundGasSpentRune.String(),
+		GasWithheldRune:       data.OutboundGasWithheldRune.String(),
 		OutboundFeeMultiplier: wrapString(outboundFeeMultiplier.String()),
 	}
 
