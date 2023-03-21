@@ -593,7 +593,7 @@ class ThorchainState:
                 if len(outbounds) > 0:
                     self.reserve += rune_fee
                     # only add to surplus if it's an external L1 outbound
-                    if not coin.is_chain("THOR"):
+                    if not coin.asset.is_thor():
                         self.gas_withheld_rune += rune_fee
         return outbounds
 
