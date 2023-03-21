@@ -62,6 +62,10 @@ func (h LeaveHandler) validateV3_2_0(ctx cosmos.Context, msg MsgLeave) error {
 		return err
 	}
 
+	if !msg.Tx.Coins.IsEmpty() {
+		return cosmos.ErrUnknownRequest("leave message cannot have a non-zero coin amount")
+	}
+
 	jail, err := h.mgr.Keeper().GetNodeAccountJail(ctx, msg.NodeAddress)
 	if err != nil {
 		// ignore this error and carry on. Don't want a jail bug causing node

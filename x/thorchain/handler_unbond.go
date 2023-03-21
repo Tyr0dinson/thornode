@@ -61,6 +61,10 @@ func (h UnBondHandler) validateV3_2_0(ctx cosmos.Context, msg MsgUnBond) error {
 		return err
 	}
 
+	if !msg.TxIn.Coins.IsEmpty() {
+		return cosmos.ErrUnknownRequest("unbond message cannot have a non-zero coin amount")
+	}
+
 	na, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get node account(%s)", msg.NodeAddress))
