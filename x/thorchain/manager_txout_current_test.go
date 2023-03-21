@@ -60,8 +60,8 @@ func (s TxOutStoreV108Suite) TestAddOutTxItem(c *C) {
 
 	network, err := w.keeper.GetNetwork(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(network.OutboundGasSpentRune, Equals, int64(0))
-	c.Assert(network.OutboundGasWithheldRune, Equals, int64(0))
+	c.Assert(network.OutboundGasSpentRune, Equals, uint64(0))
+	c.Assert(network.OutboundGasWithheldRune, Equals, uint64(0))
 
 	acc1 := GetRandomValidatorNode(NodeActive)
 	acc2 := GetRandomValidatorNode(NodeActive)
@@ -131,8 +131,8 @@ func (s TxOutStoreV108Suite) TestAddOutTxItem(c *C) {
 	// Gas withheld should be updated
 	network, err = w.keeper.GetNetwork(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(network.OutboundGasSpentRune, Equals, int64(0))
-	c.Assert(network.OutboundGasWithheldRune, Equals, int64(74999)) // After slippage the 75000 BNB fee is 74999 in RUNE
+	c.Assert(network.OutboundGasSpentRune, Equals, uint64(0))
+	c.Assert(network.OutboundGasWithheldRune, Equals, uint64(74999)) // After slippage the 75000 BNB fee is 74999 in RUNE
 
 	// Should get acc1. Acc3 hasn't signed and acc1 now has the highest amount
 	// of coin.
@@ -154,7 +154,7 @@ func (s TxOutStoreV108Suite) TestAddOutTxItem(c *C) {
 	// Gas withheld should be updated
 	network, err = w.keeper.GetNetwork(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(network.OutboundGasWithheldRune, Equals, int64(149997))
+	c.Assert(network.OutboundGasWithheldRune, Equals, uint64(149997))
 
 	item = TxOutItem{
 		Chain:     common.BNBChain,
@@ -174,7 +174,7 @@ func (s TxOutStoreV108Suite) TestAddOutTxItem(c *C) {
 	// Gas withheld should be updated
 	network, err = w.keeper.GetNetwork(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(network.OutboundGasWithheldRune, Equals, int64(224994))
+	c.Assert(network.OutboundGasWithheldRune, Equals, uint64(224994))
 
 	item = TxOutItem{
 		Chain:     common.BCHChain,

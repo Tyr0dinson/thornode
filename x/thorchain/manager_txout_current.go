@@ -201,12 +201,13 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 	}
 
 	// Add total outbound fee to the OutboundGasWithheldRune. totalOutboundFeeRune will be 0 if these are Migration outbounds
-	if !totalOutboundFeeRune.IsZero() {
+	// Don't count outbounds on THORChain ($RUNE and Synths)
+	if !totalOutboundFeeRune.IsZero() && !toi.Chain.IsTHORChain() {
 		network, err := tos.keeper.GetNetwork(ctx)
 		if err != nil {
 			ctx.Logger().Error("fail to get network data", "error", err)
 		} else {
-			network.OutboundGasWithheldRune = network.OutboundGasWithheldRune.Add(totalOutboundFeeRune)
+			network.OutboundGasWithheldRune += totalOutboundFeeRune.Uint64()
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
 				ctx.Logger().Error("fail to set network data", "error", err)
 			}
