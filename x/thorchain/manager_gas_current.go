@@ -127,7 +127,7 @@ func (gm *GasMgrV108) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 
 	// Calculate outbound fee based on current fee multiplier
 	chainBaseFee := networkFee.TransactionSize * networkFee.TransactionFeeRate
-	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), network.OutboundGasSpentRune, network.OutboundGasWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
+	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(network.OutboundGasSpentRune), cosmos.NewUint(network.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 	finalFee := common.GetUncappedShare(cosmos.NewUint(chainBaseFee), cosmos.NewUint(10_000), feeMultiplierBps)
 
 	fee := cosmos.RoundToDecimal(
@@ -331,8 +331,8 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
 				continue
 			}
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas)                         // Add to the pool
-			network.OutboundGasSpentRune = network.OutboundGasSpentRune.Add(runeGas) // Add $RUNE spent on gas by the reserve
+			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
+			network.OutboundGasSpentRune += runeGas.Uint64() // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,
 			// no rune is added to the pool, sorry LPs!
