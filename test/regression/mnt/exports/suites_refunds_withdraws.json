@@ -411,7 +411,7 @@
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
         "outbound_gas_spent_rune": "158941495",
-        "outbound_gas_withheld_rune": "218010122",
+        "outbound_gas_withheld_rune": "212010122",
         "total_bond_units": "19"
       },
       "network_fees": [
