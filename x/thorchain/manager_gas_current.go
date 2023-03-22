@@ -320,6 +320,8 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			ctx.Logger().Error("invalid pool", "pool", gas.Asset, "error", err)
 			continue
 		}
+		ctx.Logger().Info("gas pool", "pool", pool.String())
+		ctx.Logger().Info("gas amount", "amount", gas.Amount.String())
 		runeGas := pool.AssetValueInRune(gas.Amount) // Convert to Rune (gas will never be RUNE)
 		if runeGas.IsZero() {
 			continue
@@ -332,6 +334,7 @@ func (gm *GasMgrV108) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				continue
 			}
 			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
+			ctx.Logger().Info("add to gas spent:", "amt", runeGas.String())
 			network.OutboundGasSpentRune += runeGas.Uint64() // Add $RUNE spent on gas by the reserve
 		} else {
 			// since we don't have enough in the reserve to cover the gas used,

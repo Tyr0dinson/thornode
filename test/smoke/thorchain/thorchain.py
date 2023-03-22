@@ -330,11 +330,19 @@ class ThorchainState:
 
         for asset, gas in gas_coins.items():
             pool = self.get_pool(gas.asset)
+            print("gas pool: ", pool)
+            print("gas amount: ", gas.amount)
             # figure out how much rune is an equal amount to gas.amount
             rune_amt = pool.get_asset_in_rune(gas.amount)
             self.reserve -= rune_amt  # take rune from the reserve
-            self.gas_spent_rune += rune_amt
 
+            # only append gas spent if it's not a native THORChain asset
+            if not asset.is_thor():
+                print("add to gas spent: ", rune_amt)
+                self.gas_spent_rune += rune_amt
+
+            print("add to pool rune: ", rune_amt)
+            print("subtract from pool asset: ", gas.amount)
             pool.add(rune_amt, 0)  # replenish gas costs with rune
             pool.sub(0, gas.amount)  # subtract gas from pool
             self.set_pool(pool)
@@ -442,11 +450,15 @@ class ThorchainState:
         if not isinstance(txs, list):
             txs = [txs]
 
+        print("\nhandle fee")
         for tx in txs:
             # fee amount in rune value
             rune_fee = self.get_rune_fee(tx.chain)
             if not tx.gas:
                 tx.gas = [self.get_gas(tx.chain, in_tx)]
+                print("tx.gas : ", tx.gas )
+
+            print("coins: ", tx.coins)
 
             for coin in tx.coins:
                 if coin.is_rune():
@@ -455,22 +467,23 @@ class ThorchainState:
                     coin.amount -= rune_fee
                     if coin.amount > 0:
                         outbounds.append(tx)
-                        # only do the fee logic state changes if there's an outbound
-                        if rune_fee > 0:
-                            # add fee event
-                            event = Event(
-                                "fee",
-                                [
-                                    {"tx_id": in_tx.id},
-                                    {"coins": f"{rune_fee} {coin.asset}"},
-                                    {"pool_deduct": 0},
-                                ],
-                            )
-                            self.events.append(event)
-                            tx.fee = Coin(coin.asset, rune_fee)
+                    # only do the fee logic state changes if there's an outbound
+                    if rune_fee > 0:
+                        # add fee event
+                        event = Event(
+                            "fee",
+                            [
+                                {"tx_id": in_tx.id},
+                                {"coins": f"{rune_fee} {coin.asset}"},
+                                {"pool_deduct": 0},
+                            ],
+                        )
+                        self.events.append(event)
+                        tx.fee = Coin(coin.asset, rune_fee)
 
                 else:
                     pool = self.get_pool(coin.asset)
+                    print("pool: ", pool)
                     asset_fee = 0
                     if pool.status == "Staged":
                         rune_fee = 0
@@ -555,6 +568,8 @@ class ThorchainState:
                                     Coin(gas_asset, int(fee_in_gas_asset / 2))
                                 ]
 
+                        print("rune_fee: ", rune_fee)
+                        print("asset_fee: ", asset_fee)
                         if rune_fee > 0 or asset_fee > 0:
                             # add fee event
                             self.events.append(Event(
@@ -589,12 +604,14 @@ class ThorchainState:
                         tx.fee = Coin(coin.asset, asset_fee)
                         outbounds.append(tx)
 
-                # add to the reserve / withheld gas only if there are outbounds
-                if len(outbounds) > 0:
-                    self.reserve += rune_fee
-                    # only add to surplus if it's an external L1 outbound
-                    if not coin.asset.is_thor():
-                        self.gas_withheld_rune += rune_fee
+            # add to the reserve / withheld gas only if there are outbounds
+            if len(outbounds) > 0:
+                self.reserve += rune_fee
+                # only add to surplus if it's an external L1 outbound
+                print("coin.asset: ", coin.asset)
+                if not coin.asset.is_thor():
+                    print("add to gas withheld: ", rune_fee)
+                    self.gas_withheld_rune += rune_fee
         return outbounds
 
     def _total_liquidity(self):

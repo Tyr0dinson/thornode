@@ -200,6 +200,9 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 		}
 	}
 
+	ctx.Logger().Info("outbound_fee", "coin.asset: ", toi.Coin.String())
+	ctx.Logger().Info("rune_fee", "amt: ", totalOutboundFeeRune.String())
+
 	// Add total outbound fee to the OutboundGasWithheldRune. totalOutboundFeeRune will be 0 if these are Migration outbounds
 	// Don't count outbounds on THORChain ($RUNE and Synths)
 	if !totalOutboundFeeRune.IsZero() && !toi.Chain.IsTHORChain() {
@@ -207,6 +210,7 @@ func (tos *TxOutStorageV108) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 		if err != nil {
 			ctx.Logger().Error("fail to get network data", "error", err)
 		} else {
+			ctx.Logger().Info("add to gas withheld:", "amt: ", totalOutboundFeeRune.String())
 			network.OutboundGasWithheldRune += totalOutboundFeeRune.Uint64()
 			if err := tos.keeper.SetNetwork(ctx, network); err != nil {
 				ctx.Logger().Error("fail to set network data", "error", err)
@@ -527,7 +531,10 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 						}
 					}
 					var poolDeduct cosmos.Uint
+					ctx.Logger().Info("got asset fee", "asset_fee", assetFee.String())
 					runeFee = pool.RuneDisbursementForAssetAdd(assetFee)
+					ctx.Logger().Info("asset fee in rune", "amt", runeFee.String())
+					ctx.Logger().Info("pool", "pool", pool.String())
 					if runeFee.GT(pool.BalanceRune) {
 						poolDeduct = pool.BalanceRune
 					} else {
@@ -610,6 +617,7 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		}
 	}
 	for _, feeEvent := range feeEvents {
+		ctx.Logger().Info("fee event", "event", feeEvent.String())
 		if err := tos.eventMgr.EmitFeeEvent(ctx, feeEvent); err != nil {
 			ctx.Logger().Error("fail to emit fee event", "error", err)
 		}
