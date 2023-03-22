@@ -31,8 +31,8 @@ func init() {
 		MaxSynthPerPoolDepth:                3_500,
 		PauseLoans:                          0,
 		TargetOutboundFeeSurplusRune:        10_000_00000000,
-		MaxOutboundFeeMultiplierBasisPoints: 20_000,
-		MinOutboundFeeMultiplierBasisPoints: 15_000,
+		MaxOutboundFeeMultiplierBasisPoints: 30_000,
+		MinOutboundFeeMultiplierBasisPoints: 30_000,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,
