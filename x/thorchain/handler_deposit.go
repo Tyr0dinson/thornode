@@ -141,6 +141,15 @@ func (h DepositHandler) handleV3_2_0(ctx cosmos.Context, msg MsgDeposit) (*cosmo
 	default:
 		targetModule = AsgardName
 	}
+
+	// Only permit coin types other than RUNE to be sent to network modules when explicitly allowed.
+	// (When the Amount is zero, the Asset type is irrelevant.)
+	// Coins having exactly one Coin is ensured by the validate function,
+	// but IsEmpty covers a hypothetical no-Coin scenario too.
+	if !msg.Coins.IsEmpty() && !msg.Coins[0].Asset.IsRune() && targetModule != AsgardName {
+		return nil, fmt.Errorf("(%s) memos are for the (%s) module, for which messages must only contain RUNE", memo.GetType().String(), targetModule)
+	}
+
 	coinsInMsg := msg.Coins
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() {
 		// send funds to target module
