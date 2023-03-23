@@ -523,10 +523,7 @@ func (tos *TxOutStorageV108) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 						}
 					}
 					var poolDeduct cosmos.Uint
-					ctx.Logger().Info("got asset fee", "asset_fee", assetFee.String())
 					runeFee = pool.RuneDisbursementForAssetAdd(assetFee)
-					ctx.Logger().Info("asset fee in rune", "amt", runeFee.String())
-					ctx.Logger().Info("pool", "pool", pool.String())
 					if runeFee.GT(pool.BalanceRune) {
 						poolDeduct = pool.BalanceRune
 					} else {
