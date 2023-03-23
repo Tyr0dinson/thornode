@@ -21,8 +21,6 @@ func DexAggregators(version semver.Version) []Aggregator {
 			{common.AVAXChain, `0xce5d236164D2Bc0B2f65351f23B617c2A7D5Cc28`},
 			// TSAggregatorPangolin Avalanche V2
 			{common.AVAXChain, `0x9aC752Ed433f7E038Be4070544858cB3d83cC0d7`},
-			// Symbiosis MulticallRouter
-			{common.ETHChain, `0x49d3Fc00f3ACf80FABCb42D7681667B20F60889A`},
 			// TSSwapGeneric Ethereum V2
 			{common.ETHChain, `0x213255345a740324cbCE0242e32076Ab735906e2`},
 			// TSAggregatorGeneric Ethereum V2
