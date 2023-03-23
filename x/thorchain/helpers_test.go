@@ -24,6 +24,11 @@ type TestRefundBondKeeper struct {
 	na      NodeAccount
 	vaults  Vaults
 	modules map[string]int64
+	consts  constants.ConstantValues
+}
+
+func (k *TestRefundBondKeeper) GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64 {
+	return k.consts.GetInt64Value(key)
 }
 
 func (k *TestRefundBondKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
@@ -248,6 +253,7 @@ func (s *HelperSuite) TestRefundBondError(c *C) {
 	tx.FromAddress = GetRandomTHORAddress()
 	keeper1 := &TestRefundBondKeeper{
 		modules: make(map[string]int64),
+		consts:  constants.GetConstantValues(GetCurrentVersion()),
 	}
 	mgr := NewDummyMgrWithKeeper(keeper1)
 	c.Assert(refundBond(ctx, tx, na.NodeAddress, cosmos.ZeroUint(), &na, mgr), IsNil)
@@ -310,6 +316,7 @@ func (s *HelperSuite) TestRefundBondHappyPath(c *C) {
 		ygg:     ygg,
 		vaults:  Vaults{GetRandomVault()},
 		modules: make(map[string]int64),
+		consts:  constants.GetConstantValues(GetCurrentVersion()),
 	}
 	na.Status = NodeStandby
 	mgr := NewDummyMgrWithKeeper(keeper)
@@ -352,6 +359,7 @@ func (s *HelperSuite) TestRefundBondDisableRequestToLeaveNode(c *C) {
 		ygg:     ygg,
 		vaults:  Vaults{GetRandomVault()},
 		modules: make(map[string]int64),
+		consts:  constants.GetConstantValues(GetCurrentVersion()),
 	}
 	na.Status = NodeStandby
 	na.RequestedToLeave = true
@@ -771,6 +779,48 @@ func (s *HelperSuite) TestUpdateTxOutGas(c *C) {
 	didUpdate := false
 	for _, item := range txVoter.Actions {
 		if item.Equals(txOut) && item.MaxGas.Equals(newGas) {
+			didUpdate = true
+			break
+		}
+	}
+
+	c.Assert(didUpdate, Equals, true)
+}
+
+func (s *HelperSuite) TestUpdateTxOutGasRate(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create ObservedVoter and add a TxOut
+	txVoter := GetRandomObservedTxVoter()
+	txOut := GetRandomTxOutItem()
+	txVoter.Actions = append(txVoter.Actions, txOut)
+	mgr.Keeper().SetObservedTxInVoter(ctx, txVoter)
+
+	// Try to set new gas rate, should return error as TxOut InHash doesn't match
+	newGasRate := int64(25)
+	err := updateTxOutGasRate(ctx, mgr.K, txOut, newGasRate)
+	c.Assert(err.Error(), Equals, fmt.Sprintf("fail to find tx out in ObservedTxVoter %s", txOut.InHash))
+
+	// Update TxOut InHash to match, should update gas
+	txOut.InHash = txVoter.TxID
+	txVoter.Actions[1] = txOut
+	mgr.Keeper().SetObservedTxInVoter(ctx, txVoter)
+
+	// Err should be Nil
+	err = updateTxOutGasRate(ctx, mgr.K, txOut, newGasRate)
+	c.Assert(err, IsNil)
+
+	// Now that the actions have been updated (dependent on Equals which checks GasRate),
+	// update the GasRate in the outbound queue item.
+	txOut.GasRate = newGasRate
+
+	// Keeper should have updated gas of TxOut in Actions
+	txVoter, err = mgr.Keeper().GetObservedTxInVoter(ctx, txVoter.TxID)
+	c.Assert(err, IsNil)
+
+	didUpdate := false
+	for _, item := range txVoter.Actions {
+		if item.Equals(txOut) && item.GasRate == newGasRate {
 			didUpdate = true
 			break
 		}

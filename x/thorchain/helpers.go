@@ -29,48 +29,22 @@ var WhitelistedArbs = []string{ // treasury addresses
 	"ltc1qaa064vvv4d6stgywnf777j6dl8rd3tt93fp6jx",
 }
 
-func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.47.0")) {
-		return refundTxV47(ctx, tx, mgr, refundCode, refundReason, nativeRuneModuleName)
+	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return refundTxV108(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
+	case version.GTE(semver.MustParse("0.47.0")):
+		return refundTxV47(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, nativeRuneModuleName string) error {
+func refundTxV108(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
-	addEvent := func(refundCoins common.Coins) error {
-		eventRefund := NewEventRefund(refundCode, refundReason, tx.Tx, common.NewFee(common.Coins{}, cosmos.ZeroUint()))
-		if len(refundCoins) > 0 {
-			// create a new TX based on the coins thorchain refund , some of the coins thorchain doesn't refund
-			// coin thorchain doesn't have pool with , likely airdrop
-			newTx := common.NewTx(tx.Tx.ID, tx.Tx.FromAddress, tx.Tx.ToAddress, tx.Tx.Coins, tx.Tx.Gas, tx.Tx.Memo)
-
-			// all the coins in tx.Tx should belongs to the same chain
-			transactionFee := mgr.GasMgr().GetFee(ctx, tx.Tx.Chain, common.RuneAsset())
-			fee := getFee(tx.Tx.Coins, refundCoins, transactionFee)
-			eventRefund = NewEventRefund(refundCode, refundReason, newTx, fee)
-		}
-		if err := mgr.EventMgr().EmitEvent(ctx, eventRefund); err != nil {
-			return fmt.Errorf("fail to emit refund event: %w", err)
-		}
-		return nil
-	}
-
-	// for THORChain transactions, create the event before we txout. For other
-	// chains, do it after. The reason for this is we need to make sure the
-	// first event (refund) is created, before we create the outbound events
-	// (second). Because its THORChain, its safe to assume all the coins are
-	// safe to send back. Where as for external coins, we cannot make this
-	// assumption (ie coins we don't have pools for and therefore, don't know
-	// the value of it relative to rune)
-	if tx.Tx.Chain.Equals(common.THORChain) {
-		if err := addEvent(tx.Tx.Coins); err != nil {
-			return err
-		}
-	}
 	refundCoins := make(common.Coins, 0)
 	for _, coin := range tx.Tx.Coins {
 		if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
@@ -89,14 +63,55 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 				VaultPubKey: tx.ObservedPubKey,
 				Coin:        coin,
 				Memo:        NewRefundMemo(tx.Tx.ID).String(),
-				ModuleName:  nativeRuneModuleName,
+				ModuleName:  sourceModuleName,
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 			if err != nil {
-				ctx.Logger().Error("fail to prepare outbund tx", "error", err)
+				ctx.Logger().Error("fail to prepare outbound tx", "error", err)
 				// concatenate the refund failure to refundReason
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
+
+				// sourceModuleName is frequently "", assumed to be AsgardName by default.
+				if sourceModuleName == "" {
+					sourceModuleName = AsgardName
+				}
+
+				// If unable to refund synths, burn them.
+				if coin.Asset.IsSyntheticAsset() {
+					// For code clarity, set the error to nil at the start and check it at every step.
+					var err error
+					err = nil
+
+					if sourceModuleName != ModuleName {
+						err = mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ModuleName, common.NewCoins(coin))
+						if err != nil {
+							ctx.Logger().Error("fail to move coin during failed refund burn", "error", err)
+						}
+					}
+
+					if err == nil {
+						err = mgr.Keeper().BurnFromModule(ctx, ModuleName, coin)
+						if err != nil {
+							ctx.Logger().Error("fail to burn coin during failed refund burn", "error", err)
+						}
+					}
+
+					if err == nil {
+						burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, "failed_refund")
+						if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+							ctx.Logger().Error("fail to emit burn event", "error", err)
+						}
+					}
+				}
+
+				// If unable to refund THOR.RUNE, send it to the Reserve.
+				if coin.Asset.IsNativeRune() && sourceModuleName != ReserveName {
+					err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
+					if err != nil {
+						ctx.Logger().Error("fail to send RUNE to Reserve after failed refund", "error", err)
+					}
+				}
 			}
 			if success {
 				refundCoins = append(refundCoins, toi.Coin)
@@ -104,10 +119,21 @@ func refundTxV47(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint
 		}
 		// Zombie coins are just dropped.
 	}
-	if !tx.Tx.Chain.Equals(common.THORChain) {
-		if err := addEvent(refundCoins); err != nil {
-			return err
-		}
+
+	// For refund events, emit the event after the txout attempt in order to include the 'fail to refund' reason if unsuccessful.
+	eventRefund := NewEventRefund(refundCode, refundReason, tx.Tx, common.NewFee(common.Coins{}, cosmos.ZeroUint()))
+	if len(refundCoins) > 0 {
+		// create a new TX based on the coins thorchain refund , some of the coins thorchain doesn't refund
+		// coin thorchain doesn't have pool with , likely airdrop
+		newTx := common.NewTx(tx.Tx.ID, tx.Tx.FromAddress, tx.Tx.ToAddress, tx.Tx.Coins, tx.Tx.Gas, tx.Tx.Memo)
+
+		// all the coins in tx.Tx should belongs to the same chain
+		transactionFee := mgr.GasMgr().GetFee(ctx, tx.Tx.Chain, common.RuneAsset())
+		fee := getFee(tx.Tx.Coins, refundCoins, transactionFee)
+		eventRefund = NewEventRefund(refundCode, refundReason, newTx, fee)
+	}
+	if err := mgr.EventMgr().EmitEvent(ctx, eventRefund); err != nil {
+		return fmt.Errorf("fail to emit refund event: %w", err)
 	}
 
 	return nil
@@ -339,14 +365,14 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 		ctx.Logger().Error("Node Account left with more funds in their Yggdrasil vault than their bond's value", "address", nodeAcc.NodeAddress, "ygg-value", yggRune, "bond", nodeAcc.Bond)
 	}
 	// slash yggdrasil remains
-	penaltyPts := fetchConfigInt64(ctx, mgr, constants.SlashPenalty)
+	penaltyPts := mgr.Keeper().GetConfigInt64(ctx, constants.SlashPenalty)
 	slashRune := common.GetUncappedShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), yggRune)
 	if slashRune.GT(nodeAcc.Bond) {
 		slashRune = nodeAcc.Bond
 	}
 	bondBeforeSlash := nodeAcc.Bond
 	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, slashRune)
-	bp.Adjust(nodeAcc.Bond) // redistribute node bond amongst bond providers
+	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
 
 	if !provider.IsEmpty() && !provider.Bond.IsZero() {
@@ -462,6 +488,7 @@ func isSignedByActiveNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers [
 	return true
 }
 
+// TODO remove after hard fork
 func fetchConfigInt64(ctx cosmos.Context, mgr Manager, key constants.ConstantName) int64 {
 	val, err := mgr.Keeper().GetMimir(ctx, key.String())
 	if val < 0 || err != nil {
@@ -1160,6 +1187,37 @@ func updateTxOutGasV1(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOu
 	return nil
 }
 
+// In the case where the gas rate of the chain of a queued outbound tx has changed
+// Update the ObservedTxVoter so the network can still match the outbound with
+// the observed inbound
+func updateTxOutGasRate(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gasRate int64) error {
+	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
+	// For example , migration , yggdrasil funding etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
+	if txOut.InHash == common.BlankTxID {
+		return nil
+	}
+	voter, err := keeper.GetObservedTxInVoter(ctx, txOut.InHash)
+	if err != nil {
+		return err
+	}
+
+	txOutIndex := -1
+	for i, tx := range voter.Actions {
+		if tx.Equals(txOut) {
+			txOutIndex = i
+			voter.Actions[txOutIndex].GasRate = gasRate
+			keeper.SetObservedTxInVoter(ctx, voter)
+			break
+		}
+	}
+
+	if txOutIndex == -1 {
+		return fmt.Errorf("fail to find tx out in ObservedTxVoter %s", txOut.InHash)
+	}
+
+	return nil
+}
+
 // backfill bond provider information (passive migration code)
 func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, bp *BondProviders) error {
 	if len(bp.Providers) == 0 {
@@ -1171,7 +1229,7 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 		p := NewBondProvider(nodeOpBondAddr)
 		p.Bond = nodeAccount.Bond
 		bp.Providers = append(bp.Providers, p)
-		defaultNodeOperationFee := fetchConfigInt64(ctx, mgr, constants.NodeOperatorFee)
+		defaultNodeOperationFee := mgr.Keeper().GetConfigInt64(ctx, constants.NodeOperatorFee)
 		bp.NodeOperatorFee = cosmos.NewUint(uint64(defaultNodeOperationFee))
 	}
 
