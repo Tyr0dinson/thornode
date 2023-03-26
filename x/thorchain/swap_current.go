@@ -13,16 +13,10 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-type SwapperVCUR struct {
-	coinsToBurn common.Coins
-	coinsToMint common.Coins
-}
+type SwapperVCUR struct{}
 
 func newSwapperVCUR() *SwapperVCUR {
-	return &SwapperVCUR{
-		coinsToBurn: make(common.Coins, 0),
-		coinsToMint: make(common.Coins, 0),
-	}
+	return &SwapperVCUR{}
 }
 
 // validateMessage is trying to validate the legitimacy of the incoming message and decide whether THORNode can handle it
@@ -93,9 +87,6 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		tx.Gas = nil
 		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
 		swapEvents = append(swapEvents, swapEvt)
-		if source.IsDerivedAsset() {
-			s.coinsToMint = append(s.coinsToMint, common.NewCoin(common.RuneAsset(), amt))
-		}
 	}
 	assetAmount, swapEvt, swapErr := s.swapOne(ctx, mgr, tx, target, destination, swapTarget, transactionFee, synthVirtualDepthMult)
 	if swapErr != nil {
@@ -111,9 +102,6 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	if target.IsRune() {
 		if assetAmount.LTE(transactionFee) {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
-		}
-		if source.IsDerivedAsset() {
-			s.coinsToMint = append(s.coinsToMint, common.NewCoin(common.RuneAsset(), assetAmount))
 		}
 	}
 	// emit asset is zero
@@ -165,12 +153,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		)
 	}
 
-	if destination.IsNoop() {
-		// mint synths if no txout is created and send them to asgard
-		if target.GetChain().IsTHORChain() && target.IsSyntheticAsset() {
-			s.coinsToMint = append(s.coinsToMint, common.NewCoin(target, assetAmount))
-		}
-	} else {
+	if !destination.IsNoop() {
 		toi := TxOutItem{
 			Chain:                 target.GetChain(),
 			InHash:                tx.ID,
@@ -179,10 +162,6 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 			Aggregator:            dexAgg,
 			AggregatorTargetAsset: dexAggTargetAsset,
 			AggregatorTargetLimit: dexAggLimit,
-		}
-		// let the txout manager mint our outbound asset if it is a synthetic asset
-		if toi.Chain.IsTHORChain() && (toi.Coin.Asset.IsSyntheticAsset() || toi.Coin.Asset.IsDerivedAsset()) {
-			toi.ModuleName = ModuleName
 		}
 
 		// streaming swap outbounds are handled in the swap queue manager
@@ -197,55 +176,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		}
 	}
 
-	if err := s.burnCoins(ctx, mgr, s.coinsToBurn); err != nil {
-		return assetAmount, swapEvents, err
-	}
-
-	if err := s.mintCoins(ctx, mgr, s.coinsToMint); err != nil {
-		return assetAmount, swapEvents, err
-	}
 	return assetAmount, swapEvents, nil
-}
-
-func (s *SwapperVCUR) burnCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
-	err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, coins)
-	if err != nil {
-		ctx.Logger().Error("fail to move coins during swap", "error", err)
-		return err
-	}
-	for _, coin := range coins {
-		if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, coin); err != nil {
-			ctx.Logger().Error("fail to burn coins during swap", "error", err)
-		} else {
-			burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, "swap")
-			if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
-				ctx.Logger().Error("fail to emit burn event", "error", err)
-			}
-		}
-	}
-	return nil
-}
-
-func (s *SwapperVCUR) mintCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
-	if len(coins) == 0 {
-		return nil
-	}
-	for _, coin := range coins {
-		if err := mgr.Keeper().MintToModule(ctx, ModuleName, coin); err != nil {
-			ctx.Logger().Error("fail to mint coins during swap", "error", err)
-			return err
-		}
-		mintEvt := NewEventMintBurn(MintSupplyType, coin.Asset.Native(), coin.Amount, "swap")
-		if err := mgr.EventMgr().EmitEvent(ctx, mintEvt); err != nil {
-			ctx.Logger().Error("fail to emit mint event", "error", err)
-			return err
-		}
-	}
-	if err := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, coins); err != nil {
-		ctx.Logger().Error("fail to move coins during swap", "error", err)
-		return err
-	}
-	return nil
 }
 
 func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
@@ -367,30 +298,64 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 
 	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
 
-	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
-		// we're doing a synth swap
-		if source.IsSyntheticAsset() {
-			// our source is a pegged asset, burn it all
-			pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
-			s.coinsToBurn = append(s.coinsToBurn, tx.Coins...)
+	// Burning of input synth or derived pool input (asset or RUNE).
+	if source.IsSyntheticAsset() || asset.IsDerivedAsset() {
+		burnCoin := tx.Coins[0]
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(burnCoin)); err != nil {
+			ctx.Logger().Error("fail to move coins during swap", "error", err)
+			return cosmos.ZeroUint(), evt, err
+		} else if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, burnCoin); err != nil {
+			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		} else {
-			pool.BalanceRune = pool.BalanceRune.Add(x)
+			burnEvt := NewEventMintBurn(BurnSupplyType, burnCoin.Asset.Native(), burnCoin.Amount, "swap")
+			if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+				ctx.Logger().Error("fail to emit burn event", "error", err)
+			}
+		}
+	}
+
+	// Minting of output synth or derived pool output (asset or RUNE).
+	if (target.IsSyntheticAsset() || asset.IsDerivedAsset()) &&
+		!emitAssets.IsZero() {
+		// If the source isn't RUNE, the target should be RUNE.
+		mintCoin := common.NewCoin(target, emitAssets)
+		if err := mgr.Keeper().MintToModule(ctx, ModuleName, mintCoin); err != nil {
+			ctx.Logger().Error("fail to mint coins during swap", "error", err)
+			return cosmos.ZeroUint(), evt, err
+		} else {
+			mintEvt := NewEventMintBurn(MintSupplyType, mintCoin.Asset.Native(), mintCoin.Amount, "swap")
+			if err := mgr.EventMgr().EmitEvent(ctx, mintEvt); err != nil {
+				ctx.Logger().Error("fail to emit mint event", "error", err)
+			}
+
+			if err := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(mintCoin)); err != nil {
+				ctx.Logger().Error("fail to move coins during swap", "error", err)
+				return cosmos.ZeroUint(), evt, err
+			}
+		}
+	}
+
+	// Use pool fields here rather than X and Y as synthVirtualDepthMult could affect X and Y.
+	// Only alter BalanceAsset when the non-RUNE asset isn't a synth.
+	if source.IsRune() {
+		pool.BalanceRune = pool.BalanceRune.Add(x)
+		if !target.IsSyntheticAsset() {
+			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, emitAssets)
 		}
 	} else {
-		if source.IsRune() {
-			pool.BalanceRune = X.Add(x)
-			pool.BalanceAsset = common.SafeSub(Y, emitAssets)
-		} else {
-			pool.BalanceAsset = X.Add(x)
-			pool.BalanceRune = common.SafeSub(Y, emitAssets)
+		// The target should be RUNE.
+		pool.BalanceRune = common.SafeSub(pool.BalanceRune, emitAssets)
+		if !source.IsSyntheticAsset() {
+			pool.BalanceAsset = pool.BalanceAsset.Add(x)
 		}
-		// when swapping with derived asset pool, always burn inbound assets
-		if pool.Asset.IsDerivedAsset() {
-			s.coinsToBurn = append(s.coinsToBurn, tx.Coins...)
-		}
+	}
+	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
+		synthSupply = keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		pool.CalcUnits(keeper.GetVersion(), synthSupply)
 	}
 	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
 
+	// Even for a Derived Asset pool, set the pool so the txout manager's GetFee for toi.Coin.Asset uses updated balances.
 	if err := keeper.SetPool(ctx, pool); err != nil {
 		return cosmos.ZeroUint(), evt, fmt.Errorf("fail to set pool")
 	}

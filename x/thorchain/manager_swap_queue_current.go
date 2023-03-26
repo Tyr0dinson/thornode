@@ -233,10 +233,6 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				}
 
 				for _, item := range tois {
-					// let the txout manager mint our outbound asset if it is a synthetic asset
-					if item.Chain.IsTHORChain() && (item.Coin.Asset.IsSyntheticAsset() || item.Coin.Asset.IsDerivedAsset()) {
-						item.ModuleName = ModuleName
-					}
 					ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, item, cosmos.ZeroUint())
 					if err != nil {
 						return ErrInternal(err, "fail to add outbound tx")
