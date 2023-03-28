@@ -19,6 +19,7 @@ func NewSendHandler(mgr Manager) BaseHandler[*MsgSend] {
 		mgr:    mgr,
 		logger: MsgSendLogger,
 		validators: NewValidators[*MsgSend]().
+			Register("1.111.0", MsgSendValidateV111).
 			Register("1.87.0", MsgSendValidateV87).
 			Register("0.1.0", MsgSendValidateV1),
 		handlers: NewHandlers[*MsgSend]().
@@ -27,7 +28,7 @@ func NewSendHandler(mgr Manager) BaseHandler[*MsgSend] {
 	}
 }
 
-func MsgSendValidateV87(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
+func MsgSendValidateV111(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
