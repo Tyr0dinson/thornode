@@ -132,31 +132,59 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 
 		// Mark bad, old, low bond, and old version validators
 		if minimumNodesForBFT+2 < int64(totalActiveNodes) {
+			// Check by how much the number of Active nodes can increase.
+			newNode, err := vm.k.GetMimir(ctx, constants.NumberOfNewNodesPerChurn.String())
+			if err != nil || newNode <= 0 {
+				newNode = 1
+			}
+			// Limit according to DesiredValidatorSet.
+			if desiredValidatorSet-int64(len(nas)) < newNode {
+				// Allow a negative.
+				newNode = desiredValidatorSet - int64(len(nas))
+			}
+			// Track how many Ready nodes are waiting for places to open up;
+			// when newNode is negative, it represents positions over DesiredValidatorSet
+			// which have to be emptied before Ready nodes can join.
+			readyWaiting := int64(len(ready)) - newNode
+
+			// Validator number can drop if Ready node members cannot complete keygens,
+			// so don't make extra room for Ready nodes unless already at DesiredValidatorSet.
+			fullValidators := (int64(len(nas)) >= desiredValidatorSet)
+
 			// Only mark badly-performing actors in churn retries (keygens failing),
-			// or when there are already the maximum number of Active nodes and at least one Ready node.
-			if retryChurn ||
-				(int64(len(nas)) >= desiredValidatorSet && len(ready) > 0) {
+			// or when validators are full and at least one Ready node is waiting for a place.
+			if retryChurn || (fullValidators && readyWaiting > 0) {
 				redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
 				minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
 
-				if err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline); err != nil {
+				marked, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
+				if err != nil {
 					return err
 				}
+				readyWaiting -= marked
 			}
 
 			// Only mark old/{low bond}/{low version} actors on initial churn.
 			if !retryChurn {
-				// Only mark old/{low bond} actors when there are already the maximum number of Active nodes
-				// and at least one Ready node.
-				if int64(len(nas)) >= desiredValidatorSet && len(ready) > 0 {
+				// Only mark old/{low bond} actors when validators are full and at least one Ready node is waiting for a place.
+				if fullValidators && readyWaiting > 0 {
 					if err := vm.markOldActor(ctx); err != nil {
 						return err
 					}
-					if err := vm.markLowBondActor(ctx); err != nil {
-						return err
+					// Only one actor marked, so decrement directly.
+					readyWaiting--
+
+					if readyWaiting > 0 {
+						if err := vm.markLowBondActor(ctx); err != nil {
+							return err
+						}
+						// No further check of readyWaiting, so don't decrement.
+						// readyWaiting--
 					}
 				}
 
+				// Unlike slash point performance, mark low version validators for churn-out
+				// during the first keygen try whether or not there are waiting Ready nodes.
 				if err := vm.markLowVersionValidators(ctx); err != nil {
 					return err
 				}
@@ -1251,6 +1279,10 @@ func (vm *ValidatorMgrV110) findOldActor(ctx cosmos.Context) (NodeAccount, error
 
 	na.StatusSince = ctx.BlockHeight() // set the start status age to "now"
 	for _, n := range nas {
+		// Only mark an old actor not already marked for churn-out.
+		if na.LeaveScore > 0 {
+			continue
+		}
 		if n.StatusSince < na.StatusSince {
 			na = n
 		}
@@ -1271,6 +1303,10 @@ func (vm *ValidatorMgrV110) findLowBondActor(ctx cosmos.Context) (NodeAccount, e
 		bond := nas[0].Bond
 		na = nas[0]
 		for _, n := range nas {
+			// Only mark a low bond actor not already marked for churn-out.
+			if na.LeaveScore > 0 {
+				continue
+			}
 			if n.Bond.LT(bond) {
 				bond = n.Bond
 				na = n
@@ -1320,17 +1356,17 @@ func (vm *ValidatorMgrV110) markLowBondActor(ctx cosmos.Context) error {
 }
 
 // Mark a bad actor to be churned out
-func (vm *ValidatorMgrV110) markBadActor(ctx cosmos.Context, minSlashPointsForBadValidator, redline int64) error {
+func (vm *ValidatorMgrV110) markBadActor(ctx cosmos.Context, minSlashPointsForBadValidator, redline int64) (int64, error) {
 	nas, err := vm.findBadActors(ctx, minSlashPointsForBadValidator, redline)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, na := range nas {
 		if err := vm.markActor(ctx, na, "for bad behavior"); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return int64(len(nas)), nil
 }
 
 // Mark up to `MaxNodeToChurnOutForLowVersion` nodes as low version
