@@ -36,12 +36,10 @@ func newValidatorMgrV110(k keeper.Keeper, networkMgr NetworkManager, txOutStore 
 
 // BeginBlock when block begin
 func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error {
-	constAccessor := mgr.GetConstants()
-
 	vm.existingValidators = existingValidators
 	height := ctx.BlockHeight()
 	if height == genesisBlockHeight {
-		if err := vm.setupValidatorNodes(ctx, height, constAccessor); err != nil {
+		if err := vm.setupValidatorNodes(ctx, height); err != nil {
 			ctx.Logger().Error("fail to setup validator nodes", "error", err)
 		}
 	}
@@ -49,16 +47,13 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 		// ragnarok is in progress, no point to check node rotation
 		return nil
 	}
-	minimumNodesForBFT := constAccessor.GetInt64Value(constants.MinimumNodesForBFT)
+	minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
 	totalActiveNodes, err := vm.k.TotalActiveValidators(ctx)
 	if err != nil {
 		return err
 	}
 
-	churnInterval, err := vm.k.GetMimir(ctx, constants.ChurnInterval.String())
-	if churnInterval < 0 || err != nil {
-		churnInterval = constAccessor.GetInt64Value(constants.ChurnInterval)
-	}
+	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 
 	vaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -69,15 +64,9 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 
 	// get constants
-	desiredValidatorSet, err := vm.k.GetMimir(ctx, constants.DesiredValidatorSet.String())
-	if desiredValidatorSet < 0 || err != nil {
-		desiredValidatorSet = constAccessor.GetInt64Value(constants.DesiredValidatorSet)
-	}
-	churnRetryInterval := constAccessor.GetInt64Value(constants.ChurnRetryInterval)
-	asgardSize, err := vm.k.GetMimir(ctx, constants.AsgardSize.String())
-	if asgardSize < 0 || err != nil {
-		asgardSize = constAccessor.GetInt64Value(constants.AsgardSize)
-	}
+	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
+	churnRetryInterval := vm.k.GetConstants().GetInt64Value(constants.ChurnRetryInterval)
+	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
 
 	// calculate if we need to retry a churn because we are overdue for a
 	// successful one
@@ -134,14 +123,8 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 
 		// Mark bad, old, low, and old version validators
 		if minimumNodesForBFT+2 < int64(totalActiveNodes) {
-			redline, err := vm.k.GetMimir(ctx, constants.BadValidatorRedline.String())
-			if err != nil || redline < 0 {
-				redline = constAccessor.GetInt64Value(constants.BadValidatorRedline)
-			}
-			minSlashPointsForBadValidator, err := vm.k.GetMimir(ctx, constants.MinSlashPointsForBadValidator.String())
-			if err != nil || minSlashPointsForBadValidator < 0 {
-				minSlashPointsForBadValidator = constAccessor.GetInt64Value(constants.MinSlashPointsForBadValidator)
-			}
+			redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
+			minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
 			if err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline); err != nil {
 				return err
 			}
@@ -158,12 +141,12 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 
 			}
 			// when the active nodes didn't upgrade , boot them out one at a time
-			if err := vm.markLowVersionValidators(ctx, constAccessor); err != nil {
+			if err := vm.markLowVersionValidators(ctx); err != nil {
 				return err
 			}
 		}
 
-		next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet), constAccessor)
+		next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
 		if err != nil {
 			return err
 		}
@@ -253,14 +236,11 @@ func (vm *ValidatorMgrV110) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 		return nil
 	}
 
-	artificialRagnarokBlockHeight, err := vm.k.GetMimir(ctx, constants.ArtificialRagnarokBlockHeight.String())
-	if artificialRagnarokBlockHeight < 0 || err != nil {
-		artificialRagnarokBlockHeight = mgr.GetConstants().GetInt64Value(constants.ArtificialRagnarokBlockHeight)
-	}
+	artificialRagnarokBlockHeight := vm.k.GetConfigInt64(ctx, constants.ArtificialRagnarokBlockHeight)
 	if artificialRagnarokBlockHeight > 0 {
 		ctx.Logger().Info("Artificial Ragnarok is planned", "height", artificialRagnarokBlockHeight)
 	}
-	minimumNodesForBFT := mgr.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
+	minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
 	nodesAfterChange := len(activeNodes) + len(newNodes) - len(removedNodes)
 	if (len(activeNodes) >= int(minimumNodesForBFT) && nodesAfterChange < int(minimumNodesForBFT)) ||
 		(artificialRagnarokBlockHeight > 0 && ctx.BlockHeight() >= artificialRagnarokBlockHeight) {
@@ -658,7 +638,7 @@ func (vm *ValidatorMgrV110) processRagnarok(ctx cosmos.Context, mgr Manager) err
 		return fmt.Errorf("fail to get ragnarok pending: %w", err)
 	}
 	if pending > 0 {
-		txOutQueue, err := vm.getPendingTxOut(ctx, mgr.GetConstants())
+		txOutQueue, err := vm.getPendingTxOut(ctx)
 		if err != nil {
 			ctx.Logger().Error("fail to get pending tx out item", "error", err)
 			return nil
@@ -681,8 +661,8 @@ func (vm *ValidatorMgrV110) processRagnarok(ctx cosmos.Context, mgr Manager) err
 	return nil
 }
 
-func (vm *ValidatorMgrV110) getPendingTxOut(ctx cosmos.Context, constAccessor constants.ConstantValues) (int64, error) {
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+func (vm *ValidatorMgrV110) getPendingTxOut(ctx cosmos.Context) (int64, error) {
+	signingTransactionPeriod := vm.k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	count := int64(0)
 	for height := startHeight; height <= ctx.BlockHeight(); height++ {
@@ -1018,7 +998,7 @@ func (vm *ValidatorMgrV110) RequestYggReturn(ctx cosmos.Context, node NodeAccoun
 	}
 	chains = chains.Distinct()
 
-	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := vm.k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	// select vault that is most secure
 	vault := vm.k.GetMostSecure(ctx, active, signingTransactionPeriod)
 	if vault.IsEmpty() {
@@ -1093,7 +1073,7 @@ func (vm *ValidatorMgrV110) recallYggFunds(ctx cosmos.Context, mgr Manager) erro
 }
 
 // setupValidatorNodes it is one off it only get called when genesis
-func (vm *ValidatorMgrV110) setupValidatorNodes(ctx cosmos.Context, height int64, constAccessor constants.ConstantValues) error {
+func (vm *ValidatorMgrV110) setupValidatorNodes(ctx cosmos.Context, height int64) error {
 	if height != genesisBlockHeight {
 		ctx.Logger().Info("only need to setup validator node when start up", "height", height)
 		return nil
@@ -1125,10 +1105,7 @@ func (vm *ValidatorMgrV110) setupValidatorNodes(ctx cosmos.Context, height int64
 	sort.Sort(activeCandidateNodes)
 	sort.Sort(readyNodes)
 	activeCandidateNodes = append(activeCandidateNodes, readyNodes...)
-	desiredValidatorSet, err := vm.k.GetMimir(ctx, constants.DesiredValidatorSet.String())
-	if desiredValidatorSet < 0 || err != nil {
-		desiredValidatorSet = constAccessor.GetInt64Value(constants.DesiredValidatorSet)
-	}
+	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	for idx, item := range activeCandidateNodes {
 		if int64(idx) < desiredValidatorSet {
 			item.UpdateStatus(NodeActive, ctx.BlockHeight())
@@ -1342,12 +1319,9 @@ func (vm *ValidatorMgrV110) markBadActor(ctx cosmos.Context, minSlashPointsForBa
 // Mark up to `MaxNodeToChurnOutForLowVersion` nodes as low version
 // This will slate them to churn out. `MaxNodeToChurnOutForLowVersion`
 // is a Mimir setting that defaults in constants to 1
-func (vm *ValidatorMgrV110) markLowVersionValidators(ctx cosmos.Context, constAccessor constants.ConstantValues) error {
+func (vm *ValidatorMgrV110) markLowVersionValidators(ctx cosmos.Context) error {
 	// Get max number of nodes to mark as low version
-	maxNodes, err := vm.k.GetMimir(ctx, constants.MaxNodeToChurnOutForLowVersion.String())
-	if maxNodes < 0 || err != nil {
-		maxNodes = constAccessor.GetInt64Value(constants.MaxNodeToChurnOutForLowVersion)
-	}
+	maxNodes := vm.k.GetConfigInt64(ctx, constants.MaxNodeToChurnOutForLowVersion)
 
 	nodeAccs, err := vm.findLowVersionValidators(ctx, maxNodes)
 	if err != nil {
@@ -1383,7 +1357,7 @@ func (vm *ValidatorMgrV110) findLowVersionValidators(ctx cosmos.Context, maxNode
 }
 
 // find any actor that are ready to become "ready" status
-func (vm *ValidatorMgrV110) markReadyActors(ctx cosmos.Context, constAccessor constants.ConstantValues) error {
+func (vm *ValidatorMgrV110) markReadyActors(ctx cosmos.Context) error {
 	standby, err := vm.k.ListValidatorsByStatus(ctx, NodeStandby)
 	if err != nil {
 		return err
@@ -1395,7 +1369,7 @@ func (vm *ValidatorMgrV110) markReadyActors(ctx cosmos.Context, constAccessor co
 
 	// check all ready and standby nodes are in "ready" state (upgrade/downgrade as needed)
 	for _, na := range append(standby, ready...) {
-		status, _ := vm.NodeAccountPreflightCheck(ctx, na, constAccessor)
+		status, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
 		na.UpdateStatus(status, ctx.BlockHeight())
 
 		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
@@ -1407,7 +1381,7 @@ func (vm *ValidatorMgrV110) markReadyActors(ctx cosmos.Context, constAccessor co
 }
 
 // NodeAccountPreflightCheck preflight check to find out what the node account's next status will be
-func (vm *ValidatorMgrV110) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error) {
+func (vm *ValidatorMgrV110) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, _ constants.ConstantValues) (NodeStatus, error) {
 	// ensure banned nodes can't get churned in again
 	if na.ForcedToLeave {
 		return NodeDisabled, fmt.Errorf("node account has been banned")
@@ -1447,10 +1421,7 @@ func (vm *ValidatorMgrV110) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 	}
 
 	// ensure we have enough rune
-	minBond, err := vm.k.GetMimir(ctx, constants.MinimumBondInRune.String())
-	if minBond < 0 || err != nil {
-		minBond = constAccessor.GetInt64Value(constants.MinimumBondInRune)
-	}
+	minBond := vm.k.GetConfigInt64(ctx, constants.MinimumBondInRune)
 	if na.Bond.LT(cosmos.NewUint(uint64(minBond))) {
 		return NodeStandby, fmt.Errorf("node account does not have minimum bond requirement: %d/%d", na.Bond.Uint64(), minBond)
 	}
@@ -1478,11 +1449,11 @@ func (vm *ValidatorMgrV110) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 }
 
 // Returns a list of nodes to include in the next pool
-func (vm *ValidatorMgrV110) nextVaultNodeAccounts(ctx cosmos.Context, targetCount int, constAccessor constants.ConstantValues) (NodeAccounts, bool, error) {
+func (vm *ValidatorMgrV110) nextVaultNodeAccounts(ctx cosmos.Context, targetCount int) (NodeAccounts, bool, error) {
 	rotation := false // track if are making any changes to the current active node accounts
 
 	// update list of ready actors
-	if err := vm.markReadyActors(ctx, constAccessor); err != nil {
+	if err := vm.markReadyActors(ctx); err != nil {
 		return nil, false, err
 	}
 
@@ -1552,7 +1523,7 @@ func (vm *ValidatorMgrV110) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 	}
 	// add ready nodes to become active
 	limit := toRemove + int(newNode) // Max limit of ready nodes to churn in
-	minimumNodesForBFT := constAccessor.GetInt64Value(constants.MinimumNodesForBFT)
+	minimumNodesForBFT := vm.k.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
 	if len(active)+limit < int(minimumNodesForBFT) {
 		limit = int(minimumNodesForBFT) - len(active)
 	}
