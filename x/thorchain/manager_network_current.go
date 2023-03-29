@@ -293,11 +293,15 @@ func (vm *NetworkMgrV109) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 		runeAdd = false
 		runeAmt = common.SafeSub(derivedPool.BalanceRune, runeDepth)
 	}
-	mod := NewPoolMod(derivedPool.Asset, runeAmt, runeAdd, assetAmt, assetAdd)
-	emitPoolBalanceChangedEvent(ctx, mod, "derived pool adjustment", mgr)
 
-	derivedPool.BalanceAsset = assetDepth
-	derivedPool.BalanceRune = runeDepth
+	// Only emit an EventPoolBalanceChanged if there's a balance change.
+	if !assetAmt.IsZero() || !runeAmt.IsZero() {
+		mod := NewPoolMod(derivedPool.Asset, runeAmt, runeAdd, assetAmt, assetAdd)
+		emitPoolBalanceChangedEvent(ctx, mod, "derived pool adjustment", mgr)
+
+		derivedPool.BalanceAsset = assetDepth
+		derivedPool.BalanceRune = runeDepth
+	}
 
 	if err := mgr.Keeper().SetPool(ctx, derivedPool); err != nil {
 		// Since unable to SetPool here, presumably unable to SetPool in suspendVirtualPool either.
