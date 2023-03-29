@@ -121,28 +121,45 @@ func (vm *ValidatorMgrV110) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 			}
 		}
 
-		// Mark bad, old, low, and old version validators
+		// update list of ready actors
+		if err := vm.markReadyActors(ctx); err != nil {
+			return err
+		}
+		ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
+		if err != nil {
+			return err
+		}
+
+		// Mark bad, old, low bond, and old version validators
 		if minimumNodesForBFT+2 < int64(totalActiveNodes) {
-			redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
-			minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
-			if err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline); err != nil {
-				return err
-			}
-			if !retryChurn { // Only mark old/low actors on initial churn
-				if err := vm.markOldActor(ctx); err != nil {
+			// Only mark badly-performing actors in churn retries (keygens failing),
+			// or when there are already the maximum number of Active nodes and at least one Ready node.
+			if retryChurn ||
+				(int64(len(nas)) >= desiredValidatorSet && len(ready) > 0) {
+				redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
+				minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
+
+				if err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline); err != nil {
 					return err
 				}
-				// Only churn out lowest-bond Active node when there are already the maximum number of Active nodes.
-				if int64(len(nas)) >= desiredValidatorSet {
+			}
+
+			// Only mark old/{low bond}/{low version} actors on initial churn.
+			if !retryChurn {
+				// Only mark old/{low bond} actors when there are already the maximum number of Active nodes
+				// and at least one Ready node.
+				if int64(len(nas)) >= desiredValidatorSet && len(ready) > 0 {
+					if err := vm.markOldActor(ctx); err != nil {
+						return err
+					}
 					if err := vm.markLowBondActor(ctx); err != nil {
 						return err
 					}
 				}
 
-			}
-			// when the active nodes didn't upgrade , boot them out one at a time
-			if err := vm.markLowVersionValidators(ctx); err != nil {
-				return err
+				if err := vm.markLowVersionValidators(ctx); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -1264,7 +1281,7 @@ func (vm *ValidatorMgrV110) findLowBondActor(ctx cosmos.Context) (NodeAccount, e
 	return na, nil
 }
 
-// Mark an old to be churned out
+// Mark an actor to be churned out
 func (vm *ValidatorMgrV110) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
@@ -1346,6 +1363,10 @@ func (vm *ValidatorMgrV110) findLowVersionValidators(ctx cosmos.Context, maxNode
 	}
 	nodeAccs := NodeAccounts{}
 	for _, na := range activeNodes {
+		// Only mark low version actors not already marked for churn-out.
+		if na.LeaveScore > 0 {
+			continue
+		}
 		if na.GetVersion().LT(minimumVersion) {
 			nodeAccs = append(nodeAccs, na)
 		}
@@ -1451,11 +1472,6 @@ func (vm *ValidatorMgrV110) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 // Returns a list of nodes to include in the next pool
 func (vm *ValidatorMgrV110) nextVaultNodeAccounts(ctx cosmos.Context, targetCount int) (NodeAccounts, bool, error) {
 	rotation := false // track if are making any changes to the current active node accounts
-
-	// update list of ready actors
-	if err := vm.markReadyActors(ctx); err != nil {
-		return nil, false, err
-	}
 
 	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
 	if err != nil {
