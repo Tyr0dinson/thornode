@@ -64,6 +64,8 @@ const (
 	prefixOrderBookMarketIndex    types.DbPrefix = "omark/"
 	prefixOrderBookProcessor      types.DbPrefix = "oproc/"
 	prefixMimir                   types.DbPrefix = "mimir/"
+	prefixMinJoinLast             types.DbPrefix = "minjoinlast/"
+	prefixMinJoinLastHeight       types.DbPrefix = "minjoinlastheight/"
 	prefixNodeMimir               types.DbPrefix = "nodemimir/"
 	prefixNodePauseChain          types.DbPrefix = "node_pause_chain/"
 	prefixNetworkFee              types.DbPrefix = "network_fee/"

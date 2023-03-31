@@ -404,6 +404,10 @@ func (vm *ValidatorMgrV110) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 			ctx.Logger().Error("fail to set node account", "error", err)
 		}
 	}
+
+	// Now that the node statuses have been updated, update the stored MinJoinVersion.
+	vm.k.SetMinJoinLast(ctx)
+
 	return validators
 }
 
@@ -1373,6 +1377,13 @@ func (vm *ValidatorMgrV110) markBadActor(ctx cosmos.Context, minSlashPointsForBa
 // This will slate them to churn out. `MaxNodeToChurnOutForLowVersion`
 // is a Mimir setting that defaults in constants to 1
 func (vm *ValidatorMgrV110) markLowVersionValidators(ctx cosmos.Context) error {
+	// Only mark low version validators later than ChurnOutForLowVersionBlocks since the MinJoinVersion last changed.
+	_, minJoinlastHeight := vm.k.GetMinJoinLast(ctx)
+	churnOutForLowVersionBlocks := vm.k.GetConfigInt64(ctx, constants.ChurnOutForLowVersionBlocks)
+	if ctx.BlockHeight() < minJoinlastHeight+churnOutForLowVersionBlocks {
+		return nil
+	}
+
 	// Get max number of nodes to mark as low version
 	maxNodes := vm.k.GetConfigInt64(ctx, constants.MaxNodeToChurnOutForLowVersion)
 

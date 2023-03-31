@@ -138,7 +138,6 @@ func (vts *ValidatorMgrV110TestSuite) TestRagnarokForChaosnet(c *C) {
 
 func (vts *ValidatorMgrV110TestSuite) TestLowerVersion(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	ctx = ctx.WithBlockHeight(1440)
 
 	mgr.Keeper().SetMimir(ctx, constants.DesiredValidatorSet.String(), 12)
 	mgr.Keeper().SetMimir(ctx, constants.ArtificialRagnarokBlockHeight.String(), 1024)
@@ -172,13 +171,14 @@ func (vts *ValidatorMgrV110TestSuite) TestLowerVersion(c *C) {
 	activeNode4 := GetRandomValidatorNode(NodeActive)
 	activeNode4.Version = "0.4.0"
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode4), IsNil)
-	c.Assert(networkMgr.markLowVersionValidators(ctx), IsNil)
 
-	activeNas, _ := networkMgr.k.ListActiveValidators(ctx)
-	markedCount := 0
 	lowVersionAddresses := []common.Address{activeNode1.BondAddress, activeNode2.BondAddress, activeNode3.BondAddress, activeNode4.BondAddress}
+	markedCount := 0
 
-	// should have marked 3 of the correct validators as low version
+	// Not more than ChurnOutForLowVersionBlocks (default 21600), so should mark 0 of the low version validators
+	c.Assert(networkMgr.markLowVersionValidators(ctx), IsNil)
+	activeNas, err := networkMgr.k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
 	for _, na := range activeNas {
 
 		isCorrectNode := false
@@ -190,11 +190,33 @@ func (vts *ValidatorMgrV110TestSuite) TestLowerVersion(c *C) {
 			}
 		}
 
-		if na.LeaveScore == uint64(144000000000) && isCorrectNode {
+		if na.LeaveScore > 0 && isCorrectNode {
 			markedCount++
 		}
 	}
+	c.Assert(markedCount, Equals, 0)
 
+	ctx = ctx.WithBlockHeight(30000)
+
+	// Now more than ChurnOutForLowVersionBlocks (default 21600), so should mark 3 of the low version validators
+	c.Assert(networkMgr.markLowVersionValidators(ctx), IsNil)
+	activeNas, err = networkMgr.k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	for _, na := range activeNas {
+
+		isCorrectNode := false
+
+		for _, addr := range lowVersionAddresses {
+			if addr == na.BondAddress {
+				isCorrectNode = true
+				break
+			}
+		}
+
+		if na.LeaveScore > 0 && isCorrectNode {
+			markedCount++
+		}
+	}
 	c.Assert(markedCount, Equals, 3)
 }
 

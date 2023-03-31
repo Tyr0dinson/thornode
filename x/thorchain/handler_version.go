@@ -144,13 +144,18 @@ func (h VersionHandler) handleV110(ctx cosmos.Context, msg MsgSetVersion) error 
 	tx.FromAddress = nodeAccount.BondAddress
 	bondEvent := NewEventBond(cost, BondCost, tx)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
-		return fmt.Errorf("fail to emit bond event: %w", err)
+		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("set_version",
 			cosmos.NewAttribute("thor_address", msg.Signer.String()),
 			cosmos.NewAttribute("version", msg.Version)))
+
+	if nodeAccount.Status == NodeActive {
+		// This could affect the MinJoinVersion, so update it.
+		h.mgr.Keeper().SetMinJoinLast(ctx)
+	}
 
 	return nil
 }
