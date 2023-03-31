@@ -274,7 +274,8 @@ func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 		}
 
 		if len(voter.OutTxs) >= len(voter.Actions) {
-			ctx.Logger().Debug(fmt.Sprintf("(%d) OutTxs present for (%s), despite expecting fewer than the (%d) Actions.", len(voter.OutTxs), txID, len(voter.Actions)))
+			log := fmt.Sprintf("(%d) OutTxs present for (%s), despite expecting fewer than the (%d) Actions.", len(voter.OutTxs), txID.String(), len(voter.Actions))
+			ctx.Logger().Debug(log)
 			continue
 		}
 
@@ -285,12 +286,14 @@ func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 			}
 		}
 		if len(indices) == 0 {
-			ctx.Logger().Debug(fmt.Sprintf("No dangling Actions item found for (%s).", txID))
+			log := fmt.Sprintf("No dangling Actions item found for (%s).", txID.String())
+			ctx.Logger().Debug(log)
 			continue
 		}
 
 		if len(voter.Actions)-len(voter.OutTxs) != len(indices) {
-			ctx.Logger().Debug(fmt.Sprintf("(%d) Actions and (%d) OutTxs present for (%s), yet there appeared to be (%d) dangling Actions.", len(voter.Actions), len(voter.OutTxs), txID, len(indices)))
+			log := fmt.Sprintf("(%d) Actions and (%d) OutTxs present for (%s), yet there appeared to be (%d) dangling Actions.", len(voter.Actions), len(voter.OutTxs), txID.String(), len(indices))
+			ctx.Logger().Debug(log)
 			continue
 		}
 
