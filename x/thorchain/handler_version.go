@@ -90,13 +90,17 @@ func (h VersionHandler) validateV80(ctx cosmos.Context, msg MsgSetVersion) error
 func (h VersionHandler) handle(ctx cosmos.Context, msg MsgSetVersion) error {
 	ctx.Logger().Info("handleMsgSetVersion request", "Version:", msg.Version)
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.57.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.110.0")):
+		return h.handleV110(ctx, msg)
+	case version.GTE(semver.MustParse("0.57.0")):
 		return h.handleV57(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func (h VersionHandler) handleV57(ctx cosmos.Context, msg MsgSetVersion) error {
+func (h VersionHandler) handleV110(ctx cosmos.Context, msg MsgSetVersion) error {
 	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		return cosmos.ErrUnauthorized(fmt.Errorf("unable to find account(%s):%w", msg.Signer, err).Error())
