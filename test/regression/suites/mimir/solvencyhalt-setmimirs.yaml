@@ -34,19 +34,6 @@ genesis:
         - chain: BTC
           transaction_fee_rate: "7"
           transaction_size: "1000"
-      node_accounts:
-        - active_block_height: "0"
-          bond: "5000000000000"
-          ip_address: 1.1.1.2
-          node_address: {{ addr_thor_fox }}
-          bond_address: {{ addr_thor_fox }}
-          pub_key_set:
-            secp256k1: "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5"
-            ed25519: "tthorpub1zcjduepqhu4l2kex363h3vtwzxtjhep28l888uuue5ms3czh9unlgm0p0kgs42gsuz"
-          signer_membership: []
-          status: Active
-          validator_cons_pub_key: tthorcpub1zcjduepqene73th796hyhqa45sevgrnjncr6jftglfkjk4l2xdjs035y805sud32km
-          version: {{ version }}
       vaults:
         - block_height: "0"
           chains:
@@ -66,8 +53,8 @@ genesis:
               decimals: "8"
           inbound_tx_count: "1"
           membership:
-            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
-          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4 # dog
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4 # dog's pubkey
           status: ActiveVault
           type: AsgardVault
         - block_height: "0"
@@ -88,8 +75,8 @@ genesis:
               decimals: "8"
           inbound_tx_count: "1"
           membership:
-            - tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5
-          pub_key: tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4 # also dog
+          pub_key: tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5 # fox's pubkey
           status: ActiveVault
           type: AsgardVault
 ---
@@ -105,36 +92,16 @@ asserts:
 type: tx-solvency
 signer: {{ addr_thor_dog }}
 chain: BTC
-pub_key: tthorpub1addwnpepq2x58tf0lefzxvtccgxkhd8qkv8sfzy8qgdu0x3gffdrnlh0xtm25ghct07
+pub_key: tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5
 coins:
   - asset: BTC.BTC
     amount: "20000000" # insolvent vault
 height: 1
 sequence: 0
 ---
-type: tx-solvency
-signer: {{ addr_thor_fox }}
-chain: BTC
-pub_key: tthorpub1addwnpepq2x58tf0lefzxvtccgxkhd8qkv8sfzy8qgdu0x3gffdrnlh0xtm25ghct07
-coins:
-  - asset: BTC.BTC
-    amount: "20000000" # insolvent vault
-height: 1
-sequence: 0
----
-# In the same block, a second solvency message (both Active nodes for consensus).
+# In the same block, a second solvency message
 type: tx-solvency
 signer: {{ addr_thor_dog }}
-chain: BTC
-pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
-coins:
-  - asset: BTC.BTC
-    amount: "70000000" # solvent vault
-height: 1
-sequence: 1
----
-type: tx-solvency
-signer: {{ addr_thor_fox }}
 chain: BTC
 pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
 coins:
