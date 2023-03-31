@@ -13,6 +13,8 @@ func DexAggregators(version semver.Version) []Aggregator {
 	switch {
 	case version.GTE(semver.MustParse("1.108.0")):
 		return []Aggregator{
+			// TSAggregatorWoofi Avalanche V2
+			{common.AVAXChain, `0x5505BE604dFA8A1ad402A71f8A357fba47F9bf5a`},
 			// TSSwapGeneric Avalanche V2
 			{common.AVAXChain, `0x77b34A3340eDdD56799749be4Be2c322547E2428`},
 			// TSAggregatorGeneric Avalanche V2
@@ -21,6 +23,8 @@ func DexAggregators(version semver.Version) []Aggregator {
 			{common.AVAXChain, `0xce5d236164D2Bc0B2f65351f23B617c2A7D5Cc28`},
 			// TSAggregatorPangolin Avalanche V2
 			{common.AVAXChain, `0x9aC752Ed433f7E038Be4070544858cB3d83cC0d7`},
+			// TSAggregator VTHOR Ethereum V2
+			{common.ETHChain, `0x0581a9ab98c467dca614c940104e6dd102be5c7d`},
 			// TSSwapGeneric Ethereum V2
 			{common.ETHChain, `0x213255345a740324cbCE0242e32076Ab735906e2`},
 			// TSAggregatorGeneric Ethereum V2
