@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"strconv"
 
 	. "gopkg.in/check.v1"
@@ -8,6 +9,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type ValidatorMgrV109TestSuite struct{}
@@ -140,6 +142,91 @@ func (vts *ValidatorMgrV109TestSuite) TestRagnarokForChaosnet(c *C) {
 	ragnarokHeight, err := mgr.Keeper().GetRagnarokBlockHeight(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(ragnarokHeight == 1024, Equals, true, Commentf("%d == %d", ragnarokHeight, 1024))
+}
+
+func (vts *ValidatorMgrV109TestSuite) TestMaxValidatorsChurnEffect(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(129600) // 3 * 43200
+
+	validatorMgr := newValidatorMgrV109(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	validatorMgr.k.SetMimir(ctx, constants.ChurnInterval.String(), 43200)
+	validatorMgr.k.SetMimir(ctx, constants.AsgardSize.String(), 30)
+
+	// Create Asgard ActiveVault, but don't Set it until after assigning its membership.
+	asgard := GetRandomVault()
+	asgard.BlockHeight = 86400 // 2 * 43200, exactly one ChurnInterval before the current block height
+
+	var nas [12]NodeAccount
+	for i := 0; i < 12; i++ {
+		activeNode := GetRandomValidatorNode(NodeActive)
+
+		// Defaults.
+		activeNode.StatusSince = 86400 // 2 * 43200, one ChurnInterval ago
+		activeNode.Bond = cosmos.NewUint(400_000_00000000)
+		validatorMgr.k.SetNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 500)
+
+		// Oldest
+		if i == 0 {
+			activeNode.StatusSince = 43200 // Two ChurnIntervals ago
+		}
+		// Lowest bond
+		if i == 1 {
+			activeNode.Bond = cosmos.NewUint(350_000_00000000)
+		}
+		// Most slash points
+		if i == 2 {
+			validatorMgr.k.SetNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 1000)
+		}
+
+		c.Assert(validatorMgr.k.SetNodeAccount(ctx, activeNode), IsNil)
+		nas[i] = activeNode
+		asgard.Membership = append(asgard.Membership, activeNode.PubKeySet.Secp256k1.String())
+	}
+	c.Assert(validatorMgr.k.SetVault(ctx, asgard), IsNil)
+
+	checkMarks := func(c *C, keeper keeper.Keeper, nas [12]NodeAccount) [12]int {
+		marks := [12]int{}
+		var err error
+		for i, na := range nas {
+			na, err = keeper.GetNodeAccount(ctx, na.NodeAddress)
+			c.Assert(err, IsNil)
+			marks[i] = 0
+			if na.LeaveScore > 0 {
+				marks[i] = 1
+			}
+		}
+		return marks
+	}
+
+	// Confirm 'checkMarks' behaviour.
+	marks := checkMarks(c, validatorMgr.k, nas)
+	c.Assert(marks == [12]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Equals, true, Commentf(fmt.Sprint(marks)))
+
+	// Check behaviour when below the DesiredValidatorSet.
+	validatorMgr.k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 120)
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	marks = checkMarks(c, validatorMgr.k, nas)
+	// Since below the DesiredValidatorSet, only the oldest and highest-slash-points nodes are marked,
+	// not the lowest bond node.
+	c.Assert(marks == [12]int{1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Equals, true, Commentf(fmt.Sprint(marks)))
+
+	// Reset marked states.
+	for _, na := range nas {
+		na.LeaveScore = 0
+		c.Assert(validatorMgr.k.SetNodeAccount(ctx, na), IsNil)
+	}
+	// Confirm that marks reset.
+	marks = checkMarks(c, validatorMgr.k, nas)
+	c.Assert(marks == [12]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Equals, true, Commentf(fmt.Sprint(marks)))
+
+	// Check behaviour when at the DesiredValidatorSet.
+	validatorMgr.k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 12)
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	marks = checkMarks(c, validatorMgr.k, nas)
+	// Since at the DesiredValidatorSet, oldest and lowest-bond and highest-slash-points nodes are all marked.
+	c.Assert(marks == [12]int{1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Equals, true, Commentf(fmt.Sprint(marks)))
 }
 
 func (vts *ValidatorMgrV109TestSuite) TestLowerVersion(c *C) {
