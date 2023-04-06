@@ -120,7 +120,7 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
-	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
 		return fmt.Errorf("no availability (0), lending unavailable")
 	}
@@ -216,7 +216,7 @@ func (h LoanOpenHandler) openLoanV111(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("no max supply set")
 	}
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
-	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
 		return fmt.Errorf("no availability (0), lending unavailable")
 	}
