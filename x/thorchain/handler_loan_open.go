@@ -76,7 +76,10 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 	// Circuit Breaker: check if we're hit the max supply
 	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	maxAmt := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
-	if maxAmt > 0 && supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
+	if maxAmt <= 0 {
+		return fmt.Errorf("no max supply set")
+	}
+	if supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
 		return fmt.Errorf("loans are currently paused, due to rune supply cap (%d/%d)", supply.Uint64(), maxAmt)
 	}
 
