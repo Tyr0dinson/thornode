@@ -71,7 +71,7 @@ func (h SwapHandler) validateV99(ctx cosmos.Context, msg MsgSwap) error {
 		return errors.New("trading is halted, can't process swap")
 	}
 	if target.IsDerivedAsset() || msg.Tx.Coins[0].Asset.IsDerivedAsset() {
-		if fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets) == 0 {
+		if h.mgr.Keeper().GetConfigInt64(ctx, constants.EnableDerivedAssets) == 0 {
 			// since derived assets are disabled, only the protocol can use
 			// them (specifically lending)
 			acc, err := h.mgr.Keeper().GetModuleAddress(LendingName)
@@ -135,7 +135,7 @@ func (h SwapHandler) validateV99(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if len(msg.Aggregator) > 0 {
-		swapOutDisabled := fetchConfigInt64(ctx, h.mgr, constants.SwapOutDexAggregationDisabled)
+		swapOutDisabled := h.mgr.Keeper().GetConfigInt64(ctx, constants.SwapOutDexAggregationDisabled)
 		if swapOutDisabled > 0 {
 			return errors.New("swap out dex integration disabled")
 		}
@@ -162,6 +162,8 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	ctx.Logger().Info("receive MsgSwap", "request tx hash", msg.Tx.ID, "source asset", msg.Tx.Coins[0].Asset, "target asset", msg.TargetAsset, "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return h.handleV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
 		return h.handleV107(ctx, msg)
 	case version.GTE(semver.MustParse("1.99.0")):
@@ -181,7 +183,7 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	}
 }
 
-func (h SwapHandler) handleV107(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV108(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
 	// Don't change msg.Destination here; this line was introduced to avoid people from swapping mainnet asset,
 	// but using testnet address.
@@ -272,12 +274,7 @@ func (h SwapHandler) handleV107(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 			msg.TargetAsset, emit,
 		))
 
-		// The transaction id set on the tx in the message is the reversed txid of the
-		// inbound tx - here we reverse it back to the original txid and set it in the
-		// context, which is used in the second run of the handler so that the memo on the
-		// outbound transaction matches the id of the inbound which opened the loan.
-		txid := common.TxID(msg.Tx.ID.String()).Reverse()
-		ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
+		ctx = ctx.WithValue(constants.CtxLoanTxID, msg.Tx.ID)
 
 		obTx := ObservedTx{Tx: msg.Tx}
 		msg, err := getMsgLoanOpenFromMemo(m, obTx, msg.Signer)
@@ -298,12 +295,7 @@ func (h SwapHandler) handleV107(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		}
 		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
 
-		// The transaction id set on the tx in the message is the reversed txid of the
-		// inbound tx - here we reverse it back to the original txid and set it in the
-		// context, which is used in the second run of the handler so that the memo on the
-		// outbound transaction matches the id of the inbound which closed the loan.
-		txid := common.TxID(msg.Tx.ID.String()).Reverse()
-		ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
+		ctx = ctx.WithValue(constants.CtxLoanTxID, msg.Tx.ID)
 
 		msg, err := getMsgLoanRepaymentFromMemo(m, common.NewCoin(common.TOR, emit), msg.Signer)
 		if err != nil {
@@ -328,8 +320,18 @@ func (h SwapHandler) getEffectiveSecurityBond(ctx cosmos.Context) (cosmos.Uint, 
 	return getEffectiveSecurityBond(nodeAccounts), nil
 }
 
-// getTotalLiquidityRUNE we have in all pools
 func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, error) {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return h.getTotalLiquidityRUNEV108(ctx)
+	default:
+		return h.getTotalLiquidityRUNEV1(ctx)
+	}
+}
+
+// getTotalLiquidityRUNE we have in all pools
+func (h SwapHandler) getTotalLiquidityRUNEV108(ctx cosmos.Context) (cosmos.Uint, error) {
 	pools, err := h.mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)
@@ -340,7 +342,10 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		if p.Status == PoolSuspended {
 			continue
 		}
-		if p.Asset.IsNative() {
+		if p.Asset.IsVaultAsset() {
+			continue
+		}
+		if p.Asset.IsDerivedAsset() {
 			continue
 		}
 		total = total.Add(p.BalanceRune)

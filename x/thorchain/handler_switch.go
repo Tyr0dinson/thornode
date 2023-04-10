@@ -56,8 +56,8 @@ func (h SwitchHandler) validateV87(ctx cosmos.Context, msg MsgSwitch) error {
 		return err
 	}
 
-	killSwitchStart := fetchConfigInt64(ctx, h.mgr, constants.KillSwitchStart)
-	killSwitchDuration := fetchConfigInt64(ctx, h.mgr, constants.KillSwitchDuration)
+	killSwitchStart := h.mgr.Keeper().GetConfigInt64(ctx, constants.KillSwitchStart)
+	killSwitchDuration := h.mgr.Keeper().GetConfigInt64(ctx, constants.KillSwitchDuration)
 
 	if killSwitchStart > 0 && ctx.BlockHeight() > killSwitchStart+killSwitchDuration {
 		return fmt.Errorf("switch is deprecated")
@@ -78,6 +78,8 @@ func (h SwitchHandler) handle(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result
 	ctx.Logger().Info("handleMsgSwitch request", "destination address", msg.Destination.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.108.0")):
+		return h.handleV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.93.0")):
 		return h.handleV93(ctx, msg)
 	case version.GTE(semver.MustParse("1.87.0")):
@@ -89,13 +91,9 @@ func (h SwitchHandler) handle(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result
 	}
 }
 
-func (h SwitchHandler) handleV93(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
-	}
-	if haltHeight > 0 && ctx.BlockHeight() > haltHeight {
-		return nil, fmt.Errorf("mimir has halted THORChain transactions")
+func (h SwitchHandler) handleV108(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
+	if isChainHalted(ctx, h.mgr, common.THORChain) {
+		return nil, fmt.Errorf("unable to switch while THORChain is halted")
 	}
 
 	if !msg.Tx.Coins[0].IsNative() && msg.Tx.Coins[0].Asset.IsRune() {
@@ -159,9 +157,9 @@ func (h SwitchHandler) calcCoin(ctx cosmos.Context, in cosmos.Uint) cosmos.Uint 
 }
 
 func (h SwitchHandler) calcCoinV93(ctx cosmos.Context, in cosmos.Uint) cosmos.Uint {
-	killSwitchStart := fetchConfigInt64(ctx, h.mgr, constants.KillSwitchStart)
+	killSwitchStart := h.mgr.Keeper().GetConfigInt64(ctx, constants.KillSwitchStart)
 	if killSwitchStart > 0 && ctx.BlockHeight() >= killSwitchStart {
-		killSwitchDuration := fetchConfigInt64(ctx, h.mgr, constants.KillSwitchDuration)
+		killSwitchDuration := h.mgr.Keeper().GetConfigInt64(ctx, constants.KillSwitchDuration)
 		remainBlocks := (killSwitchStart + killSwitchDuration) - ctx.BlockHeight()
 		if remainBlocks <= 0 {
 			return cosmos.ZeroUint()
