@@ -471,9 +471,20 @@ func calculatePoolUnitsV134(oldPoolUnits, poolRune, poolAsset, addRune, addAsset
 	if addAsset.Add(poolAsset).IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
 	}
-	if poolRune.IsZero() || poolAsset.IsZero() {
-		return addRune, addRune, nil
+
+	if poolRune.IsZero() || poolAsset.IsZero() || oldPoolUnits.IsZero() {
+		sUnits := addRune
+		if addRune.IsZero() {
+			if !poolAsset.IsZero() {
+				// Where possible, keep a RUNE scale for new units.
+				sUnits = addAsset.Mul(poolRune).Quo(poolAsset)
+			} else {
+				sUnits = addAsset
+			}
+		}
+		return oldPoolUnits.Add(sUnits), sUnits, nil
 	}
+
 	P := cosmos.NewDecFromBigInt(oldPoolUnits.BigInt())
 	R := cosmos.NewDecFromBigInt(poolRune.BigInt())
 	A := cosmos.NewDecFromBigInt(poolAsset.BigInt())
