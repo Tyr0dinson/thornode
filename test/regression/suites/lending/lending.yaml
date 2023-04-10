@@ -58,10 +58,10 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: derived pools should be created (eth and btc only)
+description: derived pools should be created (eth and btc and tor only)
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .|length == 6
 ---
 ########################################################################################
 # fail open loan due to min out

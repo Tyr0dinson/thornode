@@ -45,10 +45,16 @@ asserts:
   - .|length == 1
 ---
 type: check
-description: pool should not exist until second deposit
+description: pool should have no units until second deposit
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 0
+  - .|length == 1
+  - .[0].LP_units == "0"
+  - .[0].balance_rune == "0"
+  - .[0].balance_asset == "0"
+  - .[0].pending_inbound_rune == "0"
+  - .[0].pending_inbound_asset == "100000000"
+
 ---
 type: tx-deposit
 signer: {{ addr_thor_cat }}

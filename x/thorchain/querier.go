@@ -1092,8 +1092,12 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
 		}
-		// ignore pool if no liquidity provider units
-		if pool.LPUnits.IsZero() {
+		// ignore pool if no liquidity provider units or coins
+		if pool.LPUnits.IsZero() &&
+			pool.BalanceRune.IsZero() &&
+			pool.BalanceAsset.IsZero() &&
+			pool.PendingInboundRune.IsZero() &&
+			pool.PendingInboundAsset.IsZero() {
 			continue
 		}
 
