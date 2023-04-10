@@ -134,6 +134,9 @@ class Health:
         self.thorchain_pools = self.thorchain_client.get_pools()
         for tpool in self.thorchain_pools:
             asset = tpool["asset"]
+            if tpool["LP_units"] == "0":
+                # Expect an empty pool with no LP_units to be unrepresented in Midgard, so skip it.
+                continue
             mpool = self.midgard_client.get_pool(asset)
 
             # Thorchain Coins
