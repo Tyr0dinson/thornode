@@ -141,7 +141,7 @@ func checkExportInvariants(genesis map[string]any) error {
 		for _, vaultCoin := range sumVaultAsset {
 			if coin.Asset.Equals(vaultCoin.Asset) && !coin.Amount.Equal(vaultCoin.Amount) {
 				if coin.Amount.GT(vaultCoin.Amount) {
-					fmt.Printf("%s pool has %s more than its vaults\n", coin.Asset, common.SafeSub(vaultCoin.Amount, coin.Amount))
+					fmt.Printf("%s pool has %s more than its vaults\n", coin.Asset, common.SafeSub(coin.Amount, vaultCoin.Amount))
 				}
 				if vaultCoin.Amount.GT(coin.Amount) {
 					fmt.Printf("%s vaults have %s more than their pool\n", coin.Asset, common.SafeSub(vaultCoin.Amount, coin.Amount))
