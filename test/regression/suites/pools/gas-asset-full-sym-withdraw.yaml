@@ -1,0 +1,228 @@
+# Note that a final withdraw cannot be done asymmetrically,
+# for logged reason "fail to withdraw: cannot withdraw 100% of only one side of the pool".
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: MaxOutboundFeeMultiplierBasisPoints
+value: 30000 # To match Mainnet, outbound fee of 3x the expected gas cost
+sequence: 0
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm vault coins
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1 # Only one vault
+  - .[0].coins|length == 2 # Only two coin types
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
+  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "1000000000"
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "100000000000"
+  - .balance_asset == "100000000" # Same as vault balance
+  - .balance_rune == "100001065448" # Higher due to block rewards
+  - .status == "Available"
+---
+type: check
+description: confirm ETH.ETH pool state
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .LP_units == "100000000000"
+  - .balance_asset == "1000000000" # Same as vault balance
+  - .balance_rune == "100001065448" # Higher due to block rewards
+  - .status == "Available"
+---
+type: check
+description: confirm Pool Module RUNE balance is the sum of the pools' RUNE balances
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+ - .coins[]|select(.denom == "rune")|.amount == "200002130896"
+---
+# Full BTC.BTC symmetrical withdraw
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:BTC.BTC:10000"
+sequence: 0
+---
+# Full ETH.ETH symmetrical withdraw
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:ETH.ETH:10000"
+sequence: 1
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: check that there are no scheduled queue (asset) outbounds
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+type: check
+description: check details of the (asset) queued outbounds
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.chain == "BTC")|.coin.amount == "99989500"
+  - .[]|select(.chain == "BTC")|.max_gas[0].amount == "10500"
+  - .[]|select(.chain == "ETH")|.coin.amount == "999040000"
+  - .[]|select(.chain == "ETH")|.max_gas[0].amount == "960000"
+---
+type: check
+description: check BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "10500" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*7*1000 withheld , not 3*7*1000 ?)
+  - .balance_rune == "0"
+  - .status == "Staged" # TODO:  Gas asset pools should start empty and Available and remain Available even if they return to being empty.
+# Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
+---
+type: check
+description: check ETH.ETH pool state
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "960000" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*8*80000 withheld, not 3*8*80000 ?)
+  - .balance_rune == "0"
+  - .status == "Staged" # See above for the status TODO.
+# Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
+---
+type: check
+description: confirm Pool Module RUNE balance is the sum of the pools' RUNE balances
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+ - .coins|length == 0 # The 'rune' balance is 0 as expected, so it is not displayed.
+---
+type: check
+description: confirm vault coins are unchanged
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1 # Only one vault
+  - .[0].coins|length == 2 # Only two coin types
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
+  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "1000000000"
+---
+type: check
+description: check the expected fee amounts
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain == "BTC")|.outbound_fee == "21000"
+  - .[]|select(.chain == "ETH")|.outbound_fee == "1920000"
+---
+type: check
+description: check the actual fee event amounts
+endpoint: http://localhost:1317/thorchain/blockevents
+asserts:
+  - .|[.tx[]|select(.type == "fee")]|length == 2 # Two fee events total (expecting two THOR.RUNE, one BTC.BTC, one ETH.ETH)
+  - .|[.tx[]|select((.type == "fee") and (.coins == "2000000 THOR.RUNE"))]|length == 2 # No BTC.BTC or ETH.ETH fee event, despite their outbounds
+  - .|[.tx[]|select(.type == "outbound")]|length == 2
+  - .|[.tx[]|select((.type == "outbound") and (.coin == "99999065448 THOR.RUNE"))]|length == 2
+  - .|[.tx[]|select(.type == "scheduled_outbound")]|length == 2
+  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "BTC.BTC") and (.coin_amount == "99989500"))]|length == 1
+  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "ETH.ETH") and (.coin_amount == "999040000"))]|length == 1
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "99989500"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "7000" # 10500 max_gas was 1.5x expected, 7000 (7 rate * 1,000 size) being 1x expected
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid 2 }}" # native_txid 1 was the tx-mimir at the start, while native_txid 2 was cat's first withdraw
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+sequence: 1
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "999040000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "640000" # 960000 max_gas was 1.5x expected, 640000 (8 rate * 80,000 size) being 1x expected
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid 3 }}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm the outbound queue is now empty
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: confirm the vault coins
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1 # Only one vault
+  - .[0].coins|length == 2 # Only two coin types
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "3500"
+  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "320000"
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "10500" # TODO:  This hasn't fallen, and is now three times the vault balance (insolvent)
+  - .balance_rune == "0"
+  - .status == "Staged" # See above for the status TODO.
+---
+type: check
+description: confirm ETH.ETH pool state
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "960000" # TODO:  This hasn't fallen, and is now three times the vault balance (insolvent)
+  - .balance_rune == "0"
+  - .status == "Staged" # See above for the status TODO.
+---
+type: check
+description: confirm Pool Module RUNE balance is the sum of the pools' RUNE balances
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+ - .coins|length == 0 # The 'rune' balance is 0 as expected, so it is not displayed.
