@@ -95,7 +95,7 @@ asserts:
   - .LP_units == "0"
   - .balance_asset == "10500" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*7*1000 withheld , not 3*7*1000 ?)
   - .balance_rune == "0"
-  - .status == "Staged" # TODO:  Gas asset pools should start empty and Available and remain Available even if they return to being empty.
+  - .status == "Available" # Gas asset pools start empty and Available and remain Available even if they return to being empty.
 # Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
 ---
 type: check
@@ -105,7 +105,7 @@ asserts:
   - .LP_units == "0"
   - .balance_asset == "960000" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*8*80000 withheld, not 3*8*80000 ?)
   - .balance_rune == "0"
-  - .status == "Staged" # See above for the status TODO.
+  - .status == "Available"
 # Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
 ---
 type: check
@@ -210,7 +210,7 @@ asserts:
   - .LP_units == "0"
   - .balance_asset == "3500" # Gas correctly deducted
   - .balance_rune == "0"
-  - .status == "Staged" # See above for the status TODO.
+  - .status == "Available"
 ---
 type: check
 description: confirm ETH.ETH pool state
@@ -219,7 +219,7 @@ asserts:
   - .LP_units == "0"
   - .balance_asset == "320000" # Gas correctly deducted
   - .balance_rune == "0"
-  - .status == "Staged" # See above for the status TODO.
+  - .status == "Available"
 ---
 type: check
 description: confirm Pool Module RUNE balance is the sum of the pools' RUNE balances

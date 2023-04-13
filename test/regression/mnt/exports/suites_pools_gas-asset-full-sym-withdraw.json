@@ -339,7 +339,7 @@
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
-          "status": "Staged",
+          "status": "Available",
           "synth_units": "0"
         },
         {
@@ -350,7 +350,7 @@
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
-          "status": "Staged",
+          "status": "Available",
           "synth_units": "0"
         }
       ],
