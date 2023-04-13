@@ -342,7 +342,6 @@ func (WithdrawSuiteV109) TestWithdraw(c *C) {
 	ps := NewWithdrawTestKeeperV109(mgr.Keeper())
 	ps2 := getWithdrawTestKeeperV109(c, ctx, mgr.Keeper(), runeAddress)
 
-	remainGas := uint64(37500)
 	testCases := []struct {
 		name          string
 		msg           MsgWithdrawLiquidity
@@ -474,7 +473,7 @@ func (WithdrawSuiteV109) TestWithdraw(c *C) {
 			},
 			ps:            ps2,
 			runeAmount:    cosmos.NewUint(50 * common.One),
-			assetAmount:   cosmos.NewUint(50 * common.One).Sub(cosmos.NewUint(remainGas)),
+			assetAmount:   cosmos.NewUint(50 * common.One), // manager_txout will deduct the fee which covers the gas cost
 			expectedError: nil,
 		},
 	}

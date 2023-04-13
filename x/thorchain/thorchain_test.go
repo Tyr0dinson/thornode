@@ -79,8 +79,7 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	pool, err = keeper.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Check(pool.BalanceRune.IsZero(), Equals, true)
-	remainGas := uint64(37500)
-	c.Check(pool.BalanceAsset.Uint64(), Equals, remainGas) // leave a little behind for gas
+	c.Check(pool.BalanceAsset.IsZero(), Equals, true) // withdraw does a full withdraw, leaving manager_txout from handler_withdraw to withhold a fee to cover gas costs
 	c.Check(pool.LPUnits.IsZero(), Equals, true)
 
 	// liquidity provider for user1, again
@@ -96,7 +95,7 @@ func (s *ThorchainSuite) TestLiquidityProvision(c *C) {
 	pool, err = keeper.GetPool(ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Check(pool.BalanceRune.Equal(cosmos.NewUint(200*common.One)), Equals, true)
-	c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(20000000000+remainGas)), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
+	c.Check(pool.BalanceAsset.Equal(cosmos.NewUint(200*common.One)), Equals, true, Commentf("%d", pool.BalanceAsset.Uint64()))
 	c.Check(pool.LPUnits.IsZero(), Equals, false)
 }
 
@@ -285,7 +284,7 @@ func (s *ThorchainSuite) TestRagnarok(c *C) {
 	c.Assert(err, IsNil)
 	lp2 := GetRandomRUNEAddress() // liquidity provider 2
 	lp2asset := GetRandomBNBAddress()
-	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(15*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
+	err = addHandler.addLiquidity(ctx, common.BNBAsset, cosmos.NewUint(155*common.One), cosmos.NewUint(14*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)
 	err = addHandler.addLiquidity(ctx, boltAsset, cosmos.NewUint(20*common.One), cosmos.NewUint(4*common.One), lp2, lp2asset, GetRandomTxHash(), false, consts)
 	c.Assert(err, IsNil)

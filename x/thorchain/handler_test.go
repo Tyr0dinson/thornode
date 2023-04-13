@@ -290,8 +290,8 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 	c.Check(pool.Status, Equals, PoolAvailable) // As common.BNBAsset is a gas asset, its pool should be Available even when empty.
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(0), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(0), Commentf("%d", pool.BalanceRune.Uint64()))
-	remainGas := uint64(37500)
-	c.Check(pool.BalanceAsset.Uint64(), Equals, remainGas, Commentf("%d", pool.BalanceAsset.Uint64())) // leave a little behind for gas
+	remainGas := uint64(75000)
+	c.Check(pool.BalanceAsset.Uint64(), Equals, remainGas, Commentf("%d", pool.BalanceAsset.Uint64())) // deducted fee is retained to cover gas
 }
 
 func (HandlerSuite) TestRefund(c *C) {
