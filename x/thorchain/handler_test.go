@@ -287,7 +287,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 	pool, err = w.keeper.GetPool(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Assert(pool.IsEmpty(), Equals, false)
-	c.Check(pool.Status, Equals, PoolStaged)
+	c.Check(pool.Status, Equals, PoolAvailable) // As common.BNBAsset is a gas asset, its pool should be Available even when empty.
 	c.Check(pool.LPUnits.Uint64(), Equals, uint64(0), Commentf("%d", pool.LPUnits.Uint64()))
 	c.Check(pool.BalanceRune.Uint64(), Equals, uint64(0), Commentf("%d", pool.BalanceRune.Uint64()))
 	remainGas := uint64(37500)
