@@ -208,7 +208,7 @@ description: confirm BTC.BTC pool state
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "10500" # TODO:  This hasn't fallen, and is now three times the vault balance (insolvent)
+  - .balance_asset == "3500" # Gas correctly deducted
   - .balance_rune == "0"
   - .status == "Staged" # See above for the status TODO.
 ---
@@ -217,7 +217,7 @@ description: confirm ETH.ETH pool state
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "960000" # TODO:  This hasn't fallen, and is now three times the vault balance (insolvent)
+  - .balance_asset == "320000" # Gas correctly deducted
   - .balance_rune == "0"
   - .status == "Staged" # See above for the status TODO.
 ---
