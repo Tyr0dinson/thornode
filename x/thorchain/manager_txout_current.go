@@ -482,8 +482,10 @@ func (tos *TxOutStorageV109) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 					}
 				}
 
-				// if pool units is zero, no asset fee is taken
-				if !pool.GetPoolUnits().IsZero() {
+				// Fee is always withheld for gas cost availability if the outbound is gas asset,
+				// otherwise is only withheld if the pool has both asset and RUNE
+				// (allowing the withheld non-gas asset to be swapped to RUNE to pay an outbound fee)
+				if pool.Asset.IsGasAsset() || (!pool.BalanceAsset.IsZero() && !pool.BalanceRune.IsZero()) {
 					assetFee := transactionFeeAsset
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount

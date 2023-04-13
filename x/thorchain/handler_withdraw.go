@@ -128,7 +128,7 @@ func (h WithdrawLiquidityHandler) handleV109(ctx cosmos.Context, msg MsgWithdraw
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
 	}
-	runeAmt, assetAmt, impLossProtection, units, gasAsset, err := withdraw(ctx, msg, h.mgr)
+	runeAmt, assetAmt, impLossProtection, units, _, err := withdraw(ctx, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
 	}
@@ -186,19 +186,6 @@ func (h WithdrawLiquidityHandler) handleV109(ctx cosmos.Context, msg MsgWithdraw
 			ToAddress: addr,
 			Coin:      coin,
 			Memo:      memo,
-		}
-		if !gasAsset.IsZero() {
-			// TODO: chain specific logic should be in a single location
-			if msg.Asset.IsBNB() {
-				toi.MaxGas = common.Gas{
-					common.NewCoin(common.RuneAsset().GetChain().GetGasAsset(), gasAsset.QuoUint64(2)),
-				}
-			} else if msg.Asset.GetChain().GetGasAsset().Equals(msg.Asset) {
-				toi.MaxGas = common.Gas{
-					common.NewCoin(msg.Asset.GetChain().GetGasAsset(), gasAsset),
-				}
-			}
-			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
 		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())

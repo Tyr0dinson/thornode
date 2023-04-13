@@ -152,31 +152,6 @@ func withdrawV109(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 		}
 	}
 	withDrawAsset = cosmos.RoundToDecimal(withDrawAsset, pool.Decimals)
-	gasAsset := cosmos.ZeroUint()
-	// If the pool is empty, and there is a gas asset, subtract required gas
-	if common.SafeSub(pool.GetPoolUnits(), fLiquidityProviderUnit).Add(unitAfter).IsZero() {
-		maxGas, err := mgr.GasMgr().GetMaxGas(ctx, pool.Asset.GetChain())
-		if err != nil {
-			ctx.Logger().Error("fail to get gas for asset", "asset", pool.Asset, "error", err)
-			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
-		}
-		// minus gas costs for our transactions
-		// TODO: chain specific logic should be in a single location
-		if pool.Asset.IsBNB() && !common.RuneAsset().Chain.Equals(common.THORChain) {
-			originalAsset := withDrawAsset
-			withDrawAsset = common.SafeSub(
-				withDrawAsset,
-				maxGas.Amount.MulUint64(2), // RUNE asset is on binance chain
-			)
-			gasAsset = originalAsset.Sub(withDrawAsset)
-		} else if pool.Asset.GetChain().GetGasAsset().Equals(pool.Asset) {
-			gasAsset = maxGas.Amount
-			if gasAsset.GT(withDrawAsset) {
-				gasAsset = withDrawAsset
-			}
-			withDrawAsset = common.SafeSub(withDrawAsset, gasAsset)
-		}
-	}
 
 	ctx.Logger().Info("client withdraw", "RUNE", withdrawRune, "asset", withDrawAsset, "units left", unitAfter)
 	// update pool
@@ -229,7 +204,7 @@ func withdrawV109(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), ErrInternal(err, "fail to move imp loss protection rune from the reserve to asgard")
 		}
 	}
-	return withdrawRune, withDrawAsset, protectionRuneAmount, common.SafeSub(originalLiquidityProviderUnits, unitAfter), gasAsset, nil
+	return withdrawRune, withDrawAsset, protectionRuneAmount, common.SafeSub(originalLiquidityProviderUnits, unitAfter), cosmos.ZeroUint(), nil
 }
 
 // calcImpLossV91 if there needs to add some imp loss protection, in rune
