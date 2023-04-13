@@ -309,12 +309,15 @@ func (gm *GasMgrV109) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			ctx.Logger().Error("invalid pool", "pool", gas.Asset, "error", err)
 			continue
 		}
-		runeGas := pool.AssetValueInRune(gas.Amount) // Convert to Rune (gas will never be RUNE)
-		if runeGas.IsZero() {
-			continue
+
+		// Only report and reimburse for the gas in fact deducted (deductable) from the pool.
+		if gas.Amount.GT(pool.BalanceAsset) {
+			gas.Amount = pool.BalanceAsset
 		}
+		runeGas := pool.AssetValueInRune(gas.Amount) // Convert to Rune (gas will never be RUNE)
+
 		// If Rune owed now exceeds the Total Reserve, return it all
-		if runeGas.LT(keeper.GetRuneBalanceOfModule(ctx, ReserveName)) {
+		if !runeGas.IsZero() && runeGas.LT(keeper.GetRuneBalanceOfModule(ctx, ReserveName)) {
 			coin := common.NewCoin(common.RuneNative, runeGas)
 			if err := keeper.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas.Asset, "error", err)
