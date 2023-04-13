@@ -1167,8 +1167,14 @@ func (vm *NetworkMgrV109) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 			withdrawAddr = lp.AssetAddress
 			withdrawAsset = lp.Asset
 		}
+
+		ragnarokTx := common.GetRagnarokTx(pool.Asset.Chain, withdrawAddr, withdrawAddr)
+		for i := range ragnarokTx.Coins {
+			// Withdrawal coin is added to its pool, so set the Amount to zero to not make the pool insolvent.
+			ragnarokTx.Coins[i].Amount = cosmos.ZeroUint()
+		}
 		withdrawMsg := NewMsgWithdrawLiquidity(
-			common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
+			ragnarokTx,
 			withdrawAddr,
 			cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
 			pool.Asset,
