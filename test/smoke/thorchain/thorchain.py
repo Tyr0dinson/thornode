@@ -283,7 +283,7 @@ class ThorchainState:
             if p.asset == pool.asset:
                 if (
                     pool.asset_balance == 0 or pool.rune_balance == 0
-                ) and pool.status == "Available":
+                ) and pool.status == "Available" and pool.asset != self.get_gas_asset(pool.asset.get_chain()):
                     pool.status = "Staged"
 
                     # Generate pool event with new status
@@ -474,7 +474,7 @@ class ThorchainState:
                 else:
                     pool = self.get_pool(coin.asset)
                     asset_fee = 0
-                    if pool.status == "Staged":
+                    if pool.status == "Staged" or pool.rune_balance == 0: # Gas asset pools can have 0 RUNE balance while still being Available
                         rune_fee = 0
                     else:
                         if coin.asset == self.get_gas_asset(tx.chain):
