@@ -83,17 +83,21 @@ description: check details of the (asset) queued outbounds
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 2
-  - .[]|select(.chain == "BTC")|.coin.amount == "99989500"
-  - .[]|select(.chain == "BTC")|.max_gas[0].amount == "10500"
-  - .[]|select(.chain == "ETH")|.coin.amount == "999040000"
-  - .[]|select(.chain == "ETH")|.max_gas[0].amount == "960000"
+  - .[]|select(.chain == "BTC")|.coin.amount == "99979000"
+  - .[]|select(.chain == "BTC")|.coin.asset == "BTC.BTC"
+  - .[]|select(.chain == "BTC")|.max_gas[0].amount == "10500" # 1.5x estimated gas cost
+  - .[]|select(.chain == "BTC")|.max_gas[0].asset == "BTC.BTC"
+  - .[]|select(.chain == "ETH")|.coin.amount == "998080000"
+  - .[]|select(.chain == "ETH")|.coin.asset == "ETH.ETH"
+  - .[]|select(.chain == "ETH")|.max_gas[0].amount == "960000" # 1.5x estimated gas cost
+  - .[]|select(.chain == "ETH")|.coin.asset == "ETH.ETH"
 ---
 type: check
 description: check BTC.BTC pool state
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "10500" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*7*1000 withheld , not 3*7*1000 ?)
+  - .balance_asset == "21000" # 3x estimated gas cost
   - .balance_rune == "0"
   - .status == "Available" # Gas asset pools start empty and Available and remain Available even if they return to being empty.
 # Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
@@ -103,7 +107,7 @@ description: check ETH.ETH pool state
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "960000" # Enough balance_asset remaining for the outbound's max_gas (but why 1.5*8*80000 withheld, not 3*8*80000 ?)
+  - .balance_asset == "1920000" # 3x estimated gas cost
   - .balance_rune == "0"
   - .status == "Available"
 # Note that the outbound's coin amount and the pool's remaining balance_asset sum to the pool's initial balance_asset, as it should be.
@@ -134,13 +138,15 @@ type: check
 description: check the actual fee event amounts
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
-  - .|[.tx[]|select(.type == "fee")]|length == 2 # Two fee events total (expecting two THOR.RUNE, one BTC.BTC, one ETH.ETH)
-  - .|[.tx[]|select((.type == "fee") and (.coins == "2000000 THOR.RUNE"))]|length == 2 # No BTC.BTC or ETH.ETH fee event, despite their outbounds
+  - .|[.tx[]|select(.type == "fee")]|length == 4 # Four fee events total (expecting two THOR.RUNE, one BTC.BTC, one ETH.ETH)
+  - .|[.tx[]|select((.type == "fee") and (.coins == "2000000 THOR.RUNE"))]|length == 2
+  - .|[.tx[]|select((.type == "fee") and (.coins == "21000 BTC.BTC"))]|length == 1
+  - .|[.tx[]|select((.type == "fee") and (.coins == "1920000 ETH.ETH"))]|length == 1
   - .|[.tx[]|select(.type == "outbound")]|length == 2
   - .|[.tx[]|select((.type == "outbound") and (.coin == "99999065448 THOR.RUNE"))]|length == 2
   - .|[.tx[]|select(.type == "scheduled_outbound")]|length == 2
-  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "BTC.BTC") and (.coin_amount == "99989500"))]|length == 1
-  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "ETH.ETH") and (.coin_amount == "999040000"))]|length == 1
+  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "BTC.BTC") and (.coin_amount == "99979000"))]|length == 1
+  - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "ETH.ETH") and (.coin_amount == "998080000"))]|length == 1
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -151,11 +157,11 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_cat }}
       coins:
-        - amount: "99989500"
+        - amount: "99979000"
           asset: "BTC.BTC"
           decimals: 8
       gas:
-        - amount: "7000" # 10500 max_gas was 1.5x expected, 7000 (7 rate * 1,000 size) being 1x expected
+        - amount: "7000" # 1x expected gas cost
           asset: "BTC.BTC"
       memo: "OUT:{{ native_txid 2 }}" # native_txid 1 was the tx-mimir at the start, while native_txid 2 was cat's first withdraw
     block_height: 3
@@ -172,11 +178,11 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "999040000"
+        - amount: "998080000"
           asset: "ETH.ETH"
           decimals: 8
       gas:
-        - amount: "640000" # 960000 max_gas was 1.5x expected, 640000 (8 rate * 80,000 size) being 1x expected
+        - amount: "640000" # 1x expected gas cost
           asset: "ETH.ETH"
       memo: "OUT:{{ native_txid 3 }}"
     block_height: 3
@@ -195,20 +201,31 @@ asserts:
   - .|length == 0
 ---
 type: check
+description: check the outbound and gas events
+endpoint: http://localhost:1317/thorchain/blockevents
+asserts:
+  - .|[.tx[]|select(.type == "outbound")]|length == 2
+  - .|[.tx[]|select((.type == "outbound") and (.coin == "99979000 BTC.BTC"))]|length == 1
+  - .|[.tx[]|select((.type == "outbound") and (.coin == "998080000 ETH.ETH"))]|length == 1
+  - .|[.end[]|select(.type == "gas")]|length == 2
+  - .end[]|select((.type == "gas") and (.asset == "BTC.BTC"))|.asset_amt == "7000"
+  - .end[]|select((.type == "gas") and (.asset == "ETH.ETH"))|.asset_amt == "640000"
+---
+type: check
 description: confirm the vault coins
 endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - .|length == 1 # Only one vault
   - .[0].coins|length == 2 # Only two coin types
-  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "3500"
-  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "320000"
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "14000" # Since 1x gas cost, 2x left of the 3x fee withheld
+  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "1280000" # Likewise
 ---
 type: check
 description: confirm BTC.BTC pool state
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "3500" # Gas correctly deducted
+  - .balance_asset == "14000" # Gas correctly deducted, the reaminder equalling the vault balance
   - .balance_rune == "0"
   - .status == "Available"
 ---
@@ -217,7 +234,7 @@ description: confirm ETH.ETH pool state
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .LP_units == "0"
-  - .balance_asset == "320000" # Gas correctly deducted
+  - .balance_asset == "1280000" # Gas correctly deducted, the reaminder equalling the vault balance
   - .balance_rune == "0"
   - .status == "Available"
 ---
