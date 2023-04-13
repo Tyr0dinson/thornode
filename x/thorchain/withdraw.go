@@ -197,8 +197,12 @@ func withdrawV109(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), ErrInternal(err, fmt.Sprintf("sanity check: LP units cannot increase during a withdrawal: %d --> %d", originalLiquidityProviderUnits.Uint64(), unitAfter.Uint64()))
 	}
 
-	// Create a pool event if THORNode have no rune or assets
-	if (pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero()) && !pool.Asset.IsVaultAsset() {
+	// Gas asset pools are Available even when empty, and Savers vaults always have zero BalanceRune,
+	// but otherwise change a non-Staged pool's status to Staged and emit a pool event if the pool has either no rune or no asset
+	if !pool.Asset.IsGasAsset() &&
+		!pool.Asset.IsVaultAsset() &&
+		(pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero()) &&
+		pool.Status != PoolStaged {
 		poolEvt := NewEventPool(pool.Asset, PoolStaged)
 		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); nil != err {
 			ctx.Logger().Error("fail to emit pool event", "error", err)
