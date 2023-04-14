@@ -3,14 +3,14 @@ FROM registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-24.0
 FROM registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.5 as dogecoin
 FROM registry.gitlab.com/thorchain/devops/node-launcher:litecoin-daemon-0.18.1 as litecoin
 
-FROM golang:1.18.0 AS build
+FROM golang:1.20.3 AS build
 
 RUN apt-get update && \
   apt-get install --no-install-recommends -y protobuf-compiler=3.12.4-1 && \
   rm -rf /var/lib/apt/lists/*
 
 # build geth since the image is alpine based
-RUN go install github.com/ethereum/go-ethereum/cmd/geth@v1.10.16
+RUN go install github.com/ethereum/go-ethereum/cmd/geth@v1.11.5
 
 # copy chain clis
 COPY --from=bitcoin /usr/local/bin/bitcoin-cli /usr/local/bin/bitcoin-cli
