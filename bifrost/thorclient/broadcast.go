@@ -91,8 +91,10 @@ func (b *ThorchainBridge) Broadcast(msgs ...stypes.Msg) (common.TxID, error) {
 		}
 		b.logger.Info().Int("bytes", len(txBytes)).Uint32("code", commit.Code).Interface("messages", msgs).Msg("failed tx")
 		// commit code 6 means `unknown request` , which means the tx can't be accepted by thorchain
-		// if that's the case, let's just ignore it and move on
-		if commit.Code != 6 {
+		// if that's the case, let's just ignore it and move on (but still without incrementing sequence number)
+		if commit.Code == 6 {
+			return txHash, nil
+		} else {
 			return txHash, fmt.Errorf("fail to broadcast to THORChain,code:%d, log:%s", commit.Code, commit.RawLog)
 		}
 	}
