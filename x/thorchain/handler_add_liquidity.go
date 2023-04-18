@@ -697,6 +697,10 @@ func (h AddLiquidityHandler) addLiquidityV134(ctx cosmos.Context,
 	if (pool.BalanceRune.IsZero() && !asset.IsVaultAsset()) || pool.BalanceAsset.IsZero() {
 		return ErrInternal(err, "pool cannot have zero rune or asset balance")
 	}
+
+	// CalcUnits to set the correct SynthUnits before the DepositValue calculations
+	pool.CalcUnits(h.mgr.GetVersion(), synthSupply)
+
 	if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 		return ErrInternal(err, "fail to save pool")
 	}
