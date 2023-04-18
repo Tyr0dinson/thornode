@@ -50,7 +50,7 @@ endpoint: http://localhost:1317/thorchain/balance/module/asgard
 asserts:
  - .coins[]|select(.denom == "rune")|.amount == "200002130896"
 ---
-# Full BTC.BTC symmetrical withdraw
+# Full symmetrical withdraws
 type: tx-deposit
 signer: {{ addr_thor_cat }}
 coins:
@@ -59,7 +59,6 @@ coins:
 memo: "-:BTC.BTC:10000"
 sequence: 0
 ---
-# Full ETH.ETH symmetrical withdraw
 type: tx-deposit
 signer: {{ addr_thor_cat }}
 coins:
@@ -148,6 +147,7 @@ asserts:
   - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "BTC.BTC") and (.coin_amount == "99979000"))]|length == 1
   - .|[.tx[]|select((.type == "scheduled_outbound") and (.coin_asset == "ETH.ETH") and (.coin_amount == "998080000"))]|length == 1
 ---
+# Asset txout observations
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -243,3 +243,142 @@ description: confirm Pool Module RUNE balance is the sum of the pools' RUNE bala
 endpoint: http://localhost:1317/thorchain/balance/module/asgard
 asserts:
  - .coins|length == 0 # The 'rune' balance is 0 as expected, so it is not displayed.
+---
+# Pending symmetrical add liquidity (both directions first add)
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "+:BTC.BTC:{{ addr_thor_cat }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "+:ETH.ETH:{{ addr_eth_cat }}"
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "14000"
+  - .balance_rune == "0"
+  - .pending_inbound_asset == "100000000"
+  - .pending_inbound_rune == "0"
+---
+type: check
+description: confirm ETH.ETH pool state
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "1280000"
+  - .balance_rune == "0"
+  - .pending_inbound_asset == "0"
+  - .pending_inbound_rune == "100000000000"
+---
+# Add liquidity completion
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "+:BTC.BTC:{{ addr_btc_cat }}"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "+:ETH.ETH:{{ addr_thor_cat }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "100000000000"
+  - .balance_asset == "100014000"
+  - .balance_rune == "100000532724" # Higher due to block rewards
+  - .pending_inbound_asset == "0"
+  - .pending_inbound_rune == "0"
+---
+type: check
+description: confirm ETH.ETH pool state
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .LP_units == "100000000000"
+  - .balance_asset == "1001280000"
+  - .balance_rune == "100000532724" # Higher due to block rewards
+  - .pending_inbound_asset == "0"
+  - .pending_inbound_rune == "0"
+---
+type: check
+description: confirm liquidity provider BTC.BTC position
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  - .units == "100000000000"
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value == "100014000"
+  - .rune_deposit_value == "100000000000"
+---
+type: check
+description: confirm liquidity provider ETH.ETH position
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  - .units == "100000000000"
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value == "1001280000"
+  - .rune_deposit_value == "100000000000"
+---
+type: check
+description: confirm vault coins
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1 # Only one vault
+  - .[0].coins|length == 2 # Only two coin types
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "100014000"
+  - .[0].coins[]|select(.asset == "ETH.ETH")|.amount == "1001280000"
+---
+type: check
+description: confirm Pool Module RUNE balance is the sum of the pools' RUNE balances
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+ - .coins[]|select(.denom == "rune")|.amount == "200001065448"
