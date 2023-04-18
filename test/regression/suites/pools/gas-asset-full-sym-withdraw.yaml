@@ -382,3 +382,198 @@ description: confirm Pool Module RUNE balance is the sum of the pools' RUNE bala
 endpoint: http://localhost:1317/thorchain/balance/module/asgard
 asserts:
  - .coins[]|select(.denom == "rune")|.amount == "200001065448"
+---
+# Mint synths (leaving a block for the swap queue)
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC/BTC"
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "100000000000"
+  - .balance_asset == "100014000"
+  - .balance_rune == "109980549045"
+  - .synth_supply == "9069702"
+  - .synth_units == "4749572076"
+---
+# Do another full withdraw, this time with synths present.
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "-:BTC.BTC:10000"
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "4555851" # About half the synth_supply remains (backing it together with the remaining RUNE)
+  - .balance_rune == "4963821027"
+  - .synth_supply == "9069702"
+  - .synth_units == "0"
+---
+type: check
+description: check the queued outbound's details
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].coin.amount == "95458149"
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].max_gas[0].amount == "10500"
+  - .[0].max_gas[0].asset == "BTC.BTC"
+---
+# Asset txout observation
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_cat }}
+      coins:
+        - amount: "95458149"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "7000" #
+          asset: "BTC.BTC"
+      memo: "OUT:{{ native_txid 11 }}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm the outbound queue is now empty
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "4548851" # Gas deducted, though still enough balance_asset to back the synth_supply
+  - .balance_rune == "4971499329"
+  - .pending_inbound_asset == "0"
+  - .pending_inbound_rune == "0"
+  - .synth_supply == "9069702"
+  - .synth_units == "0"
+---
+type: check
+description: confirm liquidity provider no BTC.BTC position
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  - .units == "0"
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value == "0"
+  - .rune_deposit_value == "0"
+---
+# Pending symmetrical add liquidity
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 6 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "+:BTC.BTC:{{ addr_thor_cat }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0"
+  - .balance_asset == "4548851"
+  - .balance_rune == "4971550787"
+  - .pending_inbound_asset == "100000000"
+  - .pending_inbound_rune == "0"
+  - .synth_supply == "9069702"
+  - .synth_units == "0"
+---
+type: check
+description: confirm liquidity provider BTC.BTC pending position
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  - .units == "0"
+  - .pending_asset == "100000000"
+  - .pending_rune == "0"
+  - .asset_deposit_value == "0"
+  - .rune_deposit_value == "0"
+---
+# Add liquidity completion
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "+:BTC.BTC:{{ addr_btc_cat }}"
+---
+type: create-blocks
+count: 1
+#########################################################################
+---
+type: check
+description: confirm vault BTC.BTC
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1 # Only one vault
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "104548851"
+---
+type: check
+description: check BTC.BTC pool state
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .LP_units == "0" # Still zero despite the add liquidity
+  - .balance_asset == "104548851" # Increased by the add liquidity
+  - .balance_rune == "104972095858" # Increased by the add liquidity (as well as block rewards)
+  - .pending_inbound_asset == "0" # Asset no longer pending (since the add liquidity completed)
+  - .pending_inbound_rune == "0"
+  - .synth_supply == "9069702"
+  - .synth_units == "0"
+---
+type: check
+description: check liquidity provider BTC.BTC position
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_cat }}
+asserts:
+  - .units == "0" # All the liquidity provider's added liquidity was swallowed by the pool
+  - .pending_asset == "0"
+  - .pending_rune == "0"
+  - .asset_deposit_value == "0"
+  - .rune_deposit_value == "0"
