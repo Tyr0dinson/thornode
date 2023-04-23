@@ -36,6 +36,7 @@ func (k KVStore) getMinJoinLast(ctx cosmos.Context) MinJoinLast {
 	minJoinLastBytes := store.Get([]byte(key))
 	record := MinJoinLast{}
 	if err := k.cdc.Unmarshal(minJoinLastBytes, &record); err != nil {
+		ctx.Logger().Error("failed to unmarshal MinJoinLast from KVStore", "error", err, "key", key)
 		return MinJoinLast{}
 	}
 	return record
