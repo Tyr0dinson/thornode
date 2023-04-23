@@ -2390,7 +2390,7 @@ components:
           type: string
           example: "0.18.0"
           description: next version (minimum version for a node to become Active)
-        min_join_changed_height:
+        next_since_height:
           type: integer
           format: int64
           example: 2000000
