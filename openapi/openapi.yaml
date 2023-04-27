@@ -1609,11 +1609,6 @@ components:
           items:
             type: string
             example: "E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B"
-        block_height:
-          type: integer
-          format: int64
-          example: 7581334
-          description: same as external_observed_height, to be deprecated in favour of external_observed_height
         external_observed_height:
           type: integer
           format: int64
@@ -1631,11 +1626,6 @@ components:
           type: integer
           format: int64
           example: 10000
-        finalise_height:
-          type: integer
-          format: int64
-          example: 7581334
-          description: same as external_confirmation_delay_height, to be deprecated in favour of external_confirmation_delay_height
         external_confirmation_delay_height:
           type: integer
           format: int64

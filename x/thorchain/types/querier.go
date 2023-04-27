@@ -229,12 +229,10 @@ type QueryObservedTx struct {
 	Tx                              common.Tx     `json:"tx"`
 	Status                          Status        `json:"status,omitempty"`
 	OutHashes                       []string      `json:"out_hashes,omitempty"`
-	BlockHeight                     int64         `json:"block_height,omitempty"`
 	ExternalObservedHeight          int64         `json:"external_observed_height,omitempty"`
 	Signers                         []string      `json:"signers,omitempty"`
 	ObservedPubKey                  common.PubKey `json:"observed_pub_key,omitempty"`
 	KeysignMs                       int64         `json:"keysign_ms,omitempty"`
-	FinaliseHeight                  int64         `json:"finalise_height,omitempty"`
 	ExternalConfirmationDelayHeight int64         `json:"external_confirmation_delay_height,omitempty"`
 	Aggregator                      string        `json:"aggregator,omitempty"`
 	AggregatorTarget                string        `json:"aggregator_target,omitempty"`
@@ -247,12 +245,10 @@ func NewQueryObservedTx(obTx ObservedTx) QueryObservedTx {
 		Tx:                              obTx.Tx,
 		Status:                          obTx.Status,
 		OutHashes:                       obTx.OutHashes,
-		BlockHeight:                     obTx.BlockHeight,
 		ExternalObservedHeight:          obTx.BlockHeight,
 		Signers:                         obTx.Signers,
 		ObservedPubKey:                  obTx.ObservedPubKey,
 		KeysignMs:                       obTx.KeysignMs,
-		FinaliseHeight:                  obTx.FinaliseHeight,
 		ExternalConfirmationDelayHeight: obTx.FinaliseHeight,
 		Aggregator:                      obTx.Aggregator,
 		AggregatorTarget:                obTx.AggregatorTarget,
