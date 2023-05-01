@@ -107,6 +107,16 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 					}
 				}
 
+				// If unable to refund external-chain coins, add them to their pools
+				// (so they aren't left in the vaults with no reflection in the pools).
+				// Failed-refund external coins have earlier been established to have existing pools with non-zero BalanceRune.
+				if !coin.Asset.IsNative() {
+					pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
+					if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+						ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
+					}
+				}
+
 				// If unable to refund THOR.RUNE, send it to the Reserve.
 				if coin.Asset.IsNativeRune() && sourceModuleName != ReserveName {
 					err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
