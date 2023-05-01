@@ -112,8 +112,16 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 				// Failed-refund external coins have earlier been established to have existing pools with non-zero BalanceRune.
 				if !coin.Asset.IsNative() {
 					pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
-					if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+					err := mgr.Keeper().SetPool(ctx, pool)
+					if err != nil {
 						ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
+					}
+
+					if err == nil {
+						donateEvt := NewEventDonate(coin.Asset, tx.Tx)
+						if err := mgr.EventMgr().EmitEvent(ctx, donateEvt); err != nil {
+							ctx.Logger().Error("fail to emit donate event", "error", err)
+						}
 					}
 				}
 
@@ -122,6 +130,14 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 					err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
 					if err != nil {
 						ctx.Logger().Error("fail to send RUNE to Reserve after failed refund", "error", err)
+					}
+
+					if err == nil {
+						reserveContributor := NewReserveContributor(tx.Tx.FromAddress, coin.Amount)
+						reserveEvent := NewEventReserve(reserveContributor, tx.Tx)
+						if err := mgr.EventMgr().EmitEvent(ctx, reserveEvent); err != nil {
+							ctx.Logger().Error("fail to emit reserve event", "error", err)
+						}
 					}
 				}
 			}
