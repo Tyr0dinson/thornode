@@ -592,13 +592,17 @@ func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason str
 // isTradingHalt has been used in two handlers , thus put it here
 func isTradingHalt(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.65.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.110.0")):
+		return isTradingHaltV110(ctx, msg, mgr)
+	case version.GTE(semver.MustParse("0.65.0")):
 		return isTradingHaltV65(ctx, msg, mgr)
+	default:
+		return false
 	}
-	return false
 }
 
-func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
+func isTradingHaltV110(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 	switch m := msg.(type) {
 	case *MsgSwap:
 		for _, raw := range WhitelistedArbs {

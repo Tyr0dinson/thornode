@@ -762,6 +762,32 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	return nil
 }
 
+func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
+	switch m := msg.(type) {
+	case *MsgSwap:
+		for _, raw := range WhitelistedArbs {
+			address, err := common.NewAddress(strings.TrimSpace(raw))
+			if err != nil {
+				ctx.Logger().Error("failt to parse address for trading halt check", "address", raw, "error", err)
+				continue
+			}
+			if address.Equals(m.Tx.FromAddress) {
+				return false
+			}
+		}
+		source := common.EmptyChain
+		if len(m.Tx.Coins) > 0 {
+			source = m.Tx.Coins[0].Asset.GetLayer1Asset().Chain
+		}
+		target := m.TargetAsset.GetLayer1Asset().Chain
+		return isChainTradingHalted(ctx, mgr, source) || isChainTradingHalted(ctx, mgr, target) || isGlobalTradingHalted(ctx, mgr)
+	case *MsgAddLiquidity:
+		return isChainTradingHalted(ctx, mgr, m.Asset.Chain) || isGlobalTradingHalted(ctx, mgr)
+	default:
+		return isGlobalTradingHalted(ctx, mgr)
+	}
+}
+
 // isChainHalted check whether the given chain is halt
 // chain halt is different as halt trading , when a chain is halt , there is no observation on the given chain
 // outbound will not be signed and broadcast
