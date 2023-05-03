@@ -639,6 +639,16 @@ func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
 
 // isChainTradingHalted check whether trading on the given chain is halted
 func isChainTradingHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.110.0")):
+		return isChainTradingHaltedV110(ctx, mgr, chain)
+	default:
+		return isChainTradingHaltedV1(ctx, mgr, chain)
+	}
+}
+
+func isChainTradingHaltedV110(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
 	haltChainTrading, err := mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
