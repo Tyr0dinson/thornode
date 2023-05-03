@@ -615,14 +615,18 @@ func isTradingHaltV110(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 				return false
 			}
 		}
-		source := common.EmptyChain
+		source := common.EmptyAsset
 		if len(m.Tx.Coins) > 0 {
-			source = m.Tx.Coins[0].Asset.GetLayer1Asset().Chain
+			source = m.Tx.Coins[0].Asset
 		}
-		target := m.TargetAsset.GetLayer1Asset().Chain
-		return isChainTradingHalted(ctx, mgr, source) || isChainTradingHalted(ctx, mgr, target) || isGlobalTradingHalted(ctx, mgr)
+		target := m.TargetAsset
+		return isChainTradingHalted(ctx, mgr, source.GetLayer1Asset().GetChain()) ||
+			isChainTradingHalted(ctx, mgr, target.GetLayer1Asset().GetChain()) ||
+			isChainHalted(ctx, mgr, source.GetChain()) ||
+			isChainHalted(ctx, mgr, target.GetChain())
 	case *MsgAddLiquidity:
-		return isChainTradingHalted(ctx, mgr, m.Asset.Chain) || isGlobalTradingHalted(ctx, mgr)
+		return isChainTradingHalted(ctx, mgr, m.Asset.GetLayer1Asset().GetChain()) ||
+			isChainHalted(ctx, mgr, m.Asset.GetChain())
 	default:
 		return isGlobalTradingHalted(ctx, mgr)
 	}
@@ -632,6 +636,7 @@ func isTradingHaltV110(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
 	haltTrading, err := mgr.Keeper().GetMimir(ctx, "HaltTrading")
 	if err == nil && ((haltTrading > 0 && haltTrading < ctx.BlockHeight()) || mgr.Keeper().RagnarokInProgress(ctx)) {
+		ctx.Logger().Info("global trading is halt")
 		return true
 	}
 	return false
@@ -649,14 +654,18 @@ func isChainTradingHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) b
 }
 
 func isChainTradingHaltedV110(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
+	if isGlobalTradingHalted(ctx, mgr) {
+		return true
+	}
+
 	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
 	haltChainTrading, err := mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
 		ctx.Logger().Info("trading is halt", "chain", chain)
 		return true
 	}
-	// further to check whether the chain is halted
-	return isChainHalted(ctx, mgr, chain)
+
+	return false
 }
 
 func isChainHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
