@@ -105,6 +105,7 @@ type QueryVaultResp struct {
 	PendingTxBlockHeights []int64                                     `json:"pending_tx_block_heights,omitempty"`
 	Routers               []ChainContract                             `json:"routers"`
 	Addresses             []QueryChainAddress                         `json:"addresses"`
+	Frozen                []string                                    `json:"frozen,omitempty"`
 }
 
 type QueryVersion struct {
@@ -257,6 +258,42 @@ func NewQueryObservedTx(obTx ObservedTx) QueryObservedTx {
 		Aggregator:                      obTx.Aggregator,
 		AggregatorTarget:                obTx.AggregatorTarget,
 		AggregatorTargetLimit:           obTx.AggregatorTargetLimit,
+	}
+}
+
+// QueryPool holds all the information related to a pool
+type QueryPool struct {
+	Asset                string `json:"asset"`
+	Status               string `json:"status"`
+	Decimals             int64  `json:"decimals,omitempty"`
+	PendingInboundAsset  string `json:"pending_inbound_asset"`
+	PendingInboundRune   string `json:"pending_inbound_rune"`
+	BalanceAsset         string `json:"balance_asset"`
+	BalanceRune          string `json:"balance_rune"`
+	PoolUnits            string `json:"pool_units"`
+	LPUnits              string `json:"LP_units"`
+	SynthUnits           string `json:"synth_units"`
+	SynthSupply          string `json:"synth_supply"`
+	SaversDepth          string `json:"savers_depth"`
+	SaversUnits          string `json:"savers_units"`
+	SynthMintPaused      bool   `json:"synth_mint_paused"`
+	SynthSupplyRemaining string `json:"synth_supply_remaining"`
+	LoanCollateral       string `json:"loan_collateral"`
+}
+
+// NewQueryPool creates a new QueryPool based on the given pool parameters
+func NewQueryPool(pool Pool) QueryPool {
+	return QueryPool{
+		Asset:               pool.Asset.String(),
+		Status:              pool.Status.String(),
+		Decimals:            pool.Decimals,
+		PendingInboundAsset: pool.PendingInboundAsset.String(),
+		PendingInboundRune:  pool.PendingInboundRune.String(),
+		BalanceAsset:        pool.BalanceAsset.String(),
+		BalanceRune:         pool.BalanceRune.String(),
+		PoolUnits:           pool.GetPoolUnits().String(),
+		LPUnits:             pool.LPUnits.String(),
+		SynthUnits:          pool.SynthUnits.String(),
 	}
 }
 

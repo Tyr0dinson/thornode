@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"text/template"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/mitchellh/mapstructure"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 	"gopkg.in/yaml.v3"
@@ -25,7 +28,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 type Operation interface {
-	Execute(thornode *os.Process, logs chan string) error
+	Execute(out io.Writer, routine int, thornode *os.Process, logs chan string) error
 	OpType() string
 }
 
@@ -57,6 +60,8 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxObservedIn{}
 	case "tx-observed-out":
 		op = &OpTxObservedOut{}
+	case "tx-tss-keysign":
+		op = &OpTxTssKeysign{}
 	case "tx-deposit":
 		op = &OpTxDeposit{}
 	case "tx-mimir":
@@ -82,7 +87,7 @@ func NewOperation(opMap map[string]any) Operation {
 
 	switch op.(type) {
 	// internal types have MarshalJSON methods necessary to decode
-	case *OpTxObservedIn, *OpTxObservedOut, *OpTxDeposit, *OpTxMimir, *OpTxSend, *OpTxVersion:
+	case *OpTxObservedIn, *OpTxObservedOut, *OpTxDeposit, *OpTxMimir, *OpTxSend, *OpTxVersion, *OpTxTssKeysign:
 		// encode as json
 		buf := bytes.NewBuffer(nil)
 		enc := json.NewEncoder(buf)
@@ -123,9 +128,12 @@ type OpState struct {
 	Genesis map[string]any `json:"genesis"`
 }
 
-func (op *OpState) Execute(*os.Process, chan string) error {
+func (op *OpState) Execute(_ io.Writer, routine int, _ *os.Process, _ chan string) error {
+	// extract HOME from command environment
+	home := fmt.Sprintf("/%d", routine)
+
 	// load genesis file
-	f, err := os.OpenFile(os.ExpandEnv("/regtest/.thornode/config/genesis.json"), os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Join(home, ".thornode/config/genesis.json"), os.O_RDWR, 0o644)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to open genesis file")
 	}
@@ -174,7 +182,9 @@ type OpCheck struct {
 	Asserts     []string          `json:"asserts"`
 }
 
-func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
+func (op *OpCheck) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	localLog := consoleLogger(out)
+
 	// abort if no endpoint is set (empty check op is allowed for breakpoint convenience)
 	if op.Endpoint == "" {
 		return fmt.Errorf("check")
@@ -186,6 +196,16 @@ func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
 		log.Fatal().Err(err).Msg("failed to build request")
 	}
 
+	// parse the endpoint and add routine to the port number
+	port, err := strconv.Atoi(req.URL.Port())
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse port")
+	}
+	if req.URL.Hostname() != "localhost" { // host must be localhost
+		log.Fatal().Str("host", req.URL.Hostname()).Msg("endpoint host must be localhost")
+	}
+	req.URL.Host = fmt.Sprintf("localhost:%d", port+routine)
+
 	// add params
 	q := req.URL.Query()
 	for k, v := range op.Params {
@@ -196,24 +216,24 @@ func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
 	// send request
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Err(err).Msg("failed to send request")
+		localLog.Err(err).Msg("failed to send request")
 		return err
 	}
 
 	// read response
 	buf, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Err(err).Msg("failed to read response")
+		localLog.Err(err).Msg("failed to read response")
 		return err
 	}
 
 	// ensure status code matches
 	if resp.StatusCode != op.Status {
 		// dump pretty output for debugging
-		fmt.Println(ColorPurple + "\nOperation:" + ColorReset)
-		_ = yaml.NewEncoder(os.Stdout).Encode(op)
-		fmt.Println(ColorPurple + "\nEndpoint Response:" + ColorReset)
-		fmt.Println(string(buf) + "\n")
+		_, _ = out.Write([]byte(ColorPurple + "\nOperation:" + ColorReset + "\n"))
+		_ = yaml.NewEncoder(out).Encode(op)
+		_, _ = out.Write([]byte(ColorPurple + "\nEndpoint Response:" + ColorReset + "\n"))
+		_, _ = out.Write([]byte(string(buf) + "\n"))
 
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
@@ -222,7 +242,7 @@ func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
 	if len(buf) == 0 {
 		if os.Getenv("DEBUG") == "" {
 			fmt.Println(ColorPurple + "\nLogs:" + ColorReset)
-			dumpLogs(logs)
+			dumpLogs(out, logs)
 		}
 
 		fmt.Println(ColorPurple + "\nOperation:" + ColorReset)
@@ -234,7 +254,16 @@ func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
 	// pipe response to jq for assertions
 	for _, a := range op.Asserts {
 		// render the assert expression (used for native_txid)
-		tmpl := template.Must(template.Must(templates.Clone()).Parse(a))
+		funcMap := template.FuncMap{
+			"native_txid": func(i int) string {
+				// allow reverse indexing
+				if i < 0 {
+					i += len(nativeTxIDs[routine]) + 1
+				}
+				return nativeTxIDs[routine][i-1]
+			},
+		}
+		tmpl := template.Must(template.Must(templates.Clone()).Funcs(funcMap).Parse(a))
 		expr := bytes.NewBuffer(nil)
 		err = tmpl.Execute(expr, nil)
 		if err != nil {
@@ -244,25 +273,25 @@ func (op *OpCheck) Execute(_ *os.Process, logs chan string) error {
 
 		cmd := exec.Command("jq", "-e", a)
 		cmd.Stdin = bytes.NewReader(buf)
-		out, err := cmd.CombinedOutput()
+		cmdOut, err := cmd.CombinedOutput()
 		if err != nil {
 			if cmd.ProcessState.ExitCode() == 1 && os.Getenv("DEBUG") == "" {
 				// dump process logs if the assert expression failed
-				fmt.Println(ColorPurple + "\nLogs:" + ColorReset)
-				dumpLogs(logs)
+				_, _ = out.Write([]byte(ColorPurple + "\nLogs:" + ColorReset + "\n"))
+				dumpLogs(out, logs)
 			}
 
 			// dump pretty output for debugging
-			fmt.Println(ColorPurple + "\nOperation:" + ColorReset)
-			_ = yaml.NewEncoder(os.Stdout).Encode(op)
-			fmt.Println(ColorPurple + "\nFailed Assert: " + ColorReset + expr.String())
-			fmt.Println(ColorPurple + "\nEndpoint Response:" + ColorReset)
-			fmt.Println(string(buf) + "\n")
+			_, _ = out.Write([]byte(ColorPurple + "\nOperation:" + ColorReset + "\n"))
+			_ = yaml.NewEncoder(out).Encode(op)
+			_, _ = out.Write([]byte(ColorPurple + "\nFailed Assert: " + ColorReset + expr.String() + "\n"))
+			_, _ = out.Write([]byte(ColorPurple + "\nEndpoint Response:" + ColorReset + "\n"))
+			_, _ = out.Write([]byte(string(buf) + "\n"))
 
 			// log fatal on syntax errors and skip logs
 			if cmd.ProcessState.ExitCode() != 1 {
 				drainLogs(logs)
-				fmt.Println(ColorRed + string(out) + ColorReset)
+				_, _ = out.Write([]byte(ColorRed + string(cmdOut) + ColorReset + "\n"))
 			}
 
 			return err
@@ -282,34 +311,36 @@ type OpCreateBlocks struct {
 	Exit   *int `json:"exit"`
 }
 
-func (op *OpCreateBlocks) Execute(p *os.Process, logs chan string) error {
+func (op *OpCreateBlocks) Execute(out io.Writer, routine int, p *os.Process, logs chan string) error {
+	localLog := consoleLogger(out)
+
 	// clear existing log output
 	drainLogs(logs)
 
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
-		_, err := httpClient.Get("http://localhost:8080/newBlock")
+		_, err := httpClient.Get(fmt.Sprintf("http://localhost:%d/newBlock", 8080+routine))
 		if err != nil {
 			// if exit code is not set this was unexpected
 			if op.Exit == nil {
-				log.Err(err).Msg("failed to create block")
+				localLog.Err(err).Msg("failed to create block")
 				return err
 			}
 
 			// if exit code is set, this was expected
 			if processRunning(p.Pid) {
-				log.Err(err).Msg("block did not exit as expected")
+				localLog.Err(err).Msg("block did not exit as expected")
 				return err
 			}
 
 			// if process is not running, check exit code
 			ps, err := p.Wait()
 			if err != nil {
-				log.Err(err).Msg("failed to wait for process")
+				localLog.Err(err).Msg("failed to wait for process")
 				return err
 			}
 			if ps.ExitCode() != *op.Exit {
-				log.Error().Int("exit", ps.ExitCode()).Int("expect", *op.Exit).Msg("bad exit code")
+				localLog.Error().Int("exit", ps.ExitCode()).Int("expect", *op.Exit).Msg("bad exit code")
 				return err
 			}
 
@@ -320,7 +351,7 @@ func (op *OpCreateBlocks) Execute(p *os.Process, logs chan string) error {
 
 	// if exit code is set, this was unexpected
 	if op.Exit != nil {
-		log.Error().Int("expect", *op.Exit).Msg("expected exit code")
+		localLog.Error().Int("expect", *op.Exit).Msg("expected exit code")
 		return errors.New("expected exit code")
 	}
 
@@ -343,9 +374,9 @@ type OpTxObservedIn struct {
 	Sequence *int64             `json:"sequence"`
 }
 
-func (op *OpTxObservedIn) Execute(_ *os.Process, logs chan string) error {
+func (op *OpTxObservedIn) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
 	msg := types.NewMsgObservedTxIn(op.Txs, op.Signer)
-	return sendMsg(msg, op.Signer, op.Sequence, op, logs)
+	return sendMsg(out, routine, msg, op.Signer, op.Sequence, op, logs)
 }
 
 // ------------------------------ OpTxObservedOut ------------------------------
@@ -357,11 +388,20 @@ type OpTxObservedOut struct {
 	Sequence *int64             `json:"sequence"`
 }
 
-func (op *OpTxObservedOut) Execute(_ *os.Process, logs chan string) error {
+func (op *OpTxObservedOut) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
 	// render the memos (used for native_txid)
+	funcMap := template.FuncMap{
+		"native_txid": func(i int) string {
+			// allow reverse indexing
+			if i < 0 {
+				i += len(nativeTxIDs[routine]) + 1
+			}
+			return nativeTxIDs[routine][i-1]
+		},
+	}
 	for i := range op.Txs {
 		tx := &op.Txs[i]
-		tmpl := template.Must(template.Must(templates.Clone()).Parse(tx.Tx.Memo))
+		tmpl := template.Must(template.Must(templates.Clone()).Funcs(funcMap).Parse(tx.Tx.Memo))
 		memo := bytes.NewBuffer(nil)
 		err := tmpl.Execute(memo, nil)
 		if err != nil {
@@ -371,7 +411,20 @@ func (op *OpTxObservedOut) Execute(_ *os.Process, logs chan string) error {
 	}
 
 	msg := types.NewMsgObservedTxOut(op.Txs, op.Signer)
-	return sendMsg(msg, op.Signer, op.Sequence, op, logs)
+	return sendMsg(out, routine, msg, op.Signer, op.Sequence, op, logs)
+}
+
+// ------------------------------ OpTxTssKeysign ------------------------------
+
+type OpTxTssKeysign struct {
+	OpBase                  `yaml:",inline"`
+	types.MsgTssKeysignFail `yaml:",inline"`
+	// Signer                  sdk.AccAddress `json:"signer"`
+	Sequence *int64 `json:"sequence"`
+}
+
+func (op *OpTxTssKeysign) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgTssKeysignFail, op.MsgTssKeysignFail.Signer, op.Sequence, op, logs)
 }
 
 // ------------------------------ OpTxDeposit ------------------------------
@@ -382,8 +435,8 @@ type OpTxDeposit struct {
 	Sequence         *int64 `json:"sequence"`
 }
 
-func (op *OpTxDeposit) Execute(_ *os.Process, logs chan string) error {
-	return sendMsg(&op.MsgDeposit, op.Signer, op.Sequence, op, logs)
+func (op *OpTxDeposit) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgDeposit, op.Signer, op.Sequence, op, logs)
 }
 
 // ------------------------------ OpTxMimir ------------------------------
@@ -394,8 +447,8 @@ type OpTxMimir struct {
 	Sequence       *int64 `json:"sequence"`
 }
 
-func (op *OpTxMimir) Execute(_ *os.Process, logs chan string) error {
-	return sendMsg(&op.MsgMimir, op.Signer, op.Sequence, op, logs)
+func (op *OpTxMimir) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgMimir, op.Signer, op.Sequence, op, logs)
 }
 
 // ------------------------------ OpTxSend ------------------------------
@@ -406,8 +459,8 @@ type OpTxSend struct {
 	Sequence      *int64 `json:"sequence"`
 }
 
-func (op *OpTxSend) Execute(_ *os.Process, logs chan string) error {
-	return sendMsg(&op.MsgSend, op.FromAddress, op.Sequence, op, logs)
+func (op *OpTxSend) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgSend, op.FromAddress, op.Sequence, op, logs)
 }
 
 // ------------------------------ OpTxVersion ------------------------------
@@ -418,23 +471,27 @@ type OpTxVersion struct {
 	Sequence            *int64 `json:"sequence"`
 }
 
-func (op *OpTxVersion) Execute(_ *os.Process, logs chan string) error {
-	return sendMsg(&op.MsgSetVersion, op.Signer, op.Sequence, op, logs)
+func (op *OpTxVersion) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgSetVersion, op.Signer, op.Sequence, op, logs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func sendMsg(msg sdk.Msg, signer sdk.AccAddress, seq *int64, op any, logs chan string) error {
+func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq *int64, op any, logs chan string) error {
+	log := log.Output(zerolog.ConsoleWriter{Out: out})
+
 	// check that message is valid
 	err := msg.ValidateBasic()
 	if err != nil {
-		enc := json.NewEncoder(os.Stdout) // json instead of yaml to encode amount
+		enc := json.NewEncoder(out) // json instead of yaml to encode amount
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(op)
 		log.Fatal().Err(err).Msg("failed to validate basic")
 	}
+
+	clientCtx, txFactory := clientContextAndFactory(routine)
 
 	// custom client context
 	buf := bytes.NewBuffer(nil)
@@ -451,11 +508,11 @@ func sendMsg(msg sdk.Msg, signer sdk.AccAddress, seq *int64, op any, logs chan s
 	// send message
 	err = tx.GenerateOrBroadcastTxWithFactory(ctx, txf, msg)
 	if err != nil {
-		fmt.Println(ColorPurple + "\nOperation:" + ColorReset)
-		enc := json.NewEncoder(os.Stdout) // json instead of yaml to encode amount
+		_, _ = out.Write([]byte(ColorPurple + "\nOperation:" + ColorReset))
+		enc := json.NewEncoder(out) // json instead of yaml to encode amount
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(op)
-		fmt.Println(ColorPurple + "\nTx Output:" + ColorReset)
+		_, _ = out.Write([]byte(ColorPurple + "\nTx Output:" + ColorReset))
 		drainLogs(logs)
 		return err
 	}
@@ -471,7 +528,7 @@ func sendMsg(msg sdk.Msg, signer sdk.AccAddress, seq *int64, op any, logs chan s
 	if txRes.Code != 0 {
 		log.Debug().Uint32("code", txRes.Code).Str("log", txRes.RawLog).Msg("tx send failed")
 	} else {
-		nativeTxIDs = append(nativeTxIDs, txRes.TxHash)
+		nativeTxIDs[routine] = append(nativeTxIDs[routine], txRes.TxHash)
 	}
 
 	return err

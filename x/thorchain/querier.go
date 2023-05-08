@@ -273,6 +273,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		OutboundTxCount:       v.OutboundTxCount,
 		PendingTxBlockHeights: v.PendingTxBlockHeights,
 		Routers:               v.Routers,
+		Frozen:                v.Frozen,
 		Addresses:             getVaultChainAddress(ctx, v),
 	}
 	return jsonify(ctx, resp)
@@ -307,6 +308,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				OutboundTxCount:       vault.OutboundTxCount,
 				PendingTxBlockHeights: vault.PendingTxBlockHeights,
 				Routers:               vault.Routers,
+				Frozen:                vault.Frozen,
 				Addresses:             getVaultChainAddress(ctx, vault),
 			})
 		}
@@ -1062,30 +1064,19 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 	}
 
-	p := &openapi.Pool{
-		BalanceRune:          pool.BalanceRune.String(),
-		BalanceAsset:         pool.BalanceAsset.String(),
-		Asset:                pool.Asset.String(),
-		LPUnits:              pool.LPUnits.String(),
-		PoolUnits:            pool.GetPoolUnits().String(),
-		Status:               pool.Status.String(),
-		Decimals:             wrapInt64(pool.Decimals),
-		SynthUnits:           pool.SynthUnits.String(),
-		SynthSupply:          synthSupply.String(),
-		SaversDepth:          saversDepth.String(),
-		SaversUnits:          saversUnits.String(),
-		SynthMintPaused:      synthMintPausedErr != nil,
-		SynthSupplyRemaining: synthSupplyRemaining.String(),
-		LoanCollateral:       totalCollateral.String(),
-		PendingInboundRune:   pool.PendingInboundRune.String(),
-		PendingInboundAsset:  pool.PendingInboundAsset.String(),
-	}
+	p := NewQueryPool(pool)
+	p.SynthSupply = synthSupply.String()
+	p.SaversDepth = saversDepth.String()
+	p.SaversUnits = saversUnits.String()
+	p.SynthMintPaused = (synthMintPausedErr != nil)
+	p.SynthSupplyRemaining = synthSupplyRemaining.String()
+	p.LoanCollateral = totalCollateral.String()
 
 	return jsonify(ctx, p)
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	pools := make([]openapi.Pool, 0)
+	pools := make([]QueryPool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -1122,24 +1113,15 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		if err != nil {
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 		}
-		p := openapi.Pool{
-			BalanceRune:          pool.BalanceRune.String(),
-			BalanceAsset:         pool.BalanceAsset.String(),
-			Asset:                pool.Asset.String(),
-			LPUnits:              pool.LPUnits.String(),
-			PoolUnits:            pool.GetPoolUnits().String(),
-			Status:               pool.Status.String(),
-			Decimals:             wrapInt64(pool.Decimals),
-			SynthUnits:           pool.SynthUnits.String(),
-			SynthSupply:          synthSupply.String(),
-			SaversDepth:          saversDepth.String(),
-			SaversUnits:          saversUnits.String(),
-			SynthMintPaused:      synthMintPausedErr != nil,
-			SynthSupplyRemaining: synthSupplyRemaining.String(),
-			LoanCollateral:       totalCollateral.String(),
-			PendingInboundRune:   pool.PendingInboundRune.String(),
-			PendingInboundAsset:  pool.PendingInboundAsset.String(),
-		}
+
+		p := NewQueryPool(pool)
+		p.SynthSupply = synthSupply.String()
+		p.SaversDepth = saversDepth.String()
+		p.SaversUnits = saversUnits.String()
+		p.SynthMintPaused = (synthMintPausedErr != nil)
+		p.SynthSupplyRemaining = synthSupplyRemaining.String()
+		p.LoanCollateral = totalCollateral.String()
+
 		pools = append(pools, p)
 	}
 	return jsonify(ctx, pools)

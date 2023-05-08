@@ -76,7 +76,7 @@ func NewConstantValue() *ConstantVals {
 			PoolDepthForYggFundingMin:           500_000_00000000,   // the minimum pool depth in RUNE required for ygg funding
 			MaxNodeToChurnOutForLowVersion:      1,                  // the maximum number of nodes to churn out for low version per churn
 			POLMaxNetworkDeposit:                0,                  // Maximum amount of rune deposited into the pools
-			POLMaxPoolMovement:                  100,                // Maximum amount of rune to enter/exit a pool per iteration. This is in basis points of the pool rune depth
+			POLMaxPoolMovement:                  100,                // Maximum amount of rune to enter/exit a pool per iteration - 1 equals one hundredth of a basis point of pool rune depth
 			POLSynthUtilization:                 0,                  // TODO: remove me on hard fork
 			POLTargetSynthPerPoolDepth:          0,                  // target synth per pool depth for POL (basis points)
 			POLBuffer:                           0,                  // buffer around the POL synth utilization (basis points added to/subtracted from POLTargetSynthPerPoolDepth basis points)
@@ -87,6 +87,7 @@ func NewConstantValue() *ConstantVals {
 			MinimumPoolLiquidityFee:             0,                  // Minimum liquidity fee made by the pool,active pool fail to meet this within a PoolCycle will be demoted
 			ILPCutoff:                           0,                  // the cutoff height for impermanent loss protection
 			ChurnMigrateRounds:                  5,                  // Number of rounds to migrate vaults during churn
+			AllowWideBlame:                      0,                  // allow for a wide blame, only set in mocknet for regression testing tss keysign failures
 			MaxAffiliateFeeBasisPoints:          10_000,             // Max allowed affiliate fee basis points
 			TargetOutboundFeeSurplusRune:        100_000_00000000,   // Target amount of RUNE for Outbound Fee Surplus: the sum of the diff between outbound cost to user and outbound cost to network
 			MaxOutboundFeeMultiplierBasisPoints: 30_000,             // Maximum multiplier applied to base outbound fee charged to user, in basis points

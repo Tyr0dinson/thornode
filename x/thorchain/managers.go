@@ -89,7 +89,7 @@ type ObserverManager interface {
 
 // ValidatorManager define the method to manage validators
 type ValidatorManager interface {
-	BeginBlock(ctx cosmos.Context, constAccessor constants.ConstantValues, existingValidators []string) error
+	BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
 	EndBlock(ctx cosmos.Context, mgr Manager) []abci.ValidatorUpdate
 	RequestYggReturn(ctx cosmos.Context, node NodeAccount, mgr Manager) error
 	processRagnarok(ctx cosmos.Context, mgr Manager) error
@@ -325,6 +325,8 @@ func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkee
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
+	case version.GTE(semver.MustParse("1.109.0")):
+		return newGasMgrV109(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.108.0")):
 		return newGasMgrV108(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.102.0")):
@@ -353,6 +355,8 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
+	case version.GTE(semver.MustParse("1.109.0")):
+		return newTxOutStorageV109(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.108.0")):
 		return newTxOutStorageV108(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.107.0")):
@@ -387,6 +391,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.109.0")):
+		return newNetworkMgrV109(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.107.0")):
 		return newNetworkMgrV107(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.106.0")):
@@ -424,6 +430,8 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.109.0")):
+		return newValidatorMgrV109(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.106.0")):
 		return newValidatorMgrV106(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.103.0")):
@@ -502,6 +510,8 @@ func GetOrderBook(version semver.Version, keeper keeper.Keeper) (OrderBook, erro
 // GetSlasher return an implementation of Slasher
 func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (Slasher, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.109.0")):
+		return newSlasherV109(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.108.0")):
 		return newSlasherV108(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.92.0")):
