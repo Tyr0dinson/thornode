@@ -81,7 +81,7 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 				}
 
 				// Select course of action according to coin type:
-				// native RUNE, native coin which isn't RUNE, or external coin.
+				// External coin, native coin which isn't RUNE, or native RUNE (not from the Reserve).
 				switch {
 				case !coin.Asset.IsNative():
 					// If unable to refund external-chain coins, add them to their pools
@@ -99,11 +99,11 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 							ctx.Logger().Error("fail to emit donate event", "error", err)
 						}
 					}
-				case coin.Asset.IsNative() && !coin.Asset.IsNativeRune():
+				case !coin.Asset.IsNativeRune():
 					// If unable to refund native coins other than RUNE, burn them.
 
-					// For code clarity, set the error to nil at the start and check it at every step.
-					var err error = nil
+					// For code clarity, start with a nil error (the default) and check it at every step.
+					var err error
 
 					if sourceModuleName != ModuleName {
 						err = mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ModuleName, common.NewCoins(coin))
@@ -125,26 +125,23 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 							ctx.Logger().Error("fail to emit burn event", "error", err)
 						}
 					}
-				case coin.Asset.IsNativeRune():
+				case sourceModuleName != ReserveName:
 					// If unable to refund THOR.RUNE, send it to the Reserve.
-					if sourceModuleName != ReserveName {
-						err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
-						if err != nil {
-							ctx.Logger().Error("fail to send RUNE to Reserve after failed refund", "error", err)
-						}
+					err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
+					if err != nil {
+						ctx.Logger().Error("fail to send RUNE to Reserve after failed refund", "error", err)
+					}
 
-						if err == nil {
-							reserveContributor := NewReserveContributor(tx.Tx.FromAddress, coin.Amount)
-							reserveEvent := NewEventReserve(reserveContributor, tx.Tx)
-							if err := mgr.EventMgr().EmitEvent(ctx, reserveEvent); err != nil {
-								ctx.Logger().Error("fail to emit reserve event", "error", err)
-							}
+					if err == nil {
+						reserveContributor := NewReserveContributor(tx.Tx.FromAddress, coin.Amount)
+						reserveEvent := NewEventReserve(reserveContributor, tx.Tx)
+						if err := mgr.EventMgr().EmitEvent(ctx, reserveEvent); err != nil {
+							ctx.Logger().Error("fail to emit reserve event", "error", err)
 						}
 					}
 				default:
-					// If the above switch cases are not altered, this default case should never be reached,
-					// but log the occurrence if it is.
-					ctx.Logger().Error("unable to determine what to do with a failed-refund coin", "asset", coin.Asset)
+					// If not satisfying the other conditions this coin should be native RUNE in the Reserve,
+					// so leave it there.
 				}
 			}
 			if success {
