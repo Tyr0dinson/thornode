@@ -52,6 +52,8 @@ func (h LoanOpenHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.111.0")):
+		return h.validateV111(ctx, msg)
 	case version.GTE(semver.MustParse("1.108.0")):
 		return h.validateV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
@@ -61,7 +63,7 @@ func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) validateV108(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
