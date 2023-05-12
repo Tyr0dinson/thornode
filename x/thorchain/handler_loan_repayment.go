@@ -244,8 +244,8 @@ func (h LoanRepaymentHandler) repayV113(ctx cosmos.Context, msg MsgLoanRepayment
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
 	tx := common.NewTx(txID, lendAddr, lendAddr, coins, common.Gas{fakeGas}, "noop")
 	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, msg.MinOut, common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
-	handler := NewSwapHandler(h.mgr)
-	if _, err := handler.Run(ctx, swapMsg); err != nil {
+	handler := NewInternalHandler(h.mgr)
+	if _, err := handler(ctx, swapMsg); err != nil {
 		ctx.Logger().Error("fail to make second swap when closing a loan", "error", err)
 		return err
 	}

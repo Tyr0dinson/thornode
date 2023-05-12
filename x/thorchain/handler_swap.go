@@ -249,6 +249,7 @@ func (h SwapHandler) handleV113(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
 		return nil, err
 	}
+	handler := NewInternalHandler(h.mgr)
 	switch mem.GetType() {
 	case TxAdd:
 		m, ok := mem.(AddLiquidityMemo)
@@ -262,8 +263,8 @@ func (h SwapHandler) handleV113(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			return nil, err
 		}
-		handler := NewAddLiquidityHandler(h.mgr)
-		_, err = handler.Run(ctx, msg)
+
+		_, err = handler(ctx, msg)
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
 			return nil, err
@@ -285,9 +286,8 @@ func (h SwapHandler) handleV113(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			return nil, err
 		}
-		openLoanHandler := NewLoanOpenHandler(h.mgr)
 
-		_, err = openLoanHandler.Run(ctx, msg) // fire and forget
+		_, err = handler(ctx, msg) // fire and forget
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to open loan", "error", err)
 			return nil, err
@@ -305,8 +305,8 @@ func (h SwapHandler) handleV113(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			return nil, err
 		}
-		repayLoanHandler := NewLoanRepaymentHandler(h.mgr)
-		_, err = repayLoanHandler.Run(ctx, msg) // fire and forget
+
+		_, err = handler(ctx, msg) // fire and forget
 		if err != nil {
 			ctx.Logger().Error("swap handler failed to repay loan", "error", err)
 			return nil, err

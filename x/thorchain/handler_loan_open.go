@@ -324,8 +324,8 @@ func (h LoanOpenHandler) openLoanV113(ctx cosmos.Context, msg MsgLoanOpen) error
 		tx := common.NewTx(txID, lendingAddr, lendingAddr, common.NewCoins(torCoin), nil, "noop")
 		// we do NOT pass affiliate info here as it was already taken out on the swap of the collateral to derived asset
 		swapMsg := NewMsgSwap(tx, msg.TargetAsset, msg.TargetAddress, msg.MinOut, common.NoAddress, zero, msg.Aggregator, msg.AggregatorTargetAddress, &msg.AggregatorTargetLimit, 0, msg.Signer)
-		handler := NewSwapHandler(h.mgr)
-		if _, err := handler.Run(ctx, swapMsg); err != nil {
+		handler := NewInternalHandler(h.mgr)
+		if _, err := handler(ctx, swapMsg); err != nil {
 			ctx.Logger().Error("fail to make second swap when opening a loan", "error", err)
 			return err
 		}
