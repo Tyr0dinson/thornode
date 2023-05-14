@@ -249,7 +249,7 @@ func (b *BlockScanner) scanBlocks() {
 				mod = 1
 			}
 			// enable this one , so we could see how far it is behind
-			if currentBlock%mod == 0 || len(txIn.TxArray) > 0 {
+			if currentBlock%mod == 0 || !b.healthy {
 				b.logger.Info().Int64("block height", currentBlock).Int("txs", len(txIn.TxArray)).Msg("scan block")
 			}
 			atomic.AddInt64(&b.previousBlock, 1)
