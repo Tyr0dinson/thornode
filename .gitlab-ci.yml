@@ -107,6 +107,7 @@ build-thornode:
     - stagenet
     - testnet-multichain
     - chaosnet-multichain
+    - odin/debug-bifrost
   services:
     - docker:20.10.12-dind
   before_script:
