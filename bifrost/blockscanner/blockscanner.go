@@ -81,6 +81,7 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 	}
 
 	scanner.previousBlock, err = scanner.FetchLastHeight()
+	b.logger.Info().Int64("block height", scanner.previousBlock).Msg("fetch last height")
 	return scanner, err
 }
 
@@ -232,8 +233,23 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 
+			// determine how often we print a info log line for scanner
+			// progress. General goal is about once per minute
+			var mod int64
+			switch b.cfg.ChainID.String() {
+			case "AVAX":
+				mod = 20
+			case "ETH":
+				mod = 5
+			case "GAIA":
+				mod = 12
+			case "BNB":
+				mod = 200
+			default:
+				mod = 1
+			}
 			// enable this one , so we could see how far it is behind
-			if currentBlock%100 == 0 {
+			if currentBlock%mod == 0 {
 				b.logger.Info().Int64("block height", currentBlock).Int("txs", len(txIn.TxArray)).Msg("scan block")
 			}
 			atomic.AddInt64(&b.previousBlock, 1)
@@ -264,19 +280,16 @@ func (b *BlockScanner) scanBlocks() {
 }
 
 // FetchLastHeight retrieves the last height to start scanning blocks from on startup
-//  1. Check if we have a height specified in config AND
-//     its higher than the block scanner storage one, use that
+//  1. Check if we have a height specified in config
 //  2. Get the last observed height from THORChain if available
 //  3. Use block scanner storage if > 0
 //  4. Fetch last height from the chain itself
 func (b *BlockScanner) FetchLastHeight() (int64, error) {
-	// get scanner storage height
-	currentPos, _ := b.scannerStorage.GetScanPos() // ignore error
-
 	// 1. if we've configured a starting height, use that
 	if b.cfg.StartBlockHeight > 0 {
 		return b.cfg.StartBlockHeight, nil
 	}
+
 	// 2. attempt to find the height from thorchain
 	// wait for thorchain to be caught up first
 	if err := b.thorchainBridge.WaitToCatchUp(); err != nil {
@@ -295,6 +308,7 @@ func (b *BlockScanner) FetchLastHeight() (int64, error) {
 	}
 
 	// 3. If we've already started scanning, begin where we left off
+	currentPos, _ := b.scannerStorage.GetScanPos() // ignore error
 	if currentPos > 0 {
 		return currentPos, nil
 	}
