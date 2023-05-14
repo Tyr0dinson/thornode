@@ -81,7 +81,7 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 	}
 
 	scanner.previousBlock, err = scanner.FetchLastHeight()
-	b.logger.Info().Int64("block height", scanner.previousBlock).Msg("fetch last height")
+	logger.Info().Int64("block height", scanner.previousBlock).Msg("block scanner last fetch height")
 	return scanner, err
 }
 
