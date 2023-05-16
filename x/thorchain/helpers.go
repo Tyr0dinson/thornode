@@ -1088,3 +1088,175 @@ func isActionsItemDangling(voter ObservedTxVoter, i int) bool {
 	}
 	return true
 }
+
+// splitAffiliateFee handles a message's affiliate fee, receiving a &msg pointer as an argument.
+// Specifically:  it sends the fee, reduces the coin's amount, and removes the affiliate-related fields
+// (but leaves the memo unaltered).
+func splitAffiliateFee(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		splitAffiliateFeeV114(ctx, mgr, msg)
+	default:
+		// If something goes wrong, log and do nothing else.
+		ctx.Logger().Error("bad version for splitAffiliateFee", "version", version.String())
+	}
+}
+
+func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
+	// Collect field information and strip out the affiliate-related fields from the message,
+	// though leave the memo itself untouched.
+	var affiliateTx common.Tx
+	var affiliateAddress common.Address
+	var affiliateBasisPoints cosmos.Uint
+	var signer cosmos.AccAddress
+	var addLiquidityTargetAsset common.Asset
+	switch msgPointer := msg.(type) {
+	case *MsgSwap:
+		// If an internal handler's affiliate fee succeeds and main message fails,
+		// the entire unsplit message would need a refund, so replace the message's Coins
+		// to ONLY change the internal handler's message.
+		//
+		// Note that splitAffiliateFee should not be called from handler_deposit or handler_observed_txin,
+		// as the message-origin ObservedTx is refunded, and changing its Coins would also change the ObservedTxVoter's Coins.
+		// (That is, for the GetObservedTxInVoter details.)
+		msgPointer.Tx.Coins = common.NewCoins(msgPointer.Tx.Coins...)
+
+		affiliateAddress = msgPointer.AffiliateAddress
+		affiliateBasisPoints = msgPointer.AffiliateBasisPoints
+		affiliateTx = msgPointer.Tx
+		signer = msgPointer.Signer
+
+		msgPointer.AffiliateAddress = common.NoAddress
+		msgPointer.AffiliateBasisPoints = cosmos.ZeroUint()
+	case *MsgAddLiquidity:
+		// If an internal handler's affiliate fee succeeds and main message fails,
+		// the entire unsplit message would need a refund, so replace the message's Coins
+		// to ONLY change the internal handler's message.
+		//
+		// Note that splitAffiliateFee should not be called from handler_deposit or handler_observed_txin,
+		// as the message-origin ObservedTx is refunded, and changing its Coins would also change the ObservedTxVoter's Coins.
+		// (That is, for the GetObservedTxInVoter details.)
+		msgPointer.Tx.Coins = common.NewCoins(msgPointer.Tx.Coins...)
+
+		affiliateAddress = msgPointer.AffiliateAddress
+		affiliateBasisPoints = msgPointer.AffiliateBasisPoints
+		affiliateTx = msgPointer.Tx
+		signer = msgPointer.Signer
+		addLiquidityTargetAsset = msgPointer.Asset
+
+		msgPointer.AffiliateAddress = common.NoAddress
+		msgPointer.AffiliateBasisPoints = cosmos.ZeroUint()
+	default:
+		// If something goes wrong, log and return the unsplit message as-is.
+		// To split an affiliate fee, the message type should be confirmed above to be one
+		// for which any native coins are in the Pool Module (AsgardName).
+		ctx.Logger().Error("unable to identify message type for splitting affiliate fee")
+		return
+	}
+
+	if affiliateAddress.IsEmpty() || affiliateBasisPoints.IsZero() {
+		// No fee to be sent, so return here.
+		return
+	}
+
+	// Save the original Coins slice for updating the original message later.
+	msgCoins := affiliateTx.Coins
+	mainAmt := msgCoins[0].Amount
+
+	// Copy (only) the first Coin, to not (yet) affect the original slice.
+	affiliateTx.Coins = common.NewCoins(affiliateTx.Coins[0])
+
+	affiliateTx.Coins[0].Amount = common.GetSafeShare(
+		affiliateBasisPoints,
+		cosmos.NewUint(10000),
+		mainAmt,
+	)
+	mainAmt = common.SafeSub(mainAmt, affiliateTx.Coins[0].Amount)
+
+	if affiliateTx.Coins[0].IsEmpty() {
+		// No fee to be sent, so end here without reducing the original message's Coins.
+		return
+	}
+
+	ctx.Logger().Info("splitting affiliate fee", "asset", affiliateTx.Coins[0].Asset, "amount", affiliateTx.Coins[0].Amount)
+
+	handler := NewInternalHandler(mgr)
+	var err error
+	switch {
+	case addLiquidityTargetAsset.IsVaultAsset() || !affiliateAddress.IsChain(common.THORChain):
+		// As the unsplit message is a Savers vault Add Liquidity
+		// or the affiliate address cannot receive native RUNE,
+		// do an add liquidity for the affiliate.
+		// If anything doesn't acceptably match,
+		// it should return an error downstream.
+
+		affiliateAssetAddress := common.NoAddress
+		affiliateRuneAddress := common.NoAddress
+		if affiliateAddress.IsChain(common.THORChain) {
+			affiliateRuneAddress = affiliateAddress
+		} else {
+			affiliateAssetAddress = affiliateAddress
+		}
+
+		if addLiquidityTargetAsset.IsEmpty() {
+			addLiquidityTargetAsset = affiliateTx.Coins[0].Asset
+		}
+
+		affiliateAssetAmount := cosmos.ZeroUint()
+		affiliateRuneAmount := cosmos.ZeroUint()
+		if affiliateTx.Coins[0].Asset.IsNativeRune() {
+			affiliateRuneAmount = affiliateTx.Coins[0].Amount
+		} else if addLiquidityTargetAsset == affiliateTx.Coins[0].Asset {
+			affiliateAssetAmount = affiliateTx.Coins[0].Amount
+			// Note that for a Savers add liquidity the target Asset is expected to not match the Coins,
+			// and both RuneAmount and AssetAmount are expected to be zero.
+		}
+
+		affiliateAddLiquidityMsg := NewMsgAddLiquidity(
+			affiliateTx,
+			addLiquidityTargetAsset,
+			affiliateAssetAmount,
+			affiliateRuneAmount,
+			affiliateRuneAddress,
+			affiliateAssetAddress,
+			common.NoAddress,
+			cosmos.ZeroUint(),
+			signer,
+		)
+		_, err = handler(ctx, affiliateAddLiquidityMsg)
+	case affiliateTx.Coins[0].Asset.IsNativeRune():
+		// Since the affiliate receives RUNE, transfer the amount directly.
+		var toAddress cosmos.AccAddress // To avoid 'ineffectual assignment to err' below.
+		toAddress, err = affiliateAddress.AccAddress()
+		if err != nil {
+			ctx.Logger().Error("fail to convert address into AccAddress", "msg", affiliateAddress, "error", err)
+			return
+		}
+		coin := affiliateTx.Coins[0]
+		err = mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
+	default:
+		// Swap to RUNE.
+		affiliateSwapMsg := NewMsgSwap(
+			affiliateTx,
+			common.RuneAsset(),
+			affiliateAddress,
+			cosmos.ZeroUint(),
+			common.NoAddress,
+			cosmos.ZeroUint(),
+			"",
+			"", nil,
+			MarketOrder,
+			signer,
+		)
+		_, err = handler(ctx, affiliateSwapMsg)
+	}
+
+	if err != nil {
+		// Since splitting the affiliate fee did not succeed, do not reduce the original message's Coins.
+		ctx.Logger().Error("splitting affiliate fee did not succeed", "error", err)
+		return
+	}
+	// Since the affiliate fee was successful, update the original message's Coins.
+	msgCoins[0].Amount = mainAmt
+}
