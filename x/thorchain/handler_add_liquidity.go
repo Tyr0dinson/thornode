@@ -238,6 +238,9 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 }
 
 func (h AddLiquidityHandler) handleV114(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+	// Do any affiliate fee splitting.
+	splitAffiliateFee(ctx, h.mgr, &msg)
+
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)

@@ -81,6 +81,10 @@ func (vm *SwapQueueV114) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	for i := int64(0); i < vm.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock); i++ {
 		pick := swaps[i]
+
+		// Do any affiliate fee splitting.
+		splitAffiliateFee(ctx, mgr, &pick.msg)
+
 		_, err := handler(ctx, &pick.msg)
 		if err != nil {
 			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", err)

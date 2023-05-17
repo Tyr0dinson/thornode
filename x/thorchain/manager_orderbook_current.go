@@ -374,6 +374,9 @@ func (ob *OrderBookV114) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			continue
 		}
 
+		// Do any affiliate fee splitting.
+		splitAffiliateFee(ctx, mgr, &msg)
+
 		// make the swap
 		_, err := handler(ctx, &msg)
 		if err != nil {

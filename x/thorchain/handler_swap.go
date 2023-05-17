@@ -212,6 +212,11 @@ func (h SwapHandler) handleV114(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
 	}
 
+	// MsgLoanOpen for example has Affiliate and AffiliateBasisPoints fields, but no Coins (no Tx),
+	// so check swap message affiliate information here too
+	// (not only as after the swap queue and order book).
+	splitAffiliateFee(ctx, h.mgr, &msg)
+
 	dexAgg := ""
 	dexAggTargetAsset := ""
 	if len(msg.Aggregator) > 0 {
