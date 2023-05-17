@@ -325,16 +325,7 @@ func (h WithdrawLiquidityHandler) swapV114(ctx cosmos.Context, msg MsgWithdrawLi
 	msg.Tx.Coins = common.NewCoins(coin)
 	swapMsg := NewMsgSwap(msg.Tx, targetAsset, addr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, msg.Signer)
 
-	// sanity check swap msg
-	handler := NewSwapHandler(h.mgr)
-	if err := handler.validate(ctx, *swapMsg); err != nil {
-		return err
-	}
-
-	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
-		ctx.Logger().Error("fail to add swap to queue", "error", err)
-		return err
-	}
-
-	return nil
+	handler := NewInternalHandler(h.mgr)
+	_, err := handler(ctx, swapMsg)
+	return err
 }
