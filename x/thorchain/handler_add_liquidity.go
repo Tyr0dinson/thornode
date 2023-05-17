@@ -220,6 +220,8 @@ func (h AddLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgAddLiquidit
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return h.handleV114(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
 		return h.handleV107(ctx, msg)
 	case version.GTE(semver.MustParse("1.98.0")):
@@ -235,10 +237,10 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 	}
 }
 
-func (h AddLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+func (h AddLiquidityHandler) handleV114(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
-		return h.swapV93(ctx, msg)
+		return h.swap(ctx, msg)
 	}
 
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
@@ -353,7 +355,19 @@ func (h AddLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgAddLiquidity)
 	return nil
 }
 
-func (h AddLiquidityHandler) swapV93(ctx cosmos.Context, msg MsgAddLiquidity) error {
+func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return h.swapV114(ctx, msg)
+	case version.GTE(semver.MustParse("1.93.0")):
+		return h.swapV93(ctx, msg)
+	default:
+		return nil
+	}
+}
+
+func (h AddLiquidityHandler) swapV114(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block
