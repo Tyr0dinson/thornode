@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	tmtypes "github.com/tendermint/tendermint/types"
 
@@ -908,6 +909,32 @@ func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 		h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 	}
 	return result, nil
+}
+
+func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.98.0")):
+		h.addSwapV98(ctx, msg)
+	default:
+		h.addSwapV65(ctx, msg)
+	}
+}
+
+func (h DepositHandler) addSwapV98(ctx cosmos.Context, msg MsgSwap) {
+	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
+		source := msg.Tx.Coins[0]
+		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
+		evt := NewEventLimitOrder(source, target, msg.Tx.ID)
+		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit limit order event", "error", err)
+		}
+		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
+			ctx.Logger().Error("fail to add swap to queue", "error", err)
+		}
+	} else {
+		h.addSwapV65(ctx, msg)
+	}
 }
 
 func (h DepositHandler) addSwapV65(ctx cosmos.Context, msg MsgSwap) {

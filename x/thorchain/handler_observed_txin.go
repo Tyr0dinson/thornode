@@ -9,7 +9,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
-	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -276,7 +275,9 @@ func (h ObservedTxInHandler) handleV114(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		// if its a swap, send it to our queue for processing later
 		if isSwap {
-			h.addSwap(ctx, *swapMsg)
+			if err := addSwap(ctx, h.mgr, *swapMsg); err != nil {
+				ctx.Logger().Error("failed to add swap", "error", err)
+			}
 			continue
 		}
 
@@ -303,35 +304,6 @@ func (h ObservedTxInHandler) handleV114(ctx cosmos.Context, msg MsgObservedTxIn)
 		}
 	}
 	return &cosmos.Result{}, nil
-}
-
-func (h ObservedTxInHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.98.0")):
-		h.addSwapV98(ctx, msg)
-	default:
-		h.addSwapV63(ctx, msg)
-	}
-}
-
-func (h ObservedTxInHandler) addSwapV98(ctx cosmos.Context, msg MsgSwap) {
-	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
-		// TODO: swap to synth if layer1 asset (follow on PR)
-		// TODO: create handler to modify/cancel an order (follow on PR)
-
-		source := msg.Tx.Coins[0]
-		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
-		evt := NewEventLimitOrder(source, target, msg.Tx.ID)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit swap event", "error", err)
-		}
-		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
-			ctx.Logger().Error("fail to add swap to queue", "error", err)
-		}
-	} else {
-		h.addSwapV63(ctx, msg)
-	}
 }
 
 func (h ObservedTxInHandler) isFromAsgard(ctx cosmos.Context, tx ObservedTx) (bool, error) {
