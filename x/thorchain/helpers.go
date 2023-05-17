@@ -1089,6 +1089,67 @@ func isActionsItemDangling(voter ObservedTxVoter, i int) bool {
 	return true
 }
 
+// addSwap adds a swap message either to the swap queue (index 0)
+// or to the order book, depending on the EnableOrderBooks key.
+func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return addSwapV114(ctx, mgr, msg)
+	default:
+		return errBadVersion
+	}
+}
+
+func addSwapV114(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	// sanity check swap msg
+	handler := NewSwapHandler(mgr)
+	if err := handler.validate(ctx, msg); err != nil {
+		return err
+	}
+
+	enableOrderBooks := mgr.Keeper().GetConfigInt64(ctx, constants.EnableOrderBooks)
+	if enableOrderBooks <= 0 {
+		return addToSwapQueueV114(ctx, mgr, msg)
+	}
+
+	// ensure TxID does NOT have a collision with another swap, this could
+	// happen if the user submits two identical loan requests in the same
+	// block
+	if ok := mgr.Keeper().HasOrderBookItem(ctx, msg.Tx.ID); ok {
+		return fmt.Errorf("txn hash conflict")
+	}
+
+	source := msg.Tx.Coins[0]
+	target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
+	evt := NewEventLimitOrder(source, target, msg.Tx.ID)
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit limit order event", "error", err)
+	}
+	if err := mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
+		ctx.Logger().Error("fail to add swap to order book", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func addToSwapQueueV114(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	// ensure TxID does NOT have a collision with another swap, this could
+	// happen if the user submits two identical loan requests in the same
+	// block
+	if ok := mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
+		return fmt.Errorf("txn hash conflict")
+	}
+
+	if err := mgr.Keeper().SetSwapQueueItem(ctx, msg, 0); err != nil {
+		ctx.Logger().Error("fail to add swap to queue", "error", err)
+		return err
+	}
+
+	return nil
+}
+
 // splitAffiliateFee handles a message's affiliate fee, receiving a &msg pointer as an argument.
 // Specifically:  it sends the fee, reduces the coin's amount, and removes the affiliate-related fields
 // (but leaves the memo unaltered).
