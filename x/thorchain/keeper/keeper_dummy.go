@@ -35,6 +35,10 @@ func (k KVStoreDummy) GetVersionWithCtx(ctx cosmos.Context) (semver.Version, boo
 	return semver.MustParse("9999999.0.0"), true
 }
 func (k KVStoreDummy) SetVersionWithCtx(ctx cosmos.Context, v semver.Version) {}
+func (k KVStoreDummy) GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64) {
+	return k.GetMinJoinVersion(ctx), 0
+}
+func (k KVStoreDummy) SetMinJoinLast(ctx cosmos.Context) {}
 
 func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, key string) string {
 	return fmt.Sprintf("%s/1/%s", prefix, key)
@@ -111,6 +115,8 @@ func (k KVStoreDummy) GetLastSignedHeight(_ cosmos.Context) (int64, error) {
 func (k KVStoreDummy) SetLastChainHeight(_ cosmos.Context, _ common.Chain, _ int64) error {
 	return kaboom
 }
+
+func (k KVStoreDummy) ForceSetLastChainHeight(_ cosmos.Context, _ common.Chain, _ int64) {}
 
 func (k KVStoreDummy) GetLastChainHeight(_ cosmos.Context, _ common.Chain) (int64, error) {
 	return 0, kaboom
@@ -502,6 +508,9 @@ func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int6
 
 func (k KVStoreDummy) SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error {
 	return kaboom
+}
+
+func (k KVStoreDummy) ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) {
 }
 
 func (k KVStoreDummy) GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error) {

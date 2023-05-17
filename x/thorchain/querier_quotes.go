@@ -503,7 +503,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return quoteErrorResponse(err)
 	}
 	res.OutboundDelayBlocks = outboundDelay
-	res.OutboundDelaySeconds = outboundDelay * toAsset.Chain.ApproximateBlockMilliseconds() / 1000
+	res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 
 	// send memo if the destination was provided
 	if sendMemo {
@@ -788,7 +788,7 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 		return quoteErrorResponse(err)
 	}
 	res.OutboundDelayBlocks = outboundDelay
-	res.OutboundDelaySeconds = outboundDelay * asset.GetLayer1Asset().Chain.ApproximateBlockMilliseconds() / 1000
+	res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 
 	// set info fields
 	chain := asset.GetLayer1Asset().Chain
@@ -987,7 +987,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 					return quoteErrorResponse(err)
 				}
 				res.OutboundDelayBlocks = outboundDelay
-				res.OutboundDelaySeconds = outboundDelay * targetAsset.Chain.ApproximateBlockMilliseconds() / 1000
+				res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 			}
 		case "outbound":
 			// track coin and to address
@@ -1132,11 +1132,12 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 
 	// invalidate unexpected parameters
 	allowed := map[string]bool{
-		assetParam:     true,
-		amountParam:    true,
-		loanAssetParam: true,
-		loanOwnerParam: true,
-		minOutParam:    true,
+		assetParam:       true,
+		amountParam:      true,
+		loanAssetParam:   true,
+		loanOwnerParam:   true,
+		minOutParam:      true,
+		fromAddressParam: true,
 	}
 	for p := range params {
 		if !allowed[p] {
@@ -1177,11 +1178,18 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 		return quoteErrorResponse(fmt.Errorf("bad loan owner: %w", err))
 	}
 
+	// parse from address
+	fromAddress, err := quoteParseAddress(ctx, mgr, params[fromAddressParam][0], asset.GetChain())
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("bad from address: %w", err))
+	}
+
 	// create message for simulation
 	msg := &types.MsgLoanRepayment{
 		Owner:           loanOwner,
 		CollateralAsset: loanAsset,
 		Coin:            common.NewCoin(asset, amount),
+		From:            fromAddress,
 		MinOut:          minOut,
 	}
 
@@ -1253,7 +1261,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 					return quoteErrorResponse(err)
 				}
 				res.OutboundDelayBlocks = outboundDelay
-				res.OutboundDelaySeconds = outboundDelay * loanAsset.Chain.ApproximateBlockMilliseconds() / 1000
+				res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 			}
 		case "outbound":
 			// track coin and to address

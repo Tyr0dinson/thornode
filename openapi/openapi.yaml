@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.109.2
+  version: 1.110.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -973,6 +973,12 @@ paths:
           type: integer
           format: int64
           example: 1000000
+      - name: from_address
+        in: query
+        description: the address that is paying off the loan
+        schema:
+          type: string
+          example: "btc1xxxxxxxxxxxxx"
       - name: loan_asset
         in: query
         description: the collateral asset of the loan
@@ -2383,7 +2389,12 @@ components:
         next:
           type: string
           example: "0.18.0"
-          description: next version
+          description: next version (minimum version for a node to become Active)
+        next_since_height:
+          type: integer
+          format: int64
+          example: 2000000
+          description: height at which the minimum joining version last changed
         querier:
           type: string
           example: "0.16.0"

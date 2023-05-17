@@ -150,7 +150,7 @@ func NewCosmosClient(
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
 	}
-	c.storage, err = blockscanner.NewBlockScannerStorage(path)
+	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
@@ -317,7 +317,7 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx []byte, checkpoint []byte, err error) {
+func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, err error) {
 	defer func() {
 		if err != nil {
 			var keysignError tss.KeysignError
