@@ -198,7 +198,17 @@ func (h DepositHandler) handleV114(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 		msg, ok := m.(*MsgSwap)
 		if ok {
 			if err := addSwap(ctx, h.mgr, *msg); err != nil {
-				ctx.Logger().Error("failed to add swap", "error", err)
+				code := uint32(1)
+				var e se.Error
+				if errors.As(err, &e) {
+					code = e.ABCICode()
+				}
+				if txIn.Tx.Coins.IsEmpty() {
+					return &cosmos.Result{}, nil
+				}
+				if err := refundTx(ctx, txIn, h.mgr, code, err.Error(), targetModule); err != nil {
+					return nil, fmt.Errorf("fail to refund tx: %w", err)
+				}
 			}
 		}
 		return &cosmos.Result{}, nil

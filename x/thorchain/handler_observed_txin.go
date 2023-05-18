@@ -276,7 +276,9 @@ func (h ObservedTxInHandler) handleV114(ctx cosmos.Context, msg MsgObservedTxIn)
 		// if its a swap, send it to our queue for processing later
 		if isSwap {
 			if err := addSwap(ctx, h.mgr, *swapMsg); err != nil {
-				ctx.Logger().Error("failed to add swap", "error", err)
+				if err := refundTx(ctx, tx, h.mgr, CodeTxFail, err.Error(), ""); err != nil {
+					ctx.Logger().Error("fail to refund", "error", err)
+				}
 			}
 			continue
 		}
