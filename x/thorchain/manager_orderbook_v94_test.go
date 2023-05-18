@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -413,6 +414,10 @@ func (s OrderBookV94Suite) TestEndBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	book := newOrderBookV1(mgr.Keeper())
+
+	version := semver.MustParse("1.94.0")
+	mgr.currentVersion = version
+	mgr.Keeper().SetVersionWithCtx(ctx, version)
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
