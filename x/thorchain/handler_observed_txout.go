@@ -371,8 +371,8 @@ func isOutboundFakeGasTX(tx ObservedTx) bool {
 }
 
 func (h ObservedTxOutHandler) slashV128(ctx cosmos.Context, tx ObservedTx, reason string) error {
-	toSlash := make(common.Coins, len(tx.Tx.Coins))
-	copy(toSlash, tx.Tx.Coins)
+	// NewCoins so that Adds_deprecated does not change the voter's coins.
+	toSlash := common.NewCoins(tx.Tx.Coins...)
 	toSlash = toSlash.Adds_deprecated(tx.Tx.Gas.ToCoins())
 
 	if reason != "" {
