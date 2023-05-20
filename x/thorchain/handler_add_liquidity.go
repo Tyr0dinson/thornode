@@ -295,64 +295,17 @@ func (h AddLiquidityHandler) handleV114(ctx cosmos.Context, msg MsgAddLiquidity)
 		}
 	}
 
-	if msg.AffiliateBasisPoints.IsZero() {
-		return h.addLiquidity(
-			ctx,
-			msg.Asset,
-			msg.RuneAmount,
-			msg.AssetAmount,
-			msg.RuneAddress,
-			msg.AssetAddress,
-			msg.Tx.ID,
-			stage,
-			h.mgr.GetConstants())
-	}
-
-	// add liquidity has an affiliate fee, add liquidity for both the user and their affiliate
-	affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.RuneAmount)
-	affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.AssetAmount)
-	userRune := common.SafeSub(msg.RuneAmount, affiliateRune)
-	userAsset := common.SafeSub(msg.AssetAmount, affiliateAsset)
-
-	err = h.addLiquidity(
+	return h.addLiquidity(
 		ctx,
 		msg.Asset,
-		userRune,
-		userAsset,
+		msg.RuneAmount,
+		msg.AssetAmount,
 		msg.RuneAddress,
 		msg.AssetAddress,
 		msg.Tx.ID,
 		stage,
 		h.mgr.GetConstants(),
 	)
-	if err != nil {
-		return err
-	}
-
-	affiliateRuneAddress := common.NoAddress
-	affiliateAssetAddress := common.NoAddress
-	if msg.AffiliateAddress.IsChain(common.THORChain) {
-		affiliateRuneAddress = msg.AffiliateAddress
-	} else {
-		affiliateAssetAddress = msg.AffiliateAddress
-	}
-
-	err = h.addLiquidity(
-		ctx,
-		msg.Asset,
-		affiliateRune,
-		affiliateAsset,
-		affiliateRuneAddress,
-		affiliateAssetAddress,
-		msg.Tx.ID,
-		false,
-		h.mgr.GetConstants(),
-	)
-	if err != nil {
-		ctx.Logger().Error("fail to add liquidity for affiliate", "address", msg.AffiliateAddress, "error", err)
-		return err
-	}
-	return nil
 }
 
 func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error {

@@ -270,6 +270,15 @@ func (h SwapHandler) handleV114(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			return nil, err
 		}
+
+		// Clear any affiliate information, as the affiliate split should have already taken place.
+		msgAddLiquidity, ok := msg.(*MsgAddLiquidity)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast add liquidity message")
+		}
+		msgAddLiquidity.AffiliateAddress = common.NoAddress
+		msgAddLiquidity.AffiliateBasisPoints = cosmos.ZeroUint()
+
 		handler := NewAddLiquidityHandler(h.mgr)
 		_, err = handler.Run(ctx, msg)
 		if err != nil {
@@ -293,6 +302,15 @@ func (h SwapHandler) handleV114(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			return nil, err
 		}
+
+		// Clear any affiliate information, as the affiliate split should have already taken place.
+		msgLoanOpen, ok := msg.(*MsgLoanOpen)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast loan open message")
+		}
+		msgLoanOpen.AffiliateAddress = common.NoAddress
+		msgLoanOpen.AffiliateBasisPoints = cosmos.ZeroUint()
+
 		openLoanHandler := NewLoanOpenHandler(h.mgr)
 
 		_, err = openLoanHandler.Run(ctx, msg) // fire and forget
