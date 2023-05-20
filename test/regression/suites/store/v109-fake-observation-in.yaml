@@ -158,4 +158,3 @@ description: user should now have a savers position
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/tb1qehshltuxerv4zt4ruzxufd8m6r5xll7rdwa2rq
 asserts:
   - .|.asset_deposit_value == "39992352"
----

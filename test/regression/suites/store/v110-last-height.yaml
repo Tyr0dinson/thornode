@@ -22,8 +22,8 @@ description: chain should have updated last block height
 endpoint: http://localhost:1317/thorchain/lastblock
 asserts:
   - .[]|select(.chain=="BTC")|.last_observed_in==788640
----
 # NOTE: not presently a way to test this since these are not stored in genesis.
+# ---
 # type: check
 # description: validator should have updated observe height
 # endpoint: http://localhost:1317/thorchain/nodes
