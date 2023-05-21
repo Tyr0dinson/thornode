@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -1318,6 +1320,156 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 		ctx.Logger().Error("splitting affiliate fee did not succeed", "error", err)
 		return
 	}
-	// Since the affiliate fee was successful, update the original message's Coins.
+	// Since the affiliate fee split was successful, update the original message's Coins.
 	msgCoins[0].Amount = mainAmt
+
+	// Since the affiliate fee split was successful, check whether to do a PreferredAsset swap from the affiliate Owner.
+	if err := triggerPreferredAssetSwapV114(ctx, mgr, affiliateAddress, affiliateTx.ID, affiliateTx.Memo); err != nil {
+		// Do not cancel the affiliate fee if a PreferredAsset swap fails, just log the error.
+		ctx.Logger().Error("fail to swap to PreferredAsset from affiliate", "msg", affiliateAddress, "error", err)
+	}
+}
+
+func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, memo string) error {
+	// This shouldn't happen, but if there's no Keeper, no THORName interpretation can be done.
+	if mgr.Keeper() == nil {
+		return fmt.Errorf("the manager's keeper is nil")
+	}
+
+	// Get the Affiliate THORName from the unparsed memo;
+	// note that parseBase is unexportable.
+	var name string
+	parts := strings.Split(memo, ":")
+	txType, err := mem.StringToTxType(mem.GetPart(parts, 0))
+	if err != nil {
+		return err
+	}
+	// Switch according to the Affiliate field in the memo
+	// (note that reaching here is dependent on
+	//	messages being accepted by splitAffiliateFee).
+	switch txType {
+	case TxSwap, TxLimitOrder:
+		name = mem.GetPart(parts, 4)
+	case TxAdd:
+		name = mem.GetPart(parts, 3)
+	default:
+		return fmt.Errorf("the memo's base (%s) is not for a memo with an Affiliate field", mem.GetPart(parts, 0))
+	}
+
+	if _, err := common.NewAddress(name); err == nil {
+		// If the Affiliate is an address, it wouldn't be interpreted as a THORName
+		// for the affiliate fee, so it shouldn't be used for a PreferredAsset swap.
+		return nil
+	}
+
+	if !mgr.Keeper().THORNameExists(ctx, name) {
+		return nil
+	}
+	tn, err := mgr.Keeper().GetTHORName(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	// No PreferredAsset swap if PreferredAsset isn't set or is native RUNE,
+	// or if SwapRuneThreshold isn't set.
+	if tn.PreferredAsset.IsEmpty() || tn.PreferredAsset.IsNativeRune() || tn.SwapRuneThreshold.IsZero() {
+		return nil
+	}
+
+	// Only trigger a PreferredAsset swap of RUNE from a THORChain address when that THORChain address is the affiliate address specified.
+	thorAlias := tn.GetAlias(common.THORChain)
+	if thorAlias != affiliateAddress {
+		return fmt.Errorf("affiliate address (%s) doesn't match THORChain alias (%s)", affiliateAddress, thorAlias)
+	}
+
+	destination := tn.GetAlias(tn.PreferredAsset.GetChain())
+	// No PreferredAsset swap if there isn't an alias for the PreferredAsset's chain.
+	// Note that THORChain (synth PreferredAsset) is possible,
+	// but that PreferredAsset swaps can be refunded if the swap doesn't succeed,
+	// for instance being at MaxSynthPerPoolDepth.
+	if destination.IsEmpty() {
+		return nil
+	}
+
+	// The swap is triggered by a fee to the THORChain Alias address
+	// and its input from the Owner address,
+	// so should only take place when both are the same.
+	thorAliasAccAddr, err := thorAlias.AccAddress()
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(thorAliasAccAddr, tn.Owner) {
+		return nil
+	}
+	// Since the PreferredAsset swap's fromAddress (type common.Address) must be from the Owner,
+	// and the thorAlias has just be confirmed to refer to the Owner (type cosmos.AccAddress),
+	// the thorAlias can be the fromAddress in the later tx.
+	fromAddress := thorAlias
+
+	// Get the RUNE balance of the Owner.
+	balanceCoins := mgr.Keeper().GetBalance(ctx, tn.Owner)
+	amt := cosmos.NewUint(balanceCoins.AmountOf(common.RuneNative.Native()).Uint64())
+
+	// As with a node's first bond, ensure the Owner
+	// retains 1 RUNE for transactions' network fees.
+	amt = common.SafeSub(amt, cosmos.NewUint(common.One))
+
+	// Check the threshold.
+	if amt.LT(tn.SwapRuneThreshold) {
+		return nil
+	}
+
+	networkMemo := "THOR-PreferredAsset-" + name
+	// 'THOR' to mark as a network memo,
+	// 'PreferredAsset' to indicate the type,
+	// and THORName for easy analytics
+	// without having to separately look up each TxID's memo.
+
+	asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	if err != nil {
+		return err
+	}
+
+	coin := common.NewCoin(common.RuneAsset(), amt)
+
+	tx := common.NewTx(
+		txID,
+		fromAddress,
+		asgardAddress, // swap inbound 'ToAddress', distinct from the destination
+		common.NewCoins(coin),
+		common.Gas{}, // Gas can be length zero but gas cannot have amount zero, else failing MsgSwap's ValidateBasic.
+		networkMemo,
+	)
+
+	swapMsg := NewMsgSwap(
+		tx,
+		tn.PreferredAsset, // Target Asset
+		destination,
+		cosmos.ZeroUint(), // TradeTarget
+		common.NoAddress,  // Affiliate
+		cosmos.ZeroUint(), // AffiliateBasisPoints
+		"",                // Aggregator
+		"",                // AggregatorTargetAddress
+		nil,               // AggregatorTargetLimit
+		MarketOrder,       // OrderType
+		tn.Owner,          // Signer
+	)
+
+	// Transfer the RUNE to the Pool Module for the swap,
+	// but only have done so (commit to the main Context) if there was no swap error.
+	cacheCtx, commit := ctx.CacheContext()
+	if err := mgr.Keeper().SendFromAccountToModule(cacheCtx, tn.Owner, AsgardName, common.NewCoins(coin)); err != nil {
+		return err
+	}
+	handler := NewSwapHandler(mgr)
+	_, err = handler.Run(cacheCtx, swapMsg)
+	if err != nil {
+		// Return without committing the cached RUNE transfer.
+		return err
+	}
+	// Since there was no handler error, commit the state changes.
+	commit()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
+
+	return nil
 }
