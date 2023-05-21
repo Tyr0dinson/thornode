@@ -320,7 +320,8 @@
           "expire_block_height": "5256011",
           "name": "xx",
           "owner": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
-          "preferred_asset": "."
+          "preferred_asset": ".",
+          "swap_rune_threshold": "0"
         }
       ],
       "bond_providers": [
