@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -132,12 +133,20 @@ func (h ManageTHORNameHandler) handleV114(ctx cosmos.Context, msg MsgManageTHORN
 		return nil, fmt.Errorf("THORNames are currently disabled")
 	}
 
-	tn := THORName{Name: msg.Name, Owner: msg.Signer, PreferredAsset: common.EmptyAsset}
+	tn := THORName{Name: msg.Name, Owner: msg.Signer, PreferredAsset: common.EmptyAsset, SwapRuneThreshold: cosmos.ZeroUint()}
+	// If a THORName has already expired, it's treated as not existing
+	// and pre-expiry information isn't used.
 	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name)
 	if exists {
 		tn, err = h.mgr.Keeper().GetTHORName(ctx, msg.Name)
 		if err != nil {
 			return nil, err
+		}
+
+		// This function will refer to SwapRuneThreshold,
+		// and THORNames predating it could have an empty Uint rather than cosmos.ZeroUint().
+		if tn.SwapRuneThreshold == (cosmos.Uint{}) {
+			tn.SwapRuneThreshold = cosmos.ZeroUint()
 		}
 	}
 
@@ -175,14 +184,34 @@ func (h ManageTHORNameHandler) handleV114(ctx cosmos.Context, msg MsgManageTHORN
 	}
 
 	// check if we need to update the preferred asset
+	// Note:  If PreferredAsset and SwapRuneThreshold cannot be manually cleared (being optional fields),
+	// perhaps set PreferredAsset to THOR.RUNE to block PreferredAsset swaps.
 	if !tn.PreferredAsset.Equals(msg.PreferredAsset) && !msg.PreferredAsset.IsEmpty() {
 		tn.PreferredAsset = msg.PreferredAsset
 	}
 
-	tn.SetAlias(msg.Chain, msg.Address) // update address
-	if !msg.Owner.Empty() {
-		tn.Owner = msg.Owner // update owner
+	// check if we need to update SwapRuneThrehsold
+	// Note:  If PreferredAsset and SwapRuneThreshold cannot be manually cleared (being optional fields),
+	// perhaps set SwapRuneThrehsold to an excessively high number to block PreferredAsset swaps.
+	if !tn.SwapRuneThreshold.Equal(msg.SwapRuneThreshold) && !msg.SwapRuneThreshold.IsZero() {
+		tn.SwapRuneThreshold = msg.SwapRuneThreshold
 	}
+
+	tn.SetAlias(msg.Chain, msg.Address) // update address
+
+	if !msg.Owner.Empty() {
+		// Check whether the Owner-setting is an actual change or is redundant.
+		if !bytes.Equal(msg.Owner, tn.Owner) {
+			// PreferredAsset and SwapRuneThreshold are used for automated affiliate fee swaps from the Owner address,
+			// so clear them when the Owner changes
+			// (require them to only be set by the new Owner).
+			tn.PreferredAsset = common.EmptyAsset
+			tn.SwapRuneThreshold = cosmos.ZeroUint()
+
+			tn.Owner = msg.Owner // update owner
+		}
+	}
+
 	h.mgr.Keeper().SetTHORName(ctx, tn)
 
 	evt := NewEventTHORName(tn.Name, msg.Chain, msg.Address, registrationFeePaid, fundPaid, tn.ExpireBlockHeight, tn.Owner)
