@@ -226,6 +226,17 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		return nil, ErrInternal(err, "fail to fetch THORName")
 	}
 
+	// When PreferredAsset or SwapRuneThreshold are empty, don't display them.
+	var preferredAssetStr string
+	if !name.PreferredAsset.Equals(common.EmptyAsset) {
+		preferredAssetStr = name.PreferredAsset.String()
+	}
+	var swapRuneThresholdStr string
+	// THORNames predating SwapRuneThreshold could have an empty Uint rather than cosmos.ZeroUint().
+	if name.SwapRuneThreshold != (cosmos.Uint{}) && !name.SwapRuneThreshold.IsZero() {
+		swapRuneThresholdStr = name.SwapRuneThreshold.String()
+	}
+
 	// convert to openapi types
 	aliases := []openapi.ThornameAlias{}
 	for _, alias := range name.Aliases {
@@ -238,7 +249,8 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		Name:              wrapString(name.Name),
 		ExpireBlockHeight: wrapInt64(name.ExpireBlockHeight),
 		Owner:             wrapString(name.Owner.String()),
-		PreferredAsset:    name.PreferredAsset.String(),
+		PreferredAsset:    wrapString(preferredAssetStr),
+		SwapRuneThreshold: wrapString(swapRuneThresholdStr),
 		Aliases:           aliases,
 	}
 

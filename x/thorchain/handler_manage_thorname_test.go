@@ -32,7 +32,7 @@ func (s *HandlerManageTHORNameSuite) TestValidator(c *C) {
 	mgr.Keeper().SetTHORName(ctx, name)
 
 	// happy path
-	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.THORChain, addr, coin, 0, common.BNBAsset, acc, acc)
+	msg := NewMsgManageTHORName("I-am_the_99th_walrus+", common.THORChain, addr, coin, 0, common.BNBAsset, acc, cosmos.ZeroUint(), acc)
 	c.Assert(handler.validate(ctx, *msg), IsNil)
 
 	// fail: address is wrong chain
@@ -91,7 +91,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	FundAccount(c, ctx, mgr.Keeper(), acc, 10*common.One)
 
 	// happy path, register new name
-	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.RuneAsset(), acc, acc)
+	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.RuneAsset(), acc, cosmos.ZeroUint(), acc)
 	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err := mgr.Keeper().GetTHORName(ctx, tnName)
@@ -101,7 +101,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, set alt chain address
 	bnbAddr := GetRandomBNBAddress()
-	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, cosmos.ZeroUint(), acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
@@ -110,7 +110,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 
 	// happy path, update alt chain address
 	bnbAddr = GetRandomBNBAddress()
-	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.BNBChain, bnbAddr, coin, 0, common.RuneAsset(), acc, cosmos.ZeroUint(), acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
@@ -118,7 +118,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Check(name.GetAlias(common.BNBChain).Equals(bnbAddr), Equals, true)
 
 	// happy path, release thorname back into the wild
-	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, common.RuneAsset(), acc, acc)
+	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, common.RuneAsset(), acc, cosmos.ZeroUint(), acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
