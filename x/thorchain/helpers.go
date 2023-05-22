@@ -1315,3 +1315,22 @@ func isActionsItemDangling(voter ObservedTxVoter, i int) bool {
 	}
 	return true
 }
+
+func runeFromLendingToPoolModule(ctx cosmos.Context, keeper keeper.Keeper, amt cosmos.Uint) error {
+	// Check the Lending Module balance; supplement from the Reserve Module if not enough.
+	runeCoin := common.NewCoin(common.RuneAsset(), amt)
+	deficit := common.SafeSub(runeCoin.Amount, keeper.GetBalanceOfModule(ctx, LendingName, runeCoin.Asset.Native()))
+	if !deficit.IsZero() {
+		deficitCoin := common.NewCoin(runeCoin.Asset, deficit)
+		if err := keeper.SendFromModuleToModule(ctx, ReserveName, LendingName, common.NewCoins(deficitCoin)); err != nil {
+			ctx.Logger().Error("fail to move coins from Reserve Module to Lending Module during swap", "error", err)
+			return err
+		}
+	}
+	if err := keeper.SendFromModuleToModule(ctx, LendingName, AsgardName, common.NewCoins(runeCoin)); err != nil {
+		ctx.Logger().Error("fail to move coins from Lending Module to Pool Module during swap", "error", err)
+		return err
+	}
+
+	return nil
+}

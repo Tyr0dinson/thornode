@@ -92,18 +92,7 @@ func (s *SwapperV111) Swap(ctx cosmos.Context,
 		swapEvt.OutTxs = common.NewTx(common.BlankTxID, tx.FromAddress, tx.ToAddress, tx.Coins, tx.Gas, tx.Memo)
 		swapEvents = append(swapEvents, swapEvt)
 		if source.IsDerivedAsset() {
-			// Check the Lending Module balance; supplement from the Reserve Module if not enough.
-			runeCoin := common.NewCoin(common.RuneAsset(), amt)
-			deficit := common.SafeSub(runeCoin.Amount, mgr.Keeper().GetBalanceOfModule(ctx, LendingName, runeCoin.Asset.Native()))
-			if !deficit.IsZero() {
-				deficitCoin := common.NewCoin(runeCoin.Asset, deficit)
-				if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, LendingName, common.NewCoins(deficitCoin)); err != nil {
-					ctx.Logger().Error("fail to move coins from Reserve Module to Lending Module during swap", "error", err)
-					return cosmos.ZeroUint(), swapEvents, err
-				}
-			}
-			if err := mgr.Keeper().SendFromModuleToModule(ctx, LendingName, AsgardName, common.NewCoins(runeCoin)); err != nil {
-				ctx.Logger().Error("fail to move coins from Lending Module to Pool Module during swap", "error", err)
+			if err := runeFromLendingToPoolModule(ctx, mgr.Keeper(), amt); err != nil {
 				return cosmos.ZeroUint(), swapEvents, err
 			}
 		}
@@ -124,18 +113,7 @@ func (s *SwapperV111) Swap(ctx cosmos.Context,
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
 		}
 		if source.IsDerivedAsset() {
-			// Check the Lending Module balance; supplement from the Reserve Module if not enough.
-			runeCoin := common.NewCoin(common.RuneAsset(), assetAmount)
-			deficit := common.SafeSub(runeCoin.Amount, mgr.Keeper().GetBalanceOfModule(ctx, LendingName, runeCoin.Asset.Native()))
-			if !deficit.IsZero() {
-				deficitCoin := common.NewCoin(runeCoin.Asset, deficit)
-				if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, LendingName, common.NewCoins(deficitCoin)); err != nil {
-					ctx.Logger().Error("fail to move coins from Reserve Module to Lending Module during swap", "error", err)
-					return cosmos.ZeroUint(), swapEvents, err
-				}
-			}
-			if err := mgr.Keeper().SendFromModuleToModule(ctx, LendingName, AsgardName, common.NewCoins(runeCoin)); err != nil {
-				ctx.Logger().Error("fail to move coins from Lending Module to Pool Module during swap", "error", err)
+			if err := runeFromLendingToPoolModule(ctx, mgr.Keeper(), assetAmount); err != nil {
 				return cosmos.ZeroUint(), swapEvents, err
 			}
 		}
