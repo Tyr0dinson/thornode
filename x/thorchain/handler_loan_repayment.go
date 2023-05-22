@@ -105,6 +105,8 @@ func (h LoanRepaymentHandler) validateV110(ctx cosmos.Context, msg MsgLoanRepaym
 func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.111.0")):
+		return h.handleV111(ctx, msg)
 	case version.GTE(semver.MustParse("1.110.0")):
 		return h.handleV110(ctx, msg)
 	case version.GTE(semver.MustParse("1.108.0")):
@@ -116,7 +118,7 @@ func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) e
 	}
 }
 
-func (h LoanRepaymentHandler) handleV110(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) handleV111(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// inject txid into the context if unset
 	var err error
 	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
@@ -127,13 +129,13 @@ func (h LoanRepaymentHandler) handleV110(ctx cosmos.Context, msg MsgLoanRepaymen
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.Coin.Asset.Equals(common.TOR) {
-		return h.repayV110(ctx, msg)
+		return h.repayV111(ctx, msg)
 	} else {
 		return h.swapV110(ctx, msg)
 	}
 }
 
-func (h LoanRepaymentHandler) repayV110(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) repayV111(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
@@ -164,12 +166,14 @@ func (h LoanRepaymentHandler) repayV110(ctx cosmos.Context, msg MsgLoanRepayment
 	if err := h.mgr.Keeper().SendFromModuleToModule(ctx, LendingName, ModuleName, common.NewCoins(msg.Coin)); err != nil {
 		ctx.Logger().Error("fail to move coins during loan repayment", "error", err)
 		return err
-	} else {
-		err := h.mgr.Keeper().BurnFromModule(ctx, ModuleName, msg.Coin)
-		if err != nil {
-			ctx.Logger().Error("fail to burn coins during loan repayment", "error", err)
-			return err
-		}
+	}
+	if err := h.mgr.Keeper().BurnFromModule(ctx, ModuleName, msg.Coin); err != nil {
+		ctx.Logger().Error("fail to burn coins during loan repayment", "error", err)
+		return err
+	}
+	burnEvt := NewEventMintBurn(BurnSupplyType, msg.Coin.Asset.Native(), msg.Coin.Amount, "loan_repayment")
+	if err := h.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+		ctx.Logger().Error("fail to emit burn event", "error", err)
 	}
 
 	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
