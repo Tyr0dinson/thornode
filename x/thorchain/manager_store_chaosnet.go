@@ -373,4 +373,20 @@ func migrateStoreV111(ctx cosmos.Context, mgr *Mgrs) {
 		// set observation height back
 		mgr.Keeper().ForceSetLastObserveHeight(ctx, common.BTCChain, na, 788640)
 	}
+
+	// Using part of the RUNE total supply gap opened up by the KillSwitch,
+	// prime the Lending Module with 10 million RUNE.
+	mintCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(10_000_000_00000000))
+	if err := mgr.Keeper().MintToModule(ctx, ModuleName, mintCoin); err != nil {
+		ctx.Logger().Error("fail to mint coin during store migration", "error", err)
+		return
+	}
+	if err := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, LendingName, common.NewCoins(mintCoin)); err != nil {
+		ctx.Logger().Error("fail to transfer funds to lending module in store migration", "error", err)
+		return
+	}
+	mintEvt := NewEventMintBurn(MintSupplyType, mintCoin.Asset.Native(), mintCoin.Amount, "store_migration")
+	if err := mgr.EventMgr().EmitEvent(ctx, mintEvt); err != nil {
+		ctx.Logger().Error("fail to emit mint event", "error", err)
+	}
 }
