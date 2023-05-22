@@ -196,6 +196,10 @@ func (s *SwapperV111) Swap(ctx cosmos.Context,
 }
 
 func (s *SwapperV111) burnCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
+	// If Coins were length 0, SendFromModuleToModule would emit a null-amount transfer event.
+	if len(coins) == 0 {
+		return nil
+	}
 	err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, coins)
 	if err != nil {
 		ctx.Logger().Error("fail to move coins during swap", "error", err)
@@ -215,6 +219,7 @@ func (s *SwapperV111) burnCoins(ctx cosmos.Context, mgr Manager, coins common.Co
 }
 
 func (s *SwapperV111) mintCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
+	// If Coins were length 0, SendFromModuleToModule would emit a null-amount transfer event.
 	if len(coins) == 0 {
 		return nil
 	}
