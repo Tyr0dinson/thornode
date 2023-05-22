@@ -136,6 +136,8 @@ func (h LoanOpenHandler) validateV108(ctx cosmos.Context, msg MsgLoanOpen) error
 func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.111.0")):
+		return h.handleV111(ctx, msg)
 	case version.GTE(semver.MustParse("1.108.0")):
 		return h.handleV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
@@ -145,7 +147,7 @@ func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) handleV108(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) handleV111(ctx cosmos.Context, msg MsgLoanOpen) error {
 	// inject txid into the context if unset
 	var err error
 	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
@@ -156,13 +158,13 @@ func (h LoanOpenHandler) handleV108(ctx cosmos.Context, msg MsgLoanOpen) error {
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.CollateralAsset.IsDerivedAsset() {
-		return h.openLoanV108(ctx, msg)
+		return h.openLoanV111(ctx, msg)
 	} else {
 		return h.swapV108(ctx, msg)
 	}
 }
 
-func (h LoanOpenHandler) openLoanV108(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) openLoanV111(ctx cosmos.Context, msg MsgLoanOpen) error {
 	var err error
 	zero := cosmos.ZeroUint()
 
