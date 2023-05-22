@@ -37,7 +37,8 @@ func MsgSendValidateV111(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 	if msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(AsgardName)) ||
 		msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(BondName)) ||
 		msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(ReserveName)) ||
-		msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(ModuleName)) {
+		msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(ModuleName)) ||
+		msg.ToAddress.Equals(mgr.Keeper().GetModuleAccAddress(LendingName)) {
 		return errors.New("cannot use MsgSend for Module transactions, use MsgDeposit instead")
 	}
 
