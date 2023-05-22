@@ -63,7 +63,7 @@ func NewConstantValue() *ConstantVals {
 			MaxCR:                               60_000,             // Maximum collateralization ratio (basis pts)
 			PauseLoans:                          1,                  // pause opening new loans and repaying loans
 			LoanRepaymentMaturity:               0,                  // number of blocks before loan has reached maturity and can be repaid
-			LendingLever:                        3333,               // This controls (in basis points) how much lending is allowed relative to rune supply
+			LendingLever:                        3333,               // This controls (in basis points) how much lending is allowed relative to Lending Module rune balance
 			MinTxOutVolumeThreshold:             1000_00000000,      // total txout volume (in rune) a block needs to have to slow outbound transactions
 			TxOutDelayRate:                      25_00000000,        // outbound rune per block rate for scheduled transactions (excluding native assets)
 			TxOutDelayMax:                       17280,              // max number of blocks a transaction can be delayed

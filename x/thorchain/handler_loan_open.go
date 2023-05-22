@@ -73,14 +73,10 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("loans are currently paused")
 	}
 
-	// Circuit Breaker: check if we're hit the max supply
-	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
-	maxAmt := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
-	if maxAmt <= 0 {
-		return fmt.Errorf("no max supply set")
-	}
-	if supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
-		return fmt.Errorf("loans are currently paused, due to rune supply cap (%d/%d)", supply.Uint64(), maxAmt)
+	// Circuit Breaker: check if we've run out of Lending Module RUNE balance
+	runeBalance := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, LendingName)
+	if runeBalance.IsZero() {
+		return fmt.Errorf("loans are currently paused, due to empty Lending Module rune balance")
 	}
 
 	// ensure collateral pool exists
@@ -119,8 +115,8 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("no liquidity, lending unavailable")
 	}
 	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
-	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
-	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBalance) // calculate how much rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
 		return fmt.Errorf("no availability (0), lending unavailable")
 	}
@@ -210,13 +206,8 @@ func (h LoanOpenHandler) openLoanV111(ctx cosmos.Context, msg MsgLoanOpen) error
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
-	currentRuneSupply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
-	maxRuneSupply := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
-	if maxRuneSupply <= 0 {
-		return fmt.Errorf("no max supply set")
-	}
-	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
-	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	runeBalance := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, LendingName)
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBalance) // calculate how much rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
 		return fmt.Errorf("no availability (0), lending unavailable")
 	}
