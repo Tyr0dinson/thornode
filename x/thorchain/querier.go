@@ -228,11 +228,11 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 
 	// When PreferredAsset or SwapRuneThreshold are empty, don't display them.
 	var preferredAssetStr string
-	if !name.PreferredAsset.Equals(common.EmptyAsset) {
+	if !name.PreferredAsset.IsEmpty() {
 		preferredAssetStr = name.PreferredAsset.String()
 	}
 	var swapRuneThresholdStr string
-	// THORNames predating SwapRuneThreshold could have an empty Uint rather than cosmos.ZeroUint().
+	// THORNames predating SwapRuneThreshold could have an empty cosmos.Uint rather than cosmos.ZeroUint().
 	if name.SwapRuneThreshold != (cosmos.Uint{}) && !name.SwapRuneThreshold.IsZero() {
 		swapRuneThresholdStr = name.SwapRuneThreshold.String()
 	}
