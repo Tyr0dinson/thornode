@@ -2,6 +2,26 @@
 ---
 {{ template "btc-eth-usdc-pool-state.yaml" }}
 ---
+type: state
+genesis:
+  app_state:
+    auth:
+      accounts:
+        - "@type": /cosmos.auth.v1beta1.ModuleAccount
+          base_account:
+            account_number: "9"
+            address: {{ addr_module_lending }}
+            pub_key: ~
+            sequence: "0"
+          name: lending
+          permissions: []
+    bank:
+      balances:
+        - address: {{ addr_module_lending }}
+          coins:
+            - denom: rune
+              amount: "15_000_000_00000000"
+---
 type: create-blocks
 count: 1
 ---
@@ -197,7 +217,8 @@ type: check
 description: no derived btc should exist
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-   - .supply[]|select(.denom == "rune")|.amount|tonumber == 50300000000000
+   - '[.supply[]|select(.denom == "thor.btc")]|length == 0'
+   - .supply[]|select(.denom == "rune")|.amount|tonumber == 1550300000000000
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -246,10 +267,10 @@ asserts:
   - .balances[]|select(.denom == "thor.btc")|.amount|tonumber == 495049
 ---
 type: check
-description: check rune supply decreases
+description: check rune supply is unchanged
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-   - .supply[]|select(.denom == "rune")|.amount|tonumber == 50299990337963
+   - .supply[]|select(.denom == "rune")|.amount|tonumber == 1550300000000000
 ---
 type: check
 description: fox account should not receive rune until next block
@@ -259,10 +280,27 @@ asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500483351059
 ---
 type: check
-description: should emit 4 mint_burn events
+description: should emit 2 mint_burn events (THOR.BTC mint, TOR burn, see !2914 for the missing TOR mint), and transfer rune from Pool Module to Lending Module and (some) back
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
-  - .|[.end[]|select(.type == "mint_burn")]|length == 4
+  - .|[.end[]|select(.type == "mint_burn")]|length == 2
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.supply == "mint"
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.amount|tonumber == 495049
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.denom == "thor.btc"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.supply == "burn"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.amount|tonumber == 490110000
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.denom == "tor"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))|.amount == "495013096rune"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))|.amount == "485351059rune"
+# A net Lending Module RUNE balance increase of 9662037rune.
+---
+type: check
+description: the Lending Module should have 9662037 more rune
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount|tonumber == 1500000009662037
 ---
 ########################################################################################
 # open loan btc -> eth
@@ -348,10 +386,27 @@ txs:
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: check
-description: should emit 4 mint_burn events
+description: should emit 2 mint_burn events (THOR.BTC mint, TOR burn, see !2914 for the missing TOR mint), and transfer rune from Pool Module to Lending Module and (some) back
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
-  - .|[.end[]|select(.type == "mint_burn")]|length == 4
+  - .|[.end[]|select(.type == "mint_burn")]|length == 2
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.supply == "mint"
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.amount|tonumber == 494725
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.denom == "thor.btc"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.supply == "burn"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.amount|tonumber == 484970000
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.denom == "tor"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))|.amount == "490140877rune"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))|.amount == "480310102rune"
+# A net Lending Module RUNE balance increase of 9830775rune.
+---
+type: check
+description: the Lending Module should have 9830775 more rune
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount|tonumber == 1500000019492812
 ---
 type: create-blocks
 count: 1
@@ -508,10 +563,27 @@ txs:
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: check
-description: should emit 4 mint_burn events
+description: should emit 2 mint_burn events (TOR mint, THOR.BTC burn, see !2914 for the missing TOR burn), and transfer rune from Pool Module to Lending Module and (some) back
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
-  - .|[.end[]|select(.type == "mint_burn")]|length == 4
+  - .|[.end[]|select(.type == "mint_burn")]|length == 2
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.supply == "mint"
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.amount|tonumber == 495021900
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.denom == "tor"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.supply == "burn"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.amount|tonumber == 502482
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.denom == "thor.btc"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))|.amount == "500000000rune"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))|.amount == "487192216rune"
+# A net Lending Module RUNE balance increase (despite being a repayment, perhaps due to slip) of 12807784rune.
+---
+type: check
+description: the Lending Module should have 12807784 more rune
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount|tonumber == 1500000032300596
 ---
 type: create-blocks
 count: 1
@@ -606,10 +678,27 @@ txs:
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: check
-description: should emit 4 mint_burn events
+description: should emit 2 mint_burn events (TOR mint, THOR.BTC burn, see !2914 for the missing TOR burn), and transfer rune from Pool Module to Lending Module and (some) back
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
-  - .|[.end[]|select(.type == "mint_burn")]|length == 4
+  - .|[.end[]|select(.type == "mint_burn")]|length == 2
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.supply == "mint"
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.amount|tonumber == 4180150193
+  - .|[.end[]|select(.type == "mint_burn")]|.[0]|.denom == "tor"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.supply == "burn"
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.amount|tonumber == 487292 # previously 502482 burnt; same 989774 total as the 495049 + 494725 minted
+  - .|[.end[]|select(.type == "mint_burn")]|.[1]|.denom == "thor.btc"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_asgard }}") and (.recipient == "{{ addr_module_lending }}") and (.amount|test("rune")))|.amount == "4571195838rune"
+  - .|[.end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))]|length == 1
+  - .end[]|select((.type == "transfer") and (.sender == "{{ addr_module_lending }}") and (.recipient == "{{ addr_module_asgard }}") and (.amount|test("rune")))|.amount == "477027825rune"
+# A net Lending Module RUNE balance increase (note the overpaying) of 4094168013rune.
+---
+type: check
+description: the Lending Module should have 4094168013 more rune
+endpoint: http://localhost:1317/thorchain/balance/module/lending
+asserts:
+  - .coins[]|select(.denom == "rune")|.amount|tonumber == 1500004126468609
 ---
 type: create-blocks
 count: 1
@@ -737,3 +826,11 @@ asserts:
     # this time they should receieve a normal amount relative to the deposit since the
     # excess debt down was credited on the previous open
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504315579427
+
+---
+type: check
+description: check rune supply is unchanged
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+asserts:
+   - .supply[]|select(.denom == "rune")|.amount|tonumber == 1550300000000000
+   
