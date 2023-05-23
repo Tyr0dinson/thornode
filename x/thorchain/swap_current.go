@@ -196,6 +196,8 @@ func (s *SwapperV111) Swap(ctx cosmos.Context,
 }
 
 func (s *SwapperV111) burnCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
+	// Don't do anything for an empty Coin.
+	coins = coins.NoneEmpty()
 	// If Coins were length 0, SendFromModuleToModule would emit a null-amount transfer event.
 	if len(coins) == 0 {
 		return nil
@@ -219,6 +221,8 @@ func (s *SwapperV111) burnCoins(ctx cosmos.Context, mgr Manager, coins common.Co
 }
 
 func (s *SwapperV111) mintCoins(ctx cosmos.Context, mgr Manager, coins common.Coins) error {
+	// Don't do anything for an empty Coin.
+	coins = coins.NoneEmpty()
 	// If Coins were length 0, SendFromModuleToModule would emit a null-amount transfer event.
 	if len(coins) == 0 {
 		return nil
