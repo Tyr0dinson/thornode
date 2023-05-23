@@ -1323,17 +1323,29 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 	// Since the affiliate fee split was successful, update the original message's Coins.
 	msgCoins[0].Amount = mainAmt
 
+	tn, ok, err := getAffiliateTHORNameV114(ctx, mgr.Keeper(), affiliateTx.Memo)
+	if err != nil {
+		ctx.Logger().Error("fail to get affiliate THORName from memo", "memo", affiliateTx.Memo, "error", err)
+		return
+	}
+	if !ok {
+		// If unable to get a THORName, don't attempt a PreferredAsset swap.
+		return
+	}
+
 	// Since the affiliate fee split was successful, check whether to do a PreferredAsset swap from the affiliate Owner.
-	if err := triggerPreferredAssetSwapV114(ctx, mgr, affiliateAddress, affiliateTx.ID, affiliateTx.Memo); err != nil {
+	if err := triggerPreferredAssetSwapV114(ctx, mgr, affiliateAddress, affiliateTx.ID, tn); err != nil {
 		// Do not cancel the affiliate fee if a PreferredAsset swap fails, just log the error.
 		ctx.Logger().Error("fail to swap to PreferredAsset from affiliate", "msg", affiliateAddress, "error", err)
 	}
 }
 
-func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, memo string) error {
+// Get the Affiliate THORName from an unparsed memo;
+// note that parseBase is unexportable.
+func getAffiliateTHORNameV114(ctx cosmos.Context, keeper keeper.Keeper, memo string) (THORName, bool, error) {
 	// This shouldn't happen, but if there's no Keeper, no THORName interpretation can be done.
-	if mgr.Keeper() == nil {
-		return fmt.Errorf("the manager's keeper is nil")
+	if keeper == nil {
+		return THORName{}, false, fmt.Errorf("the keeper is nil")
 	}
 
 	// Get the Affiliate THORName from the unparsed memo;
@@ -1342,7 +1354,7 @@ func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAdd
 	parts := strings.Split(memo, ":")
 	txType, err := mem.StringToTxType(mem.GetPart(parts, 0))
 	if err != nil {
-		return err
+		return THORName{}, false, err
 	}
 	// Switch according to the Affiliate field in the memo
 	// (note that reaching here is dependent on
@@ -1353,23 +1365,28 @@ func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAdd
 	case TxAdd:
 		name = mem.GetPart(parts, 3)
 	default:
-		return fmt.Errorf("the memo's base (%s) is not for a memo with an Affiliate field", mem.GetPart(parts, 0))
+		// This should never be reached, so if it is, report it.
+		return THORName{}, false, fmt.Errorf("the memo's base (%s) is not for a memo with an Affiliate field", mem.GetPart(parts, 0))
 	}
 
 	if _, err := common.NewAddress(name); err == nil {
 		// If the Affiliate is an address, it wouldn't be interpreted as a THORName
 		// for the affiliate fee, so it shouldn't be used for a PreferredAsset swap.
-		return nil
+		return THORName{}, false, nil
 	}
 
-	if !mgr.Keeper().THORNameExists(ctx, name) {
-		return nil
+	if !keeper.THORNameExists(ctx, name) {
+		return THORName{}, false, nil
 	}
-	tn, err := mgr.Keeper().GetTHORName(ctx, name)
+	tn, err := keeper.GetTHORName(ctx, name)
 	if err != nil {
-		return err
+		return THORName{}, false, err
 	}
 
+	return tn, true, nil
+}
+
+func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName) error {
 	// No PreferredAsset swap if PreferredAsset isn't set or is native RUNE,
 	// or if SwapRuneThreshold isn't set.
 	if tn.PreferredAsset.IsEmpty() || tn.PreferredAsset.IsNativeRune() || tn.SwapRuneThreshold.IsZero() {
@@ -1419,7 +1436,7 @@ func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAdd
 		return nil
 	}
 
-	networkMemo := "THOR-PreferredAsset-" + name
+	networkMemo := "THOR-PreferredAsset-" + tn.Name
 	// 'THOR' to mark as a network memo,
 	// 'PreferredAsset' to indicate the type,
 	// and THORName for easy analytics
