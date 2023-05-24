@@ -67,8 +67,8 @@ description: there should be one swap event with USDC amount not more than 5% of
 endpoint: http://localhost:1317/thorchain/blockevents
 asserts:
   - .|[.end[]|select(.type == "swap")]|length == 1
-  - .end[]|select(.type == "swap")|.coin == "50000040 ETH.USDC-0X9999999999999999999999999999999999999999"
-# The unsplit inbound was 10_00000800, so 5% would be exactly 0_50000040.  However, this doesn't respect decimals 6.
+  - .end[]|select(.type == "swap")|.coin == "50000000 ETH.USDC-0X9999999999999999999999999999999999999999"
+# The unsplit inbound was 10_00000800, so 5% would be 0_50000040, slightly larger than this decimals-respecting affiliate fee.
 ---
 type: check
 description: refund outbound should be scheduled and respect decimals 6
@@ -79,7 +79,7 @@ asserts:
   - .[0]|.coin.asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
   - .[0]|.coin.amount|tonumber > 0
   - .[0]|.coin.amount|tonumber % 1e2 == 0
-  - .[0]|.coin.amount == "821872700"
+  - .[0]|.coin.amount == "821872800"
 ---
 type: check
 description: Asgard ETH.USDC vault balance should respect decimals 6
@@ -97,8 +97,8 @@ endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999
 asserts:
   - .decimals == 6
   - .balance_asset|tonumber > 0
-  - .balance_asset|tonumber % 1e2 != 0 # This should be == 0, but isn't.
-  - .balance_asset == "100178128040" # This should be the vault balance minus the outbound coin's amount, but isn't.
+  - .balance_asset|tonumber % 1e2 == 0
+  - .balance_asset == "100178128000" # This is equal to inbound-added vault balance minus the outbound amount.
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -109,7 +109,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "821872700"
+        - amount: "821872800"
           asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
           decimals: 6
       gas:
@@ -136,7 +136,7 @@ asserts:
   - .|length == 1
   - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber > 0
   - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber % 1e2 == 0
-  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount == "100178128100"
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount == "100178128000"
 # The updated vault balance is the inbound-added vault balance minus the outbound amount.
 ---
 type: check
@@ -145,6 +145,6 @@ endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999
 asserts:
   - .decimals == 6
   - .balance_asset|tonumber > 0
-  - .balance_asset|tonumber % 1e2 != 0 # This should be == 0, but isn't.
-  - .balance_asset == "100178128040" # This should be the vault balance, but isn't.
+  - .balance_asset|tonumber % 1e2 == 0
+  - .balance_asset == "100178128000" # This is now equal to the vault balance.
   
