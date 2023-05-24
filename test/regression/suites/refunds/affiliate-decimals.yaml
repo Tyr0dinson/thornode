@@ -1,0 +1,150 @@
+# Context: While synths can represent fractions of coins,
+# L1 coins in pool Asset depths (and vault balances)
+# should be indivisible coins which respect their pool's decimals
+# (matching, and available for withdraw or swap-out).
+# This should apply even when part of an affiliate-fee-split swap message enters the pool (successful swap)
+# and another part doesn't (refund).
+
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: ETH.USDC pool should have decimals 6 and have balance_asset respecting that
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .decimals == 6
+  - .balance_asset|tonumber > 0
+  - .balance_asset|tonumber % 1e2 == 0
+  - .balance_asset == "100000000000"
+---
+type: check
+description: Asgard ETH.USDC vault balance should respect decimals 6 (and matches the pool balance_asset)
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber > 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber % 1e2 == 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount == "100000000000"
+---
+type: check
+description: affiliate should start with zero rune
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 0
+---
+########################################################################################
+# swap l1 to synth failed limit
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000800" # The inbound amount respects decimals 6, but 5% of it doesn't.
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "=:ETH/ETH:{{ addr_thor_fox }}:100000000:{{ addr_thor_pig }}:500"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: there should be one swap event with USDC amount not more than 5% of the inbound and respecting decimals 6
+endpoint: http://localhost:1317/thorchain/blockevents
+asserts:
+  - .|[.end[]|select(.type == "swap")]|length == 1
+  - .end[]|select(.type == "swap")|.coin == "50000040 ETH.USDC-0X9999999999999999999999999999999999999999"
+# The unsplit inbound was 10_00000800, so 5% would be exactly 0_50000040.  However, this doesn't respect decimals 6.
+---
+type: check
+description: refund outbound should be scheduled and respect decimals 6
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ observe_txid 1 }}"
+  - .[0]|.coin.asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .[0]|.coin.amount|tonumber > 0
+  - .[0]|.coin.amount|tonumber % 1e2 == 0
+  - .[0]|.coin.amount == "821872700"
+---
+type: check
+description: Asgard ETH.USDC vault balance should respect decimals 6
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber > 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber % 1e2 == 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount == "101000000800"
+# As the outbound's txout hasn't been observed yet, the vault balance is the sum of the previous balance and the inbound.
+---
+type: check
+description: ETH.USDC pool's balance_asset should still respect its decimals
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .decimals == 6
+  - .balance_asset|tonumber > 0
+  - .balance_asset|tonumber % 1e2 != 0 # This should be == 0, but isn't.
+  - .balance_asset == "100178128040" # This should be the vault balance minus the outbound coin's amount, but isn't.
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "821872700"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "REFUND:{{ observe_txid 1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: outbound should have been observed
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: Asgard ETH.USDC vault balance should respect decimals 6
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber > 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount|tonumber % 1e2 == 0
+  - .[0].coins[]|select(.asset=="ETH.USDC-0X9999999999999999999999999999999999999999")|.amount == "100178128100"
+# The updated vault balance is the inbound-added vault balance minus the outbound amount.
+---
+type: check
+description: ETH.USDC pool's balance_asset should respect its decimals (and again match the vault balance)
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .decimals == 6
+  - .balance_asset|tonumber > 0
+  - .balance_asset|tonumber % 1e2 != 0 # This should be == 0, but isn't.
+  - .balance_asset == "100178128040" # This should be the vault balance, but isn't.
+  
