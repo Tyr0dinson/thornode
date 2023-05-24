@@ -1235,6 +1235,15 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 		cosmos.NewUint(10000),
 		mainAmt,
 	)
+	// Respect decimals when the asset is L1 (in case one swap adds to the pool and the other is refunded),
+	// erring on the side of not overpaying the affiliate fee.
+	if err := roundL1Decimals(ctx, mgr.Keeper(), &affiliateTx.Coins[0]); err != nil {
+		// Though this should never happen,
+		// if there's an error here then log it and don't split the affiliate fee,
+		// continuing with the unsplit message.
+		ctx.Logger().Error("unable to split affiliate fee", "error", err)
+		return
+	}
 	mainAmt = common.SafeSub(mainAmt, affiliateTx.Coins[0].Amount)
 
 	if affiliateTx.Coins[0].IsEmpty() {
@@ -1338,6 +1347,24 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 		// Do not cancel the affiliate fee if a PreferredAsset swap fails, just log the error.
 		ctx.Logger().Error("fail to swap to PreferredAsset from affiliate", "msg", affiliateAddress, "error", err)
 	}
+}
+
+func roundL1Decimals(ctx cosmos.Context, keeper keeper.Keeper, coin *common.Coin) error {
+	// If the outbound coin is Native (e.g. synthetic or derived),
+	// respecting decimals is unnecessary (as they can be fractional).
+	if coin.Asset.IsNative() {
+		return nil
+	}
+
+	pool, err := keeper.GetPool(ctx, coin.Asset)
+	if err != nil {
+		return err
+	}
+
+	// Note, if the Decimals are 0 from being a new pool, RoundToDecimal will not change the precision.
+	coin.Amount = cosmos.RoundToDecimal(coin.Amount, pool.Decimals)
+
+	return nil
 }
 
 // Get the Affiliate THORName from an unparsed memo;
