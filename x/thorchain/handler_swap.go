@@ -259,8 +259,10 @@ func (h SwapHandler) handleV114(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 
 	mem, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	if err != nil {
-		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
-		return nil, err
+		// This is typically expectd to be a PreferredAsset (or other protocol-origin) swap,
+		// so treat the type as though TxSwap (return here) and only use the Debug level for logging.
+		ctx.Logger().Debug("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
+		return &cosmos.Result{}, nil
 	}
 	switch mem.GetType() {
 	case TxAdd:
