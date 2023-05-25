@@ -1,0 +1,496 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Send rune to pig and create blocks to not get a 'key not found' error later
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "10000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create THORName without PreferredAsset and SwapRuneThreshold;
+# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapRuneThreshold,
+# where the first four fields are non-optional.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "~:xx:THOR:{{ addr_thor_pig }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: thorname "xx" should be registered, and no PreferredAsset or SwapRuneThreshold set
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == null
+  - .swap_rune_threshold == null
+---
+type: check
+description: check btc pool depths
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "100000000"
+  - .balance_rune == "100003263092"
+# Slightly over 1,000 RUNE per BTC.
+---
+type: check
+description: check btc outbound fee
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain=="BTC")|.outbound_fee == "14000"
+# The RUNE cost for the outbound fee should then be a little over 0_14000000.
+---
+########################################################################################
+# Set BTC alias, BTC.BTC PreferredAsset and below-outbound-fee SwapRuneThreshold.
+# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapRuneThreshold,
+# where the first four fields are non-optional, and to use a later field all earlier fields are non-optional.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:xx:BTC:{{ addr_btc_pig }}:{{ addr_thor_pig }}:BTC.BTC:0:10000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: PreferredAsset and SwapRuneThreshold should now be set
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases|length == 2
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == "BTC.BTC"
+  - .swap_rune_threshold == "10000000"
+---
+type: check
+description: check pig balance
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "4996000000" # Well above the threshold.
+---
+########################################################################################
+# BTC->RUNE swap with pig as the affiliate
+########################################################################################
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "200000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "14000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
+      # Expecting 0_00010000 BTC.BTC affiliate fee, about 0_10000000 RUNE's worth
+      # (enough for the to-RUNE affiliate swap's native outbound fee,
+      #  not enough by itself for a BTC outbound fee)
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: check pig balance after the fox swap
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "100000000" # Exactly 1_00000000 RUNE left for transactions.
+---
+type: check
+description: check PreferredAsset swap event
+endpoint: http://localhost:1317/thorchain/blockevents
+asserts:
+  - .|[.end[]|select(.type == "outbound")]|length == 2
+  - .|[.end[]|select(.type == "outbound")]|.[0].to == "{{ addr_thor_pig }}"
+  - .|[.end[]|select(.type == "outbound")]|.[0].coin == "7998435 THOR.RUNE"
+  - .|[.end[]|select((.type == "swap") and (.memo == "THOR-PreferredAsset-xx"))]|length == 1
+  - .end[]|select((.type == "swap") and (.memo == "THOR-PreferredAsset-xx"))|.coin == "4903998435 THOR.RUNE" # = 49_96000000 + 0_07998435 - 1_00000000
+---
+type: check
+description: outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+  - .[0].to_address == "{{ addr_btc_pig }}"
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].coin.amount == "4442889"
+---
+# Observe the outbound.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_pig }}
+      coins:
+        - amount: "4442889"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: check btc pool depths
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "95746611"
+  - .balance_rune == "104684356682"
+# About 1,100 RUNE per BTC.
+---
+type: check
+description: check btc outbound fee
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .[]|select(.chain=="BTC")|.outbound_fee == "14000"
+# The RUNE cost for the outbound fee should then be similar to 0_15400000.
+---
+########################################################################################
+# Outbound fee behaviour testing
+########################################################################################
+# Small inbound, intending the pig balance to have enough for threshold and not for outbound fee.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "260000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "14000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
+      # Expecting 0_00013000 BTC.BTC affiliate fee, about 0_14300000 RUNE's worth
+      # (enough for the to-RUNE affiliate swap's native outbound fee,
+      #  and still enough for the SwapRuneThreshold afterwards,
+      #  but not enough by itself for a BTC outbound fee)
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: check pig balance after the fox swap
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "112209663"
+  # Higher than 1_00000000 due to the affiliate fee and no PreferredAsset swap
+  # (since the amount over isn't enough for the outbound fee,
+  #  despite being over the SwapRuneThreshold).
+---
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# Small inbound, expecting pig balance to have enough for threshold and outbound fee.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "260000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "14000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
+      # Expecting 0_00013000 BTC.BTC affiliate fee as before;
+      # enough for the to-RUNE affiliate swap's native outbound fee,
+      #  not enough by itself for a BTC outbound fee.
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: check pig balance after the fox swap
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "100000000" # Exactly 1_00000000 RUNE left for transactions.
+---
+type: check
+description: check PreferredAsset swap event
+endpoint: http://localhost:1317/thorchain/blockevents
+asserts:
+  - .|[.end[]|select(.type == "outbound")]|length == 2
+  - .|[.end[]|select(.type == "outbound")]|.[0].coin == "12133053 THOR.RUNE"
+  - .|[.end[]|select((.type == "swap") and (.memo == "THOR-PreferredAsset-xx"))]|length == 1
+  - .end[]|select((.type == "swap") and (.memo == "THOR-PreferredAsset-xx"))|.coin == "24342716 THOR.RUNE" # = 1_12209663 + 0_12133053 - 1_00000000
+---
+type: check
+description: outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].in_hash == "{{ observe_txid 4 }}"
+  - .[0].to_address == "{{ addr_btc_pig }}"
+  - .[0].coin.asset == "BTC.BTC"
+  - .[0].coin.amount == "8380"
+---
+# Observe the outbound.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 5 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_pig }}
+      coins:
+        - amount: "8380"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 4 }}"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Threshold testing
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:xx:BTC:{{ addr_btc_pig }}:{{ addr_thor_pig }}:BTC.BTC:0:500000000" # 5_00000000, 50x larger.
+---
+# Large inbound, expecting pig balance to have enough for outbound fee and not enough for the larger threshold.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "4000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "14000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
+      # Expecting 0.00200000 BTC.BTC affiliate fee as before;
+      # enough for the to-RUNE affiliate swap's native outbound fee
+      # and the BTC outbound fee, but not enough for the 5_00000000 RUNE SwapRuneThrehsold.
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: SwapRuneThreshold should now be larger
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases|length == 2
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == "BTC.BTC"
+  - .swap_rune_threshold == "500000000"
+---
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: check pig balance after the fox swap
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "311511484" # Enough for the outbound fee, but not enough for the new threshold
+---
+########################################################################################
+# Alias-not-matching-Owner testing
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:xx:THOR:{{ addr_thor_cat }}:{{ addr_thor_pig }}:BTC.BTC:0:10000000"
+# THOR Cat Alias, threshold back to 0_10000000 (so THOR Pig now has enough for it).
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: SwapRuneThreshold should be small again and THOR alias should be cat
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases|length == 2
+  - .aliases[0].address == "{{ addr_thor_cat }}"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .preferred_asset == "BTC.BTC"
+  - .swap_rune_threshold == "10000000"
+---
+type: check
+description: check pig balance
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "309511484"
+  # THOR Pig balance has decreased a little from the MsgDeposit network fee,
+  # and has enough for the threshold.
+---
+type: check
+description: check cat balance
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "2500000000000" # Enough for the threshold
+---
+# Small inbound
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 7 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "260000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "14000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
+      # Expecting 0.00200000 BTC.BTC affiliate fee as before;
+      # enough for the to-RUNE affiliate swap's native outbound fee
+      # and the BTC outbound fee, but not enough for the 5_00000000 RUNE SwapRuneThrehsold.
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: no outbound should be scheduled
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+description: check pig balance
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "309511484"
+  # THOR Pig balance has not changed.
+---
+type: check
+description: check cat balance
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+asserts:
+  - .result[]|select(.denom == "rune")|.amount == "2500010982325"
+  # THOR Cat balance has increased from the affiliate fee, but with no PreferredAsset swap.
+---
+########################################################################################
+# PreferredAsset-reset-upon-Owner-change testing
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "~:xx:THOR:{{ addr_thor_fox }}:{{ addr_thor_fox }}:BTC.BTC"
+# This is as though it's a memo trying to do a PreferredAsset swap of THOR Fox's balance to BTC Pig's address.
+# The memo specifies PreferredAsset and doesn't set SwapRuneThrehsold to show whether that makes a difference.
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: PreferredAsset and SwapRuneThreshold should be cleared
+endpoint: http://localhost:1317/thorchain/thorname/xx
+asserts:
+  - .aliases|length == 2
+  - .aliases[0].address == "{{ addr_thor_fox }}"
+  - .aliases[1].address == "{{ addr_btc_pig }}"
+  - .owner == "{{ addr_thor_fox }}"
+  - .preferred_asset == null
+  - .swap_rune_threshold == null
