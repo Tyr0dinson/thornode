@@ -1244,12 +1244,11 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 		ctx.Logger().Error("unable to split affiliate fee", "error", err)
 		return
 	}
-	mainAmt = common.SafeSub(mainAmt, affiliateTx.Coins[0].Amount)
-
 	if affiliateTx.Coins[0].IsEmpty() {
-		// No fee to be sent, so end here without reducing the original message's Coins.
+		// No fee to be sent, so don't split the original message.
 		return
 	}
+	mainAmt = common.SafeSub(mainAmt, affiliateTx.Coins[0].Amount)
 
 	ctx.Logger().Info("splitting affiliate fee", "asset", affiliateTx.Coins[0].Asset, "amount", affiliateTx.Coins[0].Amount)
 
