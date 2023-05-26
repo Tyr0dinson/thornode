@@ -317,7 +317,7 @@
           "name": "xx",
           "owner": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "preferred_asset": ".",
-          "swap_rune_threshold": "0"
+          "swap_threshold": "0"
         }
       ],
       "bond_providers": [

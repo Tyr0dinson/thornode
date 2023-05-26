@@ -226,15 +226,15 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		return nil, ErrInternal(err, "fail to fetch THORName")
 	}
 
-	// When PreferredAsset or SwapRuneThreshold are empty, don't display them.
+	// When PreferredAsset or SwapThreshold are empty, don't display them.
 	var preferredAssetStr string
 	if !name.PreferredAsset.IsEmpty() {
 		preferredAssetStr = name.PreferredAsset.String()
 	}
-	var swapRuneThresholdStr string
-	// THORNames predating SwapRuneThreshold could have an empty cosmos.Uint rather than cosmos.ZeroUint().
-	if name.SwapRuneThreshold != (cosmos.Uint{}) && !name.SwapRuneThreshold.IsZero() {
-		swapRuneThresholdStr = name.SwapRuneThreshold.String()
+	var swapThresholdStr string
+	// THORNames predating SwapThreshold could have an empty cosmos.Uint rather than cosmos.ZeroUint().
+	if name.SwapThreshold != (cosmos.Uint{}) && !name.SwapThreshold.IsZero() {
+		swapThresholdStr = name.SwapThreshold.String()
 	}
 
 	// convert to openapi types
@@ -250,7 +250,7 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		ExpireBlockHeight: wrapInt64(name.ExpireBlockHeight),
 		Owner:             wrapString(name.Owner.String()),
 		PreferredAsset:    wrapString(preferredAssetStr),
-		SwapRuneThreshold: wrapString(swapRuneThresholdStr),
+		SwapThreshold:     wrapString(swapThresholdStr),
 		Aliases:           aliases,
 	}
 

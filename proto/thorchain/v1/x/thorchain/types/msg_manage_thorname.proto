@@ -15,5 +15,5 @@ message MsgManageTHORName {
   common.Asset preferred_asset = 6 [(gogoproto.nullable) = false];
   bytes owner = 7  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   bytes signer = 8  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  string swap_rune_threshold = 9 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  string swap_threshold = 9 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
 }

@@ -1971,7 +1971,7 @@ components:
         preferred_asset:
           type: string
           example: "BTC.BTC"
-        swap_rune_threshold:
+        swap_threshold:
           type: string
           description: minimum RUNE input for an automatic swap of RUNE to the preferred_asset, with zero specifying no swap
           example: "1000"

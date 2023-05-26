@@ -19,8 +19,8 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Create THORName without PreferredAsset and SwapRuneThreshold;
-# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapRuneThreshold,
+# Create THORName without PreferredAsset and SwapThreshold;
+# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapThreshold,
 # where the first four fields are non-optional.
 ########################################################################################
 type: tx-deposit
@@ -34,13 +34,13 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: thorname "xx" should be registered, and no PreferredAsset or SwapRuneThreshold set
+description: thorname "xx" should be registered, and no PreferredAsset or SwapThreshold set
 endpoint: http://localhost:1317/thorchain/thorname/xx
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
   - .preferred_asset == null
-  - .swap_rune_threshold == null
+  - .swap_threshold == null
 ---
 type: check
 description: check btc pool depths
@@ -58,8 +58,8 @@ asserts:
 # The RUNE cost for the outbound fee should then be a little over 0_14000000.
 ---
 ########################################################################################
-# Set BTC alias, BTC.BTC PreferredAsset and below-outbound-fee SwapRuneThreshold.
-# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapRuneThreshold,
+# Set BTC alias, BTC.BTC PreferredAsset and below-outbound-fee SwapThreshold.
+# memo structure is [~/n/name]:THORName:Chain:AliasAddress:Owner:PreferredAsset:ExpireBlockHeight:SwapThreshold,
 # where the first four fields are non-optional, and to use a later field all earlier fields are non-optional.
 ########################################################################################
 type: tx-deposit
@@ -73,7 +73,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: PreferredAsset and SwapRuneThreshold should now be set
+description: PreferredAsset and SwapThreshold should now be set
 endpoint: http://localhost:1317/thorchain/thorname/xx
 asserts:
   - .aliases|length == 2
@@ -81,7 +81,7 @@ asserts:
   - .aliases[1].address == "{{ addr_btc_pig }}"
   - .owner == "{{ addr_thor_pig }}"
   - .preferred_asset == "BTC.BTC"
-  - .swap_rune_threshold == "10000000"
+  - .swap_threshold == "10000000"
 ---
 type: check
 description: check pig balance
@@ -217,7 +217,7 @@ txs:
       memo: "=:THOR.RUNE:{{ addr_thor_fox }}::xx:500"
       # Expecting 0_00013000 BTC.BTC affiliate fee, about 0_14300000 RUNE's worth
       # (enough for the to-RUNE affiliate swap's native outbound fee,
-      #  and still enough for the SwapRuneThreshold afterwards,
+      #  and still enough for the SwapThreshold afterwards,
       #  but not enough by itself for a BTC outbound fee)
     block_height: 7
     finalise_height: 7
@@ -233,7 +233,7 @@ asserts:
   - .result[]|select(.denom == "rune")|.amount == "112209663"
   # Higher than 1_00000000 due to the affiliate fee and no PreferredAsset swap
   # (since the amount over isn't enough for the outbound fee,
-  #  despite being over the SwapRuneThreshold).
+  #  despite being over the SwapThreshold).
 ---
 type: check
 description: no outbound should be scheduled
@@ -361,7 +361,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: SwapRuneThreshold should now be larger
+description: SwapThreshold should now be larger
 endpoint: http://localhost:1317/thorchain/thorname/xx
 asserts:
   - .aliases|length == 2
@@ -369,7 +369,7 @@ asserts:
   - .aliases[1].address == "{{ addr_btc_pig }}"
   - .owner == "{{ addr_thor_pig }}"
   - .preferred_asset == "BTC.BTC"
-  - .swap_rune_threshold == "500000000"
+  - .swap_threshold == "500000000"
 ---
 type: check
 description: no outbound should be scheduled
@@ -398,7 +398,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: SwapRuneThreshold should be small again and THOR alias should be cat
+description: SwapThreshold should be small again and THOR alias should be cat
 endpoint: http://localhost:1317/thorchain/thorname/xx
 asserts:
   - .aliases|length == 2
@@ -406,7 +406,7 @@ asserts:
   - .aliases[1].address == "{{ addr_btc_pig }}"
   - .owner == "{{ addr_thor_pig }}"
   - .preferred_asset == "BTC.BTC"
-  - .swap_rune_threshold == "10000000"
+  - .swap_threshold == "10000000"
 ---
 type: check
 description: check pig balance
@@ -485,7 +485,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: PreferredAsset and SwapRuneThreshold should be cleared
+description: PreferredAsset and SwapThreshold should be cleared
 endpoint: http://localhost:1317/thorchain/thorname/xx
 asserts:
   - .aliases|length == 2
@@ -493,4 +493,4 @@ asserts:
   - .aliases[1].address == "{{ addr_btc_pig }}"
   - .owner == "{{ addr_thor_fox }}"
   - .preferred_asset == null
-  - .swap_rune_threshold == null
+  - .swap_threshold == null

@@ -1331,7 +1331,7 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 	// Since the affiliate fee split was successful, update the original message's Coins.
 	msgCoins[0].Amount = mainAmt
 
-	tn, ok, err := getAffiliateTHORNameV114(ctx, mgr.Keeper(), affiliateTx.Memo)
+	tn, ok, err := getAffiliateTHORName(ctx, mgr.Keeper(), affiliateTx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to get affiliate THORName from memo", "memo", affiliateTx.Memo, "error", err)
 		return
@@ -1342,7 +1342,7 @@ func splitAffiliateFeeV114(ctx cosmos.Context, mgr Manager, msg cosmos.Msg) {
 	}
 
 	// Since the affiliate fee split was successful, check whether to do a PreferredAsset swap from the affiliate Owner.
-	if err := triggerPreferredAssetSwapV114(ctx, mgr, affiliateAddress, affiliateTx.ID, tn); err != nil {
+	if err := triggerPreferredAssetSwap(ctx, mgr, affiliateAddress, affiliateTx.ID, tn); err != nil {
 		// Do not cancel the affiliate fee if a PreferredAsset swap fails, just log the error.
 		ctx.Logger().Error("fail to swap to PreferredAsset from affiliate", "msg", affiliateAddress, "error", err)
 	}
@@ -1368,6 +1368,16 @@ func roundL1Decimals(ctx cosmos.Context, keeper keeper.Keeper, coin *common.Coin
 
 // Get the Affiliate THORName from an unparsed memo;
 // note that parseBase is unexportable.
+func getAffiliateTHORName(ctx cosmos.Context, keeper keeper.Keeper, memo string) (THORName, bool, error) {
+	version := keeper.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return getAffiliateTHORNameV114(ctx, keeper, memo)
+	default:
+		return THORName{}, false, fmt.Errorf("bad version (%s) for getAffiliateTHORName", version.String())
+	}
+}
+
 func getAffiliateTHORNameV114(ctx cosmos.Context, keeper keeper.Keeper, memo string) (THORName, bool, error) {
 	// This shouldn't happen, but if there's no Keeper, no THORName interpretation can be done.
 	if keeper == nil {
@@ -1386,7 +1396,7 @@ func getAffiliateTHORNameV114(ctx cosmos.Context, keeper keeper.Keeper, memo str
 	// (note that reaching here is dependent on
 	//	messages being accepted by splitAffiliateFee).
 	switch txType {
-	case TxSwap, TxLimitOrder:
+	case TxSwap, TxLimitOrder, TxLoanOpen:
 		name = mem.GetPart(parts, 4)
 	case TxAdd:
 		name = mem.GetPart(parts, 3)
@@ -1412,10 +1422,20 @@ func getAffiliateTHORNameV114(ctx cosmos.Context, keeper keeper.Keeper, memo str
 	return tn, true, nil
 }
 
+func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName) error {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return triggerPreferredAssetSwapV114(ctx, mgr, affiliateAddress, txID, tn)
+	default:
+		return fmt.Errorf("bad version (%s) for triggerPreferredAssetSwap", version.String())
+	}
+}
+
 func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName) error {
 	// No PreferredAsset swap if PreferredAsset isn't set or is native RUNE,
-	// or if SwapRuneThreshold isn't set.
-	if tn.PreferredAsset.IsEmpty() || tn.PreferredAsset.IsNativeRune() || tn.SwapRuneThreshold.IsZero() {
+	// or if SwapThreshold isn't set.
+	if tn.PreferredAsset.IsEmpty() || tn.PreferredAsset.IsNativeRune() || tn.SwapThreshold.IsZero() {
 		return nil
 	}
 
@@ -1458,7 +1478,7 @@ func triggerPreferredAssetSwapV114(ctx cosmos.Context, mgr Manager, affiliateAdd
 	amt = common.SafeSub(amt, cosmos.NewUint(common.One))
 
 	// Check the threshold.
-	if amt.LT(tn.SwapRuneThreshold) {
+	if amt.LT(tn.SwapThreshold) {
 		return nil
 	}
 

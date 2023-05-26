@@ -10,13 +10,13 @@ import (
 
 type ManageTHORNameMemo struct {
 	MemoBase
-	Name              string
-	Chain             common.Chain
-	Address           common.Address
-	PreferredAsset    common.Asset
-	Expire            int64
-	Owner             cosmos.AccAddress
-	SwapRuneThreshold cosmos.Uint
+	Name           string
+	Chain          common.Chain
+	Address        common.Address
+	PreferredAsset common.Asset
+	Expire         int64
+	Owner          cosmos.AccAddress
+	SwapThreshold  cosmos.Uint
 }
 
 func (m ManageTHORNameMemo) GetName() string            { return m.Name }
@@ -24,16 +24,16 @@ func (m ManageTHORNameMemo) GetChain() common.Chain     { return m.Chain }
 func (m ManageTHORNameMemo) GetAddress() common.Address { return m.Address }
 func (m ManageTHORNameMemo) GetBlockExpire() int64      { return m.Expire }
 
-func NewManageTHORNameMemo(name string, chain common.Chain, addr common.Address, expire int64, asset common.Asset, owner cosmos.AccAddress, swapRuneThreshold cosmos.Uint) ManageTHORNameMemo {
+func NewManageTHORNameMemo(name string, chain common.Chain, addr common.Address, expire int64, asset common.Asset, owner cosmos.AccAddress, swapThreshold cosmos.Uint) ManageTHORNameMemo {
 	return ManageTHORNameMemo{
-		MemoBase:          MemoBase{TxType: TxTHORName},
-		Name:              name,
-		Chain:             chain,
-		Address:           addr,
-		PreferredAsset:    asset,
-		Expire:            expire,
-		Owner:             owner,
-		SwapRuneThreshold: swapRuneThreshold,
+		MemoBase:       MemoBase{TxType: TxTHORName},
+		Name:           name,
+		Chain:          chain,
+		Address:        addr,
+		PreferredAsset: asset,
+		Expire:         expire,
+		Owner:          owner,
+		SwapThreshold:  swapThreshold,
 	}
 }
 
@@ -43,7 +43,7 @@ func ParseManageTHORNameMemo(parts []string) (ManageTHORNameMemo, error) {
 	var owner cosmos.AccAddress
 	preferredAsset := common.EmptyAsset
 	expire := int64(0)
-	swapRuneThreshold := cosmos.ZeroUint()
+	swapThreshold := cosmos.ZeroUint()
 
 	if len(parts) < 4 {
 		return ManageTHORNameMemo{}, fmt.Errorf("not enough parameters")
@@ -81,14 +81,14 @@ func ParseManageTHORNameMemo(parts []string) (ManageTHORNameMemo, error) {
 		}
 	}
 
-	swapRuneThresholdStr := GetPart(parts, 7)
-	if swapRuneThresholdStr != "" {
-		swapRuneThresholdUint64, err := strconv.ParseUint(swapRuneThresholdStr, 10, 64)
+	swapThresholdStr := GetPart(parts, 7)
+	if swapThresholdStr != "" {
+		swapThresholdUint64, err := strconv.ParseUint(swapThresholdStr, 10, 64)
 		if err != nil {
 			return ManageTHORNameMemo{}, err
 		}
-		swapRuneThreshold = cosmos.NewUint(swapRuneThresholdUint64)
+		swapThreshold = cosmos.NewUint(swapThresholdUint64)
 	}
 
-	return NewManageTHORNameMemo(name, chain, addr, expire, preferredAsset, owner, swapRuneThreshold), nil
+	return NewManageTHORNameMemo(name, chain, addr, expire, preferredAsset, owner, swapThreshold), nil
 }

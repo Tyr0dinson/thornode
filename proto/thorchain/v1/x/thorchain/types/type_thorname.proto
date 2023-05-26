@@ -17,5 +17,5 @@ message THORName {
   bytes owner = 3  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   common.Asset preferred_asset = 4 [(gogoproto.nullable) = false];
   repeated THORNameAlias aliases = 5  [(gogoproto.nullable) = false];
-  string swap_rune_threshold = 9 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  string swap_threshold = 9 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
 }

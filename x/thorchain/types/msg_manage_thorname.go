@@ -6,7 +6,7 @@ import (
 )
 
 // NewMsgManageTHORName create a new instance of MsgManageTHORName
-func NewMsgManageTHORName(name string, chain common.Chain, addr common.Address, coin common.Coin, exp int64, asset common.Asset, owner cosmos.AccAddress, swapRuneThreshold cosmos.Uint, signer cosmos.AccAddress) *MsgManageTHORName {
+func NewMsgManageTHORName(name string, chain common.Chain, addr common.Address, coin common.Coin, exp int64, asset common.Asset, owner cosmos.AccAddress, swapThreshold cosmos.Uint, signer cosmos.AccAddress) *MsgManageTHORName {
 	return &MsgManageTHORName{
 		Name:              name,
 		Chain:             chain,
@@ -15,7 +15,7 @@ func NewMsgManageTHORName(name string, chain common.Chain, addr common.Address, 
 		ExpireBlockHeight: exp,
 		PreferredAsset:    asset,
 		Owner:             owner,
-		SwapRuneThreshold: swapRuneThreshold,
+		SwapThreshold:     swapThreshold,
 		Signer:            signer,
 	}
 }
