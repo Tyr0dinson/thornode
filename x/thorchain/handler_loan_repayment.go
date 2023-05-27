@@ -144,6 +144,11 @@ func (h LoanRepaymentHandler) repayV111(ctx cosmos.Context, msg MsgLoanRepayment
 		ctx.Logger().Error("fail to get lending address", "error", err)
 		return err
 	}
+	asgardAddr, err := h.mgr.Keeper().GetModuleAddress(AsgardName)
+	if err != nil {
+		ctx.Logger().Error("fail to get asgard address", "error", err)
+		return err
+	}
 	loan, err := h.mgr.Keeper().GetLoan(ctx, msg.CollateralAsset, msg.Owner)
 	if err != nil {
 		ctx.Logger().Error("fail to get loan", "error", err)
@@ -210,7 +215,7 @@ func (h LoanRepaymentHandler) repayV111(ctx cosmos.Context, msg MsgLoanRepayment
 	}
 
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
-	tx := common.NewTx(txID, lendAddr, lendAddr, coins, common.Gas{fakeGas}, "noop")
+	tx := common.NewTx(txID, lendAddr, asgardAddr, coins, common.Gas{fakeGas}, "noop")
 	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, msg.MinOut, common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
 	handler := NewSwapHandler(h.mgr)
 	if _, err := handler.Run(ctx, swapMsg); err != nil {
@@ -236,6 +241,11 @@ func (h LoanRepaymentHandler) swapV111(ctx cosmos.Context, msg MsgLoanRepayment)
 		ctx.Logger().Error("fail to get lending address", "error", err)
 		return err
 	}
+	asgardAddr, err := h.mgr.Keeper().GetModuleAddress(AsgardName)
+	if err != nil {
+		ctx.Logger().Error("fail to get asgard address", "error", err)
+		return err
+	}
 
 	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
 	if !ok {
@@ -244,7 +254,7 @@ func (h LoanRepaymentHandler) swapV111(ctx cosmos.Context, msg MsgLoanRepayment)
 
 	memo := fmt.Sprintf("loan-:%s:%s:%s", msg.CollateralAsset, msg.Owner, msg.MinOut)
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
-	tx := common.NewTx(txID, msg.From, lendAddr, common.NewCoins(msg.Coin), common.Gas{fakeGas}, memo)
+	tx := common.NewTx(txID, msg.From, asgardAddr, common.NewCoins(msg.Coin), common.Gas{fakeGas}, memo)
 	swapMsg := NewMsgSwap(tx, common.TOR, lendAddr, cosmos.ZeroUint(), lendAddr, cosmos.ZeroUint(), "", "", nil, 0, msg.Signer)
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
