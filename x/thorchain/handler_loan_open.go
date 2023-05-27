@@ -165,7 +165,7 @@ func (h LoanOpenHandler) handleV111(ctx cosmos.Context, msg MsgLoanOpen) error {
 	if msg.CollateralAsset.IsDerivedAsset() {
 		return h.openLoanV111(ctx, msg)
 	} else {
-		return h.swapV108(ctx, msg)
+		return h.swapV111(ctx, msg)
 	}
 }
 
@@ -324,7 +324,7 @@ func (h LoanOpenHandler) getCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint
 	return cr.AddUint64(uint64(minCR))
 }
 
-func (h LoanOpenHandler) swapV108(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) swapV111(ctx cosmos.Context, msg MsgLoanOpen) error {
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
 		ctx.Logger().Error("fail to get lending address", "error", err)
