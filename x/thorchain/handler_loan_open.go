@@ -388,6 +388,11 @@ func (h LoanOpenHandler) swapV113(ctx cosmos.Context, msg MsgLoanOpen) error {
 		return fmt.Errorf("fail to get tx in voter for tx (%s): %w", txID, err)
 	}
 	toAddress := txInVoter.Tx.Tx.ToAddress
+	// An empty ToAddress fails Tx validation,
+	// and a querier quote for instance has no retrievable ToAddress.
+	if toAddress.IsEmpty() {
+		toAddress = "no to address available"
+	}
 
 	memo := fmt.Sprintf("loan+:%s:%s:%d:%s:%d:%s:%s:%d", msg.TargetAsset, msg.TargetAddress, msg.MinOut.Uint64(), msg.AffiliateAddress, msg.AffiliateBasisPoints.Uint64(), msg.Aggregator, msg.AggregatorTargetAddress, msg.AggregatorTargetLimit.Uint64())
 	fakeGas := common.NewCoin(msg.CollateralAsset.GetChain().GetGasAsset(), cosmos.OneUint())
