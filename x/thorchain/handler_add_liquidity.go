@@ -138,6 +138,13 @@ func (h AddLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	if !msg.AssetAddress.IsEmpty() {
+		// If the needsSwap check disallows a cross-chain AssetAddress,
+		// a position with pending RUNE cannot be completed with Asset,
+		// so fail validation here if the AssetAddress chain is different from the Asset's.
+		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
+			return errAddLiquidityMismatchAddr
+		}
+
 		polAddress, err := h.mgr.Keeper().GetModuleAddress(ReserveName)
 		if err != nil {
 			return err
