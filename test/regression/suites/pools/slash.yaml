@@ -1,0 +1,76 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# only btc.btc pool should exist
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC.BTC"
+---
+# confirm BTC.BTC vault balance
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
+---
+# confirm BTC.BTC pool Asset depth
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc
+asserts:
+  - .balance_asset == "100000000"
+  # Same as the vault balance.
+---
+########################################################################################
+# Observed txout with no outbound (slash-worthy),
+# as for a double-spend or malicious funds transfer or reorg gas amount confusion
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "100000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 6
+    finalise_height: 6
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# slash event should be emitted
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[.txs[].result.events[]|select(.type == "slash")]|length == 1
+  - .txs[].result.events[]|select(.type == "slash")|."BTC.BTC" == "-110500"
+  - .txs[].result.events[]|select(.type == "slash")|."THOR.RUNE" == "110501202"
+---
+# check BTC.BTC vault balance
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length == 1
+  - .[0].coins[]|select(.asset == "BTC.BTC")|.amount == "99889500"
+---
+# check BTC.BTC pool Asset depth
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc
+asserts:
+  - .balance_asset == "99879000"
+  # Lower than the vault balance (oversolvent) by 10500 (the gas amount).
