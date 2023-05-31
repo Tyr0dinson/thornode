@@ -72,5 +72,6 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
 asserts:
-  - .balance_asset == "99879000"
-  # Lower than the vault balance (oversolvent) by 10500 (the gas amount).
+  - .balance_asset == "99889500"
+  # Equal to the vault balance (both decreased by the slash event's 110500 amount,
+  # being the 100000 coin + 10500 gas).
