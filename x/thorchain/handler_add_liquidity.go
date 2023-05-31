@@ -52,6 +52,8 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.112.0")):
+		return h.validateV112(ctx, msg)
 	case version.GTE(semver.MustParse("1.110.0")):
 		return h.validateV110(ctx, msg)
 	case version.GTE(semver.MustParse("1.99.0")):
@@ -71,7 +73,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	}
 }
 
-func (h AddLiquidityHandler) validateV110(ctx cosmos.Context, msg MsgAddLiquidity) error {
+func (h AddLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if err := msg.ValidateBasicV98(); err != nil {
 		ctx.Logger().Error(err.Error())
 		return errAddLiquidityFailValidation
