@@ -67,9 +67,6 @@ txs:
       from_address: {{ addr_btc_fox }}
       to_address: {{ addr_btc_dog }}
       coins:
-        # TODO:
-        # Update loan quotes to fail if collateral is less than 3x max gas since to
-        # avoid cases where there is not enough to even refund.
         - amount: "14001" # outbound fee (2x estimated gas) + 1 sat
           asset: "BTC.BTC"
           decimals: 8
