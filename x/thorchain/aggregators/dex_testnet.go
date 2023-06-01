@@ -11,6 +11,13 @@ import (
 
 func DexAggregators(version semver.Version) []Aggregator {
 	switch {
+	case version.GTE(semver.MustParse("1.111.0")):
+		return []Aggregator{
+			// TSAggregatorGeneric
+			{common.BSCChain, `0xdd9ea15bc6ba78a7f1202aad159979b5fcfb14e6`},
+			// TSAggregatorUniswapV2 BinanceSmartChain V2
+			{common.BSCChain, `0x8dCC06dfFA91655041748CF42e56E331fF9D85e0`},
+		}
 	case version.GTE(semver.MustParse("1.93.0")):
 		return []Aggregator{
 			// uniswap v2
