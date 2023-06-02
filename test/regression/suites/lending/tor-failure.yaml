@@ -616,9 +616,8 @@ asserts:
   - .end[]|select(.type == "refund")|.reason == "pool(THOR.TOR) is not available"
   - .end[]|select(.type == "refund")|.from == "{{ addr_thor_fox }}"
   # The from field is the user's which receives the refund
-  - .end[]|select(.type == "refund")|.to == "no to address available"
+  - .end[]|select(.type == "refund")|.to == "{{ addr_module_asgard }}"
   # The to field is the address to which the user first sends the funds (not the swap destination).
-  # TODO:  Here, this should be the Pool Module {{ addr_module_asgard }}.
   - .|[.end[]|select(.type == "outbound")]|length == 1
   - .end[]|select(.type == "outbound")|.from == "{{ addr_module_asgard }}"
   - .end[]|select(.type == "outbound")|.to == "{{ addr_thor_fox }}"
