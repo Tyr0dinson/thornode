@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -199,7 +200,16 @@ func (h DepositHandler) handleV113(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 		return &cosmos.Result{}, nil
 	}
 
-	result, err := handler(ctx, m)
+	// if it is a loan, inject the TxID and ToAddress into the context
+	_, isLoanOpen := m.(*MsgLoanOpen)
+	_, isLoanRepayment := m.(*MsgLoanRepayment)
+	mCtx := ctx
+	if isLoanOpen || isLoanRepayment {
+		mCtx = ctx.WithValue(constants.CtxLoanTxID, txIn.Tx.ID)
+		mCtx = mCtx.WithValue(constants.CtxLoanToAddress, txIn.Tx.ToAddress)
+	}
+
+	result, err := handler(mCtx, m)
 	if err != nil {
 		code := uint32(1)
 		var e se.Error
