@@ -278,12 +278,13 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		// if it is a loan, inject the observed txid into the context
+		// if it is a loan, inject the observed TxID and ToAddress into the context
 		_, isLoanOpen := m.(*MsgLoanOpen)
 		_, isLoanRepayment := m.(*MsgLoanRepayment)
 		mCtx := ctx
 		if isLoanOpen || isLoanRepayment {
 			mCtx = ctx.WithValue(constants.CtxLoanTxID, tx.Tx.ID)
+			mCtx = mCtx.WithValue(constants.CtxLoanToAddress, tx.Tx.ToAddress)
 		}
 
 		_, err = handler(mCtx, m)

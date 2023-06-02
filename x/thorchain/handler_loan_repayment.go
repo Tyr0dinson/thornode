@@ -282,16 +282,11 @@ func (h LoanRepaymentHandler) swapV113(ctx cosmos.Context, msg MsgLoanRepayment)
 		return fmt.Errorf("fail to get txid")
 	}
 
-	// As MsgLoanRepayment does not retain the original ToAddress,
-	// retrieve it from the ObservedTxInVoter.
-	txInVoter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
-	if err != nil {
-		return fmt.Errorf("fail to get tx in voter for tx (%s): %w", txID, err)
-	}
-	toAddress := txInVoter.Tx.Tx.ToAddress
+	toAddress, ok := ctx.Value(constants.CtxLoanToAddress).(common.Address)
 	// An empty ToAddress fails Tx validation,
-	// and a querier quote for instance has no retrievable ToAddress.
-	if toAddress.IsEmpty() {
+	// and a querier quote or unit test has no provided ToAddress.
+	// As this only affects emitted swap event contents, do not return an error.
+	if !ok || toAddress.IsEmpty() {
 		toAddress = "no to address available"
 	}
 
