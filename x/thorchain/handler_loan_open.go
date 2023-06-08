@@ -173,6 +173,8 @@ func (h LoanOpenHandler) openLoan(ctx cosmos.Context, msg MsgLoanOpen) error {
 func (h LoanOpenHandler) swap(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.113.0")):
+		return h.swapV113(ctx, msg)
 	case version.GTE(semver.MustParse("1.108.0")):
 		return h.swapV108(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
@@ -354,7 +356,7 @@ func (h LoanOpenHandler) getCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint
 	return cr.AddUint64(uint64(minCR))
 }
 
-func (h LoanOpenHandler) swapV108(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) swapV113(ctx cosmos.Context, msg MsgLoanOpen) error {
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
 	if err != nil {
 		ctx.Logger().Error("fail to get lending address", "error", err)
