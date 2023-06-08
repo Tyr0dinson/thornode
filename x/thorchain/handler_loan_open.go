@@ -141,6 +141,8 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.113.0")):
+		return h.handleV113(ctx, msg)
 	case version.GTE(semver.MustParse("1.111.0")):
 		return h.handleV111(ctx, msg)
 	case version.GTE(semver.MustParse("1.108.0")):
@@ -184,7 +186,7 @@ func (h LoanOpenHandler) swap(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) handleV111(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) handleV113(ctx cosmos.Context, msg MsgLoanOpen) error {
 	// inject txid into the context if unset
 	var err error
 	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)

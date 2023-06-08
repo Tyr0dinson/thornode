@@ -152,6 +152,23 @@ func (h LoanOpenHandler) validateV107(ctx cosmos.Context, msg MsgLoanOpen) error
 	return nil
 }
 
+func (h LoanOpenHandler) handleV111(ctx cosmos.Context, msg MsgLoanOpen) error {
+	// inject txid into the context if unset
+	var err error
+	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
+	if err != nil {
+		return err
+	}
+
+	// if the inbound asset is TOR, then lets repay the loan. If not, lets
+	// swap first and try again later
+	if msg.CollateralAsset.IsDerivedAsset() {
+		return h.openLoan(ctx, msg)
+	} else {
+		return h.swap(ctx, msg)
+	}
+}
+
 func (h LoanOpenHandler) handleV108(ctx cosmos.Context, msg MsgLoanOpen) error {
 	// inject txid into the context if unset
 	var err error
