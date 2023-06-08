@@ -157,13 +157,6 @@ func (h LoanRepaymentHandler) swap(ctx cosmos.Context, msg MsgLoanRepayment) err
 }
 
 func (h LoanRepaymentHandler) handleV113(ctx cosmos.Context, msg MsgLoanRepayment) error {
-	// inject txid into the context if unset
-	var err error
-	ctx, err = storeContextTxID(ctx, constants.CtxLoanTxID)
-	if err != nil {
-		return err
-	}
-
 	// if the inbound asset is TOR, then lets repay the loan. If not, lets
 	// swap first and try again later
 	if msg.Coin.Asset.Equals(common.TOR) {
