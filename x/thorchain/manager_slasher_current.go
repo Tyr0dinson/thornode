@@ -375,6 +375,16 @@ func (s *SlasherV115) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					for i, action := range voter.Actions {
 						if action.Equals(tx) {
 							voter.Actions[i].VaultPubKey = vault.PubKey
+
+							// Here, simultaneously clear the Aggregator information for a reassigned TxOutItem and its Actions item
+							// so that a SwapOut will send the THORChain output asset instead of cycling and swallowingif
+							// (and maybe failing with slashes) if something goes wrong.
+							tx.Aggregator = ""
+							tx.AggregatorTargetAsset = ""
+							tx.AggregatorTargetLimit = nil
+							voter.Actions[i].Aggregator = ""
+							voter.Actions[i].AggregatorTargetAsset = ""
+							voter.Actions[i].AggregatorTargetLimit = nil
 						}
 					}
 					s.keeper.SetObservedTxInVoter(ctx, voter)
