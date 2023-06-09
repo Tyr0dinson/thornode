@@ -257,7 +257,7 @@ func (h LoanOpenHandler) openLoanV113(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 	cr := h.getCR(totalCollateral.Add(msg.CollateralAmount), totalAvailableAssetForPool, minCR, maxCR)
 
-	price := h.mgr.Keeper().DollarInRune(ctx).QuoUint64(constants.DollarMulti)
+	price := h.mgr.Keeper().DollarsPerRune(ctx).QuoUint64(constants.DollarMulti)
 	if price.IsZero() {
 		return fmt.Errorf("TOR price cannot be zero")
 	}

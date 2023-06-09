@@ -34,11 +34,12 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 	return []common.Asset{asset.GetLayer1Asset()}
 }
 
-func (k KVStore) DollarInRune(ctx cosmos.Context) cosmos.Uint {
+// gets the amount of USD that is equal to 1 RUNE (in other words, 1 RUNE's price in USD)
+func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
 	// check for mimir override
-	dollarInRune, err := k.GetMimir(ctx, "DollarInRune")
-	if err == nil && dollarInRune > 0 {
-		return cosmos.NewUint(uint64(dollarInRune))
+	dollarsPerRune, err := k.GetMimir(ctx, "DollarsPerRune")
+	if err == nil && dollarsPerRune > 0 {
+		return cosmos.NewUint(uint64(dollarsPerRune))
 	}
 
 	usdAssets := k.GetAnchors(ctx, common.TOR)
