@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -37,7 +39,16 @@ func NewManageTHORNameMemo(name string, chain common.Chain, addr common.Address,
 	}
 }
 
-func ParseManageTHORNameMemo(parts []string) (ManageTHORNameMemo, error) {
+func ParseManageTHORNameMemo(version semver.Version, parts []string) (ManageTHORNameMemo, error) {
+	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return ParseManageTHORNameMemoV114(parts)
+	default:
+		return ParseManageTHORNameMemoV1(parts)
+	}
+}
+
+func ParseManageTHORNameMemoV114(parts []string) (ManageTHORNameMemo, error) {
 	var err error
 	var name string
 	var owner cosmos.AccAddress

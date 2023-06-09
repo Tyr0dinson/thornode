@@ -347,7 +347,7 @@ func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo strin
 	case TxConsolidate:
 		return ParseConsolidateMemo(parts)
 	case TxTHORName:
-		return ParseManageTHORNameMemo(parts)
+		return ParseManageTHORNameMemo(keeper.GetVersion(), parts)
 	case TxLoanOpen:
 		return ParseLoanOpenMemo(ctx, keeper.GetVersion(), keeper, asset, parts)
 	case TxLoanRepayment:
