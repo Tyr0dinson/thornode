@@ -44,7 +44,10 @@ func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
 
 	usdAssets := k.GetAnchors(ctx, common.TOR)
 
-	return k.AnchorMedian(ctx, usdAssets)
+	// anchorMedian returns a 1e8*constants.DollarMulti number,
+	// so divide by constants.DollarMulti in order to return a 1e8 number
+	// (consistent with a DollarsPerRune Mimir key being 1e8).
+	return k.AnchorMedian(ctx, usdAssets).QuoUint64(constants.DollarMulti)
 }
 
 func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {

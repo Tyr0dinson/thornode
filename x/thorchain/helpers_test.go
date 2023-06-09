@@ -396,7 +396,7 @@ func (s *HelperSuite) TestDollarsPerRune(c *C) {
 	pool.Decimals = 8
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	runeUSDPrice := telem(mgr.Keeper().DollarsPerRune(ctx).QuoUint64(constants.DollarMulti))
+	runeUSDPrice := telem(mgr.Keeper().DollarsPerRune(ctx))
 	c.Assert(runeUSDPrice, Equals, float32(8.300317))
 
 	// Now try with a second pool, identical depths.
@@ -411,7 +411,7 @@ func (s *HelperSuite) TestDollarsPerRune(c *C) {
 	pool.Decimals = 8
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	runeUSDPrice = telem(mgr.Keeper().DollarsPerRune(ctx).QuoUint64(constants.DollarMulti))
+	runeUSDPrice = telem(mgr.Keeper().DollarsPerRune(ctx))
 	c.Assert(runeUSDPrice, Equals, float32(8.300317))
 }
 

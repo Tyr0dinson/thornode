@@ -99,7 +99,7 @@ func (gm *GasMgrV113) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 	runeUSDPrice := cosmos.ZeroUint()
 	// since gm.mgr get set at BeginBlock , so here add a safeguard incase gm.mgr is nil
 	if gm.mgr != nil {
-		runeUSDPrice = gm.keeper.DollarsPerRune(ctx).QuoUint64(constants.DollarMulti)
+		runeUSDPrice = gm.keeper.DollarsPerRune(ctx)
 	}
 	minAsset := cosmos.ZeroUint()
 	if !runeUSDPrice.IsZero() {

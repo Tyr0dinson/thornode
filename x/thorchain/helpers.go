@@ -778,7 +778,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	version := mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.113.0")):
-		runeUSDPrice = telem(mgr.Keeper().DollarsPerRune(ctx).QuoUint64(constants.DollarMulti))
+		runeUSDPrice = telem(mgr.Keeper().DollarsPerRune(ctx))
 	default:
 		runeUSDPrice = telem(mgr.Keeper().DollarInRune(ctx).QuoUint64(constants.DollarMulti))
 	}
