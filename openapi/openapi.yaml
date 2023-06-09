@@ -1973,7 +1973,7 @@ components:
           example: "BTC.BTC"
         swap_threshold:
           type: string
-          description: minimum RUNE input for an automatic swap of RUNE to the preferred_asset, with zero specifying no swap
+          description: minimum RUNE balance (on top of 1 RUNE retained for transactions) for automatic swap of RUNE to the preferred_asset, with zero specifying no swap
           example: "1000"
         aliases:
           type: array

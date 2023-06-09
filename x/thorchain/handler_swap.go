@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 
@@ -257,12 +258,15 @@ func (h SwapHandler) handleV114(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		}
 	}
 
+	if strings.HasPrefix(msg.Tx.Memo, "THOR-") {
+		// This is a protocol-origin swap with an unparsable memo,
+		// so finish the swap here without checking for a downstream handler.
+		return &cosmos.Result{}, nil
+	}
 	mem, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	if err != nil {
-		// This is typically expectd to be a PreferredAsset (or other protocol-origin) swap,
-		// so treat the type as though TxSwap (return here) and only use the Debug level for logging.
-		ctx.Logger().Debug("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
-		return &cosmos.Result{}, nil
+		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", err)
+		return nil, err
 	}
 	switch mem.GetType() {
 	case TxAdd:
