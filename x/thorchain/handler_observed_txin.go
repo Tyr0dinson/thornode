@@ -69,6 +69,8 @@ func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn)
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return h.handleV114(ctx, msg)
 	case version.GTE(semver.MustParse("1.113.0")):
 		return h.handleV113(ctx, msg)
 	case version.GTE(semver.MustParse("1.112.0")):
@@ -135,7 +137,7 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 	return voter, ok
 }
 
-func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+func (h ObservedTxInHandler) handleV114(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
