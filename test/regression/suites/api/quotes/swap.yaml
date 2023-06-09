@@ -317,7 +317,7 @@ params:
   destination: {{ addr_btc_fox }}
 asserts:
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:895131:{{ addr_thor_pig }}:500"
-  - .expected_amount_out|tonumber == 943729
+  - .expected_amount_out|tonumber == 942799
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -358,7 +358,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "943729"
+        - amount: "942799"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -417,8 +417,8 @@ params:
   affiliate_bps: 500
   destination: {{ addr_thor_fox }}
 asserts:
-  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252262:xx:500"
-  - .expected_amount_out|tonumber == 912114319
+  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252197:xx:500"
+  - .expected_amount_out|tonumber == 911218501
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -453,7 +453,7 @@ description: establish affiliate balance before swap
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 95019968
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 95950836
 ---
 type: create-blocks
 count: 1
@@ -464,14 +464,14 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170766
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2501421370022
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2501420474204
 ---
 type: check
 description: affiliate should have more rune after swap
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 141088304
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 142922933
 ---
 ########################################################################################
 # quote btc/btc to rune when from_address doesn't have enough btc/btc - quote should still be returned

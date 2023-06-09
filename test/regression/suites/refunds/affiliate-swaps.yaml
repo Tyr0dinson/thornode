@@ -111,18 +111,18 @@ type: create-blocks
 count: 1
 ---
 type: check
-description: should have lost gas and fee for failed swap
+description: should have lost gas (2*0.02 RUNE for inbound and refund) for failed swap
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499784000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499834000000
 ---
 type: check
-description: affiliate should have receieved fee
+description: affiliate should not have received fee, since the message failed validation (isSynthMintPaused)
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 200000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 150000000
 ---
 ########################################################################################
 # swap l1 to rune failed limit
@@ -162,7 +162,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 446691832
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 396761297
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -231,7 +231,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 692136311
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 642274719
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -300,7 +300,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 936342826
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 886549660
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -369,7 +369,7 @@ description: affiliate should have receieved fee
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1179320672
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1129595420
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -434,11 +434,14 @@ asserts:
   - .[0]|.in_hash == "{{ observe_txid 9 }}"
 ---
 type: check
-description: affiliate should have receieved fee
+description: affiliate should not have received fee, since the message failed validation (isSynthMintPaused)
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1129595420
+---
+type: create-blocks
+count: 1
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -449,7 +452,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "4736000"
+        - amount: "4986000"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -468,6 +471,7 @@ description: outbound should have been observed
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+
 ---
 ########################################################################################
 # valid swap rune to synth for subsequent failure tests from synth
@@ -487,21 +491,21 @@ description: fox account should have received btc synth
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9287456
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489782000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9243906
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489832000000
 ---
 type: check
-description: affiliate should have receieved fee
+description: affiliate should not have received fee, since the memo had no affiliate field
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1129595420
 ---
 type: check
 description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9287456
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9243906
 ---
 ########################################################################################
 # swap synth to rune failed limit
@@ -521,22 +525,21 @@ description: should have lost gas and fee for failed swap, some synth should bur
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9235593
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489780000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9192051
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489830000000
 ---
 type: check
-description: affiliate should have receieved fee in synth btc
+description: affiliate should have receieved fee in rune
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances|length == 2
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 50000
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1181512660
 ---
 type: check
-description: entire btc synth supply should be on pig and fox accounts
+description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9285593
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9192051
 ---
 ########################################################################################
 # swap synth to l1 failed limit
@@ -556,22 +559,21 @@ description: should have lost gas and fee for failed swap, some synth should bur
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9183730
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489778000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9140195
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489828000000
 ---
 type: check
-description: affiliate should have receieved fee in synth btc
+description: affiliate should have receieved fee in rune
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances|length == 2
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 100000
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1233402762
 ---
 type: check
-description: entire btc synth supply should be on pig and fox accounts
+description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9283730
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9140195
 ---
 ########################################################################################
 # swap synth to synth failed limit
@@ -581,7 +583,7 @@ signer: {{ addr_thor_fox }}
 coins:
   - amount: "1000000"
     asset: "btc/btc"
-memo: "=:ETH/ETH:{{ addr_thor_fox }}:10000000:{{ addr_thor_pig }}:500"
+memo: "=:ETH/ETH:{{ addr_thor_fox }}:100000000:{{ addr_thor_pig }}:500"
 ---
 type: create-blocks
 count: 1
@@ -591,26 +593,25 @@ description: should have lost gas and fee for failed swap, some synth should bur
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9131867
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489776000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9088338
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489826000000
 ---
 type: check
-description: affiliate should have receieved fee in synth btc
+description: affiliate should have receieved fee in rune
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances|length == 2
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 150000
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1285265740
 ---
 type: check
-description: entire btc synth supply should be on pig and fox accounts
+description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply|length == 3
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9281867
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9088338
 ---
 ########################################################################################
-# swap synth to non-existent l1
+# invalid swap memo
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -627,23 +628,22 @@ description: should have lost gas and fee for failed swap, some synth should bur
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9130004
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489774000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9086481
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489824000000
 ---
 type: check
-description: affiliate should not receive fee
+description: affiliate should not have received fee, because processOneTxIn can't intepret the memo
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 150000
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1285265740
 ---
 type: check
-description: entire btc synth supply should be on pig and fox accounts
+description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply|length == 3
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9280004
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9086481
 ---
 ########################################################################################
 # swap synth to non-existent synth
@@ -663,20 +663,54 @@ description: should have lost gas and fee for failed swap, some synth should bur
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9078141
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489772000000
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9084624
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489822000000
 ---
 type: check
-description: affiliate should have receieved fee in synth btc
+description: affiliate should have receieved fee in rune
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
-  - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 200000
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1421079052
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1285265740
 ---
 type: check
-description: entire btc synth supply should be on pig and fox accounts
+description: entire btc synth supply should be on fox account
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply|length == 3
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9278141
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9084624
+---
+########################################################################################
+# swap synth to non-existent l1
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000"
+    asset: "btc/btc"
+memo: "=:DOGE.DOGE:{{ addr_doge_fox }}::{{ addr_thor_pig }}:500"
+---
+type: create-blocks
+count: 1
+---
+type: check
+description: should have lost gas and fee for failed swap, some synth should burn
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9032766
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489820000000
+---
+type: check
+description: affiliate should have receieved fee in rune
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1337100176
+---
+type: check
+description: entire btc synth supply should be on fox account
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+asserts:
+  - .supply|length == 3
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9032766
