@@ -55,8 +55,8 @@ func (tos *TxOutStorageV112) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			continue
 		}
 
-		// if the outbound height is in the past, then no need to calculate new max gas
-		if voter.OutboundHeight < ctx.BlockHeight() {
+		// if the outbound height exists and is in the past, then no need to calculate new max gas
+		if voter.OutboundHeight > 0 && voter.OutboundHeight < ctx.BlockHeight() {
 			continue
 		}
 
