@@ -49,6 +49,17 @@ func (tos *TxOutStorageV112) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	gasRateCache := make(map[common.Chain]int64)
 
 	for i, tx := range txOut.TxArray {
+		voter, err := tos.keeper.GetObservedTxInVoter(ctx, tx.InHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
+			continue
+		}
+
+		// if the outbound height is in the past, then no need to calculate new max gas
+		if voter.OutboundHeight < ctx.BlockHeight() {
+			continue
+		}
+
 		// update max gas, take the larger of the current gas, or the last gas used
 
 		// update cache if needed
