@@ -103,6 +103,10 @@ func (o *Observer) Start() error {
 	return nil
 }
 
+func (o *Observer) Observe(txIn types.TxIn) {
+	o.globalTxsQueue <- txIn
+}
+
 func (o *Observer) restoreDeck() {
 	onDeckTxs, err := o.storage.GetOnDeckTxs()
 	if err != nil {
