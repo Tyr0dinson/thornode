@@ -1198,9 +1198,9 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	// extremely unlikely), ignore it for now (attempt to recover in the next
 	// block). This should be OK as the asset amount in the pool has already
 	// been deducted so the balances are correct. Just operating at a deficit.
-	totalBonded, err := vm.getTotalActiveBond(ctx)
+	totalEffectiveBond, _, err := getTotalEffectiveBond(ctx, vm.k)
 	if err != nil {
-		return fmt.Errorf("fail to get total active bond: %w", err)
+		return fmt.Errorf("fail to get total effective bond: %w", err)
 	}
 
 	emissionCurve, err := vm.k.GetMimir(ctx, constants.EmissionCurve.String())
@@ -1212,7 +1212,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 		incentiveCurve = constAccessor.GetInt64Value(constants.IncentiveCurve)
 	}
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
-	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(totalProvidedLiquidity, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, incentiveCurve, blocksPerYear)
+	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(totalProvidedLiquidity, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, incentiveCurve, blocksPerYear)
 
 	network.LPIncomeSplit = int64(lpShare.Uint64())
 	network.NodeIncomeSplit = int64(10_000) - network.LPIncomeSplit
@@ -1350,7 +1350,7 @@ func (vm *NetworkMgrVCUR) calcPoolDeficit(lpDeficit, totalFees, poolFees cosmos.
 }
 
 // Calculate the block rewards that bonders and liquidity providers should receive
-func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, incentiveCurve, blocksPerYear int64) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalEffectiveBond, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, incentiveCurve, blocksPerYear int64) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	// Block Rewards will take the latest reserve, divide it by the emission
 	// curve factor, then divide by blocks per year
 	trD := cosmos.NewDec(int64(totalReserve.Uint64()))
@@ -1361,8 +1361,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, 
 
 	systemIncome := blockReward.Add(totalLiquidityFees) // Get total system income for block
 
-	lpSplit := vm.getPoolShare(incentiveCurve, totalProvidedLiquidity, totalBonded, systemIncome) // Get liquidity provider share
-	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                          // Remainder to Bonders
+	lpSplit := vm.getPoolShare(incentiveCurve, totalProvidedLiquidity, totalEffectiveBond, systemIncome) // Get liquidity provider share
+	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                 // Remainder to Bonders
 	lpShare := common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(10_000))
 
 	lpDeficit := cosmos.ZeroUint()
@@ -1379,7 +1379,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, 
 	return bonderSplit, poolReward, lpDeficit, lpShare
 }
 
-func (vm *NetworkMgrVCUR) getPoolShare(incentiveCurve int64, totalProvidedLiquidity, totalBonded, totalRewards cosmos.Uint) cosmos.Uint {
+func (vm *NetworkMgrVCUR) getPoolShare(incentiveCurve int64, totalProvidedLiquidity, totalEffectiveBond, totalRewards cosmos.Uint) cosmos.Uint {
 	/*
 		Pooled : Share
 		0 : 100%
@@ -1390,7 +1390,7 @@ func (vm *NetworkMgrVCUR) getPoolShare(incentiveCurve int64, totalProvidedLiquid
 	if incentiveCurve <= 0 {
 		incentiveCurve = 1
 	}
-	if totalProvidedLiquidity.GTE(totalBonded) { // Zero payments to liquidity providers when provided liquidity == bonded
+	if totalProvidedLiquidity.GTE(totalEffectiveBond) { // Zero payments to liquidity providers when provided liquidity == bonded
 		return cosmos.ZeroUint()
 	}
 	/*
@@ -1402,13 +1402,13 @@ func (vm *NetworkMgrVCUR) getPoolShare(incentiveCurve int64, totalProvidedLiquid
 
 	var total cosmos.Uint
 	if incentiveCurve >= 100 {
-		total = totalBonded
+		total = totalEffectiveBond
 	} else {
 		inD := cosmos.NewDec(incentiveCurve)
 		divi := cosmos.NewDecFromBigInt(totalProvidedLiquidity.BigInt()).Quo(inD)
-		total = cosmos.NewUint(uint64((divi).RoundInt64())).Add(totalBonded)
+		total = cosmos.NewUint(uint64((divi).RoundInt64())).Add(totalEffectiveBond)
 	}
-	part := common.SafeSub(totalBonded, totalProvidedLiquidity)
+	part := common.SafeSub(totalEffectiveBond, totalProvidedLiquidity)
 	return common.GetSafeShare(part, total, totalRewards)
 }
 

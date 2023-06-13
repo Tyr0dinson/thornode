@@ -756,7 +756,7 @@ func (vm *ValidatorMgrVCUR) distributeBondReward(ctx cosmos.Context, mgr Manager
 	var resultErr error
 	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
-		return fmt.Errorf("fail to get all active node account: %w", err)
+		return fmt.Errorf("fail to get all active node accounts: %w", err)
 	}
 
 	// Note that unlike estimated CurrentAward distribution in querier.go ,
@@ -773,16 +773,9 @@ func (vm *ValidatorMgrVCUR) distributeBondReward(ctx cosmos.Context, mgr Manager
 		}
 	}
 
-	bondHardCap := getHardBondCap(active)
-
-	totalEffectiveBond := cosmos.ZeroUint()
-	for _, item := range active {
-		b := item.Bond
-		if item.Bond.GT(bondHardCap) {
-			b = bondHardCap
-		}
-
-		totalEffectiveBond = totalEffectiveBond.Add(b)
+	totalEffectiveBond, bondHardCap, err := getTotalEffectiveBond(ctx, vm.k)
+	if err != nil {
+		return fmt.Errorf("fail to get total effective bond: %w", err)
 	}
 
 	network, err := vm.k.GetNetwork(ctx)
