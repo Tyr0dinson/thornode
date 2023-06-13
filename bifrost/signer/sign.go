@@ -214,12 +214,12 @@ func (s *Signer) processTransactions() {
 			observations := []types.TxInItem{}
 			defer func() {
 				if len(observations) > 0 {
-					s.observer.Observe(types.TxIn{
+					s.observer.ObserveSigned(types.TxIn{
 						Count:                strconv.Itoa(len(observations)),
 						Chain:                chain,
 						TxArray:              observations,
 						MemPool:              true,
-						Filtered:             false,
+						Filtered:             true,
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
