@@ -533,7 +533,7 @@ class Smoker:
             old_events = events
             if len(events) == len(sim_events) and pending_txs <= 0 and processed_events:
                 break
-            time.sleep(0.3)
+            time.sleep(1)
         if pending_txs > 0:
             count_events = len(events) - old_event_count
             self.check_events(events[-count_events:], sim_events[-count_events:])

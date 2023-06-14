@@ -73,7 +73,7 @@ class MockLitecoin(HttpClient):
             except Exception:
                 continue
             finally:
-                time.sleep(0.3)
+                time.sleep(1)
 
     @classmethod
     def get_address_from_pubkey(cls, pubkey):
@@ -130,7 +130,7 @@ class MockLitecoin(HttpClient):
         """
         start_block = self.get_block_height()
         for x in range(0, 30):
-            time.sleep(0.3)
+            time.sleep(1)
             block = self.get_block_height()
             if block - start_block >= count:
                 return
