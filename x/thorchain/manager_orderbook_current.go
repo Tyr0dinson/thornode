@@ -13,19 +13,19 @@ import (
 	"github.com/jinzhu/copier"
 )
 
-// OrderBookV104 is going to manage the swaps queue
-type OrderBookV104 struct {
+// OrderBookV114 is going to manage the swaps queue
+type OrderBookV114 struct {
 	k           keeper.Keeper
 	limitOrders orderItems
 }
 
-// newOrderBookV104 create a new vault manager
-func newOrderBookV104(k keeper.Keeper) *OrderBookV104 {
-	return &OrderBookV104{k: k, limitOrders: make(orderItems, 0)}
+// newOrderBookV114 create a new vault manager
+func newOrderBookV114(k keeper.Keeper) *OrderBookV114 {
+	return &OrderBookV114{k: k, limitOrders: make(orderItems, 0)}
 }
 
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
-func (ob *OrderBookV104) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradePairs, pools Pools) (orderItems, error) { // nolint
+func (ob *OrderBookV114) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradePairs, pools Pools) (orderItems, error) { // nolint
 	items := make(orderItems, 0)
 
 	// if the network is doing a pool cycle, no swaps/orders are executed this
@@ -81,7 +81,7 @@ func (ob *OrderBookV104) FetchQueue(ctx cosmos.Context, mgr Manager, pairs trade
 	return items, nil
 }
 
-func (ob *OrderBookV104) discoverLimitOrders(ctx cosmos.Context, pair tradePair, pools Pools) (orderItems, bool) {
+func (ob *OrderBookV114) discoverLimitOrders(ctx cosmos.Context, pair tradePair, pools Pools) (orderItems, bool) {
 	items := make(orderItems, 0)
 	done := false
 
@@ -137,7 +137,7 @@ func (ob *OrderBookV104) discoverLimitOrders(ctx cosmos.Context, pair tradePair,
 	return items, done
 }
 
-func (ob *OrderBookV104) checkFeelessSwap(pools Pools, pair tradePair, indexRatio uint64) bool {
+func (ob *OrderBookV114) checkFeelessSwap(pools Pools, pair tradePair, indexRatio uint64) bool {
 	var ratio cosmos.Uint
 	switch {
 	case !pair.HasRune():
@@ -169,7 +169,7 @@ func (ob *OrderBookV104) checkFeelessSwap(pools Pools, pair tradePair, indexRati
 	return cosmos.NewUint(indexRatio).GT(ratio)
 }
 
-func (ob *OrderBookV104) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg MsgSwap) bool {
+func (ob *OrderBookV114) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg MsgSwap) bool {
 	swapper, err := GetSwapper(ob.k.GetVersion())
 	if err != nil {
 		ctx.Logger().Error("fail to load swapper", "error", err)
@@ -218,7 +218,7 @@ func (ob *OrderBookV104) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg M
 	return emit.GT(target.Amount)
 }
 
-func (ob *OrderBookV104) getRatio(input, output cosmos.Uint) cosmos.Uint {
+func (ob *OrderBookV114) getRatio(input, output cosmos.Uint) cosmos.Uint {
 	if output.IsZero() {
 		return cosmos.ZeroUint()
 	}
@@ -227,7 +227,7 @@ func (ob *OrderBookV104) getRatio(input, output cosmos.Uint) cosmos.Uint {
 
 // converts a proc, cosmos.Uint, into a series of selected pairs from the pairs
 // input (ie asset pairs that need to be check for executable order)
-func (ob *OrderBookV104) convertProcToAssetArrays(proc []bool, pairs tradePairs) (tradePairs, bool) {
+func (ob *OrderBookV114) convertProcToAssetArrays(proc []bool, pairs tradePairs) (tradePairs, bool) {
 	result := make(tradePairs, 0)
 	if len(proc) != len(pairs) {
 		return result, false
@@ -244,7 +244,7 @@ func (ob *OrderBookV104) convertProcToAssetArrays(proc []bool, pairs tradePairs)
 }
 
 // converts a list of selected pairs from a list of total pairs, to be represented as a uint64
-func (ob *OrderBookV104) convertAssetArraysToProc(toProc, pairs tradePairs) []bool {
+func (ob *OrderBookV114) convertAssetArraysToProc(toProc, pairs tradePairs) []bool {
 	builder := make([]bool, len(pairs))
 	for i, pair := range pairs {
 		builder[i] = false
@@ -259,7 +259,7 @@ func (ob *OrderBookV104) convertAssetArraysToProc(toProc, pairs tradePairs) []bo
 }
 
 // getAssetPairs - fetches a list of strings that represents directional trading pairs
-func (ob *OrderBookV104) getAssetPairs(ctx cosmos.Context) (tradePairs, Pools) {
+func (ob *OrderBookV114) getAssetPairs(ctx cosmos.Context) (tradePairs, Pools) {
 	result := make(tradePairs, 0)
 	var pools Pools
 
@@ -295,7 +295,7 @@ func (ob *OrderBookV104) getAssetPairs(ctx cosmos.Context) (tradePairs, Pools) {
 	return result, pools
 }
 
-func (ob *OrderBookV104) AddOrderBookItem(ctx cosmos.Context, msg MsgSwap) error {
+func (ob *OrderBookV114) AddOrderBookItem(ctx cosmos.Context, msg MsgSwap) error {
 	if err := ob.k.SetOrderBookItem(ctx, msg); err != nil {
 		ctx.Logger().Error("fail to add order book item", "error", err)
 		return err
@@ -312,7 +312,7 @@ func (ob *OrderBookV104) AddOrderBookItem(ctx cosmos.Context, msg MsgSwap) error
 }
 
 // EndBlock trigger the real swap to be processed
-func (ob *OrderBookV104) EndBlock(ctx cosmos.Context, mgr Manager) error {
+func (ob *OrderBookV114) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	handler := NewInternalHandler(mgr)
 
 	minSwapsPerBlock, err := ob.k.GetMimir(ctx, constants.MinSwapsPerBlock.String())
@@ -459,7 +459,7 @@ func (ob *OrderBookV104) EndBlock(ctx cosmos.Context, mgr Manager) error {
 }
 
 // getTodoNum - determine how many swaps to do.
-func (ob *OrderBookV104) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock int64) int64 {
+func (ob *OrderBookV114) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock int64) int64 {
 	// Do half the length of the queue. Unless...
 	//	1. The queue length is greater than maxSwapsPerBlock
 	//  2. The queue legnth is less than minSwapsPerBlock
@@ -475,7 +475,7 @@ func (ob *OrderBookV104) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock
 
 // scoreMsgs - this takes a list of MsgSwap, and converts them to a scored
 // orderItem list
-func (ob *OrderBookV104) scoreMsgs(ctx cosmos.Context, items orderItems, synthVirtualDepthMult int64) (orderItems, error) {
+func (ob *OrderBookV114) scoreMsgs(ctx cosmos.Context, items orderItems, synthVirtualDepthMult int64) (orderItems, error) {
 	pools := make(map[common.Asset]Pool)
 
 	for i, item := range items {
@@ -535,7 +535,7 @@ func (ob *OrderBookV104) scoreMsgs(ctx cosmos.Context, items orderItems, synthVi
 }
 
 // getLiquidityFeeAndSlip calculate liquidity fee and slip, fee is in RUNE
-func (ob *OrderBookV104) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *orderItem, virtualDepthMult int64) {
+func (ob *OrderBookV114) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *orderItem, virtualDepthMult int64) {
 	// Get our X, x, Y values
 	var X, x, Y cosmos.Uint
 	x = sourceCoin.Amount
@@ -564,7 +564,7 @@ func (ob *OrderBookV104) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, s
 	item.slip = item.slip.Add(slip)
 }
 
-func (ob *OrderBookV104) parseRatioFromKey(key string) (uint64, error) {
+func (ob *OrderBookV114) parseRatioFromKey(key string) (uint64, error) {
 	parts := strings.Split(key, "/")
 	if len(parts) < 5 {
 		return 0, fmt.Errorf("invalid key format")
