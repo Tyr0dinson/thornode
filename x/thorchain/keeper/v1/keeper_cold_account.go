@@ -54,30 +54,30 @@ func (k KVStore) ListActiveColdAccounts(ctx cosmos.Context) (ColdAccounts, error
 
 // GetColdAccount try to get cold account with the given address from db
 func (k KVStore) GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) (ColdAccount, error) {
-	record := NewColdAccount(addr, asset, common.NoAddress)
+	record := NewColdAccount(addr, asset, common.PubKey(""))
 	_, err := k.getColdAccount(ctx, k.GetKey(ctx, prefixColdAccount, record.Key()), &record)
 	return record, err
 }
 
 // GetColdAccountByAddress try to get cold account with the given address from db
-func (k KVStore) GetColdAccountByAddress(ctx cosmos.Context, addr common.Address, asset common.Asset) (ColdAccount, error) {
+func (k KVStore) GetColdAccountByPubKey(ctx cosmos.Context, pk common.PubKey, asset common.Asset) (ColdAccount, error) {
 	acc := cosmos.AccAddress{}
-	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountAddr, addr.String()), &acc)
+	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, pk.String()), &acc)
 	return k.GetColdAccount(ctx, acc, asset)
 }
 
-// SetColdAccount save the given node account into data store
+// SetColdAccount save the given cold account into data store
 func (k KVStore) SetColdAccount(ctx cosmos.Context, acct ColdAccount) error {
 	if acct.IsEmpty() {
 		return nil
 	}
 	// ensure we're NOT overwriting the index
 	acc := cosmos.AccAddress{}
-	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountAddr, acct.Address.String()), &acc)
-	if !acc.Empty() && !acct.Owner.Equals(acc) {
+	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, acct.PubKey.String()), &acc)
+	if !acc.Empty() && !acct.Operator.Equals(acc) {
 		return fmt.Errorf("cannot overwrite cold account address index")
 	}
-	k.setAccAddress(ctx, k.GetKey(ctx, prefixColdAccountAddr, acct.Address.String()), acct.Owner)
+	k.setAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, acct.PubKey.String()), acct.Operator)
 	k.setColdAccount(ctx, k.GetKey(ctx, prefixColdAccount, acct.Key()), acct)
 	return nil
 }
@@ -93,7 +93,7 @@ func (k KVStore) SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt c
 	}
 	ra := rewriteRatio(ratioLength, getRatio(acct.Bond, amt))
 	key := k.GetKey(ctx, prefixColdAccountRatio, fmt.Sprintf("%s/%s", acct.Asset, ra))
-	k.setAccAddress(ctx, key, acct.Owner)
+	k.setAccAddress(ctx, key, acct.Operator)
 }
 
 // GetColdAccountRatioIterator iterate cold account

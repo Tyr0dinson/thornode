@@ -40,7 +40,7 @@ const (
 	prefixNodeAccount             types.DbPrefix = "node_account/"
 	prefixColdAccount             types.DbPrefix = "ca/"
 	prefixColdAccountRatio        types.DbPrefix = "ca_r/"
-	prefixColdAccountAddr         types.DbPrefix = "ca_a/"
+	prefixColdAccountPubKey       types.DbPrefix = "ca_pk/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"

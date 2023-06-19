@@ -250,7 +250,7 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 		}
 
 		if vault.IsCold() {
-			acct, newErr := h.mgr.Keeper().GetColdAccountByAddress(ctx, tx.Tx.ToAddress, tx.Tx.Coins[0].Asset)
+			acct, newErr := h.mgr.Keeper().GetColdAccountByPubKey(ctx, tx.ObservedPubKey, tx.Tx.Coins[0].Asset)
 			if newErr != nil {
 				ctx.Logger().Error("fail to fetch cold account by address", "error", newErr)
 				continue

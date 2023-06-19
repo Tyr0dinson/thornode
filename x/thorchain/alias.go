@@ -48,6 +48,12 @@ const (
 	NodeTypeValidator = types.NodeType_TypeValidator
 	NodeTypeVault     = types.NodeType_TypeVault
 
+	// Cold Status
+	ColdUnknown  = types.ColdStatus_UnknownColdStatus
+	ColdDisabled = types.ColdStatus_DisabledColdStatus
+	ColdStandby  = types.ColdStatus_StandbyColdStatus
+	ColdActive   = types.ColdStatus_ActiveColdStatus
+
 	// Bond type
 	BondPaid     = types.BondType_bond_paid
 	BondReturned = types.BondType_bond_returned
@@ -167,12 +173,15 @@ var (
 	NewBondProviders               = types.NewBondProviders
 	NewBondProvider                = types.NewBondProvider
 	NewNodeAccount                 = types.NewNodeAccount
+	NewColdAccount                 = types.NewColdAccount
 	NewVault                       = types.NewVault
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgYggdrasil                = types.NewMsgYggdrasil
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
 	NewMsgUnBond                   = types.NewMsgUnBond
+	NewMsgColdBond                 = types.NewMsgColdBond
+	NewMsgColdUnBond               = types.NewMsgColdUnBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
 	NewMsgBan                      = types.NewMsgBan
 	NewMsgSwitch                   = types.NewMsgSwitch
@@ -233,6 +242,8 @@ type (
 	MsgSwitch                      = types.MsgSwitch
 	MsgBond                        = types.MsgBond
 	MsgUnBond                      = types.MsgUnBond
+	MsgColdBond                    = types.MsgColdBond
+	MsgColdUnBond                  = types.MsgColdUnBond
 	MsgNoOp                        = types.MsgNoOp
 	MsgConsolidate                 = types.MsgConsolidate
 	MsgDonate                      = types.MsgDonate

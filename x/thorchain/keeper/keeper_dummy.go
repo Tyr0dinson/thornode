@@ -275,7 +275,7 @@ func (k KVStoreDummy) ListActiveColdAccounts(ctx cosmos.Context) (ColdAccounts, 
 func (k KVStoreDummy) GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress, _ common.Asset) (ColdAccount, error) {
 	return ColdAccount{}, kaboom
 }
-func (k KVStoreDummy) GetColdAccountByAddress(ctx cosmos.Context, addr common.Address, _ common.Asset) (ColdAccount, error) {
+func (k KVStoreDummy) GetColdAccountByPubKey(ctx cosmos.Context, _ common.PubKey, _ common.Asset) (ColdAccount, error) {
 	return ColdAccount{}, kaboom
 }
 func (k KVStoreDummy) SetColdAccount(ctx cosmos.Context, na ColdAccount) error                   { return kaboom }

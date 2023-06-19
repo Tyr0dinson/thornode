@@ -8,18 +8,18 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-func NewColdAccount(owner cosmos.AccAddress, asset common.Asset, addr common.Address) ColdAccount {
+func NewColdAccount(operator cosmos.AccAddress, asset common.Asset, pk common.PubKey) ColdAccount {
 	return ColdAccount{
-		Owner:   owner,
-		Asset:   asset,
-		Address: addr,
-		Status:  ColdStatus_StandbyColdStatus,
-		Bond:    cosmos.ZeroUint(),
+		Operator: operator,
+		Asset:    asset,
+		PubKey:   pk,
+		Status:   ColdStatus_StandbyColdStatus,
+		Bond:     cosmos.ZeroUint(),
 	}
 }
 
 func (a *ColdAccount) Key() string {
-	return fmt.Sprintf("%s/%s", a.Owner, a.Asset.String())
+	return fmt.Sprintf("%s/%s", a.Operator, a.Asset.String())
 }
 
 // IsEmpty decide whether ColdAccount is empty
@@ -44,9 +44,9 @@ func (a *ColdAccount) UpdateStatus(status ColdStatus, height int64) {
 // String implement fmt.Stringer interface
 func (a *ColdAccount) String() string {
 	sb := strings.Builder{}
-	sb.WriteString("owner:" + a.Owner.String() + "\n")
+	sb.WriteString("operator:" + a.Operator.String() + "\n")
 	sb.WriteString("status:" + a.Status.String() + "\n")
-	sb.WriteString("acct pubkeys:" + a.Address.String() + "\n")
+	sb.WriteString("pubkey:" + a.PubKey.String() + "\n")
 	sb.WriteString("bond:" + a.Bond.String() + "\n")
 	return sb.String()
 }

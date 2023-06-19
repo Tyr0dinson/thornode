@@ -41,6 +41,9 @@ const (
 	PauseBond
 	PauseUnbond
 	MinimumBondInRune
+	MinimumColdBondInRune
+	MinColdCollateralizationRatio
+	MinOutboundForCold
 	FundMigrationInterval
 	ArtificialRagnarokBlockHeight
 	MaximumLiquidityRune
@@ -150,6 +153,9 @@ var nameToString = map[ConstantName]string{
 	PauseBond:                           "PauseBond",
 	PauseUnbond:                         "PauseUnbond",
 	MinimumBondInRune:                   "MinimumBondInRune",
+	MinimumColdBondInRune:               "MinimumColdBondInRune",
+	MinColdCollateralizationRatio:       "MinColdCollateralizationRatio",
+	MinOutboundForCold:                  "MinOutboundForCold",
 	MaxBondProviders:                    "MaxBondProviders",
 	FundMigrationInterval:               "FundMigrationInterval",
 	ArtificialRagnarokBlockHeight:       "ArtificialRagnarokBlockHeight",

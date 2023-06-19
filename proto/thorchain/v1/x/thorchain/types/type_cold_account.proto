@@ -18,10 +18,11 @@ enum ColdStatus {
 }
 
 message ColdAccount {
-  bytes owner = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes operator = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   common.Asset asset = 2 [(gogoproto.nullable) = false];
-  string address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string pub_key = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   ColdStatus status = 4;
   int64 status_since = 5;
   string bond = 6 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  int64 collateralization_ratio = 7;
 }

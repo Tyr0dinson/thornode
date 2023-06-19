@@ -162,7 +162,7 @@ type KeeperColdAccount interface {
 	ListActiveColdAccounts(ctx cosmos.Context) (ColdAccounts, error)
 	GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) (ColdAccount, error)
 	SetColdAccount(ctx cosmos.Context, na ColdAccount) error
-	GetColdAccountByAddress(ctx cosmos.Context, addr common.Address, asset common.Asset) (ColdAccount, error)
+	GetColdAccountByPubKey(ctx cosmos.Context, pk common.PubKey, asset common.Asset) (ColdAccount, error)
 	GetColdAccountIterator(ctx cosmos.Context) cosmos.Iterator
 	SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt cosmos.Uint)
 	GetColdAccountIteratorRatio(ctx cosmos.Context, asset common.Asset) cosmos.Iterator
