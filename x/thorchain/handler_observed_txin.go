@@ -183,7 +183,7 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		if vault.IsAsgard() {
+		if vault.IsAsgard() || vault.IsCold() {
 			if !voter.UpdatedVault {
 				vault.AddFunds(tx.Tx.Coins)
 				voter.UpdatedVault = true
@@ -217,8 +217,8 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		if !vault.IsAsgard() {
-			ctx.Logger().Info("Vault is not an Asgard vault, transaction ignored.")
+		if vault.IsYggdrasil() {
+			ctx.Logger().Info("Vault is not an yggdrasil vault, transaction ignored.")
 			continue
 		}
 
@@ -246,6 +246,17 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			if newErr := refundTx(ctx, tx, h.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 				ctx.Logger().Error("fail to refund", "error", newErr)
 			}
+			continue
+		}
+
+		if vault.IsCold() {
+			acct, newErr := h.mgr.Keeper().GetColdAccountByAddress(ctx, tx.Tx.ToAddress, tx.Tx.Coins[0].Asset)
+			if newErr != nil {
+				ctx.Logger().Error("fail to fetch cold account by address", "error", newErr)
+				continue
+			}
+			coin := vault.GetCoin(tx.Tx.Coins[0].Asset)
+			h.mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount)
 			continue
 		}
 

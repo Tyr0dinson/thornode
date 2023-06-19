@@ -57,8 +57,11 @@ type (
 	BondProviders            = types.BondProviders
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
+	ColdAccount              = types.ColdAccount
+	ColdAccounts             = types.ColdAccounts
 	NodeMimirs               = types.NodeMimirs
 	NodeStatus               = types.NodeStatus
+	ColdStatus               = types.ColdStatus
 	Network                  = types.Network
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity
 	VaultStatus              = types.VaultStatus

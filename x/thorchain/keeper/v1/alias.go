@@ -25,6 +25,10 @@ const (
 	NodeStandby = types.NodeStatus_Standby
 	NodeUnknown = types.NodeStatus_Unknown
 
+	// Cold status
+	ColdActive  = types.ColdStatus_ActiveColdStatus
+	ColdStandby = types.ColdStatus_StandbyColdStatus
+
 	// Node type
 	NodeTypeUnknown   = types.NodeType_TypeUnknown
 	NodeTypeValidator = types.NodeType_TypeValidator
@@ -55,6 +59,7 @@ var (
 	HasSuperMajority           = types.HasSuperMajority
 	RegisterCodec              = types.RegisterCodec
 	NewNodeAccount             = types.NewNodeAccount
+	NewColdAccount             = types.NewColdAccount
 	NewBondProviders           = types.NewBondProviders
 	NewBondProvider            = types.NewBondProvider
 	NewVault                   = types.NewVault
@@ -107,6 +112,9 @@ type (
 	NodeAccounts             = types.NodeAccounts
 	NodeStatus               = types.NodeStatus
 	NodeType                 = types.NodeType
+	ColdAccount              = types.ColdAccount
+	ColdAccounts             = types.ColdAccounts
+	ColdStatus               = types.ColdStatus
 	Network                  = types.Network
 	VaultStatus              = types.VaultStatus
 	NetworkFee               = types.NetworkFee
@@ -125,6 +133,7 @@ type (
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64
+	ProtoAccAddress   = types.ProtoAccAddress
 	ProtoAccAddresses = types.ProtoAccAddresses
 	ProtoStrings      = types.ProtoStrings
 	ProtoUint         = common.ProtoUint

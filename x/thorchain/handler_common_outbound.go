@@ -84,6 +84,31 @@ func (h CommonOutboundTxHandler) handleV98(ctx cosmos.Context, tx ObservedTx, in
 		return &cosmos.Result{}, nil
 	}
 
+	// for funds sent from a cold vault, we only need to check if the to
+	// address is an active/retiring asgard vault
+	vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		return nil, ErrInternal(err, "fail to get vault for outbound handler")
+	}
+	if vault.IsCold() && !tx.Tx.ToAddress.IsEmpty() { // sanity check to address is valid
+		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+		}
+		if ok, _ := vaults.HasAddress(tx.Tx.Chain, tx.Tx.ToAddress); ok {
+			// outbound is from cold --> hot, no need to slash
+			return nil, nil
+		}
+		vaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get retiring vaults: %w", err)
+		}
+		if ok, _ := vaults.HasAddress(tx.Tx.Chain, tx.Tx.ToAddress); ok {
+			// outbound is from cold --> hot, no need to slash
+			return nil, nil
+		}
+	}
+
 	shouldSlash := true
 	signingTransPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	// every Signing Transaction Period , THORNode will check whether a

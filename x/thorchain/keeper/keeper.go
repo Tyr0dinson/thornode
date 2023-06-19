@@ -61,6 +61,7 @@ type Keeper interface {
 	KeeperLiquidityProvider
 	KeeperLoan
 	KeeperNodeAccount
+	KeeperColdAccount
 	KeeperObserver
 	KeeperObservedTx
 	KeeperTxOut
@@ -154,6 +155,17 @@ type KeeperNodeAccount interface {
 	ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccAddress) error
 	SetBondProviders(ctx cosmos.Context, _ BondProviders) error
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
+}
+
+type KeeperColdAccount interface {
+	ListColdAccountsByStatus(ctx cosmos.Context, status ColdStatus) (ColdAccounts, error)
+	ListActiveColdAccounts(ctx cosmos.Context) (ColdAccounts, error)
+	GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) (ColdAccount, error)
+	SetColdAccount(ctx cosmos.Context, na ColdAccount) error
+	GetColdAccountByAddress(ctx cosmos.Context, addr common.Address, asset common.Asset) (ColdAccount, error)
+	GetColdAccountIterator(ctx cosmos.Context) cosmos.Iterator
+	SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt cosmos.Uint)
+	GetColdAccountIteratorRatio(ctx cosmos.Context, asset common.Asset) cosmos.Iterator
 }
 
 type KeeperObserver interface {

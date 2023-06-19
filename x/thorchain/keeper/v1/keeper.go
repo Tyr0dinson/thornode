@@ -38,6 +38,9 @@ const (
 	prefixLastSignedHeight        types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight       types.DbPrefix = "last_observe_height/"
 	prefixNodeAccount             types.DbPrefix = "node_account/"
+	prefixColdAccount             types.DbPrefix = "ca/"
+	prefixColdAccountRatio        types.DbPrefix = "ca_r/"
+	prefixColdAccountAddr         types.DbPrefix = "ca_a/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
@@ -217,6 +220,32 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
 	*record = value.GetValue()
+	return true, nil
+}
+
+func (k KVStore) setAccAddress(ctx cosmos.Context, key string, record cosmos.AccAddress) {
+	store := ctx.KVStore(k.storeKey)
+	value := ProtoAccAddress{Value: record}
+	buf := k.cdc.MustMarshal(&value)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
+}
+
+func (k KVStore) getAccAddress(ctx cosmos.Context, key string, record *cosmos.AccAddress) (bool, error) {
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	var value ProtoAccAddress
+	bz := store.Get([]byte(key))
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	*record = value.Value
 	return true, nil
 }
 

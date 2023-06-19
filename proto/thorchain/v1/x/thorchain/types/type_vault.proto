@@ -12,6 +12,7 @@ enum VaultType {
   UnknownVault = 0;
   AsgardVault = 1;
   YggdrasilVault = 2;
+  ColdVault = 3;
 }
 
 enum VaultStatus {

@@ -186,24 +186,26 @@ func (h ObservedTxOutHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxOu
 				ctx.Logger().Error("fail to get vault", "error", err)
 				continue
 			}
-			toSlash := make(common.Coins, len(tx.Tx.Coins))
-			copy(toSlash, tx.Tx.Coins)
-			toSlash = toSlash.Adds(tx.Tx.Gas.ToCoins())
+			if !vault.IsCold() {
+				toSlash := make(common.Coins, len(tx.Tx.Coins))
+				copy(toSlash, tx.Tx.Coins)
+				toSlash = toSlash.Adds(tx.Tx.Gas.ToCoins())
 
-			slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
-				telemetry.NewLabel("reason", "sent_extra_funds"),
-				telemetry.NewLabel("chain", string(tx.Tx.Chain)),
-			}))
+				slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+					telemetry.NewLabel("reason", "sent_extra_funds"),
+					telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+				}))
 
-			if err := h.mgr.Slasher().SlashVault(slashCtx, tx.ObservedPubKey, toSlash, h.mgr); err != nil {
-				ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
+				if err := h.mgr.Slasher().SlashVault(slashCtx, tx.ObservedPubKey, toSlash, h.mgr); err != nil {
+					ctx.Logger().Error("fail to slash account for sending extra fund", "error", err)
+				}
+				vault.SubFunds(toSlash)
+				if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+					ctx.Logger().Error("fail to save vault", "error", err)
+				}
+
+				continue
 			}
-			vault.SubFunds(toSlash)
-			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
-				ctx.Logger().Error("fail to save vault", "error", err)
-			}
-
-			continue
 		}
 
 		txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
@@ -264,6 +266,17 @@ func (h ObservedTxOutHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxOu
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
+		}
+
+		if vault.IsCold() {
+			acct, newErr := h.mgr.Keeper().GetColdAccountByAddress(ctx, tx.Tx.ToAddress, tx.Tx.Coins[0].Asset)
+			if newErr != nil {
+				ctx.Logger().Error("fail to fetch cold account by address", "error", newErr)
+				continue
+			}
+			coin := vault.GetCoin(tx.Tx.Coins[0].Asset)
+			h.mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount)
+			continue
 		}
 
 		if !vault.HasFunds() && vault.Status == RetiringVault {
