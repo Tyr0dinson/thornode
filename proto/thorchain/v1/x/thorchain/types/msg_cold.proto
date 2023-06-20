@@ -8,7 +8,7 @@ import "gogoproto/gogo.proto";
 
 message MsgColdBond {
   bytes operator = 1  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  string bond = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  common.Coin bond = 3 [(gogoproto.nullable) = false];
   string pub_key = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   common.Asset asset = 4 [(gogoproto.nullable) = false];
   int64 collateralization_ratio = 5;
