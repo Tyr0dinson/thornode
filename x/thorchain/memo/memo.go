@@ -28,6 +28,8 @@ const (
 	TxDonate
 	TxBond
 	TxUnbond
+	TxColdBond
+	TxColdUnBond
 	TxLeave
 	TxYggdrasilFund
 	TxYggdrasilReturn
@@ -59,6 +61,8 @@ var stringToTxTypeMap = map[string]TxType{
 	"d":           TxDonate,
 	"bond":        TxBond,
 	"unbond":      TxUnbond,
+	"cbond":       TxColdBond,
+	"cunbond":     TxColdUnBond,
 	"leave":       TxLeave,
 	"yggdrasil+":  TxYggdrasilFund,
 	"yggdrasil-":  TxYggdrasilReturn,
@@ -88,6 +92,8 @@ var txToStringMap = map[TxType]string{
 	TxDonate:          "donate",
 	TxBond:            "bond",
 	TxUnbond:          "unbond",
+	TxColdBond:        "cbond",
+	TxColdUnBond:      "cunbond",
 	TxLeave:           "leave",
 	TxYggdrasilFund:   "yggdrasil+",
 	TxYggdrasilReturn: "yggdrasil-",
@@ -115,7 +121,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxLeave, TxSwitch, TxReserve, TxNoOp, TxTHORName, TxLoanOpen, TxLoanRepayment:
+	case TxAdd, TxWithdraw, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxColdBond, TxColdUnBond, TxLeave, TxSwitch, TxReserve, TxNoOp, TxTHORName, TxLoanOpen, TxLoanRepayment:
 		return true
 	default:
 		return false
@@ -143,7 +149,7 @@ func (tx TxType) IsInternal() bool {
 // HasOutbound whether the txtype might trigger outbound tx
 func (tx TxType) HasOutbound() bool {
 	switch tx {
-	case TxAdd, TxBond, TxDonate, TxYggdrasilReturn, TxReserve, TxMigrate, TxRagnarok, TxSwitch:
+	case TxAdd, TxBond, TxColdBond, TxDonate, TxYggdrasilReturn, TxReserve, TxMigrate, TxRagnarok, TxSwitch:
 		return false
 	default:
 		return true
@@ -220,7 +226,7 @@ func parseBase(memo string) (MemoBase, []string, error) {
 	}
 
 	switch mem.TxType {
-	case TxDonate, TxAdd, TxSwap, TxLimitOrder, TxWithdraw, TxLoanOpen, TxLoanRepayment:
+	case TxDonate, TxAdd, TxSwap, TxColdBond, TxColdUnBond, TxLimitOrder, TxWithdraw, TxLoanOpen, TxLoanRepayment:
 		if len(parts) < 2 {
 			return mem, parts, fmt.Errorf("cannot parse given memo: length %d", len(parts))
 		}
@@ -269,6 +275,10 @@ func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 		return ParseBondMemo(version, parts)
 	case TxUnbond:
 		return ParseUnbondMemo(version, parts)
+	case TxColdBond:
+		return ParseColdBondMemo(version, parts, asset)
+	case TxColdUnBond:
+		return ParseColdUnBondMemo(version, parts, asset)
 	case TxYggdrasilFund:
 		return ParseYggdrasilFundMemo(parts)
 	case TxYggdrasilReturn:
@@ -330,6 +340,10 @@ func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo strin
 		return ParseBondMemo(keeper.GetVersion(), parts)
 	case TxUnbond:
 		return ParseUnbondMemo(keeper.GetVersion(), parts)
+	case TxColdBond:
+		return ParseColdBondMemo(keeper.GetVersion(), parts, asset)
+	case TxColdUnBond:
+		return ParseColdUnBondMemo(keeper.GetVersion(), parts, asset)
 	case TxYggdrasilFund:
 		return ParseYggdrasilFundMemo(parts)
 	case TxYggdrasilReturn:
@@ -409,6 +423,15 @@ func GetPart(parts []string, idx int) string {
 		return ""
 	}
 	return parts[idx]
+}
+
+func getPartInt64(parts []string, idx int) (int64, bool, error) {
+	str := GetPart(parts, idx)
+	if str == "" {
+		return 0, false, nil
+	}
+	value, err := strconv.ParseInt(str, 10, 64)
+	return value, true, err
 }
 
 func parseTradeTarget(limit string) (cosmos.Uint, error) {

@@ -136,7 +136,8 @@ func (h DepositHandler) handleV113(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 		targetModule = BondName
 	case TxReserve, TxTHORName:
 		targetModule = ReserveName
-	// TODO: add TxMemo here to send funds to ColdBondName
+	case TxColdBond, TxColdUnBond:
+		targetModule = ColdBondName
 	default:
 		targetModule = AsgardName
 	}

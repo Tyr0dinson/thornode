@@ -79,6 +79,8 @@ const (
 	TxLimitOrder      = mem.TxLimitOrder
 	TxAdd             = mem.TxAdd
 	TxBond            = mem.TxBond
+	TxColdBond        = mem.TxColdBond
+	TxColdUnBond      = mem.TxColdUnBond
 	TxYggdrasilFund   = mem.TxYggdrasilFund
 	TxYggdrasilReturn = mem.TxYggdrasilReturn
 	TxMigrate         = mem.TxMigrate
