@@ -44,6 +44,7 @@ const (
 	MinimumColdBondInRune
 	MinColdCollateralizationRatio
 	MinOutboundForCold
+	ColdBondMaturity
 	FundMigrationInterval
 	ArtificialRagnarokBlockHeight
 	MaximumLiquidityRune
@@ -156,6 +157,7 @@ var nameToString = map[ConstantName]string{
 	MinimumColdBondInRune:               "MinimumColdBondInRune",
 	MinColdCollateralizationRatio:       "MinColdCollateralizationRatio",
 	MinOutboundForCold:                  "MinOutboundForCold",
+	ColdBondMaturity:                    "ColdBondMaturity",
 	MaxBondProviders:                    "MaxBondProviders",
 	FundMigrationInterval:               "FundMigrationInterval",
 	ArtificialRagnarokBlockHeight:       "ArtificialRagnarokBlockHeight",

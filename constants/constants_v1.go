@@ -39,6 +39,7 @@ func NewConstantValue() *ConstantVals {
 			MinimumColdBondInRune:               10_000_00000000,    // 10k
 			MinColdCollateralizationRatio:       20_000,             // no less that 2x the value
 			MinOutboundForCold:                  100_000,            // sets a minimum amount (in basis points) of L1 asset the outbound needs to be to be sent.
+			ColdBondMaturity:                    0,                  // min blocks before a bond can be unbonded
 			MaxBondProviders:                    6,                  // maximum number of bond providers
 			MaxOutboundAttempts:                 0,                  // maximum retries to reschedule a transaction
 			SlashPenalty:                        15000,              // penalty paid (in basis points) for theft of assets

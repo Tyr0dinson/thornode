@@ -183,7 +183,14 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		if vault.IsAsgard() || vault.IsCold() {
+		// Don't add to vault in a cold wallet if the funds are not sent from
+		// asgard. A malicious actor could trigger a liquidation event for
+		// someone else by just sending they L1 asset.
+		fromAsgard, err := h.isFromAsgard(ctx, tx)
+		if err != nil {
+			ctx.Logger().Error("fail to determinate whether fund is from asgard or not, let's assume it is not", "error", err)
+		}
+		if vault.IsAsgard() || (vault.IsCold() && fromAsgard) {
 			if !voter.UpdatedVault {
 				vault.AddFunds(tx.Tx.Coins)
 				voter.UpdatedVault = true
@@ -256,6 +263,11 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 				continue
 			}
 			coin := vault.GetCoin(tx.Tx.Coins[0].Asset)
+			acct.PendingAsset = common.SafeSub(acct.PendingAsset, coin.Amount)
+			if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
+				ctx.Logger().Error("fail to update acct on txin", "error", err)
+				continue
+			}
 			h.mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount)
 			continue
 		}

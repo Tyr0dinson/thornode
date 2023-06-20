@@ -131,7 +131,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	if !bp.Has(msg.Signer) {
 		bp.Providers = append(bp.Providers, NewBondProvider(msg.Signer))
 	}
-	bp.Bond(bondSize, msg.Signer)
+	bp.BondWithHeight(bondSize, msg.Signer, ctx.BlockHeight())
 	acct.Bond = acct.Bond.Add(msg.Bond)
 
 	// make updates to the acct/bp
@@ -143,14 +143,6 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 		if msg.OperatorFee > -1 && msg.OperatorFee <= 10000 {
 			bp.NodeOperatorFee = cosmos.NewUint(uint64(msg.OperatorFee))
 		}
-	}
-
-	// save changes
-	if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
-		return ErrInternal(err, fmt.Sprintf("fail to save cold account(%s)", acct.String()))
-	}
-	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
-		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
 	vault, err := h.mgr.Keeper().GetVault(ctx, acct.PubKey)
@@ -194,7 +186,16 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	if err != nil {
 		return fmt.Errorf("fail to add outbound tx: %w", err)
 	}
+	acct.PendingAsset = acct.PendingAsset.Add(coin.Amount) // track pending asset being sent out
 	//////////////////////////////////////////////////////////////////////////
+
+	// save changes
+	if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to save cold account(%s)", acct.String()))
+	}
+	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
+	}
 
 	return nil
 }

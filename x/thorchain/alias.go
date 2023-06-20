@@ -14,6 +14,7 @@ const (
 	AsgardName       = types.AsgardName
 	BondName         = types.BondName
 	LendingName      = types.LendingName
+	ColdBondName     = types.ColdBondName
 	RouterKey        = types.RouterKey
 	StoreKey         = types.StoreKey
 	DefaultCodespace = types.DefaultCodespace

@@ -287,6 +287,26 @@ func (bp *BondProviders) Unbond(bond cosmos.Uint, acc cosmos.AccAddress) {
 	}
 }
 
+func (bp *BondProviders) BondWithHeight(bond cosmos.Uint, acc cosmos.AccAddress, height int64) {
+	for i, provider := range bp.Providers {
+		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].Bond = bp.Providers[i].Bond.Add(bond)
+			bp.Providers[i].LastBond = height
+			return
+		}
+	}
+}
+
+func (bp *BondProviders) UnbondWithHeight(bond cosmos.Uint, acc cosmos.AccAddress, height int64) {
+	for i, provider := range bp.Providers {
+		if provider.BondAddress.Equals(acc) {
+			bp.Providers[i].Bond = common.SafeSub(bp.Providers[i].Bond, bond)
+			bp.Providers[i].LastUnbond = height
+			return
+		}
+	}
+}
+
 // remove provider (only if bond is zero)
 func (bp *BondProviders) Remove(acc cosmos.AccAddress) bool {
 	for i, provider := range bp.Providers {

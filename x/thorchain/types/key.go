@@ -13,6 +13,8 @@ const (
 	BondName = "bond"
 	// LendingName
 	LendingName = "lending"
+	// ColdBondName
+	ColdBondName = "cold_bond"
 
 	// StoreKey to be used when creating the KVStore
 	StoreKey = ModuleName

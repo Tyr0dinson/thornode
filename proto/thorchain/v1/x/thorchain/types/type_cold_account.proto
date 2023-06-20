@@ -25,4 +25,5 @@ message ColdAccount {
   int64 status_since = 5;
   string bond = 6 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
   int64 collateralization_ratio = 7;
+  string pending_asset = 8 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
 }

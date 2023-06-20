@@ -49,6 +49,8 @@ message BondProvider {
   option (gogoproto.stringer) = true;
   bytes bond_address = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   string bond = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  int64 last_bond = 3;
+  int64 last_unbond = 4;
 }
 
 message BondProviders {
