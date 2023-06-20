@@ -12,7 +12,8 @@ message MsgColdBond {
   string pub_key = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
   common.Asset asset = 4 [(gogoproto.nullable) = false];
   int64 collateralization_ratio = 5;
-  bytes signer = 6  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  int64 operator_fee = 6;
+  bytes signer = 7  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
 
 message MsgColdUnBond {

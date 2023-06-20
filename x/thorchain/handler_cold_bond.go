@@ -73,8 +73,8 @@ func (h ColdBondHandler) validateV115(ctx cosmos.Context, msg MsgColdBond) error
 	}
 
 	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
-	if minCR > msg.CollateralizationRatio {
-		return fmt.Errorf("collateralization cannot exceed limits")
+	if msg.CollateralizationRatio > 0 && minCR > msg.CollateralizationRatio {
+		return fmt.Errorf("collateralization ratio cannot be less than %d", minCR)
 	}
 
 	return nil
@@ -96,14 +96,10 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 		return ErrInternal(err, fmt.Sprintf("fail to get cold account(%s)", msg.Operator))
 	}
 
-	if acct.Operator.Equals(msg.Signer) {
-		minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
-		if minCR < msg.CollateralizationRatio {
-			acct.CollateralizationRatio = msg.CollateralizationRatio
-		}
-	}
-
 	if acct.Status == ColdUnknown {
+		if msg.PubKey.IsEmpty() {
+			fmt.Errorf("invalid pubkey")
+		}
 		acct = NewColdAccount(msg.Operator, msg.Asset, msg.PubKey)
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent("new_cold_node",
@@ -113,28 +109,46 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 			))
 	}
 
-	// Get the bond providers initially in order before adding the msg.Bond to the original bond.
+	// when a bond provider bonding, that individual should pay for gas fees to
+	// send more L1 asset to the cold node. So to account for this, we reduce
+	// the bond provider's bond
+	maxGas, err := h.mgr.GasMgr().GetMaxGas(ctx, acct.Asset.GetChain())
+	if err != nil {
+		return err
+	}
+	pool, err := h.mgr.Keeper().GetPool(ctx, acct.Asset)
+	if err != nil {
+		return err
+	}
+	maxGasInRune := pool.RuneValueInAsset(maxGas.Amount)
+	bondSize := common.SafeSub(msg.Bond, maxGasInRune)
+
 	bp, err := h.mgr.Keeper().GetBondProviders(ctx, acct.Operator)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.Operator))
 	}
-
-	// Re-distribute current bond if needed
-	bp.Adjust(h.mgr.GetVersion(), acct.Bond)
-
-	acct.Bond = acct.Bond.Add(msg.Bond)
+	bp.Adjust(h.mgr.GetVersion(), acct.Bond) // re-distribute bond as needed
 	if !bp.Has(msg.Signer) {
 		bp.Providers = append(bp.Providers, NewBondProvider(msg.Signer))
 	}
-	bp.Bond(msg.Bond, msg.Signer)
+	bp.Bond(bondSize, msg.Signer)
+	acct.Bond = acct.Bond.Add(msg.Bond)
 
-	// hard coded operator fee
-	bp.NodeOperatorFee = cosmos.NewUint(2000)
+	// make updates to the acct/bp
+	if acct.Operator.Equals(msg.Signer) {
+		minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
+		if msg.CollateralizationRatio > 0 && minCR < msg.CollateralizationRatio {
+			acct.CollateralizationRatio = msg.CollateralizationRatio
+		}
+		if msg.OperatorFee > -1 && msg.OperatorFee <= 10000 {
+			bp.NodeOperatorFee = cosmos.NewUint(uint64(msg.OperatorFee))
+		}
+	}
 
+	// save changes
 	if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save cold account(%s)", acct.String()))
 	}
-
 	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
@@ -144,22 +158,13 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 		return err
 	}
 	coin := vault.GetCoin(acct.Asset)
-	pool, err := h.mgr.Keeper().GetPool(ctx, acct.Asset)
-	if err != nil {
-		return err
-	}
-
 	bondValudeInAsset := pool.RuneValueInAsset(acct.Bond)
-	maxAssetAmount := common.GetSafeShare(cosmos.NewUint(10_000), cosmos.NewUint(uint64(acct.CollateralizationRatio)), bondValudeInAsset)
+	maxAssetAmount := common.GetSafeShare(constants.MaxBasisPoints, cosmos.NewUintFromInt64(acct.CollateralizationRatio), bondValudeInAsset)
 	coin.Amount = common.SafeSub(maxAssetAmount, coin.Amount)
 
 	//////////////////////////////////////////////////////////////////////////
 	///////////// ensure sent amount isn't trivial and burns gas /////////////
 	//////////////////////////////////////////////////////////////////////////
-	maxGas, err := h.mgr.GasMgr().GetMaxGas(ctx, acct.Asset.GetChain())
-	if err != nil {
-		return err
-	}
 	minOutbound := fetchConfigInt64(ctx, h.mgr, constants.MinOutboundForCold)
 	minOut := maxGas.Amount.MulUint64(uint64(minOutbound))
 	if minOut.LT(coin.Amount) {
@@ -167,7 +172,9 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	}
 	//////////////////////////////////////////////////////////////////////////
 
-	// send L1 to operator
+	//////////////////////////////////////////////////////////////////////////
+	///////////////// send out layer1 asset to the cold node /////////////////
+	//////////////////////////////////////////////////////////////////////////
 	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
 	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
 	if err != nil {
@@ -187,6 +194,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	if err != nil {
 		return fmt.Errorf("fail to add outbound tx: %w", err)
 	}
+	//////////////////////////////////////////////////////////////////////////
 
 	return nil
 }

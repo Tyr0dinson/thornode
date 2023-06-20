@@ -121,6 +121,13 @@ func ErrInsufficientCoins(err error, msg string) error {
 	return se.Wrap(multierror.Append(se.ErrInsufficientFunds, err), msg)
 }
 
+func NewUintFromInt64(i int64) Uint {
+	if i < 0 {
+		return ZeroUint()
+	}
+	return NewUint(uint64(i))
+}
+
 // RoundToDecimal round the given amt to the desire decimals
 func RoundToDecimal(amt Uint, dec int64) Uint {
 	if dec != 0 && dec < DefaultCoinDecimals {

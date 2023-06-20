@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
@@ -24,6 +25,9 @@ var SWVersion, _ = semver.Make(Version)
 
 // ThorchainBlockTime Block time of THORChain
 var ThorchainBlockTime = 5 * time.Second
+
+// MaxBasisPoints
+var MaxBasisPoints = cosmos.NewUint(10_000)
 
 // MaxMemoSize Maximum Memo Size
 const MaxMemoSize = 250
