@@ -77,6 +77,16 @@ func (h ColdBondHandler) validateV115(ctx cosmos.Context, msg MsgColdBond) error
 		return fmt.Errorf("collateralization ratio cannot be less than %d", minCR)
 	}
 
+	acct, err := h.mgr.Keeper().GetColdAccount(ctx, msg.Operator, msg.Asset)
+	if err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to get cold account(%s)", msg.Operator))
+	}
+	// ensure that multiple bonds simultaneous don't trigger the network to
+	// send too much in funds
+	if !acct.PendingAsset.IsZero() {
+		return fmt.Errorf("cannot bond while pending assets is non-zero")
+	}
+
 	return nil
 }
 
@@ -121,7 +131,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 		return err
 	}
 	maxGasInRune := pool.RuneValueInAsset(maxGas.Amount)
-	bondSize := common.SafeSub(msg.Bond, maxGasInRune)
+	bondSize := common.SafeSub(msg.Bond.Amount, maxGasInRune)
 
 	bp, err := h.mgr.Keeper().GetBondProviders(ctx, acct.Operator)
 	if err != nil {
@@ -132,7 +142,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 		bp.Providers = append(bp.Providers, NewBondProvider(msg.Signer))
 	}
 	bp.BondWithHeight(bondSize, msg.Signer, ctx.BlockHeight())
-	acct.Bond = acct.Bond.Add(msg.Bond)
+	acct.Bond = acct.Bond.Add(msg.Bond.Amount)
 
 	// make updates to the acct/bp
 	if acct.Operator.Equals(msg.Signer) {
@@ -152,7 +162,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	coin := vault.GetCoin(acct.Asset)
 	bondValudeInAsset := pool.RuneValueInAsset(acct.Bond)
 	maxAssetAmount := common.GetSafeShare(constants.MaxBasisPoints, cosmos.NewUintFromInt64(acct.CollateralizationRatio), bondValudeInAsset)
-	coin.Amount = common.SafeSub(maxAssetAmount, coin.Amount)
+	coin.Amount = common.SafeSub(maxAssetAmount, coin.Amount.Add(acct.PendingAsset))
 
 	//////////////////////////////////////////////////////////////////////////
 	///////////// ensure sent amount isn't trivial and burns gas /////////////

@@ -6,7 +6,7 @@ import (
 )
 
 // NewMsgColdBond create new MsgColdBond message
-func NewMsgColdBond(operator cosmos.AccAddress, asset common.Asset, bond cosmos.Uint, pk common.PubKey, signer cosmos.AccAddress) *MsgColdBond {
+func NewMsgColdBond(operator cosmos.AccAddress, asset common.Asset, bond common.Coin, pk common.PubKey, signer cosmos.AccAddress) *MsgColdBond {
 	return &MsgColdBond{
 		Operator: operator,
 		Asset:    asset,
@@ -33,8 +33,11 @@ func (m *MsgColdBond) ValidateBasic() error {
 	if !m.Asset.IsGasAsset() {
 		return cosmos.ErrUnknownRequest("asset must be a gas asset")
 	}
-	if m.Bond.IsZero() {
+	if m.Bond.IsEmpty() {
 		return cosmos.ErrUnknownRequest("bond cannot be zero")
+	}
+	if !m.Bond.Asset.IsNativeRune() {
+		return cosmos.ErrUnknownRequest("bond needs to be in rune")
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress("empty signer address")
