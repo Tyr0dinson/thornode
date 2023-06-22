@@ -6,13 +6,15 @@ import (
 )
 
 // NewMsgColdBond create new MsgColdBond message
-func NewMsgColdBond(operator cosmos.AccAddress, asset common.Asset, bond common.Coin, pk common.PubKey, signer cosmos.AccAddress) *MsgColdBond {
+func NewMsgColdBond(operator cosmos.AccAddress, asset common.Asset, bond common.Coin, pk common.PubKey, opFee, cr int64, signer cosmos.AccAddress) *MsgColdBond {
 	return &MsgColdBond{
-		Operator: operator,
-		Asset:    asset,
-		Bond:     bond,
-		PubKey:   pk,
-		Signer:   signer,
+		Operator:               operator,
+		Asset:                  asset,
+		Bond:                   bond,
+		PubKey:                 pk,
+		OperatorFee:            opFee,
+		CollateralizationRatio: cr,
+		Signer:                 signer,
 	}
 }
 

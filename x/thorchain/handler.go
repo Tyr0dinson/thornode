@@ -139,6 +139,9 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgReserveContributor{}.Type()] = NewReserveContributorHandler(mgr)
 	m[MsgBond{}.Type()] = NewBondHandler(mgr)
 	m[MsgUnBond{}.Type()] = NewUnBondHandler(mgr)
+	m[MsgColdBond{}.Type()] = NewColdBondHandler(mgr)
+	m[MsgColdUnBond{}.Type()] = NewColdUnBondHandler(mgr)
+	m[MsgLeave{}.Type()] = NewLeaveHandler(mgr)
 	m[MsgLeave{}.Type()] = NewLeaveHandler(mgr)
 	m[MsgDonate{}.Type()] = NewDonateHandler(mgr)
 	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
@@ -236,6 +239,15 @@ func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddre
 	return NewMsgUnBond(tx.Tx, memo.GetAccAddress(), memo.GetAmount(), tx.Tx.FromAddress, memo.BondProviderAddress, signer), nil
 }
 
+func getMsgColdBondFromMemo(memo ColdBondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	coin := tx.Tx.Coins.GetCoin(common.RuneAsset())
+	return NewMsgColdBond(memo.GetAccAddress(), memo.GetAsset(), coin, memo.PubKey, memo.NodeOperatorFee, memo.CollateralizationRatio, signer), nil
+}
+
+func getMsgColdUnbondFromMemo(memo ColdUnBondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgColdUnBond(memo.GetAccAddress(), memo.GetAmount(), memo.GetAsset(), signer), nil
+}
+
 func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if len(tx.Tx.Coins) == 0 {
 		return nil, fmt.Errorf("transaction must have rune in it")
@@ -286,6 +298,10 @@ func processOneTxInV107(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
 	case UnbondMemo:
 		newMsg, err = getMsgUnbondFromMemo(m, tx, signer)
+	case ColdBondMemo:
+		newMsg, err = getMsgColdBondFromMemo(m, tx, signer)
+	case ColdUnBondMemo:
+		newMsg, err = getMsgColdUnbondFromMemo(m, tx, signer)
 	case RagnarokMemo:
 		newMsg, err = getMsgRagnarokFromMemo(m, tx, signer)
 	case LeaveMemo:

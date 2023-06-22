@@ -367,6 +367,8 @@ type (
 	RagnarokMemo          = mem.RagnarokMemo
 	BondMemo              = mem.BondMemo
 	UnbondMemo            = mem.UnbondMemo
+	ColdBondMemo          = mem.ColdBondMemo
+	ColdUnBondMemo        = mem.ColdUnBondMemo
 	OutboundMemo          = mem.OutboundMemo
 	LeaveMemo             = mem.LeaveMemo
 	YggdrasilFundMemo     = mem.YggdrasilFundMemo
