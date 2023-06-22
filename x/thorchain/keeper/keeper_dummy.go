@@ -278,9 +278,10 @@ func (k KVStoreDummy) GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress,
 func (k KVStoreDummy) GetColdAccountByPubKey(ctx cosmos.Context, _ common.PubKey, _ common.Asset) (ColdAccount, error) {
 	return ColdAccount{}, kaboom
 }
-func (k KVStoreDummy) SetColdAccount(ctx cosmos.Context, na ColdAccount) error                   { return kaboom }
-func (k KVStoreDummy) GetColdAccountIterator(ctx cosmos.Context) cosmos.Iterator                 { return nil }
-func (k KVStoreDummy) SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt cosmos.Uint) {}
+func (k KVStoreDummy) SetColdAccount(ctx cosmos.Context, na ColdAccount) error            { return kaboom }
+func (k KVStoreDummy) GetColdAccountIterator(ctx cosmos.Context) cosmos.Iterator          { return nil }
+func (k KVStoreDummy) SetColdAccountRatio(_ cosmos.Context, _ ColdAccount, _ cosmos.Uint) {}
+func (k KVStoreDummy) DelColdAccountRatio(_ cosmos.Context, _ ColdAccount, _ cosmos.Uint) {}
 func (k KVStoreDummy) GetColdAccountIteratorRatio(ctx cosmos.Context, asset common.Asset) cosmos.Iterator {
 	return nil
 }

@@ -142,7 +142,28 @@ func (vm *NetworkMgrV115) liquidateCold(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Error("improper cold key", "operator", operator)
 				continue
 			}
-			if posRatio.LT(liquidationRatio) {
+			acct, err := mgr.Keeper().GetColdAccount(ctx, operator, asset)
+			if err != nil {
+				ctx.Logger().Error("cannot find cold account", "operator", operator)
+				continue
+			}
+			vault, err := mgr.Keeper().GetVault(ctx, acct.PubKey)
+			if err != nil {
+				ctx.Logger().Error("cannot find cold account", "operator", operator)
+				continue
+			}
+			coin := vault.GetCoin(asset)
+			if coin.IsEmpty() {
+				mgr.Keeper().DetColdAccountRatio(ctx, acct, posRatio)
+				continue
+			}
+			// TODO: include yield into acct.Bond
+			posRatioCurrent := acct.Bond.MulUint64(1e8).Quo(coin.Amount)
+			if posRatioCurrent.Equals(posRatio) {
+				mgr.Keeper().DetColdAccountRatio(ctx, acct, posRatio)    // delete old ratio
+				mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount) // save new ratio
+			}
+			if posRatioCurrent.LT(liquidationRatio) {
 				// TODO: check if posRatio is correct, delete and recreate if not
 				// TODO: liquidate
 			} else {

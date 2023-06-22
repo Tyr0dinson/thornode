@@ -165,6 +165,7 @@ type KeeperColdAccount interface {
 	GetColdAccountByPubKey(ctx cosmos.Context, pk common.PubKey, asset common.Asset) (ColdAccount, error)
 	GetColdAccountIterator(ctx cosmos.Context) cosmos.Iterator
 	SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt cosmos.Uint)
+	DelColdAccountRatio(ctx cosmos.Context, acct ColdAccount, ratio cosmos.Uint)
 	GetColdAccountIteratorRatio(ctx cosmos.Context, asset common.Asset) cosmos.Iterator
 }
 

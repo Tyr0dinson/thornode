@@ -97,6 +97,11 @@ func (k KVStore) SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt c
 	store.Set([]byte(key), nil)
 }
 
+func (k KVStore) DelColdAccountRatio(ctx cosmos.Context, acct ColdAccount, ratio cosmos.Uint) {
+	key := k.GetKey(ctx, prefixColdAccountRatio, fmt.Sprintf("%s/%s-%s", acct.Asset, ratio, acct.Operator))
+	k.del(ctx, key)
+}
+
 // GetColdAccountRatioIterator iterate cold account
 func (k KVStore) GetColdAccountIteratorRatio(ctx cosmos.Context, asset common.Asset) cosmos.Iterator {
 	store := ctx.KVStore(k.storeKey)
