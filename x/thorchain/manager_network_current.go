@@ -164,7 +164,6 @@ func (vm *NetworkMgrV115) liquidateCold(ctx cosmos.Context, mgr Manager) error {
 				mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount) // save new ratio
 			}
 			if posRatioCurrent.LT(liquidationRatio) {
-				// TODO: check if posRatio is correct, delete and recreate if not
 				// TODO: liquidate
 			} else {
 				break
