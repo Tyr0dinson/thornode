@@ -203,6 +203,12 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save cold account(%s)", acct.String()))
 	}
+	// **NOTE** Intentionally, not saving SetColdAccountRatio here. This is
+	// because the ratio increases here and therefore remove risk, so no action
+	// needed. Entering a new key here would bloat the chain and we may never
+	// "read" from here before the next bond event. Instead, allow the
+	// liquidation method in the network manager keep the keys up-to-date
+	// instead on an as needed basis
 	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}

@@ -92,8 +92,9 @@ func (k KVStore) SetColdAccountRatio(ctx cosmos.Context, acct ColdAccount, amt c
 		return
 	}
 	ra := rewriteRatio(ratioLength, getRatio(acct.Bond, amt))
-	key := k.GetKey(ctx, prefixColdAccountRatio, fmt.Sprintf("%s/%s", acct.Asset, ra))
-	k.setAccAddress(ctx, key, acct.Operator)
+	key := k.GetKey(ctx, prefixColdAccountRatio, fmt.Sprintf("%s/%s-%s", acct.Asset, ra, acct.Operator))
+	store := ctx.KVStore(k.storeKey)
+	store.Set([]byte(key), nil)
 }
 
 // GetColdAccountRatioIterator iterate cold account

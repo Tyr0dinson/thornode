@@ -138,10 +138,16 @@ func (h ColdUnBondHandler) handleV115(ctx cosmos.Context, msg MsgColdUnBond) err
 	bp.UnbondWithHeight(msg.Amount, msg.Signer, ctx.BlockHeight())
 	provider := bp.Get(msg.Signer)
 
+	vault, err := h.mgr.Keeper().GetVault(ctx, acct.PubKey)
+	if err != nil {
+		return err
+	}
+	coin := vault.GetCoin(acct.Asset)
 	// save changes
 	if err := h.mgr.Keeper().SetColdAccount(ctx, acct); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save cold account(%s)", acct.String()))
 	}
+	h.mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount)
 	if err := h.mgr.Keeper().SetBondProviders(ctx, bp); err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}

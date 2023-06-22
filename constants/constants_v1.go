@@ -38,6 +38,7 @@ func NewConstantValue() *ConstantVals {
 			MinimumBondInRune:                   1_000_000_00000000, // 1 million rune
 			ColdBondInRuneMin:                   10_000_00000000,    // 10k
 			ColdCollateralizationRatioMin:       20_000,             // no less that 2x the value
+			ColdLiquidation:                     1100,               // when a cold position should be liquidated (in basis points)
 			ColdMinOutboundThreshold:            100_000,            // sets a minimum amount (in basis points) of L1 asset the outbound needs to be to be sent.
 			ColdBondMaturity:                    0,                  // min blocks before a bond can be unbonded
 			MaxBondProviders:                    6,                  // maximum number of bond providers

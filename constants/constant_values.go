@@ -43,6 +43,7 @@ const (
 	MinimumBondInRune
 	ColdBondInRuneMin
 	ColdCollateralizationRatioMin
+	ColdLiquidation
 	ColdMinOutboundThreshold
 	ColdBondMaturity
 	FundMigrationInterval
@@ -156,6 +157,7 @@ var nameToString = map[ConstantName]string{
 	MinimumBondInRune:                   "MinimumBondInRune",
 	ColdBondInRuneMin:                   "ColdBondInRuneMin",
 	ColdCollateralizationRatioMin:       "ColdCollateralizationRatioMin",
+	ColdLiquidation:                     "ColdLiquidation",
 	ColdMinOutboundThreshold:            "ColdMinOutboundThreshold",
 	ColdBondMaturity:                    "ColdBondMaturity",
 	MaxBondProviders:                    "MaxBondProviders",
