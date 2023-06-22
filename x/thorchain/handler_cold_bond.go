@@ -72,7 +72,7 @@ func (h ColdBondHandler) validateV115(ctx cosmos.Context, msg MsgColdBond) error
 		return fmt.Errorf("cannot cold bond to a node account")
 	}
 
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.ColdCollateralizationRatioMin)
 	if msg.CollateralizationRatio > 0 && minCR > msg.CollateralizationRatio {
 		return fmt.Errorf("collateralization ratio cannot be less than %d", minCR)
 	}
@@ -146,7 +146,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 
 	// make updates to the acct/bp
 	if acct.Operator.Equals(msg.Signer) {
-		minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
+		minCR := fetchConfigInt64(ctx, h.mgr, constants.ColdCollateralizationRatioMin)
 		if msg.CollateralizationRatio > 0 && minCR < msg.CollateralizationRatio {
 			acct.CollateralizationRatio = msg.CollateralizationRatio
 		}
@@ -167,7 +167,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 	//////////////////////////////////////////////////////////////////////////
 	///////////// ensure sent amount isn't trivial and burns gas /////////////
 	//////////////////////////////////////////////////////////////////////////
-	minOutbound := fetchConfigInt64(ctx, h.mgr, constants.MinOutboundForCold)
+	minOutbound := fetchConfigInt64(ctx, h.mgr, constants.ColdMinOutboundThreshold)
 	minOut := maxGas.Amount.MulUint64(uint64(minOutbound))
 	if minOut.LT(coin.Amount) {
 		return nil

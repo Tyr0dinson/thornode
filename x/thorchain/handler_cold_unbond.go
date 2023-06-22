@@ -102,7 +102,7 @@ func (h ColdUnBondHandler) validateV115(ctx cosmos.Context, msg MsgColdUnBond) e
 	if err != nil {
 		return err
 	}
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinColdCollateralizationRatio)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.ColdCollateralizationRatioMin)
 	coin := vault.GetCoin(acct.Asset)
 	bondValudeInAsset := pool.RuneValueInAsset(common.SafeSub(acct.Bond, msg.Amount))
 	maxAssetAmount := common.GetSafeShare(constants.MaxBasisPoints, cosmos.NewUintFromInt64(acct.CollateralizationRatio), bondValudeInAsset)

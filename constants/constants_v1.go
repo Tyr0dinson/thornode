@@ -36,9 +36,9 @@ func NewConstantValue() *ConstantVals {
 			PauseBond:                           0,                  // pauses the ability to bond
 			PauseUnbond:                         0,                  // pauses the ability to unbond
 			MinimumBondInRune:                   1_000_000_00000000, // 1 million rune
-			MinimumColdBondInRune:               10_000_00000000,    // 10k
-			MinColdCollateralizationRatio:       20_000,             // no less that 2x the value
-			MinOutboundForCold:                  100_000,            // sets a minimum amount (in basis points) of L1 asset the outbound needs to be to be sent.
+			ColdBondInRuneMin:                   10_000_00000000,    // 10k
+			ColdCollateralizationRatioMin:       20_000,             // no less that 2x the value
+			ColdMinOutboundThreshold:            100_000,            // sets a minimum amount (in basis points) of L1 asset the outbound needs to be to be sent.
 			ColdBondMaturity:                    0,                  // min blocks before a bond can be unbonded
 			MaxBondProviders:                    6,                  // maximum number of bond providers
 			MaxOutboundAttempts:                 0,                  // maximum retries to reschedule a transaction
