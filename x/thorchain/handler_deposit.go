@@ -60,6 +60,8 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	ctx.Logger().Info("receive MsgDeposit", "from", msg.GetSigners()[0], "coins", msg.Coins, "memo", msg.Memo)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.114.0")):
+		return h.handleV114(ctx, msg)
 	case version.GTE(semver.MustParse("1.113.0")):
 		return h.handleV113(ctx, msg)
 	case version.GTE(semver.MustParse("1.112.0")):
@@ -78,7 +80,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	return nil, errInvalidVersion
 }
 
-func (h DepositHandler) handleV113(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handleV114(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgDeposit while THORChain is halted")
 	}
