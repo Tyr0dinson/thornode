@@ -524,7 +524,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 			Coins: []common.Coin{
 				{
 					Asset:  fromAsset,
-					Amount: swapAmount,
+					Amount: amount,
 				},
 			},
 			Gas: []common.Coin{{
@@ -630,7 +630,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, _, err := quoteHandleAffiliate(ctx, mgr, params, amount)
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
@@ -662,7 +662,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 			Coins: []common.Coin{
 				{
 					Asset:  asset,
-					Amount: depositAmount,
+					Amount: amount,
 				},
 			},
 			Gas: []common.Coin{
