@@ -185,6 +185,7 @@ func (vm *NetworkMgrV115) liquidateCold(ctx cosmos.Context, mgr Manager) error {
 				vm.k.DelColdAccountRatio(ctx, acct, posRatio)    // delete old ratio
 				vm.k.DelColdAccountRatio(ctx, acct, coin.Amount) // delete new ratio
 				acct.Bond = cosmos.ZeroUint()
+				// TODO zero out bond for bond providers
 				if err := vm.k.SetColdAccount(ctx, acct); err != nil {
 					ctx.Logger().Error("fail to update acct on liquidation", "error", err)
 					continue
