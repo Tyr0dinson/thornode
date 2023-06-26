@@ -142,7 +142,6 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgColdBond{}.Type()] = NewColdBondHandler(mgr)
 	m[MsgColdUnBond{}.Type()] = NewColdUnBondHandler(mgr)
 	m[MsgLeave{}.Type()] = NewLeaveHandler(mgr)
-	m[MsgLeave{}.Type()] = NewLeaveHandler(mgr)
 	m[MsgDonate{}.Type()] = NewDonateHandler(mgr)
 	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
 	m[MsgAddLiquidity{}.Type()] = NewAddLiquidityHandler(mgr)

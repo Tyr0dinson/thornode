@@ -403,7 +403,6 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 		return newNetworkMgrV115(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.112.0")):
 		return newNetworkMgrV112(keeper, txOutStore, eventMgr), nil
-		return newNetworkMgrV112(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.111.0")):
 		return newNetworkMgrV111(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.109.0")):

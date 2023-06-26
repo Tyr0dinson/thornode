@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/blang/semver"
@@ -108,7 +109,7 @@ func (h ColdBondHandler) handleV115(ctx cosmos.Context, msg MsgColdBond) error {
 
 	if acct.Status == ColdUnknown {
 		if msg.PubKey.IsEmpty() {
-			fmt.Errorf("invalid pubkey")
+			return errors.New("invalid pubkey")
 		}
 		acct = NewColdAccount(msg.Operator, msg.Asset, msg.PubKey)
 		ctx.EventManager().EmitEvent(

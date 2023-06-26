@@ -154,17 +154,50 @@ func (vm *NetworkMgrV115) liquidateCold(ctx cosmos.Context, mgr Manager) error {
 			}
 			coin := vault.GetCoin(asset)
 			if coin.IsEmpty() {
-				mgr.Keeper().DetColdAccountRatio(ctx, acct, posRatio)
+				vm.k.DelColdAccountRatio(ctx, acct, posRatio)
 				continue
 			}
-			// TODO: include yield into acct.Bond
+			// TODO: include yield+/- into acct.Bond
 			posRatioCurrent := acct.Bond.MulUint64(1e8).Quo(coin.Amount)
-			if posRatioCurrent.Equals(posRatio) {
-				mgr.Keeper().DetColdAccountRatio(ctx, acct, posRatio)    // delete old ratio
-				mgr.Keeper().SetColdAccountRatio(ctx, acct, coin.Amount) // save new ratio
+			if posRatioCurrent.Equal(posRatio) {
+				vm.k.DelColdAccountRatio(ctx, acct, posRatio)    // delete old ratio
+				vm.k.SetColdAccountRatio(ctx, acct, coin.Amount) // save new ratio
 			}
 			if posRatioCurrent.LT(liquidationRatio) {
-				// TODO: liquidate
+				// liquidate the cold account
+				// TODO: update bond to include yield+/-
+				// move bond from cold module to reserve module
+				if !acct.Bond.IsZero() {
+					if err := vm.k.SendFromModuleToModule(ctx, ColdBondName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), acct.Bond))); err != nil {
+						return fmt.Errorf("fail to transfer RUNE from reserve to asgard,err:%w", err)
+					}
+				}
+				// subtract the layer1 asset from the pool
+				poolReimbursement := pool.AssetValueInRune(coin.Amount)
+				pool.BalanceRune = pool.BalanceRune.Add(poolReimbursement)
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, coin.Amount)
+
+				// sent required rune from the reserve to the pool to reimburse the pool for lost layer1 asset
+				if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), poolReimbursement))); err != nil {
+					ctx.Logger().Error("fail to transfer RUNE from reserver to asgard", "error", err)
+				}
+
+				vm.k.DelColdAccountRatio(ctx, acct, posRatio)    // delete old ratio
+				vm.k.DelColdAccountRatio(ctx, acct, coin.Amount) // delete new ratio
+				acct.Bond = cosmos.ZeroUint()
+				if err := vm.k.SetColdAccount(ctx, acct); err != nil {
+					ctx.Logger().Error("fail to update acct on liquidation", "error", err)
+					continue
+				}
+				vault.SubFunds(common.NewCoins(coin))
+				if err := vm.k.SetVault(ctx, vault); err != nil {
+					ctx.Logger().Error("fail to update vault on liquidation", "error", err)
+				}
+
+				// TODO: emit liquidation event. Include the following...
+				// * coin.Amount
+				// * acct.Bond
+				// * poolReimbursement
 			} else {
 				break
 			}

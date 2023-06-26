@@ -62,7 +62,7 @@ func (k KVStore) GetColdAccount(ctx cosmos.Context, addr cosmos.AccAddress, asse
 // GetColdAccountByAddress try to get cold account with the given address from db
 func (k KVStore) GetColdAccountByPubKey(ctx cosmos.Context, pk common.PubKey, asset common.Asset) (ColdAccount, error) {
 	acc := cosmos.AccAddress{}
-	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, pk.String()), &acc)
+	_, _ = k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, pk.String()), &acc)
 	return k.GetColdAccount(ctx, acc, asset)
 }
 
@@ -73,7 +73,9 @@ func (k KVStore) SetColdAccount(ctx cosmos.Context, acct ColdAccount) error {
 	}
 	// ensure we're NOT overwriting the index
 	acc := cosmos.AccAddress{}
-	k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, acct.PubKey.String()), &acc)
+	if _, err := k.getAccAddress(ctx, k.GetKey(ctx, prefixColdAccountPubKey, acct.PubKey.String()), &acc); err != nil {
+		return err
+	}
 	if !acc.Empty() && !acct.Operator.Equals(acc) {
 		return fmt.Errorf("cannot overwrite cold account address index")
 	}
