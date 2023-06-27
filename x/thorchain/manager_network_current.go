@@ -83,8 +83,28 @@ func (vm *NetworkMgrV115) BeginBlock(ctx cosmos.Context, mgr Manager) error {
 		ctx.Logger().Error("failed to spawn dervied pools", "err", err)
 	}
 	if err := vm.liquidateCold(ctx, mgr); err != nil {
-		ctx.Logger().Error("failed to spawn dervied pools", "err", err)
+		ctx.Logger().Error("failed to liquidate cold nodes", "err", err)
 	}
+	return nil
+}
+
+func (vm *NetworkMgrV115) coldPositiveYield(ctx cosmos.Context, bondReward cosmos.Uint) error {
+	// apply min validator reward to bondReward
+	validatorMinReward := vm.k.GetConfigInt64(ctx, constants.ValidatorMinReward)
+	bondReward = common.GetSafeShare(cosmos.NewUintFromInt64(validatorMinReward), constants.MaxBasisPoints, bondReward)
+
+	pools, totalRune, err := vm.getTotalProvidedLiquidityRune(ctx)
+	if err != nil {
+		return err
+	}
+
+	coldNodeReward := cosmos.ZeroUint()
+	targetHotColdBalance := vm.k.GetConfigInt64(ctx, constants.TargetHotColdBalance)
+
+	// iterate over each pool and grant rewards to cold nodes
+	for _, pool := range pools {
+	}
+
 	return nil
 }
 
@@ -168,7 +188,7 @@ func (vm *NetworkMgrV115) liquidateCold(ctx cosmos.Context, mgr Manager) error {
 				// TODO: update bond to include yield+/-
 				// move bond from cold module to reserve module
 				if !acct.Bond.IsZero() {
-					if err := vm.k.SendFromModuleToModule(ctx, ColdBondName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), acct.Bond))); err != nil {
+					if err := vm.k.SendFromModuleToModule(ctx, acct.GetBondModule(), ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), acct.Bond))); err != nil {
 						return fmt.Errorf("fail to transfer RUNE from reserve to asgard,err:%w", err)
 					}
 				}
@@ -1474,7 +1494,12 @@ func (vm *NetworkMgrV115) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
 
-	return vm.k.SetNetwork(ctx, network)
+	err = vm.k.SetNetwork(ctx, network)
+	if err != nil {
+		return err
+	}
+
+	return vm.coldPositiveYield(ctx, bondReward)
 }
 
 func (vm *NetworkMgrV115) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Pools, cosmos.Uint, error) {

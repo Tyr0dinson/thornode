@@ -13,8 +13,10 @@ const (
 	BondName = "bond"
 	// LendingName
 	LendingName = "lending"
-	// ColdBondName
-	ColdBondName = "cold_bond"
+	// ColdBondPositiveInterestName
+	ColdBondPositiveInterestName = "cold_bond_positive_interest"
+	// ColdBondNegativeInterestName
+	ColdBondNegativeInterestName = "cold_bond_negative_interest"
 
 	// StoreKey to be used when creating the KVStore
 	StoreKey = ModuleName

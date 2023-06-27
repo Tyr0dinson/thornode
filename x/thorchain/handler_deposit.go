@@ -136,8 +136,14 @@ func (h DepositHandler) handleV113(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 		targetModule = BondName
 	case TxReserve, TxTHORName:
 		targetModule = ReserveName
-	case TxColdBond, TxColdUnBond:
-		targetModule = ColdBondName
+	case TxColdBond:
+		// figure out which cold bond module we need to deposit the bond
+		mem, ok := memo.(ColdBondMemo)
+		if !ok {
+			return nil, fmt.Errorf("could not convert to cold bond memo")
+		}
+		acct, _ := h.mgr.Keeper().GetColdAccount(ctx, mem.Operator, mem.Asset)
+		targetModule = acct.GetBondModule()
 	default:
 		targetModule = AsgardName
 	}

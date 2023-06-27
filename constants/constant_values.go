@@ -41,6 +41,8 @@ const (
 	PauseBond
 	PauseUnbond
 	MinimumBondInRune
+	ValidatorMinReward
+	TargetHotColdBalance
 	ColdBondInRuneMin
 	ColdCollateralizationRatioMin
 	ColdLiquidation
@@ -155,6 +157,8 @@ var nameToString = map[ConstantName]string{
 	PauseBond:                           "PauseBond",
 	PauseUnbond:                         "PauseUnbond",
 	MinimumBondInRune:                   "MinimumBondInRune",
+	ValidatorMinReward:                  "ValidatorMinReward",
+	TargetHotColdBalance:                "TargetHotColdBalance",
 	ColdBondInRuneMin:                   "ColdBondInRuneMin",
 	ColdCollateralizationRatioMin:       "ColdCollateralizationRatioMin",
 	ColdLiquidation:                     "ColdLiquidation",

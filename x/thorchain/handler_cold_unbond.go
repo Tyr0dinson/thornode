@@ -124,6 +124,8 @@ func (h ColdUnBondHandler) handle(ctx cosmos.Context, msg MsgColdUnBond) error {
 }
 
 func (h ColdUnBondHandler) handleV115(ctx cosmos.Context, msg MsgColdUnBond) error {
+	// TODO: create a means for someone to unbond and ensure the slash to pay
+	// for the layer1 they hold
 	acct, err := h.mgr.Keeper().GetColdAccount(ctx, msg.Operator, msg.Asset)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get cold account(%s)", msg.Operator))
@@ -169,7 +171,7 @@ func (h ColdUnBondHandler) handleV115(ctx cosmos.Context, msg MsgColdUnBond) err
 		ToAddress:  toAddress,
 		InHash:     txID,
 		Coin:       common.NewCoin(common.RuneAsset(), msg.Amount),
-		ModuleName: ColdBondName,
+		ModuleName: acct.GetBondModule(),
 	}
 	_, err = h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, txOutItem, cosmos.ZeroUint())
 	if err != nil {

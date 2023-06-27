@@ -22,6 +22,25 @@ func (a *ColdAccount) Key() string {
 	return fmt.Sprintf("%s/%s", a.Operator, a.Asset.String())
 }
 
+func (a ColdAccount) IsPositiveInterest() bool {
+	return a.Interest == ColdInterest_ColdPositiveInterest
+}
+
+func (a ColdAccount) IsNegativeInterest() bool {
+	return a.Interest == ColdInterest_ColdNegativeInterest
+}
+
+func (a ColdAccount) GetBondModule() string {
+	switch a.Interest {
+	case ColdInterest_ColdPositiveInterest:
+		return ColdBondPositiveInterestName
+	case ColdInterest_ColdNegativeInterest:
+		return ColdBondNegativeInterestName
+	default:
+		return ColdBondPositiveInterestName
+	}
+}
+
 // IsEmpty decide whether ColdAccount is empty
 func (a *ColdAccount) IsEmpty() bool {
 	return a.Status == ColdStatus_UnknownColdStatus
