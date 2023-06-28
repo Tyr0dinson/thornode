@@ -238,7 +238,7 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		Name:              wrapString(name.Name),
 		ExpireBlockHeight: wrapInt64(name.ExpireBlockHeight),
 		Owner:             wrapString(name.Owner.String()),
-		PreferredAsset:    name.PreferredAsset.String(),
+		PreferredAsset:    wrapString(name.PreferredAsset.String()),
 		Aliases:           aliases,
 	}
 
