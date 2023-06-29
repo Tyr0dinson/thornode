@@ -37,7 +37,7 @@ func NewConstantValue() *ConstantVals {
 			PauseUnbond:                         0,                  // pauses the ability to unbond
 			MinimumBondInRune:                   1_000_000_00000000, // 1 million rune
 			ValidatorMinReward:                  5000,               // min reward of bond rewards to validators (in basis points)
-			TargetHotColdBalance:                5000,               // target balance between hot and cold vaults (in basis points of hot)
+			TargetColdBalance:                   5000,               // target balance between hot and cold vaults (in basis points of hot)
 			ColdBondInRuneMin:                   10_000_00000000,    // 10k
 			ColdCollateralizationRatioMin:       20_000,             // no less that 2x the value
 			ColdLiquidation:                     1100,               // when a cold position should be liquidated (in basis points)

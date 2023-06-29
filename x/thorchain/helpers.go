@@ -304,6 +304,21 @@ func subsidizePoolWithSlashBondV92(ctx cosmos.Context, ygg Vault, yggTotalStolen
 	return nil
 }
 
+func getTotalAsgardCoins(ctx cosmos.Context, keeper keeper.Keeper) (common.Coins, error) {
+	coins := make(common.Coins, 0)
+	allVaults, err := keeper.GetAsgardVaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, vault := range allVaults {
+		if vault.Status != ActiveVault && vault.Status != RetiringVault {
+			continue
+		}
+		coins = coins.Adds(vault.Coins)
+	}
+	return coins, nil
+}
+
 // getTotalYggValueInRune will go through all the coins in ygg , and calculate the total value in RUNE
 // return value will be totalValueInRune,error
 func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault) (cosmos.Uint, error) {

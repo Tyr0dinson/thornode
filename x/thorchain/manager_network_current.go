@@ -88,21 +88,64 @@ func (vm *NetworkMgrV115) BeginBlock(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-func (vm *NetworkMgrV115) coldPositiveYield(ctx cosmos.Context, bondReward cosmos.Uint) error {
-	// apply min validator reward to bondReward
+func (vm *NetworkMgrV115) coldPositiveYield(ctx cosmos.Context, totalBondReward cosmos.Uint) error {
+	// gather configs
+	coldBalance := vm.k.GetConfigInt64(ctx, constants.TargetColdBalance)
 	validatorMinReward := vm.k.GetConfigInt64(ctx, constants.ValidatorMinReward)
-	bondReward = common.GetSafeShare(cosmos.NewUintFromInt64(validatorMinReward), constants.MaxBasisPoints, bondReward)
 
-	pools, totalRune, err := vm.getTotalProvidedLiquidityRune(ctx)
+	// get all pools
+	pools, totalPooledRune, err := vm.getTotalProvidedLiquidityRune(ctx)
 	if err != nil {
 		return err
 	}
 
-	coldNodeReward := cosmos.ZeroUint()
-	targetHotColdBalance := vm.k.GetConfigInt64(ctx, constants.TargetHotColdBalance)
+	// get total amount of assets the asgard vaults have
+	hotCoins, err := getTotalAsgardCoins(ctx, vm.k)
+	if err != nil {
+		return err
+	}
+
+	// apply min validator reward to bondReward
+	totalBondReward = common.GetSafeShare(cosmos.NewUintFromInt64(validatorMinReward), constants.MaxBasisPoints, totalBondReward)
 
 	// iterate over each pool and grant rewards to cold nodes
 	for _, pool := range pools {
+		hotCoin := hotCoins.GetCoin(pool.Asset)
+		totalAssetValueInRune := pool.BalanceRune
+		// calculate how much reward is granted for this asset
+		assetReward := common.GetSafeShare(totalAssetValueInRune, totalPooledRune, totalBondReward)
+		// calculate cold asset target
+		coldTarget := common.GetSafeShare(cosmos.NewUintFromInt64(coldBalance), constants.MaxBasisPoints, hotCoin.Amount)
+		// figure out how much of this yield is for cold nodes
+		coldProfit := common.SafeSub(
+			assetReward,
+			common.GetSafeShare(
+				hotCoin.Amount,
+				coldTarget,
+				assetReward,
+			),
+		)
+
+		if coldProfit.IsZero() {
+			// no profit for cold nodes (of this asset), slash them
+			coldLoss := common.SafeSub(
+				assetReward,
+				common.GetSafeShare(
+					common.SafeSub(pool.BalanceAsset, hotCoin.Amount),
+					coldTarget,
+					assetReward,
+				),
+			)
+			// TODO: this module should be per asset or track it elsewhere
+			if err := vm.k.SendFromModuleToModule(ctx, ColdBondPositiveInterestName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), coldLoss))); err != nil {
+				return fmt.Errorf("fail to transfer RUNE from cold module to validator bond to reserve module: %w", err)
+			}
+		} else {
+			// TODO: this module should be per asset or track it elsewhere
+			if err := vm.k.SendFromModuleToModule(ctx, BondName, ColdBondPositiveInterestName, common.NewCoins(common.NewCoin(common.RuneAsset(), coldProfit))); err != nil {
+				return fmt.Errorf("fail to transfer RUNE from validator bond to cold module: %w", err)
+			}
+		}
 	}
 
 	return nil
