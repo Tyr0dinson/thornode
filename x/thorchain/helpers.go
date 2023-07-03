@@ -209,7 +209,12 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 
 	// make sure maxSwapQuantity doesn't infringe on max length that a
 	// streaming swap can exist
-	maxLength := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
+	var maxLength int64
+	if sourceAsset.IsNative() && targetAsset.IsNative() {
+		maxLength = mgr.Keeper().GetConfigInt64(ctx, constants.BlocksPerYear)
+	} else {
+		maxLength = mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
+	}
 	if swp.Interval == 0 {
 		return 1, nil
 	}
