@@ -201,7 +201,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	if minBP == 0 {
 		return 0, fmt.Errorf("streaming swaps are not allows with a min BP of zero")
 	}
-	minSize := common.GetSafeShare(cosmos.NewUint(uint64(minBP)), cosmos.NewUint(10_000*10), virtualDepth)
+	minSize := common.GetSafeShare(cosmos.NewUint(uint64(minBP)), cosmos.NewUint(10_000_00*10), virtualDepth)
 	if minSize.IsZero() {
 		return 1, nil
 	}

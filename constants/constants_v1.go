@@ -63,7 +63,7 @@ func NewConstantValue() *ConstantVals {
 			MinSlashPointsForBadValidator:       100,                // The minimum slash point
 			FullImpLossProtectionBlocks:         1440000,            // number of blocks before a liquidity provider gets 100% impermanent loss protection
 			StreamingSwapPause:                  0,                  // pause streaming swaps from being processed or accepted
-			StreamingSwapMinBP:                  0,                  // min basis points for a streaming swap trade
+			StreamingSwapMinBP:                  0,                  // min basis points (x100) for a streaming swap trade
 			StreamingSwapMaxLength:              14400,              // max number of blocks a streaming swap can trade for
 			MinCR:                               10_000,             // Minimum collateralization ratio (basis pts)
 			MaxCR:                               60_000,             // Maximum collateralization ratio (basis pts)
