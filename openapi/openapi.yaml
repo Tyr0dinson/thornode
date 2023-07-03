@@ -829,9 +829,9 @@ paths:
         schema:
           type: string
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
-      - name: streaming_freq
+      - name: streaming_interval
         in: query
-        description: the frequency or interval in which streaming swaps are swap
+        description: the interval in which streaming swaps are swap
         schema:
           type: integer
           format: int64
@@ -1542,7 +1542,7 @@ components:
           type: string
           example: "CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7"
           description: the hash of a transaction
-        frequency:
+        interval:
           type: integer
           format: uint64
           description: how often each swap is made, in blocks
@@ -1788,10 +1788,10 @@ components:
           type: integer
           format: uint64
           description: number of swaps to execute in a streaming swap
-        stream_frequency:
+        stream_interval:
           type: integer
           format: uint64
-          description: the frequency (in blocks) to execute the streaming swap
+          description: the interval (in blocks) to execute the streaming swap
 
     TxOutItem:
       type: object

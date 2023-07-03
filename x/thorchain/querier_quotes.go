@@ -42,7 +42,7 @@ const (
 	affiliateParam            = "affiliate"
 	affiliateBpsParam         = "affiliate_bps"
 	minOutParam               = "min_out"
-	frequencyParam            = "streaming_freq"
+	intervalParam             = "streaming_interval"
 
 	quoteWarning    = "Do not cache this response. Do not send funds after the expiry."
 	quoteExpiration = 15 * time.Minute
@@ -384,17 +384,17 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return quoteErrorResponse(fmt.Errorf("bad amount: %w", err))
 	}
 
-	// parse streaming frequency
-	streamingFreq := uint64(0) // default value
-	if len(params[frequencyParam]) > 0 {
-		streamingFreq, err = strconv.ParseUint(params[frequencyParam][0], 10, 64)
+	// parse streaming interval
+	streamingInterval := uint64(0) // default value
+	if len(params[intervalParam]) > 0 {
+		streamingInterval, err = strconv.ParseUint(params[intervalParam][0], 10, 64)
 		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("bad streaming frequency amount: %w", err))
+			return quoteErrorResponse(fmt.Errorf("bad streaming interval amount: %w", err))
 		}
 	}
 	swp := StreamingSwap{
-		Frequency: streamingFreq,
-		Deposit:   amount,
+		Interval: streamingInterval,
+		Deposit:  amount,
 	}
 	maxSwapQuantity, err := getMaxSwapQuantity(ctx, mgr, fromAsset, toAsset, swp)
 	if err != nil {
@@ -523,7 +523,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		SlipLimit:            limit,
 		AffiliateAddress:     common.Address(affiliateMemo),
 		AffiliateBasisPoints: affiliateBps,
-		StreamFrequency:      streamingFreq,
+		StreamInterval:       streamingInterval,
 		StreamQuantity:       maxSwapQuantity,
 	}
 
@@ -559,7 +559,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		Destination:          destination,
 		AffiliateAddress:     affiliate,
 		AffiliateBasisPoints: affiliateBps,
-		StreamFrequency:      streamingFreq,
+		StreamInterval:       streamingInterval,
 		StreamQuantity:       maxSwapQuantity,
 	}
 

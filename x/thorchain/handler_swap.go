@@ -95,8 +95,8 @@ func (h SwapHandler) validateV113(ctx cosmos.Context, msg MsgSwap) error {
 
 		if swp.Count == 0 { // only check these verifications on the first swap of a streaming swap
 			maxLength := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapMaxLength)
-			if uint64(maxLength) < swp.Frequency*swp.Quantity {
-				return fmt.Errorf("streaming swap cannot exceed %d blocks: %d * %d", maxLength, swp.Quantity, swp.Frequency)
+			if uint64(maxLength) < swp.Interval*swp.Quantity {
+				return fmt.Errorf("streaming swap cannot exceed %d blocks: %d * %d", maxLength, swp.Quantity, swp.Interval)
 			}
 
 			maxSwapQuantity, err := getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp)

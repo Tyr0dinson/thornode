@@ -140,7 +140,7 @@ func (vm *SwapQueueV115) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 					// last swap must be in the past
 					continue // skip
 				}
-				if (ctx.BlockHeight()-swp.LastHeight)%int64(swp.Frequency) != 0 {
+				if (ctx.BlockHeight()-swp.LastHeight)%int64(swp.Interval) != 0 {
 					continue // skip
 				}
 			}

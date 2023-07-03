@@ -162,7 +162,7 @@ func refundTxV110(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
-	if swp.Frequency == 0 {
+	if swp.Interval == 0 {
 		return 0, nil
 	}
 	// collect pools involved in this swap
@@ -210,10 +210,10 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	// make sure maxSwapQuantity doesn't infringe on max length that a
 	// streaming swap can exist
 	maxLength := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
-	if swp.Frequency == 0 {
+	if swp.Interval == 0 {
 		return 1, nil
 	}
-	maxSwapInMaxLength := uint64(maxLength) / swp.Frequency
+	maxSwapInMaxLength := uint64(maxLength) / swp.Interval
 	if maxSwapQuantity.GT(cosmos.NewUint(maxSwapInMaxLength)) {
 		return maxSwapInMaxLength, nil
 	}
