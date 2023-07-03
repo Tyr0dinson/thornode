@@ -580,6 +580,9 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 	maxQ := int64(maxSwapQuantity)
 	res.MaxStreamingQuantity = &maxQ
+	streamSwapBlocks := int64(streamingInterval) * maxQ
+	res.StreamingSwapBlocks = &streamSwapBlocks
+	res.StreamingSwapSeconds = wrapInt64(streamSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000)
 
 	// estimate the inbound info
 	inboundAddress, routerAddress, inboundConfirmations, err := quoteInboundInfo(ctx, mgr, amount, fromAsset.GetChain())

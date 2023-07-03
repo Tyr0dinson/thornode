@@ -2778,6 +2778,16 @@ components:
           format: int64
           description: the maxiumum amount of trades a streaming swap can do for a trade
           example: 10
+        streaming_swap_blocks:
+          type: integer
+          format: int64
+          description: the number of blocks the streaming swap with execute over
+          example: 100
+        streaming_swap_seconds:
+          type: integer
+          format: int64
+          description: approx the number of seconds the streaming swap with execute over
+          example: 600
 
     QuoteSaverDepositResponse:
       type: object
