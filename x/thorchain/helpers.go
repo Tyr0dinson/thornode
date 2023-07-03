@@ -189,19 +189,40 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	if len(pools) == 0 {
 		return 0, fmt.Errorf("dev error: no pools selected during a streaming swap")
 	}
-	virtualDepth := totalRuneDepth.QuoUint64(uint64(len(pools))) // virtual rune depth
+	virtualDepth := cosmos.ZeroUint()
+	switch len(pools) {
+	case 1:
+		// single swap, should be the pool depth / 2. This is because
+		// StreamingSwapMinBP assumes double swap (half the fees, per pool at
+		// full depth)
+		virtualDepth = totalRuneDepth.QuoUint64(2) // single pool half depth
+	case 2:
+		// double swap, dynamically calculate a virtual pool that is between the
+		// depth of pool1 and pool2. This calculation should result in a
+		// consistent swap fee (in bps) no matter the depth of the pools. The
+		// larger the difference between the pools, the more the virtual pool
+		// skews towards the smaller pool. This results in less rewards given
+		// to the larger pool, and more rewards given to the smaller pool.
+
+		// (2*r1*r2) / (r1+r2)
+		r1 := pools[0].BalanceRune
+		r2 := pools[1].BalanceRune
+		num := r1.Mul(r2).MulUint64(2)
+		denom := r1.Add(r2)
+		virtualDepth = num.Quo(denom)
+	default:
+		return 0, fmt.Errorf("dev error: unsupported number of pools in a streaming swap: %d", len(pols))
+	}
 	if !sourceAsset.IsNativeRune() {
 		// since the inbound asset is not rune, the virtual depth needs to be
 		// recalculated to be the asset side
 		virtualDepth = common.GetUncappedShare(virtualDepth, pools[0].BalanceRune, pools[0].BalanceAsset)
 	}
-	// we multiply by 10 to ensure we can support decimals (ie 5 / 2 == 2.5)
-	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBP) * 10
-	minBP /= int64(len(pools)) // since multiple swaps are executed, then minBP should be adjusted
+	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBP)
 	if minBP == 0 {
 		return 0, fmt.Errorf("streaming swaps are not allows with a min BP of zero")
 	}
-	minSize := common.GetSafeShare(cosmos.NewUint(uint64(minBP)), cosmos.NewUint(10_000_00*10), virtualDepth)
+	minSize := common.GetSafeShare(cosmos.NewUint(uint64(minBP)), cosmos.NewUint(10_000_00), virtualDepth)
 	if minSize.IsZero() {
 		return 1, nil
 	}
