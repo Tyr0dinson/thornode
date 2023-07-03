@@ -122,7 +122,7 @@ func (vm *SwapQueueV115) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 		// exclude streaming swaps when its not "their time". Always want to
 		// allow the first sub-swap immediately (ie no LastHeight yet)
 		if msg.IsStreaming() {
-			pausedStreaming := vm.k.GetConfigInt64(ctx, constants.PauseStreamingSwaps)
+			pausedStreaming := vm.k.GetConfigInt64(ctx, constants.StreamingSwapPause)
 			if pausedStreaming > 0 {
 				continue
 			}

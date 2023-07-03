@@ -196,7 +196,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 		virtualDepth = common.GetUncappedShare(virtualDepth, pools[0].BalanceRune, pools[0].BalanceAsset)
 	}
 	// we multiply by 10 to ensure we can support decimals (ie 5 / 2 == 2.5)
-	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.MinBPStreamingSwap) * 10
+	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBP) * 10
 	minBP /= int64(len(pools)) // since multiple swaps are executed, then minBP should be adjusted
 	if minBP == 0 {
 		return 0, fmt.Errorf("streaming swaps are not allows with a min BP of zero")
@@ -209,7 +209,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 
 	// make sure maxSwapQuantity doesn't infringe on max length that a
 	// streaming swap can exist
-	maxLength := mgr.Keeper().GetConfigInt64(ctx, constants.MaxStreamingSwapLength)
+	maxLength := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
 	if swp.Frequency == 0 {
 		return 1, nil
 	}
