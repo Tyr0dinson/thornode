@@ -567,7 +567,6 @@ func (tos *TxOutStorageV115) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 
 		vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
 		if err != nil {
-			ctx.Logger().Error("fail to get vault", "error", err)
 			// ignore err
 		}
 		// when it is ragnarok , the network doesn't charge fee , however if the output asset is gas asset,

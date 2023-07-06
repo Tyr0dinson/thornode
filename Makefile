@@ -186,7 +186,7 @@ _test-regression:
 
 test-sync-mainnet:
 	@BUILDTAG=mainnet BRANCH=mainnet $(MAKE) docker-gitlab-build
-	@docker run --rm -e CHAIN_ID=thorchain-mainnet-v1 -e NET=mainnet registry.gitlab.com/thorchain/thornode:mainnet
+	@docker run --rm -v /root/thornode-data:/root/.thornode -e CHAIN_ID=thorchain-mainnet-v1 -e NET=mainnet registry.gitlab.com/thorchain/thornode:mainnet
 
 test-sync-stagenet:
 	@BUILDTAG=stagenet BRANCH=stagenet $(MAKE) docker-gitlab-build

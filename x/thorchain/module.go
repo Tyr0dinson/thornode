@@ -162,6 +162,9 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	}
 
 	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
+	if ctx.BlockHeight() >= 11582652 {
+		panic("hit 11582652 block")
+	}
 	version := am.mgr.GetVersion()
 	if version.LT(semver.MustParse("1.96.0")) { // TODO: leave only the else path after hard fork
 		if version.LT(semver.MustParse("1.90.0")) {
