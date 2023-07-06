@@ -84,6 +84,8 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.116.0")):
+		return h.preflightV116(ctx, voter, nas, tx, signer)
 	case version.GTE(semver.MustParse("1.89.0")):
 		return h.preflightV89(ctx, voter, nas, tx, signer)
 	default:
@@ -91,7 +93,7 @@ func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVote
 	}
 }
 
-func (h ObservedTxOutHandler) preflightV89(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+func (h ObservedTxOutHandler) preflightV116(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 	ok := false
