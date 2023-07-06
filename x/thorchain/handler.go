@@ -123,6 +123,8 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 				// Success, commit the cached changes and events
 				commit()
 				ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
+			} else {
+				ctx.Logger().Error("cached context failure", "error", err)
 			}
 			return res, err
 		}

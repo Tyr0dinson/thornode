@@ -259,8 +259,10 @@ func (h ObservedTxOutHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxOu
 			ctx.Logger().Error("fail to get vault", "error", err)
 			continue
 		}
+		ctx.Logger().Info("Pre  Vault", "Vault:", vault.String())
 		vault.SubFunds(tx.Tx.Coins)
 		vault.OutboundTxCount++
+		ctx.Logger().Info("Post Vault", "Vault:", vault.String())
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())

@@ -179,6 +179,8 @@ func (k KVStore) SetVault(ctx cosmos.Context, vault Vault) error {
 		}
 	}
 
+	atom := vault.GetCoin(common.ATOMAsset)
+	ctx.Logger().Info("Set Vault", "Vault:", atom.String())
 	k.setVault(ctx, k.GetKey(ctx, prefixVault, vault.PubKey.String()), vault)
 	return nil
 }
