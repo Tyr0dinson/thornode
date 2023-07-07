@@ -410,8 +410,7 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 			// Use a map to ensure only a single record of each signer.
 			// However, do not iterate over the map to get the signers slice,
 			// as the slice order would vary between nodes.
-			_, exist := signersMap[signer.String()]
-			if !exist {
+			if !signersMap[signer.String()] {
 				signers = append(signers, signer)
 				signersMap[signer.String()] = true
 			}
