@@ -115,11 +115,5 @@ func DexAggregatorsV116() []Aggregator {
 		{common.AVAXChain, `0x892Fb7C2A23772f4A2FFC3DC82419147dC22021C`, 400_000},
 		// RangoThorchainOutputAggUniV2_COMPACT_PANGOLIN
 		{common.AVAXChain, `0xBd039a45e656221E28594d2761DDed8F6712AE46`, 400_000},
-		// LayerZero Executor Ethereum
-		{common.ETHChain, `0xe93685f3bBA03016F02bD1828BaDD6195988D950`, 800_000},
-		// LayerZero Executor Avalanche
-		{common.AVAXChain, `0xe93685f3bBA03016F02bD1828BaDD6195988D950`, 800_000},
-		// LayerZero Executor BinanceSmartChain
-		{common.BSCChain, `0xe93685f3bBA03016F02bD1828BaDD6195988D950`, 800_000},
 	}
 }
