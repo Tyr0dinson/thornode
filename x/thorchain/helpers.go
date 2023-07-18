@@ -1413,3 +1413,22 @@ func IsModuleAccAddressV121(keeper keeper.Keeper, accAddr cosmos.AccAddress) boo
 		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
 }
+
+func floorL1Decimals(ctx cosmos.Context, keeper keeper.Keeper, coin *common.Coin) error {
+	// If the outbound coin is Native (e.g. synthetic or derived),
+	// respecting decimals is unnecessary (as they can be fractional).
+	if coin.Asset.IsNative() {
+		return nil
+	}
+
+	pool, err := keeper.GetPool(ctx, coin.Asset)
+	if err != nil {
+		return err
+	}
+
+	// Note, if the Decimals are 0 from being a new pool, RoundToDecimal will not change the precision.
+	// Also, RoundToDecimal only floors and (avoiding overshooting) never rounds up (note TestRoundToDecimal).
+	coin.Amount = cosmos.RoundToDecimal(coin.Amount, pool.Decimals)
+
+	return nil
+}
