@@ -257,6 +257,8 @@ func (h DepositHandler) addSwapV116(ctx cosmos.Context, msg MsgSwap) {
 func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.123.0")):
+		h.addSwapDirectV123(ctx, msg)
 	case version.GTE(semver.MustParse("1.116.0")):
 		h.addSwapDirectV116(ctx, msg)
 	default:
@@ -264,7 +266,7 @@ func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	}
 }
 
-func (h DepositHandler) addSwapDirectV116(ctx cosmos.Context, msg MsgSwap) {
+func (h DepositHandler) addSwapDirectV123(ctx cosmos.Context, msg MsgSwap) {
 	if msg.Tx.Coins.IsEmpty() {
 		return
 	}
