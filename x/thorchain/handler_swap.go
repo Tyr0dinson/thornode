@@ -349,6 +349,13 @@ func (h SwapHandler) handleV123(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		// should, which will cause the swap queue manager later to send out
 		// the In/Out amounts accordingly
 		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(h.mgr.GetVersion())
+
+		// Respect decimals when the asset is L1 (in case only a partial swap adds to the pool).
+		coinForFlooring := common.NewCoin(msg.Tx.Coins[0].Asset, msg.Tx.Coins[0].Amount)
+		if err := floorL1Decimals(ctx, h.mgr.Keeper(), &coinForFlooring); err != nil {
+			ctx.Logger().Error("fail to floor layer 1 to its decimals", "error", err)
+		}
+		msg.Tx.Coins[0].Amount = coinForFlooring.Amount
 	}
 
 	emit, _, swapErr := swapper.Swap(
