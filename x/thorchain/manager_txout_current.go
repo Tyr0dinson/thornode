@@ -377,12 +377,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		toi.ToAddress = newBCHAddress
 	}
 
-	// ensure amount is rounded to appropriate decimals
-	toiPool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
-	if err != nil {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool for txout manager: %w", err)
-	}
-
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	transactionFeeRune := tos.gasManager.GetFee(ctx, toi.Chain, common.RuneAsset())
 	transactionFeeAsset := tos.gasManager.GetFee(ctx, toi.Chain, toi.Coin.Asset)
@@ -617,11 +611,10 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			continue
 		}
 
-		// If the outbound coin is synthetic, respecting decimals is unnecessary
-		// and leaves unburnt synths in the Pool Module
-		if !outputs[i].Coin.Asset.IsSyntheticAsset() {
-			// sanity check: ensure outbound amount respect asset decimals
-			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, toiPool.Decimals)
+		// If the outbound coin is Native (e.g. synthetic or derived), respecting decimals is unnecessary
+		// and leaves unburnt coin in the Pool Module
+		if err := floorL1Decimals(ctx, tos.keeper, &outputs[i].Coin); err != nil {
+			ctx.Logger().Error("fail to floor layer 1 to its decimals", "error", err)
 		}
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {
