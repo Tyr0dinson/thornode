@@ -181,6 +181,7 @@ func (ob *OrderBookVCUR) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg M
 	if !msg.AffiliateBasisPoints.IsZero() {
 		maxBasisPoints := cosmos.NewUint(10_000)
 		source.Amount = common.GetSafeShare(common.SafeSub(maxBasisPoints, msg.AffiliateBasisPoints), maxBasisPoints, source.Amount)
+		// This is only a check and has no manager provider, so do not round layer 1 asset to its decimals.
 	}
 
 	target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
@@ -385,6 +386,14 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				cosmos.NewUint(10000),
 				msg.Tx.Coins[0].Amount,
 			)
+
+			// Respect decimals when the asset is L1 (in case one swap adds to the pool and the other is refunded).
+			coinForFlooring := common.NewCoin(msg.Tx.Coins[0].Asset, affiliateAmt)
+			if err := floorL1Decimals(ctx, mgr.Keeper(), &coinForFlooring); err != nil {
+				ctx.Logger().Error("fail to floor layer 1 to its decimals", "error", err)
+			}
+			affiliateAmt = coinForFlooring.Amount
+
 			msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, affiliateAmt)
 
 			affiliateSwap = *NewMsgSwap(

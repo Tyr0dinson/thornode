@@ -378,6 +378,14 @@ func (h ObservedTxInHandler) addSwapDirectV123(ctx cosmos.Context, msg MsgSwap) 
 			cosmos.NewUint(10000),
 			msg.Tx.Coins[0].Amount,
 		)
+
+		// Respect decimals when the asset is L1 (in case one swap adds to the pool and the other is refunded).
+		coinForFlooring := common.NewCoin(msg.Tx.Coins[0].Asset, amt)
+		if err := floorL1Decimals(ctx, h.mgr.Keeper(), &coinForFlooring); err != nil {
+			ctx.Logger().Error("fail to floor layer 1 to its decimals", "error", err)
+		}
+		amt = coinForFlooring.Amount
+
 		msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, amt)
 	}
 

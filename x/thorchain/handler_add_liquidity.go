@@ -331,6 +331,14 @@ func (h AddLiquidityHandler) handleV123(ctx cosmos.Context, msg MsgAddLiquidity)
 	// add liquidity has an affiliate fee, add liquidity for both the user and their affiliate
 	affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.RuneAmount)
 	affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.AssetAmount)
+
+	// Respect decimals when the asset is L1 (in case one swap adds to the pool and the other is refunded).
+	coinForFlooring := common.NewCoin(msg.Asset, affiliateAsset)
+	if err := floorL1Decimals(ctx, h.mgr.Keeper(), &coinForFlooring); err != nil {
+		ctx.Logger().Error("fail to floor layer 1 to its decimals", "error", err)
+	}
+	affiliateAsset = coinForFlooring.Amount
+
 	userRune := common.SafeSub(msg.RuneAmount, affiliateRune)
 	userAsset := common.SafeSub(msg.AssetAmount, affiliateAsset)
 
