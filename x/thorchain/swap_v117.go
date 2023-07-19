@@ -187,12 +187,8 @@ func (s *SwapperV117) Swap(ctx cosmos.Context,
 
 		// streaming swap outbounds are handled in the swap queue manager
 		if swp.Valid() != nil {
-			ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget)
-			if err != nil {
+			if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget); err != nil {
 				return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
-			}
-			if !ok {
-				return assetAmount, swapEvents, errFailAddOutboundTx
 			}
 		}
 	}

@@ -159,8 +159,7 @@ func (s *SwapperV90) Swap(ctx cosmos.Context,
 		toi.ModuleName = ModuleName
 	}
 
-	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
-	if err != nil {
+	if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
 		// when it fail to send out the txout item , thus let's restore the pool balance here , thus nothing happen to the pool
 		// given the previous pool status is already in memory, so here just apply it again
 		for _, pool := range s.poolsOrig {
@@ -170,9 +169,6 @@ func (s *SwapperV90) Swap(ctx cosmos.Context,
 		}
 
 		return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
-	}
-	if !ok {
-		return assetAmount, swapEvents, errFailAddOutboundTx
 	}
 
 	// emit the swap events , by this stage , it is guarantee that swap already happened

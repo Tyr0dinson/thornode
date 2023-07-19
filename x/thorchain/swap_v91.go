@@ -116,12 +116,8 @@ func (s *SwapperV91) Swap(ctx cosmos.Context,
 		toi.ModuleName = ModuleName
 	}
 
-	ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
-	if err != nil {
+	if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
 		return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
-	}
-	if !ok {
-		return assetAmount, swapEvents, errFailAddOutboundTx
 	}
 
 	// emit the swap events , by this stage , it is guarantee that swap already happened

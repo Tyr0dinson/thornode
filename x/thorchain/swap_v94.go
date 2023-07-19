@@ -152,12 +152,8 @@ func (s *SwapperV94) Swap(ctx cosmos.Context,
 			toi.ModuleName = ModuleName
 		}
 
-		ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget)
-		if err != nil {
+		if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget); err != nil {
 			return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
-		}
-		if !ok {
-			return assetAmount, swapEvents, errFailAddOutboundTx
 		}
 	}
 
