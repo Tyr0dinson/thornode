@@ -236,9 +236,8 @@ func newOutboundTxHandlerTestHelper(c *C) outboundTxHandlerTestHelper {
 	}
 	mgr.K = keeperHelper
 	mgr.slasher = newSlasherV75(keeperHelper, NewDummyEventMgr())
-	result, err := txOutStorage.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+	err = txOutStorage.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Check(result, Equals, true)
 
 	return outboundTxHandlerTestHelper{
 		ctx:           ctx,

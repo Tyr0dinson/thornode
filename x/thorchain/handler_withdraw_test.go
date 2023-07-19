@@ -359,14 +359,14 @@ type MockWithdrawTxOutStore struct {
 	errRune  error
 }
 
-func (store *MockWithdrawTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, _ cosmos.Uint) (bool, error) {
+func (store *MockWithdrawTxOutStore) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, _ cosmos.Uint) error {
 	if toi.Coin.Asset.IsNativeRune() && store.errRune != nil {
-		return false, store.errRune
+		return store.errRune
 	}
 	if !toi.Coin.Asset.IsNativeRune() && store.errAsset != nil {
-		return false, store.errAsset
+		return store.errAsset
 	}
-	return true, nil
+	return nil
 }
 
 type MockWithdrawEventMgr struct {

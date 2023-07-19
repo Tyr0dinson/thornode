@@ -177,9 +177,8 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 		Memo:        NewRefundMemo(tx.Tx.ID).String(),
 		InHash:      tx.Tx.ID,
 	}
-	result, err := txOutStorage.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+	err = txOutStorage.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Check(result, Equals, true)
 
 	return refundTxHandlerTestHelper{
 		ctx:           ctx,

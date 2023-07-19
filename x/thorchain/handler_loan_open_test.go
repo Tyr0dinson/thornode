@@ -17,9 +17,9 @@ type MockTxOutDummy struct {
 	blockOut *TxOut
 }
 
-func (tos *MockTxOutDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+func (tos *MockTxOutDummy) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) error {
 	tos.addToBlockOut(ctx, toi)
-	return true, nil
+	return nil
 }
 
 func (tos *MockTxOutDummy) addToBlockOut(_ cosmos.Context, toi TxOutItem) {
