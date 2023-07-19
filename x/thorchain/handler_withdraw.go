@@ -201,12 +201,8 @@ func (h WithdrawLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgWithdraw
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil

@@ -116,12 +116,8 @@ func (h WithdrawLiquidityHandler) handleV100(ctx cosmos.Context, msg MsgWithdraw
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil
@@ -269,12 +265,8 @@ func (h WithdrawLiquidityHandler) handleV98(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil
@@ -422,12 +414,8 @@ func (h WithdrawLiquidityHandler) handleV95(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil
@@ -575,12 +563,8 @@ func (h WithdrawLiquidityHandler) handleV94(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil
@@ -693,12 +677,8 @@ func (h WithdrawLiquidityHandler) handleV93(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 
 		return nil
@@ -818,12 +798,8 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		okAsset, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return nil, multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !okAsset {
-			return nil, errFailAddOutboundTx
 		}
 	}
 
@@ -835,12 +811,8 @@ func (h WithdrawLiquidityHandler) handleV88(ctx cosmos.Context, msg MsgWithdrawL
 			Coin:      common.NewCoin(common.RuneAsset(), runeAmt),
 			Memo:      memo,
 		}
-		okRune, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			return nil, multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !okRune {
-			return nil, errFailAddOutboundTx
 		}
 	}
 
@@ -945,17 +917,13 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 			toi.GasRate = int64(h.mgr.GasMgr().GetGasRate(ctx, msg.Asset.GetChain()).Uint64())
 		}
 
-		okAsset, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); err != nil {
 			// restore pool and liquidity provider
 			if err := h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 				return nil, ErrInternal(err, "fail to save pool")
 			}
 			h.mgr.Keeper().SetLiquidityProvider(ctx, lp)
 			return nil, multierror.Append(errFailAddOutboundTx, err)
-		}
-		if !okAsset {
-			return nil, errFailAddOutboundTx
 		}
 	}
 
@@ -967,8 +935,7 @@ func (h WithdrawLiquidityHandler) handleV75(ctx cosmos.Context, msg MsgWithdrawL
 			Coin:      common.NewCoin(common.RuneAsset(), runeAmt),
 			Memo:      memo,
 		}
-		okRune, txOutErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
-		if txOutErr != nil || !okRune {
+		if txOutErr := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint()); txOutErr != nil {
 			// when assetAmount is zero , the network didn't try to send asset to customer
 			// thus if it failed to send RUNE , it should restore pool here
 			// this might happen when the emit RUNE from the withdraw is less than `NativeTransactionFee`
