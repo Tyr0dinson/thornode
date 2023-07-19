@@ -110,13 +110,13 @@ func (tos *TxOutStorageV93) ClearOutboundItems(ctx cosmos.Context) {
 // TryAddTxOutItem add an outbound tx to block
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
-func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) error {
 	outputs, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
-		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
+		return fmt.Errorf("fail to prepare outbound tx: %w", err)
 	}
 	if len(outputs) == 0 {
-		return false, ErrNotEnoughToPayFee
+		return ErrNotEnoughToPayFee
 	}
 
 	sumOut := cosmos.ZeroUint()
@@ -124,7 +124,7 @@ func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
 	if sumOut.LT(minOut) {
-		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+		return fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
 	}
 
 	// blacklist binance exchange as an outbound destination. This is because
@@ -135,7 +135,7 @@ func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 	}
 	for _, b := range blacklist {
 		if toi.ToAddress.Equals(common.Address(b)) {
-			return false, fmt.Errorf("non-supported outbound address")
+			return fmt.Errorf("non-supported outbound address")
 		}
 	}
 
@@ -154,7 +154,7 @@ func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
 		if err != nil {
 			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
-			return false, fmt.Errorf("fail to get observe tx in voter,err:%w", err)
+			return fmt.Errorf("fail to get observe tx in voter,err:%w", err)
 		}
 
 		// When the inbound transaction already has an outbound , the make sure the outbound will be scheduled on the same block
@@ -169,10 +169,10 @@ func (tos *TxOutStorageV93) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 	// add tx to block out
 	for _, output := range outputs {
 		if err := tos.addToBlockOut(ctx, mgr, output, outboundHeight); err != nil {
-			return false, err
+			return err
 		}
 	}
-	return true, nil
+	return nil
 }
 
 // UnSafeAddTxOutItem - blindly adds a tx out, skipping vault selection, transaction

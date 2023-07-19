@@ -73,7 +73,7 @@ type TxOutStore interface {
 	GetBlockOut(ctx cosmos.Context) (*TxOut, error)
 	ClearOutboundItems(ctx cosmos.Context)
 	GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error)
-	TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error)
+	TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) error
 	UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem) error
 	GetOutboundItemByToAddress(cosmos.Context, common.Address) []TxOutItem
 	CalcTxOutHeight(cosmos.Context, semver.Version, TxOutItem) (int64, error)
