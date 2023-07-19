@@ -369,12 +369,8 @@ func (h LoanOpenHandler) openLoanV112(ctx cosmos.Context, msg MsgLoanOpen) error
 			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero); err != nil {
 			return err
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 	} else {
 		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
@@ -516,12 +512,8 @@ func (h LoanOpenHandler) openLoanV108(ctx cosmos.Context, msg MsgLoanOpen) error
 			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero); err != nil {
 			return err
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 	} else {
 		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
@@ -658,12 +650,8 @@ func (h LoanOpenHandler) openLoanV107(ctx cosmos.Context, msg MsgLoanOpen) error
 			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero); err != nil {
 			return err
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 	} else {
 		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
@@ -900,12 +888,8 @@ func (h LoanOpenHandler) openLoanV111(ctx cosmos.Context, msg MsgLoanOpen) error
 			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero); err != nil {
 			return err
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 	} else {
 		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)

@@ -275,12 +275,8 @@ func (h LoanOpenHandler) openLoanV113(ctx cosmos.Context, msg MsgLoanOpen) error
 			Coin:       common.NewCoin(common.TOR, cumulativeDebt),
 			ModuleName: ModuleName,
 		}
-		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero)
-		if err != nil {
+		if err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, zero); err != nil {
 			return err
-		}
-		if !ok {
-			return errFailAddOutboundTx
 		}
 	} else {
 		txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
