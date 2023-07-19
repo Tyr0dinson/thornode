@@ -219,12 +219,8 @@ func (vm *SwapQueueV115) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					if item.Chain.IsTHORChain() && (item.Coin.Asset.IsSyntheticAsset() || item.Coin.Asset.IsDerivedAsset()) {
 						item.ModuleName = ModuleName
 					}
-					ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, item, cosmos.ZeroUint())
-					if err != nil {
+					if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, item, cosmos.ZeroUint()); err != nil {
 						return ErrInternal(err, "fail to add outbound tx")
-					}
-					if !ok {
-						return errFailAddOutboundTx
 					}
 				}
 			}
