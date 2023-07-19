@@ -541,11 +541,11 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					},
 					Memo: NewMigrateMemo(ctx.BlockHeight()).String(),
 				}
-				ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+				err = vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 				if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {
 					return err
 				}
-				if ok {
+				if err == nil {
 					// Migration scheduling having been successful, add a zero Amount of this Asset to the target ActiveVault
 					// (which will not be set)
 					// to prioritise target vaults without it for this block's migrations from other RetiringVaults.

@@ -265,11 +265,11 @@ func (vm *NetworkMgrV89) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					},
 					Memo: NewMigrateMemo(ctx.BlockHeight()).String(),
 				}
-				ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+				err = vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 				if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {
 					return err
 				}
-				if ok {
+				if err == nil {
 					vault.AppendPendingTxBlockHeights(ctx.BlockHeight(), mgr.GetConstants())
 					if err := vm.k.SetVault(ctx, vault); err != nil {
 						return fmt.Errorf("fail to save vault: %w", err)
