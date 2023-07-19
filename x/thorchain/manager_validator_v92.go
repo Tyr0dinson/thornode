@@ -736,15 +736,9 @@ func (vm *validatorMgrV92) ragnarokBond(ctx cosmos.Context, nth int64, mgr Manag
 			Memo:       NewRagnarokMemo(ctx.BlockHeight()).String(),
 			ModuleName: BondName,
 		}
-		ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
-		if err != nil {
-			if !errors.Is(err, ErrNotEnoughToPayFee) {
-				return err
-			}
-			ok = true
-		}
-		if !ok {
-			continue
+		err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
+		if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {
+			return err
 		}
 
 		// add a pending rangarok transaction
