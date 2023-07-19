@@ -62,8 +62,7 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 				ModuleName:  sourceModuleName,
 			}
 
-			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
-			if err != nil {
+			if err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
 				ctx.Logger().Error("fail to prepare outbound tx", "error", err)
 				// concatenate the refund failure to refundReason
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
@@ -133,8 +132,7 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 					// If not satisfying the other conditions this coin should be native RUNE in the Reserve,
 					// so leave it there.
 				}
-			}
-			if success {
+			} else {
 				refundCoins = append(refundCoins, toi.Coin)
 			}
 		}
@@ -524,7 +522,7 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			ModuleName: BondName,
 		}
-		_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
+		err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
 		if err != nil {
 			return fmt.Errorf("fail to add outbound tx: %w", err)
 		}
