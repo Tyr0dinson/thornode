@@ -118,9 +118,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem(c *C) {
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
@@ -135,8 +134,7 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem(c *C) {
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(20*common.One)),
 	}
 	txOutStore.ClearOutboundItems(w.ctx)
-	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
-	c.Assert(success, Equals, true)
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
@@ -150,9 +148,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem(c *C) {
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(1000*common.One)),
 	}
 	txOutStore.ClearOutboundItems(w.ctx)
-	success, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(success, Equals, true)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
@@ -168,8 +165,7 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem(c *C) {
 		},
 	}
 	txOutStore.ClearOutboundItems(w.ctx)
-	result, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
-	c.Assert(result, Equals, true)
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
@@ -247,9 +243,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
@@ -270,9 +265,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c 
 	item.Chain = common.THORChain
 	item.Coin = common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One))
 	item.ToAddress = GetRandomTHORAddress()
-	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 
 	// make sure outbound_height has not been overwritten
 	afterVoter1, err := w.keeper.GetObservedTxInVoter(w.ctx, inTxID)
@@ -343,10 +337,9 @@ func (s TxOutStoreV83Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, NotNil)
 	c.Assert(err, Equals, ErrNotEnoughToPayFee)
-	c.Assert(ok, Equals, false)
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 0)
@@ -370,9 +363,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItemWithoutBFT(c *C) {
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	success, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(success, Equals, true)
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
@@ -446,9 +438,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
@@ -462,9 +453,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(7500)),
 		},
 	}
-	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 2)
@@ -587,9 +577,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	version := GetCurrentVersion()
 	constAccessor := constants.GetConstantValues(version)
 	txOutStore := newTxOutStorageV83(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), newGasMgrV81(constAccessor, w.keeper))
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 
 	item1 := TxOutItem{
 		Chain:     common.BNBChain,
@@ -598,9 +587,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 	}
 
-	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
@@ -621,9 +609,8 @@ func (s TxOutStoreV83Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtTh
 	item.Chain = common.THORChain
 	item.Coin = common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One))
 	item.ToAddress = GetRandomTHORAddress()
-	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
+	err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
 
 	// make sure outbound_height has not been overwritten
 	afterVoter1, err := w.keeper.GetObservedTxInVoter(w.ctx, inTxID)
