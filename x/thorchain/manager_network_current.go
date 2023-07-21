@@ -353,6 +353,12 @@ func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	migrationRounds := mgr.GetConstants().GetInt64Value(constants.ChurnMigrateRounds)
 
+	// Always have at least as many migration rounds as Active vaults,
+	// to ensure that all Active vaults receive gas assets.
+	if int64(len(active)) > migrationRounds {
+		migrationRounds = int64(len(active))
+	}
+
 	for _, vault := range retiring {
 		if !vault.HasFunds() {
 			vault.Status = InactiveVault
