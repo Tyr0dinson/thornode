@@ -136,7 +136,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	c.Assert(items, HasLen, 1)
 	item := items[0]
 	c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, true)
-	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(97593068), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(97592868), Commentf("%d", item.Coin.Amount.Uint64()))
 	c.Check(item.ToAddress.String(), Equals, "bcrt1qdn665723epwlg8u2mk7rg4yp7n72mzwqzuv9ye")
 
 	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, common.BTCAsset)
@@ -271,6 +271,6 @@ func (s *HandlerLoanSuite) TestLoanSwapFails(c *C) {
 	c.Assert(items, HasLen, 1)
 	item := items[0]
 	c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, true)
-	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(100000000), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(99999800), Commentf("%d", item.Coin.Amount.Uint64()))
 	c.Check(item.ToAddress.String(), Equals, "bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
 }

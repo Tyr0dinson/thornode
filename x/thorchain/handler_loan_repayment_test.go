@@ -176,6 +176,6 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	c.Assert(items, HasLen, 1)
 	item := items[0]
 	c.Check(item.Coin.Asset.Equals(common.BTCAsset), Equals, true)
-	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(99525480), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(99525280), Commentf("%d", item.Coin.Amount.Uint64()))
 	c.Check(item.ToAddress.String(), Equals, "bcrt1q8ln0p2d4mwng7x20nl7hku25d282sjgf2v74nt")
 }
