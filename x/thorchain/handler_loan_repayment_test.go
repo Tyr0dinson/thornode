@@ -120,6 +120,7 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	pool.Asset = common.BTCAsset
 	pool.BalanceAsset = cosmos.NewUint(83830778633)
 	pool.BalanceRune = cosmos.NewUint(1022440798362209)
+	pool.LPUnits = cosmos.NewUint(1022440798362209)
 	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
