@@ -531,8 +531,8 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 					}
 				}
 
-				// if pool units is zero, no asset fee is taken
-				if !pool.GetPoolUnits().IsZero() {
+				// if either BalanceAsset or BalanceRune is zero (no price), no asset fee is taken
+				if !pool.BalanceAsset.IsZero() && !pool.BalanceRune.IsZero() {
 					assetFee := transactionFee
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
