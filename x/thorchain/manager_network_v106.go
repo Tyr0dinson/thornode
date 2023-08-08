@@ -116,7 +116,7 @@ func (vm *NetworkMgrV106) suspendVirtualPool(ctx cosmos.Context, mgr Manager, de
 func (vm *NetworkMgrV106) calcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	anchors := getAnchors(ctx, mgr.Keeper(), asset)
 
-	maxAnchorBlocks := fetchConfigInt64(ctx, mgr, constants.MaxAnchorBlocks)
+	maxAnchorBlocks := fetchConfigInt64(ctx, mgr, constants.AnchorVolatilityPeriodBlocks)
 
 	// sum anchor pool rune depths
 	totalRuneDepth := cosmos.ZeroUint()
@@ -194,8 +194,8 @@ func (vm *NetworkMgrV106) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 		return
 	}
 
-	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
-	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthBasisPts)
+	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.AnchorVolatilitySlipMaxBasisPoints)
+	depthBasisPts := fetchConfigInt64(ctx, mgr, constants.DerivedDepthMinBasisPoints)
 	minDepthPts := fetchConfigInt64(ctx, mgr, constants.DerivedMinDepth)
 
 	derivedAsset := asset.GetDerivedAsset()

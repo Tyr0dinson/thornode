@@ -975,9 +975,9 @@ func (s *NetworkManagerV102TestSuite) TestSpawnDerivedAssets(c *C) {
 	vault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthMinBasisPoints", 10_000)
 	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
-	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
+	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.AnchorVolatilitySlipMaxBasisPoints)
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 
@@ -1063,8 +1063,8 @@ func (s *NetworkManagerV102TestSuite) TestSpawnDerivedAssetsBasisPoints(c *C) {
 	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	// test that DerivedDepthBasisPts affects the pool depth
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 20000)
+	// test that DerivedDepthMinBasisPoints affects the pool depth
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthMinBasisPoints", 20000)
 	err = nmgr.spawnDerivedAssets(ctx, mgr)
 	c.Assert(err, IsNil)
 	usd, err := mgr.Keeper().GetPool(ctx, common.TOR)
@@ -1073,9 +1073,9 @@ func (s *NetworkManagerV102TestSuite) TestSpawnDerivedAssetsBasisPoints(c *C) {
 	c.Check(usd.BalanceAsset.String(), Equals, "1851363360364602")
 	c.Check(usd.BalanceRune.String(), Equals, "374987118770738")
 
-	// test that DerivedDepthBasisPts set to zero will cause the pools to
+	// test that DerivedDepthMinBasisPoints set to zero will cause the pools to
 	// become suspended
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 0)
+	mgr.Keeper().SetMimir(ctx, "DerivedDepthMinBasisPoints", 0)
 	err = nmgr.spawnDerivedAssets(ctx, mgr)
 	c.Assert(err, IsNil)
 	usd, err = mgr.Keeper().GetPool(ctx, common.TOR)

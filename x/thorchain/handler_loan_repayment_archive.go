@@ -41,7 +41,7 @@ func (h LoanRepaymentHandler) validateV110(ctx cosmos.Context, msg MsgLoanRepaym
 		return fmt.Errorf("loan contains no debt to pay off")
 	}
 
-	maturity := fetchConfigInt64(ctx, h.mgr, constants.LoanRepaymentMaturity)
+	maturity := fetchConfigInt64(ctx, h.mgr, constants.LendingRepaymentMinBlocks)
 	if loan.LastOpenHeight+maturity > ctx.BlockHeight() {
 		return fmt.Errorf("loan repayment is unavailable: loan hasn't reached maturity")
 	}
@@ -74,7 +74,7 @@ func (h LoanRepaymentHandler) validateV107(ctx cosmos.Context, msg MsgLoanRepaym
 		return fmt.Errorf("loan contains no debt to pay off")
 	}
 
-	maturity := fetchConfigInt64(ctx, h.mgr, constants.LoanRepaymentMaturity)
+	maturity := fetchConfigInt64(ctx, h.mgr, constants.LendingRepaymentMinBlocks)
 	if loan.LastOpenHeight+maturity > ctx.BlockHeight() {
 		return fmt.Errorf("loan repayment is unavailable: loan hasn't reached maturity")
 	}

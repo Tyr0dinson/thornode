@@ -60,7 +60,7 @@ func (h LoanOpenHandler) validateV108(ctx cosmos.Context, msg MsgLoanOpen) error
 	if totalRune.IsZero() {
 		return fmt.Errorf("no liquidity, lending unavailable")
 	}
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
 	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
@@ -132,7 +132,7 @@ func (h LoanOpenHandler) validateV107(ctx cosmos.Context, msg MsgLoanOpen) error
 	if totalRune.IsZero() {
 		return fmt.Errorf("no liquidity, lending unavailable")
 	}
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
 	totalAvailableRuneForProtocol := common.GetUncappedShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
@@ -238,9 +238,9 @@ func (h LoanOpenHandler) openLoanV112(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 
 	// get configs
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinCR)
-	maxCR := fetchConfigInt64(ctx, h.mgr, constants.MaxCR)
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMinBasisPoints)
+	maxCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMaxBasisPoints)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
@@ -385,9 +385,9 @@ func (h LoanOpenHandler) openLoanV108(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 
 	// get configs
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinCR)
-	maxCR := fetchConfigInt64(ctx, h.mgr, constants.MaxCR)
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMinBasisPoints)
+	maxCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMaxBasisPoints)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
@@ -527,9 +527,9 @@ func (h LoanOpenHandler) openLoanV107(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 
 	// get configs
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinCR)
-	maxCR := fetchConfigInt64(ctx, h.mgr, constants.MaxCR)
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMinBasisPoints)
+	maxCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMaxBasisPoints)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
@@ -769,9 +769,9 @@ func (h LoanOpenHandler) openLoanV111(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 
 	// get configs
-	minCR := fetchConfigInt64(ctx, h.mgr, constants.MinCR)
-	maxCR := fetchConfigInt64(ctx, h.mgr, constants.MaxCR)
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+	minCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMinBasisPoints)
+	maxCR := fetchConfigInt64(ctx, h.mgr, constants.LendingCollaterisationRatioMaxBasisPoints)
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLeverBasisPoints)
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
 	// calculate CR
