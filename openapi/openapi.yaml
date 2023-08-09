@@ -2205,6 +2205,7 @@ components:
       required:
         - inbound_observed
         - inbound_finalised
+        - swap_status
       properties:
         inbound_observed:
           type: object
@@ -2269,7 +2270,35 @@ components:
             completed:
               type: boolean
               example: false
-              description: returns true if an inbound transaction's swap (successful or refunded) is no longer pending
+              description: (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
+        swap_status:
+          type: object
+          required:
+            - swap_not_pending
+          properties:
+            swap_not_pending:
+              type: boolean
+              example: false
+              description: true when no swap is pending
+            streaming:
+              type: object
+              required:
+                - interval
+                - quantity
+                - count
+              properties:
+                interval:
+                  type: integer
+                  format: uint64
+                  description: how often each swap is made, in blocks
+                quantity:
+                  type: integer
+                  format: uint64
+                  description: the total number of swaps in a streaming swaps
+                count:
+                  type: integer
+                  format: uint64
+                  description: the amount of swap attempts so far
         outbound_delay:
           type: object
           required:

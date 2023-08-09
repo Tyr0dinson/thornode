@@ -348,6 +348,25 @@ type DoneStage struct {
 	Completed bool `json:"completed"`
 }
 
+type StreamingStatus struct {
+	Interval uint64 `json:"interval"`
+	Quantity uint64 `json:"quantity"`
+	Count    uint64 `json:"count"`
+}
+
+func NewStreamingStatus(streamingSwap StreamingSwap) StreamingStatus {
+	return StreamingStatus{
+		Interval: streamingSwap.Interval,
+		Quantity: streamingSwap.Quantity,
+		Count:    streamingSwap.Count,
+	}
+}
+
+type SwapStatus struct {
+	SwapNotPending bool             `json:"swap_not_pending"`
+	Streaming      *StreamingStatus `json:"streaming,omitempty"`
+}
+
 type OutboundDelayStage struct {
 	RemainingDelayBlocks  *int64 `json:"remaining_delay_blocks,omitempty"`
 	RemainingDelaySeconds *int64 `json:"remaining_delay_seconds,omitempty"`
@@ -360,6 +379,7 @@ type OutboundSignedStage struct {
 	Completed               bool   `json:"completed"`
 }
 
+// TODO: Deprecate SwapFinalised field in favour of SwapStatus.
 type QueryTxStages struct {
 	// Pointers so that the omitempty can recognise 'nil'.
 	// Structs used for all stages for easier user looping through 'Completed' fields.
@@ -367,11 +387,13 @@ type QueryTxStages struct {
 	InboundConfirmationCounted *InboundConfirmationCountedStage `json:"inbound_confirmation_counted,omitempty"`
 	InboundFinalised           DoneStage                        `json:"inbound_finalised"`
 	SwapFinalised              *DoneStage                       `json:"swap_finalised,omitempty"`
+	SwapStatus                 SwapStatus                       `json:"swap_status"`
 	OutboundDelay              *OutboundDelayStage              `json:"outbound_delay,omitempty"`
 	OutboundSigned             *OutboundSignedStage             `json:"outbound_signed,omitempty"`
 }
 
-func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending bool) QueryTxStages {
+// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
+func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, swapNotPending bool, streamingSwap StreamingSwap) QueryTxStages {
 	var result QueryTxStages
 
 	// Set the Completed state first.
@@ -434,6 +456,14 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 		}
 
 		result.SwapFinalised = &swapFinalisedState
+	}
+
+	result.SwapStatus.SwapNotPending = swapNotPending
+
+	// Only display the SwapStatus stage's Streaming field when there's streaming information available.
+	if streamingSwap.Valid() == nil {
+		streaming := NewStreamingStatus(streamingSwap)
+		result.SwapStatus.Streaming = &streaming
 	}
 
 	// Only fill ExternalOutboundDelay and ExternalOutboundKeysign for inbound transactions with an external outbound;
@@ -511,7 +541,8 @@ type QueryTxStatus struct {
 	Stages        QueryTxStages       `json:"stages"`
 }
 
-func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending bool) QueryTxStatus {
+// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
+func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, swapNotPending bool, streamingSwap StreamingSwap) QueryTxStatus {
 	var result QueryTxStatus
 
 	// If there's a consensus Tx, display that.
@@ -529,7 +560,7 @@ func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 	// If there are no voter OutTxs yet, result OutTxs will stay empty and not be displayed.
 	result.OutTxs = voter.OutTxs
 
-	result.Stages = NewQueryTxStages(ctx, voter, isSwap, isPending)
+	result.Stages = NewQueryTxStages(ctx, voter, isSwap, isPending, swapNotPending, streamingSwap)
 
 	return result
 }
