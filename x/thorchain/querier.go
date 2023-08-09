@@ -157,7 +157,7 @@ func checkPending(ctx cosmos.Context, mgr *Mgrs, voter ObservedTxVoter) (bool, b
 	isSwap := false
 	isPending := false
 
-	memo, err := ParseMemo(mgr.GetVersion(), voter.Tx.Tx.Memo)
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), voter.Tx.Tx.Memo)
 	if err != nil {
 		// If unable to parse, assume not a (valid) swap or limit order memo.
 		return isSwap, isPending
