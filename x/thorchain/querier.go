@@ -156,11 +156,11 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 
 // TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
 func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (bool, bool, bool, StreamingSwap) {
-	swapNotPending := !keeper.HasSwapQueueItem(ctx, voter.TxID, 0) && !keeper.HasOrderBookItem(ctx, voter.TxID)
+	pending := keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
 	var streamingSwap StreamingSwap
-	if !swapNotPending {
+	if pending {
 		var err error
 		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
 		if err != nil {
@@ -175,7 +175,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
 	if err != nil {
 		// If unable to parse, assume not a (valid) swap or limit order memo.
-		return isSwap, isPending, swapNotPending, streamingSwap
+		return isSwap, isPending, pending, streamingSwap
 	}
 
 	memoType := memo.GetType()
@@ -188,11 +188,11 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		// such as the output being not enough to cover a fee.
 		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
 			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
-			isPending = !swapNotPending
+			isPending = pending
 		}
 	}
 
-	return isSwap, isPending, swapNotPending, streamingSwap
+	return isSwap, isPending, pending, streamingSwap
 }
 
 func getPeerIDFromPubKey(pubkey common.PubKey) string {
@@ -1312,9 +1312,9 @@ func queryTxStages(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	// when no TxIn voter don't check TxOut voter, as TxOut THORChain observation or not matters little to the user once signed and broadcast
 	// Rather than a "tx: %s doesn't exist" result, allow a response to an existing-but-unobserved hash with Observation.Started 'false'.
 
-	isSwap, isPending, swapNotPending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
+	isSwap, isPending, pending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
 
-	result := NewQueryTxStages(ctx, voter, isSwap, isPending, swapNotPending, streamingSwap)
+	result := NewQueryTxStages(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return jsonify(ctx, result)
 }
@@ -1328,9 +1328,9 @@ func queryTxStatus(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	// when no TxIn voter don't check TxOut voter, as TxOut THORChain observation or not matters little to the user once signed and broadcast
 	// Rather than a "tx: %s doesn't exist" result, allow a response to an existing-but-unobserved hash with Stages.Observation.Started 'false'.
 
-	isSwap, isPending, swapNotPending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
+	isSwap, isPending, pending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
 
-	result := NewQueryTxStatus(ctx, voter, isSwap, isPending, swapNotPending, streamingSwap)
+	result := NewQueryTxStatus(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return jsonify(ctx, result)
 }

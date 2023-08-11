@@ -2274,12 +2274,12 @@ components:
         swap_status:
           type: object
           required:
-            - swap_not_pending
+            - pending
           properties:
-            swap_not_pending:
+            pending:
               type: boolean
               example: false
-              description: true when no swap is pending
+              description: true when awaiting a swap
             streaming:
               type: object
               required:

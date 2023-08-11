@@ -363,8 +363,8 @@ func NewStreamingStatus(streamingSwap StreamingSwap) StreamingStatus {
 }
 
 type SwapStatus struct {
-	SwapNotPending bool             `json:"swap_not_pending"`
-	Streaming      *StreamingStatus `json:"streaming,omitempty"`
+	Pending   bool             `json:"pending"`
+	Streaming *StreamingStatus `json:"streaming,omitempty"`
 }
 
 type OutboundDelayStage struct {
@@ -393,7 +393,7 @@ type QueryTxStages struct {
 }
 
 // TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
-func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, swapNotPending bool, streamingSwap StreamingSwap) QueryTxStages {
+func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) QueryTxStages {
 	var result QueryTxStages
 
 	// Set the Completed state first.
@@ -458,7 +458,7 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 		result.SwapFinalised = &swapFinalisedState
 	}
 
-	result.SwapStatus.SwapNotPending = swapNotPending
+	result.SwapStatus.Pending = pending
 
 	// Only display the SwapStatus stage's Streaming field when there's streaming information available.
 	if streamingSwap.Valid() == nil {
@@ -542,7 +542,7 @@ type QueryTxStatus struct {
 }
 
 // TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
-func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, swapNotPending bool, streamingSwap StreamingSwap) QueryTxStatus {
+func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) QueryTxStatus {
 	var result QueryTxStatus
 
 	// If there's a consensus Tx, display that.
@@ -560,7 +560,7 @@ func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 	// If there are no voter OutTxs yet, result OutTxs will stay empty and not be displayed.
 	result.OutTxs = voter.OutTxs
 
-	result.Stages = NewQueryTxStages(ctx, voter, isSwap, isPending, swapNotPending, streamingSwap)
+	result.Stages = NewQueryTxStages(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return result
 }
