@@ -155,16 +155,15 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 }
 
 // TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
-func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (bool, bool, bool, StreamingSwap) {
+func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (isSwap, isPending, pending bool, streamingSwap StreamingSwap) {
 	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
 	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
-		return false, false, false, StreamingSwap{}
+		return
 	}
 
-	pending := keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
-	var streamingSwap StreamingSwap
 	if pending {
 		var err error
 		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
@@ -174,13 +173,10 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		}
 	}
 
-	isSwap := false
-	isPending := false
-
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
 	if err != nil {
 		// If unable to parse, assume not a (valid) swap or limit order memo.
-		return isSwap, isPending, pending, streamingSwap
+		return
 	}
 
 	memoType := memo.GetType()
@@ -197,7 +193,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		}
 	}
 
-	return isSwap, isPending, pending, streamingSwap
+	return
 }
 
 func getPeerIDFromPubKey(pubkey common.PubKey) string {

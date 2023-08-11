@@ -2209,12 +2209,23 @@ components:
         inbound_observed:
           type: object
           required:
+            - final_observations
             - completed
           properties:
             started:
               type: boolean
               example: false
-              description: returns true if any nodes have observed the transaction
+              description: returns true if any nodes have observed the transaction (to be deprecated in favour of counts)
+            pre_confirmation_count:
+              type: integer
+              format: uint64
+              example: 80
+              description: number of signers for pre-confirmation-counting observations
+            final_count:
+              type: integer
+              format: uint64
+              example: 80
+              description: number of signers for final observations, after any confirmation counting complete
             completed:
               type: boolean
               example: false

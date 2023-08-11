@@ -328,9 +328,12 @@ func NewQueryTxOutItem(toi TxOutItem, height int64) QueryTxOutItem {
 	}
 }
 
+// TODO: Deprecate InboundObserved.Started field in favour of the observation counting.
 type InboundObservedStage struct {
-	Started   *bool `json:"started,omitempty"`
-	Completed bool  `json:"completed"`
+	Started              *bool  `json:"started,omitempty"`
+	PreConfirmationCount uint64 `json:"pre_confirmation_count,omitempty"`
+	FinalCount           uint64 `json:"final_count"`
+	Completed            bool   `json:"completed"`
 }
 
 // Querier context contains the query's provided height, but not the full block context,
@@ -392,13 +395,44 @@ type QueryTxStages struct {
 	OutboundSigned             *OutboundSignedStage             `json:"outbound_signed,omitempty"`
 }
 
-// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
-func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) QueryTxStages {
-	var result QueryTxStages
+// Get the largest number of signers for a not-final (pre-confirmation-counting) and final Txs respectively.
+func countSigners(voter ObservedTxVoter) (notFinalCount, finalCount uint64) {
+	for i, refTx := range voter.Txs {
+		signersMap := make(map[string]bool)
+		final := refTx.IsFinal()
+		for f, tx := range voter.Txs {
+			// Earlier Txs already checked against all, so no need to check.
+			if f <= i {
+				continue
+			}
+			// Count larger number of signers for not-final and final observations separately.
+			if tx.IsFinal() != final {
+				continue
+			}
+			if !refTx.Tx.EqualsEx(tx.Tx) {
+				continue
+			}
 
-	// Set the Completed state first.
+			for _, signer := range tx.GetSigners() {
+				signersMap[signer.String()] = true
+			}
+		}
+		if final && uint64(len(signersMap)) > finalCount {
+			finalCount = uint64(len(signersMap))
+		} else if uint64(len(signersMap)) > notFinalCount {
+			notFinalCount = uint64(len(signersMap))
+		}
+	}
+	return
+}
+
+// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
+// TODO: Deprecate InboundObserved.Started field in favour of the observation counting.
+func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) (result QueryTxStages) {
+	result.InboundObserved.PreConfirmationCount, result.InboundObserved.FinalCount = countSigners(voter)
 	result.InboundObserved.Completed = !voter.Tx.IsEmpty()
-	// Only fill in other fields if not Completed.
+
+	// Only fill in Started if not Completed.
 	if !result.InboundObserved.Completed {
 		var obStart bool
 		result.InboundObserved.Started = &obStart
