@@ -156,6 +156,11 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 
 // TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
 func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (bool, bool, bool, StreamingSwap) {
+	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
+	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
+		return false, false, false, StreamingSwap{}
+	}
+
 	pending := keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
