@@ -386,8 +386,8 @@ type QueryTxStages struct {
 	InboundObserved            InboundObservedStage             `json:"inbound_observed"`
 	InboundConfirmationCounted *InboundConfirmationCountedStage `json:"inbound_confirmation_counted,omitempty"`
 	InboundFinalised           DoneStage                        `json:"inbound_finalised"`
+	SwapStatus                 *SwapStatus                      `json:"swap_status,omitempty"`
 	SwapFinalised              *DoneStage                       `json:"swap_finalised,omitempty"`
-	SwapStatus                 SwapStatus                       `json:"swap_status"`
 	OutboundDelay              *OutboundDelayStage              `json:"outbound_delay,omitempty"`
 	OutboundSigned             *OutboundSignedStage             `json:"outbound_signed,omitempty"`
 }
@@ -445,6 +445,15 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 	// InboundFinalised is always displayed, default Completed state false.
 	result.InboundFinalised.Completed = (voter.FinalisedHeight != 0)
 
+	var swapStatus SwapStatus
+	swapStatus.Pending = pending
+	// Only display the SwapStatus stage's Streaming field when there's streaming information available.
+	if streamingSwap.Valid() == nil {
+		streaming := NewStreamingStatus(streamingSwap)
+		swapStatus.Streaming = &streaming
+	}
+	result.SwapStatus = &swapStatus
+
 	// Whether there's an external outbound or not, show the SwapFinalised stage from the start.
 	if isSwap {
 		var swapFinalisedState DoneStage
@@ -456,14 +465,6 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 		}
 
 		result.SwapFinalised = &swapFinalisedState
-	}
-
-	result.SwapStatus.Pending = pending
-
-	// Only display the SwapStatus stage's Streaming field when there's streaming information available.
-	if streamingSwap.Valid() == nil {
-		streaming := NewStreamingStatus(streamingSwap)
-		result.SwapStatus.Streaming = &streaming
 	}
 
 	// Only fill ExternalOutboundDelay and ExternalOutboundKeysign for inbound transactions with an external outbound;

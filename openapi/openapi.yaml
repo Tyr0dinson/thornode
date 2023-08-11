@@ -2205,7 +2205,6 @@ components:
       required:
         - inbound_observed
         - inbound_finalised
-        - swap_status
       properties:
         inbound_observed:
           type: object
@@ -2262,15 +2261,6 @@ components:
               type: boolean
               example: false
               description: returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
-        swap_finalised:
-          type: object
-          required:
-            - completed
-          properties:
-            completed:
-              type: boolean
-              example: false
-              description: (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
         swap_status:
           type: object
           required:
@@ -2299,6 +2289,15 @@ components:
                   type: integer
                   format: uint64
                   description: the amount of swap attempts so far
+        swap_finalised:
+          type: object
+          required:
+            - completed
+          properties:
+            completed:
+              type: boolean
+              example: false
+              description: (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
         outbound_delay:
           type: object
           required:
