@@ -388,7 +388,7 @@ type QueryTxStages struct {
 	// Structs used for all stages for easier user looping through 'Completed' fields.
 	InboundObserved            InboundObservedStage             `json:"inbound_observed"`
 	InboundConfirmationCounted *InboundConfirmationCountedStage `json:"inbound_confirmation_counted,omitempty"`
-	InboundFinalised           DoneStage                        `json:"inbound_finalised"`
+	InboundFinalised           *DoneStage                       `json:"inbound_finalised,omitempty"`
 	SwapStatus                 *SwapStatus                      `json:"swap_status,omitempty"`
 	SwapFinalised              *DoneStage                       `json:"swap_finalised,omitempty"`
 	OutboundDelay              *OutboundDelayStage              `json:"outbound_delay,omitempty"`
@@ -432,16 +432,11 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 	result.InboundObserved.PreConfirmationCount, result.InboundObserved.FinalCount = countSigners(voter)
 	result.InboundObserved.Completed = !voter.Tx.IsEmpty()
 
-	// Only fill in Started if not Completed.
+	// If not Completed, fill in Started and do not proceed.
 	if !result.InboundObserved.Completed {
-		var obStart bool
+		obStart := (len(voter.Txs) == 0)
 		result.InboundObserved.Started = &obStart
-		if len(voter.Txs) == 0 {
-			obStart = false
-			// Since observation not started, end directly.
-			return result
-		}
-		obStart = true
+		return result
 	}
 
 	// Current block height is relevant in the confirmation counting and outbound stages.
@@ -476,8 +471,9 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 		result.InboundConfirmationCounted = &confCount
 	}
 
-	// InboundFinalised is always displayed, default Completed state false.
-	result.InboundFinalised.Completed = (voter.FinalisedHeight != 0)
+	var inboundFinalised DoneStage
+	inboundFinalised.Completed = (voter.FinalisedHeight != 0)
+	result.InboundFinalised = &inboundFinalised
 
 	var swapStatus SwapStatus
 	swapStatus.Pending = pending

@@ -2204,7 +2204,6 @@ components:
       type: object
       required:
         - inbound_observed
-        - inbound_finalised
       properties:
         inbound_observed:
           type: object
