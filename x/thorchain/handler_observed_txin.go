@@ -149,7 +149,7 @@ func (h ObservedTxInHandler) preflightV133(ctx cosmos.Context, voter ObservedTxV
 			voter.Tx = voter.GetTx(nas)
 
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
-			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetConsensusSigners()...)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) && voter.Tx.Equals(tx) {
 			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
 			// but only when the tx signer are voting is the tx that already reached consensus
