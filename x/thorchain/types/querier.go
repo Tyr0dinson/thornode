@@ -401,8 +401,9 @@ func countSigners(voter ObservedTxVoter) (notFinalCount, finalCount uint64) {
 		signersMap := make(map[string]bool)
 		final := refTx.IsFinal()
 		for f, tx := range voter.Txs {
-			// Earlier Txs already checked against all, so no need to check.
-			if f <= i {
+			// Earlier Txs already checked against all, so no need to check,
+			// but do include the signers of the current Txs.
+			if f < i {
 				continue
 			}
 			// Count larger number of signers for not-final and final observations separately.
