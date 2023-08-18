@@ -435,7 +435,7 @@ func NewQueryTxStages(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 
 	// If not Completed, fill in Started and do not proceed.
 	if !result.InboundObserved.Completed {
-		obStart := (len(voter.Txs) == 0)
+		obStart := (len(voter.Txs) != 0)
 		result.InboundObserved.Started = &obStart
 		return result
 	}
