@@ -588,6 +588,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	emitAmountStream := emitAmount
 	if streamingInterval > 0 && streamingQuantity > 0 {
 		msg.Tx.Coins[0].Amount = msg.Tx.Coins[0].Amount.QuoUint64(streamingQuantity)
+		msg.TradeTarget = msg.TradeTarget.QuoUint64(streamingQuantity)
 
 		// simulate the swap
 		streamRes, emit, outboundFeeAmount, err := quoteSimulateSwap(ctx, mgr, amount, msg)
