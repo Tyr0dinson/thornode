@@ -2003,9 +2003,6 @@ func simulate(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, error) {
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
 
-	// disable logging
-	// ctx = ctx.WithLogger(nullLogger)
-
 	// reset the swap queue
 	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iter.Close()
@@ -2019,14 +2016,15 @@ func simulate(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, error) {
 		}
 
 		// split txid and index
-		ss := strings.Split(string(iter.Key()), "-")
-		i, err := strconv.Atoi(ss[len(ss)-1])
+		key := string(iter.Key())
+		idx := strings.LastIndex(key, "-")
+		i, err := strconv.Atoi(key[idx+1:])
 		if err != nil {
 			continue
 		}
 
 		// remove from queue
-		mgr.Keeper().RemoveSwapQueueItem(ctx, common.TxID(ss[0]), i)
+		mgr.Keeper().RemoveSwapQueueItem(ctx, common.TxID(key[idx:]), i)
 	}
 
 	// simulate the loan open
