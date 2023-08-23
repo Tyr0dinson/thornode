@@ -145,8 +145,7 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 
 	// Mark bad, old, low bond, and old version validators
 	// mark someone to get churned out for bad behavior
-	_, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
-	if err != nil {
+	if _, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline); err != nil {
 		return err
 	}
 
