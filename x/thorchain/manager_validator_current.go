@@ -122,6 +122,12 @@ func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 }
 
 func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
+	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
+	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
+		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
+		return nil
+	}
+
 	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
 	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
