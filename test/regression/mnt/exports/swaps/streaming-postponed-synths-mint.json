@@ -176,7 +176,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "95572262649666",
+              "amount": "94959544605191",
               "denom": "rune"
             }
           ]
@@ -185,11 +185,11 @@
           "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
           "coins": [
             {
-              "amount": "95599661114",
+              "amount": "94790155651",
               "denom": "btc/btc"
             },
             {
-              "amount": "94902707128893",
+              "amount": "95524796011053",
               "denom": "rune"
             }
           ]
@@ -198,7 +198,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000000682270",
+              "amount": "35000000681925",
               "denom": "rune"
             }
           ]
@@ -225,7 +225,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "14525127539171",
+              "amount": "14515756701831",
               "denom": "rune"
             }
           ]
@@ -238,7 +238,7 @@
       },
       "supply": [
         {
-          "amount": "95599661114",
+          "amount": "94790155651",
           "denom": "btc/btc"
         },
         {
@@ -326,13 +326,13 @@
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
-          "asset_deposit_value": "8546787581",
+          "asset_deposit_value": "4990644524",
           "last_add_height": "12",
           "pending_asset": "0",
           "pending_rune": "0",
           "rune_address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
-          "rune_deposit_value": "8168358275349",
-          "units": "8056465396282"
+          "rune_deposit_value": "4739093312616",
+          "units": "4493413608188"
         },
         {
           "asset": "BTC.BTC",
@@ -354,7 +354,7 @@
       ],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "9525127539171",
+        "bond_reward_rune": "9515756701831",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
         "total_bond_units": "12"
@@ -386,15 +386,15 @@
       "orderbook_items": [],
       "pools": [
         {
-          "LP_units": "53056465396282",
+          "LP_units": "49493413608188",
           "asset": "BTC.BTC",
           "balance_asset": "100000000000",
-          "balance_rune": "95572262649666",
+          "balance_rune": "94959544605191",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "41206616722073"
+          "synth_units": "40543325871154"
         }
       ],
       "reserve_contributors": null,
