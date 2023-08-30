@@ -812,8 +812,15 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	}
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas())
 	if txInItem.Coins.IsEmpty() {
-		e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
-		return nil, nil
+		if txInItem.Sender == txInItem.To {
+			// When the Sender and To is the same then there's no balance chance whatever the Coins,
+			// and for Tx-received Valid() a non-zero Amount is needed to observe
+			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
+			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))
+		} else {
+			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
+			return nil, nil
+		}
 	}
 	return txInItem, nil
 }
