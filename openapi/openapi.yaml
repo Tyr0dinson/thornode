@@ -2631,7 +2631,7 @@ components:
         rune_price_in_tor:
           type: string
           example: "10"
-          description: the run price in tor
+          description: the rune price in tor
         tor_price_in_rune:
           type: string
           example: "0.1"
