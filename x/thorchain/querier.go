@@ -517,6 +517,14 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	minMultiplierBasisPoints := mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 	outboundFeeMultiplier := mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
+	price := mgr.Keeper().DollarsPerRune(ctx)
+	runePriceInTor := sdk.Dec(price).QuoInt64(common.One)
+
+	torPriceInRune := cosmos.ZeroDec()
+	if !runePriceInTor.Equal(cosmos.ZeroDec()) {
+		torPriceInRune = cosmos.NewDec(1).Quo(runePriceInTor)
+	}
+
 	result := openapi.NetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
 		// so its schema (and order here) should also be in alphabetical order.
@@ -530,6 +538,8 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		GasSpentRune:          cosmos.NewUint(data.OutboundGasSpentRune).String(),
 		GasWithheldRune:       cosmos.NewUint(data.OutboundGasWithheldRune).String(),
 		OutboundFeeMultiplier: wrapString(outboundFeeMultiplier.String()),
+		TorPriceInRune:        torPriceInRune.String(),
+		RunePriceInTor:        runePriceInTor.String(),
 
 		// TODO: These are temporarily hardcoded to the dollar value fees, for sanity check
 		// before enabling. Switch to the keeper fee methods after USD fees are live.
