@@ -49,6 +49,7 @@ memo: "=:BTC/BTC:{{ addr_thor_dog }}:0/10/2"
 ---
 type: create-blocks
 count: 1
+skip_invariants: true
 ---
 type: check
 description: asgard module invariant should be broken
