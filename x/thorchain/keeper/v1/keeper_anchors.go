@@ -34,7 +34,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 	return []common.Asset{asset.GetLayer1Asset()}
 }
 
-// RunePerDollar gets in 1e18 terms the amount of Rune that is equal to 1 USD (in other words, 1 USD's price in Rune)
+// RunePerDollar gets in 1e8 terms the amount of Rune that is equal to 1 USD (in other words, 1 USD's price in Rune)
 func (k KVStore) RunePerDollar(ctx cosmos.Context) cosmos.Uint {
 	// get the usd price of a rune, this is being returned in 1e8 number
 	runePriceInUSD := k.DollarsPerRune(ctx)
@@ -48,7 +48,7 @@ func (k KVStore) RunePerDollar(ctx cosmos.Context) cosmos.Uint {
 	)
 }
 
-// DollarsPerRune gets in 1e18 terms the amount of USD that is equal to 1 RUNE (in other words, 1 RUNE's price in USD)
+// DollarsPerRune gets in 1e8 terms the amount of USD that is equal to 1 RUNE (in other words, 1 RUNE's price in USD)
 func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
 	// check for mimir override
 	dollarsPerRune, err := k.GetMimir(ctx, "DollarsPerRune")
