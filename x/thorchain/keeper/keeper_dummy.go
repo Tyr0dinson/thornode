@@ -607,6 +607,7 @@ func (k KVStoreDummy) GetAnchors(ctx cosmos.Context, asset common.Asset) []commo
 func (k KVStoreDummy) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
+func (k KVStoreDummy) RunePerDollar(ctx cosmos.Context) cosmos.Uint  { return cosmos.ZeroUint() }
 func (k KVStoreDummy) DollarsPerRune(ctx cosmos.Context) cosmos.Uint { return cosmos.ZeroUint() }
 func (k KVStoreDummy) DollarInRune(ctx cosmos.Context) cosmos.Uint   { return cosmos.ZeroUint() } // TODO: remove me on hard fork
 func (k KVStoreDummy) DollarConfigInRune(ctx cosmos.Context, key constants.ConstantName) cosmos.Uint {
