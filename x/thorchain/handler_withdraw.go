@@ -300,6 +300,8 @@ func (h WithdrawLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgWithdraw
 func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.122.0")):
+		return h.swapV122(ctx, msg, coin, addr)
 	case version.GTE(semver.MustParse("1.119.0")):
 		return h.swapV119(ctx, msg, coin, addr)
 	case version.GTE(semver.MustParse("1.100.0")):
@@ -311,7 +313,7 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 	}
 }
 
-func (h WithdrawLiquidityHandler) swapV119(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
+func (h WithdrawLiquidityHandler) swapV122(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block
