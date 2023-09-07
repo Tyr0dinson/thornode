@@ -607,6 +607,8 @@ func (vm *NetworkMgrV91) withdrawLiquidity(ctx cosmos.Context, pool Pool, na Nod
 			cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
 			pool.Asset,
 			withdrawAsset,
+			common.NoAddress,
+			cosmos.ZeroUint(),
 			na.NodeAddress,
 		)
 

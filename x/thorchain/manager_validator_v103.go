@@ -924,6 +924,8 @@ func (vm *ValidatorMgrV103) ragnarokPools(ctx cosmos.Context, nth int64, mgr Man
 					cosmos.NewUint(uint64(basisPoints)),
 					pool.Asset,
 					withdrawAsset,
+					common.NoAddress,
+					cosmos.ZeroUint(),
 					na.NodeAddress,
 				)
 

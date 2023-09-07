@@ -849,6 +849,8 @@ func (vm *NetworkMgrV115) removePOLLiquidity(
 		basisPts,
 		pool.Asset,
 		common.RuneAsset(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
 		signer,
 	)
 
@@ -1210,6 +1212,8 @@ func (vm *NetworkMgrV115) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 			cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
 			pool.Asset,
 			withdrawAsset,
+			common.NoAddress,
+			cosmos.ZeroUint(),
 			na.NodeAddress,
 		)
 

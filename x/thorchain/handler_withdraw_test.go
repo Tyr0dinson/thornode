@@ -142,7 +142,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler(c *C) {
 	// let's just withdraw
 	withdrawHandler := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(k))
 
-	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), runeAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), runeAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress)
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
 	c.Assert(err, IsNil)
 
@@ -209,7 +209,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 
 	// let's withdraw the RUNE we just staked
 	withdrawHandler := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(keeper))
-	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), runeAddr1, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BTCAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), runeAddr1, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BTCAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress)
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
 	c.Assert(err, IsNil)
 	lp, err = keeper.GetLiquidityProvider(ctx, common.BTCAsset, runeAddr1)
@@ -229,7 +229,7 @@ func (HandlerWithdrawSuite) TestAsymmetricWithdraw(c *C) {
 	c.Assert(lp.Units.IsZero(), Equals, false)
 
 	// let's withdraw the BTC we just staked
-	msgWithdraw = NewMsgWithdrawLiquidity(GetRandomTx(), btcAddress1, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BTCAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+	msgWithdraw = NewMsgWithdrawLiquidity(GetRandomTx(), btcAddress1, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BTCAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress)
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
 	c.Assert(err, IsNil)
 	lp, err = keeper.GetLiquidityProvider(ctx, common.BTCAsset, btcAddress1)
@@ -250,27 +250,27 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_Validation(c *C) {
 	}{
 		{
 			name:           "empty signer should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, cosmos.AccAddress{}),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), cosmos.AccAddress{}),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "empty asset should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.Asset{}, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.Asset{}, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "empty RUNE address should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), common.NoAddress, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), common.NoAddress, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "withdraw basis point is 0 should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.ZeroUint(), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.ZeroUint(), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 		{
 			name:           "withdraw basis point is larger than 10000 should fail",
-			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints+100)), common.BNBAsset, common.EmptyAsset, GetRandomValidatorNode(NodeActive).NodeAddress),
+			msg:            NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints+100)), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), GetRandomValidatorNode(NodeActive).NodeAddress),
 			expectedResult: errWithdrawFailValidation,
 		},
 	}
@@ -347,7 +347,7 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_mockFailScenarios(c *C) {
 
 	for _, tc := range testCases {
 		withdrawHandler := NewWithdrawLiquidityHandler(NewDummyMgrWithKeeper(tc.k))
-		msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, activeNodeAccount.NodeAddress)
+		msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), GetRandomRUNEAddress(), cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress)
 		_, err := withdrawHandler.Run(ctx, msgWithdraw)
 		c.Assert(errors.Is(err, tc.expectedResult), Equals, true, Commentf(tc.name))
 	}
@@ -416,6 +416,8 @@ func (HandlerWithdrawSuite) TestWithdrawHandler_outboundFailures(c *C) {
 		cosmos.NewUint(1000),
 		asset,
 		common.RuneAsset(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
 		na.NodeAddress)
 
 	c.Assert(msg.ValidateBasic(), IsNil)
@@ -522,7 +524,7 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 
 	withdrawHandler := NewWithdrawLiquidityHandler(mgr)
 
-	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), avaxAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.AVAXAsset.GetSyntheticAsset(), common.EmptyAsset, activeNodeAccount.NodeAddress)
+	msgWithdraw := NewMsgWithdrawLiquidity(GetRandomTx(), avaxAddr, cosmos.NewUint(uint64(MaxWithdrawBasisPoints)), common.AVAXAsset.GetSyntheticAsset(), common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), activeNodeAccount.NodeAddress)
 	_, err = withdrawHandler.Run(ctx, msgWithdraw)
 	c.Assert(err, IsNil)
 
