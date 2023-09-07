@@ -30,5 +30,5 @@ func ParseWithdrawLiquidityMemoV1(asset common.Asset, parts []string) (WithdrawL
 			return WithdrawLiquidityMemo{}, err
 		}
 	}
-	return NewWithdrawLiquidityMemo(asset, withdrawalBasisPts, withdrawalAsset), nil
+	return NewWithdrawLiquidityMemo(asset, withdrawalBasisPts, withdrawalAsset, common.NoAddress, cosmos.ZeroUint()), nil
 }

@@ -25,7 +25,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 	)
 	runeAddr := GetRandomRUNEAddress()
 	acc1 := GetRandomBech32Addr()
-	m := NewMsgWithdrawLiquidity(tx, runeAddr, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, acc1)
+	m := NewMsgWithdrawLiquidity(tx, runeAddr, cosmos.NewUint(10000), common.BNBAsset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), acc1)
 	EnsureMsgBasicCorrect(m, c)
 	c.Check(m.Type(), Equals, "withdraw")
 
@@ -80,7 +80,7 @@ func (s *MsgWithdrawSuite) TestMsgWithdrawLiquidity(c *C) {
 		},
 	}
 	for _, item := range inputs {
-		m := NewMsgWithdrawLiquidity(item.tx, item.publicAddress, item.withdrawBasisPoints, item.asset, common.EmptyAsset, item.signer)
+		m := NewMsgWithdrawLiquidity(item.tx, item.publicAddress, item.withdrawBasisPoints, item.asset, common.EmptyAsset, common.NoAddress, cosmos.ZeroUint(), item.signer)
 		c.Check(m.ValidateBasic(), NotNil)
 	}
 }

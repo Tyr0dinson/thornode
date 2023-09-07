@@ -9,14 +9,16 @@ import (
 const MaxWithdrawBasisPoints = 10_000
 
 // NewMsgWithdrawLiquidity is a constructor function for MsgWithdrawLiquidity
-func NewMsgWithdrawLiquidity(tx common.Tx, withdrawAddress common.Address, withdrawBasisPoints cosmos.Uint, asset, withdrawalAsset common.Asset, signer cosmos.AccAddress) *MsgWithdrawLiquidity {
+func NewMsgWithdrawLiquidity(tx common.Tx, withdrawAddress common.Address, withdrawBasisPoints cosmos.Uint, asset, withdrawalAsset common.Asset, affAddr common.Address, affPts cosmos.Uint, signer cosmos.AccAddress) *MsgWithdrawLiquidity {
 	return &MsgWithdrawLiquidity{
-		Tx:              tx,
-		WithdrawAddress: withdrawAddress,
-		BasisPoints:     withdrawBasisPoints,
-		Asset:           asset,
-		WithdrawalAsset: withdrawalAsset,
-		Signer:          signer,
+		Tx:                   tx,
+		WithdrawAddress:      withdrawAddress,
+		BasisPoints:          withdrawBasisPoints,
+		Asset:                asset,
+		WithdrawalAsset:      withdrawalAsset,
+		AffiliateAddress:     affAddr,
+		AffiliateBasisPoints: affPts,
+		Signer:               signer,
 	}
 }
 

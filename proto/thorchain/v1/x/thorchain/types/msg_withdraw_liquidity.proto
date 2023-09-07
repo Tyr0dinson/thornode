@@ -13,4 +13,6 @@ message MsgWithdrawLiquidity {
   common.Asset asset = 4 [(gogoproto.nullable) = false];
   common.Asset withdrawal_asset = 5 [(gogoproto.nullable) = false];
   bytes signer = 6  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  string affiliate_address = 7 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string affiliate_basis_points = 8 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
 }
