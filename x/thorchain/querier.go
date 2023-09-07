@@ -537,7 +537,7 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		NativeOutboundFeeRune: mgr.Keeper().DollarConfigInRune(ctx, constants.NativeOutboundFeeUSD).String(),
 		TnsRegisterFeeRune:    mgr.Keeper().DollarConfigInRune(ctx, constants.TNSRegisterFeeUSD).String(),
 		TnsFeePerBlockRune:    mgr.Keeper().DollarConfigInRune(ctx, constants.TNSFeePerBlockUSD).String(),
-		RunePriceInUsd:        mgr.Keeper().DollarsPerRune(ctx).String(),
+		RunePriceInTor:        mgr.Keeper().DollarsPerRune(ctx).String(),
 		TorPriceInRune:        mgr.Keeper().RunePerDollar(ctx).String(),
 	}
 
