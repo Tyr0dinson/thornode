@@ -94,6 +94,8 @@ func (h WithdrawLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgWithdr
 func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.122.0")):
+		return h.handleV122(ctx, msg)
 	case version.GTE(semver.MustParse("1.107.0")):
 		return h.handleV107(ctx, msg)
 	case version.GTE(semver.MustParse("1.100.0")):
@@ -123,10 +125,23 @@ func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiqu
 	return nil, errBadVersion
 }
 
-func (h WithdrawLiquidityHandler) handleV107(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
+func (h WithdrawLiquidityHandler) handleV122(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
+	}
+	var affFeeCoin common.Coin
+	// If this is a savers withdraw, and affPts are > 0, find out how much yield to skim for the affiliate
+	if msg.AffiliateBasisPoints.GT(cosmos.ZeroUint()) && msg.WithdrawalAsset.IsVaultAsset() {
+		pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
+		if err != nil {
+			return nil, multierror.Append(err, err)
+		}
+		affFeeAmt := lp.GetAffiliateFeeAmount(pool, msg.BasisPoints, msg.AffiliateBasisPoints)
+		if affFeeAmt.GT(cosmos.ZeroUint()) {
+			affFeeAmt = cosmos.RoundToDecimal(affFeeAmt, pool.Decimals)
+			affFeeCoin = common.NewCoin(msg.WithdrawalAsset.GetLayer1Asset(), affFeeAmt)
+		}
 	}
 	runeAmt, assetAmt, impLossProtection, units, gasAsset, err := withdraw(ctx, msg, h.mgr)
 	if err != nil {

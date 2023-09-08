@@ -122,3 +122,25 @@ func (lp LiquidityProvider) GetSaversAssetRedeemValue(pool Pool) cosmos.Uint {
 	result := bigInt.Quo(num, denom)
 	return cosmos.NewUintFromBigInt(result)
 }
+
+// GetAffiliateFeeAmount calculate the affiliate fee amount, which is affPts basis
+// points of the withdrawPts basis points of the yield
+// - "withdrawPts" is bps of the position being withdrawn
+// - "affPts" is bps of the yield that should go to the affiliate
+// - "yield" is defined as redeem amount - deposit amount
+func (lp LiquidityProvider) GetAffiliateFeeAmount(pool Pool, withdrawPts, affPts cosmos.Uint) cosmos.Uint {
+	if affPts.IsZero() {
+		return cosmos.ZeroUint()
+	}
+	redeemAmount := lp.GetSaversAssetRedeemValue(pool)
+	depositAmount := lp.AssetDepositValue
+	// all available yield
+	totalYield := redeemAmount.Sub(depositAmount)
+	// yield being withdrawn
+	yield := common.GetSafeShare(withdrawPts, cosmos.NewUint(10_000), totalYield)
+	if yield.IsZero() {
+		return cosmos.ZeroUint()
+	}
+	// affPts basis points of the yield
+	return common.GetSafeShare(affPts, cosmos.NewUint(10_000), yield)
+}

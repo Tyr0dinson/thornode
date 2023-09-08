@@ -66,6 +66,7 @@ var (
 	errWithdrawLockup               = se.Register(DefaultCodespace, CodeWithdrawLockup, "last add within lockup blocks")
 	errWithdrawFail                 = se.Register(DefaultCodespace, CodeWithdrawFail, "fail to withdraw")
 	errInternal                     = se.Register(DefaultCodespace, CodeInternalError, "internal error")
+	errFailGetPool                  = se.Register(DefaultCodespace, CodeFailGetLiquidityProvider, "fail to get pool")
 )
 
 // ErrInternal return an error  of errInternal with additional message
