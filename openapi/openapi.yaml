@@ -2810,9 +2810,7 @@ components:
                 $ref: "#/components/schemas/TssMetric"
 
     ThornameResponse:
-      type: array
-      items:
-        $ref: "#/components/schemas/Thorname"
+      $ref: "#/components/schemas/Thorname"
 
     MimirResponse:
       type: object
