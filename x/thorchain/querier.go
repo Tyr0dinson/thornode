@@ -2086,7 +2086,12 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 	var outSigned types.OutboundSignedStage
 
 	// Set the Completed state first.
-	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete)
+	// Streaming swap voters (with affiliate fees) are set 'done' prematurely,
+	// as their last Actions are not added until the stream completes,
+	// so the OutTxs and Actions lengths need to be checked too
+	// in order for this Completed to stop being True once new Actions (with no OutTxs yet) are added.
+	// (Before then, SwapStatus for instance will indicate that a swap is still pending.)
+	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete) && (len(voter.OutTxs) >= len(voter.Actions))
 
 	// Only fill in other fields if not Completed.
 	if !outSigned.Completed {
