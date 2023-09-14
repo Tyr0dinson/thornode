@@ -1990,7 +1990,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 	if !result.InboundObserved.Completed {
 		obStart := (len(voter.Txs) != 0)
 		result.InboundObserved.Started = obStart
-		return result
+		return
 	}
 
 	// Current block height is relevant in the confirmation counting and outbound stages.
@@ -2058,10 +2058,15 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 		result.SwapFinalised = &swapFinalisedState
 	}
 
+	// If there is a swap pending, do not yet display anything after this point.
+	if swapStatus.Pending {
+		return
+	}
+
 	// Only fill ExternalOutboundDelay and ExternalOutboundKeysign for inbound transactions with an external outbound;
 	// namely, transactions with an outbound_height .
 	if voter.OutboundHeight == 0 {
-		return result
+		return
 	}
 
 	// Only display the OutboundDelay stage when there's a delay.
@@ -2107,7 +2112,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 	result.OutboundSigned = &outSigned
 
-	return result
+	return
 }
 
 func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
