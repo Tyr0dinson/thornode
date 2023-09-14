@@ -314,12 +314,19 @@ func (h DepositHandler) addSwapDirectV121(ctx cosmos.Context, msg MsgSwap) {
 		// No PreferredAsset set, normal behavior
 		if IsModuleAccAddress(h.mgr.Keeper(), toAddress) {
 			// Since LendingName is specially allowed use of SendFromModuleToAccount, rejecting here if specified.
-			err := fmt.Errorf("an affiliate address a native asset is transferred to cannot be a network module address")
-			ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
-			return
+			err = fmt.Errorf("an affiliate address a native asset is transferred to cannot be a network module address")
+		} else {
+			err = h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
 		}
-		if sdkErr := h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin)); sdkErr != nil {
+		if err != nil {
 			ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
+			// Clean up the untransferrable coin.
+			toi := TxOutItem{
+				InHash:     msg.Tx.ID,
+				Coin:       coin,
+				ModuleName: AsgardName,
+			}
+			coinCleanup(ctx, h.mgr, toi, "failed_outbound")
 		}
 	}
 }
