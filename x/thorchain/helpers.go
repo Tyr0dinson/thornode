@@ -179,6 +179,8 @@ func coinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason stri
 		return
 	}
 	tx := voter.Tx.Tx
+	// For emitted events' amounts (such as EventDonate), replace the Coins with the coin being cleaned up.
+	tx.Coins = common.NewCoins(toi.Coin)
 
 	// Select course of action according to coin type:
 	// External coin, native coin which isn't RUNE, or native RUNE (not from the Reserve).
