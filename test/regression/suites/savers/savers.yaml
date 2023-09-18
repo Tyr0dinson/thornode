@@ -655,4 +655,3 @@ description: check streaming swap is done (removed from list)
 endpoint: http://localhost:1317/thorchain/swaps/streaming
 asserts:
   - .|length == 0
----

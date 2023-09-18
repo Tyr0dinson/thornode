@@ -104,7 +104,6 @@ asserts:
 ########################################################################################
 # attempt send to lending module
 ########################################################################################
----
 type: check
 description: the lending module should contain no rune
 endpoint: http://localhost:1317/thorchain/balance/module/lending
