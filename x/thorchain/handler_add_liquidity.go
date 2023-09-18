@@ -236,6 +236,8 @@ func (h AddLiquidityHandler) validateV119(ctx cosmos.Context, msg MsgAddLiquidit
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.123.0")):
+		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.handleV121(ctx, msg)
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -255,7 +257,7 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 	}
 }
 
-func (h AddLiquidityHandler) handleV121(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+func (h AddLiquidityHandler) handleV123(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)
