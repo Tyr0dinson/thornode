@@ -9,6 +9,11 @@ Impermanent Loss Protection (ILP) was a feature introduced in the early stages o
 - Total payout to LPs under the ILP feature: 6,536,602 RUNE.
 - ILP deprecated since block: 9450000, dated 2023-01-07.
 
+**Resources:**
+
+- ILP data can be found on this dashboard: https://dashboards.ninerealms.com/#thorchain
+- python code: https://gitlab.com/-/snippets/2533191
+
 ## Rationale
 
 1. **Successful Bootstrapping:** The primary purpose of introducing ILP was to attract early liquidity providers. With over 6.5 million RUNE paid out, it's evident that the feature served its intended purpose and helped in amassing the desired liquidity.
