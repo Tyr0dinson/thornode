@@ -23,7 +23,7 @@ Impermanent Loss Protection (ILP) was a feature introduced in the early stages o
 
 Before discontinuing ILP, it's imperative to ensure that the protocol's liability towards ILP is minimal. Therefore, the criteria set for sunsetting the feature is:
 
-\*\* ILP liability should be less than 100k RUNE.
+- ILP liability should be less than 100k RUNE.
 
 ## Actions
 
@@ -31,7 +31,7 @@ Once the above criterion is met:
 
 1. **Node Voting:** Nodes will vote on the proposal to sunset ILP.
 
-Mimir Action: Update “ILPCUTOFF" from block 9450000 to block 0.
+   > Mimir Action: Update “ILPCUTOFF" from block 9450000 to block 0.
 
 1. **Code Cleanup:** A subsequent Pull Request (PR) will be raised to remove all ILP-related code from the thornode repository. This step ensures that there's no residual code that could cause potential issues or conflicts in the future.
 
