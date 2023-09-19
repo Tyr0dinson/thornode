@@ -1,13 +1,6 @@
 package keeperv1
 
-import (
-	"strings"
-
-	"github.com/blang/semver"
-	"gitlab.com/thorchain/thornode/common/cosmos"
-)
-
-var WHITELIST = []string{
+var ANCHORPOOL_WHITELIST = []string{
 	"TorAnchor-TERRA-LUNA",
 	"TorAnchor-GAIA-ATOM",
 	"TorAnchor-BNB-BNB",
@@ -27,16 +20,4 @@ var WHITELIST = []string{
 	"TorAnchor-THOR-BTC",
 	"TorAnchor-BNB-BUSD-BD1",
 	"TorAnchor-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
-}
-
-func (k KVStore) IsInHardCodedList(ctx cosmos.Context, poolId string) bool {
-	if k.GetVersion().GTE(semver.MustParse("1.122.0")) {
-		for _, pool := range WHITELIST {
-			if strings.EqualFold(pool, poolId) {
-				return true
-			}
-		}
-		return false
-	}
-	return true
 }
