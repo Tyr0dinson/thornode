@@ -26,7 +26,9 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 				continue
 			}
 			if val > 0 {
-				assets = append(assets, pool.Asset)
+				if k.IsInHardCodedList(ctx, mimirKey) {
+					assets = append(assets, pool.Asset)
+				}
 			}
 		}
 		return assets
