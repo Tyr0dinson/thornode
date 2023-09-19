@@ -20,10 +20,12 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 		}
 
 		whitelistMap := make(map[string]bool)
-		if k.GetVersion().GTE(semver.MustParse("1.122.0")) {
+		switch {
+		case k.GetVersion().GTE(semver.MustParse("1.122.0")):
 			for _, whitelist := range ANCHORPOOL_WHITELIST {
 				whitelistMap[whitelist] = true
 			}
+		default:
 		}
 
 		for _, pool := range pools {
