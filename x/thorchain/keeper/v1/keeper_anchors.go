@@ -35,9 +35,12 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 				continue
 			}
 			if val > 0 {
-				if k.GetVersion().GTE(semver.MustParse("1.122.0")) && whitelistMap[mimirKey] {
-					assets = append(assets, pool.Asset)
-				} else {
+				switch {
+				case k.GetVersion().GTE(semver.MustParse("1.122.0")):
+					if whitelistMap[mimirKey] {
+						assets = append(assets, pool.Asset)
+					}
+				default:
 					assets = append(assets, pool.Asset)
 				}
 			}
