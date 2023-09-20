@@ -22,5 +22,8 @@ func isAdminAllowedForMimir(version semver.Version, key string) bool {
 			return false
 		}
 	}
+	if !satisfiesTorAnchorWhitelist(version, key) {
+		return false
+	}
 	return true
 }

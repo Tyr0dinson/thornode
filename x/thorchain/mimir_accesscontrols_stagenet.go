@@ -5,6 +5,8 @@ package thorchain
 
 import (
 	re "regexp"
+
+	"github.com/blang/semver"
 )
 
 var adminMimirDenyList = []*re.Regexp{
@@ -28,3 +30,5 @@ var adminMimirDenyList = []*re.Regexp{
 	re.MustCompile("(?i)TxOutDelayMax"),
 	re.MustCompile("(?i)MaxRuneSupply"),
 }
+
+func satisfiesTorAnchorWhitelist(version semver.Version, key string) bool { return true }
