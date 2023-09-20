@@ -216,7 +216,7 @@ func (h MimirHandler) handleV112(ctx cosmos.Context, msg MsgMimir) error {
 func validateMimirAuth(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) error {
 	if isAdmin(msg.Signer) {
 		// If the signer is an admin key, check the admin access controls for this mimir.
-		if !isAdminAllowedForMimir(msg.Key) {
+		if !isAdminAllowedForMimir(k.GetVersion(), msg.Key) {
 			return cosmos.ErrUnauthorized(fmt.Sprintf("%s cannot set this mimir key", msg.Signer))
 		}
 	} else if !isSignedByActiveNodeAccounts(ctx, k, msg.GetSigners()) {

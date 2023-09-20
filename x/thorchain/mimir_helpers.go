@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -14,7 +16,7 @@ func isAdmin(acc cosmos.AccAddress) bool {
 	return false
 }
 
-func isAdminAllowedForMimir(key string) bool {
+func isAdminAllowedForMimir(version semver.Version, key string) bool {
 	for _, denyPattern := range adminMimirDenyList {
 		if denyPattern.MatchString(key) {
 			return false
