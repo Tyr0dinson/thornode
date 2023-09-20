@@ -3,7 +3,11 @@
 
 package keeperv1
 
-import "github.com/blang/semver"
+import (
+	"strings"
+
+	"github.com/blang/semver"
+)
 
 var ANCHORPOOL_WHITELIST = []TorAnchors{
 	TorAnchors{
@@ -22,7 +26,7 @@ type TorAnchors struct {
 
 func (ta TorAnchors) HasAsset(pool string) bool {
 	for _, anchorPool := range ta.whitelist {
-		if anchorPool == pool {
+		if strings.EqualFold(anchorPool, pool) {
 			return true
 		}
 	}
