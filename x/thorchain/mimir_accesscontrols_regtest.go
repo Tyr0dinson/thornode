@@ -1,5 +1,5 @@
-//go:build mocknet
-// +build mocknet
+//go:build regtest
+// +build regtest
 
 package thorchain
 
@@ -8,5 +8,5 @@ import (
 )
 
 var adminMimirDenyList = []*re.Regexp{
-	// For mocknet, admin mimir can set any key.
+	// For regtest, admin mimir can set any key.
 }
