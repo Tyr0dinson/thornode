@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -19,14 +18,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 			return assets
 		}
 
-		whitelistMap := make(map[string]bool)
-		switch {
-		case k.GetVersion().GTE(semver.MustParse("1.122.0")):
-			for _, whitelist := range ANCHORPOOL_WHITELIST {
-				whitelistMap[whitelist] = true
-			}
-		default:
-		}
+		torAnchors := GetTorAnchors(k.GetVersion())
 
 		for _, pool := range pools {
 			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
@@ -37,12 +29,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 				continue
 			}
 			if val > 0 {
-				switch {
-				case k.GetVersion().GTE(semver.MustParse("1.122.0")):
-					if whitelistMap[mimirKey] {
-						assets = append(assets, pool.Asset)
-					}
-				default:
+				if torAnchors.HasAsset(mimirKey) {
 					assets = append(assets, pool.Asset)
 				}
 			}
