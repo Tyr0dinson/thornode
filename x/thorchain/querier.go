@@ -181,90 +181,6 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 	}
 }
 
-// TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
-func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (isSwap, isPending, pending bool, streamingSwap StreamingSwap) {
-	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
-	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
-		return
-	}
-
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
-
-	// Only look for streaming information when a swap is pending.
-	if pending {
-		var err error
-		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
-		if err != nil {
-			// Log the error, but continue without streaming information.
-			ctx.Logger().Error("fail to get streaming swap", "error", err)
-		}
-	}
-
-	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
-	if err != nil {
-		// If unable to parse, assume not a (valid) swap or limit order memo.
-		return
-	}
-
-	memoType := memo.GetType()
-	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
-	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsVaultAsset() {
-		isSwap = true
-		// Only check the KVStore when the inbound transaction has already been finalised
-		// and when there haven't been any Actions planned.
-		// This will also check the KVStore when an inbound transaction has no output,
-		// such as the output being not enough to cover a fee.
-		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
-			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
-			isPending = pending
-		}
-	}
-
-	return
-}
-
-func getPeerIDFromPubKey(pubkey common.PubKey) string {
-	peerID, err := conversion.GetPeerIDFromPubKey(pubkey.String())
-	if err != nil {
-		// Don't break the entire endpoint if something goes wrong with the Peer ID derivation.
-		return err.Error()
-	}
-
-	return peerID.String()
-}
-
-func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
-	res, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
-}
-
-func pathChain(ctx cosmos.Context, mgr *Mgrs, path []string) (common.Chains, error) {
-	var chains common.Chains
-	if len(path) > 0 && len(path[0]) > 0 {
-		var err error
-		chain, err := common.NewChain(path[0])
-		if err != nil {
-			ctx.Logger().Error("fail to parse chain", "error", err, "chain", path[0])
-			return nil, fmt.Errorf("fail to retrieve chain: %w", err)
-		}
-		chains = append(chains, chain)
-	} else {
-		asgards, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get active asgard: %w", err)
-		}
-		for _, vault := range asgards {
-			chains = vault.GetChains().Distinct()
-			break
-		}
-	}
-	return chains, nil
-}
-
 func queryRagnarok(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	ragnarokInProgress := mgr.Keeper().RagnarokInProgress(ctx)
 	return jsonify(ctx, ragnarokInProgress)
@@ -2248,4 +2164,88 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	return em.Events(), nil
+}
+
+// TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
+func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (isSwap, isPending, pending bool, streamingSwap StreamingSwap) {
+	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
+	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
+		return
+	}
+
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+
+	// Only look for streaming information when a swap is pending.
+	if pending {
+		var err error
+		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
+		if err != nil {
+			// Log the error, but continue without streaming information.
+			ctx.Logger().Error("fail to get streaming swap", "error", err)
+		}
+	}
+
+	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
+	if err != nil {
+		// If unable to parse, assume not a (valid) swap or limit order memo.
+		return
+	}
+
+	memoType := memo.GetType()
+	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
+	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsVaultAsset() {
+		isSwap = true
+		// Only check the KVStore when the inbound transaction has already been finalised
+		// and when there haven't been any Actions planned.
+		// This will also check the KVStore when an inbound transaction has no output,
+		// such as the output being not enough to cover a fee.
+		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
+			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
+			isPending = pending
+		}
+	}
+
+	return
+}
+
+func getPeerIDFromPubKey(pubkey common.PubKey) string {
+	peerID, err := conversion.GetPeerIDFromPubKey(pubkey.String())
+	if err != nil {
+		// Don't break the entire endpoint if something goes wrong with the Peer ID derivation.
+		return err.Error()
+	}
+
+	return peerID.String()
+}
+
+func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
+	res, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		ctx.Logger().Error("fail to marshal response to json", "error", err)
+		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
+	}
+	return res, nil
+}
+
+func pathChain(ctx cosmos.Context, mgr *Mgrs, path []string) (common.Chains, error) {
+	var chains common.Chains
+	if len(path) > 0 && len(path[0]) > 0 {
+		var err error
+		chain, err := common.NewChain(path[0])
+		if err != nil {
+			ctx.Logger().Error("fail to parse chain", "error", err, "chain", path[0])
+			return nil, fmt.Errorf("fail to retrieve chain: %w", err)
+		}
+		chains = append(chains, chain)
+	} else {
+		asgards, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get active asgard: %w", err)
+		}
+		for _, vault := range asgards {
+			chains = vault.GetChains().Distinct()
+			break
+		}
+	}
+	return chains, nil
 }
