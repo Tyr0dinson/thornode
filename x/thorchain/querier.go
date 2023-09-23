@@ -109,6 +109,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryNodes(ctx, path[1:], req, mgr)
 		case q.QueryInboundAddresses.Key:
 			return queryInboundAddresses(ctx, path[1:], req, mgr)
+		case q.QueryChainInboundAddresses.Key:
+			return queryInboundAddresses(ctx, path[1:], req, mgr)
 		case q.QueryNetwork.Key:
 			return queryNetwork(ctx, mgr)
 		case q.QueryPOL.Key:
@@ -542,7 +544,10 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 	// select vault that is most secure
 	vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
 
-	chains := vault.GetChains()
+	chains, err := pathChain(ctx, mgr, path)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(chains) == 0 {
 		chains = common.Chains{common.RuneAsset().Chain}

@@ -453,6 +453,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/InboundAddressesResponse"
 
+  /thorchain/inbound_addresses/{chain}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/chain"
+    get:
+      description: Returns the asgard addresses that should be used for inbound transactions for the provided chain.
+      operationId: inboundAddressesChain
+      tags:
+        - Network
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboundAddressesResponse"
+
   /thorchain/lastblock:
     parameters:
       - $ref: "#/components/parameters/queryHeight"

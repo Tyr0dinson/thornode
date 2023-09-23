@@ -742,6 +742,39 @@ paths:
           description: OK
       tags:
       - Network
+  /thorchain/inbound_addresses/{chain}:
+    get:
+      description: Returns the asgard addresses that should be used for inbound transactions
+        for the provided chain.
+      operationId: inboundAddressesChain
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: chain
+        required: true
+        schema:
+          example: BTC
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InboundAddressesResponse'
+          description: OK
+      tags:
+      - Network
   /thorchain/lastblock:
     get:
       description: Returns the last block information for all chains.

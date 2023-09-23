@@ -93,6 +93,7 @@ Class | Method | HTTP request | Description
 *NetworkApi* | [**Ban**](docs/NetworkApi.md#ban) | **Get** /thorchain/ban/{address} | 
 *NetworkApi* | [**Constants**](docs/NetworkApi.md#constants) | **Get** /thorchain/constants | 
 *NetworkApi* | [**InboundAddresses**](docs/NetworkApi.md#inboundaddresses) | **Get** /thorchain/inbound_addresses | 
+*NetworkApi* | [**InboundAddressesChain**](docs/NetworkApi.md#inboundaddresseschain) | **Get** /thorchain/inbound_addresses/{chain} | 
 *NetworkApi* | [**Lastblock**](docs/NetworkApi.md#lastblock) | **Get** /thorchain/lastblock | 
 *NetworkApi* | [**LastblockChain**](docs/NetworkApi.md#lastblockchain) | **Get** /thorchain/lastblock/{chain} | 
 *NetworkApi* | [**Network**](docs/NetworkApi.md#network) | **Get** /thorchain/network | 
