@@ -642,7 +642,6 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryInboundAddresses.Key,
-		na.NodeAddress.String(),
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
