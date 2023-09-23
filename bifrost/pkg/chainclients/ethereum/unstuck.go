@@ -108,18 +108,26 @@ func (c *Client) unstuckTx(vaultPubKey, hash string) error {
 	}
 
 	c.logger.Info().Msgf("cancel tx hash: %s, nonce: %d", hash, tx.Nonce())
-	// double the current suggest gas price
-	currentGasRate := big.NewInt(1).Mul(c.GetGasPrice(), big.NewInt(2))
 	// inflate the originGasPrice by 10% as per ETH chain , the transaction to cancel an existing tx in the mempool
 	// need to pay at least 10% more than the original price , otherwise it will not allow it.
 	// the error will be "replacement transaction underpriced"
 	// this is the way how to get 110% of the original gas price
-	originGasPrice := tx.GasPrice()
 	inflatedOriginalGasPrice := big.NewInt(1).Div(big.NewInt(1).Mul(tx.GasPrice(), big.NewInt(11)), big.NewInt(10))
-	if inflatedOriginalGasPrice.Cmp(currentGasRate) > 0 {
-		currentGasRate = big.NewInt(1).Mul(originGasPrice, big.NewInt(2))
+
+	// double the current suggest gas price
+	currentGasRate := big.NewInt(1).Mul(c.GetGasPrice(), big.NewInt(2))
+	// Increase inflatedOriginalGasPrice to exceed currentGasRate,
+	// by an integer multiplier for easier agreement between nodes for Asgard keysigning.
+	// If currentGasRate is zero, use unmodified inflatedOriginalGasPrice directly to avoid a divide-by-zero panic.
+	if currentGasRate.Cmp(big.NewInt(0)) > 0 {
+		multiplier, remainder := big.NewInt(1).QuoRem(currentGasRate, inflatedOriginalGasPrice, big.NewInt(1))
+		if remainder.Cmp(big.NewInt(0)) > 0 {
+			multiplier = multiplier.Add(multiplier, big.NewInt(1))
+		}
+		inflatedOriginalGasPrice = inflatedOriginalGasPrice.Mul(inflatedOriginalGasPrice, multiplier)
 	}
-	canceltx := etypes.NewTransaction(tx.Nonce(), ecommon.HexToAddress(address.String()), big.NewInt(0), MaxContractGas, currentGasRate, nil)
+
+	canceltx := etypes.NewTransaction(tx.Nonce(), ecommon.HexToAddress(address.String()), big.NewInt(0), MaxContractGas, inflatedOriginalGasPrice, nil)
 	rawBytes, err := c.kw.Sign(canceltx, pubKey)
 	if err != nil {
 		return fmt.Errorf("fail to sign tx for cancelling with nonce: %d,err: %w", tx.Nonce(), err)

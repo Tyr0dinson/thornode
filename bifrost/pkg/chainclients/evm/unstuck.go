@@ -112,17 +112,23 @@ func (c *EVMClient) unstuckTx(vaultPubKey, txid string) error {
 
 	c.logger.Info().Str("txid", txid).Uint64("nonce", tx.Nonce()).Msg("cancel tx with nonce")
 
+	// inflate the originGasPrice by 10% as per ETH chain , the transaction to cancel an existing tx in the mempool
+	// need to pay at least 10% more than the original price , otherwise it will not allow it.
+	// the error will be "replacement transaction underpriced"
+	// this is the way how to get 110% of the original gas price
+	inflatedOriginalGasPrice := big.NewInt(1).Div(big.NewInt(1).Mul(tx.GasPrice(), big.NewInt(11)), big.NewInt(10))
+
 	// double the current suggest gas price
 	currentGasRate := big.NewInt(1).Mul(c.GetGasPrice(), big.NewInt(2))
-
-	// inflate the originGasPrice by 10% as per EVM chain, the transaction to cancel an
-	// existing tx in the mempool need to pay at least 10% more than the original price,
-	// otherwise it will not allow it. the error will be "replacement transaction
-	// underpriced" this is the way to get 110% of the original gas price
-	originGasPrice := tx.GasPrice()
-	inflatedOriginalGasPrice := big.NewInt(1).Div(big.NewInt(1).Mul(tx.GasPrice(), big.NewInt(11)), big.NewInt(10))
-	if inflatedOriginalGasPrice.Cmp(currentGasRate) > 0 {
-		currentGasRate = big.NewInt(1).Mul(originGasPrice, big.NewInt(2))
+	// Increase inflatedOriginalGasPrice to exceed currentGasRate,
+	// by an integer multiplier for easier agreement between nodes for Asgard keysigning.
+	// If currentGasRate is zero, use unmodified inflatedOriginalGasPrice directly to avoid a divide-by-zero panic.
+	if currentGasRate.Cmp(big.NewInt(0)) > 0 {
+		multiplier, remainder := big.NewInt(1).QuoRem(currentGasRate, inflatedOriginalGasPrice, big.NewInt(1))
+		if remainder.Cmp(big.NewInt(0)) > 0 {
+			multiplier = multiplier.Add(multiplier, big.NewInt(1))
+		}
+		inflatedOriginalGasPrice = inflatedOriginalGasPrice.Mul(inflatedOriginalGasPrice, multiplier)
 	}
 
 	// create the cancel transaction
@@ -131,7 +137,7 @@ func (c *EVMClient) unstuckTx(vaultPubKey, txid string) error {
 		ecommon.HexToAddress(address.String()),
 		big.NewInt(0),
 		MaxContractGas,
-		currentGasRate,
+		inflatedOriginalGasPrice,
 		nil,
 	)
 	rawBytes, err := c.kw.Sign(canceltx, pubKey)

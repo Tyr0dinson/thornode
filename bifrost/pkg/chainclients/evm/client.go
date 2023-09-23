@@ -518,6 +518,7 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	// GasRate from thorchain is in 1e8, need to convert to Wei
 	gasRate := convertThorchainAmountToWei(big.NewInt(txOutItem.GasRate))
 	if gasRate.Cmp(c.GetGasPrice()) < 0 {
+		// TODO: Should this be a multiple of the initial gasRate so that easier for nodes to agree during Asgard keysigning?
 		gasRate = c.GetGasPrice()
 	}
 	// outbound tx always send to smart contract address

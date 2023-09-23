@@ -513,6 +513,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// GasRate from thorchain is in 1e8, need to convert to Wei
 	gasRate := c.convertThorchainAmountToWei(big.NewInt(tx.GasRate))
 	if gasRate.Cmp(c.GetGasPrice()) < 0 {
+		// TODO: Should this be a multiple of the initial gasRate so that easier for nodes to agree during Asgard keysigning?
 		gasRate = c.GetGasPrice()
 	}
 	c.logger.Info().Msgf("gas rate: %s", gasRate)
