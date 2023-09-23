@@ -242,6 +242,29 @@ func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
 	return res, nil
 }
 
+func pathChain(ctx cosmos.Context, mgr *Mgrs, path []string) (common.Chains, error) {
+	var chains common.Chains
+	if len(path) > 0 && len(path[0]) > 0 {
+		var err error
+		chain, err := common.NewChain(path[0])
+		if err != nil {
+			ctx.Logger().Error("fail to parse chain", "error", err, "chain", path[0])
+			return nil, fmt.Errorf("fail to retrieve chain: %w", err)
+		}
+		chains = append(chains, chain)
+	} else {
+		asgards, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get active asgard: %w", err)
+		}
+		for _, vault := range asgards {
+			chains = vault.GetChains().Distinct()
+			break
+		}
+	}
+	return chains, nil
+}
+
 func queryRagnarok(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	ragnarokInProgress := mgr.Keeper().RagnarokInProgress(ctx)
 	return jsonify(ctx, ragnarokInProgress)
@@ -1658,24 +1681,9 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 }
 
 func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	var chains common.Chains
-	if len(path) > 0 && len(path[0]) > 0 {
-		var err error
-		chain, err := common.NewChain(path[0])
-		if err != nil {
-			ctx.Logger().Error("fail to parse chain", "error", err, "chain", path[0])
-			return nil, fmt.Errorf("fail to retrieve chain: %w", err)
-		}
-		chains = append(chains, chain)
-	} else {
-		asgards, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get active asgard: %w", err)
-		}
-		for _, vault := range asgards {
-			chains = vault.GetChains().Distinct()
-			break
-		}
+	chains, err := pathChain(ctx, mgr, path)
+	if err != nil {
+		return nil, err
 	}
 	var result []QueryResLastBlockHeights
 	for _, c := range chains {
