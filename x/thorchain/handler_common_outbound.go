@@ -95,20 +95,16 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	// every Signing Transaction Period , THORNode will check whether a
 	// TxOutItem had been sent by signer or not
 	// if a txout item that is older than SigningTransactionPeriod, but has not
-	// been sent out by signer , then it will create a new TxOutItem
-	// here THORNode will have to mark all the TxOutItem to complete one the tx
-	// get processed
-	outHeight := voter.OutboundHeight
-	if outHeight == 0 {
-		outHeight = voter.FinalisedHeight
+	// been sent out by signer , LackSigning will create a new TxOutItem
+	// and mark the previous TxOutItem as complete.
+	//
+	// Check the blocks to the current height starting from inbound consensus height
+	// or one signingTransPeriod ago, whichever is later.
+	height := ctx.BlockHeight() - signingTransPeriod
+	if voter.Height > height {
+		height = voter.Height
 	}
-	for height := outHeight; height <= ctx.BlockHeight(); height += signingTransPeriod {
-
-		if height < ctx.BlockHeight()-signingTransPeriod {
-			ctx.Logger().Info("Expired outbound transaction, should slash")
-			continue
-		}
-
+	for ; height <= ctx.BlockHeight(); height++ {
 		// update txOut record with our TxID that sent funds out of the pool
 		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
@@ -231,6 +227,11 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 				break
 
 			}
+		}
+		// If the TxOutItem matching the observed outbound has been found,
+		// do not check later blocks.
+		if !shouldSlash {
+			break
 		}
 	}
 
