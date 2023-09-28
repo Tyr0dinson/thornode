@@ -139,6 +139,27 @@ type YggManager interface {
 	Fund(ctx cosmos.Context, mgr Manager) error
 }
 
+// Though Swapper is not a full manager, it is recorded here for versioning convenience.
+type Swapper interface {
+	Swap(ctx cosmos.Context,
+		keeper keeper.Keeper,
+		tx common.Tx,
+		target common.Asset,
+		destination common.Address,
+		swapTarget cosmos.Uint,
+		dexAgg string,
+		dexAggTargetAsset string,
+		dexAggLimit *cosmos.Uint,
+		swp StreamingSwap,
+		transactionFee cosmos.Uint,
+		synthVirtualDepthMult int64,
+		mgr Manager,
+	) (cosmos.Uint, []*EventSwap, error)
+	CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint
+	CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint
+	CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
 	currentVersion semver.Version
@@ -410,8 +431,10 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.120.0")):
+	case version.GTE(semver.MustParse("1.121.0")):
 		return newNetworkMgrVCUR(keeper, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.120.0")):
+		return newNetworkMgrV120(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.117.0")):
 		return newNetworkMgrV117(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.115.0")):
@@ -459,8 +482,10 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.119.0")):
+	case version.GTE(semver.MustParse("1.121.0")):
 		return newValidatorMgrVCUR(keeper, networkMgr, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.119.0")):
+		return newValidatorMgrV119(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.117.0")):
 		return newValidatorMgrV117(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -504,8 +529,10 @@ func GetObserverManager(version semver.Version) (ObserverManager, error) {
 // GetPoolManager return an implementation of PoolManager
 func GetPoolManager(version semver.Version) (PoolManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.116.0")):
+	case version.GTE(semver.MustParse("1.121.0")):
 		return newPoolMgrVCUR(), nil
+	case version.GTE(semver.MustParse("1.116.0")):
+		return newPoolMgrV116(), nil
 	case version.GTE(semver.MustParse("1.112.0")):
 		return newPoolMgrV112(), nil
 	case version.GTE(semver.MustParse("1.108.0")):
@@ -523,8 +550,10 @@ func GetPoolManager(version semver.Version) (PoolManager, error) {
 // GetSwapQueue retrieve a SwapQueue that is compatible with the given version
 func GetSwapQueue(version semver.Version, keeper keeper.Keeper) (SwapQueue, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.120.0")):
+	case version.GTE(semver.MustParse("1.121.0")):
 		return newSwapQueueVCUR(keeper), nil
+	case version.GTE(semver.MustParse("1.120.0")):
+		return newSwapQueueV120(keeper), nil
 	case version.GTE(semver.MustParse("1.117.0")):
 		return newSwapQueueV117(keeper), nil
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -601,4 +630,41 @@ func GetYggManager(version semver.Version, keeper keeper.Keeper) (YggManager, er
 		return newYggMgrV79(keeper), nil
 	}
 	return nil, errInvalidVersion
+}
+
+// Though Swapper is not a full manager, it is recorded here for versioning convenience.
+// GetSwapper return an implementation of Swapper
+func GetSwapper(version semver.Version) (Swapper, error) {
+	switch {
+	case version.GTE(semver.MustParse("1.121.0")):
+		return newSwapperVCUR(), nil
+	case version.GTE(semver.MustParse("1.117.0")):
+		return newSwapperV117(), nil
+	case version.GTE(semver.MustParse("1.116.0")):
+		return newSwapperV116(), nil
+	case version.GTE(semver.MustParse("1.115.0")):
+		return newSwapperV115(), nil
+	case version.GTE(semver.MustParse("1.110.0")):
+		return newSwapperV110(), nil
+	case version.GTE(semver.MustParse("1.103.0")):
+		return newSwapperV103(), nil
+	case version.GTE(semver.MustParse("1.102.0")):
+		return newSwapperV102(), nil
+	case version.GTE(semver.MustParse("1.98.0")):
+		return newSwapperV98(), nil
+	case version.GTE(semver.MustParse("1.95.0")):
+		return newSwapperV95(), nil
+	case version.GTE(semver.MustParse("1.94.0")):
+		return newSwapperV94(), nil
+	case version.GTE(semver.MustParse("1.92.0")):
+		return newSwapperV92(), nil
+	case version.GTE(semver.MustParse("1.91.0")):
+		return newSwapperV91(), nil
+	case version.GTE(semver.MustParse("1.90.0")):
+		return newSwapperV90(), nil
+	case version.GTE(semver.MustParse("0.81.0")):
+		return newSwapperV81(), nil
+	default:
+		return nil, errInvalidVersion
+	}
 }

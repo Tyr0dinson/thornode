@@ -31,6 +31,9 @@ const (
 	DerivedMinDepth
 	MaxAnchorSlip
 	MaxAnchorBlocks
+	DynamicMaxAnchorSlipBlocks
+	DynamicMaxAnchorTarget
+	DynamicMaxAnchorCalcInterval
 	ChurnInterval
 	ChurnRetryInterval
 	ValidatorsChangeWindow
@@ -90,6 +93,7 @@ const (
 	StreamingSwapMaxLengthNative
 	MinCR
 	MaxCR
+	LoanStreamingSwapsInterval
 	PauseLoans
 	LoanRepaymentMaturity
 	LendingLever
@@ -124,6 +128,9 @@ const (
 	EnableUSDFees
 	PreferredAssetOutboundFeeMultiplier
 	FeeUSDRoundSignificantDigits
+	MigrationVaultSecurityBps
+	KeygenRetryInterval
+	SaversStreamingSwapsInterval
 )
 
 var nameToString = map[ConstantName]string{
@@ -150,6 +157,9 @@ var nameToString = map[ConstantName]string{
 	DerivedMinDepth:                     "DerivedMinDepth",
 	MaxAnchorSlip:                       "MaxAnchorSlip",
 	MaxAnchorBlocks:                     "MaxAnchorBlocks",
+	DynamicMaxAnchorSlipBlocks:          "DynamicMaxAnchorSlipBlocks",
+	DynamicMaxAnchorTarget:              "DynamicMaxAnchorTarget",
+	DynamicMaxAnchorCalcInterval:        "DynamicMaxAnchorCalcInterval",
 	ChurnInterval:                       "ChurnInterval",
 	ChurnRetryInterval:                  "ChurnRetryInterval",
 	ValidatorsChangeWindow:              "ValidatorsChangeWindow",
@@ -231,6 +241,7 @@ var nameToString = map[ConstantName]string{
 	StreamingSwapMaxLengthNative:        "StreamingSwapMaxLengthNative",
 	MinCR:                               "MinCR",
 	MaxCR:                               "MaxCR",
+	LoanStreamingSwapsInterval:          "LoanStreamingSwapsInterval",
 	PauseLoans:                          "PauseLoans",
 	LoanRepaymentMaturity:               "LoanRepaymentMaturity",
 	LendingLever:                        "LendingLever",
@@ -241,6 +252,9 @@ var nameToString = map[ConstantName]string{
 	EnableUSDFees:                       "EnableUSDFees",
 	PreferredAssetOutboundFeeMultiplier: "PreferredAssetOutboundFeeMultiplier",
 	FeeUSDRoundSignificantDigits:        "FeeUSDRoundSignificantDigits",
+	MigrationVaultSecurityBps:           "MigrationVaultSecurityBps",
+	KeygenRetryInterval:                 "KeygenRetryInterval",
+	SaversStreamingSwapsInterval:        "SaversStreamingSwapsInterval",
 }
 
 // String implement fmt.stringer

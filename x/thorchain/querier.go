@@ -530,13 +530,12 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		GasSpentRune:          cosmos.NewUint(data.OutboundGasSpentRune).String(),
 		GasWithheldRune:       cosmos.NewUint(data.OutboundGasWithheldRune).String(),
 		OutboundFeeMultiplier: wrapString(outboundFeeMultiplier.String()),
-
-		// TODO: These are temporarily hardcoded to the dollar value fees, for sanity check
-		// before enabling. Switch to the keeper fee methods after USD fees are live.
-		NativeTxFeeRune:       mgr.Keeper().DollarConfigInRune(ctx, constants.NativeTransactionFeeUSD).String(),
-		NativeOutboundFeeRune: mgr.Keeper().DollarConfigInRune(ctx, constants.NativeOutboundFeeUSD).String(),
-		TnsRegisterFeeRune:    mgr.Keeper().DollarConfigInRune(ctx, constants.TNSRegisterFeeUSD).String(),
-		TnsFeePerBlockRune:    mgr.Keeper().DollarConfigInRune(ctx, constants.TNSFeePerBlockUSD).String(),
+		NativeTxFeeRune:       mgr.Keeper().GetNativeTxFee(ctx).String(),
+		NativeOutboundFeeRune: mgr.Keeper().GetOutboundTxFee(ctx).String(),
+		TnsRegisterFeeRune:    mgr.Keeper().GetTHORNameRegisterFee(ctx).String(),
+		TnsFeePerBlockRune:    mgr.Keeper().GetTHORNamePerBlockFee(ctx).String(),
+		RunePriceInTor:        mgr.Keeper().DollarsPerRune(ctx).String(),
+		TorPriceInRune:        mgr.Keeper().RunePerDollar(ctx).String(),
 	}
 
 	return jsonify(ctx, result)
@@ -963,13 +962,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		borrowers[i] = *borrower
 	}
 
-	var res []byte
-	res, err = json.MarshalIndent(borrowers, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal borrowers to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal borrowers to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, borrowers)
 }
 
 // queryBorrower
@@ -1008,13 +1001,7 @@ func queryBorrower(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		loan.LastRepayHeight,
 	)
 
-	var res []byte
-	res, err = json.MarshalIndent(borrower, "", "	")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal borrower to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal borrower to json: %w", err)
-	}
-	return res, nil
+	return jsonify(ctx, borrower)
 }
 
 // queryLiquidityProviders
@@ -1899,7 +1886,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	if startHeight < 1 {
 		startHeight = 1
 	}
-	var result []TxOutItem
+	result := make([]QueryTxOutItem, 0)
 	for height := startHeight; height <= ctx.BlockHeight(); height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
@@ -1908,7 +1895,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 		for _, tx := range txs.TxArray {
 			if tx.OutHash.IsEmpty() {
-				result = append(result, tx)
+				result = append(result, NewQueryTxOutItem(tx, height))
 			}
 		}
 	}
@@ -1984,7 +1971,7 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		KeygenMetrics: keygenMetrics,
 		KeysignMetric: keysignMetric,
 	}
-	return json.MarshalIndent(m, "", "	")
+	return jsonify(ctx, m)
 }
 
 func queryInvariants(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {

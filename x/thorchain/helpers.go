@@ -163,6 +163,8 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.121.0")):
+		return getMaxSwapQuantityV121(ctx, mgr, sourceAsset, targetAsset, swp)
 	case version.GTE(semver.MustParse("1.116.0")):
 		return getMaxSwapQuantityV116(ctx, mgr, sourceAsset, targetAsset, swp)
 	case version.GTE(semver.MustParse("1.115.0")):
@@ -172,7 +174,7 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	}
 }
 
-func getMaxSwapQuantityV116(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
+func getMaxSwapQuantityV121(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
 	if swp.Interval == 0 {
 		return 0, nil
 	}
@@ -182,11 +184,6 @@ func getMaxSwapQuantityV116(ctx cosmos.Context, mgr Manager, sourceAsset, target
 	for _, asset := range []common.Asset{sourceAsset, targetAsset} {
 		if asset.IsNativeRune() {
 			continue
-		}
-		if asset.IsDerivedAsset() {
-			// TODO: support derived assets, current not a great way to
-			// convert derived asset --> layer1 asset well.
-			return 0, fmt.Errorf("derived assets are not currently supported by streaming swaps")
 		}
 
 		pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
@@ -263,6 +260,36 @@ func getMaxSwapQuantityV116(ctx cosmos.Context, mgr Manager, sourceAsset, target
 	// sanity check that max swap quantity is not zero
 	if maxSwapQuantity.IsZero() {
 		return 1, nil
+	}
+
+	// if swapping with a derived asset, reduce quantity relative to derived
+	// virtual pool depth. The equation for this as follows
+	dbps := cosmos.ZeroUint()
+	for _, asset := range []common.Asset{sourceAsset, targetAsset} {
+		if !asset.IsDerivedAsset() {
+			continue
+		}
+
+		// get the rune depth of the anchor pool(s)
+		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
+		dpool, _ := mgr.Keeper().GetPool(ctx, asset) // get the derived asset pool
+		newDbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
+		if dbps.IsZero() || newDbps.LT(dbps) {
+			dbps = newDbps
+		}
+	}
+	if !dbps.IsZero() {
+		// quantity = 1 / (1-dbps)
+		// But since we're dealing in basis points (to avoid float math)
+		// quantity = 10,000 / (10,000 - dbps)
+		maxBasisPoints := cosmos.NewUint(constants.MaxBasisPts)
+		diff := common.SafeSub(maxBasisPoints, dbps)
+		if !diff.IsZero() {
+			newQuantity := maxBasisPoints.Quo(diff)
+			if maxSwapQuantity.GT(newQuantity) {
+				return newQuantity.Uint64(), nil
+			}
+		}
 	}
 
 	return maxSwapQuantity.Uint64(), nil
@@ -1181,7 +1208,7 @@ func atTVLCapV118(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	coins = coins.Copy()
 	for _, vault := range vaults {
 		if vault.IsAsgard() && (vault.IsActive() || vault.IsRetiring()) {
-			coins = coins.Adds(vault.Coins)
+			coins = coins.Adds_deprecated(vault.Coins)
 		}
 	}
 
@@ -1260,6 +1287,8 @@ func isActionsItemDangling(voter ObservedTxVoter, i int) bool {
 func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.121.0")):
+		return triggerPreferredAssetSwapV121(ctx, mgr, affiliateAddress, txID, tn, affcol, queueIndex)
 	case version.GTE(semver.MustParse("1.120.0")):
 		return triggerPreferredAssetSwapV120(ctx, mgr, affiliateAddress, txID, tn, affcol, queueIndex)
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -1269,7 +1298,7 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress
 	}
 }
 
-func triggerPreferredAssetSwapV120(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
+func triggerPreferredAssetSwapV121(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
 	// Check that the THORName has an address alias for the PreferredAsset, if not skip
 	// the swap
 	alias := tn.GetAlias(tn.PreferredAsset.GetChain())
@@ -1304,9 +1333,30 @@ func triggerPreferredAssetSwapV120(ctx cosmos.Context, mgr Manager, affiliateAdd
 
 	ctx.Logger().Debug("execute preferred asset swap", "thorname", tn.Name, "amt", affRune.String(), "dest", alias)
 
-	// 1. Swap RUNE to Preferred Asset
+	// Generate a unique ID for the preferred asset swap, which is a hash of the THORName,
+	// affCoin, and BlockHeight This is to prevent the network thinking it's an outbound
+	// of the swap that triggered it
+	str := fmt.Sprintf("%s|%s|%d", tn.GetName(), affCoin.String(), ctx.BlockHeight())
+	hash := fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+
+	ctx.Logger().Info("preferred asset swap hash", "hash", hash)
+
+	paTxID, err := common.NewTxID(hash)
+	if err != nil {
+		return err
+	}
+
+	existingVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, paTxID)
+	if err != nil {
+		return fmt.Errorf("fail to get existing voter: %w", err)
+	}
+	if len(existingVoter.Txs) > 0 {
+		return fmt.Errorf("preferred asset tx: %s already exists", str)
+	}
+
+	// Construct preferred asset swap tx
 	tx := common.NewTx(
-		txID,
+		paTxID,
 		affColAddress,
 		asgardAddress,
 		common.NewCoins(affCoin),
@@ -1328,6 +1378,14 @@ func triggerPreferredAssetSwapV120(ctx cosmos.Context, mgr Manager, affiliateAdd
 		tn.Owner,
 	)
 
+	// Construct preferred asset swap inbound tx voter
+	txIn := ObservedTx{Tx: tx}
+	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
+	txInVoter.Height = ctx.BlockHeight()
+	txInVoter.FinalisedHeight = ctx.BlockHeight()
+	txInVoter.Tx = txIn
+	mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
+
 	// Queue the preferred asset swap
 	if err := mgr.Keeper().SetSwapQueueItem(ctx, *preferredAssetSwap, queueIndex); err != nil {
 		ctx.Logger().Error("fail to add preferred asset swap to queue", "error", err)
@@ -1335,4 +1393,23 @@ func triggerPreferredAssetSwapV120(ctx cosmos.Context, mgr Manager, affiliateAdd
 	}
 
 	return nil
+}
+
+func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
+	version := keeper.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.121.0")):
+		return IsModuleAccAddressV121(keeper, accAddr)
+	default:
+		return false
+	}
+}
+
+func IsModuleAccAddressV121(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
+	return accAddr.Equals(keeper.GetModuleAccAddress(AsgardName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(BondName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(ReserveName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(LendingName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
 }

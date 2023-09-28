@@ -58,7 +58,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			}
 
 			coin := swap.Tx.Coins[0]
-			if !coin.IsNative() {
+			if !coin.IsNative() && !swap.TargetAsset.IsNative() {
 				continue // only verifying native coins in this invariant
 			}
 
@@ -68,13 +68,20 @@ func AsgardInvariant(k KVStore) common.Invariant {
 				ctx.Logger().Error("error getting streaming swap", "error", err)
 				continue // should never happen
 			}
-			if !ss.In.IsZero() {
-				// adjust for stream swap amount, the amount In has been added
-				// to the pool but not deducted from the tx or module, so deduct
-				// that In amount from the tx coin
-				coin.Amount = coin.Amount.Sub(ss.In)
+
+			if coin.IsNative() {
+				if !ss.In.IsZero() {
+					// adjust for stream swap amount, the amount In has been added
+					// to the pool but not deducted from the tx or module, so deduct
+					// that In amount from the tx coin
+					coin.Amount = coin.Amount.Sub(ss.In)
+				}
+				swapCoins = swapCoins.Add(coin)
 			}
-			swapCoins = swapCoins.Add(coin)
+
+			if swap.TargetAsset.IsNative() && !ss.Out.IsZero() {
+				swapCoins = swapCoins.Add(common.NewCoin(swap.TargetAsset, ss.Out))
+			}
 		}
 
 		// get asgard module balance
@@ -82,7 +89,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
 		// asgard balance is expected to equal sum of pool and swap coins
-		expNative, _ := poolCoins.Adds(swapCoins).Native()
+		expNative, _ := poolCoins.Adds_deprecated(swapCoins).Native()
 
 		// note: coins must be sorted for SafeSub
 		diffCoins, _ := asgardCoins.SafeSub(expNative.Sort())
