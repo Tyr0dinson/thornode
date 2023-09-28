@@ -434,6 +434,10 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
 			if err := vm.k.SetVault(ctx, vault); err != nil {
 				ctx.Logger().Error("fail to set vault to inactive", "error", err)
+			} else {
+				ctx.EventManager().EmitEvent(
+					cosmos.NewEvent(EventTypeInactiveVault,
+						cosmos.NewAttribute("set asgard vault to inactive", vault.PubKey.String())))
 			}
 			continue
 		}
@@ -1026,8 +1030,8 @@ func (vm *NetworkMgrVCUR) RotateVault(ctx cosmos.Context, vault Vault) error {
 				}
 
 				ctx.EventManager().EmitEvent(
-					cosmos.NewEvent(EventTypeInactiveVault,
-						cosmos.NewAttribute("set asgard vault to inactive", asgard.PubKey.String())))
+					cosmos.NewEvent(EventTypeRetiringVault,
+						cosmos.NewAttribute("set asgard vault to retiring", asgard.PubKey.String())))
 				break
 			}
 		}

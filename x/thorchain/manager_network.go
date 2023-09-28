@@ -4,4 +4,5 @@ package thorchain
 const (
 	EventTypeActiveVault   = "ActiveVault"
 	EventTypeInactiveVault = "InactiveVault"
+	EventTypeRetiringVault = "RetiringVault"
 )
