@@ -429,6 +429,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	migrationRounds := mgr.GetConstants().GetInt64Value(constants.ChurnMigrateRounds)
 	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 
+	remainingRetiring := len(retiring)
 	for _, vault := range retiring {
 		if !vault.HasFunds() {
 			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
@@ -438,6 +439,13 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				ctx.EventManager().EmitEvent(
 					cosmos.NewEvent(EventTypeInactiveVault,
 						cosmos.NewAttribute("set asgard vault to inactive", vault.PubKey.String())))
+
+				remainingRetiring--
+				// Emit churn complete event after last inactive vault event.
+				if remainingRetiring == 0 {
+					ctx.EventManager().EmitEvent(
+						cosmos.NewEvent(EventTypeChurnComplete))
+				}
 			}
 			continue
 		}
@@ -1020,6 +1028,13 @@ func (vm *NetworkMgrVCUR) RotateVault(ctx cosmos.Context, vault Vault) error {
 		return err
 	}
 
+	initialRetiring, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return err
+	}
+	// Only emit churn start event later if initially zero RetiringVaults.
+	emitChurnStart := (len(initialRetiring) == 0)
+
 	// find vaults the new vault conflicts with, mark them as inactive
 	for _, asgard := range active {
 		for _, member := range asgard.GetMembership() {
@@ -1027,6 +1042,14 @@ func (vm *NetworkMgrVCUR) RotateVault(ctx cosmos.Context, vault Vault) error {
 				asgard.UpdateStatus(RetiringVault, ctx.BlockHeight())
 				if err := vm.k.SetVault(ctx, asgard); err != nil {
 					return err
+				}
+
+				// Emit churn start event upon any successful RetiringVault SetVault even if a later SetVault errors,
+				// emitting before the first retiring vault event to group the retiring vault events.
+				if emitChurnStart {
+					ctx.EventManager().EmitEvent(
+						cosmos.NewEvent(EventTypeChurnStart))
+					emitChurnStart = false
 				}
 
 				ctx.EventManager().EmitEvent(
