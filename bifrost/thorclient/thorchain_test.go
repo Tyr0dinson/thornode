@@ -120,7 +120,7 @@ func (s *ThorchainSuite) TestGet(c *C) {
 	c.Assert(buf, NotNil)
 }
 
-func (s *ThorchainSuite) TestGetObservationStdTx_OutboundShouldHaveNotConfirmationCounting(c *C) {
+func (s *ThorchainSuite) TestGetObservationsStdTx_OutboundShouldHaveConfirmationCounting(c *C) {
 	pk := stypes.GetRandomPubKey()
 	vaultAddr, err := pk.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -143,7 +143,7 @@ func (s *ThorchainSuite) TestGetObservationStdTx_OutboundShouldHaveNotConfirmati
 	c.Assert(err, IsNil)
 	m, ok := signedMsg[0].(*stypes.MsgObservedTxOut)
 	c.Assert(ok, Equals, true)
-	c.Assert(m.Txs[0].FinaliseHeight == m.Txs[0].BlockHeight, Equals, true)
+	c.Assert(m.Txs[0].FinaliseHeight > m.Txs[0].BlockHeight, Equals, true)
 }
 
 func (s *ThorchainSuite) TestSign(c *C) {
