@@ -335,10 +335,10 @@ func (b *thorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) ([]cosm
 			b.logger.Error().Msgf("vault-to-vault chain (%s) tx (%s) is already in both inbound and outbound arrays", tx.Tx.Chain, tx.Tx.ID)
 		case !vaultFromAddress && inInboundArray:
 			// It's already in its only (inbound) array, so drop it.
-			b.logger.Error().Msgf("inbound-only chain (%s) tx (%s) is already in the inbound array", tx.Tx.Chain, tx.Tx.ID)
+			b.logger.Error().Msgf("observed tx in for chain (%s) tx (%s) is already in the inbound array", tx.Tx.Chain, tx.Tx.ID)
 		case !vaultToAddress && inOutboundArray:
 			// It's already in its only (outbound) array, so drop it.
-			b.logger.Error().Msgf("outbound-only chain (%s) tx (%s) is already in the outbound array", tx.Tx.Chain, tx.Tx.ID)
+			b.logger.Error().Msgf("observed tx out for chain (%s) tx (%s) is already in the outbound array", tx.Tx.Chain, tx.Tx.ID)
 		default:
 			// This should never happen; rather than dropping it, return an error.
 			return nil, fmt.Errorf("could not determine if chain (%s) tx (%s) was inbound or outbound", tx.Tx.Chain, tx.Tx.ID)
