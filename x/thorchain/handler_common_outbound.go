@@ -171,21 +171,24 @@ func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, i
 									common.NewCoin(gasAsset, diffGas),
 								}, false)
 							}
-						} else if maxGasAmt.LT(realGasAmt) {
-							// signer spend more than the maximum gas prescribed by THORChain , slash it
-							ctx.Logger().Info("slash node", "max gas", maxGasAmt, "real gas spend", realGasAmt, "gap", common.SafeSub(realGasAmt, maxGasAmt).String())
-							matchCoin = false
 						}
 					}
 				}
-				if txOutItem.Chain.Equals(common.ETHChain) {
-					maxGasAmount := txOutItem.MaxGas.ToCoins().GetCoin(common.ETHAsset).Amount
-					gasAmount := tx.Tx.Gas.ToCoins().GetCoin(common.ETHAsset).Amount
-					// If thornode instruct bifrost to spend more than MaxETHGas , then it should not be slashed.
-					if gasAmount.GTE(cosmos.NewUint(constants.MaxETHGas)) && maxGasAmount.LT(cosmos.NewUint(constants.MaxETHGas)) {
-						ctx.Logger().Info("ETH chain transaction spend more than MaxETHGas should be slashed", "gas", gasAmount.String(), "max gas", constants.MaxETHGas)
+
+				// If more gas spent than than the maximum gas prescribed by THORChain , slash it unless satisfying chain-specific leeway (such as for EVM aggregators)
+				switch {
+				case maxGasAmt.GTE(realGasAmt):
+					// No problem, do nothing.
+					// All cases below are for realGasAmt exceeding maxGasAmt.
+				case txOutItem.Chain.Equals(common.ETHChain):
+					// Only slash for high gas if realGasAmt exceeds MaxETHGas leeway, else do nothing.
+					if realGasAmt.GT(cosmos.NewUint(constants.MaxETHGas)) {
+						ctx.Logger().Info("ETH chain transaction spend more than MaxETHGas should be slashed", "gas", realGasAmt.String(), "max gas", constants.MaxETHGas)
 						matchCoin = false
 					}
+				default:
+					ctx.Logger().Info("slash node", "max gas", maxGasAmt, "real gas spend", realGasAmt, "gap", common.SafeSub(realGasAmt, maxGasAmt).String())
+					matchCoin = false
 				}
 
 				if !matchCoin {
