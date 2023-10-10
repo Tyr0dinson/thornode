@@ -212,6 +212,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 		VaultPubKey: ygg.PubKey,
 		Coin:        tx.Coins[0],
 		Memo:        tx.Memo,
+		MaxGas:      tx.Gas,
 	})
 	keeper.txOutStore = txOutStore
 
@@ -233,7 +234,11 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	pendingTxOuts, err := validatorMgr.getPendingTxOut(ctx, constAccessor)
 	c.Assert(err, IsNil)
 	// c.Check(pendingTxOuts, Equals, int64(1))
-	c.Check(pendingTxOuts, Equals, int64(301)) // pendingTxOuts in fact returns 301; learn why.
+	c.Check(pendingTxOuts, Equals, int64(301))
+	// pendingTxOuts in fact returns 301,
+	// because getPendingTxOut calls GetTxOut for different heights,
+	// but TestObservedTxOutHandleKeeper-received GetTxOut drops the height argument
+	// and just returns txOutStore.blockOut (with TxOutStoreDummy-received GetBlockOut).
 
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
