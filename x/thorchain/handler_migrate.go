@@ -55,6 +55,8 @@ func (h MigrateHandler) handle(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Resu
 	ctx.Logger().Info("receive MsgMigrate", "request tx hash", msg.Tx.Tx.ID)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return h.handleV128(ctx, msg)
 	case version.GTE(semver.MustParse("1.96.0")):
 		return h.handleV96(ctx, msg)
 	case version.GTE(semver.MustParse("0.1.0")):
@@ -77,7 +79,7 @@ func (h MigrateHandler) slashV96(ctx cosmos.Context, tx ObservedTx) error {
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
 }
 
-func (h MigrateHandler) handleV96(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Result, error) {
+func (h MigrateHandler) handleV128(ctx cosmos.Context, msg MsgMigrate) (*cosmos.Result, error) {
 	// update txOut record with our TxID that sent funds out of the pool
 	txOut, err := h.mgr.Keeper().GetTxOut(ctx, msg.BlockHeight)
 	if err != nil {
