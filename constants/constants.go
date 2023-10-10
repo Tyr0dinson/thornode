@@ -38,8 +38,12 @@ const StreamingSwapMinBPFeeMulti = int64(100)
 // used to preserve precision when determining the dollar price of rune.
 const DollarMulti = 1e9
 
-// MaxETHGas define the maximum gas for a single transaction on ETH
-const MaxETHGas = 50000000
+// these define the maximum gas for aggregator leeway (total gas permitted even if exceeding MaxGas) for a single transaction on EVM chains
+const (
+	MaxAVAXGas = 50000000
+	MaxBSCGas  = 50000000
+	MaxETHGas  = 50000000
+)
 
 // The provided key must be comparable and should not be of type string or any other built-in type to avoid collisions between packages using context. Users of WithValue should define their own types for keys. To avoid allocating when assigning to an interface{}, context keys often have concrete type struct{}. Alternatively, exported context key variables' static type should be a pointer or interface.
 type contextKey string

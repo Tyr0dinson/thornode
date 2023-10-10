@@ -180,6 +180,18 @@ func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, i
 				case maxGasAmt.GTE(realGasAmt):
 					// No problem, do nothing.
 					// All cases below are for realGasAmt exceeding maxGasAmt.
+				case txOutItem.Chain.Equals(common.AVAXChain):
+					// Only slash for high gas if realGasAmt exceeds MaxAVAXGas leeway, else do nothing.
+					if realGasAmt.GT(cosmos.NewUint(constants.MaxAVAXGas)) {
+						ctx.Logger().Info("AVAX chain transaction spend more than MaxETHGas should be slashed", "gas", realGasAmt.String(), "max gas", constants.MaxAVAXGas)
+						matchCoin = false
+					}
+				case txOutItem.Chain.Equals(common.BSCChain):
+					// Only slash for high gas if realGasAmt exceeds MaxBSCGas leeway, else do nothing.
+					if realGasAmt.GT(cosmos.NewUint(constants.MaxBSCGas)) {
+						ctx.Logger().Info("ETH chain transaction spend more than MaxBSCGas should be slashed", "gas", realGasAmt.String(), "max gas", constants.MaxBSCGas)
+						matchCoin = false
+					}
 				case txOutItem.Chain.Equals(common.ETHChain):
 					// Only slash for high gas if realGasAmt exceeds MaxETHGas leeway, else do nothing.
 					if realGasAmt.GT(cosmos.NewUint(constants.MaxETHGas)) {
