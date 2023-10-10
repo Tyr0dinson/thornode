@@ -145,15 +145,18 @@ func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, i
 						})
 					}
 				}
+
+				gasAsset := txOutItem.Chain.GetGasAsset()
+				maxGasAmt := txOutItem.MaxGas.ToCoins().GetCoin(gasAsset).Amount
+				realGasAmt := tx.Tx.Gas.ToCoins().GetCoin(gasAsset).Amount
+
 				// when outbound is gas asset, record the gas cost added to the Amount (such as for a UTXO chain)
-				if !matchCoin && txOutItem.Coin.Asset.Equals(txOutItem.Chain.GetGasAsset()) {
-					asset := txOutItem.Chain.GetGasAsset()
-					intendToSpend := txOutItem.Coin.Amount.Add(txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount)
-					actualSpend := tx.Tx.Coins.GetCoin(asset).Amount.Add(tx.Tx.Gas.ToCoins().GetCoin(asset).Amount)
+				if !matchCoin && txOutItem.Coin.Asset.Equals(gasAsset) {
+					intendToSpend := txOutItem.Coin.Amount.Add(maxGasAmt)
+					actualSpend := tx.Tx.Coins.GetCoin(gasAsset).Amount.Add(realGasAmt)
 					if intendToSpend.Equal(actualSpend) {
 						matchCoin = true
-						maxGasAmt := txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount
-						realGasAmt := tx.Tx.Gas.ToCoins().GetCoin(asset).Amount
+
 						ctx.Logger().Info("override match coin", "intend to spend", intendToSpend, "actual spend", actualSpend, "max_gas", maxGasAmt, "actual gas", realGasAmt)
 						if maxGasAmt.GT(realGasAmt) {
 							// Don't reimburse gas difference if the outbound is from an InactiveVault.
@@ -165,7 +168,7 @@ func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, i
 								// the outbound spend less than MaxGas
 								diffGas := maxGasAmt.Sub(realGasAmt)
 								h.mgr.GasMgr().AddGasAsset(common.Gas{
-									common.NewCoin(asset, diffGas),
+									common.NewCoin(gasAsset, diffGas),
 								}, false)
 							}
 						} else if maxGasAmt.LT(realGasAmt) {
