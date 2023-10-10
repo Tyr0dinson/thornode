@@ -46,6 +46,8 @@ func (h CommonOutboundTxHandler) slashV96(ctx cosmos.Context, tx ObservedTx) err
 func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.122.0")):
+		return h.handleV122(ctx, tx, inTxID)
 	case version.GTE(semver.MustParse("1.118.0")):
 		return h.handleV118(ctx, tx, inTxID)
 	case version.GTE(semver.MustParse("1.98.0")):
@@ -68,7 +70,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	return nil, errBadVersion
 }
 
-func (h CommonOutboundTxHandler) handleV118(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
+func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
 	// note: Outbound tx usually it is related to an inbound tx except migration
 	// thus here try to get the ObservedTxInVoter,  and set the tx out hash accordingly
 	voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
