@@ -145,7 +145,7 @@ func (h CommonOutboundTxHandler) handleV122(ctx cosmos.Context, tx ObservedTx, i
 						})
 					}
 				}
-				// when outbound is gas asset
+				// when outbound is gas asset, record the gas cost added to the Amount (such as for a UTXO chain)
 				if !matchCoin && txOutItem.Coin.Asset.Equals(txOutItem.Chain.GetGasAsset()) {
 					asset := txOutItem.Chain.GetGasAsset()
 					intendToSpend := txOutItem.Coin.Amount.Add(txOutItem.MaxGas.ToCoins().GetCoin(asset).Amount)
