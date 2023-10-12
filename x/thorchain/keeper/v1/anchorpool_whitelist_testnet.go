@@ -3,13 +3,18 @@
 
 package keeperv1
 
-var ANCHORPOOL_WHITELIST = []TorAnchors{
-	{
-		whitelist: []string{
+import "github.com/blang/semver"
+
+func GetTorAnchors(version semver.Version) []string {
+	switch {
+	case version.GTE(semver.MustParse("1.123.0")):
+		return []string{
 			"TORANCHOR-AVAX-USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E",
 			"TORANCHOR-BNB-BUSD-BD1",
 			"TORANCHOR-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
 			"TORANCHOR-ETH-USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
-		},
-	},
+		}
+	default:
+		return []string{}
+	}
 }
