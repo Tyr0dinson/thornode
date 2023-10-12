@@ -4,10 +4,33 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
+
+type TorAnchors struct {
+	whitelist []string
+}
+
+func (ta TorAnchors) HasAsset(pool string) bool {
+	for _, anchorPool := range ta.whitelist {
+		if strings.EqualFold(anchorPool, pool) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetTorAnchors(version semver.Version) TorAnchors {
+	switch {
+	case version.GTE(semver.MustParse("1.122.0")):
+		return ANCHORPOOL_WHITELIST[0]
+	default:
+		return ANCHORPOOL_WHITELIST[0]
+	}
+}
 
 func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {
 	if asset.GetChain().IsTHORChain() {
