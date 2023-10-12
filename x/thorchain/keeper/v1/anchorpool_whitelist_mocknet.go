@@ -13,6 +13,9 @@ func GetTorAnchors(version semver.Version) []string {
 			"TORANCHOR-ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306",
 		}
 	default:
-		return []string{}
+		return []string{
+			"TORANCHOR-BNB-BUSD-BD1",
+			"TORANCHOR-ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306",
+		}
 	}
 }
