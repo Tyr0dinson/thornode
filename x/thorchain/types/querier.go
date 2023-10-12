@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	gitlab_com_thorchain_thornode_common "gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
 
 // QueryResLastBlockHeights used to return the block height query
@@ -96,7 +98,7 @@ type QueryVaultResp struct {
 	PubKey                gitlab_com_thorchain_thornode_common.PubKey `json:"pub_key,omitempty"`
 	Coins                 gitlab_com_thorchain_thornode_common.Coins  `json:"coins"`
 	Type                  VaultType                                   `json:"type,omitempty"`
-	Status                VaultStatus                                 `json:"status,omitempty"`
+	Status                VaultStatus                                 `json:"status"`
 	StatusSince           int64                                       `json:"status_since,omitempty"`
 	Membership            []string                                    `json:"membership,omitempty"`
 	Chains                []string                                    `json:"chains,omitempty"`
@@ -144,6 +146,37 @@ type QueryLiquidityProvider struct {
 	LuviDepositValue   cosmos.Uint    `json:"luvi_deposit_value"`
 	LuviRedeemValue    cosmos.Uint    `json:"luvi_redeem_value"`
 	LuviGrowthPct      cosmos.Dec     `json:"luvi_growth_pct"`
+}
+
+// QueryBlockTx overrides the openapi type with a custom Tx field for marshaling.
+type QueryBlockTx struct {
+	openapi.BlockTx
+	Tx json.RawMessage `json:"tx,omitempty"`
+}
+
+func (q QueryBlockTx) MarshalJSON() ([]byte, error) {
+	toSerialize := map[string]interface{}{}
+	toSerialize["hash"] = q.Hash
+	toSerialize["tx"] = q.Tx
+	toSerialize["result"] = q.Result
+	return json.Marshal(toSerialize)
+}
+
+// QueryBlockResponse overrides the openapi type with a custom Txs field for marshaling.
+type QueryBlockResponse struct {
+	openapi.BlockResponse
+	Txs []QueryBlockTx `json:"txs"`
+}
+
+// MarshalJSON custom marshalling to add the custom Tx field.
+func (q QueryBlockResponse) MarshalJSON() ([]byte, error) {
+	toSerialize := map[string]interface{}{}
+	toSerialize["id"] = q.Id
+	toSerialize["header"] = q.Header
+	toSerialize["begin_block_events"] = q.BeginBlockEvents
+	toSerialize["end_block_events"] = q.EndBlockEvents
+	toSerialize["txs"] = q.Txs
+	return json.Marshal(toSerialize)
 }
 
 // NewQueryLiquidityProvider creates a new QueryLiquidityProvider based on the given liquidity provider and pool
@@ -229,36 +262,32 @@ func NewQueryNodeAccount(na NodeAccount) QueryNodeAccount {
 // QueryObservedTx holds all the information related to the ObservedTx
 type QueryObservedTx struct {
 	Tx                              common.Tx     `json:"tx"`
-	Status                          Status        `json:"status,omitempty"`
-	OutHashes                       []string      `json:"out_hashes,omitempty"`
-	BlockHeight                     int64         `json:"block_height,omitempty"`
-	ExternalObservedHeight          int64         `json:"external_observed_height,omitempty"`
-	Signers                         []string      `json:"signers,omitempty"`
 	ObservedPubKey                  common.PubKey `json:"observed_pub_key,omitempty"`
-	KeysignMs                       int64         `json:"keysign_ms,omitempty"`
-	FinaliseHeight                  int64         `json:"finalise_height,omitempty"`
+	ExternalObservedHeight          int64         `json:"external_observed_height,omitempty"`
 	ExternalConfirmationDelayHeight int64         `json:"external_confirmation_delay_height,omitempty"`
 	Aggregator                      string        `json:"aggregator,omitempty"`
 	AggregatorTarget                string        `json:"aggregator_target,omitempty"`
 	AggregatorTargetLimit           *cosmos.Uint  `json:"aggregator_target_limit,omitempty"`
+	Signers                         []string      `json:"signers,omitempty"`
+	KeysignMs                       int64         `json:"keysign_ms,omitempty"`
+	OutHashes                       []string      `json:"out_hashes,omitempty"`
+	Status                          Status        `json:"status,omitempty"`
 }
 
 // NewQueryObservedTx create a new QueryObservedTx based on the given ObservedTx parameters
 func NewQueryObservedTx(obTx ObservedTx) QueryObservedTx {
 	return QueryObservedTx{
 		Tx:                              obTx.Tx,
-		Status:                          obTx.Status,
-		OutHashes:                       obTx.OutHashes,
-		BlockHeight:                     obTx.BlockHeight,
-		ExternalObservedHeight:          obTx.BlockHeight,
-		Signers:                         obTx.Signers,
 		ObservedPubKey:                  obTx.ObservedPubKey,
-		KeysignMs:                       obTx.KeysignMs,
-		FinaliseHeight:                  obTx.FinaliseHeight,
+		ExternalObservedHeight:          obTx.BlockHeight,
 		ExternalConfirmationDelayHeight: obTx.FinaliseHeight,
 		Aggregator:                      obTx.Aggregator,
 		AggregatorTarget:                obTx.AggregatorTarget,
 		AggregatorTargetLimit:           obTx.AggregatorTargetLimit,
+		Signers:                         obTx.Signers,
+		KeysignMs:                       obTx.KeysignMs,
+		OutHashes:                       obTx.OutHashes,
+		Status:                          obTx.Status,
 	}
 }
 

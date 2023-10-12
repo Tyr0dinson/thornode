@@ -239,12 +239,12 @@ asserts:
 ---
 type: check
 description: check PreferredAsset swap event
-endpoint: http://localhost:1317/thorchain/blockevents
+endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .|[.end[]|select(.type == "scheduled_outbound")]|length == 2
-  - .|[.end[]|select(.type == "scheduled_outbound")]|.[1].to_address == "{{ addr_btc_pig }}"
-  - .|[.end[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "1503986"
-  - .|[.end[]|select(.type == "scheduled_outbound")]|.[1].coin_asset == "BTC.BTC"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 2
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].to_address == "{{ addr_btc_pig }}"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "1503986"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_asset == "BTC.BTC"
 ---
 type: check
 description: two outbounds should be queued, the main swap and the preferred asset swap
@@ -292,9 +292,9 @@ txs:
       gas:
         - amount: "10500"
           asset: "BTC.BTC"
-      memo: "OUT:{{ native_txid -2 }}"
-    block_height: 8
-    finalise_height: 8
+      memo: "OUT:CBCBD21376666C332813EDA127D0267F199DC015A96CD46E1B18A3724FC24A2D"
+    block_height: 9
+    finalise_height: 9
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
@@ -430,6 +430,6 @@ asserts:
 ---
 type: check
 description: no refund for preferred asset swap
-endpoint: http://localhost:1317/thorchain/blockevents
+endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .|[.end[]|select(.type == "refund")]|length == 0
+  - .|[.end_block_events[]|select(.type == "refund")]|length == 0

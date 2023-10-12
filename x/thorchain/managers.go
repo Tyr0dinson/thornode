@@ -55,7 +55,6 @@ type GasManager interface {
 	GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error)
 	GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint
 	GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error)
-	SubGas(gas common.Gas)
 	CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint
 }
 
@@ -177,14 +176,14 @@ type Mgrs struct {
 	yggManager     YggManager
 
 	K             keeper.Keeper
-	cdc           codec.BinaryCodec
+	cdc           codec.Codec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	storeKey      cosmos.StoreKey
 }
 
 // NewManagers  create a new Manager
-func NewManagers(keeper keeper.Keeper, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
+func NewManagers(keeper keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
 		cdc:           cdc,
@@ -383,8 +382,10 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
-	case version.GTE(semver.MustParse("1.119.0")):
+	case version.GTE(semver.MustParse("1.122.0")):
 		return newTxOutStorageVCUR(keeper, constAccessor, eventMgr, gasManager), nil
+	case version.GTE(semver.MustParse("1.119.0")):
+		return newTxOutStorageV119(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.117.0")):
 		return newTxOutStorageV117(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -636,8 +637,10 @@ func GetYggManager(version semver.Version, keeper keeper.Keeper) (YggManager, er
 // GetSwapper return an implementation of Swapper
 func GetSwapper(version semver.Version) (Swapper, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
+	case version.GTE(semver.MustParse("1.122.0")):
 		return newSwapperVCUR(), nil
+	case version.GTE(semver.MustParse("1.121.0")):
+		return newSwapperV121(), nil
 	case version.GTE(semver.MustParse("1.117.0")):
 		return newSwapperV117(), nil
 	case version.GTE(semver.MustParse("1.116.0")):
