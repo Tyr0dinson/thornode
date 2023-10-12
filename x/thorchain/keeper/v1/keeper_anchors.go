@@ -11,7 +11,7 @@ import (
 
 func torAnchorHasAsset(pool string, anchors []string) bool {
 	for _, anchorPool := range anchors {
-		if strings.EqualFold(anchorPool, pool) {
+		if strings.EqualFold(anchorPool, strings.ToUpper(pool)) {
 			return true
 		}
 	}
