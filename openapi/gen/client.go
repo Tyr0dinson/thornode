@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 1.121.0
 Contact: devs@thorchain.org
 */
 
@@ -42,13 +41,14 @@ var (
 	xmlCheck  = regexp.MustCompile(`(?i:(?:application|text)/xml)`)
 )
 
-// APIClient manages communication with the Thornode API API v1.121.0
 // In most cases there should be only one, shared, APIClient.
 type APIClient struct {
 	cfg    *Configuration
 	common service // Reuse a single struct instead of allocating one for each service on the heap.
 
 	// API Services
+
+	BlockApi *BlockApiService
 
 	BorrowersApi *BorrowersApiService
 
@@ -101,6 +101,7 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.common.client = c
 
 	// API Services
+	c.BlockApi = (*BlockApiService)(&c.common)
 	c.BorrowersApi = (*BorrowersApiService)(&c.common)
 	c.HealthApi = (*HealthApiService)(&c.common)
 	c.InvariantsApi = (*InvariantsApiService)(&c.common)
