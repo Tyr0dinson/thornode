@@ -32,16 +32,18 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 		for _, pool := range pools {
 			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
 			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
+			if !torAnchorHasAsset(mimirKey, torAnchors) {
+				continue
+			}
 			val, err := k.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
 				continue
 			}
-			if val > 0 {
-				if torAnchorHasAsset(mimirKey, torAnchors) {
-					assets = append(assets, pool.Asset)
-				}
+			if val <= 0 {
+				continue
 			}
+			assets = append(assets, pool.Asset)
 		}
 		return assets
 	}
