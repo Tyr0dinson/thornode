@@ -41,8 +41,30 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# open loan btc -> rune
+# open loan btc -> rune (w/ streaming)
 ########################################################################################
+type: check
+description: check loan open quote w/ streaming
+endpoint: http://localhost:1317/thorchain/quote/loan/open
+params:
+  from_asset: BTC.BTC
+  amount: 1000000
+  to_asset: RUNE
+  destination: {{ addr_thor_fox }}
+asserts:
+  - .memo == "$+:THOR.RUNE:{{ addr_thor_fox }}"
+  - .inbound_address == "{{ addr_btc_dog }}"
+  - .expected_amount_out|tonumber == 1
+  - .expected_collateral_deposited|tonumber == 1
+  - .expected_collateralization_ratio|tonumber == 1
+  - .expected_debt_issued|tonumber == 1
+  - .recommended_min_amount_in|tonumber == 1
+  - .fees.slippage_bps|tonumber == 1
+  - .fees.total_bps|tonumber == 1
+  - .fees.outbound|tonumber == 1
+  - .fees.liquidity|tonumber == 1
+  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
+---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
