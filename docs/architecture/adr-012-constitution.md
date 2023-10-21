@@ -1,61 +1,60 @@
-# ADR 12: THORCHAIN CONSTITUTION
+# ADR 12: THORChain Constitution
 
-## Changelog
+## Revision History
 
-- {date}: {changelog}
+- {Date}: {Revision Details}
 
 ## Status
 
-Drafted
+Draft
 
-## Context
+## Background
 
-THORChain is a Network run by Nodes, delivering features for Users, with Software maintained by Developers. It coordinates all participants through its Monetary Policy. 
-Any action by any participant which breaches the Constitution can be brought to relief by Nodes by any means possible granted by this Constitution. 
+THORChain operates as a decentralized network governed by Nodes, serving Users and facilitated by Developer-maintained Software. The network's Monetary Policy serves as the coordination mechanism for all participants.
 
-## Decision
+## Ratification
 
-The THORChain Constitution has been accepted by 100% as of the Nodes on the Network as of the Acceptance Date. 
+This Constitution has received unanimous approval from all Nodes in the network as of the Ratification Date.
 
-## Constitution
+## Constitution Provisions
 
-# 1. Nodes
-1.1* Nodes must agree-by-majority on software to run at any time by way of network upgrades.  
-1.2* No other individual or entity can change, alter, or otherwise intervene the Network's operation.
-1.3* Nodes are not required to be identified by the Network; they must simply meet the requirements set by the Network to churn in. 
-1.4* Nodes are sovereign entities and reserve the right to act in any way, but they are subjected to the rule-set of the Network and must abide by this Constitution. 
-1.5* The Network must ensure that best efforts are maintained to preserve Security over Secured Assets. 
-1.6* THe Network will give no priority or bias to any Node.
-1.7* The Network will churn (re-generate vaults and rotate the validator set) on a regular cycle and eject Nodes based on Performance, Age and Bond. 
-1.8* The Network may choose to reject a Node for running outdated software. 
+### 1. Nodes
+1. Nodes must satisfy network-defined criteria for participation and continued operation.
+1. While Nodes operate as autonomous entities, they are bound by network rules and this Constitution.
+1. The network shall not exhibit preferential treatment towards any Node.
+1. Regular network churn shall be implemented to thwart Node capture and enhance network security and reliability.
+1. Nodes running incompatible Software may be excluded from network churn.
+1. Nodes are the only entities permitted to interfere, change or affect the network's operations, but in such a manner set by the network.
+1. The network shall prioritize the security of all assets under its purview.
 
-# 2. Users
-2.1* Every transaction through the Network must pay a fee.
-2.2* Every transaction through the Network must be no more than the value of the input transaction, minus the fee, considering the entire lifespan of the transaction. 
-2.3* Nodes reserve the right to ignore or reject a transaction which breaches the Constitution. 
-2.4* The Network must not discriminate between users beyond the value of their transaction and the fee they pay. 
+### 2. Users
+1. Anyone who uses the network agrees to and is bound by this Constitution. 
+1. All network transactions are subject to a fee.
+1. The outgoing value of any transaction must not exceed the input value minus the transaction fee plus any available network rewards, calculated over the transaction's lifecycle, whilst foctoring in acceptable asset volatility.
+1. Nodes may determmine and enforce acceptable asset volatility if the network is unable to adequately do so.
+1. Nodes reserve the right to dismiss or invalidate transactions that violate this Constitution.
+1. Discrimination of users must only be based on the amount of deposited funds into the network, time participating in the network and/or fees paid by the user.
 
-# 3. Developers
-3.1* Any developer can submit feature requests to the protocol. 
-3.2* Features that do not change the Constitution nor alter Network Operations can be considered at any time. 
-3.3* Features that alter, change or add new Network Operations may be submitted via an Architectural Design Record (ADR).
-3.4* Features that alter the Constitution must be submitted via an Architectural Design Record (ADR).
+### 3. Developers
+1. Developers are permitted to propose changes to the protocol at any time.
+1. Proposals that substantially modify network operations, affect Monetary Policy, impact Node governance or are otherwise controversal must be submitted through an Architectural Design Record (ADR).
+1. Proposols that could be in breach of this Constitution can be rejected by Nodes on that basis. 
 
-# 4. Software
-* The Software encapsulates the current ruleset of the Network, but must not be in violation of this Constitution. 
-* If the Software is found to be in violation of this Constitution, this Constitution will be held as correct and Nodes and Decelopers will make best efforts to correct the Software.
-* The Software must always be open-source and MIT-licenced.
+### 4. Software
+1. The Software embodies the network's current rule set and must comply with this Constitution.
+1. Software updates may be initiated by Nodes but will only take effect after a super-majority agree on it.
+1. In case of a conflict between the Software and this Constitution, this Constitution will prevail, and Nodes and Developers must rectify the Software accordingly.
+1. The Software must remain open-source and adhere to the MIT License.
 
-# Monetary Policy
-3.1* The Network Asset must maintain a fixed-supply of 500,000,000 units with 8 decimal places. 
-* A reserve of the Asset can be held in the Network, emitting to its participants under discretion by the Software. 
-* 
+### 5. Monetary Policy
+1. The total supply of the Network Asset shall not exceed 500,000,000 units with 8 decimal places.
+1. A Network Reserve may hold assets, with emissions to participants governed by the Software.
+1. Emission policies must not unduly favor any participant, as determined and enforced by Nodes.
+1. Non-standard emissions to any participant require super-majority Node consent.
 
+## Implications
 
+Upon ratification, this Constitution is binding and may only be amended by a super-majority of Nodes. Any action by any participant which breaches this Constitution can be brought to relief by Nodes by any means possible granted by this Constitution..
 
-## Consequences
-
-> This section describes the consequences, after applying the decision. All
-> consequences should be summarized here, not just the "positive" ones.
 
 
