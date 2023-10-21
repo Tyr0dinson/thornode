@@ -22,15 +22,15 @@ This Constitution has received unanimous approval from all Nodes in the network 
 1. Nodes must satisfy network-defined criteria for participation and continued operation.
 1. While Nodes operate as autonomous entities, they are bound by network rules and this Constitution.
 1. The network shall not exhibit preferential treatment towards any Node.
-1. Regular network churn shall be implemented to thwart Node capture and enhance network security and reliability.
-1. Nodes running incompatible Software may be excluded from network churn.
+1. Regular network churn shall be implemented to prevent capture by any Node and increase network security and reliability.
+1. Nodes running incompatible Software may be excluded from participation.
 1. Nodes are the only entities permitted to interfere, change or affect the network's operations, but in such a manner set by the network.
 1. The network shall prioritize the security of all assets under its purview.
 
 ### 2. Users
 1. Anyone who uses the network agrees to and is bound by this Constitution. 
 1. All network transactions are subject to a fee.
-1. The outgoing value of any transaction must not exceed the input value minus the transaction fee plus any available network rewards, calculated over the transaction's lifecycle, whilst foctoring in acceptable asset volatility.
+1. The outgoing value of any transaction must not exceed the input value minus the transaction fee plus any available network rewards, calculated over the transaction's lifecycle, whilst factoring in acceptable asset volatility.
 1. Nodes may determmine and enforce acceptable asset volatility if the network is unable to adequately do so.
 1. Nodes reserve the right to dismiss or invalidate transactions that violate this Constitution.
 1. Discrimination of users must only be based on the amount of deposited funds into the network, time participating in the network and/or fees paid by the user.
