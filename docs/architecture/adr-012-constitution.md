@@ -19,10 +19,10 @@ This Constitution has received unanimous approval from all Nodes in the network 
 ## Constitution Provisions
 
 ### 1. Nodes
+1. Nodes operate as autonomous entities but they are bound by network rules and this Constitution.
 1. Nodes must satisfy network-defined criteria for participation and continued operation.
-1. While Nodes operate as autonomous entities, they are bound by network rules and this Constitution.
 1. The network shall not exhibit preferential treatment towards any Node.
-1. Regular network churn shall be implemented to prevent capture by any Node and increase network security and reliability.
+1. Regular network churn shall be implemented to prevent capture by any Node and continually increase network security and reliability.
 1. Nodes running incompatible Software may be excluded from participation.
 1. Nodes are the only entities permitted to interfere, change or affect the network's operations, but in such a manner set by the network.
 1. The network shall prioritize the security of all assets under its purview.
@@ -31,14 +31,14 @@ This Constitution has received unanimous approval from all Nodes in the network 
 1. Anyone who uses the network agrees to and is bound by this Constitution. 
 1. All network transactions are subject to a fee.
 1. The outgoing value of any transaction must not exceed the input value minus the transaction fee plus any available network rewards, calculated over the transaction's lifecycle, whilst factoring in acceptable asset volatility.
-1. Nodes may determmine and enforce acceptable asset volatility if the network is unable to adequately do so.
+1. Nodes may determine and enforce acceptable asset volatility if the network is unable to adequately do so.
 1. Nodes reserve the right to dismiss or invalidate transactions that violate this Constitution.
 1. Discrimination of users must only be based on the amount of deposited funds into the network, time participating in the network and/or fees paid by the user.
 
 ### 3. Developers
 1. Developers are permitted to propose changes to the protocol at any time.
 1. Proposals that substantially modify network operations, affect Monetary Policy, impact Node governance or are otherwise controversal must be submitted through an Architectural Design Record (ADR).
-1. Proposols that could be in breach of this Constitution can be rejected by Nodes on that basis. 
+1. Proposals that could be in breach of this Constitution can be rejected by Nodes on that basis. 
 
 ### 4. Software
 1. The Software embodies the network's current rule set and must comply with this Constitution.
@@ -54,4 +54,4 @@ This Constitution has received unanimous approval from all Nodes in the network 
 
 ## Implications
 
-Upon ratification, this Constitution is binding and may only be amended by a super-majority of Nodes. Any action by any participant which breaches this Constitution can be brought to relief by Nodes by any means possible granted by this Constitution..
+Upon ratification, this Constitution is binding and may only be amended by a super-majority of Nodes. Any action by any participant which breaches this Constitution can be brought to relief by Nodes by any means possible granted by this Constitution.
