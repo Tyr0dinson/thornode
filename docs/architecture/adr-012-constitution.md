@@ -10,7 +10,7 @@ Draft
 
 ## Background
 
-THORChain operates as a decentralized network governed by Nodes, serving Users and facilitated by Developer-maintained Software. The network's Monetary Policy serves as the coordination mechanism for all participants.
+THORChain operates as a decentralized network governed by Nodes, serving Users and facilitated by Developer-maintained Software. The network's Monetary Policy acts as the coordination mechanism for all participants.
 
 ## Ratification
 
