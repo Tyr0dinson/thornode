@@ -55,6 +55,3 @@ This Constitution has received unanimous approval from all Nodes in the network 
 ## Implications
 
 Upon ratification, this Constitution is binding and may only be amended by a super-majority of Nodes. Any action by any participant which breaches this Constitution can be brought to relief by Nodes by any means possible granted by this Constitution..
-
-
-
