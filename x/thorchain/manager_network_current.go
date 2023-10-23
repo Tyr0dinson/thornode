@@ -280,6 +280,7 @@ func (vm *NetworkMgrVCUR) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 	// manipulation profitability significantly harder
 	reverseSlip := common.SafeSub(cosmos.NewUint(uint64(maxAnchorSlip)), slippage)
 	runeDepth = common.GetSafeShare(reverseSlip, cosmos.NewUint(uint64(maxAnchorSlip)), runeDepth)
+	ctx.Logger().Info("Derived Calcs", "asset", derivedPool.Asset, "slippage", slippage, "maxAnchorSlip", maxAnchorBlocks, "reverseSlip", reverseSlip, "rune Depth", runeDepth)
 	if runeDepth.LT(minRuneDepth) {
 		runeDepth = minRuneDepth
 	}
