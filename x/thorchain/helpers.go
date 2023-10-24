@@ -560,6 +560,13 @@ func addGasFeesV124(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 		return err
 	}
 
+	// If the vault is an InactiveVault doing an automatic refund,
+	// any balance is not represented in the pools,
+	// so the Reserve should not reimburse the gas pool.
+	if vault.Status == InactiveVault {
+		return nil
+	}
+
 	// when ragnarok is in progress, if the tx is for gas coin then don't reimburse the pool with reserve
 	// liquidity providers they need to pay their own gas
 	// if the outbound coin is not gas asset, then reserve will reimburse it , otherwise the gas asset pool will be in a loss

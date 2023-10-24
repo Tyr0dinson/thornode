@@ -220,17 +220,11 @@ func (h ObservedTxOutHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxOu
 				"tx", tx.Tx.String())
 			continue
 		}
-		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
-		if err != nil {
-			ctx.Logger().Error("fail to get vault", "error", err)
+
+		// Act on the gas fees
+		if err := addGasFees(ctx, h.mgr, tx); err != nil {
+			ctx.Logger().Error("fail to add gas fee", "error", err)
 			continue
-		}
-		// Apply Gas fees
-		if vault.Status != InactiveVault {
-			if err := addGasFees(ctx, h.mgr, tx); err != nil {
-				ctx.Logger().Error("fail to add gas fee", "error", err)
-				continue
-			}
 		}
 
 		// add addresses to observing addresses. This is used to detect
@@ -259,7 +253,7 @@ func (h ObservedTxOutHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxOu
 		// process the msg first , and then deduct the fund from vault last
 		// If sending from one of our vaults, decrement coins
 
-		vault, err = h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
 			continue
