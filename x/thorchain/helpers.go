@@ -528,14 +528,18 @@ func wrapError(ctx cosmos.Context, err error, wrap string) error {
 
 func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.124.0")):
+		return addGasFeesV124(ctx, mgr, tx)
+	case version.GTE(semver.MustParse("0.1.0")):
 		return addGasFeesV1(ctx, mgr, tx)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-// addGasFees to vault
-func addGasFeesV1(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
+// addGasFees to gas manager and deduct from vault
+func addGasFeesV124(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	if len(tx.Tx.Gas) == 0 {
 		return nil
 	}
