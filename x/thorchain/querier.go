@@ -2198,21 +2198,46 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 
 	// reset the swap queue
 	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
-	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		mgr.Keeper().DeleteKey(ctx, string(iter.Key()))
 	}
+	iter.Close()
 
-	// simulate the loan open
-	_, err = NewInternalHandler(mgr)(ctx, msg)
+	// save pool state
+	pools, err := mgr.Keeper().GetPools(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to simulate loan: %w", err)
+		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
 
-	// simulate end block
-	err = mgr.SwapQ().EndBlock(ctx, mgr)
+	// simulate the handler
+	_, err = NewInternalHandler(mgr)(ctx, msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to simulate end block: %w", err)
+		return nil, fmt.Errorf("failed to simulate handler: %w", err)
+	}
+
+	// simulate end block, loop it until the swap queue is empty
+	var count int64
+	for count < 1000 {
+		err = mgr.SwapQ().EndBlock(ctx.WithBlockHeight(ctx.BlockHeight()+count), mgr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to simulate end block: %w", err)
+		}
+
+		for _, pool := range pools {
+			_ = mgr.Keeper().SetPool(ctx, pool)
+		}
+
+		count += 1
+		queueEmpty := true
+		iter = mgr.Keeper().GetSwapQueueIterator(ctx)
+		for ; iter.Valid(); iter.Next() {
+			queueEmpty = false
+			break
+		}
+		iter.Close()
+		if queueEmpty {
+			break
+		}
 	}
 
 	return em.Events(), nil
