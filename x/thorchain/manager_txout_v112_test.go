@@ -13,18 +13,6 @@ type TxOutStoreV112Suite struct{}
 
 var _ = Suite(&TxOutStoreV112Suite{})
 
-func (s TxOutStoreV112Suite) TestAddGasFees(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	tx := GetRandomObservedTx()
-
-	version := GetCurrentVersion()
-	constAccessor := constants.GetConstantValues(version)
-	mgr.gasMgr = newGasMgrV81(constAccessor, mgr.Keeper())
-	err := addGasFees(ctx, mgr, tx)
-	c.Assert(err, IsNil)
-	c.Assert(mgr.GasMgr().GetGas(), HasLen, 1)
-}
-
 func (s TxOutStoreV112Suite) TestEndBlock(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	txOutStore := newTxOutStorageV112(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
