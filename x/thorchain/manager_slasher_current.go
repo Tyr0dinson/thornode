@@ -109,7 +109,7 @@ func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 		return nil
 	}
 
-	observeSlashPoints := constAccessor.GetInt64Value(constants.ObserveSlashPoints)
+	doubleBlockSignSlashPoints := s.keeper.GetConfigInt64(ctx, constants.DoubleBlockSignSlashPoints)
 	for _, pair := range validatorAddresses {
 		if addr.String() != pair.validatorAddress.String() {
 			continue
@@ -124,7 +124,7 @@ func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 			telemetry.NewLabel("address", na.NodeAddress.String()),
 			telemetry.NewLabel("reason", "double_block_sign"),
 		}))
-		if err := s.keeper.IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, observeSlashPoints); err != nil {
+		if err := s.keeper.IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, doubleBlockSignSlashPoints); err != nil {
 			ctx.Logger().Error("fail to increase node account slash point", "error", err, "address", na.NodeAddress.String())
 		}
 
