@@ -68,7 +68,7 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.124.0")):
-		return h.handleV109(ctx, msg) // handleV124 would be identical to handleV109
+		return h.handleV109(ctx, msg) // handle V124 would be identical to handle V109
 	case version.GTE(semver.MustParse("1.112.0")):
 		return h.handleV112(ctx, msg)
 	case version.GTE(semver.MustParse("1.109.0")):
