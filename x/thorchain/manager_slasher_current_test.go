@@ -307,6 +307,7 @@ func (s *SlashingVCURSuite) TestDoubleSign(c *C) {
 		na:          na,
 		network:     NewNetwork(),
 		slashPoints: make(map[string]int64),
+		constants:   make(map[string]int64),
 	}
 	slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
 
@@ -318,6 +319,7 @@ func (s *SlashingVCURSuite) TestDoubleSign(c *C) {
 	pair.validatorAddress = pk.Address()
 
 	c.Assert(keeper.slashPoints[na.NodeAddress.String()], Equals, int64(0))
+	keeper.constants["DoubleBlockSignSlashPoints"] = 1
 	err = slasher.HandleDoubleSign(ctx, pk.Address(), 0, constAccessor, []nodeAddressValidatorAddressPair{pair})
 	c.Assert(err, IsNil)
 	c.Assert(keeper.slashPoints[na.NodeAddress.String()], Equals, int64(1))
