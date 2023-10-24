@@ -68,7 +68,7 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.124.0")):
-		return h.handleV109(ctx, msg) // handle V124 would be identical to handle V109
+		return h.handleV124(ctx, msg)
 	case version.GTE(semver.MustParse("1.112.0")):
 		return h.handleV112(ctx, msg)
 	case version.GTE(semver.MustParse("1.109.0")):
@@ -142,6 +142,11 @@ func (h ObservedTxOutHandler) preflightV123(ctx cosmos.Context, voter ObservedTx
 }
 
 // Handle a message to observe outbound tx
+func (h ObservedTxOutHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
+	// handleV124 would be identical to handleV109
+	return h.handleV109(ctx, msg)
+}
+
 func (h ObservedTxOutHandler) handleV109(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
