@@ -540,33 +540,38 @@ func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 
 // addGasFees to gas manager and deduct from vault
 func addGasFeesV124(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
-	if len(tx.Tx.Gas) == 0 {
+	// If there's no gas, then nothing to do.
+	if tx.Tx.Gas.IsEmpty() {
 		return nil
 	}
+
+	// If the transaction wasn't from a known vault, then no relevance for known vaults or pools.
+	if !mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
+		return nil
+	}
+
+	// Since a known vault has spent gas, definitely deduct that gas from the vault's balance
+	vault, err := mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		return err
+	}
+	vault.SubFunds(tx.Tx.Gas.ToCoins())
+	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+		return err
+	}
+
+	// when ragnarok is in progress, if the tx is for gas coin then don't reimburse the pool with reserve
+	// liquidity providers they need to pay their own gas
+	// if the outbound coin is not gas asset, then reserve will reimburse it , otherwise the gas asset pool will be in a loss
 	if mgr.Keeper().RagnarokInProgress(ctx) {
-		// when ragnarok is in progress, if the tx is for gas coin then doesn't subsidise the pool with reserve
-		// liquidity providers they need to pay their own gas
-		// if the outbound coin is not gas asset, then reserve will subsidise it , otherwise the gas asset pool will be in a loss
 		gasAsset := tx.Tx.Chain.GetGasAsset()
-		if tx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
-			mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
-		}
-	} else {
-		mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
-	}
-	// Subtract from the vault
-	if mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
-		vault, err := mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
-		if err != nil {
-			return err
-		}
-
-		vault.SubFunds(tx.Tx.Gas.ToCoins())
-
-		if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
-			return err
+		if !tx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
+			return nil
 		}
 	}
+
+	// Add the gas to the gas manager to be reimbursed by the Reserve.
+	mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
 	return nil
 }
 
