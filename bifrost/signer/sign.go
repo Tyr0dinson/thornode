@@ -225,17 +225,14 @@ func (s *Signer) processTransactions() {
 	}
 
 	wg := &sync.WaitGroup{}
-	var concurrencyCount uint64
-	for _, items := range lists {
+	for i, items := range lists {
 		// When Mimir key SigningConcurrencyLimit is greater than zero,
 		// do not concurrently try to sign more than that many items.
 		// If <= 0, then treat as that no limit is set.
-		if signingConcurrencyLimit > 0 {
-			if concurrencyCount == signingConcurrencyLimit {
-				break
-			}
-			concurrencyCount++
+		if signingConcurrencyLimit > 0 && uint64(i) >= signingConcurrencyLimit {
+			break
 		}
+
 		wg.Add(1)
 
 		go func(items []TxOutStoreItem) {
