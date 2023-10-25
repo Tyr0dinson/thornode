@@ -40,6 +40,7 @@ const (
 	prefixLastSignedHeight        types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight       types.DbPrefix = "last_observe_height/"
 	prefixNodeAccount             types.DbPrefix = "node_account/"
+	prefixNodeAccountStatus       types.DbPrefix = "node_account_status/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
@@ -128,8 +129,9 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 }
 
 // GetKey return a key that can be used to store into key value store
-func (k KVStore) GetKey(ctx cosmos.Context, prefix types.DbPrefix, key string) string {
-	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+func (k KVStore) GetKey(ctx cosmos.Context, prefix types.DbPrefix, keys ...string) string {
+	concatenatedKeys := strings.Join(keys, "/")
+	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(concatenatedKeys))
 }
 
 // SetStoreVersion save the store version

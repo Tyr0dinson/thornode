@@ -40,8 +40,8 @@ func (k KVStoreDummy) GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64)
 }
 func (k KVStoreDummy) SetMinJoinLast(ctx cosmos.Context) {}
 
-func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, key string) string {
-	return fmt.Sprintf("%s/1/%s", prefix, key)
+func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, keys ...string) string {
+	return fmt.Sprintf("%s/1/%s", prefix, keys[0])
 }
 
 func (k KVStoreDummy) GetStoreVersion(ctx cosmos.Context) int64      { return 1 }
