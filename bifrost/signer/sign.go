@@ -203,8 +203,23 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
+	signingConcurrencyLimit, err := s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get signing concurrency limit mimir")
+		return
+	}
 	wg := &sync.WaitGroup{}
+	var concurrencyCount int64
 	for _, items := range s.storage.OrderedLists() {
+		// When Mimir key SigningConcurrencyLimit is greater than zero,
+		// do not concurrently try to sign more than that many items.
+		// If <= 0, then treat as that no limit is set.
+		if signingConcurrencyLimit > 0 {
+			if concurrencyCount == signingConcurrencyLimit {
+				break
+			}
+			concurrencyCount++
+		}
 		wg.Add(1)
 
 		go func(items []TxOutStoreItem) {
