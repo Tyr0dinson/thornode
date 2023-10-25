@@ -72,7 +72,7 @@ type SignerStorage interface {
 	Has(key string) bool
 	Remove(item TxOutStoreItem) error
 	List() []TxOutStoreItem
-	OrderedLists(uint64) [][]TxOutStoreItem
+	OrderedLists() map[string][]TxOutStoreItem
 	Close() error
 }
 
@@ -189,19 +189,14 @@ func (s *SignerStore) List() []TxOutStoreItem {
 }
 
 // OrderedLists
-func (s *SignerStore) OrderedLists(limit uint64) (lists [][]TxOutStoreItem) {
-	vaultIndices := make(map[string]uint64)
-	for i, item := range s.List() {
-		if limit != 0 && uint64(i) > limit {
-			return lists
+func (s *SignerStore) OrderedLists() map[string][]TxOutStoreItem {
+	lists := make(map[string][]TxOutStoreItem)
+	for _, item := range s.List() {
+		key := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+		if _, ok := lists[key]; !ok {
+			lists[key] = make([]TxOutStoreItem, 0)
 		}
-		key := item.TxOutItem.VaultPubKey.String()
-		vaultIdx, hasIdx := vaultIndices[key]
-		if !hasIdx {
-			vaultIdx = uint64(len(vaultIndices))
-			lists = append(lists, make([]TxOutStoreItem, 0))
-		}
-		lists[vaultIdx] = append(lists[vaultIdx], item)
+		lists[key] = append(lists[key], item)
 	}
 	return lists
 }

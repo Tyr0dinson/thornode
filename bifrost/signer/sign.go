@@ -203,18 +203,8 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	concurrentLimitInt64, err := s.thorchainBridge.GetMimir("ConcurrentSignLimit")
-	if err != nil {
-		s.logger.Error().Err(err).Msg("error while getting concurrent sign limit mimir")
-		return
-	}
-	var concurrentLimit uint64
-	if concurrentLimitInt64 > 0 {
-		concurrentLimit = uint64(concurrentLimitInt64)
-	}
-
 	wg := &sync.WaitGroup{}
-	for _, items := range s.storage.OrderedLists(concurrentLimit) {
+	for _, items := range s.storage.OrderedLists() {
 		wg.Add(1)
 
 		go func(items []TxOutStoreItem) {

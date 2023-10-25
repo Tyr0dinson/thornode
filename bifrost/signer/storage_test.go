@@ -1,6 +1,8 @@
 package signer
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -56,12 +58,12 @@ func (s *StorageSuite) TestStorage(c *C) {
 	c.Check(items[2].TxOutItem.Memo, Equals, "foo", Commentf("%s", items[2].TxOutItem.Memo))
 	c.Check(items[3].TxOutItem.Memo, Equals, "baz")
 
-	ordered := store.OrderedLists(0)
+	ordered := store.OrderedLists()
 	c.Assert(ordered, HasLen, 2, Commentf("%+v", ordered))
-	c.Check(ordered[0][0].TxOutItem.Memo, Equals, "boo")
-	c.Check(ordered[0][1].TxOutItem.Memo, Equals, "foo", Commentf("%s", items[1].TxOutItem.Memo))
-	c.Check(ordered[1][0].TxOutItem.Memo, Equals, "bar", Commentf("%s", items[2].TxOutItem.Memo))
-	c.Check(ordered[1][1].TxOutItem.Memo, Equals, "baz")
+	c.Check(ordered[fmt.Sprintf("BTC-%s", pk.String())][0].TxOutItem.Memo, Equals, "boo")
+	c.Check(ordered[fmt.Sprintf("BTC-%s", pk.String())][1].TxOutItem.Memo, Equals, "foo", Commentf("%s", items[1].TxOutItem.Memo))
+	c.Check(ordered[fmt.Sprintf("BNB-%s", pk.String())][0].TxOutItem.Memo, Equals, "bar", Commentf("%s", items[2].TxOutItem.Memo))
+	c.Check(ordered[fmt.Sprintf("BNB-%s", pk.String())][1].TxOutItem.Memo, Equals, "baz")
 
 	c.Check(store.Close(), IsNil)
 }
