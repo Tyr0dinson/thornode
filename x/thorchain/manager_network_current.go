@@ -419,12 +419,6 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("fail to update chain contract", "error", err)
 		}
 	}
-	for _, vault := range retiring {
-		if vault.LenPendingTxBlockHeights(ctx.BlockHeight(), mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)) > 0 {
-			ctx.Logger().Info("Skipping the migration of funds while transactions are still pending")
-			return nil
-		}
-	}
 
 	migrationRounds := mgr.GetConstants().GetInt64Value(constants.ChurnMigrateRounds)
 	signingTransactionPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
@@ -440,6 +434,11 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 
 		// move partial funds every 30 minutes
 		if (ctx.BlockHeight()-vault.StatusSince)%migrateInterval == 0 {
+			if vault.LenPendingTxBlockHeights(ctx.BlockHeight(), signingTransactionPeriod) > 0 {
+				ctx.Logger().Info("Skipping the migration of funds while transactions are still pending", "vault_pub_key", vault.PubKey)
+				continue
+			}
+
 			for _, coin := range vault.Coins {
 				// non-native rune assets are no migrated, therefore they are
 				// burned in each churn
