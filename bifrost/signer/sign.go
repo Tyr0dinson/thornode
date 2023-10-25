@@ -209,21 +209,23 @@ func (s *Signer) processTransactions() {
 		return
 	}
 
-	var signingConcurrencyLimit int64
+	var signingConcurrencyLimit uint64
 	// If there is only one list then there is no concurrency to be limited
 	// (any >0 number would behave the same as zero),
 	// so no need to query Mimir.
 	if len(lists) > 1 {
-		var err error
-		signingConcurrencyLimit, err = s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
+		signingConcurrencyLimitInt64, err := s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to get signing concurrency limit mimir")
 			return
 		}
+		if signingConcurrencyLimitInt64 > 0 {
+			signingConcurrencyLimit = uint64(signingConcurrencyLimitInt64)
+		}
 	}
 
 	wg := &sync.WaitGroup{}
-	var concurrencyCount int64
+	var concurrencyCount uint64
 	for _, items := range lists {
 		// When Mimir key SigningConcurrencyLimit is greater than zero,
 		// do not concurrently try to sign more than that many items.
