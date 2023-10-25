@@ -72,7 +72,7 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if strings.HasPrefix(key, "HALT") {
 		return 0, nil
 	}
-	panic("not implemented")
+	return -1, nil
 }
 
 // -------------------------------- tss ---------------------------------
