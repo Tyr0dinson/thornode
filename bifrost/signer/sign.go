@@ -203,14 +203,28 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	signingConcurrencyLimit, err := s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
-	if err != nil {
-		s.logger.Error().Err(err).Msg("fail to get signing concurrency limit mimir")
+	lists := s.storage.OrderedLists()
+	if len(lists) == 0 {
+		// If there are no lists, return with no further action.
 		return
 	}
+
+	var signingConcurrencyLimit int64
+	// If there is only one list then there is no concurrency to be limited
+	// (any >0 number would behave the same as zero),
+	// so no need to query Mimir.
+	if len(lists) > 1 {
+		var err error
+		signingConcurrencyLimit, err = s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
+		if err != nil {
+			s.logger.Error().Err(err).Msg("fail to get signing concurrency limit mimir")
+			return
+		}
+	}
+
 	wg := &sync.WaitGroup{}
 	var concurrencyCount int64
-	for _, items := range s.storage.OrderedLists() {
+	for _, items := range lists {
 		// When Mimir key SigningConcurrencyLimit is greater than zero,
 		// do not concurrently try to sign more than that many items.
 		// If <= 0, then treat as that no limit is set.
