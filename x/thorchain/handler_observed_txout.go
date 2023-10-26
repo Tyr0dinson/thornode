@@ -226,7 +226,7 @@ func (h ObservedTxOutHandler) handleV109(ctx cosmos.Context, msg MsgObservedTxOu
 			continue
 		}
 
-		// Act on the gas fees
+		// Apply Gas fees
 		if err := addGasFees(ctx, h.mgr, tx); err != nil {
 			ctx.Logger().Error("fail to add gas fee", "error", err)
 			continue
@@ -257,7 +257,6 @@ func (h ObservedTxOutHandler) handleV109(ctx cosmos.Context, msg MsgObservedTxOu
 		h.mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
 		// process the msg first , and then deduct the fund from vault last
 		// If sending from one of our vaults, decrement coins
-
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
