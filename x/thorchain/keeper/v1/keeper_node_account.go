@@ -45,8 +45,11 @@ func (k KVStore) setNodeStatus(ctx cosmos.Context, nodeType string, nodeStatus s
 	// remove old status for this node if any
 	key := []byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, addr.String()))
 	if store.Has(key) {
-		oldStatus := store.Get(key)
-		store.Delete([]byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, string(oldStatus), addr.String())))
+		oldStatus := string(store.Get(key))
+		if oldStatus == nodeStatus {
+			return
+		}
+		store.Delete([]byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, oldStatus, addr.String())))
 	}
 
 	// mapping node address -> node status
