@@ -207,32 +207,27 @@ func (s *Signer) processTransactions() {
 	if len(lists) == 0 {
 		// If there are no lists, return with no further action.
 		return
-	}
-
-	var signingConcurrencyLimit uint64
-	// If there is only one list then there is no concurrency to be limited
-	// (any >0 number would behave the same as zero),
-	// so no need to query Mimir.
-	if len(lists) > 1 {
-		signingConcurrencyLimitInt64, err := s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
+	} else if len(lists) > 1 {
+		// If there is only one list then there is no concurrency to be limited
+		// (any >0 number would behave the same as zero),
+		// so no need to query Mimir.
+		signingConcurrencyLimit, err := s.thorchainBridge.GetMimir("SigningConcurrencyLimit")
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to get signing concurrency limit mimir")
 			return
 		}
-		if signingConcurrencyLimitInt64 > 0 {
-			signingConcurrencyLimit = uint64(signingConcurrencyLimitInt64)
+		// When Mimir key SigningConcurrencyLimit is greater than zero,
+		// do not concurrently try to sign more than that many items.
+		// If <= 0, then treat as that no limit is set.
+		if signingConcurrencyLimit > 0 && int64(len(lists)) > signingConcurrencyLimit {
+			lists = lists[:signingConcurrencyLimit]
+			// For example a five-item slice (items 0 through 4) with [:4] becomes
+			// a four-item slice (items 0 through 3).
 		}
 	}
 
 	wg := &sync.WaitGroup{}
-	for i, items := range lists {
-		// When Mimir key SigningConcurrencyLimit is greater than zero,
-		// do not concurrently try to sign more than that many items.
-		// If <= 0, then treat as that no limit is set.
-		if signingConcurrencyLimit > 0 && uint64(i) >= signingConcurrencyLimit {
-			break
-		}
-
+	for _, items := range lists {
 		wg.Add(1)
 
 		go func(items []TxOutStoreItem) {
