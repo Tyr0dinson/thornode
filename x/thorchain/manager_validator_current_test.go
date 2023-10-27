@@ -234,6 +234,8 @@ func (vts *ValidatorMgrVCURTestSuite) TestBadActors(c *C) {
 
 	activeNode := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
+	// adding active validator in cache
+	networkMgr.activeValidators = append(networkMgr.activeValidators, activeNode)
 
 	// no bad actors with active node accounts with no slash points
 	nas, err = networkMgr.findBadActors(ctx, 0, 3)
@@ -243,9 +245,11 @@ func (vts *ValidatorMgrVCURTestSuite) TestBadActors(c *C) {
 	activeNode = GetRandomValidatorNode(NodeActive)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 250)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, activeNode)
 	activeNode = GetRandomValidatorNode(NodeActive)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode.NodeAddress, 500)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode), IsNil)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, activeNode)
 
 	// finds the worse actor
 	nas, err = networkMgr.findBadActors(ctx, 0, 3)
@@ -260,6 +264,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestBadActors(c *C) {
 	bad2 := GetRandomValidatorNode(NodeActive)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, bad2.NodeAddress, 5000)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, bad2), IsNil)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, bad1, bad2)
 
 	nas, err = networkMgr.findBadActors(ctx, 0, 3)
 	c.Assert(err, IsNil)
@@ -293,6 +298,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindBadActors(c *C) {
 	activeNode1.StatusSince = 900
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode1), IsNil)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode1.NodeAddress, 200)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, activeNode1)
 
 	// findBadActor assumes it is being called during a churn now,
 	// so this should now mark this node as bad.
@@ -304,12 +310,14 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindBadActors(c *C) {
 	activeNode2 := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode2), IsNil)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode2.NodeAddress, 2000)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, activeNode2)
 
 	activeNode3 := GetRandomValidatorNode(NodeActive)
 	activeNode3.StatusSince = 1000
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNode3), IsNil)
 	mgr.Keeper().SetNodeAccountSlashPoints(ctx, activeNode3.NodeAddress, 2000)
 	ctx = ctx.WithBlockHeight(2000)
+	networkMgr = newValidatorMgrVCUR(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	// node 3 and node 2 should both be marked even though node 3 is newer
 	// (this is because we're not favoring older nodes anymore)
 	nodeAccounts, err = networkMgr.findBadActors(ctx, 100, 3)
@@ -337,6 +345,8 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindLowBondActor(c *C) {
 	na2 := GetRandomValidatorNode(NodeActive)
 	na2.Bond = cosmos.NewUint(9)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	// adding active validator in cache
+	networkMgr.activeValidators = append(networkMgr.activeValidators, na2)
 
 	na, err = networkMgr.findLowBondActor(ctx)
 	c.Assert(err, IsNil)
@@ -345,6 +355,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindLowBondActor(c *C) {
 	na3 := GetRandomValidatorNode(NodeActive)
 	na3.Bond = cosmos.ZeroUint()
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	networkMgr.activeValidators = append(networkMgr.activeValidators, na3)
 
 	na, err = networkMgr.findLowBondActor(ctx)
 	c.Assert(err, IsNil)
