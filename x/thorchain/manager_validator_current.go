@@ -22,17 +22,15 @@ type ValidatorMgrVCUR struct {
 	txOutStore         TxOutStore
 	eventMgr           EventManager
 	existingValidators []string
-	activeValidators   NodeAccounts
 }
 
 // newValidatorMgrVCUR create a new instance of ValidatorMgrVCUR
 func newValidatorMgrVCUR(k keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) *ValidatorMgrVCUR {
 	return &ValidatorMgrVCUR{
-		k:                k,
-		networkMgr:       networkMgr,
-		txOutStore:       txOutStore,
-		eventMgr:         eventMgr,
-		activeValidators: nil,
+		k:          k,
+		networkMgr: networkMgr,
+		txOutStore: txOutStore,
+		eventMgr:   eventMgr,
 	}
 }
 
@@ -120,8 +118,6 @@ func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 	} else {
 		ctx.Logger().Info("Checking for node account rotation...")
 	}
-	// cache active validators for churn calls
-	vm.activeValidators = nas
 	return vm.churn(ctx)
 }
 
@@ -167,8 +163,6 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 	if err != nil {
 		return err
 	}
-	// reset cache
-	vm.activeValidators = nil
 	if ok {
 		for _, nodeAccSet := range vm.splitNext(ctx, next, asgardSize) {
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
@@ -1086,7 +1080,7 @@ func (vm *ValidatorMgrVCUR) getScore(ctx cosmos.Context, slashPts, lastChurnHeig
 // Iterate over active node accounts, finding bad actors with high slash points
 func (vm *ValidatorMgrVCUR) findBadActors(ctx cosmos.Context, minSlashPointsForBadValidator, badValidatorRedline int64) (NodeAccounts, error) {
 	badActors := make(NodeAccounts, 0)
-	nas, err := vm.getActiveValidators(ctx)
+	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return badActors, err
 	}
@@ -1166,7 +1160,7 @@ func (vm *ValidatorMgrVCUR) findBadActors(ctx cosmos.Context, minSlashPointsForB
 // Iterate over active node accounts, finding the one that has been active longest
 func (vm *ValidatorMgrVCUR) findOldActor(ctx cosmos.Context) (NodeAccount, error) {
 	na := NodeAccount{}
-	nas, err := vm.getActiveValidators(ctx)
+	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return na, err
 	}
@@ -1188,7 +1182,7 @@ func (vm *ValidatorMgrVCUR) findOldActor(ctx cosmos.Context) (NodeAccount, error
 // Iterate over active node accounts, finding the one that has the lowest bond
 func (vm *ValidatorMgrVCUR) findLowBondActor(ctx cosmos.Context) (NodeAccount, error) {
 	na := NodeAccount{}
-	nas, err := vm.getActiveValidators(ctx)
+	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return na, err
 	}
@@ -1294,7 +1288,7 @@ func (vm *ValidatorMgrVCUR) markLowVersionValidators(ctx cosmos.Context) error {
 // Finds up to `maxNodesToFind` active validators with version lower than the most "popular" version
 func (vm *ValidatorMgrVCUR) findLowVersionValidators(ctx cosmos.Context, maxNodesToFind int64) (NodeAccounts, error) {
 	minimumVersion, _ := vm.k.GetMinJoinLast(ctx)
-	activeNodes, err := vm.getActiveValidators(ctx)
+	activeNodes, err := vm.k.ListValidatorsByStatus(ctx, NodeActive)
 	if err != nil {
 		return NodeAccounts{}, err
 	}
@@ -1317,7 +1311,7 @@ func (vm *ValidatorMgrVCUR) findLowVersionValidators(ctx cosmos.Context, maxNode
 // clearLeaveScores - clears all leaves scores of active validators except for
 // ones that requested to leave
 func (vm *ValidatorMgrVCUR) clearLeaveScores(ctx cosmos.Context) error {
-	active, err := vm.getActiveValidators(ctx)
+	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return err
 	}
@@ -1442,7 +1436,7 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 		return ready[i].Bond.GT(ready[j].Bond)
 	})
 
-	active, err := vm.getActiveValidators(ctx)
+	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1515,16 +1509,4 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 	}
 
 	return active, rotation, nil
-}
-
-func (vm *ValidatorMgrVCUR) getActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
-	if len(vm.activeValidators) == 0 {
-		nas, err := vm.k.ListActiveValidators(ctx)
-		if err != nil {
-			return nas, err
-		}
-		vm.activeValidators = nas
-	}
-
-	return vm.activeValidators, nil
 }

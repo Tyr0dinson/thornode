@@ -85,6 +85,11 @@ const (
 	prefixVersion                 types.DbPrefix = "version/"
 )
 
+var (
+	isStatusCacheUpdated bool
+	activeStatusNodes    NodeAccounts
+)
+
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
 	err = fmt.Errorf("KVStore Error: %s: %w", wrapper, err)
 	ctx.Logger().Error("keeper error", "error", err)
@@ -103,6 +108,8 @@ type KVStore struct {
 
 // NewKVStore creates new instances of the thorchain Keeper
 func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+	isStatusCacheUpdated = false
+	activeStatusNodes = make(NodeAccounts, 0)
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
