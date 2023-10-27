@@ -278,7 +278,7 @@ func (HandlerBondSuite) TestBondProvider_OperatorFee(c *C) {
 	c.Assert(err, IsNil)
 
 	// Should be able to decrease operator fee after provider has bonded
-	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, providerAccAddr, operatorAccAddress, 4000)
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, nil, operatorAccAddress, 4000)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
@@ -288,18 +288,47 @@ func (HandlerBondSuite) TestBondProvider_OperatorFee(c *C) {
 	c.Assert(bp.NodeOperatorFee.Uint64(), Equals, uint64(4000))
 
 	// Only operator can set operator fee
-	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, providerAccAddr, providerAccAddr, 0)
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, nil, providerAccAddr, 0)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err.Error(), Equals, "only node operator can set fee: unknown request")
 
-	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, providerAccAddr, providerAccAddr, 4000)
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, nil, providerAccAddr, 4000)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err.Error(), Equals, "only node operator can set fee: unknown request")
+
+	// A non-zero-bond provider cannot be unwhitelisted
+	bp, _ = k.GetBondProviders(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(len(bp.Providers), Equals, 2)
+	c.Assert(bp.Providers[1].Bond.Uint64() > 0, Equals, true)
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, providerAccAddr, operatorAccAddress, 0)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
+	bp, _ = k.GetBondProviders(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(len(bp.Providers), Equals, 2)
+
+	// A zero-bond provider can be unwhitelisted again with a bond memo (so even when the node is Active)
+	bp.Providers[1].Bond = cosmos.ZeroUint()
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+	bp, _ = k.GetBondProviders(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(len(bp.Providers), Equals, 1)
+
+	// A node operator address cannot remove itself.
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, operatorBondAddress, operatorAccAddress, operatorAccAddress, 0)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+	err = handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
 
 	// If nodeAcc.BondAddress is empty, any address should be able to set operator fee (and become bonder address)
 	standbyNodeAccount.BondAddress = common.NoAddress
 	c.Assert(k.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
-	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, providerAccAddr, providerAccAddr, 4000)
+	msg = NewMsgBond(txIn, standbyNodeAddr, amt, providerBondAddress, nil, providerAccAddr, 4000)
 	err = handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 }
