@@ -40,7 +40,6 @@ const (
 	prefixLastSignedHeight        types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight       types.DbPrefix = "last_observe_height/"
 	prefixNodeAccount             types.DbPrefix = "node_account/"
-	prefixNodeAccountStatus       types.DbPrefix = "node_account_status/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
@@ -86,6 +85,11 @@ const (
 	prefixVersion                 types.DbPrefix = "version/"
 )
 
+var (
+	isStatusCacheUpdated bool
+	activeStatusNodes    NodeAccounts
+)
+
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
 	err = fmt.Errorf("KVStore Error: %s: %w", wrapper, err)
 	ctx.Logger().Error("keeper error", "error", err)
@@ -104,6 +108,8 @@ type KVStore struct {
 
 // NewKVStore creates new instances of the thorchain Keeper
 func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+	isStatusCacheUpdated = false
+	activeStatusNodes = make(NodeAccounts, 0)
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
@@ -129,9 +135,8 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 }
 
 // GetKey return a key that can be used to store into key value store
-func (k KVStore) GetKey(ctx cosmos.Context, prefix types.DbPrefix, keys ...string) string {
-	concatenatedKeys := strings.Join(keys, "/")
-	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(concatenatedKeys))
+func (k KVStore) GetKey(ctx cosmos.Context, prefix types.DbPrefix, key string) string {
+	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
 }
 
 // SetStoreVersion save the store version

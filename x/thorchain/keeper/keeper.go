@@ -22,7 +22,7 @@ type Keeper interface {
 	SetVersionWithCtx(ctx cosmos.Context, v semver.Version)
 	GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64)
 	SetMinJoinLast(ctx cosmos.Context)
-	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key ...string) string
+	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
 	SetStoreVersion(ctx cosmos.Context, ver int64)
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint

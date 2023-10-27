@@ -9,7 +9,6 @@ import (
 	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -39,25 +38,6 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key string, record *NodeAcco
 	return true, nil
 }
 
-func (k KVStore) setNodeStatus(ctx cosmos.Context, nodeType string, nodeStatus string, addr cosmos.AccAddress) {
-	store := ctx.KVStore(k.storeKey)
-
-	// remove old status for this node if any
-	key := []byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, addr.String()))
-	if store.Has(key) {
-		oldStatus := string(store.Get(key))
-		if oldStatus == nodeStatus {
-			return
-		}
-		store.Delete([]byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, oldStatus, addr.String())))
-	}
-
-	// mapping node address -> node status
-	// mapping node status+address -> address
-	store.Set(key, []byte(nodeStatus))
-	store.Set([]byte(k.GetKey(ctx, prefixNodeAccountStatus, nodeType, nodeStatus, addr.String())), addr)
-}
-
 // TotalActiveValidators count the number of active node account
 func (k KVStore) TotalActiveValidators(ctx cosmos.Context) (int, error) {
 	activeNodes, err := k.ListActiveValidators(ctx)
@@ -85,23 +65,31 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
-	naIterator := k.GetNodeAccountKeyIterator(ctx, k.GetKey(ctx, prefixNodeAccountStatus, NodeTypeValidator.String(), status.String()))
+	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
-		na, err := k.GetNodeAccount(ctx, naIterator.Value())
-		if err != nil {
-			return nil, err
+		var na NodeAccount
+		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
-
-		nodeAccounts = append(nodeAccounts, na)
+		if na.Type == NodeTypeValidator && na.Status == status {
+			nodeAccounts = append(nodeAccounts, na)
+		}
 	}
-
 	return nodeAccounts, nil
 }
 
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
-	return k.ListValidatorsByStatus(ctx, NodeActive)
+	if !isStatusCacheUpdated || len(activeStatusNodes) == 0 {
+		nas, err := k.ListValidatorsByStatus(ctx, NodeActive)
+		if err != nil {
+			return nas, err
+		}
+		isStatusCacheUpdated = true
+		activeStatusNodes = nas
+	}
+	return activeStatusNodes, nil
 }
 
 // GetMinJoinVersion - get min version to join. Min version is the most popular version
@@ -221,7 +209,10 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	}
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
-	k.setNodeStatus(ctx, na.Type.String(), na.Status.String(), na.NodeAddress)
+	// update cache status and active nodes when ListActiveValidators is called
+	if na.Type == NodeTypeValidator {
+		isStatusCacheUpdated = false
+	}
 	return nil
 }
 
@@ -270,11 +261,6 @@ func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string
 // GetNodeAccountIterator iterate node account
 func (k KVStore) GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNodeAccount)
-}
-
-// GetNodeStatusAccountIterator iterates node with specific status
-func (k KVStore) GetNodeAccountKeyIterator(ctx cosmos.Context, key string) cosmos.Iterator {
-	return k.getIterator(ctx, types.DbPrefix(key))
 }
 
 // GetNodeAccountSlashPoints - get the slash points associated with the given
