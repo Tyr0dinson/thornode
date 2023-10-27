@@ -14,6 +14,7 @@ var _ = Suite(&KeeperNodeAccountSuite{})
 
 func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	ctx, k := setupKeeperForTest(c)
+	k.ResetActiveStatusCache()
 	ctx = ctx.WithBlockHeight(10)
 
 	na1 := GetRandomValidatorNode(NodeActive)
@@ -29,6 +30,8 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	count, err := k.TotalActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Check(count, Equals, 1)
+	c.Check(len(activeStatusNodes), Equals, 1)
+	c.Assert(isStatusCacheUpdated, Equals, true)
 
 	na, err := k.GetNodeAccount(ctx, na1.NodeAddress)
 	c.Assert(err, IsNil)
@@ -58,6 +61,10 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	nodeAccounts, err := k.ListValidatorsWithBond(ctx)
 	c.Check(err, IsNil)
 	c.Check(nodeAccounts.Len() > 0 && nodeAccounts.Len() < 3, Equals, true)
+
+	k.ResetActiveStatusCache()
+	c.Check(len(activeStatusNodes), Equals, 0)
+	c.Assert(isStatusCacheUpdated, Equals, false)
 }
 
 func (s *KeeperNodeAccountSuite) TestGetMinJoinVersion(c *C) {

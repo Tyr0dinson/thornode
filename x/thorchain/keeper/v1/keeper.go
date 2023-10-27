@@ -108,8 +108,6 @@ type KVStore struct {
 
 // NewKVStore creates new instances of the thorchain Keeper
 func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
-	isStatusCacheUpdated = false
-	activeStatusNodes = make(NodeAccounts, 0)
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,

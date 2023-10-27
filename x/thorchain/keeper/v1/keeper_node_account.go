@@ -81,15 +81,16 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
-	if !isStatusCacheUpdated || len(activeStatusNodes) == 0 {
+	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && (!isStatusCacheUpdated || len(activeStatusNodes) == 0) {
 		nas, err := k.ListValidatorsByStatus(ctx, NodeActive)
 		if err != nil {
 			return nas, err
 		}
 		isStatusCacheUpdated = true
 		activeStatusNodes = nas
+		return activeStatusNodes, nil
 	}
-	return activeStatusNodes, nil
+	return k.ListValidatorsByStatus(ctx, NodeActive)
 }
 
 // GetMinJoinVersion - get min version to join. Min version is the most popular version
@@ -209,10 +210,6 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	}
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
-	// update cache status and active nodes when ListActiveValidators is called
-	if na.Type == NodeTypeValidator {
-		isStatusCacheUpdated = false
-	}
 	return nil
 }
 
@@ -468,4 +465,9 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 	ctx.EventManager().EmitEvents(events)
 
 	return nil
+}
+
+func (k KVStore) ResetActiveStatusCache() {
+	isStatusCacheUpdated = false
+	activeStatusNodes = make(NodeAccounts, 0)
 }
