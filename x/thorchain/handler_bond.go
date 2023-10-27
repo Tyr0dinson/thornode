@@ -209,17 +209,19 @@ func (h BondHandler) handleV124(ctx cosmos.Context, msg MsgBond) error {
 		}
 	}
 
-	// if bonder is node operator, add additional bonding address
+	// if bonder is node operator, add or (if zero-bond) remove additional bonding address
 	if msg.BondAddress.Equals(nodeAccount.BondAddress) && !msg.BondProviderAddress.Empty() {
-		max, err := h.mgr.Keeper().GetMimir(ctx, constants.MaxBondProviders.String())
-		if err != nil || max < 0 {
-			max = h.mgr.GetConstants().GetInt64Value(constants.MaxBondProviders)
-		}
-		if int64(len(bp.Providers)) >= max {
-			return fmt.Errorf("additional bond providers are not allowed, maximum reached")
-		}
 		if !bp.Has(msg.BondProviderAddress) {
+			max := h.mgr.Keeper().GetConfigInt64(ctx, constants.MaxBondProviders)
+			if int64(len(bp.Providers)) >= max {
+				return fmt.Errorf("additional bond providers are not allowed, maximum reached")
+			}
 			bp.Providers = append(bp.Providers, NewBondProvider(msg.BondProviderAddress))
+		} else {
+			// Remove confirms the provider has zero bond and is not the node operator (first provider)
+			if ok := bp.Remove(msg.BondProviderAddress); !ok {
+				return fmt.Errorf("cannot remove bond provider %s", msg.BondProviderAddress)
+			}
 		}
 	}
 
