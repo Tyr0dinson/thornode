@@ -85,6 +85,7 @@ const (
 	prefixVersion                 types.DbPrefix = "version/"
 )
 
+// caches validator node accounts with active status
 var (
 	isStatusCacheUpdated bool
 	activeStatusNodes    NodeAccounts

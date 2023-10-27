@@ -467,6 +467,8 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 	return nil
 }
 
+// ResetActiveStatusCache resets active validator status cache
+// forcing to read active validator list from store when ListActiveValidators is called
 func (k KVStore) ResetActiveStatusCache() {
 	isStatusCacheUpdated = false
 	activeStatusNodes = make(NodeAccounts, 0)

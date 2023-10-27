@@ -328,6 +328,7 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 		ctx.Logger().Error("fail to pay node bond rewards", "error", err)
 	}
 
+	// reset cache due to status change of active nodes
 	vm.k.ResetActiveStatusCache()
 	validators := make([]abci.ValidatorUpdate, 0, len(newNodes)+len(removedNodes))
 	for _, na := range newNodes {
