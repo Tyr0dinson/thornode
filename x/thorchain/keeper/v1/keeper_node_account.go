@@ -81,13 +81,15 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && (!isStatusCacheUpdated || len(activeStatusNodes) == 0) {
-		nas, err := k.ListValidatorsByStatus(ctx, NodeActive)
-		if err != nil {
-			return nas, err
+	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
+		if !isStatusCacheUpdated || len(activeStatusNodes) == 0 {
+			nas, err := k.ListValidatorsByStatus(ctx, NodeActive)
+			if err != nil {
+				return nas, err
+			}
+			isStatusCacheUpdated = true
+			activeStatusNodes = nas
 		}
-		isStatusCacheUpdated = true
-		activeStatusNodes = nas
 		return activeStatusNodes, nil
 	}
 	return k.ListValidatorsByStatus(ctx, NodeActive)
