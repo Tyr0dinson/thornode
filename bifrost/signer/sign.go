@@ -52,6 +52,22 @@ type Signer struct {
 	observer              *observer.Observer
 }
 
+// VaultSemaphore contains concurrency objects materials for a semaphore implementation.
+type VaultSemaphore struct {
+	wg   *sync.WaitGroup
+	semC chan struct{}
+}
+
+// Acquire occupies one concurrent process limit
+func (s *VaultSemaphore) Acquire() {
+	s.semC <- struct{}{}
+}
+
+// Release releases one concurrent process limit
+func (s *VaultSemaphore) Release() {
+	<-s.semC
+}
+
 // NewSigner create a new instance of signer
 func NewSigner(cfg config.BifrostSignerConfiguration,
 	thorchainBridge thorclient.ThorchainBridge,
@@ -131,6 +147,15 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 	}, nil
 }
 
+// NewVaultSemaphore creates a semaphore over vault transactions
+// to limit the concurrent transactions per vaults
+func NewVaultSemaphore(maxConcurrency int64, wg *sync.WaitGroup) VaultSemaphore {
+	return VaultSemaphore{
+		semC: make(chan struct{}, maxConcurrency),
+		wg:   wg,
+	}
+}
+
 func (s *Signer) getChain(chainID common.Chain) (chainclients.ChainClient, error) {
 	chain, ok := s.chains[chainID]
 	if !ok {
@@ -203,6 +228,19 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
+	concurrentLimitInt64, err := s.thorchainBridge.GetMimir("ConcurrentSignLimit")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("error while getting concurrent sign limit mimir")
+		return
+	}
+	if concurrentLimitInt64 == 0 {
+		s.processTransactionsV1()
+		return
+	}
+	s.processTransactionsV2(concurrentLimitInt64)
+}
+
+func (s *Signer) processTransactionsV1() {
 	wg := &sync.WaitGroup{}
 	for _, items := range s.storage.OrderedLists() {
 		wg.Add(1)
@@ -307,6 +345,89 @@ func (s *Signer) processTransactions() {
 			}
 		}(items)
 	}
+	wg.Wait()
+}
+
+func (s *Signer) processTransactionsV2(concurrentLimit int64) {
+	pipelines := make(map[ttypes.VaultStatus]map[string][]TxOutStoreItem)
+	vaultStatusCache := make(map[string]ttypes.VaultStatus)
+
+	// initialize each pipeline vaults
+	pipelines[ttypes.VaultStatus_ActiveVault] = make(map[string][]TxOutStoreItem)
+	pipelines[ttypes.VaultStatus_InactiveVault] = make(map[string][]TxOutStoreItem)
+	pipelines[ttypes.VaultStatus_RetiringVault] = make(map[string][]TxOutStoreItem)
+
+	// fill vault transactions of each pipeline
+	for _, item := range s.storage.List() {
+		status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
+		if !ok {
+			vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
+			if err != nil {
+				s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
+				return
+			}
+			status = vault.Status
+			if _, ok := pipelines[status]; !ok {
+				pipelines[status] = make(map[string][]TxOutStoreItem)
+			}
+		}
+
+		// split transactions between vaults of the pipeline
+		key := item.TxOutItem.VaultPubKey.String()
+		if _, ok := pipelines[status][key]; !ok {
+			pipelines[status][key] = make([]TxOutStoreItem, 0)
+		}
+		pipelines[status][key] = append(pipelines[status][key], item)
+	}
+
+	wg := sync.WaitGroup{}
+
+	for status, pipeline := range pipelines {
+		concurrentPerVault := int64(1)
+		if status == ttypes.VaultStatus_ActiveVault {
+			concurrentPerVault = concurrentLimit
+		}
+
+		for _, items := range pipeline {
+			wg.Add(1)
+			vaultSem := NewVaultSemaphore(concurrentPerVault, &wg)
+
+			go func(items []TxOutStoreItem) {
+				remaining := len(items)
+
+				var chainMutex sync.Map
+				lockChain := func(tx TxOutStoreItem) func() {
+					value, _ := chainMutex.LoadOrStore(tx.TxOutItem.Chain, &sync.Mutex{})
+					mtx := value.(*sync.Mutex)
+					mtx.Lock()
+
+					return func() { mtx.Unlock() }
+				}
+
+				for _, item := range items {
+					vaultSem.Acquire()
+
+					go func(tx TxOutStoreItem) {
+						defer vaultSem.Release()
+						chainLock := lockChain(tx)
+						defer chainLock()
+
+						// TODO: tx process and remove comment
+						// min := 1
+						// max := 5
+						// seconds := rand.Intn(max-min) + min
+						// time.Sleep(time.Duration(seconds) * time.Second)
+
+						remaining--
+						if remaining == 0 {
+							vaultSem.wg.Done()
+						}
+					}(item)
+				}
+			}(items)
+		}
+	}
+
 	wg.Wait()
 }
 
