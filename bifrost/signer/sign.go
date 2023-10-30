@@ -50,6 +50,12 @@ type Signer struct {
 	localPubKey           common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
+
+	// signer concurrency control
+	activeVaultSemaphore   chan struct{}
+	retiringVaultSemaphore chan struct{}
+	inactiveVaultSemaphore chan struct{}
+	vaultChainLocks        map[string]chan struct{}
 }
 
 // NewSigner create a new instance of signer
@@ -111,23 +117,27 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 	}
 	constantProvider := NewConstantsProvider(thorchainBridge)
 	return &Signer{
-		logger:                log.With().Str("module", "signer").Logger(),
-		cfg:                   cfg,
-		wg:                    &sync.WaitGroup{},
-		stopChan:              make(chan struct{}),
-		blockScanner:          blockScanner,
-		thorchainBlockScanner: thorchainBlockScanner,
-		chains:                chains,
-		m:                     m,
-		storage:               storage,
-		errCounter:            m.GetCounterVec(metrics.SignerError),
-		pubkeyMgr:             pubkeyMgr,
-		thorchainBridge:       thorchainBridge,
-		tssKeygen:             kg,
-		constantsProvider:     constantProvider,
-		localPubKey:           na.PubKeySet.Secp256k1,
-		tssKeysignMetricMgr:   tssKeysignMetricMgr,
-		observer:              obs,
+		logger:                 log.With().Str("module", "signer").Logger(),
+		cfg:                    cfg,
+		wg:                     &sync.WaitGroup{},
+		stopChan:               make(chan struct{}),
+		blockScanner:           blockScanner,
+		thorchainBlockScanner:  thorchainBlockScanner,
+		chains:                 chains,
+		m:                      m,
+		storage:                storage,
+		errCounter:             m.GetCounterVec(metrics.SignerError),
+		pubkeyMgr:              pubkeyMgr,
+		thorchainBridge:        thorchainBridge,
+		tssKeygen:              kg,
+		constantsProvider:      constantProvider,
+		localPubKey:            na.PubKeySet.Secp256k1,
+		tssKeysignMetricMgr:    tssKeysignMetricMgr,
+		observer:               obs,
+		activeVaultSemaphore:   make(chan struct{}, 4),
+		retiringVaultSemaphore: make(chan struct{}, 4),
+		inactiveVaultSemaphore: make(chan struct{}, 4),
+		vaultChainLocks:        make(map[string]chan struct{}),
 	}, nil
 }
 
@@ -199,6 +209,120 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 		return nil, nil, ctx.Err()
 	case err := <-ch:
 		return checkpoint, txIn, err
+	}
+}
+
+func (s *Signer) processTransactionsV2() {
+	// determine how many of each vault type we can process
+	remaining := map[ttypes.VaultStatus]int{
+		ttypes.VaultStatus_ActiveVault:   0,
+		ttypes.VaultStatus_RetiringVault: 0,
+		ttypes.VaultStatus_InactiveVault: 0,
+	}
+	for {
+		select {
+		case s.activeVaultSemaphore <- struct{}{}:
+			remaining[ttypes.VaultStatus_ActiveVault]++
+		case s.retiringVaultSemaphore <- struct{}{}:
+			remaining[ttypes.VaultStatus_RetiringVault]++
+		case s.inactiveVaultSemaphore <- struct{}{}:
+			remaining[ttypes.VaultStatus_InactiveVault]++
+		default:
+			break
+		}
+	}
+
+	// get any locked vault/chains
+	lockedChains := make(map[string]bool)
+	for vaultChain, semaphore := range s.vaultChainLocks {
+		select {
+		case semaphore <- struct{}{}:
+			lockedChains[vaultChain] = true
+		default:
+			lockedChains[vaultChain] = false
+		}
+	}
+
+	for _, item := range s.storage.List() {
+		// concat our vault and chain for the lock key
+		vaultChain := string(item.TxOutItem.VaultPubKey) + string(item.TxOutItem.Chain)
+
+		// check if the vault/chain is locked
+		locked, ok := lockedChains[vaultChain]
+		if ok && !locked {
+			continue
+		}
+
+		// create the lock if we have not before seen it
+		if !ok {
+			s.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
+			s.vaultChainLocks[vaultChain] <- struct{}{}
+			lockedChains[vaultChain] = true
+		}
+
+		// TODO: ensure this is cached
+		// get the vault status
+		vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
+		if err != nil {
+			s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
+			return
+		}
+
+		// check if we have any slots remaining for this vault status
+		countRemaining, ok := remaining[vault.Status]
+		if !ok || countRemaining <= 0 {
+			continue
+		}
+
+		// determine which semaphore to use
+		var semaphore chan struct{}
+		switch vault.Status {
+		case ttypes.VaultStatus_ActiveVault:
+			semaphore = s.activeVaultSemaphore
+		case ttypes.VaultStatus_RetiringVault:
+			semaphore = s.retiringVaultSemaphore
+		case ttypes.VaultStatus_InactiveVault:
+			semaphore = s.inactiveVaultSemaphore
+		}
+
+		// count the semaphore as aquired
+		remaining[vault.Status]--
+
+		// release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
+		lockedChains[vaultChain] = false
+
+		// process the transaction
+		go func(t TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
+			// release the semaphore and vault/chain lock on exit
+			defer func() {
+				<-semaphore
+				<-s.vaultChainLocks[vaultChain]
+			}()
+
+			// TODO: call function to do processing here
+			// s.processTransaction(t)
+		}(item, vaultChain, semaphore)
+	}
+
+	// release the unused vault/chain locks we took
+	for vaultChain, locked := range lockedChains {
+		if locked {
+			<-s.vaultChainLocks[vaultChain]
+		}
+	}
+
+	// release the unused semaphores we took
+	for vaultStatus, remaining := range remaining {
+		for i := 0; i < remaining; i++ {
+			switch vaultStatus {
+			case ttypes.VaultStatus_ActiveVault:
+				<-s.activeVaultSemaphore
+			case ttypes.VaultStatus_RetiringVault:
+				<-s.retiringVaultSemaphore
+			case ttypes.VaultStatus_InactiveVault:
+				<-s.inactiveVaultSemaphore
+			}
+		}
 	}
 }
 
