@@ -65,6 +65,9 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
+		return k.listValidatorByStatus(ctx, status)
+	}
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
@@ -100,9 +103,6 @@ func (k KVStore) listValidatorByStatus(ctx cosmos.Context, status NodeStatus) (N
 
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
-		return k.listValidatorByStatus(ctx, NodeActive)
-	}
 	return k.ListValidatorsByStatus(ctx, NodeActive)
 }
 

@@ -70,13 +70,13 @@ func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 
 	// calculate if we need to retry a churn because we are overdue for a
 	// successful one
-	nas, err := vm.k.ListActiveValidators(ctx)
+	nas, err := vm.k.TotalActiveValidators(ctx)
 	if err != nil {
 		return err
 	}
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
-	expectedActiveVaults := int64(len(nas)) / asgardSize
-	if int64(len(nas))%asgardSize > 0 {
+	expectedActiveVaults := int64(nas) / asgardSize
+	if int64(nas)%asgardSize > 0 {
 		expectedActiveVaults++
 	}
 	incompleteChurnCheck := int64(len(vaults)) != expectedActiveVaults
