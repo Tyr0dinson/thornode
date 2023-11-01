@@ -689,12 +689,12 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	// the amount out will deduct the outbound fee
 	res.ExpectedAmountOut = emitAmount.Sub(outboundFeeAmount).String()
 
+	res.IsWithinToleranceBps = true
+
 	if limit.GT(sdk.ZeroUint()) {
 		if emitAmount.Sub(outboundFeeAmount).LT(limit) {
 			res.IsWithinToleranceBps = false
 		}
-	} else {
-		res.IsWithinToleranceBps = true
 	}
 
 	// TODO: temporary for transition to only use expected amount out.
