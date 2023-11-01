@@ -40,8 +40,9 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key string, record *NodeAcco
 
 // TotalActiveValidators count the number of active node account
 func (k KVStore) TotalActiveValidators(ctx cosmos.Context) (int, error) {
-	activeNodes, err := k.ListActiveValidators(ctx)
-	return len(activeNodes), err
+	var nodes []cosmos.AccAddress
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, NodeActive.String()), &nodes)
+	return len(nodes), err
 }
 
 // ListValidatorsWithBond - gets a list of all validator node accounts that have bond
@@ -79,18 +80,28 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	return nodeAccounts, nil
 }
 
+// listValidatorByStatus - get list of validator node accounts using status node address index
+func (k KVStore) listValidatorByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	nodeAddress := make([]cosmos.AccAddress, 0)
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &nodeAddress)
+	if err != nil {
+		return NodeAccounts{}, err
+	}
+	nodes := make(NodeAccounts, len(nodeAddress))
+	for i, nodeAddr := range nodeAddress {
+		node, err := k.GetNodeAccount(ctx, nodeAddr)
+		if err != nil {
+			return nodes, err
+		}
+		nodes[i] = node
+	}
+	return nodes, nil
+}
+
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
-		if !isStatusCacheUpdated || len(activeStatusNodes) == 0 {
-			nas, err := k.ListValidatorsByStatus(ctx, NodeActive)
-			if err != nil {
-				return nas, err
-			}
-			isStatusCacheUpdated = true
-			activeStatusNodes = nas
-		}
-		return activeStatusNodes, nil
+		return k.listValidatorByStatus(ctx, NodeActive)
 	}
 	return k.ListValidatorsByStatus(ctx, NodeActive)
 }
@@ -212,6 +223,66 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	}
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
+	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && na.Type == NodeTypeValidator {
+		err := k.index(ctx, na.NodeAddress, na.Status)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (k KVStore) index(ctx cosmos.Context, nodeAddress cosmos.AccAddress, status NodeStatus) error {
+	prevStatusKey := k.GetKey(ctx, prefixNodeAccountStatus, nodeAddress.String())
+	var prevStatus int64
+	found, err := k.getInt64(ctx, prevStatusKey, &prevStatus)
+	if err != nil {
+		return err
+	}
+	if found && NodeStatus(prevStatus) == status {
+		// No changes
+		return nil
+	}
+	// remove from old status index
+	if found {
+		err = k.removeFromIndex(ctx, NodeStatus(prevStatus).String(), nodeAddress)
+		if err != nil {
+			return err
+		}
+	}
+	// add to new status index
+	err = k.addToIndex(ctx, status.String(), nodeAddress)
+	if err != nil {
+		return err
+	}
+	k.setInt64(ctx, prevStatusKey, int64(status))
+	return nil
+}
+
+func (k KVStore) removeFromIndex(ctx cosmos.Context, status string, nodeAddress cosmos.AccAddress) error {
+	var addrs []cosmos.AccAddress
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), &addrs)
+	if err != nil {
+		return err
+	}
+	newAddrs := make([]cosmos.AccAddress, 0)
+	for _, addr := range addrs {
+		if !addr.Equals(nodeAddress) {
+			newAddrs = append(newAddrs, addr)
+		}
+	}
+	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), newAddrs)
+	return nil
+}
+
+func (k KVStore) addToIndex(ctx cosmos.Context, status string, nodeAddress cosmos.AccAddress) error {
+	var addrs []cosmos.AccAddress
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), &addrs)
+	if err != nil {
+		return err
+	}
+	addrs = append(addrs, nodeAddress)
+	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), addrs)
 	return nil
 }
 
@@ -467,11 +538,4 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 	ctx.EventManager().EmitEvents(events)
 
 	return nil
-}
-
-// ResetActiveStatusCache resets active validator status cache
-// forcing to read active validator list from store when ListActiveValidators is called
-func (k KVStore) ResetActiveStatusCache() {
-	isStatusCacheUpdated = false
-	activeStatusNodes = make(NodeAccounts, 0)
 }

@@ -669,8 +669,6 @@ func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr 
 	return kaboom
 }
 
-func (k KVStoreDummy) ResetActiveStatusCache() {}
-
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

@@ -40,6 +40,8 @@ const (
 	prefixLastSignedHeight        types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight       types.DbPrefix = "last_observe_height/"
 	prefixNodeAccount             types.DbPrefix = "node_account/"
+	prefixNodeAccountIndex        types.DbPrefix = "node_account_idx/"
+	prefixNodeAccountStatus       types.DbPrefix = "node_account_status/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
@@ -83,12 +85,6 @@ const (
 	prefixAffiliateCollector      types.DbPrefix = "affcol/"
 	prefixRollingPoolLiquidityFee types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixVersion                 types.DbPrefix = "version/"
-)
-
-// caches validator node accounts with active status
-var (
-	isStatusCacheUpdated bool
-	activeStatusNodes    NodeAccounts
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
