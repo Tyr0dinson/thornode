@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 1.124.0
 Contact: devs@thorchain.org
 */
 
@@ -57,13 +58,15 @@ type QuoteSwapResponse struct {
 	StreamingSwapSeconds *int64 `json:"streaming_swap_seconds,omitempty"`
 	// total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
 	TotalSwapSeconds *int64 `json:"total_swap_seconds,omitempty"`
+	// indicates if the expected out amount is within the tolerance bps of the quote
+	IsWithinToleranceBps bool `json:"is_within_tolerance_bps"`
 }
 
 // NewQuoteSwapResponse instantiates a new QuoteSwapResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, slippageBps int64, streamingSlippageBps int64, expiry int64, warning string, notes string, expectedAmountOut string, expectedAmountOutStreaming string) *QuoteSwapResponse {
+func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, slippageBps int64, streamingSlippageBps int64, expiry int64, warning string, notes string, expectedAmountOut string, expectedAmountOutStreaming string, isWithinToleranceBps bool) *QuoteSwapResponse {
 	this := QuoteSwapResponse{}
 	this.OutboundDelayBlocks = outboundDelayBlocks
 	this.OutboundDelaySeconds = outboundDelaySeconds
@@ -75,6 +78,7 @@ func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64,
 	this.Notes = notes
 	this.ExpectedAmountOut = expectedAmountOut
 	this.ExpectedAmountOutStreaming = expectedAmountOutStreaming
+	this.IsWithinToleranceBps = isWithinToleranceBps
 	return &this
 }
 
@@ -678,6 +682,30 @@ func (o *QuoteSwapResponse) SetTotalSwapSeconds(v int64) {
 	o.TotalSwapSeconds = &v
 }
 
+// GetIsWithinToleranceBps returns the IsWithinToleranceBps field value
+func (o *QuoteSwapResponse) GetIsWithinToleranceBps() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.IsWithinToleranceBps
+}
+
+// GetIsWithinToleranceBpsOk returns a tuple with the IsWithinToleranceBps field value
+// and a boolean to check if the value has been set.
+func (o *QuoteSwapResponse) GetIsWithinToleranceBpsOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.IsWithinToleranceBps, true
+}
+
+// SetIsWithinToleranceBps sets field value
+func (o *QuoteSwapResponse) SetIsWithinToleranceBps(v bool) {
+	o.IsWithinToleranceBps = v
+}
+
 func (o QuoteSwapResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.InboundAddress != nil {
@@ -742,6 +770,9 @@ func (o QuoteSwapResponse) MarshalJSON() ([]byte, error) {
 	}
 	if o.TotalSwapSeconds != nil {
 		toSerialize["total_swap_seconds"] = o.TotalSwapSeconds
+	}
+	if true {
+		toSerialize["is_within_tolerance_bps"] = o.IsWithinToleranceBps
 	}
 	return json.Marshal(toSerialize)
 }

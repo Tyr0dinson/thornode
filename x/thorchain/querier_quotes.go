@@ -591,7 +591,6 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 			Asset:  toAsset,
 		},
 		Destination:          destination,
-		SlipLimit:            limit,
 		AffiliateAddress:     common.Address(affiliateMemo),
 		AffiliateBasisPoints: affiliateBps,
 		StreamInterval:       streamingInterval,
@@ -689,6 +688,14 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 	// the amount out will deduct the outbound fee
 	res.ExpectedAmountOut = emitAmount.Sub(outboundFeeAmount).String()
+
+	if limit.GT(sdk.ZeroUint()) {
+		if emitAmount.Sub(outboundFeeAmount).LT(limit) {
+			res.IsWithinToleranceBps = false
+		}
+	} else {
+		res.IsWithinToleranceBps = true
+	}
 
 	// TODO: temporary for transition to only use expected amount out.
 	if streamingInterval > 0 && streamingQuantity > 0 {

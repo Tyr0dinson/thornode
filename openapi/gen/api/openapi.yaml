@@ -4627,6 +4627,7 @@ components:
         streaming_swap_blocks: 100
         warning: Do not cache this response. Do not send funds after the expiry.
         expiry: 1671660285
+        is_within_tolerance_bps: true
         inbound_confirmation_blocks: 0
         inbound_address: bc1qjk3xzu5slu7mtmc8jc9yed3zqvkhkttm700g9a
       properties:
@@ -4730,11 +4731,16 @@ components:
           example: 600
           format: int64
           type: integer
+        is_within_tolerance_bps:
+          description: indicates if the expected out amount is within the tolerance
+            bps of the quote
+          type: boolean
       required:
       - expected_amount_out
       - expected_amount_out_streaming
       - expiry
       - fees
+      - is_within_tolerance_bps
       - notes
       - outbound_delay_blocks
       - outbound_delay_seconds

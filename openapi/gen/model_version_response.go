@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 1.124.0
 Contact: devs@thorchain.org
 */
 

@@ -3151,6 +3151,7 @@ components:
         - warning
         - notes
         - expiry
+        - is_within_tolerance_bps
       properties:
         <<: *quote-properties
         memo:
@@ -3185,6 +3186,9 @@ components:
           format: int64
           description: total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
           example: 600
+        is_within_tolerance_bps:
+          type: boolean
+          description: indicates if the expected out amount is within the tolerance bps of the quote
 
     QuoteSaverDepositResponse:
       type: object

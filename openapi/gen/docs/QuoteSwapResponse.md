@@ -25,12 +25,13 @@ Name | Type | Description | Notes
 **StreamingSwapBlocks** | Pointer to **int64** | the number of blocks the streaming swap will execute over | [optional] 
 **StreamingSwapSeconds** | Pointer to **int64** | approx the number of seconds the streaming swap will execute over | [optional] 
 **TotalSwapSeconds** | Pointer to **int64** | total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay) | [optional] 
+**IsWithinToleranceBps** | **bool** | indicates if the expected out amount is within the tolerance bps of the quote | 
 
 ## Methods
 
 ### NewQuoteSwapResponse
 
-`func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, slippageBps int64, streamingSlippageBps int64, expiry int64, warning string, notes string, expectedAmountOut string, expectedAmountOutStreaming string, ) *QuoteSwapResponse`
+`func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, slippageBps int64, streamingSlippageBps int64, expiry int64, warning string, notes string, expectedAmountOut string, expectedAmountOutStreaming string, isWithinToleranceBps bool, ) *QuoteSwapResponse`
 
 NewQuoteSwapResponse instantiates a new QuoteSwapResponse object
 This constructor will assign default values to properties that have it defined,
@@ -519,6 +520,26 @@ SetTotalSwapSeconds sets TotalSwapSeconds field to given value.
 `func (o *QuoteSwapResponse) HasTotalSwapSeconds() bool`
 
 HasTotalSwapSeconds returns a boolean if a field has been set.
+
+### GetIsWithinToleranceBps
+
+`func (o *QuoteSwapResponse) GetIsWithinToleranceBps() bool`
+
+GetIsWithinToleranceBps returns the IsWithinToleranceBps field if non-nil, zero value otherwise.
+
+### GetIsWithinToleranceBpsOk
+
+`func (o *QuoteSwapResponse) GetIsWithinToleranceBpsOk() (*bool, bool)`
+
+GetIsWithinToleranceBpsOk returns a tuple with the IsWithinToleranceBps field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetIsWithinToleranceBps
+
+`func (o *QuoteSwapResponse) SetIsWithinToleranceBps(v bool)`
+
+SetIsWithinToleranceBps sets IsWithinToleranceBps field to given value.
+
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
