@@ -224,7 +224,7 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
 	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && na.Type == NodeTypeValidator {
-		err := k.index(ctx, na.NodeAddress, na.Status)
+		err := k.updateNodeStatusIndex(ctx, na.NodeAddress, na.Status)
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	return nil
 }
 
-func (k KVStore) index(ctx cosmos.Context, nodeAddress cosmos.AccAddress, status NodeStatus) error {
+func (k KVStore) updateNodeStatusIndex(ctx cosmos.Context, nodeAddress cosmos.AccAddress, status NodeStatus) error {
 	prevStatusKey := k.GetKey(ctx, prefixNodeAccountStatus, nodeAddress.String())
 	var prevStatus int64
 	found, err := k.getInt64(ctx, prevStatusKey, &prevStatus)
