@@ -50,39 +50,100 @@ type Signer struct {
 	localPubKey           common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
+	concurrent            concurrentSigner
 }
 
-// VaultSemaphore contains concurrency objects materials for a semaphore implementation.
-type VaultSemaphore struct {
-	ch              chan TxOutStoreItem
-	semC            chan struct{}
-	vaultChainMutex sync.Map
+// concurrentSigner holds the materials needed for pipeline concurrent processing,
+// this is being created and filled while Signer initialization
+type concurrentSigner struct {
+	activeVaultSemaphore   chan struct{}
+	retiringVaultSemaphore chan struct{}
+	inactiveVaultSemaphore chan struct{}
+	vaultChainLocks        map[string]chan struct{}
 }
 
-// Acquire occupies one concurrent process limit
-func (vs *VaultSemaphore) Acquire() {
-	vs.semC <- struct{}{}
-}
+type pipelineCapacity map[ttypes.VaultStatus]int
 
-// Release releases one concurrent process limit
-func (vs *VaultSemaphore) Release() {
-	<-vs.semC
-}
-
-type ConcurrentSigner struct {
-	ActivePipeline   *VaultSemaphore
-	RetiringPipeline *VaultSemaphore
-	InactivePipeline *VaultSemaphore
-}
-
-func (s *VaultSemaphore) LockChain(chain common.Chain) func() func() {
-	return func() func() {
-		value, _ := s.vaultChainMutex.LoadOrStore(chain, &sync.Mutex{})
-		mtx := value.(*sync.Mutex)
-		mtx.Lock()
-
-		return func() { mtx.Unlock() }
+// hasCapacity returns true of there is any free slots in the corresponfing pipeline's vault.
+func (pc pipelineCapacity) hasCapacity(vaultStatus ttypes.VaultStatus) bool {
+	remainingCount, ok := pc[vaultStatus]
+	if !ok || remainingCount <= 0 {
+		return false
 	}
+	return true
+}
+
+// releaseCapacity releases the unused capacity of the pipeline's vault semaphore.
+func (cs concurrentSigner) releaseCapacity(capacity pipelineCapacity) {
+	for vaultStatus, remaining := range capacity {
+		for i := 0; i < remaining; i++ {
+			switch vaultStatus {
+			case ttypes.VaultStatus_ActiveVault:
+				<-cs.activeVaultSemaphore
+			case ttypes.VaultStatus_RetiringVault:
+				<-cs.retiringVaultSemaphore
+			case ttypes.VaultStatus_InactiveVault:
+				<-cs.inactiveVaultSemaphore
+			}
+		}
+	}
+}
+
+// pipelineCapacity returns current pipeline's capacity of the vault semaphore.
+func (cs concurrentSigner) pipelineCapacity() pipelineCapacity {
+	// determine how many of each vault type we can process
+	capacity := map[ttypes.VaultStatus]int{
+		ttypes.VaultStatus_ActiveVault:   0,
+		ttypes.VaultStatus_RetiringVault: 0,
+		ttypes.VaultStatus_InactiveVault: 0,
+	}
+CL:
+	for {
+		select {
+		case cs.activeVaultSemaphore <- struct{}{}:
+			capacity[ttypes.VaultStatus_ActiveVault]++
+		case cs.retiringVaultSemaphore <- struct{}{}:
+			capacity[ttypes.VaultStatus_RetiringVault]++
+		case cs.inactiveVaultSemaphore <- struct{}{}:
+			capacity[ttypes.VaultStatus_InactiveVault]++
+
+		default:
+			break CL
+		}
+	}
+
+	return capacity
+}
+
+// lockedChains returns a map of boolean for cach available vault/chain.
+func (cs concurrentSigner) lockedChains() map[string]bool {
+	// get any locked vault/chains
+	lockedChains := make(map[string]bool)
+	for vaultChain, semaphore := range cs.vaultChainLocks {
+		select {
+		case semaphore <- struct{}{}:
+			lockedChains[vaultChain] = true
+		default:
+			lockedChains[vaultChain] = false
+		}
+	}
+
+	return lockedChains
+}
+
+// semaphore returns the corresponding smaphore of the pipeline's vault
+func (cs concurrentSigner) semaphore(vaultStatus ttypes.VaultStatus) chan struct{} {
+	// determine which semaphore to use
+	var semaphore chan struct{}
+	switch vaultStatus {
+	case ttypes.VaultStatus_ActiveVault:
+		semaphore = cs.activeVaultSemaphore
+	case ttypes.VaultStatus_RetiringVault:
+		semaphore = cs.retiringVaultSemaphore
+	case ttypes.VaultStatus_InactiveVault:
+		semaphore = cs.inactiveVaultSemaphore
+	}
+	return semaphore
 }
 
 // NewSigner create a new instance of signer
@@ -143,6 +204,12 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		return nil, fmt.Errorf("fail to create Tss Key gen,err:%w", err)
 	}
 	constantProvider := NewConstantsProvider(thorchainBridge)
+
+	activeConcurrentSigners, err := thorchainBridge.GetMimir("ActiveVaultsConcurrentSignLimit")
+	if err != nil {
+		return nil, fmt.Errorf("error while getting concurrent sign limit mimir:%w", err)
+	}
+
 	return &Signer{
 		logger:                log.With().Str("module", "signer").Logger(),
 		cfg:                   cfg,
@@ -161,15 +228,20 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		localPubKey:           na.PubKeySet.Secp256k1,
 		tssKeysignMetricMgr:   tssKeysignMetricMgr,
 		observer:              obs,
+		concurrent:            newConcurrerntSigner(activeConcurrentSigners),
 	}, nil
 }
 
-// NewConcurrerntSigner
-func NewConcurrerntSigner(concurrentLimit int64) ConcurrentSigner {
-	return ConcurrentSigner{
-		ActivePipeline:   &VaultSemaphore{ch: make(chan TxOutStoreItem, 8), semC: make(chan struct{}, concurrentLimit)},
-		RetiringPipeline: &VaultSemaphore{ch: make(chan TxOutStoreItem, 2), semC: make(chan struct{}, 1)},
-		InactivePipeline: &VaultSemaphore{ch: make(chan TxOutStoreItem, 2), semC: make(chan struct{}, 1)},
+// newConcurrerntSigner creates a new object of concurrent signing pipelines and vaults.
+func newConcurrerntSigner(activeConcLimit int64) concurrentSigner {
+	if activeConcLimit == 0 {
+		return concurrentSigner{}
+	}
+	return concurrentSigner{
+		activeVaultSemaphore:   make(chan struct{}, activeConcLimit),
+		retiringVaultSemaphore: make(chan struct{}, 1),
+		inactiveVaultSemaphore: make(chan struct{}, 1),
+		vaultChainLocks:        make(map[string]chan struct{}),
 	}
 }
 
@@ -245,16 +317,11 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	concurrentLimitInt64, err := s.thorchainBridge.GetMimir("ConcurrentSignLimit")
-	if err != nil {
-		s.logger.Error().Err(err).Msg("error while getting concurrent sign limit mimir")
-		return
-	}
-	if concurrentLimitInt64 == 0 {
+	if len(s.concurrent.activeVaultSemaphore) == 0 {
 		s.processTransactionsV1()
 		return
 	}
-	s.processTransactionsV2(concurrentLimitInt64)
+	s.processTransactionsV2()
 }
 
 func (s *Signer) processTransactionsV1() {
@@ -284,27 +351,8 @@ func (s *Signer) processTransactionsV1() {
 				wg.Done()
 			}()
 
-			// precondition: all transactions should be for the same chain
-			for _, item := range items {
-				if !item.TxOutItem.Chain.Equals(chain) {
-					s.logger.Error().Msgf("tx out items for different chains in the same batch: %s, %s", item.TxOutItem.Chain, items[0].TxOutItem.Chain)
-					return
-				}
-			}
-
-			// if any tx out items are in broadcast or round 7 failure retry, only proceed with those
-			retryItems := []TxOutStoreItem{}
-			for _, item := range items {
-				if item.Round7Retry || len(item.SignedTx) > 0 {
-					retryItems = append(retryItems, item)
-				}
-			}
-			if len(retryItems) > 0 {
-				s.logger.Info().Msgf("found %d retry items", len(retryItems))
-				items = retryItems
-			}
-			if len(retryItems) > 1 {
-				s.logger.Error().Msgf("found %d retry items, there should only be one", len(retryItems))
+			if !s.validateTransactions(items, chain) {
+				return
 			}
 
 			for i, item := range items {
@@ -316,47 +364,10 @@ func (s *Signer) processTransactionsV1() {
 						continue
 					}
 
-					s.logger.Info().Int("num", i).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
-					// a single keysign should not take longer than 5 minutes , regardless TSS or local
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
-						return s.signAndBroadcast(item)
-					})
-					if err != nil {
-						// mark the txout on round 7 failure to block other txs for the chain / pubkey
-						ksErr := tss.KeysignError{}
-						if errors.As(err, &ksErr) && ksErr.IsRound7() {
-							s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
-							item.Round7Retry = true
-							item.Checkpoint = checkpoint
-							if err := s.storage.Set(item); err != nil {
-								s.logger.Error().Err(err).Msg("fail to update tx out store item with round 7 retry")
-							}
-						}
-
-						if errors.Is(err, context.DeadlineExceeded) {
-							panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
-						}
-						s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
-						cancel()
+					var success bool
+					success, observations = s.processTransaction(i, item, observations)
+					if !success {
 						return
-						// The 'item' for loop should not be items[0],
-						// because problems which return 'nil, nil' should be skipped over instead of blocking others.
-						// When signAndBroadcast returns an error (such as from a keysign timeout),
-						// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
-						// for when the keysign failure was from a loss of list synchrony.
-						// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
-					}
-					cancel()
-
-					// if enabled and the observation is non-nil, add to this batch's observations
-					if s.cfg.AutoObserve && obs != nil {
-						observations = append(observations, *obs)
-					}
-
-					// We have a successful broadcast! Remove the item from our store
-					if err := s.storage.Remove(item); err != nil {
-						s.logger.Error().Err(err).Msg("fail to update tx out store item")
 					}
 				}
 			}
@@ -365,57 +376,128 @@ func (s *Signer) processTransactionsV1() {
 	wg.Wait()
 }
 
-func (s *Signer) processTransactionsV2(concurrentLimit int64) {
-	pipelines := make(map[ttypes.VaultStatus]map[string][]TxOutStoreItem)
-	vaultStatusCache := make(map[string]ttypes.VaultStatus)
-
-	items := s.storage.List()
-	itemsLen := len(items)
-
-	// initialize each pipeline vaults
-	concSigner := NewConcurrerntSigner(concurrentLimit)
-
-	wg := sync.WaitGroup{}
-	var processTx = func(sema *VaultSemaphore, tx TxOutStoreItem) {
-		unlock := sema.LockChain(tx.TxOutItem.Chain)
-		defer unlock()
-		defer sema.Release()
-
-		// TODO: tx process and remove comment
-		// min := 1
-		// max := 5
-		// seconds := rand.Intn(max-min) + min
-		// time.Sleep(time.Duration(seconds) * time.Second)
-
-		itemsLen--
-		if itemsLen == 0 {
-			wg.Done()
+func (s *Signer) validateTransactions(items []TxOutStoreItem, chain common.Chain) bool {
+	if chain != "" {
+		// precondition: all transactions should be for the same chain
+		for _, item := range items {
+			if !item.TxOutItem.Chain.Equals(chain) {
+				s.logger.Error().Msgf("tx out items for different chains in the same batch: %s, %s", item.TxOutItem.Chain, items[0].TxOutItem.Chain)
+				return false
+			}
 		}
 	}
 
-	wg.Add(1)
-	go func() {
-		for {
-			select {
-			case tx := <-concSigner.ActivePipeline.ch:
-				concSigner.ActivePipeline.Acquire()
-				go processTx(concSigner.ActivePipeline, tx)
+	// if any tx out items are in broadcast or round 7 failure retry, only proceed with those
+	retryItems := []TxOutStoreItem{}
+	for _, item := range items {
+		if item.Round7Retry || len(item.SignedTx) > 0 {
+			retryItems = append(retryItems, item)
+		}
+	}
+	if len(retryItems) > 0 {
+		s.logger.Info().Msgf("found %d retry items", len(retryItems))
+		items = retryItems
+	}
+	if len(retryItems) > 1 {
+		s.logger.Error().Msgf("found %d retry items, there should only be one", len(retryItems))
+	}
+	return true
+}
 
-			case tx := <-concSigner.RetiringPipeline.ch:
-				concSigner.RetiringPipeline.Acquire()
-				go processTx(concSigner.RetiringPipeline, tx)
-
-			case tx := <-concSigner.RetiringPipeline.ch:
-				concSigner.InactivePipeline.Acquire()
-				go processTx(concSigner.InactivePipeline, tx)
-
+func (s *Signer) processTransaction(index int, item TxOutStoreItem, observations []types.TxInItem) (bool, []types.TxInItem) {
+	s.logger.Info().Int("num", index).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
+	// a single keysign should not take longer than 5 minutes , regardless TSS or local
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+		return s.signAndBroadcast(item)
+	})
+	if err != nil {
+		// mark the txout on round 7 failure to block other txs for the chain / pubkey
+		ksErr := tss.KeysignError{}
+		if errors.As(err, &ksErr) && ksErr.IsRound7() {
+			s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
+			item.Round7Retry = true
+			item.Checkpoint = checkpoint
+			if err := s.storage.Set(item); err != nil {
+				s.logger.Error().Err(err).Msg("fail to update tx out store item with round 7 retry")
 			}
 		}
-	}()
 
-	wg.Add(1)
-	go func(items []TxOutStoreItem) {
-		for _, item := range items {
+		if errors.Is(err, context.DeadlineExceeded) {
+			panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
+		}
+		s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
+		cancel()
+		return false, []types.TxInItem{}
+		// The 'item' for loop should not be items[0],
+		// because problems which return 'nil, nil' should be skipped over instead of blocking others.
+		// When signAndBroadcast returns an error (such as from a keysign timeout),
+		// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
+		// for when the keysign failure was from a loss of list synchrony.
+		// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
+	}
+	cancel()
+
+	// if enabled and the observation is non-nil, add to this batch's observations
+	if s.cfg.AutoObserve && obs != nil {
+		observations = append(observations, *obs)
+	}
+
+	// We have a successful broadcast! Remove the item from our store
+	if err := s.storage.Remove(item); err != nil {
+		s.logger.Error().Err(err).Msg("fail to update tx out store item")
+	}
+
+	return true, observations
+}
+
+func (s *Signer) processTransactionsV2() {
+
+	// list of all transactions sorted
+	items := s.storage.List()
+
+	// validate transactions and ignore same chain validation
+	if !s.validateTransactions(items, "") {
+		return
+	}
+
+	// vaultStatusCache this is being used for cahcing the vault status
+	vaultStatusCache := make(map[string]ttypes.VaultStatus)
+
+	// get the remaining (free) capacity of all pipelines
+	remainingCap := s.concurrent.pipelineCapacity()
+
+	// get any locked vault/chains
+	lockedChains := s.concurrent.lockedChains()
+
+	// make all observations for the batch before returning
+	observations := []types.TxInItem{}
+
+	for i, item := range items {
+		select {
+		case <-s.stopChan:
+			return
+		default:
+			if item.Status == TxSpent { // don't rebroadcast spent transactions
+				continue
+			}
+
+			// concat vault and chain for the lock key
+			vaultChain := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+
+			// check if the vault/chain is locked, if it is then ignore this tx
+			locked, ok := lockedChains[vaultChain]
+			if ok && locked {
+				continue
+			}
+
+			// no lock record available, we need to initalize the lock
+			if !ok {
+				s.concurrent.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
+				s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
+				lockedChains[vaultChain] = true
+			}
+
 			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
 			if !ok {
 				vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
@@ -424,25 +506,63 @@ func (s *Signer) processTransactionsV2(concurrentLimit int64) {
 					return
 				}
 				status = vault.Status
-				if _, ok := pipelines[status]; !ok {
-					pipelines[status] = make(map[string][]TxOutStoreItem)
+
+				// set in the cache
+				vaultStatusCache[item.TxOutItem.VaultPubKey.String()] = vault.Status
+			}
+
+			// check if we have any slots remaining for this vault status
+			if !remainingCap.hasCapacity(status) {
+				continue
+			}
+
+			// decrese the available semaphore buffer and set as aquired
+			remainingCap[status]--
+
+			// release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
+			lockedChains[vaultChain] = false
+
+			// process the transaction concurrently
+			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
+				defer func() {
+					// release the vault semaphore on exit
+					<-semaphore
+					// release the vault/chain lock on exit
+					<-s.concurrent.vaultChainLocks[vaultChain]
+				}()
+
+				// process transaction
+				var success bool
+				success, observations = s.processTransaction(i, item, observations)
+				if !success {
+					return
 				}
-			}
 
-			switch status {
-			case ttypes.VaultStatus_ActiveVault:
-				concSigner.ActivePipeline.ch <- item
-			case ttypes.VaultStatus_RetiringVault:
-				concSigner.RetiringPipeline.ch <- item
-			case ttypes.VaultStatus_InactiveVault:
-				concSigner.InactivePipeline.ch <- item
-			}
+				// update observations
+				if len(observations) > 0 {
+					s.observer.ObserveSigned(types.TxIn{
+						Count:                strconv.Itoa(len(observations)),
+						Chain:                item.TxOutItem.Chain,
+						TxArray:              observations,
+						MemPool:              true,
+						Filtered:             true,
+						SentUnFinalised:      false,
+						Finalised:            false,
+						ConfirmationRequired: 0,
+					})
+				}
+			}(i, item, vaultChain, s.concurrent.semaphore(status))
 		}
-		wg.Done()
+	}
 
-	}(items)
+	// release the unused vault/chain locks we took
+	for vaultChain, locked := range lockedChains {
+		if locked {
+			<-s.concurrent.vaultChainLocks[vaultChain]
+		}
+	}
 
-	wg.Wait()
+	s.concurrent.releaseCapacity(remainingCap)
 }
 
 // processTxnOut processes outbound TxOuts and save them to storage
