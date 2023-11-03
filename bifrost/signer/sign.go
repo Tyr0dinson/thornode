@@ -97,7 +97,7 @@ func (cs concurrentSigner) pipelineCapacity() pipelineCapacity {
 		ttypes.VaultStatus_RetiringVault: 0,
 		ttypes.VaultStatus_InactiveVault: 0,
 	}
-CL:
+
 	for {
 		select {
 		case cs.activeVaultSemaphore <- struct{}{}:
@@ -108,11 +108,9 @@ CL:
 			capacity[ttypes.VaultStatus_InactiveVault]++
 
 		default:
-			break CL
+			return capacity
 		}
 	}
-
-	return capacity
 }
 
 // lockedChains returns a map of boolean for cach available vault/chain.
@@ -317,7 +315,7 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	if len(s.concurrent.activeVaultSemaphore) == 0 {
+	if len(s.concurrent.activeVaultSemaphore) == -1 {
 		s.processTransactionsV1()
 		return
 	}
@@ -351,8 +349,27 @@ func (s *Signer) processTransactionsV1() {
 				wg.Done()
 			}()
 
-			if !s.validateTransactions(items, chain) {
-				return
+			// precondition: all transactions should be for the same chain
+			for _, item := range items {
+				if !item.TxOutItem.Chain.Equals(chain) {
+					s.logger.Error().Msgf("tx out items for different chains in the same batch: %s, %s", item.TxOutItem.Chain, items[0].TxOutItem.Chain)
+					return
+				}
+			}
+
+			// if any tx out items are in broadcast or round 7 failure retry, only proceed with those
+			retryItems := []TxOutStoreItem{}
+			for _, item := range items {
+				if item.Round7Retry || len(item.SignedTx) > 0 {
+					retryItems = append(retryItems, item)
+				}
+			}
+			if len(retryItems) > 0 {
+				s.logger.Info().Msgf("found %d retry items", len(retryItems))
+				items = retryItems
+			}
+			if len(retryItems) > 1 {
+				s.logger.Error().Msgf("found %d retry items, there should only be one", len(retryItems))
 			}
 
 			for i, item := range items {
@@ -376,32 +393,116 @@ func (s *Signer) processTransactionsV1() {
 	wg.Wait()
 }
 
-func (s *Signer) validateTransactions(items []TxOutStoreItem, chain common.Chain) bool {
-	if chain != "" {
-		// precondition: all transactions should be for the same chain
-		for _, item := range items {
-			if !item.TxOutItem.Chain.Equals(chain) {
-				s.logger.Error().Msgf("tx out items for different chains in the same batch: %s, %s", item.TxOutItem.Chain, items[0].TxOutItem.Chain)
-				return false
+func (s *Signer) processTransactionsV2() {
+
+	// list of all transactions sorted
+	items := s.storage.List()
+
+	// validate transactions and ignore same chain validation
+	items = s.filterTransactions(items)
+
+	// vaultStatusCache this is being used for cahcing the vault status
+	vaultStatusCache := make(map[string]ttypes.VaultStatus)
+
+	// get the remaining (free) capacity of all pipelines
+	remainingCap := s.concurrent.pipelineCapacity()
+
+	// get any locked vault/chains
+	lockedChains := s.concurrent.lockedChains()
+
+	// make all observations for the batch before returning
+	observations := []types.TxInItem{}
+
+	for i, item := range items {
+		select {
+		case <-s.stopChan:
+			return
+		default:
+			if item.Status == TxSpent { // don't rebroadcast spent transactions
+				continue
 			}
+
+			// concat vault and chain for the lock key
+			vaultChain := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+
+			// check if the vault/chain is locked, if it is then ignore this tx
+			locked, ok := lockedChains[vaultChain]
+			if ok && locked {
+				continue
+			}
+
+			// no lock record available, we need to initialize the lock
+			if !ok {
+				s.concurrent.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
+				s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
+				lockedChains[vaultChain] = true
+			}
+
+			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
+			if !ok {
+				vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
+				if err != nil {
+					s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
+					return
+				}
+				status = vault.Status
+
+				// set in the cache
+				vaultStatusCache[item.TxOutItem.VaultPubKey.String()] = vault.Status
+			}
+
+			// check if we have any slots remaining for this vault status
+			if !remainingCap.hasCapacity(status) {
+				continue
+			}
+
+			// decrease the available semaphore buffer and set as acquired
+			remainingCap[status]--
+
+			// release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
+			lockedChains[vaultChain] = false
+
+			// process the transaction concurrently
+			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
+				defer func() {
+					// release the vault semaphore on exit
+					<-semaphore
+					// release the vault/chain lock on exit
+					<-s.concurrent.vaultChainLocks[vaultChain]
+				}()
+
+				// process transaction
+				var success bool
+				success, observations = s.processTransaction(i, item, observations)
+				if !success {
+					return
+				}
+
+				// update observations
+				if len(observations) > 0 {
+					s.observer.ObserveSigned(types.TxIn{
+						Count:                strconv.Itoa(len(observations)),
+						Chain:                item.TxOutItem.Chain,
+						TxArray:              observations,
+						MemPool:              true,
+						Filtered:             true,
+						SentUnFinalised:      false,
+						Finalised:            false,
+						ConfirmationRequired: 0,
+					})
+				}
+			}(i, item, vaultChain, s.concurrent.semaphore(status))
 		}
 	}
 
-	// if any tx out items are in broadcast or round 7 failure retry, only proceed with those
-	retryItems := []TxOutStoreItem{}
-	for _, item := range items {
-		if item.Round7Retry || len(item.SignedTx) > 0 {
-			retryItems = append(retryItems, item)
+	// release the unused vault/chain locks we took
+	for vaultChain, locked := range lockedChains {
+		if locked {
+			<-s.concurrent.vaultChainLocks[vaultChain]
 		}
 	}
-	if len(retryItems) > 0 {
-		s.logger.Info().Msgf("found %d retry items", len(retryItems))
-		items = retryItems
-	}
-	if len(retryItems) > 1 {
-		s.logger.Error().Msgf("found %d retry items, there should only be one", len(retryItems))
-	}
-	return true
+
+	s.concurrent.releaseCapacity(remainingCap)
 }
 
 func (s *Signer) processTransaction(index int, item TxOutStoreItem, observations []types.TxInItem) (bool, []types.TxInItem) {
@@ -449,120 +550,6 @@ func (s *Signer) processTransaction(index int, item TxOutStoreItem, observations
 	}
 
 	return true, observations
-}
-
-func (s *Signer) processTransactionsV2() {
-
-	// list of all transactions sorted
-	items := s.storage.List()
-
-	// validate transactions and ignore same chain validation
-	if !s.validateTransactions(items, "") {
-		return
-	}
-
-	// vaultStatusCache this is being used for cahcing the vault status
-	vaultStatusCache := make(map[string]ttypes.VaultStatus)
-
-	// get the remaining (free) capacity of all pipelines
-	remainingCap := s.concurrent.pipelineCapacity()
-
-	// get any locked vault/chains
-	lockedChains := s.concurrent.lockedChains()
-
-	// make all observations for the batch before returning
-	observations := []types.TxInItem{}
-
-	for i, item := range items {
-		select {
-		case <-s.stopChan:
-			return
-		default:
-			if item.Status == TxSpent { // don't rebroadcast spent transactions
-				continue
-			}
-
-			// concat vault and chain for the lock key
-			vaultChain := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
-
-			// check if the vault/chain is locked, if it is then ignore this tx
-			locked, ok := lockedChains[vaultChain]
-			if ok && locked {
-				continue
-			}
-
-			// no lock record available, we need to initalize the lock
-			if !ok {
-				s.concurrent.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
-				s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
-				lockedChains[vaultChain] = true
-			}
-
-			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
-			if !ok {
-				vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
-				if err != nil {
-					s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
-					return
-				}
-				status = vault.Status
-
-				// set in the cache
-				vaultStatusCache[item.TxOutItem.VaultPubKey.String()] = vault.Status
-			}
-
-			// check if we have any slots remaining for this vault status
-			if !remainingCap.hasCapacity(status) {
-				continue
-			}
-
-			// decrese the available semaphore buffer and set as aquired
-			remainingCap[status]--
-
-			// release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
-			lockedChains[vaultChain] = false
-
-			// process the transaction concurrently
-			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
-				defer func() {
-					// release the vault semaphore on exit
-					<-semaphore
-					// release the vault/chain lock on exit
-					<-s.concurrent.vaultChainLocks[vaultChain]
-				}()
-
-				// process transaction
-				var success bool
-				success, observations = s.processTransaction(i, item, observations)
-				if !success {
-					return
-				}
-
-				// update observations
-				if len(observations) > 0 {
-					s.observer.ObserveSigned(types.TxIn{
-						Count:                strconv.Itoa(len(observations)),
-						Chain:                item.TxOutItem.Chain,
-						TxArray:              observations,
-						MemPool:              true,
-						Filtered:             true,
-						SentUnFinalised:      false,
-						Finalised:            false,
-						ConfirmationRequired: 0,
-					})
-				}
-			}(i, item, vaultChain, s.concurrent.semaphore(status))
-		}
-	}
-
-	// release the unused vault/chain locks we took
-	for vaultChain, locked := range lockedChains {
-		if locked {
-			<-s.concurrent.vaultChainLocks[vaultChain]
-		}
-	}
-
-	s.concurrent.releaseCapacity(remainingCap)
 }
 
 // processTxnOut processes outbound TxOuts and save them to storage
