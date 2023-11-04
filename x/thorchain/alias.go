@@ -275,6 +275,7 @@ type (
 	QueryTxStatus                  = types.QueryTxStatus
 	QuerySaver                     = types.QuerySaver
 	QueryChainAddress              = types.QueryChainAddress
+	QueryChurn                     = types.QueryChurn
 	PoolStatus                     = types.PoolStatus
 	Pool                           = types.Pool
 	Pools                          = types.Pools
