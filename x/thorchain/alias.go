@@ -278,6 +278,7 @@ type (
 	QuerySaver                     = types.QuerySaver
 	QueryStreamingSwap             = types.QueryStreamingSwap
 	QueryChainAddress              = types.QueryChainAddress
+	QueryChurn                     = types.QueryChurn
 	PoolStatus                     = types.PoolStatus
 	Pool                           = types.Pool
 	Pools                          = types.Pools

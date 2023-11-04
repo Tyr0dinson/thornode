@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // ValidatorMgrVCUR is to manage a list of validators , and rotate them
@@ -1509,4 +1510,41 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 	}
 
 	return active, rotation, nil
+}
+
+// Info returned for the API endpoint /churn
+func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts) {
+	// Calculate the next churn height
+	lastChurnHeight := vm.getLastChurnHeight(ctx)
+	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
+	nextChurnHeight := lastChurnHeight + churnInterval
+
+	// Get the active validators and diff them from the next set
+	activeNodes, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		fmt.Errorf("fail to get active nodes: %w", err)
+		return nextChurnHeight, nil, nil
+	}
+	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
+	nextNodes, _, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
+	if err != nil {
+		fmt.Errorf("fail to get next nodes: %w", err)
+		return nextChurnHeight, nil, nil
+	}
+
+	var nodesIn types.NodeAccounts
+	for _, node := range nextNodes {
+		if !activeNodes.Contains(node) {
+			nodesIn = append(nodesIn, node)
+		}
+	}
+
+	var nodesOut types.NodeAccounts
+	for _, node := range activeNodes {
+		if !nextNodes.Contains(node) {
+			nodesOut = append(nodesOut, node)
+		}
+	}
+
+	return nextChurnHeight, nodesIn, nodesOut
 }

@@ -1751,6 +1751,19 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	return jsonify(ctx, query)
 }
 
+// ThorChurn
+func queryChurnInfo(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	nextChurnHeight, nodesIn, nodesOut := mgr.validatorMgr.ChurnState(ctx)
+
+	churn := QueryChurn{
+		NextChurnHeight: nextChurnHeight,
+		NodesIn:         nodesIn.GetNodeAddresses(),
+		NodesOut:        nodesOut.GetNodeAddresses(),
+	}
+
+	return jsonify(ctx, churn)
+}
+
 func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	var chains common.Chains
 	if len(path) > 0 && len(path[0]) > 0 {

@@ -825,3 +825,10 @@ type QueryVaultsPubKeys struct {
 	Yggdrasil []QueryVaultPubKeyContract `json:"yggdrasil"` // TODO remove on hard fork
 	Inactive  []QueryVaultPubKeyContract `json:"inactive"`
 }
+
+// QueryChurn returns data on the next churn
+type QueryChurn struct {
+	NextChurnHeight int64               `json:"next_churn_height"`
+	NodesIn         []cosmos.AccAddress `json:"nodes_in"`
+	NodesOut        []cosmos.AccAddress `json:"last_signed_out"`
+}
