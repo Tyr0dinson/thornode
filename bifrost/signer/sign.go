@@ -343,7 +343,7 @@ func (s *Signer) processTransactionsV1() {
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
-					}, chain.IsEVM())
+					}, chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 				}
 
 				wg.Done()
@@ -507,7 +507,7 @@ func (s *Signer) processTransactionsV2() {
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
-					}, item.TxOutItem.Chain.IsEVM())
+					}, item.TxOutItem.Chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 				}
 			}(i, item, vaultChain, s.concurrent.semaphore(status))
 		}
