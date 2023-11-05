@@ -1664,46 +1664,51 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 		totalPendingDebtInRepaymentAsset = poolRepayment.RuneValueInAsset(totalPendingDebtInRune)
 	}
 
+	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBPFee)
+	initialThresholdBasisPoints := sdk.NewUint(uint64(minBP)) // Initial threshold to start looking the amount
+	amountInTorToRepay := pendingDebt.Mul(repayBps).Quo(sdk.NewUint(10_000))
 	amountToRepay := totalPendingDebtInRepaymentAsset.Mul(repayBps).Quo(sdk.NewUint(10_000))
+	incrementBasedOnThreshold := amountToRepay.Mul(initialThresholdBasisPoints).Quo(sdk.NewUint(10_000))
+	amountPlusThresholdToRepay := amountToRepay.Add(incrementBasedOnThreshold)
 
 	// create message for simulation
 	msg := &types.MsgLoanRepayment{
 		Owner:           loanOwner,
 		CollateralAsset: loanAsset,
-		Coin:            common.NewCoin(asset, amountToRepay),
+		Coin:            common.NewCoin(asset, amountPlusThresholdToRepay),
 		From:            fromAddress,
 		MinOut:          minOut,
 	}
 
-	initialRes, data, err := quoteSimulateCloseLoan(ctx, mgr, msg)
-	if data != nil {
-		return data, err
-	}
-
-	totalFeeInCollateralAsset, err := sdk.ParseUint(initialRes.Fees.Total)
-	if err != nil {
-		return quoteErrorResponse(fmt.Errorf("bad loan owner: %w", err))
-	}
-
-	totalFeeInRepaymentAsset := totalFeeInCollateralAsset
-	if !msg.CollateralAsset.IsRune() { // TODO: is it possible in the futhure loans with Rune as collateral ?
-		poolCollateralAsset, err := mgr.Keeper().GetPool(ctx, msg.CollateralAsset)
-		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("failed to get pool: %w", err))
-		}
-		totalFeeInRuneAsset := poolCollateralAsset.AssetValueInRune(totalFeeInCollateralAsset)
-		totalFeeInRepaymentAsset = poolRepayment.RuneValueInAsset(totalFeeInRuneAsset)
-	}
-
-	// Resimulate adding fees + threshold
-	thresholdBasisPoint := sdk.NewUint(uint64(initialRes.Fees.TotalBps)).Add(sdk.NewUint((30))) // Over min amount, not possibility to predict acurately the neccessary amount due to repay involves two SS
-	increment := amountToRepay.Add(totalFeeInRepaymentAsset).Mul(thresholdBasisPoint).Quo(sdk.NewUint(10_000))
-	newAmount := amountToRepay.Add(totalFeeInRepaymentAsset).Add(increment)
-	msg.Coin.Amount = newAmount
-
 	res, data, err := quoteSimulateCloseLoan(ctx, mgr, msg)
 	if data != nil {
 		return data, err
+	}
+
+	thresholdBasisPoint := initialThresholdBasisPoints
+
+	for thresholdBasisPoint.LTE(sdk.NewUint(5000)) { // Arbitrary cap for threashole of 5000 BPS to avoid harmful requests
+
+		exptectedDebtRepaid, err := cosmos.ParseUint(res.ExpectedDebtRepaid)
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("bad AmountIn: %w", err))
+		}
+
+		if exptectedDebtRepaid.GTE(amountInTorToRepay) {
+			break
+		}
+
+		// Arbitrary increment 10BPS per iteration until meet the target. Higher amount less load for server but also calculations less accurate
+		thresholdBasisPoint = thresholdBasisPoint.Add(sdk.NewUint(10))
+
+		// Resimulate with new threshold
+		increment := amountToRepay.Mul(thresholdBasisPoint).Quo(sdk.NewUint(10_000))
+		newAmount := amountToRepay.Add(increment)
+		msg.Coin.Amount = newAmount
+		res, data, err = quoteSimulateCloseLoan(ctx, mgr, msg)
+		if err != nil {
+			return data, err
+		}
 	}
 
 	return json.MarshalIndent(res, "", "  ")
