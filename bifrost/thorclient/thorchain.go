@@ -47,7 +47,7 @@ const (
 	NodeAccountEndpoint      = "/thorchain/node"
 	SignerMembershipEndpoint = "/thorchain/vaults/%s/signers"
 	StatusEndpoint           = "/status"
-	VaultEndpoint            = "/thorchain/vaults/%s"
+	VaultEndpoint            = "/thorchain/vault/%s"
 	AsgardVault              = "/thorchain/vaults/asgard"
 	PubKeysEndpoint          = "/thorchain/vaults/pubkeys"
 	ThorchainConstants       = "/thorchain/constants"
