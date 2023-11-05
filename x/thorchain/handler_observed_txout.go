@@ -143,11 +143,6 @@ func (h ObservedTxOutHandler) preflightV123(ctx cosmos.Context, voter ObservedTx
 
 // Handle a message to observe outbound tx
 func (h ObservedTxOutHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
-	// handleV124 would be identical to handleV109
-	return h.handleV109(ctx, msg)
-}
-
-func (h ObservedTxOutHandler) handleV109(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -164,7 +159,7 @@ func (h ObservedTxOutHandler) handleV109(ctx cosmos.Context, msg MsgObservedTxOu
 		if tx.KeysignMs > 0 {
 			keysignMetric, err := h.mgr.Keeper().GetTssKeysignMetric(ctx, tx.Tx.ID)
 			if err != nil {
-				ctx.Logger().Error("fail to get keysing metric", "error", err)
+				ctx.Logger().Error("fail to get keysign metric", "error", err)
 			} else {
 				keysignMetric.AddNodeTssTime(msg.Signer, tx.KeysignMs)
 				h.mgr.Keeper().SetTssKeysignMetric(ctx, keysignMetric)
