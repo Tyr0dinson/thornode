@@ -232,7 +232,7 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 
 // newConcurrerntSigner creates a new object of concurrent signing pipelines and vaults.
 func newConcurrerntSigner(activeConcLimit int64) concurrentSigner {
-	if activeConcLimit == 0 {
+	if activeConcLimit == -1 {
 		return concurrentSigner{}
 	}
 	return concurrentSigner{
@@ -315,7 +315,7 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	if len(s.concurrent.activeVaultSemaphore) == -1 {
+	if len(s.concurrent.activeVaultSemaphore) == 0 {
 		s.processTransactionsV1()
 		return
 	}
@@ -343,7 +343,7 @@ func (s *Signer) processTransactionsV1() {
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
-					}, chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
+					})
 				}
 
 				wg.Done()
