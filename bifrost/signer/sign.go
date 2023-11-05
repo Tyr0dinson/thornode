@@ -394,12 +394,30 @@ func (s *Signer) processTransactionsV1() {
 }
 
 func (s *Signer) processTransactionsV2() {
+	// vault/chain key generator function, returns unique key of a vault/chain pair
+	var vaultChainKey = func(item TxOutStoreItem) string {
+		// concat vault and chain for the lock key
+		return fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+	}
 
 	// list of all transactions sorted
-	items := s.storage.List()
+	allItems := s.storage.List()
 
-	// validate transactions and ignore same chain validation
-	items = s.filterTransactions(items)
+	// extract the vaults that have round7 item
+	retryVaults := make(map[string]struct{})
+	for _, item := range allItems {
+		if item.Round7Retry || len(item.SignedTx) > 0 {
+			retryVaults[vaultChainKey(item)] = struct{}{}
+		}
+	}
+
+	// filter round7 and include the rest vault items
+	var items []TxOutStoreItem
+	for _, item := range allItems {
+		if _, isRound7 := retryVaults[vaultChainKey(item)]; !isRound7 {
+			items = append(items, item)
+		}
+	}
 
 	// vaultStatusCache this is being used for cahcing the vault status
 	vaultStatusCache := make(map[string]ttypes.VaultStatus)
@@ -423,7 +441,7 @@ func (s *Signer) processTransactionsV2() {
 			}
 
 			// concat vault and chain for the lock key
-			vaultChain := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+			vaultChain := vaultChainKey(item)
 
 			// check if the vault/chain is locked, if it is then ignore this tx
 			locked, ok := lockedChains[vaultChain]
