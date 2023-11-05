@@ -1739,13 +1739,13 @@ paths:
           example: ETH.ETH
           type: string
         style: form
-      - description: the asset amount in 1e8 decimals
+      - description: the basis points of the existing position to repay
         explode: true
         in: query
-        name: amount
+        name: repay_bps
         required: false
         schema:
-          example: 1000000
+          example: 100
           format: int64
           type: integer
         style: form
@@ -5261,13 +5261,16 @@ components:
           \ multi-out transactions."
         outbound_delay_seconds: 5
         recommended_min_amount_in: "15000"
+        total_swap_seconds: 600
         streaming_slippage_bps: 2
         outbound_delay_blocks: 1
         memo: $-:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
         dust_threshold: "10000"
+        streaming_swap_seconds: 600
         inbound_confirmation_seconds: 6
         router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
         expected_amount_out: "10000"
+        streaming_swap_blocks: 10
         warning: Do not cache this response. Do not send funds after the expiry.
         expiry: 1671660285
         expected_collateral_withdrawn: "1000000"
@@ -5354,16 +5357,38 @@ components:
           description: the expected amount of TOR debt decrease on the loan
           example: "1000000"
           type: string
+        streaming_swap_blocks:
+          description: the number of blocks the streaming swaps involved in repayment
+          example: 10
+          format: int64
+          type: integer
+        streaming_swap_seconds:
+          description: approx the number of seconds the streaming swaps involved in
+            seconds
+          example: 600
+          format: int64
+          type: integer
+        total_swap_seconds:
+          description: total number of seconds a reayment is expected to take (inbound
+            conf + streaming swaps + outbound delay)
+          example: 600
+          format: int64
+          type: integer
       required:
       - expected_amount_out
       - expected_collateral_withdrawn
       - expected_debt_repaid
       - expiry
       - fees
+      - inbound_confirmation_blocks
+      - inbound_confirmation_seconds
       - memo
       - notes
       - outbound_delay_blocks
       - outbound_delay_seconds
+      - streaming_swap_blocks
+      - streaming_swap_seconds
+      - total_swap_seconds
       - warning
       type: object
     Ping:

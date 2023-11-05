@@ -1092,13 +1092,13 @@ paths:
         schema:
           type: string
           example: "ETH.ETH"
-      - name: amount
+      - name: repay_bps
         in: query
-        description: the asset amount in 1e8 decimals
+        description: the basis points of the existing position to repay
         schema:
           type: integer
           format: int64
-          example: 1000000
+          example: 100
       - name: to_asset
         in: query
         description: the collateral asset of the loan
@@ -3402,6 +3402,9 @@ components:
         - warning
         - notes
         - expiry
+        - streaming_swap_blocks
+        - streaming_swap_seconds
+        - total_swap_seconds
       properties:
         <<: *quote-properties
         memo:
@@ -3420,3 +3423,18 @@ components:
           type: string
           description: the expected amount of TOR debt decrease on the loan
           example: "1000000"
+        streaming_swap_blocks:
+          type: integer
+          format: int64
+          description: the number of blocks the streaming swaps involved in repayment
+          example: 10
+        streaming_swap_seconds:
+          type: integer
+          format: int64
+          description: approx the number of seconds the streaming swaps involved in seconds
+          example: 600
+        total_swap_seconds:
+          type: integer
+          format: int64
+          description: total number of seconds a reayment is expected to take (inbound conf + streaming swaps + outbound delay)
+          example: 600

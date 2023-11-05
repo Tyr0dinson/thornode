@@ -441,18 +441,18 @@ type: check
 endpoint: http://localhost:1317/thorchain/quote/loan/close
 params:
   from_asset: THOR.RUNE
-  amount: 500000000
+  repay_bps: 5128
   to_asset: BTC.BTC
   loan_owner: {{ addr_btc_fox }}
 asserts:
   - .memo == "$-:BTC.BTC:{{ addr_btc_fox }}"
   - .expected_collateral_withdrawn|tonumber == 0
-  - .expected_debt_repaid|tonumber == 495028435
-  - .fees.total_bps|tonumber == 49
-  - .fees.slippage_bps|tonumber == 49
+  - .expected_debt_repaid|tonumber == 498438548
+  - .fees.total_bps|tonumber == 50
+  - .fees.slippage_bps|tonumber == 50
   - .fees.outbound|not
-  - .fees.liquidity|tonumber == 2525
-  - .fees.total|tonumber == 2525
+  - .fees.liquidity|tonumber == 2560
+  - .fees.total|tonumber == 2560
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -486,7 +486,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/quote/loan/close
 params:
   from_asset: ETH.ETH
-  amount: 50000000
+  repay_bps: 10_100
   to_asset: BTC.BTC
   loan_owner: {{ addr_btc_fox }}
 asserts:
@@ -494,11 +494,11 @@ asserts:
   - .inbound_address == "{{ addr_eth_dog }}"
   - .expected_amount_out|tonumber == 936255
   - .expected_collateral_withdrawn|tonumber == 989774
-  - .expected_debt_repaid|tonumber == 4180145903
-  - .fees.total_bps|tonumber == 4941
-  - .fees.slippage_bps|tonumber == 922
+  - .expected_debt_repaid|tonumber == 536664719
+  - .fees.total_bps|tonumber == 423
+  - .fees.slippage_bps|tonumber == 109
   - .fees.outbound|tonumber == 14000
-  - .fees.liquidity|tonumber == 448688
+  - .fees.liquidity|tonumber == 25651
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
 type: tx-observed-in
