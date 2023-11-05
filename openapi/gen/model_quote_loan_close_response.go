@@ -48,6 +48,8 @@ type QuoteLoanCloseResponse struct {
 	Memo string `json:"memo"`
 	// the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
 	ExpectedAmountOut string `json:"expected_amount_out"`
+	// the amount of repayment asset the user should send to repayle the load in the desired percentage
+	AmountIn string `json:"amount_in"`
 	// the expected amount of collateral decrease on the loan
 	ExpectedCollateralWithdrawn string `json:"expected_collateral_withdrawn"`
 	// the expected amount of TOR debt decrease on the loan
@@ -64,7 +66,7 @@ type QuoteLoanCloseResponse struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewQuoteLoanCloseResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, memo string, expectedAmountOut string, expectedCollateralWithdrawn string, expectedDebtRepaid string, streamingSwapBlocks int64, streamingSwapSeconds int64, totalSwapSeconds int64) *QuoteLoanCloseResponse {
+func NewQuoteLoanCloseResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, memo string, expectedAmountOut string, amountIn string, expectedCollateralWithdrawn string, expectedDebtRepaid string, streamingSwapBlocks int64, streamingSwapSeconds int64, totalSwapSeconds int64) *QuoteLoanCloseResponse {
 	this := QuoteLoanCloseResponse{}
 	this.OutboundDelayBlocks = outboundDelayBlocks
 	this.OutboundDelaySeconds = outboundDelaySeconds
@@ -74,6 +76,7 @@ func NewQuoteLoanCloseResponse(outboundDelayBlocks int64, outboundDelaySeconds i
 	this.Notes = notes
 	this.Memo = memo
 	this.ExpectedAmountOut = expectedAmountOut
+	this.AmountIn = amountIn
 	this.ExpectedCollateralWithdrawn = expectedCollateralWithdrawn
 	this.ExpectedDebtRepaid = expectedDebtRepaid
 	this.StreamingSwapBlocks = streamingSwapBlocks
@@ -538,6 +541,30 @@ func (o *QuoteLoanCloseResponse) SetExpectedAmountOut(v string) {
 	o.ExpectedAmountOut = v
 }
 
+// GetAmountIn returns the AmountIn field value
+func (o *QuoteLoanCloseResponse) GetAmountIn() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.AmountIn
+}
+
+// GetAmountInOk returns a tuple with the AmountIn field value
+// and a boolean to check if the value has been set.
+func (o *QuoteLoanCloseResponse) GetAmountInOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.AmountIn, true
+}
+
+// SetAmountIn sets field value
+func (o *QuoteLoanCloseResponse) SetAmountIn(v string) {
+	o.AmountIn = v
+}
+
 // GetExpectedCollateralWithdrawn returns the ExpectedCollateralWithdrawn field value
 func (o *QuoteLoanCloseResponse) GetExpectedCollateralWithdrawn() string {
 	if o == nil {
@@ -707,6 +734,9 @@ func (o QuoteLoanCloseResponse) MarshalJSON() ([]byte, error) {
 	}
 	if true {
 		toSerialize["expected_amount_out"] = o.ExpectedAmountOut
+	}
+	if true {
+		toSerialize["amount_in"] = o.AmountIn
 	}
 	if true {
 		toSerialize["expected_collateral_withdrawn"] = o.ExpectedCollateralWithdrawn

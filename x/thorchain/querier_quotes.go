@@ -1568,6 +1568,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 
 	res.StreamingSwapBlocks = streamingSwapBlocks
 	res.StreamingSwapSeconds = streamingSwapSeconds
+	res.AmountIn = msg.Coin.Amount.String()
 
 	return res, nil, nil
 }
@@ -1645,7 +1646,6 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 		return quoteErrorResponse(fmt.Errorf("failed to get loan: %w", err))
 	}
 
-	pendingDebt := loan.DebtIssued.Sub(loan.DebtRepaid)
 	poolRepayment, err := mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("failed to get pool: %w", err))
@@ -1656,8 +1656,10 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 		return quoteErrorResponse(fmt.Errorf("failed to get pool: %w", err))
 	}
 
+	pendingDebt := loan.DebtIssued.Sub(loan.DebtRepaid)
 	totalPendingDebtInRune := poolThorAsset.AssetValueInRune(pendingDebt)
 	totalPendingDebtInRepaymentAsset := totalPendingDebtInRune
+
 	if !asset.IsRune() {
 		totalPendingDebtInRepaymentAsset = poolRepayment.RuneValueInAsset(totalPendingDebtInRune)
 	}
@@ -1694,8 +1696,8 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// Resimulate adding fees + threshold
-	thresholdBasisPoint := sdk.NewUint(uint64(initialRes.Fees.TotalBps)).Add(sdk.NewUint((20))) // Over min amount, not possibility to predict acurately the neccessary amount due to repay involves two SS
-	increment := amountToRepay.Mul(thresholdBasisPoint).Quo(sdk.NewUint(10_000))
+	thresholdBasisPoint := sdk.NewUint(uint64(initialRes.Fees.TotalBps)).Add(sdk.NewUint((30))) // Over min amount, not possibility to predict acurately the neccessary amount due to repay involves two SS
+	increment := amountToRepay.Add(totalFeeInRepaymentAsset).Mul(thresholdBasisPoint).Quo(sdk.NewUint(10_000))
 	newAmount := amountToRepay.Add(totalFeeInRepaymentAsset).Add(increment)
 	msg.Coin.Amount = newAmount
 

@@ -3395,6 +3395,7 @@ components:
         - expected_amount_out
         - expected_collateral_withdrawn
         - expected_debt_repaid
+        - amount_in
         - memo
         - outbound_delay_blocks
         - outbound_delay_seconds
@@ -3414,6 +3415,10 @@ components:
         expected_amount_out:
           type: string
           description: the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
+          example: "10000"
+        amount_in:
+          type: string
+          description: the amount of repayment asset the user should send to repayle the load in the desired percentage
           example: "10000"
         expected_collateral_withdrawn:
           type: string
