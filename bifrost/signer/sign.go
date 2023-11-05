@@ -315,7 +315,7 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	if len(s.concurrent.activeVaultSemaphore) == 0 {
+	if cap(s.concurrent.activeVaultSemaphore) == 0 {
 		s.processTransactionsV1()
 		return
 	}
