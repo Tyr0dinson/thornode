@@ -343,7 +343,7 @@ func (s *Signer) processTransactionsV1() {
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
-					})
+					}, chain.IsEVM())
 				}
 
 				wg.Done()
@@ -507,7 +507,7 @@ func (s *Signer) processTransactionsV2() {
 						SentUnFinalised:      false,
 						Finalised:            false,
 						ConfirmationRequired: 0,
-					})
+					}, item.TxOutItem.Chain.IsEVM())
 				}
 			}(i, item, vaultChain, s.concurrent.semaphore(status))
 		}
