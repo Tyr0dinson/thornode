@@ -1532,14 +1532,14 @@ func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAcc
 		return nextChurnHeight, nil, nil
 	}
 
-	var nodesIn types.NodeAccounts
+	nodesIn := make(types.NodeAccounts, 0)
 	for _, node := range nextNodes {
 		if !activeNodes.Contains(node) {
 			nodesIn = append(nodesIn, node)
 		}
 	}
 
-	var nodesOut types.NodeAccounts
+	nodesOut := make(types.NodeAccounts, 0)
 	for _, node := range activeNodes {
 		if !nextNodes.Contains(node) {
 			nodesOut = append(nodesOut, node)
