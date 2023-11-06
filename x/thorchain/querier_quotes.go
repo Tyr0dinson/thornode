@@ -1438,7 +1438,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 				data, err = quoteErrorResponse(fmt.Errorf("bad amount: %w", err))
 				return nil, data, err
 			}
-			streamingSwapBlocks = streamingSwapBlocks + swapQuantity.BigInt().Int64()
+			streamingSwapBlocks += swapQuantity.BigInt().Int64()
 			switch {
 			case coin.Asset.Equals(common.TOR):
 				repaymentEmit = coin
@@ -1556,11 +1556,10 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 	res.RecommendedMinAmountIn = wrapString(minLoanCloseAmount.String())
 
-	streamingSwapSeconds = streamingSwapSeconds + streamingSwapBlocks*common.THORChain.ApproximateBlockMilliseconds()/1000
+	streamingSwapSeconds += streamingSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
 
 	if res.InboundConfirmationSeconds != nil {
-		var value int64
-		value = *res.InboundConfirmationSeconds
+		value := *res.InboundConfirmationSeconds
 		res.TotalRepaySeconds = streamingSwapSeconds + res.OutboundDelaySeconds + value
 	} else {
 		res.TotalRepaySeconds = streamingSwapSeconds + res.OutboundDelaySeconds
@@ -1686,7 +1685,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 
 	thresholdBasisPoint := initialThresholdBasisPoints
 
-	for thresholdBasisPoint.LTE(sdk.NewUint(5000)) { // Arbitrary cap for the threshold of 5000 BPS to avoid harmful requests.
+	for thresholdBasisPoint.LTE(sdk.NewUint(1500)) { // Arbitrary cap for the threshold of 1500 BPS to avoid harmful requests.
 
 		exptectedDebtRepaid, err := cosmos.ParseUint(res.ExpectedDebtRepaid)
 		if err != nil {
