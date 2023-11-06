@@ -3395,7 +3395,7 @@ components:
         - expected_amount_out
         - expected_collateral_withdrawn
         - expected_debt_repaid
-        - amount_in
+        - expected_amount_in
         - memo
         - outbound_delay_blocks
         - outbound_delay_seconds
@@ -3405,7 +3405,7 @@ components:
         - expiry
         - streaming_swap_blocks
         - streaming_swap_seconds
-        - total_swap_seconds
+        - total_repay_seconds
       properties:
         <<: *quote-properties
         memo:
@@ -3416,9 +3416,9 @@ components:
           type: string
           description: the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
           example: "10000"
-        amount_in:
+        expected_amount_in:
           type: string
-          description: the amount of repayment asset the user should send to repayle the load in the desired percentage
+          description: The quantity of the repayment asset to be sent by the user, calculated as the desired percentage of the loan's value, expressed in units of 1e8
           example: "10000"
         expected_collateral_withdrawn:
           type: string
@@ -3431,15 +3431,15 @@ components:
         streaming_swap_blocks:
           type: integer
           format: int64
-          description: the number of blocks the streaming swaps involved in repayment
+          description: The number of blocks involved in the streaming swaps during the repayment process.
           example: 10
         streaming_swap_seconds:
           type: integer
           format: int64
-          description: approx the number of seconds the streaming swaps involved in seconds
+          description: The approximate number of seconds taken by the streaming swaps involved in the repayment process.
           example: 600
-        total_swap_seconds:
+        total_repay_seconds:
           type: integer
           format: int64
-          description: total number of seconds a reayment is expected to take (inbound conf + streaming swaps + outbound delay)
+          description: The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
           example: 600

@@ -448,7 +448,9 @@ asserts:
   - .memo == "$-:BTC.BTC:{{ addr_btc_fox }}"
   - .expected_collateral_withdrawn|tonumber == 0
   - .expected_debt_repaid|tonumber == 500447725
-  - .amount_in|tonumber == 505529337
+  - .expected_amount_in|tonumber == 505529337
+  - .streaming_swap_seconds|tonumber == 6
+  - .total_repay_seconds|tonumber == 6
   - .fees.total_bps|tonumber == 50
   - .fees.slippage_bps|tonumber == 50
   - .fees.outbound|not
@@ -496,7 +498,9 @@ asserts:
   - .expected_amount_out|tonumber == 936255
   - .expected_collateral_withdrawn|tonumber == 989774
   - .expected_debt_repaid|tonumber == 484997638
-  - .amount_in|tonumber == 4905205
+  - .expected_amount_in|tonumber == 4905205
+  - .streaming_swap_seconds|tonumber == 24
+  - .total_repay_seconds|tonumber == 48
   - .fees.total_bps|tonumber == 411
   - .fees.slippage_bps|tonumber == 98
   - .fees.outbound|tonumber == 14000

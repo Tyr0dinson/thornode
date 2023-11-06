@@ -1561,14 +1561,14 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	if res.InboundConfirmationSeconds != nil {
 		var value int64
 		value = *res.InboundConfirmationSeconds
-		res.TotalSwapSeconds = streamingSwapSeconds + res.OutboundDelaySeconds + value
+		res.TotalRepaySeconds = streamingSwapSeconds + res.OutboundDelaySeconds + value
 	} else {
-		res.TotalSwapSeconds = streamingSwapSeconds + res.OutboundDelaySeconds
+		res.TotalRepaySeconds = streamingSwapSeconds + res.OutboundDelaySeconds
 	}
 
 	res.StreamingSwapBlocks = streamingSwapBlocks
 	res.StreamingSwapSeconds = streamingSwapSeconds
-	res.AmountIn = msg.Coin.Amount.String()
+	res.ExpectedAmountIn = msg.Coin.Amount.String()
 
 	return res, nil, nil
 }
@@ -1608,7 +1608,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
 
-	// parse repayment b
+	// parse repayment bps
 	repayBps, err := cosmos.ParseUint(params[repayBpsParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad amount: %w", err))
@@ -1665,13 +1665,12 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBPFee)
-	initialThresholdBasisPoints := sdk.NewUint(uint64(minBP)) // Initial threshold to start looking the amount
+	initialThresholdBasisPoints := sdk.NewUint(uint64(minBP)) // Initial threshold to start looking for the target amount
 	amountInTorToRepay := pendingDebt.Mul(repayBps).Quo(sdk.NewUint(10_000))
 	amountToRepay := totalPendingDebtInRepaymentAsset.Mul(repayBps).Quo(sdk.NewUint(10_000))
 	incrementBasedOnThreshold := amountToRepay.Mul(initialThresholdBasisPoints).Quo(sdk.NewUint(10_000))
 	amountPlusThresholdToRepay := amountToRepay.Add(incrementBasedOnThreshold)
 
-	// create message for simulation
 	msg := &types.MsgLoanRepayment{
 		Owner:           loanOwner,
 		CollateralAsset: loanAsset,
@@ -1687,18 +1686,18 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 
 	thresholdBasisPoint := initialThresholdBasisPoints
 
-	for thresholdBasisPoint.LTE(sdk.NewUint(5000)) { // Arbitrary cap for threashole of 5000 BPS to avoid harmful requests
+	for thresholdBasisPoint.LTE(sdk.NewUint(5000)) { // Arbitrary cap for the threshold of 5000 BPS to avoid harmful requests.
 
 		exptectedDebtRepaid, err := cosmos.ParseUint(res.ExpectedDebtRepaid)
 		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("bad AmountIn: %w", err))
+			return quoteErrorResponse(fmt.Errorf("bad exptectedDebtRepaid: %w", err))
 		}
 
 		if exptectedDebtRepaid.GTE(amountInTorToRepay) {
 			break
 		}
 
-		// Arbitrary increment 10BPS per iteration until meet the target. Higher amount less load for server but also calculations less accurate
+		// Arbitrarily increment by 10 BPS per iteration until the target is met. A higher amount results in less server load but also less accurate calculations
 		thresholdBasisPoint = thresholdBasisPoint.Add(sdk.NewUint(10))
 
 		// Resimulate with new threshold
