@@ -54,7 +54,7 @@ bifrost:
     auto_observe: true
     keygen_timeout: 5m
     keysign_timeout: 1m
-    party_timeout: 45s
+    party_timeout: 30s
     pre_param_timeout: 5m
   tss:
     rendezvous: asgard
@@ -115,6 +115,7 @@ bifrost:
         max_gas_fee: 0
         gas_price_resolution: 0
         max_contract_gas: 0
+        max_resume_block_lag: 2h
 
       # the following defaults must be defined to override with environment
       chain_host: ""
@@ -239,6 +240,7 @@ bifrost:
 
 thor:
   node_relay_url: https://node-relay-bot.herokuapp.com
+  vault_pubkeys_cutoff_blocks: 1_000_000
 
   log_filter:
     modules:

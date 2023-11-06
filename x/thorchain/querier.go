@@ -117,7 +117,7 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryBalanceModule(ctx, path[1:], mgr)
 		case q.QueryVaultsAsgard.Key:
 			return queryAsgardVaults(ctx, mgr)
-		case q.QueryVaultsYggdrasil.Key:
+		case q.QueryVaultsYggdrasil.Key: // TODO remove on hard fork
 			return queryYggdrasilVaults(ctx, mgr)
 		case q.QueryVault.Key:
 			return queryVault(ctx, path[1:], mgr)
@@ -391,6 +391,7 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	return result
 }
 
+// TODO remove on hard fork
 func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	vaults := make(Vaults, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
@@ -456,7 +457,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	var resp QueryVaultsPubKeys
 	resp.Asgard = make([]QueryVaultPubKeyContract, 0)
-	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0)
+	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0) // TODO remove on hard fork
 	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
@@ -464,9 +465,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// usually ChurnInterval is 43200, sometimes when the network has issues , we 10x this value ,
-	// so if the inactive vault is older than 500_000 blocks , should not be monitored
-	cutOffAge := ctx.BlockHeight() - 500000
+	cutOffAge := ctx.BlockHeight() - config.GetThornode().VaultPubkeysCutoffBlocks
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
@@ -474,7 +473,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
-		if vault.IsYggdrasil() {
+		if vault.IsYggdrasil() { // TODO remove ygg on hard fork
 			na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to unmarshal vault", "error", err)
@@ -2198,21 +2197,46 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 
 	// reset the swap queue
 	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
-	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		mgr.Keeper().DeleteKey(ctx, string(iter.Key()))
 	}
+	iter.Close()
 
-	// simulate the loan open
-	_, err = NewInternalHandler(mgr)(ctx, msg)
+	// save pool state
+	pools, err := mgr.Keeper().GetPools(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to simulate loan: %w", err)
+		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
 
-	// simulate end block
-	err = mgr.SwapQ().EndBlock(ctx, mgr)
+	// simulate the handler
+	_, err = NewInternalHandler(mgr)(ctx, msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to simulate end block: %w", err)
+		return nil, fmt.Errorf("failed to simulate handler: %w", err)
+	}
+
+	// simulate end block, loop it until the swap queue is empty
+	var count int64
+	for count < 1000 {
+		err = mgr.SwapQ().EndBlock(ctx.WithBlockHeight(ctx.BlockHeight()+count), mgr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to simulate end block: %w", err)
+		}
+
+		for _, pool := range pools {
+			_ = mgr.Keeper().SetPool(ctx, pool)
+		}
+
+		count += 1
+		queueEmpty := true
+		iter = mgr.Keeper().GetSwapQueueIterator(ctx)
+		for ; iter.Valid(); iter.Next() {
+			queueEmpty = false
+			break
+		}
+		iter.Close()
+		if queueEmpty {
+			break
+		}
 	}
 
 	return em.Events(), nil

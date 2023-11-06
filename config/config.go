@@ -384,6 +384,11 @@ type Thornode struct {
 	// NodeRelayURL is the URL of the node relay service.
 	NodeRelayURL string `mapstructure:"node_relay_url"`
 
+	// VaultPubkeysCutoffBlocks is the max age in blocks for inactive vaults to be
+	// included in the vaults pubkeys response. Vaults older than this age will not be
+	// observed by bifrost.
+	VaultPubkeysCutoffBlocks int64 `mapstructure:"vault_pubkeys_cutoff_blocks"`
+
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
 	LogFilter struct {
 		// Modules is a list of modules to filter.
@@ -686,6 +691,14 @@ type BifrostBlockScannerConfiguration struct {
 	// WhitelistTokens is the set of whitelisted token addresses. Inbounds for all other
 	// tokens are ignored.
 	WhitelistTokens []string `mapstructure:"whitelist_tokens"`
+
+	// MaxResumeBlockLag is the max duration to lag behind the latest current consensus
+	// inbound height upon startup. If there is a local scanner position we will start
+	// from that height up to this threshold. The local scanner height is compared to the
+	// height from the lastblock response, which contains the height of the latest
+	// consensus inbound. This is necessary to avoid a race, as there could be a consensus
+	// inbound after an outbound which has not reached consensus, causing double spend.
+	MaxResumeBlockLag time.Duration `mapstructure:"max_resume_block_lag"`
 }
 
 func (b *BifrostBlockScannerConfiguration) Validate() {

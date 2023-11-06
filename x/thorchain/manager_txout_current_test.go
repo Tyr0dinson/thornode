@@ -55,6 +55,7 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BCHAsset, cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
 
@@ -69,33 +70,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
-
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
 	// Create voter
 	inTxID := GetRandomTxHash()
@@ -125,7 +99,7 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
-	c.Assert(msgs[0].VaultPubKey.String(), Equals, acc2.PubKeySet.Secp256k1.String())
+	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999925000)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
 
 	// Gas withheld should be updated
@@ -149,7 +123,7 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
-	c.Assert(msgs[0].VaultPubKey.String(), Equals, acc2.PubKeySet.Secp256k1.String())
+	c.Assert(msgs[0].VaultPubKey.String(), Equals, vault.PubKey.String())
 
 	// Gas withheld should be updated
 	network, err = w.keeper.GetNetwork(w.ctx)
@@ -187,8 +161,8 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	}
 	txOutStore.ClearOutboundItems(w.ctx)
 	result, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
-	c.Assert(result, Equals, true)
 	c.Assert(err, IsNil)
+	c.Assert(result, Equals, true)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
 	// this should be a mocknet address
@@ -266,32 +240,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 	w.keeper.SetMimir(w.ctx, constants.MinTxOutVolumeThreshold.String(), 100000000000)
 	w.keeper.SetMimir(w.ctx, constants.TxOutDelayRate.String(), 2500000000)
 	w.keeper.SetMimir(w.ctx, constants.MaxTxOutOffset.String(), 720)
@@ -366,30 +314,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
 	// Create voter
 	inTxID := GetRandomTxHash()
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{
@@ -443,96 +367,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItemWithoutBFT(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(msgs, HasLen, 1)
 	c.Assert(msgs[0].Coin.Amount.Equal(cosmos.NewUint(1999925000)), Equals, true, Commentf("%d", msgs[0].Coin.Amount.Uint64()))
-}
-
-func (s TxOutStoreVCURSuite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
-	w := getHandlerTestWrapper(c, 1, true, true)
-	vault := GetRandomVault()
-	vault.Coins = common.Coins{
-		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
-		common.NewCoin(common.BNBAsset, cosmos.NewUint(10000*common.One)),
-	}
-	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
-
-	acc1 := GetRandomValidatorNode(NodeActive)
-	acc2 := GetRandomValidatorNode(NodeActive)
-	acc3 := GetRandomValidatorNode(NodeActive)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
-
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(11*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	// Create voter
-	inTxID := GetRandomTxHash()
-	voter := NewObservedTxVoter(inTxID, ObservedTxs{
-		ObservedTx{
-			Tx:             GetRandomTx(),
-			Status:         types.Status_incomplete,
-			BlockHeight:    1,
-			Signers:        []string{w.activeNodeAccount.NodeAddress.String(), acc1.NodeAddress.String(), acc2.NodeAddress.String()},
-			KeysignMs:      0,
-			FinaliseHeight: 1,
-		},
-	})
-	w.keeper.SetObservedTxInVoter(w.ctx, voter)
-
-	// Should get acc2. Acc3 hasn't signed and acc2 is the highest value
-	item := TxOutItem{
-		Chain:     common.BNBChain,
-		ToAddress: GetRandomBNBAddress(),
-		InHash:    inTxID,
-		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(3900000000)),
-		MaxGas: common.Gas{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100000000)),
-		},
-	}
-	txOutStore := newTxOutStorageVCUR(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
-	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item, cosmos.ZeroUint())
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
-	msgs, err := txOutStore.GetOutboundItems(w.ctx)
-	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 1)
-
-	item1 := TxOutItem{
-		Chain:     common.BNBChain,
-		ToAddress: GetRandomBNBAddress(),
-		InHash:    inTxID,
-		Coin:      common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000000)),
-		MaxGas: common.Gas{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(7500)),
-		},
-	}
-	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
-	c.Assert(err, IsNil)
-	c.Assert(ok, Equals, true)
-	msgs, err = txOutStore.GetOutboundItems(w.ctx)
-	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 2)
-	c.Assert(msgs[1].VaultPubKey.Equals(acc1.PubKeySet.Secp256k1), Equals, true)
 }
 
 func (s TxOutStoreVCURSuite) TestCalcTxOutHeight(c *C) {
@@ -626,32 +460,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtT
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
-			common.NewCoin(common.BCHAsset, cosmos.NewUint(40*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 	w.keeper.SetMimir(w.ctx, constants.MinTxOutVolumeThreshold.String(), 100000000000)
 	w.keeper.SetMimir(w.ctx, constants.TxOutDelayRate.String(), 2500000000)
 	w.keeper.SetMimir(w.ctx, constants.MaxTxOutOffset.String(), 720)
@@ -801,20 +609,6 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItemSendingFromRetiredVault(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
-
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	ygg.AddFunds(
-		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(10*common.One)),
-		},
-	)
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
-
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
-	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
 	w.keeper.SetMimir(w.ctx, constants.MinTxOutVolumeThreshold.String(), 10000000000000)
 	w.keeper.SetMimir(w.ctx, constants.TxOutDelayRate.String(), 250000000000)
