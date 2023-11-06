@@ -468,7 +468,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +541,7 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 	vaultsMigrating := (len(vaults) != 0)
 
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active validators: %w", err)
 	}
@@ -712,7 +712,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond)
 
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
@@ -838,7 +838,7 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 // Calculates total "effective bond" - the total bond when taking into account the
 // Bond-weighted hard-cap
 func getTotalEffectiveBond(ctx cosmos.Context, mgr *Mgrs, bondHardCap cosmos.Uint) (cosmos.Uint, error) {
-	activeNodes, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeActive)
+	activeNodes, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get active nodes: %w", err)
 	}
@@ -864,7 +864,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
 
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
@@ -1502,7 +1502,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		}
 	}
 
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
@@ -2010,7 +2010,7 @@ func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.Reques
 }
 
 func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
+	activeNodes, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("fail to fetch active node accounts", "error", err)
 		return nil, fmt.Errorf("fail to fetch active node accounts: %w", err)
@@ -2369,7 +2369,7 @@ func eventMap(e sdk.Event) map[string]string {
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
 	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}

@@ -40,9 +40,8 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key string, record *NodeAcco
 
 // TotalActiveValidators count the number of active node account
 func (k KVStore) TotalActiveValidators(ctx cosmos.Context) (int, error) {
-	var nodes []cosmos.AccAddress
-	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, NodeActive.String()), &nodes)
-	return len(nodes), err
+	activeNodes, err := k.ListActiveValidators(ctx)
+	return len(activeNodes), err
 }
 
 // ListValidatorsWithBond - gets a list of all validator node accounts that have bond
@@ -66,7 +65,15 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
-		return k.listValidatorByStatus(ctx, status)
+		if _, found := k.nodeAccountStatus[status]; !found {
+			nodes, err := k.listValidatorsByStatusStore(ctx, status)
+			if err != nil {
+				return nodes, err
+			}
+			k.nodeAccountStatus[status] = nodes
+			return nodes, err
+		}
+		return k.nodeAccountStatus[status], nil
 	}
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
@@ -83,8 +90,7 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	return nodeAccounts, nil
 }
 
-// listValidatorByStatus - get list of validator node accounts using status node address index
-func (k KVStore) listValidatorByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+func (k KVStore) listValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAddress := make([]cosmos.AccAddress, 0)
 	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &nodeAddress)
 	if err != nil {
@@ -99,6 +105,14 @@ func (k KVStore) listValidatorByStatus(ctx cosmos.Context, status NodeStatus) (N
 		nodes[i] = node
 	}
 	return nodes, nil
+}
+
+// ListValidatorsByStatusStore - get a list of node accounts from account status index
+func (k KVStore) ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
+		return k.listValidatorsByStatusStore(ctx, status)
+	}
+	return k.ListValidatorsByStatus(ctx, status)
 }
 
 // ListActiveValidators - get a list of active validator node accounts
@@ -224,7 +238,7 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
 	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && na.Type == NodeTypeValidator {
-		err := k.updateNodeStatusIndex(ctx, na.NodeAddress, na.Status)
+		err := k.updateNodeStatusIndex(ctx, na)
 		if err != nil {
 			return err
 		}
@@ -232,57 +246,77 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	return nil
 }
 
-func (k KVStore) updateNodeStatusIndex(ctx cosmos.Context, nodeAddress cosmos.AccAddress, status NodeStatus) error {
-	prevStatusKey := k.GetKey(ctx, prefixNodeAccountStatus, nodeAddress.String())
+func (k KVStore) updateNodeStatusIndex(ctx cosmos.Context, node NodeAccount) error {
+	prevStatusKey := k.GetKey(ctx, prefixNodeAccountStatus, node.NodeAddress.String())
 	var prevStatus int64
 	found, err := k.getInt64(ctx, prevStatusKey, &prevStatus)
 	if err != nil {
 		return err
 	}
-	if found && NodeStatus(prevStatus) == status {
-		// No changes
+
+	newStatus := node.Status
+	if found && NodeStatus(prevStatus) == newStatus {
+		// if cache exists, make changes
+		if _, cached := k.nodeAccountStatus[newStatus]; cached {
+			for i, nodeAcc := range k.nodeAccountStatus[newStatus] {
+				if nodeAcc.NodeAddress.Equals(node.NodeAddress) {
+					k.nodeAccountStatus[newStatus][i] = node
+					break
+				}
+			}
+		}
 		return nil
 	}
 	// remove from old status index
 	if found {
-		err = k.removeFromIndex(ctx, NodeStatus(prevStatus).String(), nodeAddress)
+		err = k.removeFromStatusIndex(ctx, NodeStatus(prevStatus), node)
 		if err != nil {
 			return err
 		}
 	}
 	// add to new status index
-	err = k.addToIndex(ctx, status.String(), nodeAddress)
+	err = k.addToStatusIndex(ctx, node)
 	if err != nil {
 		return err
 	}
-	k.setInt64(ctx, prevStatusKey, int64(status))
+	k.setInt64(ctx, prevStatusKey, int64(newStatus))
 	return nil
 }
 
-func (k KVStore) removeFromIndex(ctx cosmos.Context, status string, nodeAddress cosmos.AccAddress) error {
+// removeFromStatusIndex - removes a node account from the status index and cache if it exists
+func (k KVStore) removeFromStatusIndex(ctx cosmos.Context, status NodeStatus, node NodeAccount) error {
 	var addrs []cosmos.AccAddress
-	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), &addrs)
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &addrs)
 	if err != nil {
 		return err
 	}
 	newAddrs := make([]cosmos.AccAddress, 0)
-	for _, addr := range addrs {
-		if !addr.Equals(nodeAddress) {
+	for i, addr := range addrs {
+		if !addr.Equals(node.NodeAddress) {
 			newAddrs = append(newAddrs, addr)
+		} else {
+			if _, cached := k.nodeAccountStatus[status]; cached {
+				k.nodeAccountStatus[status] = append(k.nodeAccountStatus[status][:i], k.nodeAccountStatus[status][i+1:]...)
+			}
 		}
 	}
-	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), newAddrs)
+	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), newAddrs)
 	return nil
 }
 
-func (k KVStore) addToIndex(ctx cosmos.Context, status string, nodeAddress cosmos.AccAddress) error {
+// addToStatusIndex - adds a NodeAccount to the status index and in cache if it exists
+func (k KVStore) addToStatusIndex(ctx cosmos.Context, node NodeAccount) error {
+	status := node.Status
 	var addrs []cosmos.AccAddress
-	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), &addrs)
+	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &addrs)
 	if err != nil {
 		return err
 	}
-	addrs = append(addrs, nodeAddress)
-	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status), addrs)
+	addrs = append(addrs, node.NodeAddress)
+	if _, cached := k.nodeAccountStatus[status]; cached {
+		k.nodeAccountStatus[status] = append(k.nodeAccountStatus[status], node)
+	}
+	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), addrs)
 	return nil
 }
 

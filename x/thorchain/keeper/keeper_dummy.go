@@ -669,6 +669,10 @@ func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr 
 	return kaboom
 }
 
+func (k KVStoreDummy) ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

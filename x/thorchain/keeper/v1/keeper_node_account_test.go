@@ -29,6 +29,7 @@ func (s *KeeperNodeAccountSuite) TestNodeAccount(c *C) {
 	count, err := k.TotalActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Check(count, Equals, 1)
+
 	na, err := k.GetNodeAccount(ctx, na1.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(na.Equals(na1), Equals, true)

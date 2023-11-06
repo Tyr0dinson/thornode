@@ -95,23 +95,25 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
-	cdc           codec.BinaryCodec
-	coinKeeper    bankkeeper.Keeper
-	accountKeeper authkeeper.AccountKeeper
-	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
-	version       semver.Version
-	constAccessor constants.ConstantValues
+	cdc               codec.BinaryCodec
+	coinKeeper        bankkeeper.Keeper
+	accountKeeper     authkeeper.AccountKeeper
+	storeKey          cosmos.StoreKey // Unexposed key to access store from cosmos.Context
+	version           semver.Version
+	constAccessor     constants.ConstantValues
+	nodeAccountStatus map[NodeStatus]NodeAccounts
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
 func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
 	return KVStore{
-		coinKeeper:    coinKeeper,
-		accountKeeper: accountKeeper,
-		storeKey:      storeKey,
-		cdc:           cdc,
-		version:       version,
-		constAccessor: constants.GetConstantValues(version),
+		coinKeeper:        coinKeeper,
+		accountKeeper:     accountKeeper,
+		storeKey:          storeKey,
+		cdc:               cdc,
+		version:           version,
+		constAccessor:     constants.GetConstantValues(version),
+		nodeAccountStatus: make(map[NodeStatus]NodeAccounts),
 	}
 }
 
