@@ -179,7 +179,6 @@ type Mgrs struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	storeKey      cosmos.StoreKey
-	nodeAccounts  map[NodeStatus]NodeAccounts
 }
 
 // NewManagers  create a new Manager
@@ -190,7 +189,6 @@ func NewManagers(keeper keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Ke
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		storeKey:      storeKey,
-		nodeAccounts:  make(map[NodeStatus]NodeAccounts),
 	}
 }
 
