@@ -294,3 +294,31 @@ func (s *KeeperNodeAccountSuite) TestBondProviders(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(providers.Providers, HasLen, 1)
 }
+
+func (s *KeeperNodeAccountSuite) TestBuildNodeStatus(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for i := 0; i < 3; i++ {
+		na1 := GetRandomValidatorNode(NodeActive)
+		na2 := GetRandomValidatorNode(NodeStandby)
+		c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+		c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	}
+	c.Assert(k.BuildNodeStatus(ctx), IsNil)
+
+	for _, status := range []NodeStatus{NodeActive, NodeStandby} {
+		var nodeAddresses []cosmos.AccAddress
+		found, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &nodeAddresses)
+		c.Assert(found, Equals, true)
+		c.Assert(err, IsNil)
+		c.Assert(len(nodeAddresses), Equals, 3)
+
+		// would trigger cache rebuild for status
+		validators, err := k.ListValidatorsByStatus(ctx, status)
+		c.Assert(err, IsNil)
+		for i, validator := range validators {
+			c.Assert(nodeAddresses[i].String(), Equals, validator.NodeAddress.String())
+			// check cache
+			c.Assert(k.nodeAccountStatus[status][i].NodeAddress.String(), Equals, validator.NodeAddress.String())
+		}
+	}
+}

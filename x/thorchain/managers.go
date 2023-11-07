@@ -204,7 +204,8 @@ func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
 	if v.Equals(mgr.GetVersion()) {
-		if v.GTE(semver.MustParse("1.124.0")) {
+		// re-create keeper to reset cache
+		if v.GTE(semver.MustParse("1.124.0")) { // TODO remove version check after fork and always rebuild keeper thereafter
 			k, err := GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
 			if err != nil {
 				return err

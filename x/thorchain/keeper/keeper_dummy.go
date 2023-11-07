@@ -673,6 +673,10 @@ func (k KVStoreDummy) ListValidatorsByStatusStore(ctx cosmos.Context, status Nod
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) BuildNodeStatus(ctx cosmos.Context) error {
+	return kaboom
+}
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

@@ -966,6 +966,12 @@ func migrateStoreV124(ctx cosmos.Context, mgr *Mgrs) {
 		ctx.Logger().Error("fail to requeue BTC rescue tx", "error", err)
 		return
 	}
+
+	err = mgr.Keeper().BuildNodeStatus(ctx)
+	if err != nil {
+		ctx.Logger().Error("failed to build node status index", "error", err)
+		return
+	}
 }
 
 // Bond refunds for AVAX double spend slash. See PR for details on determining amounts.

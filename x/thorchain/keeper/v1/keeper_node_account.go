@@ -573,3 +573,31 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 
 	return nil
 }
+
+// BuildNodeStatus build status index and address, for store migration
+func (k KVStore) BuildNodeStatus(ctx cosmos.Context) error {
+	statusIndex := make(map[NodeStatus][]cosmos.AccAddress)
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := k.Cdc().Unmarshal(naIterator.Value(), &na); err != nil {
+			return dbError(ctx, "Unmarshal: node account", err)
+		}
+		if na.Type == NodeTypeValidator {
+			if _, found := statusIndex[na.Status]; !found {
+				statusIndex[na.Status] = make([]cosmos.AccAddress, 0)
+			}
+			statusIndex[na.Status] = append(statusIndex[na.Status], na.NodeAddress)
+			// set address -> status
+			k.setInt64(ctx, k.GetKey(ctx, prefixNodeAccountStatus, na.NodeAddress.String()), int64(na.Status))
+		}
+	}
+
+	// analyze-ignore(map-iteration)
+	for status, nodeAddresses := range statusIndex {
+		// set status index -> addresses with status
+		k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), nodeAddresses)
+	}
+	return nil
+}
