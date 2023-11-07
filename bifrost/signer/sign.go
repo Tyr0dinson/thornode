@@ -118,10 +118,10 @@ func (cs concurrentSigner) lockedChains() map[string]bool {
 	// get any locked vault/chains
 	lockedChains := make(map[string]bool)
 	for vaultChain, semaphore := range cs.vaultChainLocks {
-		select {
-		case semaphore <- struct{}{}:
+		// if channel has any element, means it chain/vauls is lock
+		if len(semaphore) == 1 {
 			lockedChains[vaultChain] = true
-		default:
+		} else {
 			lockedChains[vaultChain] = false
 		}
 	}
@@ -226,12 +226,12 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		localPubKey:           na.PubKeySet.Secp256k1,
 		tssKeysignMetricMgr:   tssKeysignMetricMgr,
 		observer:              obs,
-		concurrent:            newConcurrerntSigner(activeConcurrentSigners),
+		concurrent:            newConcurrentSigner(activeConcurrentSigners),
 	}, nil
 }
 
-// newConcurrerntSigner creates a new object of concurrent signing pipelines and vaults.
-func newConcurrerntSigner(activeConcLimit int64) concurrentSigner {
+// newConcurrentSigner creates a new object of concurrent signing pipelines and vaults.
+func newConcurrentSigner(activeConcLimit int64) concurrentSigner {
 	if activeConcLimit == -1 {
 		return concurrentSigner{}
 	}
@@ -402,17 +402,17 @@ func (s *Signer) processTransactionsV2() {
 
 	// list of all transactions sorted
 	allItems := s.storage.List()
-
 	// extract the vaults that have round7 item
 	retryVaults := make(map[string]struct{})
+	var items []TxOutStoreItem
 	for _, item := range allItems {
 		if item.Round7Retry || len(item.SignedTx) > 0 {
 			retryVaults[vaultChainKey(item)] = struct{}{}
+			items = append(items, item)
 		}
 	}
 
 	// filter round7 and include the rest vault items
-	var items []TxOutStoreItem
 	for _, item := range allItems {
 		if _, isRound7 := retryVaults[vaultChainKey(item)]; !isRound7 {
 			items = append(items, item)
@@ -431,6 +431,7 @@ func (s *Signer) processTransactionsV2() {
 	// make all observations for the batch before returning
 	observations := []types.TxInItem{}
 
+	fmt.Println("rrr")
 	for i, item := range items {
 		select {
 		case <-s.stopChan:
@@ -444,10 +445,12 @@ func (s *Signer) processTransactionsV2() {
 			vaultChain := vaultChainKey(item)
 
 			// check if the vault/chain is locked, if it is then ignore this tx
+			fmt.Println("ooo")
 			locked, ok := lockedChains[vaultChain]
 			if ok && locked {
 				continue
 			}
+			fmt.Println("bbb")
 
 			// no lock record available, we need to initialize the lock
 			if !ok {
@@ -477,8 +480,8 @@ func (s *Signer) processTransactionsV2() {
 			// decrease the available semaphore buffer and set as acquired
 			remainingCap[status]--
 
-			// release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
-			lockedChains[vaultChain] = false
+			// // release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
+			// lockedChains[vaultChain] = false
 
 			// process the transaction concurrently
 			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
@@ -491,7 +494,9 @@ func (s *Signer) processTransactionsV2() {
 
 				// process transaction
 				var success bool
+				fmt.Println("jjjjjjjjjjjj")
 				success, observations = s.processTransaction(i, item, observations)
+
 				if !success {
 					return
 				}
@@ -513,12 +518,12 @@ func (s *Signer) processTransactionsV2() {
 		}
 	}
 
-	// release the unused vault/chain locks we took
-	for vaultChain, locked := range lockedChains {
-		if locked {
-			<-s.concurrent.vaultChainLocks[vaultChain]
-		}
-	}
+	// // release the unused vault/chain locks we took
+	// for vaultChain, locked := range lockedChains {
+	// 	if locked {
+	// 		<-s.concurrent.vaultChainLocks[vaultChain]
+	// 	}
+	// }
 
 	s.concurrent.releaseCapacity(remainingCap)
 }
@@ -895,6 +900,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 
 	// broadcast the transaction
+	fmt.Printf("xxx  %v", "fffffff")
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
@@ -907,6 +913,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		return nil, observation, err
 	}
+
 	s.logger.Info().Str("txid", hash).Str("memo", tx.Memo).Msg("broadcasted tx to chain")
 
 	if s.isTssKeysign(tx.VaultPubKey) {
