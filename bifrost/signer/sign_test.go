@@ -74,6 +74,21 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	panic("not implemented")
 }
 
+func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
+	vaultPubkey, err := common.NewPubKey(pubkey)
+	if err != nil {
+		panic(err)
+	}
+	return types2.NewVault(
+		1,
+		thorchain.ActiveVault,
+		thorchain.AsgardVault,
+		vaultPubkey,
+		[]string{common.BNBChain.String()},
+		[]types2.ChainContract{},
+	), nil
+}
+
 // -------------------------------- tss ---------------------------------
 
 type fakeTssServer struct {
@@ -703,4 +718,89 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	sign.wg.Wait()
 	ks.Stop()
 	ks2.Stop()
+}
+
+// TestBroadcastV2Retry tests if retry item acts the same as the v1.
+func (s *SignSuite) TestBroadcastV2Retry(c *C) {
+	vaultPubkey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+
+	// start a mock keysign
+	msg := "foobar"
+	tssServer := newFakeTss(msg, true)
+	bridge := fakeBridge{s.bridge}
+	ks, err := tss.NewKeySign(tssServer, bridge)
+	c.Assert(err, IsNil)
+	ks.Start()
+
+	// creat mock chain client and signer
+	cc := &MockChainClient{ks: ks, broadcastFailCount: 2}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.BNBChain: cc,
+		},
+		pubkeyMgr:           pubkeymanager.NewMockPoolAddressValidator(),
+		stopChan:            make(chan struct{}),
+		wg:                  &sync.WaitGroup{},
+		thorchainBridge:     bridge,
+		constantsProvider:   NewConstantsProvider(bridge),
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		logger:              log.With().Str("module", "signer").Logger(),
+		concurrent:          newConcurrentSigner(4),
+	}
+
+	// create a signer store with fake txouts
+	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	err = sign.storage.Set(TxOutStoreItem{
+		TxOutItem: types.TxOutItem{
+			Chain:       common.BNBChain,
+			ToAddress:   "tbnb1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
+			Memo:        msg,
+			VaultPubKey: vaultPubkey,
+			Coins: common.Coins{ // must be set or signer overrides memo
+				common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
+			},
+		},
+	})
+	c.Assert(err, IsNil)
+
+	// first attempt should fail broadcast and set signed tx
+	sign.processTransactions()
+	time.Sleep(constants.ThorchainBlockTime)
+	c.Assert(cc.signCount, Equals, 1)
+	c.Assert(tssServer.counter, Equals, 1)
+	c.Assert(cc.broadcastCount, Equals, 1)
+	tois := sign.storage.List()
+	c.Assert(err, IsNil)
+	c.Assert(tois, HasLen, 1)
+	c.Assert(tois[0].Checkpoint, IsNil)
+	c.Assert(len(tois[0].SignedTx), Equals, 64)
+
+	// second attempt should not sign and still fail broadcast
+	sign.processTransactions()
+	time.Sleep(constants.ThorchainBlockTime)
+	c.Assert(cc.signCount, Equals, 1)
+	c.Assert(tssServer.counter, Equals, 1)
+	c.Assert(cc.broadcastCount, Equals, 2)
+	tois = sign.storage.List()
+	c.Assert(err, IsNil)
+	c.Assert(tois, HasLen, 1)
+	c.Assert(tois[0].Checkpoint, IsNil)
+	c.Assert(len(tois[0].SignedTx), Equals, 64)
+
+	// third attempt should not sign and succeed broadcast
+	sign.processTransactions()
+	time.Sleep(constants.ThorchainBlockTime)
+	c.Assert(cc.signCount, Equals, 1)
+	c.Assert(tssServer.counter, Equals, 1)
+	c.Assert(cc.broadcastCount, Equals, 3)
+	tois = sign.storage.List()
+	c.Assert(err, IsNil)
+	c.Assert(tois, HasLen, 0)
+
+	// stop signer
+	close(sign.stopChan)
+	sign.wg.Wait()
+	ks.Stop()
 }
