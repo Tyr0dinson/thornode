@@ -174,6 +174,7 @@ services:
       # use new utxo client for doge
       BIFROST_CHAINS_DOGE_UTXO_CLIENT_V2: "true"
       BIFROST_CHAINS_BCH_UTXO_CLIENT_V2: "true"
+      BIFROST_CHAINS_LTC_UTXO_CLIENT_V2: "true"
 
     ports:
       - 5040:5040
@@ -406,7 +407,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-daemon-25.0
+    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-daemon-25.1
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-1}
@@ -452,7 +453,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ethereum/client-go:v1.13.3
+    image: ethereum/client-go:v1.13.4
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
@@ -503,7 +504,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.10.12
+    image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.10.13
     volumes:
       - "./mocknet/avax:/mocknet"
     command:

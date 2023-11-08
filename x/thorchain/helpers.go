@@ -3,7 +3,6 @@ package thorchain
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,6 +22,8 @@ import (
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.124.0")):
+		return refundTxV124(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.117.0")):
 		return refundTxV117(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.110.0")):
@@ -36,7 +37,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 	}
 }
 
-func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
+func refundTxV124(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -52,10 +53,21 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 
 		// Only attempt an outbound if a fee can be taken from the coin.
 		if coin.Asset.IsNativeRune() || !pool.BalanceRune.IsZero() {
+			toAddr := tx.Tx.FromAddress
+			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
+			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
+				// If the memo specifies a refund address, send the refund to that address. If
+				// refund memo can't be parsed or is invalid for the refund chain, it will
+				// default back to the sender address
+				if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
+					toAddr = memo.GetRefundAddress()
+				}
+			}
+
 			toi := TxOutItem{
 				Chain:       coin.Asset.GetChain(),
 				InHash:      tx.Tx.ID,
-				ToAddress:   tx.Tx.FromAddress,
+				ToAddress:   toAddr,
 				VaultPubKey: tx.ObservedPubKey,
 				Coin:        coin,
 				Memo:        NewRefundMemo(tx.Tx.ID).String(),
@@ -68,71 +80,7 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 				// concatenate the refund failure to refundReason
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
 
-				sourceModuleName = toi.GetModuleName() // Ensure that non-"".
-
-				// Select course of action according to coin type:
-				// External coin, native coin which isn't RUNE, or native RUNE (not from the Reserve).
-				switch {
-				case !coin.Asset.IsNative():
-					// If unable to refund external-chain coins, add them to their pools
-					// (so they aren't left in the vaults with no reflection in the pools).
-					// Failed-refund external coins have earlier been established to have existing pools with non-zero BalanceRune.
-					pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
-					err := mgr.Keeper().SetPool(ctx, pool)
-					if err != nil {
-						ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
-					}
-
-					if err == nil {
-						donateEvt := NewEventDonate(coin.Asset, tx.Tx)
-						if err := mgr.EventMgr().EmitEvent(ctx, donateEvt); err != nil {
-							ctx.Logger().Error("fail to emit donate event", "error", err)
-						}
-					}
-				case !coin.Asset.IsNativeRune():
-					// If unable to refund native coins other than RUNE, burn them.
-
-					// For code clarity, start with a nil error (the default) and check it at every step.
-					var err error
-
-					if sourceModuleName != ModuleName {
-						err = mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ModuleName, common.NewCoins(coin))
-						if err != nil {
-							ctx.Logger().Error("fail to move coin during failed refund burn", "error", err)
-						}
-					}
-
-					if err == nil {
-						err = mgr.Keeper().BurnFromModule(ctx, ModuleName, coin)
-						if err != nil {
-							ctx.Logger().Error("fail to burn coin during failed refund burn", "error", err)
-						}
-					}
-
-					if err == nil {
-						burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, "failed_refund")
-						if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
-							ctx.Logger().Error("fail to emit burn event", "error", err)
-						}
-					}
-				case sourceModuleName != ReserveName:
-					// If unable to refund THOR.RUNE, send it to the Reserve.
-					err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
-					if err != nil {
-						ctx.Logger().Error("fail to send RUNE to Reserve after failed refund", "error", err)
-					}
-
-					if err == nil {
-						reserveContributor := NewReserveContributor(tx.Tx.FromAddress, coin.Amount)
-						reserveEvent := NewEventReserve(reserveContributor, tx.Tx)
-						if err := mgr.EventMgr().EmitEvent(ctx, reserveEvent); err != nil {
-							ctx.Logger().Error("fail to emit reserve event", "error", err)
-						}
-					}
-				default:
-					// If not satisfying the other conditions this coin should be native RUNE in the Reserve,
-					// so leave it there.
-				}
+				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund")
 			}
 			if success {
 				refundCoins = append(refundCoins, toi.Coin)
@@ -158,6 +106,88 @@ func refundTxV117(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 	}
 
 	return nil
+}
+
+// unrefundableCoinCleanup - update the accounting for a failed outbound of toi.Coin
+// native rune: send to the reserve
+// native coin besides rune: burn
+// non-native coin: donate to its pool
+func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason string) {
+	coin := toi.Coin
+
+	sourceModuleName := toi.GetModuleName() // Ensure that non-"".
+
+	// For context in emitted events, retrieve the original transaction that prompted the cleanup.
+	// If there is no retrievable transaction, leave those fields empty.
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
+	if err != nil {
+		ctx.Logger().Error("fail to get observed tx in", "error", err, "hash", toi.InHash.String())
+		return
+	}
+	tx := voter.Tx.Tx
+	// For emitted events' amounts (such as EventDonate), replace the Coins with the coin being cleaned up.
+	tx.Coins = common.NewCoins(toi.Coin)
+
+	// Select course of action according to coin type:
+	// External coin, native coin which isn't RUNE, or native RUNE (not from the Reserve).
+	switch {
+	case !coin.Asset.IsNative():
+		// If unable to refund external-chain coins, add them to their pools
+		// (so they aren't left in the vaults with no reflection in the pools).
+		// Failed-refund external coins have earlier been established to have existing pools with non-zero BalanceRune.
+
+		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+		if err != nil {
+			ctx.Logger().Error("fail to get pool", "error", err)
+			return
+		}
+
+		pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
+		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+			ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
+			return
+		}
+
+		donateEvt := NewEventDonate(coin.Asset, tx)
+		if err := mgr.EventMgr().EmitEvent(ctx, donateEvt); err != nil {
+			ctx.Logger().Error("fail to emit donate event", "error", err)
+		}
+	case !coin.Asset.IsNativeRune():
+		// If unable to refund native coins other than RUNE, burn them.
+
+		if sourceModuleName != ModuleName {
+			if err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ModuleName, common.NewCoins(coin)); err != nil {
+				ctx.Logger().Error("fail to move coin during cleanup burn", "error", err)
+				return
+			}
+		}
+
+		if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, coin); err != nil {
+			ctx.Logger().Error("fail to burn coin during cleanup burn", "error", err)
+			return
+		}
+
+		burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, burnReason)
+		if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("fail to emit burn event", "error", err)
+		}
+	case sourceModuleName != ReserveName:
+		// If unable to refund THOR.RUNE, send it to the Reserve.
+		err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
+		if err != nil {
+			ctx.Logger().Error("fail to send RUNE to Reserve during cleanup", "error", err)
+			return
+		}
+
+		reserveContributor := NewReserveContributor(tx.FromAddress, coin.Amount)
+		reserveEvent := NewEventReserve(reserveContributor, tx)
+		if err := mgr.EventMgr().EmitEvent(ctx, reserveEvent); err != nil {
+			ctx.Logger().Error("fail to emit reserve event", "error", err)
+		}
+	default:
+		// If not satisfying the other conditions this coin should be native RUNE in the Reserve,
+		// so leave it there.
+	}
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
@@ -325,140 +355,11 @@ func getFee(input, output common.Coins, transactionFee cosmos.Uint) common.Fee {
 	return fee
 }
 
-func subsidizePoolWithSlashBond(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.92.0")):
-		return subsidizePoolWithSlashBondV92(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	case version.GTE(semver.MustParse("1.88.0")):
-		return subsidizePoolWithSlashBondV88(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	case version.GTE(semver.MustParse("0.74.0")):
-		return subsidizePoolWithSlashBondV74(ctx, ygg, yggTotalStolen, slashRuneAmt, mgr)
-	default:
-		return errBadVersion
-	}
-}
-
-func subsidizePoolWithSlashBondV92(ctx cosmos.Context, ygg Vault, yggTotalStolen, slashRuneAmt cosmos.Uint, mgr Manager) error {
-	// Thorchain did not slash the node account
-	if slashRuneAmt.IsZero() {
-		return nil
-	}
-	stolenRUNE := ygg.GetCoin(common.RuneAsset()).Amount
-	slashRuneAmt = common.SafeSub(slashRuneAmt, stolenRUNE)
-	yggTotalStolen = common.SafeSub(yggTotalStolen, stolenRUNE)
-
-	// Should never happen, but this prevents a divide-by-zero panic in case it does
-	if yggTotalStolen.IsZero() {
-		return nil
-	}
-
-	type fund struct {
-		asset         common.Asset
-		stolenAsset   cosmos.Uint
-		subsidiseRune cosmos.Uint
-	}
-	// here need to use a map to hold on to the amount of RUNE need to be subsidized to each pool
-	// reason being , if ygg pool has both RUNE and BNB coin left, these two coin share the same pool
-	// which is BNB pool , if add the RUNE directly back to pool , it will affect BNB price , which will affect the result
-	subsidize := make([]fund, 0)
-	for _, coin := range ygg.Coins {
-		if coin.IsEmpty() {
-			continue
-		}
-		if coin.Asset.IsRune() {
-			// when the asset is RUNE, thorchain don't need to update the RUNE balance on pool
-			continue
-		}
-		f := fund{
-			asset:         coin.Asset,
-			stolenAsset:   cosmos.ZeroUint(),
-			subsidiseRune: cosmos.ZeroUint(),
-		}
-
-		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
-		if err != nil {
-			return err
-		}
-		f.stolenAsset = f.stolenAsset.Add(coin.Amount)
-		runeValue := pool.AssetValueInRune(coin.Amount)
-		if runeValue.IsZero() {
-			ctx.Logger().Info("rune value of stolen asset is 0", "pool", pool.Asset, "asset amount", coin.Amount.String())
-			continue
-		}
-		// the amount of RUNE thorchain used to subsidize the pool is calculate by ratio
-		// slashRune * (stealAssetRuneValue /totalStealAssetRuneValue)
-		subsidizeAmt := slashRuneAmt.Mul(runeValue).Quo(yggTotalStolen)
-		f.subsidiseRune = f.subsidiseRune.Add(subsidizeAmt)
-		subsidize = append(subsidize, f)
-	}
-
-	for _, f := range subsidize {
-		pool, err := mgr.Keeper().GetPool(ctx, f.asset.GetLayer1Asset())
-		if err != nil {
-			ctx.Logger().Error("fail to get pool", "asset", f.asset, "error", err)
-			continue
-		}
-		if pool.IsEmpty() {
-			continue
-		}
-
-		pool.BalanceRune = pool.BalanceRune.Add(f.subsidiseRune)
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, f.stolenAsset)
-
-		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
-			ctx.Logger().Error("fail to save pool", "asset", pool.Asset, "error", err)
-			continue
-		}
-
-		// Send the subsidized RUNE from the Bond module to Asgard
-		runeToAsgard := common.NewCoin(common.RuneNative, f.subsidiseRune)
-		if !runeToAsgard.Amount.IsZero() {
-			if err := mgr.Keeper().SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(runeToAsgard)); err != nil {
-				ctx.Logger().Error("fail to send subsidy from bond to asgard", "error", err)
-				return err
-			}
-		}
-
-		poolSlashAmt := []PoolAmt{
-			{
-				Asset:  pool.Asset,
-				Amount: 0 - int64(f.stolenAsset.Uint64()),
-			},
-			{
-				Asset:  common.RuneAsset(),
-				Amount: int64(f.subsidiseRune.Uint64()),
-			},
-		}
-		eventSlash := NewEventSlash(pool.Asset, poolSlashAmt)
-		if err := mgr.EventMgr().EmitEvent(ctx, eventSlash); err != nil {
-			ctx.Logger().Error("fail to emit slash event", "error", err)
-		}
-	}
-	return nil
-}
-
-// getTotalYggValueInRune will go through all the coins in ygg , and calculate the total value in RUNE
-// return value will be totalValueInRune,error
-func getTotalYggValueInRune(ctx cosmos.Context, keeper keeper.Keeper, ygg Vault) (cosmos.Uint, error) {
-	yggRune := cosmos.ZeroUint()
-	for _, coin := range ygg.Coins {
-		if coin.Asset.IsRune() {
-			yggRune = yggRune.Add(coin.Amount)
-		} else {
-			pool, err := keeper.GetPool(ctx, coin.Asset)
-			if err != nil {
-				return cosmos.ZeroUint(), err
-			}
-			yggRune = yggRune.Add(pool.AssetValueInRune(coin.Amount))
-		}
-	}
-	return yggRune, nil
-}
-
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.124.0")):
+		return refundBondV124(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("1.103.0")):
 		return refundBondV103(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("1.92.0")):
@@ -472,7 +373,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 	}
 }
 
-func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+func refundBondV124(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
@@ -489,18 +390,6 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 		amt = nodeAcc.Bond
 	}
 
-	ygg := Vault{}
-	if mgr.Keeper().VaultExists(ctx, nodeAcc.PubKeySet.Secp256k1) {
-		var err error
-		ygg, err = mgr.Keeper().GetVault(ctx, nodeAcc.PubKeySet.Secp256k1)
-		if err != nil {
-			return err
-		}
-		if !ygg.IsYggdrasil() {
-			return errors.New("this is not a Yggdrasil vault")
-		}
-	}
-
 	bp, err := mgr.Keeper().GetBondProviders(ctx, nodeAcc.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", nodeAcc.NodeAddress))
@@ -511,23 +400,6 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 		return err
 	}
 
-	// Calculate total value (in rune) the Yggdrasil pool has
-	yggRune, err := getTotalYggValueInRune(ctx, mgr.Keeper(), ygg)
-	if err != nil {
-		return fmt.Errorf("fail to get total ygg value in RUNE: %w", err)
-	}
-
-	if nodeAcc.Bond.LT(yggRune) {
-		ctx.Logger().Error("Node Account left with more funds in their Yggdrasil vault than their bond's value", "address", nodeAcc.NodeAddress, "ygg-value", yggRune, "bond", nodeAcc.Bond)
-	}
-	// slash yggdrasil remains
-	penaltyPts := mgr.Keeper().GetConfigInt64(ctx, constants.SlashPenalty)
-	slashRune := common.GetUncappedShare(cosmos.NewUint(uint64(penaltyPts)), cosmos.NewUint(10_000), yggRune)
-	if slashRune.GT(nodeAcc.Bond) {
-		slashRune = nodeAcc.Bond
-	}
-	bondBeforeSlash := nodeAcc.Bond
-	nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, slashRune)
 	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
 
@@ -562,10 +434,6 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 		}
 
 		nodeAcc.Bond = common.SafeSub(nodeAcc.Bond, amt)
-	} else {
-		// if it get into here that means the node account doesn't have any bond left after slash.
-		// which means the real slashed RUNE could be the bond they have before slash
-		slashRune = bondBeforeSlash
 	}
 
 	if nodeAcc.RequestedToLeave {
@@ -581,32 +449,6 @@ func refundBondV103(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
-	if err := subsidizePoolWithSlashBond(ctx, ygg, yggRune, slashRune, mgr); err != nil {
-		ctx.Logger().Error("fail to subsidize pool with slashed bond", "error", err)
-		return err
-	}
-
-	// at this point , all coins in yggdrasil vault has been accounted for , and node already been slashed
-	ygg.SubFunds(ygg.Coins)
-	if err := mgr.Keeper().SetVault(ctx, ygg); err != nil {
-		ctx.Logger().Error("fail to save yggdrasil vault", "error", err)
-		return err
-	}
-
-	if err := mgr.Keeper().DeleteVault(ctx, ygg.PubKey); err != nil {
-		return err
-	}
-
-	// Output bond events for the slashed and returned bond.
-	if !slashRune.IsZero() {
-		fakeTx := common.Tx{}
-		fakeTx.ID = common.BlankTxID
-		fakeTx.FromAddress = nodeAcc.BondAddress
-		bondEvent := NewEventBond(slashRune, BondCost, fakeTx)
-		if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
-			ctx.Logger().Error("fail to emit bond event", "error", err)
-		}
-	}
 	return nil
 }
 
@@ -697,41 +539,57 @@ func wrapError(ctx cosmos.Context, err error, wrap string) error {
 
 func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	version := mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.124.0")):
+		return addGasFeesV124(ctx, mgr, tx)
+	case version.GTE(semver.MustParse("0.1.0")):
 		return addGasFeesV1(ctx, mgr, tx)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-// addGasFees to vault
-func addGasFeesV1(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
-	if len(tx.Tx.Gas) == 0 {
+// addGasFees to gas manager and deduct from vault
+func addGasFeesV124(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
+	// If there's no gas, then nothing to do.
+	if tx.Tx.Gas.IsEmpty() {
 		return nil
 	}
+
+	// If the transaction wasn't from a known vault, then no relevance for known vaults or pools.
+	if !mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
+		return nil
+	}
+
+	// Since a known vault has spent gas, definitely deduct that gas from the vault's balance
+	vault, err := mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		return err
+	}
+	vault.SubFunds(tx.Tx.Gas.ToCoins())
+	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+		return err
+	}
+
+	// If the vault is an InactiveVault doing an automatic refund,
+	// any balance is not represented in the pools,
+	// so the Reserve should not reimburse the gas pool.
+	if vault.Status == InactiveVault {
+		return nil
+	}
+
+	// when ragnarok is in progress, if the tx is for gas coin then don't reimburse the pool with reserve
+	// liquidity providers they need to pay their own gas
+	// if the outbound coin is not gas asset, then reserve will reimburse it , otherwise the gas asset pool will be in a loss
 	if mgr.Keeper().RagnarokInProgress(ctx) {
-		// when ragnarok is in progress, if the tx is for gas coin then doesn't subsidise the pool with reserve
-		// liquidity providers they need to pay their own gas
-		// if the outbound coin is not gas asset, then reserve will subsidise it , otherwise the gas asset pool will be in a loss
 		gasAsset := tx.Tx.Chain.GetGasAsset()
-		if tx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
-			mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
-		}
-	} else {
-		mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
-	}
-	// Subtract from the vault
-	if mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
-		vault, err := mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
-		if err != nil {
-			return err
-		}
-
-		vault.SubFunds(tx.Tx.Gas.ToCoins())
-
-		if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
-			return err
+		if !tx.Tx.Coins.GetCoin(gasAsset).IsEmpty() {
+			return nil
 		}
 	}
+
+	// Add the gas to the gas manager to be reimbursed by the Reserve.
+	mgr.GasMgr().AddGasAsset(tx.Tx.Gas, true)
 	return nil
 }
 
@@ -857,7 +715,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// emit node metrics
-	yggs := make(Vaults, 0)
+	yggs := make(Vaults, 0) // TODO remove on hard fork
 	nodes, err := mgr.Keeper().ListValidatorsWithBond(ctx)
 	if err != nil {
 		return err
@@ -943,7 +801,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			continue
 		}
 
-		// calculate the total value of this yggdrasil vault
+		// calculate the total value of this vault
 		totalValue := cosmos.ZeroUint()
 		for _, coin := range vault.Coins {
 			if coin.Asset.IsRune() {
@@ -1083,7 +941,7 @@ func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutI
 
 func updateTxOutGasV88(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
 	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
-	// For example , migration , yggdrasil funding etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
+	// For example , migration, etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
 	if txOut.InHash == common.BlankTxID {
 		return nil
 	}
@@ -1119,7 +977,7 @@ func updateTxOutGasV1(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOu
 // the observed inbound
 func updateTxOutGasRate(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gasRate int64) error {
 	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
-	// For example , migration , yggdrasil funding etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
+	// For example , migration, etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
 	if txOut.InHash == common.BlankTxID {
 		return nil
 	}

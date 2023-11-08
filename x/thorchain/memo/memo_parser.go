@@ -86,21 +86,12 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseBondMemo()
 	case TxUnbond:
 		return p.ParseUnbondMemo()
-	case TxYggdrasilFund:
-		return p.ParseYggdrasilFundMemo()
-	case TxYggdrasilReturn:
-		return p.ParseYggdrasilReturnMemo()
 	case TxReserve:
 		return p.ParseReserveMemo()
 	case TxMigrate:
 		return p.ParseMigrateMemo()
 	case TxRagnarok:
 		return p.ParseRagnarokMemo()
-	case TxSwitch: // TODO remove TxSwitch on hard fork
-		if p.keeper.GetVersion().GTE(semver.MustParse("1.117.0")) {
-			return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
-		}
-		return p.ParseSwitchMemo()
 	case TxNoOp:
 		return p.ParseNoOpMemo()
 	case TxConsolidate:
@@ -111,6 +102,23 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseLoanOpenMemo()
 	case TxLoanRepayment:
 		return p.ParseLoanRepaymentMemo()
+
+	case TxSwitch: // TODO remove on hard fork
+		if p.keeper.GetVersion().GTE(semver.MustParse("1.117.0")) {
+			return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
+		}
+		return p.ParseSwitchMemo()
+	case TxYggdrasilFund: // TODO remove on hard fork
+		if p.keeper.GetVersion().GTE(semver.MustParse("1.124.0")) {
+			return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
+		}
+		return p.ParseYggdrasilFundMemo()
+	case TxYggdrasilReturn: // TODO remove on hard fork
+		if p.keeper.GetVersion().GTE(semver.MustParse("1.124.0")) {
+			return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
+		}
+		return p.ParseYggdrasilReturnMemo()
+
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
 	}
@@ -232,6 +240,51 @@ func (p *parser) getAddressWithKeeper(idx int, required bool, def common.Address
 	if err != nil {
 		if required || p.get(idx) != "" {
 			p.addErr(fmt.Errorf("cannot parse '%s' as an Address: %w", p.get(idx), err))
+		}
+	}
+	return addr
+}
+
+func (p *parser) getAddressAndRefundAddressWithKeeper(idx int, required bool, def common.Address, chain common.Chain) (common.Address, common.Address) {
+	p.incRequired(required)
+
+	//nolint:ineffassign
+	destination := common.NoAddress
+	refundAddress := common.NoAddress
+	addresses := p.get(idx)
+
+	if strings.Contains(addresses, "/") {
+		parts := strings.SplitN(addresses, "/", 2)
+		if p.keeper == nil {
+			dest, err := common.NewAddress(parts[0])
+			if err != nil {
+				if required || parts[0] != "" {
+					p.addErr(fmt.Errorf("cannot parse '%s' as an Address: %w", parts[0], err))
+				}
+			}
+			destination = dest
+		} else {
+			destination = p.getAddressFromString(parts[0], chain, required)
+		}
+		if len(parts) > 1 {
+			refundAddress, _ = common.NewAddress(parts[1])
+		}
+	} else {
+		destination = p.getAddressWithKeeper(idx, false, common.NoAddress, chain)
+	}
+
+	if destination.IsEmpty() && !refundAddress.IsEmpty() {
+		p.addErr(fmt.Errorf("refund address is set but destination address is empty"))
+	}
+
+	return destination, refundAddress
+}
+
+func (p *parser) getAddressFromString(val string, chain common.Chain, required bool) common.Address {
+	addr, err := FetchAddress(p.ctx, p.keeper, val, chain)
+	if err != nil {
+		if required || val != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as an Address: %w", val, err))
 		}
 	}
 	return addr

@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	q "gitlab.com/thorchain/thornode/x/thorchain/query"
@@ -117,7 +118,7 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryBalanceModule(ctx, path[1:], mgr)
 		case q.QueryVaultsAsgard.Key:
 			return queryAsgardVaults(ctx, mgr)
-		case q.QueryVaultsYggdrasil.Key:
+		case q.QueryVaultsYggdrasil.Key: // TODO remove on hard fork
 			return queryYggdrasilVaults(ctx, mgr)
 		case q.QueryVault.Key:
 			return queryVault(ctx, path[1:], mgr)
@@ -129,6 +130,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryVersion(ctx, path[1:], req, mgr)
 		case q.QueryMimirValues.Key:
 			return queryMimirValues(ctx, path[1:], req, mgr)
+		case q.QueryMimirV2Values.Key:
+			return queryMimirV2Values(ctx, path[1:], req, mgr)
 		case q.QueryMimirWithKey.Key:
 			return queryMimirWithKey(ctx, path[1:], req, mgr)
 		case q.QueryMimirAdminValues.Key:
@@ -391,6 +394,7 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	return result
 }
 
+// TODO remove on hard fork
 func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	vaults := make(Vaults, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
@@ -456,7 +460,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	var resp QueryVaultsPubKeys
 	resp.Asgard = make([]QueryVaultPubKeyContract, 0)
-	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0)
+	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0) // TODO remove on hard fork
 	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
@@ -464,9 +468,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// usually ChurnInterval is 43200, sometimes when the network has issues , we 10x this value ,
-	// so if the inactive vault is older than 500_000 blocks , should not be monitored
-	cutOffAge := ctx.BlockHeight() - 500000
+	cutOffAge := ctx.BlockHeight() - config.GetThornode().VaultPubkeysCutoffBlocks
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var vault Vault
@@ -474,7 +476,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
-		if vault.IsYggdrasil() {
+		if vault.IsYggdrasil() { // TODO remove ygg on hard fork
 			na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to unmarshal vault", "error", err)
@@ -494,9 +496,16 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 					Routers: vault.Routers,
 				})
 			case InactiveVault:
+				// skip inactive vaults that have never received an inbound
+				if vault.InboundTxCount == 0 {
+					continue
+				}
+
+				// skip inactive vaults older than the cutoff age
 				if vault.BlockHeight < cutOffAge {
 					continue
 				}
+
 				activeMembers, err := vault.GetMembers(active.GetNodeAddresses())
 				if err != nil {
 					ctx.Logger().Error("fail to get active members of vault", "error", err)
@@ -1770,6 +1779,85 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 		values[k] = v
 	}
 
+	// overwrite values based on mimir v2
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("failed to get active validator set", "error", err)
+	}
+
+	iteration := mgr.Keeper().GetNodeMimirIteratorV2(ctx)
+	defer iteration.Close()
+	for ; iteration.Valid(); iteration.Next() {
+		key := strings.TrimPrefix(string(iteration.Key()), "nodemimirV2//")
+		mimirs, err := mgr.Keeper().GetNodeMimirsV2(ctx, key)
+		if err != nil {
+			continue
+		}
+		parts := strings.Split(key, "-")
+		id, err := strconv.Atoi(parts[0])
+		if err != nil {
+			continue
+		}
+		ref := parts[len(parts)-1]
+
+		m, _ := mimir.GetMimir(mimir.Id(id), ref)
+		value := int64(-1)
+		switch m.Type() {
+		case mimir.EconomicMimir:
+			value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
+			if value < 0 {
+				value, _ = mgr.Keeper().GetMimirV2(ctx, key)
+			}
+		case mimir.OperationalMimir:
+			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
+		}
+		if value >= 0 {
+			values[m.LegacyKey(m.Reference())] = value
+		}
+	}
+
+	return jsonify(ctx, values)
+}
+
+func queryMimirV2Values(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	values := make(map[string]int64)
+
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("failed to get active validator set", "error", err)
+	}
+
+	iterNode := mgr.Keeper().GetNodeMimirIteratorV2(ctx)
+	defer iterNode.Close()
+	for ; iterNode.Valid(); iterNode.Next() {
+		key := strings.TrimPrefix(string(iterNode.Key()), "nodemimirV2//")
+		mimirs, err := mgr.Keeper().GetNodeMimirsV2(ctx, key)
+		if err != nil {
+			continue
+		}
+		parts := strings.Split(key, "-")
+		id, err := strconv.Atoi(parts[0])
+		if err != nil {
+			continue
+		}
+		ref := parts[len(parts)-1]
+
+		m, _ := mimir.GetMimir(mimir.Id(id), ref)
+		value := int64(-1)
+		switch m.Type() {
+		case mimir.EconomicMimir:
+			value, _ = mgr.Keeper().GetMimirV2(ctx, key)
+			if value < 0 {
+				value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
+			}
+		case mimir.OperationalMimir:
+			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
+		}
+		if value >= 0 {
+			values[m.Name()] = value
+		}
+	}
+
 	return jsonify(ctx, values)
 }
 
@@ -1844,7 +1932,7 @@ func queryMimirNodeValues(ctx cosmos.Context, path []string, req abci.RequestQue
 	for ; iter.Valid(); iter.Next() {
 		mimirs := NodeMimirs{}
 		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &mimirs); err != nil {
-			ctx.Logger().Error("fail to unmarshal node mimir value", "error", err)
+			ctx.Logger().Error("fail to unmarshal node mimir v2 value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
 
@@ -2179,7 +2267,7 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	// set random txid
-	txid := common.TxID(common.RandStringBytesMask(64))
+	txid := common.TxID(common.RandHexString(64))
 	ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
 
 	// validate

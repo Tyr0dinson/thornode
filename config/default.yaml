@@ -54,7 +54,7 @@ bifrost:
     auto_observe: true
     keygen_timeout: 5m
     keysign_timeout: 1m
-    party_timeout: 45s
+    party_timeout: 30s
     pre_param_timeout: 5m
   tss:
     rendezvous: asgard
@@ -115,6 +115,7 @@ bifrost:
         max_gas_fee: 0
         gas_price_resolution: 0
         max_contract_gas: 0
+        max_resume_block_lag: 2h
 
       # the following defaults must be defined to override with environment
       chain_host: ""
@@ -193,6 +194,7 @@ bifrost:
         <<: *default-block-scanner
         chain_id: DOGE
         gas_price_resolution: 500_000 # sats
+        gas_cache_blocks: 10
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
       utxo:
@@ -218,8 +220,15 @@ bifrost:
         <<: *default-block-scanner
         chain_id: LTC
         observation_flexibility_blocks: 3
+        gas_cache_blocks: 10
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
+      utxo:
+        <<: *utxo
+        block_cache_count: 600
+        version: 21
+        max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
+        estimated_average_tx_size: 250
     bch:
       <<: *default-chain
       chain_id: BCH
@@ -231,6 +240,9 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
+        block_cache_count: 144
+        version: 26
+        max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         estimated_average_tx_size: 1500
 
 ########################################################################################
@@ -239,6 +251,7 @@ bifrost:
 
 thor:
   node_relay_url: https://node-relay-bot.herokuapp.com
+  vault_pubkeys_cutoff_blocks: 1_000_000
 
   log_filter:
     modules:

@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.123.0
+  version: 1.124.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -821,6 +821,22 @@ paths:
     get:
       description: Returns current node mimir configuration for the provided node address.
       operationId: mimirNode
+      tags:
+        - Mimir
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MimirResponse"
+
+  /thorchain/mimirV2:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns current mimir V2 configuration.
+      operationId: mimirV2
       tags:
         - Mimir
       responses:

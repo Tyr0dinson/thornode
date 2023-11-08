@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 1.123.0
+  version: 1.124.0
 servers:
 - url: /
 paths:
@@ -1331,6 +1331,30 @@ paths:
           example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
           type: string
         style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirResponse'
+          description: OK
+      tags:
+      - Mimir
+  /thorchain/mimirV2:
+    get:
+      description: Returns current mimir V2 configuration.
+      operationId: mimirV2
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
       responses:
         "200":
           content:
