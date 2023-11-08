@@ -650,6 +650,14 @@ func (*NetworkManagerVCURTestSuite) TestFairMergePOLCycle(c *C) {
 	err = net.POLCycle(ctx, mgr)
 	c.Assert(err, ErrorMatches, "dev err: no active node accounts")
 
+	// set node account
+	err = mgr.Keeper().SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive))
+	c.Assert(err, IsNil)
+
+	// cycle should error since there are no pol enabled pools
+	err = net.POLCycle(ctx, mgr)
+	c.Assert(err, ErrorMatches, "no POL pools")
+
 	// create dummy bnb pool
 	pool := NewPool()
 	pool.Asset = common.BNBAsset
@@ -669,15 +677,21 @@ func (*NetworkManagerVCURTestSuite) TestFairMergePOLCycle(c *C) {
 	err = mgr.Keeper().SetPool(ctx, btcPool)
 	c.Assert(err, IsNil)
 
-	// cycle should error since there are no pol enabled pools
-	err = mgr.Keeper().SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive))
-	c.Assert(err, IsNil)
+	// cycle should silently succeed since there are gas asset pools
 	err = net.POLCycle(ctx, mgr)
-	c.Assert(err, ErrorMatches, "no POL pools")
+	c.Assert(err, IsNil)
 
-	// cycle should silently succeed when there is a pool enabled
-	mgr.Keeper().SetMimir(ctx, "POL-BNB-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "POL-BTC-BTC", 1)
+	mgr.Keeper().SetMimir(ctx, "POL-BNB-BNB", 0)
+	mgr.Keeper().SetMimir(ctx, "POL-BTC-BTC", 0)
+	// cycle should error since there are no pol enabled pools
+	err = net.POLCycle(ctx, mgr)
+	c.Assert(err, NotNil)
+
+	// 3 is default behaviour (like -1) being on if gas asset or TorAnchor,
+	// not being 0 (paused), 1 (on), 2 (withdraw)
+	mgr.Keeper().SetMimir(ctx, "POL-BNB-BNB", 3)
+	mgr.Keeper().SetMimir(ctx, "POL-BTC-BTC", 3)
+	// cycle should silently succeed since there are gas asset pools
 	err = net.POLCycle(ctx, mgr)
 	c.Assert(err, IsNil)
 
