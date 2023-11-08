@@ -3366,6 +3366,9 @@ components:
         - warning
         - notes
         - expiry
+        - streaming_swap_blocks
+        - streaming_swap_seconds
+        - total_open_loan_seconds
       properties:
         <<: *quote-properties
         memo:
@@ -3388,6 +3391,21 @@ components:
           type: string
           description: the expected amount of TOR debt increase on the loan
           example: "1000000"
+        streaming_swap_blocks:
+          type: integer
+          format: int64
+          description: The number of blocks involved in the streaming swaps during the open loan process.
+          example: 10
+        streaming_swap_seconds:
+          type: integer
+          format: int64
+          description: The approximate number of seconds taken by the streaming swaps involved in the open loan process.
+          example: 600
+        total_open_loan_seconds:
+          type: integer
+          format: int64
+          description: The total expected duration for a open loan, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
+          example: 600
 
     QuoteLoanCloseResponse:
       type: object

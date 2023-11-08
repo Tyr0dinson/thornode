@@ -1171,6 +1171,8 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	affiliateFee := sdk.ZeroUint()
 	expectedAmountOut := sdk.ZeroUint()
 	finalEmitAmount := sdk.ZeroUint() // used to calculate slippage
+	streamingSwapBlocks := int64(0)
+	streamingSwapSeconds := int64(0)
 
 	// iterate events in reverse order
 	for i := len(events) - 1; i >= 0; i-- {
@@ -1231,6 +1233,11 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 			if coin.Asset.Equals(targetAsset) {
 				finalEmitAmount = coin.Amount
 			}
+			swapQuantity, err := cosmos.ParseUint(em["streaming_swap_quantity"])
+			if err != nil {
+				return quoteErrorResponse(fmt.Errorf("bad quantity: %w", err))
+			}
+			streamingSwapBlocks += swapQuantity.BigInt().Int64()
 
 		// extract loan data from loan open event
 		case "loan_open":
@@ -1323,6 +1330,18 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 	res.RecommendedMinAmountIn = wrapString(minLoanOpenAmount.String())
 
+	streamingSwapSeconds += streamingSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
+
+	if res.InboundConfirmationSeconds != nil {
+		value := *res.InboundConfirmationSeconds
+		res.TotalOpenLoanSeconds = streamingSwapSeconds + res.OutboundDelaySeconds + value
+	} else {
+		res.TotalOpenLoanSeconds = streamingSwapSeconds + res.OutboundDelaySeconds
+	}
+
+	res.StreamingSwapBlocks = streamingSwapBlocks
+	res.StreamingSwapSeconds = streamingSwapSeconds
+
 	return json.MarshalIndent(res, "", "  ")
 }
 
@@ -1375,7 +1394,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	outboundLiquidityFee := sdk.ZeroUint()
 	affiliateFee := sdk.ZeroUint()
 	expectedAmountOut := sdk.ZeroUint()
-	streamingSwapBlocks := int64(0) // TODO: Add to res
+	streamingSwapBlocks := int64(0)
 	streamingSwapSeconds := int64(0)
 	var repaymentEmit, outboundEmit common.Coin
 
@@ -1432,7 +1451,6 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 				data, err = quoteErrorResponse(fmt.Errorf("failed to parse coin: %w", err))
 				return nil, data, err
 			}
-			// parse amount
 			swapQuantity, err := cosmos.ParseUint(em["streaming_swap_quantity"])
 			if err != nil {
 				data, err = quoteErrorResponse(fmt.Errorf("bad amount: %w", err))
