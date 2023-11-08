@@ -2,12 +2,21 @@ package keeperv1
 
 import (
 	"fmt"
-	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
+
+func (k KVStore) IsTorAnchorAsset(ctx cosmos.Context, asset common.Asset) bool {
+	mimirKey := fmt.Sprintf("TorAnchor-%s", asset.MimirString())
+	val, err := k.GetMimir(ctx, mimirKey)
+	if err != nil {
+		ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
+		return false
+	}
+	return (val > 0)
+}
 
 func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {
 	if asset.GetChain().IsTHORChain() {
@@ -18,15 +27,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 			return assets
 		}
 		for _, pool := range pools {
-			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
-			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
-			var val int64
-			val, err = k.GetMimir(ctx, mimirKey)
-			if err != nil {
-				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
-				continue
-			}
-			if val > 0 {
+			if k.IsTorAnchorAsset(ctx, pool.Asset) {
 				assets = append(assets, pool.Asset)
 			}
 		}
