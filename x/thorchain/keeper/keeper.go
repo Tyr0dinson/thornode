@@ -394,6 +394,7 @@ type KeeperAnchors interface {
 	DollarsPerRune(ctx cosmos.Context) cosmos.Uint
 	RunePerDollar(ctx cosmos.Context) cosmos.Uint
 	DollarInRune(ctx cosmos.Context) cosmos.Uint // TODO: remove me on hard fork
+	IsTorAnchorAsset(ctx cosmos.Context, asset common.Asset) bool
 }
 
 // NewKVStore creates new instances of the thorchain Keeper

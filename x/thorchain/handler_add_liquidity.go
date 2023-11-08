@@ -107,7 +107,8 @@ func (h AddLiquidityHandler) validateV126(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// Note that GetChain() without GetLayer1Asset() would indicate THORChain for synthetic assets.
-	gasAsset := msg.Asset.GetLayer1Asset().GetChain().GetGasAsset()
+	layer1Asset := msg.Asset.GetLayer1Asset()
+	gasAsset := layer1Asset.GetChain().GetGasAsset()
 	// Even if a destination gas asset pool is empty, the first add liquidity has to be symmetrical,
 	// and so there is no need to check at this stage for whether the addition is of RUNE or Asset or with needsSwap.
 	if !msg.Asset.Equals(gasAsset) {
@@ -136,20 +137,12 @@ func (h AddLiquidityHandler) validateV126(ctx cosmos.Context, msg MsgAddLiquidit
 	// * layer 1 assets  (BTC, ETH, BNB, etc.)
 	// * stable pools (as determined by TOR anchor pool settings)
 	if msg.Asset.IsVaultAsset() {
-		// Check if the asset is in the anchor pools
-		isAnchorAsset := false
-		for _, asset := range h.mgr.Keeper().GetAnchors(ctx, common.TOR) {
-			if msg.Asset.GetLayer1Asset().Equals(asset) {
-				isAnchorAsset = true
-				break
-			}
-		}
-		// Saver asset must be either L1 gas asset or isAnchorAsset
-		if !msg.Asset.GetLayer1Asset().IsGasAsset() && !isAnchorAsset {
+		// Saver L1 asset must be either gas asset or anchor asset
+		if !layer1Asset.IsGasAsset() && !h.mgr.Keeper().IsTorAnchorAsset(ctx, layer1Asset) {
 			return fmt.Errorf("asset must be a gas asset or TOR anchor pool")
 		}
 		// Ensure that the message is being sent from an address on a chain that matches the L1 asset chain
-		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
+		if !msg.AssetAddress.IsChain(layer1Asset.GetChain()) {
 			return fmt.Errorf("asset address must be layer1 chain")
 		}
 		// Savers vaults are not currently enabled for RUNE
@@ -167,7 +160,7 @@ func (h AddLiquidityHandler) validateV126(ctx cosmos.Context, msg MsgAddLiquidit
 		// If the needsSwap check disallows a cross-chain AssetAddress,
 		// a position with pending RUNE cannot be completed with Asset,
 		// so fail validation here if the AssetAddress chain is different from the Asset's.
-		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
+		if !msg.AssetAddress.IsChain(layer1Asset.GetChain()) {
 			return errAddLiquidityMismatchAddr
 		}
 
@@ -186,7 +179,7 @@ func (h AddLiquidityHandler) validateV126(ctx cosmos.Context, msg MsgAddLiquidit
 		if !msg.Asset.IsVaultAsset() {
 			return fmt.Errorf("swap & add liquidity is only available for synthetic pools")
 		}
-		if !msg.Asset.GetLayer1Asset().Equals(msg.Tx.Coins[0].Asset) {
+		if !layer1Asset.Equals(msg.Tx.Coins[0].Asset) {
 			return fmt.Errorf("deposit asset must be the layer1 equivalent for the synthetic asset")
 		}
 	}
