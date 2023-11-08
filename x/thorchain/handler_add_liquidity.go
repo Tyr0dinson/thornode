@@ -137,8 +137,7 @@ func (h AddLiquidityHandler) validateV126(ctx cosmos.Context, msg MsgAddLiquidit
 	// * layer 1 assets  (BTC, ETH, BNB, etc.)
 	// * stable pools (as determined by TOR anchor pool settings)
 	if msg.Asset.IsVaultAsset() {
-		// Saver L1 asset must be either gas asset or anchor asset
-		if !layer1Asset.IsGasAsset() && !h.mgr.Keeper().IsTorAnchorAsset(ctx, layer1Asset) {
+		if !h.mgr.Keeper().IsSaverL1Asset(ctx, layer1Asset) {
 			return fmt.Errorf("asset must be a gas asset or TOR anchor pool")
 		}
 		// Ensure that the message is being sent from an address on a chain that matches the L1 asset chain

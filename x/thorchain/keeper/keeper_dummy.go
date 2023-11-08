@@ -649,6 +649,7 @@ func (k KVStoreDummy) DollarConfigInRune(ctx cosmos.Context, key constants.Const
 	return cosmos.ZeroUint()
 }
 func (k KVStoreDummy) IsTorAnchorAsset(_ cosmos.Context, _ common.Asset) bool { return false }
+func (k KVStoreDummy) IsSaverL1Asset(_ cosmos.Context, _ common.Asset) bool   { return false }
 
 func (k KVStoreDummy) GetNativeTxFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()

@@ -89,3 +89,15 @@ func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.
 	}
 	return common.GetMedianUint(p)
 }
+
+// Saver L1 asset must be either gas asset or anchor asset
+func (k KVStore) IsSaverL1Asset(ctx cosmos.Context, asset common.Asset) bool {
+	// Only return true for external assets, for example not gas asset THOR.RUNE
+	if asset.IsNative() {
+		return false
+	}
+	if asset.IsGasAsset() {
+		return true
+	}
+	return k.IsTorAnchorAsset(ctx, asset)
+}
