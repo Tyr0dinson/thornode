@@ -65,7 +65,7 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
-		if _, found := k.nodeAccountStatus[status]; !found {
+		if cachedNodes, found := k.nodeAccountStatus[status]; !found || len(cachedNodes) == 0 {
 			nodes, err := k.listValidatorsByStatusStore(ctx, status)
 			if err != nil {
 				return nodes, err
