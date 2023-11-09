@@ -966,8 +966,10 @@ func migrateStoreV124(ctx cosmos.Context, mgr *Mgrs) {
 		ctx.Logger().Error("fail to requeue BTC rescue tx", "error", err)
 		return
 	}
+}
 
-	err = mgr.Keeper().BuildNodeStatus(ctx)
+func migrateStoreV125(ctx cosmos.Context, mgr *Mgrs) {
+	err := mgr.Keeper().BuildNodeStatus(ctx)
 	if err != nil {
 		ctx.Logger().Error("failed to build node status index", "error", err)
 		return

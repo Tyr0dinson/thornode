@@ -205,7 +205,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
 	if v.Equals(mgr.GetVersion()) {
 		// re-create keeper to reset cache
-		if v.GTE(semver.MustParse("1.124.0")) { // TODO remove version check after fork and always rebuild keeper thereafter
+		if v.GTE(semver.MustParse("1.125.0")) { // TODO remove version check after fork and always rebuild keeper thereafter
 			k, err := GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
 			if err != nil {
 				return err
@@ -496,8 +496,10 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.124.0")):
+	case version.GTE(semver.MustParse("1.125.0")):
 		return newValidatorMgrVCUR(keeper, networkMgr, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.124.0")):
+		return newValidatorMgrV124(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.123.0")):
 		return newValidatorMgrV123(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.121.0")):

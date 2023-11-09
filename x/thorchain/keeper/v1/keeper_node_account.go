@@ -64,7 +64,7 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
+	if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
 		if cachedNodes, found := k.nodeAccountStatus[status]; !found || len(cachedNodes) == 0 {
 			nodes, err := k.listValidatorsByStatusStore(ctx, status)
 			if err != nil {
@@ -109,7 +109,7 @@ func (k KVStore) listValidatorsByStatusStore(ctx cosmos.Context, status NodeStat
 
 // ListValidatorsByStatusStore - get a list of node accounts from account status index
 func (k KVStore) ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.124.0")) {
+	if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
 		return k.listValidatorsByStatusStore(ctx, status)
 	}
 	return k.ListValidatorsByStatus(ctx, status)
@@ -237,7 +237,7 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 	}
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
-	if k.GetVersion().GTE(semver.MustParse("1.124.0")) && na.Type == NodeTypeValidator {
+	if k.GetVersion().GTE(semver.MustParse("1.125.0")) && na.Type == NodeTypeValidator {
 		err := k.updateNodeStatusIndex(ctx, na)
 		if err != nil {
 			return err
