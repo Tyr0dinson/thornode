@@ -1839,7 +1839,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 	}
 
 	// overwrite values based on mimir v2
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
@@ -1922,7 +1922,7 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 func queryMimirV2Values(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	values := make(map[string]int64)
 
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
