@@ -45,6 +45,11 @@ func getNodeStatus(ps string) NodeStatus {
 	return NodeStatus_Unknown
 }
 
+// ShouldCache returns true if node status is either Active, Standby or Ready
+func (x NodeStatus) ShouldCache() bool {
+	return 2 <= x && x <= 4
+}
+
 func NewBondProviders(acc cosmos.AccAddress) BondProviders {
 	return BondProviders{
 		NodeAddress:     acc,

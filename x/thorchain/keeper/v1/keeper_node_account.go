@@ -64,16 +64,18 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
-		if cachedNodes, found := k.nodeAccountStatus[status]; !found || len(cachedNodes) == 0 {
-			nodes, err := k.listValidatorsByStatusStore(ctx, status)
-			if err != nil {
+	if status.ShouldCache() {
+		if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
+			if cachedNodes, found := k.nodeAccountStatus[status]; !found || len(cachedNodes) == 0 {
+				nodes, err := k.listValidatorsByStatusStore(ctx, status)
+				if err != nil {
+					return nodes, err
+				}
+				k.nodeAccountStatus[status] = nodes
 				return nodes, err
 			}
-			k.nodeAccountStatus[status] = nodes
-			return nodes, err
+			return k.nodeAccountStatus[status], nil
 		}
-		return k.nodeAccountStatus[status], nil
 	}
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
@@ -238,9 +240,11 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
 	if k.GetVersion().GTE(semver.MustParse("1.125.0")) && na.Type == NodeTypeValidator {
-		err := k.updateNodeStatusIndex(ctx, na)
-		if err != nil {
-			return err
+		if na.Status.ShouldCache() {
+			err := k.updateNodeStatusIndex(ctx, na)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -585,12 +589,14 @@ func (k KVStore) BuildNodeStatus(ctx cosmos.Context) error {
 			return dbError(ctx, "Unmarshal: node account", err)
 		}
 		if na.Type == NodeTypeValidator {
-			if _, found := statusIndex[na.Status]; !found {
-				statusIndex[na.Status] = make([]cosmos.AccAddress, 0)
+			if na.Status.ShouldCache() {
+				if _, found := statusIndex[na.Status]; !found {
+					statusIndex[na.Status] = make([]cosmos.AccAddress, 0)
+				}
+				statusIndex[na.Status] = append(statusIndex[na.Status], na.NodeAddress)
+				// set address -> status
+				k.setInt64(ctx, k.GetKey(ctx, prefixNodeAccountStatus, na.NodeAddress.String()), int64(na.Status))
 			}
-			statusIndex[na.Status] = append(statusIndex[na.Status], na.NodeAddress)
-			// set address -> status
-			k.setInt64(ctx, k.GetKey(ctx, prefixNodeAccountStatus, na.NodeAddress.String()), int64(na.Status))
 		}
 	}
 
