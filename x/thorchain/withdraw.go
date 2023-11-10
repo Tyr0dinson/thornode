@@ -61,18 +61,27 @@ func withdrawV125(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 	poolAsset := pool.BalanceAsset
 	originalLiquidityProviderUnits := lp.Units
 	fLiquidityProviderUnit := lp.Units
-	if lp.Units.IsZero() {
-		if !lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero() {
-			mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
-			pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
-			pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
-			if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
-				ctx.Logger().Error("failed to save pool pending inbound funds", "error", err)
-			}
-			// remove lp
-
-			return lp.PendingRune, cosmos.RoundToDecimal(lp.PendingAsset, pool.Decimals), cosmos.ZeroUint(), lp.Units, cosmos.ZeroUint(), nil
+	// If there is pending liquidity, withdraw it rather than committed liquidity.
+	if !lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero() {
+		pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
+		pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
+		if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+			ctx.Logger().Error("failed to save pool pending inbound funds", "error", err)
 		}
+
+		pendingRune := lp.PendingRune
+		pendingAsset := lp.PendingAsset
+		if lp.Units.IsZero() {
+			mgr.Keeper().RemoveLiquidityProvider(ctx, lp) // remove lp
+		} else {
+			lp.PendingRune = cosmos.ZeroUint()
+			lp.PendingAsset = cosmos.ZeroUint()
+			mgr.Keeper().SetLiquidityProvider(ctx, lp)
+		}
+
+		return pendingRune, cosmos.RoundToDecimal(pendingAsset, pool.Decimals), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), nil
+	}
+	if lp.Units.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errNoLiquidityUnitLeft
 	}
 
