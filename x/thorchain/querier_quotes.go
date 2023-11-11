@@ -833,6 +833,10 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("unable to unmarshal swapRes: %w", err))
 	}
+	// If the QuoteSwapResponse is empty, queryQuoteSwap has returned a quoteErrorResponse to return.
+	if *swapRes == (openapi.QuoteSwapResponse{}) {
+		return swapResRaw, nil
+	}
 
 	expectedAmountOut, _ := sdk.ParseUint(swapRes.ExpectedAmountOut)
 	outboundFee, _ := sdk.ParseUint(*swapRes.Fees.Outbound)
@@ -953,6 +957,10 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	err = json.Unmarshal(swapResRaw, &swapRes)
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("unable to unmarshal swapRes: %w", err))
+	}
+	// If the QuoteSwapResponse is empty, queryQuoteSwap has returned a quoteErrorResponse to return.
+	if *swapRes == (openapi.QuoteSwapResponse{}) {
+		return swapResRaw, nil
 	}
 
 	// use the swap result info to generate the withdraw quote
