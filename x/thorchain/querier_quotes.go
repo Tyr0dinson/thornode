@@ -1369,7 +1369,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 
 	// estimate the inbound info
-	inboundAddress, routerAddress, inboundConfirmations, err := quoteInboundInfo(ctx, mgr, msg.Coin.Amount, msg.Coin.Asset.Chain, msg.Coin.Asset)
+	inboundAddress, routerAddress, inboundConfirmations, err := quoteInboundInfo(ctx, mgr, msg.Coin.Amount, msg.Coin.Asset.GetChain(), msg.Coin.Asset)
 	if err != nil {
 		data, err = quoteErrorResponse(err)
 		return nil, data, err
@@ -1377,7 +1377,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	res.InboundAddress = wrapString(inboundAddress.String())
 	if inboundConfirmations > 0 {
 		res.InboundConfirmationBlocks = wrapInt64(inboundConfirmations)
-		res.InboundConfirmationSeconds = wrapInt64(inboundConfirmations * msg.Coin.Asset.Chain.ApproximateBlockMilliseconds() / 1000)
+		res.InboundConfirmationSeconds = wrapInt64(inboundConfirmations * msg.Coin.Asset.GetChain().ApproximateBlockMilliseconds() / 1000)
 	}
 
 	// set info fields
@@ -1656,6 +1656,16 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	fromAddress, err := types.GetRandomPubKey().GetAddress(asset.Chain)
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad from address: %w", err))
+	}
+
+	// validate if it is valid collateral asset
+	key := "LENDING-" + loanAsset.GetDerivedAsset().MimirString()
+	val, err := mgr.Keeper().GetMimir(ctx, key)
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("ail to fetch LENDING key: %w", err))
+	}
+	if val <= 0 {
+		return quoteErrorResponse(fmt.Errorf("Lending is not available for this collateral asset"))
 	}
 
 	loan, err := mgr.Keeper().GetLoan(ctx, loanAsset, loanOwner)
