@@ -38,7 +38,12 @@ if [ "$SEED" = "$(hostname)" ]; then
     NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
 
     init_chain "$NODE_ADDRESS"
-    add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
+    if [ "$NET" = "mocknet" ]; then
+      # Mocknet smoke tests use this NODE_PUB_KEY as the Active vault pubkey, thus needs it as the node's signer_membership for /thorchain/vaults/pubkeys endpoint Bifrost observations.
+      add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS" "$NODE_PUB_KEY"
+    else
+      add_node_account "$NODE_ADDRESS" "$VALIDATOR" "$NODE_PUB_KEY" "$VERSION" "$NODE_ADDRESS" "$NODE_PUB_KEY_ED25519" "$NODE_IP_ADDRESS"
+    fi
 
     # disable default bank transfer, and opt to use our own custom one
     disable_bank_send
