@@ -439,63 +439,66 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	resp.Asgard = make([]openapi.VaultInfo, 0)
 	resp.Yggdrasil = make([]openapi.VaultInfo, 0) // TODO remove on hard fork
 	resp.Inactive = make([]openapi.VaultInfo, 0)
-	iter := mgr.Keeper().GetVaultIterator(ctx)
 
 	active, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, err
 	}
-	cutOffAge := ctx.BlockHeight() - config.GetThornode().VaultPubkeysCutoffBlocks
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		var vault Vault
-		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
-			ctx.Logger().Error("fail to unmarshal vault", "error", err)
-			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
+
+	vaultPubkeyStringsMap := map[string]int{}
+	var vaultPubkeyStrings []string
+	for _, na := range active {
+		for _, pubkeyString := range na.SignerMembership {
+			if _, ok := vaultPubkeyStringsMap[pubkeyString]; !ok {
+				vaultPubkeyStrings = append(vaultPubkeyStrings, pubkeyString)
+			}
+			vaultPubkeyStringsMap[pubkeyString]++
 		}
-		if vault.IsYggdrasil() { // TODO remove ygg on hard fork
-			na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
-			if err != nil {
-				ctx.Logger().Error("fail to unmarshal vault", "error", err)
-				return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
-			}
-			if !na.Bond.IsZero() {
-				resp.Yggdrasil = append(resp.Yggdrasil, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
-				})
-			}
-		} else if vault.IsAsgard() {
-			switch vault.Status {
-			case ActiveVault, RetiringVault:
-				resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
-				})
-			case InactiveVault:
-				// skip inactive vaults that have never received an inbound
-				if vault.InboundTxCount == 0 {
-					continue
-				}
+	}
 
-				// skip inactive vaults older than the cutoff age
-				if vault.BlockHeight < cutOffAge {
-					continue
-				}
+	cutOffAge := ctx.BlockHeight() - config.GetThornode().VaultPubkeysCutoffBlocks
+	for _, pubkeyString := range vaultPubkeyStrings {
+		pubkey, err := common.NewPubKey(pubkeyString)
+		if err != nil {
+			ctx.Logger().Error("fail to parse pubkey for vault", "vault", pubkeyString, "error", err)
+			continue
+		}
+		vault, err := mgr.Keeper().GetVault(ctx, pubkey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "error", err)
+			continue
+		}
 
-				activeMembers, err := vault.GetMembers(active.GetNodeAddresses())
-				if err != nil {
-					ctx.Logger().Error("fail to get active members of vault", "error", err)
-					continue
-				}
-				allMembers := vault.Membership
-				if HasSuperMajority(len(activeMembers), len(allMembers)) {
-					resp.Inactive = append(resp.Inactive, openapi.VaultInfo{
-						PubKey:  vault.PubKey.String(),
-						Routers: castVaultRouters(vault.Routers),
-					})
-				}
+		if !vault.IsAsgard() {
+			// Yggdrasils having been deprecated, only display Asgard vault pubkeys.
+			continue
+		}
+
+		if !HasSuperMajority(vaultPubkeyStringsMap[pubkeyString], len(vault.Membership)) {
+			continue
+		}
+
+		switch vault.Status {
+		case ActiveVault, RetiringVault:
+			resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
+				PubKey:  vault.PubKey.String(),
+				Routers: castVaultRouters(vault.Routers),
+			})
+		case InactiveVault:
+			// skip inactive vaults that have never received an inbound
+			if vault.InboundTxCount == 0 {
+				continue
 			}
+
+			// skip inactive vaults older than the cutoff age
+			if vault.BlockHeight < cutOffAge {
+				continue
+			}
+
+			resp.Inactive = append(resp.Inactive, openapi.VaultInfo{
+				PubKey:  vault.PubKey.String(),
+				Routers: castVaultRouters(vault.Routers),
+			})
 		}
 	}
 	return jsonify(ctx, resp)
