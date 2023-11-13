@@ -430,9 +430,6 @@ func (s *Signer) processTransactionsV2() {
 	// get any locked vault/chains
 	lockedChains := s.concurrent.lockedChainVaults()
 
-	// make all observations for the batch before returning
-	observations := []types.TxInItem{}
-
 	for i, item := range items {
 		select {
 		case <-s.stopChan:
@@ -487,6 +484,9 @@ func (s *Signer) processTransactionsV2() {
 					// release the vault/chain lock on exit
 					<-s.concurrent.vaultChainLocks[vaultChain]
 				}()
+
+				// make all observations for the batch before returning
+				observations := []types.TxInItem{}
 
 				// process transaction
 				var success bool
