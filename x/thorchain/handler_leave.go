@@ -47,13 +47,17 @@ func (h LeaveHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, err
 
 func (h LeaveHandler) validate(ctx cosmos.Context, msg MsgLeave) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.validateV125(ctx, msg)
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.validateV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
-func (h LeaveHandler) validateV1(ctx cosmos.Context, msg MsgLeave) error {
+func (h LeaveHandler) validateV125(ctx cosmos.Context, msg MsgLeave) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
