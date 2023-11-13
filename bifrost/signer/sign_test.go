@@ -51,6 +51,7 @@ import (
 
 type fakeBridge struct {
 	thorclient.ThorchainBridge
+	processorVersion int
 }
 
 func (b fakeBridge) GetBlockHeight() (int64, error) {
@@ -70,6 +71,13 @@ func (b fakeBridge) GetConstants() (map[string]int64, error) {
 func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if strings.HasPrefix(key, "HALT") {
 		return 0, nil
+	}
+	if b.processorVersion == 2 {
+		if strings.HasPrefix(key, "VaultsConcurrentSignLimit") {
+			return 4, nil
+		}
+	} else {
+		return -1, nil
 	}
 	panic("not implemented")
 }
@@ -478,7 +486,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	// start a mock keysign
 	msg := "foobar"
 	tssServer := newFakeTss(msg, true)
-	bridge := fakeBridge{s.bridge}
+	bridge := fakeBridge{s.bridge, 1}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -558,7 +566,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// start a mock keysign, succeeds on 5th try
 	msg := "foobar"
 	tssServer := newFakeTss(msg, false)
-	bridge := fakeBridge{s.bridge}
+	bridge := fakeBridge{s.bridge, 1}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -635,7 +643,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// create the same on different chain, should move independently
 	msg2 := "foobar2"
 	tssServer2 := newFakeTss(msg2, true) // this one succeeds on first try
-	bridge2 := fakeBridge{s.bridge}
+	bridge2 := fakeBridge{s.bridge, 1}
 	ks2, err := tss.NewKeySign(tssServer2, bridge2)
 	c.Assert(err, IsNil)
 	ks2.Start()
@@ -728,7 +736,7 @@ func (s *SignSuite) TestBroadcastV2Retry(c *C) {
 	// start a mock keysign
 	msg := "foobar"
 	tssServer := newFakeTss(msg, true)
-	bridge := fakeBridge{s.bridge}
+	bridge := fakeBridge{s.bridge, 2}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -746,7 +754,7 @@ func (s *SignSuite) TestBroadcastV2Retry(c *C) {
 		constantsProvider:   NewConstantsProvider(bridge),
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 		logger:              log.With().Str("module", "signer").Logger(),
-		concurrent:          newConcurrentSigner(4),
+		pipelineSync:        newSignerPipelineSync(4),
 	}
 
 	// create a signer store with fake txouts

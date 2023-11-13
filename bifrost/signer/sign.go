@@ -50,7 +50,8 @@ type Signer struct {
 	localPubKey           common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
-	concurrent            signerPipelineSync
+	processorVersion      int
+	pipelineSync          signerPipelineSync
 }
 
 // signerPipelineSync holds the materials needed for pipeline concurrent processing,
@@ -86,6 +87,18 @@ func (cs signerPipelineSync) releaseCapacity(capacity pipelineCapacity) {
 				<-cs.inactiveVaultSemaphore
 			}
 		}
+	}
+}
+
+// waitForRunningSemaphores waits for all of semaphores to get free.
+func (cs signerPipelineSync) waitForRunningSemaphores() {
+	for {
+		if len(cs.activeVaultSemaphore) == 0 &&
+			len(cs.retiringVaultSemaphore) == 0 &&
+			len(cs.inactiveVaultSemaphore) == 0 {
+			return
+		}
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -205,11 +218,6 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 	}
 	constantProvider := NewConstantsProvider(thorchainBridge)
 
-	activeConcurrentSigners, err := thorchainBridge.GetMimir("ActiveVaultsConcurrentSignLimit")
-	if err != nil {
-		return nil, fmt.Errorf("error while getting concurrent sign limit mimir:%w", err)
-	}
-
 	return &Signer{
 		logger:                log.With().Str("module", "signer").Logger(),
 		cfg:                   cfg,
@@ -228,19 +236,19 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		localPubKey:           na.PubKeySet.Secp256k1,
 		tssKeysignMetricMgr:   tssKeysignMetricMgr,
 		observer:              obs,
-		concurrent:            newConcurrentSigner(activeConcurrentSigners),
+		processorVersion:      1,
 	}, nil
 }
 
-// newConcurrentSigner creates a new object of concurrent signing pipelines and vaults.
-func newConcurrentSigner(activeConcLimit int64) signerPipelineSync {
-	if activeConcLimit == -1 {
+// newSignerPipelineSync creates a new object of concurrent signing pipelines and vaults.
+func newSignerPipelineSync(concLimit int64) signerPipelineSync {
+	if concLimit == -1 {
 		return signerPipelineSync{}
 	}
 	return signerPipelineSync{
-		activeVaultSemaphore:   make(chan struct{}, activeConcLimit),
-		retiringVaultSemaphore: make(chan struct{}, 1),
-		inactiveVaultSemaphore: make(chan struct{}, 1),
+		activeVaultSemaphore:   make(chan struct{}, concLimit),
+		retiringVaultSemaphore: make(chan struct{}, concLimit),
+		inactiveVaultSemaphore: make(chan struct{}, 2),
 		vaultChainLocks:        make(map[string]chan struct{}),
 	}
 }
@@ -317,9 +325,28 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	if cap(s.concurrent.activeVaultSemaphore) == 0 {
+	concLimit, err := s.thorchainBridge.GetMimir("VaultsConcurrentSignLimit")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get vault concurrent sign limit mimir")
+		return
+	}
+
+	// no mimir found, so it should process v1
+	if concLimit == -1 {
+		if s.processorVersion == 2 {
+			s.processorVersion = 1
+			s.pipelineSync.waitForRunningSemaphores()
+		}
+
+		// already v1 processing
 		s.processTransactionsV1()
 		return
+	}
+
+	// v2 process is enabled
+	if s.processorVersion == 1 {
+		s.processorVersion = 2
+		s.pipelineSync = newSignerPipelineSync(concLimit)
 	}
 	s.processTransactionsV2()
 }
@@ -425,10 +452,10 @@ func (s *Signer) processTransactionsV2() {
 	vaultStatusCache := make(map[string]ttypes.VaultStatus)
 
 	// get the remaining (free) capacity of all pipelines
-	remainingCap := s.concurrent.acquireCapacity()
+	remainingCap := s.pipelineSync.acquireCapacity()
 
 	// get any locked vault/chains
-	lockedChains := s.concurrent.lockedChainVaults()
+	lockedChains := s.pipelineSync.lockedChainVaults()
 
 	for i, item := range items {
 		select {
@@ -450,12 +477,12 @@ func (s *Signer) processTransactionsV2() {
 
 			// no lock record available, we need to initialize the lock
 			if !ok {
-				s.concurrent.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
+				s.pipelineSync.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
 
 			}
 
 			// set the lock for the vault/chain
-			s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
+			s.pipelineSync.vaultChainLocks[vaultChain] <- struct{}{}
 			lockedChains[vaultChain] = true
 
 			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
@@ -485,7 +512,7 @@ func (s *Signer) processTransactionsV2() {
 					// release the vault semaphore on exit
 					<-semaphore
 					// release the vault/chain lock on exit
-					<-s.concurrent.vaultChainLocks[vaultChain]
+					<-s.pipelineSync.vaultChainLocks[vaultChain]
 				}()
 
 				// make all observations for the batch before returning
@@ -512,11 +539,11 @@ func (s *Signer) processTransactionsV2() {
 						ConfirmationRequired: 0,
 					}, item.TxOutItem.Chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 				}
-			}(i, item, vaultChain, s.concurrent.semaphore(status))
+			}(i, item, vaultChain, s.pipelineSync.semaphore(status))
 		}
 	}
 
-	s.concurrent.releaseCapacity(remainingCap)
+	s.pipelineSync.releaseCapacity(remainingCap)
 }
 
 func (s *Signer) processTransaction(index int, item TxOutStoreItem, observations []types.TxInItem) (bool, []types.TxInItem) {
