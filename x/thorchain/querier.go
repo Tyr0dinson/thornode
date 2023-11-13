@@ -704,11 +704,6 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond)
 
-	active, err := mgr.Keeper().ListActiveValidators(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get all active node account: %w", err)
-	}
-
 	result := NewQueryNodeAccount(nodeAcc)
 	result.PeerID = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
@@ -747,6 +742,10 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 			return nil, fmt.Errorf("no active vaults")
 		}
 
+		active, err := mgr.Keeper().ListActiveValidators(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get all active node account: %w", err)
+		}
 		bondHardCap := getHardBondCap(active)
 		totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
 		if err != nil {
