@@ -451,9 +451,12 @@ func (s *Signer) processTransactionsV2() {
 			// no lock record available, we need to initialize the lock
 			if !ok {
 				s.concurrent.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
-				s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
-				lockedChains[vaultChain] = true
+
 			}
+
+			// set the lock for the vault/chain
+			s.concurrent.vaultChainLocks[vaultChain] <- struct{}{}
+			lockedChains[vaultChain] = true
 
 			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
 			if !ok {
