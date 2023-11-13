@@ -47,6 +47,8 @@ func (h UnBondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, er
 func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.validateV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return h.validateV124(ctx, msg)
 	case version.GTE(semver.MustParse("1.117.0")):
@@ -60,7 +62,7 @@ func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 	}
 }
 
-func (h UnBondHandler) validateV124(ctx cosmos.Context, msg MsgUnBond) error {
+func (h UnBondHandler) validateV125(ctx cosmos.Context, msg MsgUnBond) error {
 	if err := msg.ValidateBasicV117(); err != nil {
 		return err
 	}
