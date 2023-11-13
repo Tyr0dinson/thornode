@@ -50,12 +50,12 @@ type Signer struct {
 	localPubKey           common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
-	concurrent            concurrentSigner
+	concurrent            signerPipelineSync
 }
 
-// concurrentSigner holds the materials needed for pipeline concurrent processing,
-// this is being created and filled while Signer initialization
-type concurrentSigner struct {
+// signerPipelineSync holds the materials needed for pipeline concurrent processing,
+// this is being created and filled during ty returns true of initialization
+type signerPipelineSync struct {
 	activeVaultSemaphore   chan struct{}
 	retiringVaultSemaphore chan struct{}
 	inactiveVaultSemaphore chan struct{}
@@ -64,7 +64,7 @@ type concurrentSigner struct {
 
 type pipelineCapacity map[ttypes.VaultStatus]int
 
-// hasCapacity returns true of there is any free slots in the corresponfing pipeline's vault.
+// hasCapacity returns true if there are renaining free slots in the corresponding pipeline's vault.
 func (pc pipelineCapacity) hasCapacity(vaultStatus ttypes.VaultStatus) bool {
 	remainingCount, ok := pc[vaultStatus]
 	if !ok || remainingCount <= 0 {
@@ -74,7 +74,7 @@ func (pc pipelineCapacity) hasCapacity(vaultStatus ttypes.VaultStatus) bool {
 }
 
 // releaseCapacity releases the unused capacity of the pipeline's vault semaphore.
-func (cs concurrentSigner) releaseCapacity(capacity pipelineCapacity) {
+func (cs signerPipelineSync) releaseCapacity(capacity pipelineCapacity) {
 	for vaultStatus, remaining := range capacity {
 		for i := 0; i < remaining; i++ {
 			switch vaultStatus {
@@ -89,8 +89,8 @@ func (cs concurrentSigner) releaseCapacity(capacity pipelineCapacity) {
 	}
 }
 
-// pipelineCapacity returns current pipeline's capacity of the vault semaphore.
-func (cs concurrentSigner) pipelineCapacity() pipelineCapacity {
+// acquireCapacity returns current pipeline's capacity of the vault semaphore.
+func (cs signerPipelineSync) acquireCapacity() pipelineCapacity {
 	// determine how many of each vault type we can process
 	capacity := map[ttypes.VaultStatus]int{
 		ttypes.VaultStatus_ActiveVault:   0,
@@ -113,24 +113,26 @@ func (cs concurrentSigner) pipelineCapacity() pipelineCapacity {
 	}
 }
 
-// lockedChains returns a map of boolean for cach available vault/chain.
-func (cs concurrentSigner) lockedChains() map[string]bool {
+// lockedChainVaults returns a map of boolean for cach available vault/chain,
+// it returns true if the vault/chain lock exists, in other words if any vault/chain
+// process is ongoing, this method returns true.
+func (cs signerPipelineSync) lockedChainVaults() map[string]bool {
 	// get any locked vault/chains
-	lockedChains := make(map[string]bool)
+	lockedChainVaults := make(map[string]bool)
 	for vaultChain, semaphore := range cs.vaultChainLocks {
-		// if channel has any element, means it chain/vauls is lock
+		// if channel has any element, means it chain/vaults is lock
 		if len(semaphore) == 1 {
-			lockedChains[vaultChain] = true
+			lockedChainVaults[vaultChain] = true
 		} else {
-			lockedChains[vaultChain] = false
+			lockedChainVaults[vaultChain] = false
 		}
 	}
 
-	return lockedChains
+	return lockedChainVaults
 }
 
 // semaphore returns the corresponding smaphore of the pipeline's vault
-func (cs concurrentSigner) semaphore(vaultStatus ttypes.VaultStatus) chan struct{} {
+func (cs signerPipelineSync) semaphore(vaultStatus ttypes.VaultStatus) chan struct{} {
 	// determine which semaphore to use
 	var semaphore chan struct{}
 	switch vaultStatus {
@@ -231,11 +233,11 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 }
 
 // newConcurrentSigner creates a new object of concurrent signing pipelines and vaults.
-func newConcurrentSigner(activeConcLimit int64) concurrentSigner {
+func newConcurrentSigner(activeConcLimit int64) signerPipelineSync {
 	if activeConcLimit == -1 {
-		return concurrentSigner{}
+		return signerPipelineSync{}
 	}
-	return concurrentSigner{
+	return signerPipelineSync{
 		activeVaultSemaphore:   make(chan struct{}, activeConcLimit),
 		retiringVaultSemaphore: make(chan struct{}, 1),
 		inactiveVaultSemaphore: make(chan struct{}, 1),
@@ -423,15 +425,14 @@ func (s *Signer) processTransactionsV2() {
 	vaultStatusCache := make(map[string]ttypes.VaultStatus)
 
 	// get the remaining (free) capacity of all pipelines
-	remainingCap := s.concurrent.pipelineCapacity()
+	remainingCap := s.concurrent.acquireCapacity()
 
 	// get any locked vault/chains
-	lockedChains := s.concurrent.lockedChains()
+	lockedChains := s.concurrent.lockedChainVaults()
 
 	// make all observations for the batch before returning
 	observations := []types.TxInItem{}
 
-	fmt.Println("rrr")
 	for i, item := range items {
 		select {
 		case <-s.stopChan:
@@ -445,12 +446,10 @@ func (s *Signer) processTransactionsV2() {
 			vaultChain := vaultChainKey(item)
 
 			// check if the vault/chain is locked, if it is then ignore this tx
-			fmt.Println("ooo")
 			locked, ok := lockedChains[vaultChain]
 			if ok && locked {
 				continue
 			}
-			fmt.Println("bbb")
 
 			// no lock record available, we need to initialize the lock
 			if !ok {
@@ -480,9 +479,6 @@ func (s *Signer) processTransactionsV2() {
 			// decrease the available semaphore buffer and set as acquired
 			remainingCap[status]--
 
-			// // release pseudo lock on vault/chain (now owned by the routine we are about to spawn)
-			// lockedChains[vaultChain] = false
-
 			// process the transaction concurrently
 			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
 				defer func() {
@@ -494,7 +490,6 @@ func (s *Signer) processTransactionsV2() {
 
 				// process transaction
 				var success bool
-				fmt.Println("jjjjjjjjjjjj")
 				success, observations = s.processTransaction(i, item, observations)
 
 				if !success {
@@ -517,13 +512,6 @@ func (s *Signer) processTransactionsV2() {
 			}(i, item, vaultChain, s.concurrent.semaphore(status))
 		}
 	}
-
-	// // release the unused vault/chain locks we took
-	// for vaultChain, locked := range lockedChains {
-	// 	if locked {
-	// 		<-s.concurrent.vaultChainLocks[vaultChain]
-	// 	}
-	// }
 
 	s.concurrent.releaseCapacity(remainingCap)
 }
@@ -900,7 +888,6 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 
 	// broadcast the transaction
-	fmt.Printf("xxx  %v", "fffffff")
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
