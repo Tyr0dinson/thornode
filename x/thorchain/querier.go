@@ -697,10 +697,6 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node slash points: %w", err)
 	}
-	jail, err := mgr.Keeper().GetNodeAccountJail(ctx, nodeAcc.NodeAddress)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get node jail: %w", err)
-	}
 
 	bp, err := mgr.Keeper().GetBondProviders(ctx, nodeAcc.NodeAddress)
 	if err != nil {
@@ -717,10 +713,17 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	result.PeerID = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
 
-	result.Jail = Jail{
-		// Since redundant, leave out the node address
-		ReleaseHeight: jail.ReleaseHeight,
-		Reason:        jail.Reason,
+	// Jail is only relevant for non-Active nodes.
+	if nodeAcc.Status != NodeActive {
+		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, nodeAcc.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node jail: %w", err)
+		}
+		result.Jail = Jail{
+			// Since redundant, leave out the node address
+			ReleaseHeight: jail.ReleaseHeight,
+			Reason:        jail.Reason,
+		}
 	}
 
 	result.BondProviders = BondProviders{
@@ -908,16 +911,17 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			}
 
 			result[i].CurrentAward = reward
-		}
-
-		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get node jail: %w", err)
-		}
-		result[i].Jail = Jail{
-			// Since redundant, leave out the node address
-			ReleaseHeight: jail.ReleaseHeight,
-			Reason:        jail.Reason,
+		} else {
+			// Jail is only relevant for non-Active nodes.
+			jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get node jail: %w", err)
+			}
+			result[i].Jail = Jail{
+				// Since redundant, leave out the node address
+				ReleaseHeight: jail.ReleaseHeight,
+				Reason:        jail.Reason,
+			}
 		}
 		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {

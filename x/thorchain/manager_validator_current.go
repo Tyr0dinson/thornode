@@ -1406,13 +1406,16 @@ func (vm *ValidatorMgrVCUR) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 		return NodeStandby, fmt.Errorf("node account does not meet min version requirement: %s vs %s", na.Version, minVersion)
 	}
 
-	jail, err := vm.k.GetNodeAccountJail(ctx, na.NodeAddress)
-	if err != nil {
-		ctx.Logger().Error("fail to get node account jail", "error", err)
-		return NodeStandby, fmt.Errorf("cannot fetch jail status: %w", err)
-	}
-	if jail.IsJailed(ctx) {
-		return NodeStandby, fmt.Errorf("node account is jailed until block %d: %s", jail.ReleaseHeight, jail.Reason)
+	// Jail is only relevant for non-Active nodes.
+	if na.Status != NodeActive {
+		jail, err := vm.k.GetNodeAccountJail(ctx, na.NodeAddress)
+		if err != nil {
+			ctx.Logger().Error("fail to get node account jail", "error", err)
+			return NodeStandby, fmt.Errorf("cannot fetch jail status: %w", err)
+		}
+		if jail.IsJailed(ctx) {
+			return NodeStandby, fmt.Errorf("node account is jailed until block %d: %s", jail.ReleaseHeight, jail.Reason)
+		}
 	}
 
 	if vm.k.RagnarokInProgress(ctx) {
