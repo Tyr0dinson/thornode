@@ -1229,6 +1229,20 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		dbps = cosmos.ZeroUint()
 	}
 
+	handler := NewLoanOpenHandler(mgr)
+	totalRune, err := handler.getTotalLiquidityRUNELoanPools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get total rune for loan  pools: %w", err)
+	}
+	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxAmt := fetchConfigInt64(ctx, mgr, constants.MaxRuneSupply)
+	lever := fetchConfigInt64(ctx, mgr, constants.LendingLever)
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
+	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
+	totalCollateralRemaining := totalAvailableAssetForPool.Sub(totalCollateral)
+
 	p := NewQueryPool(pool)
 	p.SynthSupply = synthSupply.String()
 	p.SaversDepth = saversDepth.String()
@@ -1236,9 +1250,9 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.LoanCollateral = totalCollateral.String()
+	p.LoanCollateralRemaining = totalCollateralRemaining.String()
 	p.DerivedDepthBps = dbps.String()
 
-	handler := NewLoanOpenHandler(mgr)
 	cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 	p.LoanCR = cr.String()
 
@@ -1246,6 +1260,18 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	handler := NewLoanOpenHandler(mgr)
+
+	totalRune, err := handler.getTotalLiquidityRUNELoanPools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get total rune for loan  pools: %w", err)
+	}
+	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxAmt := fetchConfigInt64(ctx, mgr, constants.MaxRuneSupply)
+	lever := fetchConfigInt64(ctx, mgr, constants.LendingLever)
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+
 	pools := make([]QueryPool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1289,6 +1315,10 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 		}
 
+		totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
+		totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
+		totalCollateralRemaining := totalAvailableAssetForPool.Sub(totalCollateral)
+
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
 		dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
@@ -1303,9 +1333,9 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.LoanCollateral = totalCollateral.String()
+		p.LoanCollateralRemaining = totalCollateralRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 
-		handler := NewLoanOpenHandler(mgr)
 		cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 		p.LoanCR = cr.String()
 
