@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-
 Contact: devs@thorchain.org
 */
 
