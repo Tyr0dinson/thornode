@@ -475,7 +475,7 @@ func (s *Signer) processTransactionsV1() {
 
 func (s *Signer) processTransactionsV2() {
 	// vault/chain key generator function, returns unique key of a vault/chain pair
-	var vaultChainKey = func(item TxOutStoreItem) string {
+	vaultChainKey := func(item TxOutStoreItem) string {
 		// concat vault and chain for the lock key
 		return fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
 	}
@@ -529,7 +529,6 @@ func (s *Signer) processTransactionsV2() {
 			// no lock record available, we need to initialize the lock
 			if !ok {
 				s.pipelineSync.vaultChainLocks[vaultChain] = make(chan struct{}, 1)
-
 			}
 
 			// set the lock for the vault/chain
