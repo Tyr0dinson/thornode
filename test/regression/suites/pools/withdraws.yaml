@@ -1,0 +1,53 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Nonsense withdraw attempt
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "-:ETH.nonsense:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.log? and .code != 0)] | length == 1
+  - ..|select(.log?).log | contains("pool-ETH.NONSENSE doesn't exist")
+  # TODO:  This is a failed withdraw PoolExist validation
+  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.124.0/x/thorchain/withdraw.go#L332-335 )
+  # but the handler_withdraw validation should check this much earlier at the same time as EnsureValidPoolStatus
+  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.124.0/x/thorchain/handler_withdraw.go#L79-81 )
+  # by using IsEmpty like handler_add_liquidity .
+  # ( https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/handler_add_liquidity.go#L269-270 )
+  # For handler_withdraw, a format without a hyphen ('pool-') to distinguish the withdraw.go and handler_withdraw errors.
+---
+########################################################################################
+# Withdraw half the USDC position as USDC
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "200000000"
+    asset: "rune"
+memo: "-:ETH.USDC:5000:ETH.USDC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.log? and .code != 0)] | length == 1
+  - ..|select(.log?).log | contains("withdrawal asset must be empty, rune, or pool asset")
+  # TODO (#1573): Withdrawal asset should accept fuzzy matching like pool asset (creating an outbound rather than a refund).
+  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.132.0/x/thorchain/handler.go#L317-319 )
