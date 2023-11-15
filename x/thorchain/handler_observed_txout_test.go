@@ -73,7 +73,7 @@ type TestObservedTxOutHandleKeeper struct {
 	pool        Pool
 	txOutStore  TxOutStore
 	observing   []cosmos.AccAddress
-	hashes      []common.TxID
+	hashes      map[common.TxID][]common.TxID
 }
 
 func (k *TestObservedTxOutHandleKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
@@ -161,12 +161,19 @@ func (k *TestObservedTxOutHandleKeeper) SetObservedTxInVoter(ctx cosmos.Context,
 	k.txInVoter = tx
 }
 
-func (k *TestObservedTxOutHandleKeeper) SetObservedLink(ctx cosmos.Context, _, outhash common.TxID) {
-	k.hashes = append(k.hashes, outhash)
+func (k *TestObservedTxOutHandleKeeper) SetObservedLink(ctx cosmos.Context, inhash, outhash common.TxID) {
+	if _, ok := k.hashes[inhash]; !ok {
+		k.hashes = make(map[common.TxID][]common.TxID)
+		k.hashes[inhash] = make([]common.TxID, 0)
+	}
+	k.hashes[inhash] = append(k.hashes[inhash], outhash)
 }
 
 func (k *TestObservedTxOutHandleKeeper) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
-	return k.hashes
+	if _, ok := k.hashes[inhash]; !ok {
+		return make([]common.TxID, 0)
+	}
+	return k.hashes[inhash]
 }
 
 func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
@@ -203,7 +210,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 		},
 		vaultExists: true,
 		vault:       vault,
-		hashes:      make([]common.TxID, 0),
+		hashes:      make(map[common.TxID][]common.TxID),
 	}
 	txOutStore := NewTxStoreDummy()
 	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
@@ -273,8 +280,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	tx := GetRandomTx()
 	pk := GetRandomPubKey()
 	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
-	txInHash := GetRandomTxHash()          // Used later for the pending outbound.
-	tx.Memo = fmt.Sprintf("OUT:%s", tx.ID) // Self-referential memo.
+	txInHash := GetRandomTxHash()             // Used later for the pending outbound.
+	tx.Memo = fmt.Sprintf("OUT:%s", txInHash) // Self-referential memo.
 	obTx := NewObservedTx(tx, 12, pk, 12)
 	txs := ObservedTxs{obTx}
 	c.Assert(err, IsNil)
@@ -300,7 +307,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 		},
 		vaultExists: true,
 		vault:       vault,
-		hashes:      make([]common.TxID, 0),
+		hashes:      make(map[common.TxID][]common.TxID),
 	}
 	txOutStore := NewTxStoreDummy()
 	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
