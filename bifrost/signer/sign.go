@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/spf13/cast"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/app"
@@ -144,7 +145,7 @@ func (cs signerPipelineSync) lockedChainVaults() map[string]bool {
 	return lockedChainVaults
 }
 
-// semaphore returns the corresponding smaphore of the pipeline's vault
+// semaphore returns the corresponding semaphore of the pipeline's vault
 func (cs signerPipelineSync) semaphore(vaultStatus ttypes.VaultStatus) chan struct{} {
 	// determine which semaphore to use
 	var semaphore chan struct{}
@@ -325,10 +326,21 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
-	concLimit, err := s.thorchainBridge.GetMimir("VaultsConcurrentSignLimit")
+	// TODO: this mimir and multiple processors versions will be removed after functionality asessment.
+	concLimit, err := s.thorchainBridge.GetMimir("VaultSignerConcurrency")
 	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to get vault concurrent sign limit mimir")
-		return
+
+		// fallback for the environment variable if the mimir not found
+		concLimitEnv := os.Getenv("BIFROST_SIGNER_CONCURRENCY")
+		if concLimitEnv == "" {
+			return
+		}
+		concLimit, err = cast.ToInt64E(concLimitEnv)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("invalid vault concurrent sign limit environment variable")
+			return
+		}
 	}
 
 	// no mimir found, so it should process v1
@@ -336,6 +348,7 @@ func (s *Signer) processTransactions() {
 		if s.processorVersion == 2 {
 			s.processorVersion = 1
 			s.pipelineSync.waitForRunningSemaphores()
+			s.logger.Info().Msg("transaction processing method changed to v1-sync")
 		}
 
 		// already v1 processing
@@ -347,6 +360,7 @@ func (s *Signer) processTransactions() {
 	if s.processorVersion == 1 {
 		s.processorVersion = 2
 		s.pipelineSync = newSignerPipelineSync(concLimit)
+		s.logger.Info().Msg("transaction processing method changed to v2-async")
 	}
 	s.processTransactionsV2()
 }
@@ -410,10 +424,47 @@ func (s *Signer) processTransactionsV1() {
 						continue
 					}
 
-					var success bool
-					success, observations = s.processTransaction(i, item, observations)
-					if !success {
+					s.logger.Info().Int("num", i).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
+					// a single keysign should not take longer than 5 minutes , regardless TSS or local
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+						return s.signAndBroadcast(item)
+					})
+					if err != nil {
+						// mark the txout on round 7 failure to block other txs for the chain / pubkey
+						ksErr := tss.KeysignError{}
+						if errors.As(err, &ksErr) && ksErr.IsRound7() {
+							s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
+							item.Round7Retry = true
+							item.Checkpoint = checkpoint
+							if err := s.storage.Set(item); err != nil {
+								s.logger.Error().Err(err).Msg("fail to update tx out store item with round 7 retry")
+							}
+						}
+
+						if errors.Is(err, context.DeadlineExceeded) {
+							panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
+						}
+						s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
+						cancel()
 						return
+						// The 'item' for loop should not be items[0],
+						// because problems which return 'nil, nil' should be skipped over instead of blocking others.
+						// When signAndBroadcast returns an error (such as from a keysign timeout),
+						// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
+						// for when the keysign failure was from a loss of list synchrony.
+						// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
+					}
+					cancel()
+
+					// if enabled and the observation is non-nil, add to this batch's observations
+					if s.cfg.AutoObserve && obs != nil {
+						observations = append(observations, *obs)
+					}
+
+					// We have a successful broadcast! Remove the item from our store
+					if err := s.storage.Remove(item); err != nil {
+						s.logger.Error().Err(err).Msg("fail to update tx out store item")
 					}
 				}
 			}
@@ -432,18 +483,18 @@ func (s *Signer) processTransactionsV2() {
 	// list of all transactions sorted
 	allItems := s.storage.List()
 	// extract the vaults that have round7 item
-	retryVaults := make(map[string]struct{})
+	retryVaultChains := make(map[string]bool)
 	var items []TxOutStoreItem
 	for _, item := range allItems {
 		if item.Round7Retry || len(item.SignedTx) > 0 {
-			retryVaults[vaultChainKey(item)] = struct{}{}
+			retryVaultChains[vaultChainKey(item)] = true
 			items = append(items, item)
 		}
 	}
 
 	// filter round7 and include the rest vault items
 	for _, item := range allItems {
-		if _, isRound7 := retryVaults[vaultChainKey(item)]; !isRound7 {
+		if !retryVaultChains[vaultChainKey(item)] {
 			items = append(items, item)
 		}
 	}

@@ -73,7 +73,7 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 		return 0, nil
 	}
 	if b.processorVersion == 2 {
-		if strings.HasPrefix(key, "VaultsConcurrentSignLimit") {
+		if strings.HasPrefix(key, "VaultSignerConcurrency") {
 			return 4, nil
 		}
 	} else {
