@@ -47,7 +47,38 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .|[..|select(.log? and .code != 0)] | length == 1
-  - ..|select(.log?).log | contains("withdrawal asset must be empty, rune, or pool asset")
-  # TODO (#1573): Withdrawal asset should accept fuzzy matching like pool asset (creating an outbound rather than a refund).
-  # ( https://gitlab.com/thorchain/thornode/-/blob/v1.132.0/x/thorchain/handler.go#L317-319 )
+  - .|[..|select(.log? and .code != 0)] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1 # The outbound exists.
+  - .[]|.in_hash == "{{ native_txid 2 }}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          amount: "62452000000"
+          decimals: 8
+      gas:
+        - asset: "ETH.ETH"
+          amount: "960000"
+      memo: "OUT:{{ native_txid 2 }}"
+    block_height: 5
+    finalise_height: 5
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0 # The outbound was resolved.
