@@ -2308,17 +2308,34 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 }
 
 func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*types.QueryTxResponse, error) {
+	var response types.QueryTxResponse
+	voters := make([]ObservedTxVoter, 0)
+
 	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
 	if err != nil {
 		return nil, err
 	}
-	if len(voter.Txs) == 0 {
-		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
+	if len(voter.Txs) > 0 {
+		voters = append(voters, voter)
+	} else {
+		// when tx in voter doesn't exist , double check tx out voter
+
+		// if we have multiple outbound hashes, fetch them all
+		linkedHashes := qs.mgr.Keeper().GetObservedLink(ctx, hash)
+		if len(linkedHashes) == 0 {
+			// no multi-outbound, append single outbond hash
+			linkedHashes = append(linkedHashes, hash)
 		}
-		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
+
+		for _, outhash := range linkedHashes {
+			voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, outhash)
+			if err != nil {
+				return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
+			}
+			if len(voter.Txs) == 0 {
+				return nil, fmt.Errorf("tx: %s doesn't exist", outhash)
+			}
+			voters = append(voters, voter)
 		}
 	}
 
@@ -2326,20 +2343,23 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
-	keysignMetric, err := qs.mgr.Keeper().GetTssKeysignMetric(ctx, hash)
-	if err != nil {
-		ctx.Logger().Error("fail to get keysign metrics", "error", err)
+	for _, voter := range voters {
+		keysignMetric, err := qs.mgr.Keeper().GetTssKeysignMetric(ctx, hash)
+		if err != nil {
+			ctx.Logger().Error("fail to get keysign metrics", "error", err)
+		}
+
+		response_item := types.QueryTxResponse_QueryTxResponseItem{
+			ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
+			ConsensusHeight: voter.Height,
+			FinalisedHeight: voter.FinalisedHeight,
+			OutboundHeight:  voter.OutboundHeight,
+			KeysignMetric:   keysignMetric,
+		}
+		response.Txs = append(response.Txs, response_item)
 	}
 
-	result := types.QueryTxResponse{
-		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
-		ConsensusHeight: voter.Height,
-		FinalisedHeight: voter.FinalisedHeight,
-		OutboundHeight:  voter.OutboundHeight,
-		KeysignMetric:   keysignMetric,
-	}
-
-	return &result, nil
+	return &response, nil
 }
 
 func extractBlockHeight(ctx cosmos.Context, heightStr string) (int64, error) {

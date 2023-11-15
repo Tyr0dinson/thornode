@@ -588,27 +588,31 @@ func (s *QuerierSuite) TestQueryLiquidityProviders(c *C) {
 func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	tx := GetRandomTx()
 	// test getTxInVoter
-	queryTxVoterResp, err := s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
+	queryTxVotersResp, err := s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
 		TxId: tx.ID.String(),
 	})
 	c.Assert(err, NotNil)
-	c.Assert(queryTxVoterResp, IsNil)
+	c.Assert(queryTxVotersResp, IsNil)
 
 	observedTxInVote := NewObservedTxVoter(tx.ID, []common.ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
-	queryTxVoterResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
+	queryTxVotersResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
 		TxId: tx.ID.String(),
 	})
 	c.Assert(err, IsNil)
+	c.Assert(queryTxVotersResp.TxVoters, HasLen, 1)
 
 	// marshal output so we can verify it unmarshals as expected
-	result, err := queryTxVoterResp.MarshalJSONPB(nil)
+	result, err := queryTxVotersResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	var voters []openapi.TxDetailsResponse
-	c.Assert(json.Unmarshal(result, &voters), IsNil)
+	var deserializedQueryTxVotersResp struct {
+		TxVoters []openapi.TxDetailsResponse `json:"tx_voters"`
+	}
+	c.Assert(json.Unmarshal(result, &deserializedQueryTxVotersResp), IsNil)
 
-	for _, voter := range voters {
+	c.Assert(deserializedQueryTxVotersResp.TxVoters, HasLen, 1)
+	for _, voter := range deserializedQueryTxVotersResp.TxVoters {
 		// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
 		c.Assert(voter.TxId == nil, Equals, false)
 		c.Assert(len(voter.Txs) == 1, Equals, true)
@@ -717,26 +721,33 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 		TxId: tx.ID.String(),
 	})
 	c.Assert(err, IsNil)
+	c.Assert(queryTxResp.Txs, HasLen, 1)
 
 	result, err := queryTxResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
-	var newTx struct {
-		openapi.ObservedTx `json:"observed_tx"`
-		KeysignMetrics     types.TssKeysignMetric `json:"keysign_metric,omitempty"`
-	}
-	c.Assert(json.Unmarshal(result, &newTx), IsNil)
 
-	// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
-	c.Assert(newTx.ExternalObservedHeight == nil, Equals, false)
-	c.Assert(*newTx.ExternalObservedHeight <= 0, Equals, false)
-	c.Assert(newTx.ObservedPubKey == nil, Equals, false)
-	c.Assert(newTx.ExternalConfirmationDelayHeight == nil, Equals, false)
-	c.Assert(*newTx.ExternalConfirmationDelayHeight <= 0, Equals, false)
-	c.Assert(newTx.Tx.Id == nil, Equals, false)
-	c.Assert(newTx.Tx.FromAddress == nil, Equals, false)
-	c.Assert(newTx.Tx.ToAddress == nil, Equals, false)
-	c.Assert(newTx.Tx.Chain == nil, Equals, false)
-	c.Assert(len(newTx.Tx.Coins) == 0, Equals, false)
+	var deserializedQueryTxResp struct {
+		NewTxs []struct {
+			openapi.ObservedTx `json:"observed_tx"`
+			KeysignMetrics     types.TssKeysignMetric `json:"keysign_metric,omitempty"`
+		} `json:"txs"`
+	}
+	c.Assert(json.Unmarshal(result, &deserializedQueryTxResp), IsNil)
+
+	c.Assert(deserializedQueryTxResp.NewTxs, HasLen, 1)
+	for _, tx := range deserializedQueryTxResp.NewTxs {
+		// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
+		c.Assert(tx.ExternalObservedHeight == nil, Equals, false)
+		c.Assert(*tx.ExternalObservedHeight <= 0, Equals, false)
+		c.Assert(tx.ObservedPubKey == nil, Equals, false)
+		c.Assert(tx.ExternalConfirmationDelayHeight == nil, Equals, false)
+		c.Assert(*tx.ExternalConfirmationDelayHeight <= 0, Equals, false)
+		c.Assert(tx.Tx.Id == nil, Equals, false)
+		c.Assert(tx.Tx.FromAddress == nil, Equals, false)
+		c.Assert(tx.Tx.ToAddress == nil, Equals, false)
+		c.Assert(tx.Tx.Chain == nil, Equals, false)
+		c.Assert(len(tx.Tx.Coins) == 0, Equals, false)
+	}
 }
 
 func (s *QuerierSuite) TestQueryKeyGen(c *C) {
