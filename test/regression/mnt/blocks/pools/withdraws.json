@@ -299,9 +299,9 @@
         },
         "result": {
           "code": 99,
-          "log": "failed to execute message; message index: 0: fail to process withdraw request: 2 errors occurred:\n\t* internal error\n\t* pool-ETH.NONSENSE doesn't exist\n\n: internal error",
+          "log": "failed to execute message; message index: 0: pool (ETH.NONSENSE) doesn't exist: internal error",
           "gas_wanted": "0",
-          "gas_used": "130425",
+          "gas_used": "116425",
           "events": [
             {
               "fee": "",
@@ -369,7 +369,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "D008FA11D3BFF11B466F3A8371B4B1027E7475D1F3A97D0F8777338598CD5495",
-      "last_results_hash": "D0807F413F1F3648FA941E3D5F38F599439096D55FF9AC8458D973FA30F77F8B",
+      "last_results_hash": "4172CF746BF21C3BC94C9E9EA77224F9B03C968D724C6F6C20D83B7111702AE5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
