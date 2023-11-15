@@ -78,6 +78,11 @@ func (h WithdrawLiquidityHandler) validateV133(ctx cosmos.Context, msg MsgWithdr
 		return ErrInternal(err, errMsg)
 	}
 
+	if pool.IsEmpty() {
+		// pool doesn't exist
+		return fmt.Errorf("pool (%s) doesn't exist", msg.Asset)
+	}
+
 	if err := pool.EnsureValidPoolStatus(&msg); err != nil {
 		return multierror.Append(errInvalidPoolStatus, err)
 	}
