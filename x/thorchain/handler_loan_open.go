@@ -132,8 +132,19 @@ func (h LoanOpenHandler) validateV121(ctx cosmos.Context, msg MsgLoanOpen) error
 	return nil
 }
 
-// GetTotalAvailableAssetForPool returns total available collateral for a certain asset to be lended
+// getTotalAvailableAssetForPool returns total available collateral for a certain asset to be lended
 func (h LoanOpenHandler) GetTotalAvailableAssetForPool(ctx cosmos.Context, collateralAsset common.Asset,
+) (types.Uint, error) {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("1.121.0")):
+		return h.getTotalAvailableAssetForPoolV121(ctx, collateralAsset)
+	default:
+		return types.Uint{}, errBadVersion
+	}
+}
+
+func (h LoanOpenHandler) getTotalAvailableAssetForPoolV121(ctx cosmos.Context, collateralAsset common.Asset,
 ) (types.Uint, error) {
 	// Circuit Breaker: check if we're hit the max supply
 	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
