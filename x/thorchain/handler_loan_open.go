@@ -53,6 +53,8 @@ func (h LoanOpenHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.validateV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.validateV121(ctx, msg)
 	case version.GTE(semver.MustParse("1.111.0")):
@@ -66,7 +68,7 @@ func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) validateV121(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) validateV125(ctx cosmos.Context, msg MsgLoanOpen) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -137,14 +139,14 @@ func (h LoanOpenHandler) GetTotalAvailableAssetForPool(ctx cosmos.Context, colla
 ) (types.Uint, error) {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.getTotalAvailableAssetForPoolV121(ctx, collateralAsset)
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.getTotalAvailableAssetForPoolV125(ctx, collateralAsset)
 	default:
 		return types.Uint{}, errBadVersion
 	}
 }
 
-func (h LoanOpenHandler) getTotalAvailableAssetForPoolV121(ctx cosmos.Context, collateralAsset common.Asset,
+func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, collateralAsset common.Asset,
 ) (types.Uint, error) {
 	// Circuit Breaker: check if we're hit the max supply
 	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
