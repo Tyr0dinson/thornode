@@ -499,9 +499,6 @@ func (s *Signer) processTransactionsV2() {
 		}
 	}
 
-	// vaultStatusCache this is being used for cahcing the vault status
-	vaultStatusCache := make(map[string]ttypes.VaultStatus)
-
 	// get the remaining (free) capacity of all pipelines
 	remainingCap := s.pipelineSync.acquireCapacity()
 
@@ -535,26 +532,19 @@ func (s *Signer) processTransactionsV2() {
 			s.pipelineSync.vaultChainLocks[vaultChain] <- struct{}{}
 			lockedChains[vaultChain] = true
 
-			status, ok := vaultStatusCache[item.TxOutItem.VaultPubKey.String()]
-			if !ok {
-				vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
-				if err != nil {
-					s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
-					return
-				}
-				status = vault.Status
-
-				// set in the cache
-				vaultStatusCache[item.TxOutItem.VaultPubKey.String()] = vault.Status
+			vault, err := s.thorchainBridge.GetVault(item.TxOutItem.VaultPubKey.String())
+			if err != nil {
+				s.logger.Error().Msgf("tx out item invalid vault: %s", item.TxOutItem.VaultPubKey)
+				return
 			}
 
 			// check if we have any slots remaining for this vault status
-			if !remainingCap.hasCapacity(status) {
+			if !remainingCap.hasCapacity(vault.Status) {
 				continue
 			}
 
 			// decrease the available semaphore buffer and set as acquired
-			remainingCap[status]--
+			remainingCap[vault.Status]--
 
 			// process the transaction concurrently
 			go func(i int, item TxOutStoreItem, vaultChain string, semaphore chan struct{}) {
@@ -589,7 +579,7 @@ func (s *Signer) processTransactionsV2() {
 						ConfirmationRequired: 0,
 					}, item.TxOutItem.Chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 				}
-			}(i, item, vaultChain, s.pipelineSync.semaphore(status))
+			}(i, item, vaultChain, s.pipelineSync.semaphore(vault.Status))
 		}
 	}
 
