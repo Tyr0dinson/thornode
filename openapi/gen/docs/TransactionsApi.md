@@ -14,7 +14,7 @@ Method | HTTP request | Description
 
 ## Tx
 
-> TxResponse Tx(ctx, hash).Height(height).Execute()
+> []TxResponse Tx(ctx, hash).Height(height).Execute()
 
 
 
@@ -43,7 +43,7 @@ func main() {
         fmt.Fprintf(os.Stderr, "Error when calling `TransactionsApi.Tx``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
     }
-    // response from `Tx`: TxResponse
+    // response from `Tx`: []TxResponse
     fmt.Fprintf(os.Stdout, "Response from `TransactionsApi.Tx`: %v\n", resp)
 }
 ```
@@ -68,7 +68,7 @@ Name | Type | Description  | Notes
 
 ### Return type
 
-[**TxResponse**](TxResponse.md)
+[**[]TxResponse**](TxResponse.md)
 
 ### Authorization
 
@@ -86,7 +86,7 @@ No authorization required
 
 ## TxSigners
 
-> TxDetailsResponse TxSigners(ctx, hash).Height(height).Execute()
+> []TxDetailsResponse TxSigners(ctx, hash).Height(height).Execute()
 
 
 
@@ -115,7 +115,7 @@ func main() {
         fmt.Fprintf(os.Stderr, "Error when calling `TransactionsApi.TxSigners``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
     }
-    // response from `TxSigners`: TxDetailsResponse
+    // response from `TxSigners`: []TxDetailsResponse
     fmt.Fprintf(os.Stdout, "Response from `TransactionsApi.TxSigners`: %v\n", resp)
 }
 ```
@@ -140,7 +140,7 @@ Name | Type | Description  | Notes
 
 ### Return type
 
-[**TxDetailsResponse**](TxDetailsResponse.md)
+[**[]TxDetailsResponse**](TxDetailsResponse.md)
 
 ### Authorization
 
@@ -158,7 +158,7 @@ No authorization required
 
 ## TxSignersOld
 
-> TxSignersResponse TxSignersOld(ctx, hash).Height(height).Execute()
+> []TxSignersResponse TxSignersOld(ctx, hash).Height(height).Execute()
 
 
 
@@ -187,7 +187,7 @@ func main() {
         fmt.Fprintf(os.Stderr, "Error when calling `TransactionsApi.TxSignersOld``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
     }
-    // response from `TxSignersOld`: TxSignersResponse
+    // response from `TxSignersOld`: []TxSignersResponse
     fmt.Fprintf(os.Stdout, "Response from `TransactionsApi.TxSignersOld`: %v\n", resp)
 }
 ```
@@ -212,7 +212,7 @@ Name | Type | Description  | Notes
 
 ### Return type
 
-[**TxSignersResponse**](TxSignersResponse.md)
+[**[]TxSignersResponse**](TxSignersResponse.md)
 
 ### Authorization
 

@@ -437,7 +437,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TxResponse"
+                type: array
+                items:
+                  $ref: "#/components/schemas/TxResponse"
 
   /thorchain/tx/{hash}/signers:
     parameters:
@@ -454,7 +456,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TxSignersResponse"
+                type: array
+                items:
+                  $ref: "#/components/schemas/TxSignersResponse"
 
   /thorchain/tx/details/{hash}:
     parameters:
@@ -471,7 +475,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TxDetailsResponse"
+                type: array
+                items:
+                  $ref: "#/components/schemas/TxDetailsResponse"
 
   /thorchain/tx/stages/{hash}:
     parameters:

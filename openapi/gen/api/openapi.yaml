@@ -698,7 +698,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TxResponse'
+                items:
+                  $ref: '#/components/schemas/TxResponse'
+                type: array
           description: OK
       tags:
       - Transactions
@@ -730,7 +732,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TxSignersResponse'
+                items:
+                  $ref: '#/components/schemas/TxSignersResponse'
+                type: array
           description: OK
       tags:
       - Transactions
@@ -762,7 +766,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TxDetailsResponse'
+                items:
+                  $ref: '#/components/schemas/TxDetailsResponse'
+                type: array
           description: OK
       tags:
       - Transactions

@@ -36,7 +36,7 @@ func (r ApiTxRequest) Height(height int64) ApiTxRequest {
 	return r
 }
 
-func (r ApiTxRequest) Execute() (*TxResponse, *http.Response, error) {
+func (r ApiTxRequest) Execute() ([]TxResponse, *http.Response, error) {
 	return r.ApiService.TxExecute(r)
 }
 
@@ -58,13 +58,13 @@ func (a *TransactionsApiService) Tx(ctx context.Context, hash string) ApiTxReque
 }
 
 // Execute executes the request
-//  @return TxResponse
-func (a *TransactionsApiService) TxExecute(r ApiTxRequest) (*TxResponse, *http.Response, error) {
+//  @return []TxResponse
+func (a *TransactionsApiService) TxExecute(r ApiTxRequest) ([]TxResponse, *http.Response, error) {
 	var (
 		localVarHTTPMethod   = http.MethodGet
 		localVarPostBody     interface{}
 		formFiles            []formFile
-		localVarReturnValue  *TxResponse
+		localVarReturnValue  []TxResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "TransactionsApiService.Tx")
@@ -149,7 +149,7 @@ func (r ApiTxSignersRequest) Height(height int64) ApiTxSignersRequest {
 	return r
 }
 
-func (r ApiTxSignersRequest) Execute() (*TxDetailsResponse, *http.Response, error) {
+func (r ApiTxSignersRequest) Execute() ([]TxDetailsResponse, *http.Response, error) {
 	return r.ApiService.TxSignersExecute(r)
 }
 
@@ -171,13 +171,13 @@ func (a *TransactionsApiService) TxSigners(ctx context.Context, hash string) Api
 }
 
 // Execute executes the request
-//  @return TxDetailsResponse
-func (a *TransactionsApiService) TxSignersExecute(r ApiTxSignersRequest) (*TxDetailsResponse, *http.Response, error) {
+//  @return []TxDetailsResponse
+func (a *TransactionsApiService) TxSignersExecute(r ApiTxSignersRequest) ([]TxDetailsResponse, *http.Response, error) {
 	var (
 		localVarHTTPMethod   = http.MethodGet
 		localVarPostBody     interface{}
 		formFiles            []formFile
-		localVarReturnValue  *TxDetailsResponse
+		localVarReturnValue  []TxDetailsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "TransactionsApiService.TxSigners")
@@ -262,7 +262,7 @@ func (r ApiTxSignersOldRequest) Height(height int64) ApiTxSignersOldRequest {
 	return r
 }
 
-func (r ApiTxSignersOldRequest) Execute() (*TxSignersResponse, *http.Response, error) {
+func (r ApiTxSignersOldRequest) Execute() ([]TxSignersResponse, *http.Response, error) {
 	return r.ApiService.TxSignersOldExecute(r)
 }
 
@@ -284,13 +284,13 @@ func (a *TransactionsApiService) TxSignersOld(ctx context.Context, hash string) 
 }
 
 // Execute executes the request
-//  @return TxSignersResponse
-func (a *TransactionsApiService) TxSignersOldExecute(r ApiTxSignersOldRequest) (*TxSignersResponse, *http.Response, error) {
+//  @return []TxSignersResponse
+func (a *TransactionsApiService) TxSignersOldExecute(r ApiTxSignersOldRequest) ([]TxSignersResponse, *http.Response, error) {
 	var (
 		localVarHTTPMethod   = http.MethodGet
 		localVarPostBody     interface{}
 		formFiles            []formFile
-		localVarReturnValue  *TxSignersResponse
+		localVarReturnValue  []TxSignersResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "TransactionsApiService.TxSignersOld")
