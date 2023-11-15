@@ -66,6 +66,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryTxResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTxStagesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTxStatusResponse{}
+	_ jsonpb.JSONPBMarshaler = &QueryTxVotersResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryUpgradeProposalResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryUpgradeProposalsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryUpgradeVotesResponse{}
@@ -489,6 +490,11 @@ func (m *QueryTxStatusResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, erro
 	result.Stages = castTxStagesResponse(m.Stages)
 
 	return jsonify(result)
+}
+
+// QueryTxVotersResponse
+func (m *QueryTxVotersResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
 }
 
 func (m *QueryUpgradeProposalResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {

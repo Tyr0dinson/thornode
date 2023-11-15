@@ -605,22 +605,24 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	result, err := queryTxVoterResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	var voter openapi.TxDetailsResponse
-	c.Assert(json.Unmarshal(result, &voter), IsNil)
+	var voters []openapi.TxDetailsResponse
+	c.Assert(json.Unmarshal(result, &voters), IsNil)
 
-	// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
-	c.Assert(voter.TxId == nil, Equals, false)
-	c.Assert(len(voter.Txs) == 1, Equals, true)
-	c.Assert(voter.Txs[0].ExternalObservedHeight == nil, Equals, false)
-	c.Assert(*voter.Txs[0].ExternalObservedHeight <= 0, Equals, false)
-	c.Assert(voter.Txs[0].ObservedPubKey == nil, Equals, false)
-	c.Assert(voter.Txs[0].ExternalConfirmationDelayHeight == nil, Equals, false)
-	c.Assert(*voter.Txs[0].ExternalConfirmationDelayHeight <= 0, Equals, false)
-	c.Assert(voter.Txs[0].Tx.Id == nil, Equals, false)
-	c.Assert(voter.Txs[0].Tx.FromAddress == nil, Equals, false)
-	c.Assert(voter.Txs[0].Tx.ToAddress == nil, Equals, false)
-	c.Assert(voter.Txs[0].Tx.Chain == nil, Equals, false)
-	c.Assert(len(voter.Txs[0].Tx.Coins) == 0, Equals, false)
+	for _, voter := range voters {
+		// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
+		c.Assert(voter.TxId == nil, Equals, false)
+		c.Assert(len(voter.Txs) == 1, Equals, true)
+		c.Assert(voter.Txs[0].ExternalObservedHeight == nil, Equals, false)
+		c.Assert(*voter.Txs[0].ExternalObservedHeight <= 0, Equals, false)
+		c.Assert(voter.Txs[0].ObservedPubKey == nil, Equals, false)
+		c.Assert(voter.Txs[0].ExternalConfirmationDelayHeight == nil, Equals, false)
+		c.Assert(*voter.Txs[0].ExternalConfirmationDelayHeight <= 0, Equals, false)
+		c.Assert(voter.Txs[0].Tx.Id == nil, Equals, false)
+		c.Assert(voter.Txs[0].Tx.FromAddress == nil, Equals, false)
+		c.Assert(voter.Txs[0].Tx.ToAddress == nil, Equals, false)
+		c.Assert(voter.Txs[0].Tx.Chain == nil, Equals, false)
+		c.Assert(len(voter.Txs[0].Tx.Coins) == 0, Equals, false)
+	}
 }
 
 func (s *QuerierSuite) TestQueryTxStages(c *C) {

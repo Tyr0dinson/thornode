@@ -177,8 +177,8 @@ type QueryClient interface {
 	TxStages(ctx context.Context, in *QueryTxStagesRequest, opts ...grpc.CallOption) (*QueryTxStagesResponse, error)
 	TxStatus(ctx context.Context, in *QueryTxStatusRequest, opts ...grpc.CallOption) (*QueryTxStatusResponse, error)
 	Tx(ctx context.Context, in *QueryTxRequest, opts ...grpc.CallOption) (*QueryTxResponse, error)
-	TxVoters(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryObservedTxVoter, error)
-	TxVotersOld(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryObservedTxVoter, error)
+	TxVoters(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryTxVotersResponse, error)
+	TxVotersOld(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryTxVotersResponse, error)
 	Clout(ctx context.Context, in *QuerySwapperCloutRequest, opts ...grpc.CallOption) (*SwapperClout, error)
 	Queue(ctx context.Context, in *QueryQueueRequest, opts ...grpc.CallOption) (*QueryQueueResponse, error)
 	ScheduledOutbound(ctx context.Context, in *QueryScheduledOutboundRequest, opts ...grpc.CallOption) (*QueryOutboundResponse, error)
@@ -743,8 +743,8 @@ func (c *queryClient) Tx(ctx context.Context, in *QueryTxRequest, opts ...grpc.C
 	return out, nil
 }
 
-func (c *queryClient) TxVoters(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryObservedTxVoter, error) {
-	out := new(QueryObservedTxVoter)
+func (c *queryClient) TxVoters(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryTxVotersResponse, error) {
+	out := new(QueryTxVotersResponse)
 	err := c.cc.Invoke(ctx, Query_TxVoters_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -752,8 +752,8 @@ func (c *queryClient) TxVoters(ctx context.Context, in *QueryTxVotersRequest, op
 	return out, nil
 }
 
-func (c *queryClient) TxVotersOld(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryObservedTxVoter, error) {
-	out := new(QueryObservedTxVoter)
+func (c *queryClient) TxVotersOld(ctx context.Context, in *QueryTxVotersRequest, opts ...grpc.CallOption) (*QueryTxVotersResponse, error) {
+	out := new(QueryTxVotersResponse)
 	err := c.cc.Invoke(ctx, Query_TxVotersOld_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -1040,8 +1040,8 @@ type QueryServer interface {
 	TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error)
 	TxStatus(context.Context, *QueryTxStatusRequest) (*QueryTxStatusResponse, error)
 	Tx(context.Context, *QueryTxRequest) (*QueryTxResponse, error)
-	TxVoters(context.Context, *QueryTxVotersRequest) (*QueryObservedTxVoter, error)
-	TxVotersOld(context.Context, *QueryTxVotersRequest) (*QueryObservedTxVoter, error)
+	TxVoters(context.Context, *QueryTxVotersRequest) (*QueryTxVotersResponse, error)
+	TxVotersOld(context.Context, *QueryTxVotersRequest) (*QueryTxVotersResponse, error)
 	Clout(context.Context, *QuerySwapperCloutRequest) (*SwapperClout, error)
 	Queue(context.Context, *QueryQueueRequest) (*QueryQueueResponse, error)
 	ScheduledOutbound(context.Context, *QueryScheduledOutboundRequest) (*QueryOutboundResponse, error)
@@ -1249,10 +1249,10 @@ func (UnimplementedQueryServer) TxStatus(context.Context, *QueryTxStatusRequest)
 func (UnimplementedQueryServer) Tx(context.Context, *QueryTxRequest) (*QueryTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Tx not implemented")
 }
-func (UnimplementedQueryServer) TxVoters(context.Context, *QueryTxVotersRequest) (*QueryObservedTxVoter, error) {
+func (UnimplementedQueryServer) TxVoters(context.Context, *QueryTxVotersRequest) (*QueryTxVotersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TxVoters not implemented")
 }
-func (UnimplementedQueryServer) TxVotersOld(context.Context, *QueryTxVotersRequest) (*QueryObservedTxVoter, error) {
+func (UnimplementedQueryServer) TxVotersOld(context.Context, *QueryTxVotersRequest) (*QueryTxVotersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TxVotersOld not implemented")
 }
 func (UnimplementedQueryServer) Clout(context.Context, *QuerySwapperCloutRequest) (*SwapperClout, error) {

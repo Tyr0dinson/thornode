@@ -332,11 +332,11 @@ service Query {
     option (google.api.http).get = "/thorchain/tx/{tx_id}";
   }
 
-  rpc TxVoters(QueryTxVotersRequest) returns (QueryObservedTxVoter) {
+  rpc TxVoters(QueryTxVotersRequest) returns (QueryTxVotersResponse) {
     option (google.api.http).get = "/thorchain/tx/details/{tx_id}";
   }
 
-  rpc TxVotersOld(QueryTxVotersRequest) returns (QueryObservedTxVoter) {
+  rpc TxVotersOld(QueryTxVotersRequest) returns (QueryTxVotersResponse) {
     option (google.api.http).get = "/thorchain/tx/{tx_id}/signers";
   }
 

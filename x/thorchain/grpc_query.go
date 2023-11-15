@@ -483,7 +483,7 @@ func (s *queryServer) TxStatus(c context.Context, req *types.QueryTxStatusReques
 	return s.queryTxStatus(ctx, req)
 }
 
-func (s *queryServer) TxVoters(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
+func (s *queryServer) TxVoters(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryTxVotersResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
 	}
@@ -491,7 +491,7 @@ func (s *queryServer) TxVoters(c context.Context, req *types.QueryTxVotersReques
 	return s.queryTxVoters(ctx, req)
 }
 
-func (s *queryServer) TxVotersOld(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
+func (s *queryServer) TxVotersOld(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryTxVotersResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
 	}

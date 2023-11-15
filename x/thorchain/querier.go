@@ -1960,20 +1960,54 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 	return hash, voter, nil
 }
 
-func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
+func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryTxVotersResponse, error) {
 	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
 	if err != nil {
 		return nil, err
 	}
+	if len(voter.Txs) > 0 {
+		// voter is inbound hash, return immediately
+		tx_voter := types.QueryObservedTxVoter{
+			TxID:            voter.TxID,
+			Tx:              castObservedTx(voter.Tx),
+			Height:          voter.Height,
+			Txs:             []types.QueryObservedTx{},
+			Actions:         voter.Actions,
+			OutTxs:          voter.OutTxs,
+			FinalisedHeight: voter.FinalisedHeight,
+			UpdatedVault:    voter.UpdatedVault,
+			Reverted:        voter.Reverted,
+			OutboundHeight:  voter.OutboundHeight,
+		}
+		for _, obTx := range voter.Txs {
+			tx_voter.Txs = append(tx_voter.Txs, castObservedTx(obTx))
+		}
+		response := &types.QueryTxVotersResponse{
+			TxVoters: []types.QueryObservedTxVoter{tx_voter},
+		}
+
+		return response, nil
+	}
+
 	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
-		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+
+	// if we have multiple outbound hashes, fetch them all
+	linkedHashes := qs.mgr.Keeper().GetObservedLink(ctx, hash)
+	if len(linkedHashes) == 0 {
+		// no multi-outbound, append single outbond hash
+		linkedHashes = append(linkedHashes, hash)
+	}
+
+	voters := make([]ObservedTxVoter, 0)
+	for _, outhash := range linkedHashes {
+		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, outhash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
 		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
+			return nil, fmt.Errorf("tx: %s doesn't exist", outhash)
 		}
+		voters = append(voters, voter)
 	}
 
 	var txs []types.QueryObservedTx
@@ -1985,18 +2019,29 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 		}
 	}
 
-	return &types.QueryObservedTxVoter{
-		TxID:            voter.TxID,
-		Tx:              castObservedTx(voter.Tx),
-		Height:          voter.Height,
-		Txs:             txs,
-		Actions:         voter.Actions,
-		OutTxs:          voter.OutTxs,
-		FinalisedHeight: voter.FinalisedHeight,
-		UpdatedVault:    voter.UpdatedVault,
-		Reverted:        voter.Reverted,
-		OutboundHeight:  voter.OutboundHeight,
-	}, nil
+	tx_voters := make([]types.QueryObservedTxVoter, 0)
+	for _, voter := range voters {
+		tx_voter := types.QueryObservedTxVoter{
+			TxID:            voter.TxID,
+			Tx:              castObservedTx(voter.Tx),
+			Height:          voter.Height,
+			Txs:             txs,
+			Actions:         voter.Actions,
+			OutTxs:          voter.OutTxs,
+			FinalisedHeight: voter.FinalisedHeight,
+			UpdatedVault:    voter.UpdatedVault,
+			Reverted:        voter.Reverted,
+			OutboundHeight:  voter.OutboundHeight,
+		}
+		for _, obTx := range voter.Txs {
+			tx_voter.Txs = append(tx_voter.Txs, castObservedTx(obTx))
+		}
+		tx_voters = append(tx_voters, tx_voter)
+	}
+	response := &types.QueryTxVotersResponse{
+		TxVoters: tx_voters,
+	}
+	return response, nil
 }
 
 // TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.

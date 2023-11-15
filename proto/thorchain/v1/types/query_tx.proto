@@ -53,16 +53,20 @@ message QueryTxRequest {
 }
 
 message QueryTxResponse {
-  QueryObservedTx observed_tx = 1
-      [ (gogoproto.jsontag) = "observed_tx", (gogoproto.nullable) = false ];
-  // the thorchain height at which the inbound reached consensus
-  int64 consensus_height = 2;
-  // the thorchain height at which the outbound was finalised
-  int64 finalised_height = 3;
-  // the thorchain height for which the outbound was scheduled
-  int64 outbound_height = 4;
-  TssKeysignMetric keysign_metric = 5
-      [ (gogoproto.jsontag) = "keysign_metric" ];
+  message QueryTxResponseItem {
+    QueryObservedTx observed_tx = 1
+        [ (gogoproto.jsontag) = "observed_tx", (gogoproto.nullable) = false ];
+    // the thorchain height at which the inbound reached consensus
+    int64 consensus_height = 2;
+    // the thorchain height at which the outbound was finalised
+    int64 finalised_height = 3;
+    // the thorchain height for which the outbound was scheduled
+    int64 outbound_height = 4;
+    TssKeysignMetric keysign_metric = 5
+        [ (gogoproto.jsontag) = "keysign_metric" ];
+  }
+  repeated QueryTxResponseItem txs = 1
+      [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "txs" ];
 }
 
 // Same as ObservedTx, but changes block_height and finalise_height (openapi
@@ -114,6 +118,11 @@ message QueryObservedTxVoter {
 message QueryTxVotersRequest {
   string tx_id = 1;
   string height = 2;
+}
+
+message QueryTxVotersResponse {
+  repeated QueryObservedTxVoter tx_voters = 1
+      [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "tx_voters" ];
 }
 
 message PlannedOutTx {
