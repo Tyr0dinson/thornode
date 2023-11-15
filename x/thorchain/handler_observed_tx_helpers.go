@@ -474,6 +474,7 @@ func processTxOutAttestation(
 	}
 
 	k.SetObservedTxOutVoter(ctx, voter)
+	k.SetObservedLink(ctx, tx.Tx.ID, tx.Hash())
 
 	// Check to see if we have enough identical observations to process the transaction
 	return voter, ok

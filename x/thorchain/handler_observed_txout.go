@@ -62,7 +62,7 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 	handler := NewInternalHandler(h.mgr)
 
 	for _, tx := range msg.Txs {
-		voter, err := ensureVaultAndGetTxOutVoter(ctx, k, tx.ObservedPubKey, tx.Tx.ID, msg.GetSigners(), tx.KeysignMs)
+		voter, err := ensureVaultAndGetTxOutVoter(ctx, k, tx.ObservedPubKey, tx.Hash(), msg.GetSigners(), tx.KeysignMs)
 		if err != nil {
 			ctx.Logger().Error("fail to ensure vault and get tx out voter", "error", err)
 			continue

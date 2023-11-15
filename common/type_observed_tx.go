@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,22 @@ func (m *ObservedTx) Valid() error {
 // IsEmpty check whether the Tx is empty
 func (m *ObservedTx) IsEmpty() bool {
 	return m.Tx.IsEmpty()
+}
+
+// Hash calculate a hash based on tx data
+func (m ObservedTx) Hash() TxID {
+	str := fmt.Sprintf(
+		"%d|%s|%s|%s|%s|%s|%s|%s",
+		m.BlockHeight,
+		m.Tx.ID.String(),
+		m.Tx.Chain.String(),
+		m.Tx.FromAddress,
+		m.Tx.ToAddress,
+		m.Tx.Coins.String(),
+		m.Tx.Gas.ToCoins().String(),
+		m.Tx.Memo,
+	)
+	return TxID(fmt.Sprintf("%X", sha256.Sum256([]byte(str))))
 }
 
 // Equals compare two ObservedTx
