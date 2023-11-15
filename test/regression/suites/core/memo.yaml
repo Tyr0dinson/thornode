@@ -209,8 +209,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 2 }}
 asserts:
-  - .tx.tx.id == "{{ observe_txid 2 }}"
-  - .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .tx_voters | .[0] | .tx.tx.id == "{{ observe_txid 2 }}"
+  - .tx_voters | .[0] | .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -802,8 +802,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 14 }}
 asserts:
-  - .tx.tx.id == "{{ observe_txid 14 }}"
-  - .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .tx_voters | .[0] | .tx.tx.id == "{{ observe_txid 14 }}"
+  - .tx_voters | .[0] | .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -870,8 +870,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 16 }}
 asserts:
-  - .tx.tx.id == "{{ observe_txid 16 }}"
-  - (.tx.tx.memo | length) == 0
+  - .tx_voters | .[0] | .tx.tx.id == "{{ observe_txid 16 }}"
+  - (.tx_voters | .[0] | .tx.tx.memo | length) == 0
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
