@@ -8005,8 +8005,8 @@
       "name": "XVG ERC-20",
       "symbol": "XVG",
       "decimals": 18,
-      "logoURI": "logolink"
+      "logoURI": "https://raw.githubusercontent.com/vergecurrency/verge-graphics/master/XVGETH/Verge_Token_erc-20_icon_square-192x192.png"
     }
   ],
-  "logoURI": "https://raw.githubusercontent.com/vergecurrency/verge-graphics/master/XVGETH/Verge_Token_erc-20_icon_square-192x192.png"
+  "logoURI": "https://1inch.exchange/assets/images/logo.png"
 }
