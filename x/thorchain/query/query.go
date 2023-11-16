@@ -93,6 +93,7 @@ var (
 	QueryInvariants          = Query{Key: "invariants", EndpointTemplate: "/%s/invariants"}
 	QueryInvariant           = Query{Key: "invariant", EndpointTemplate: "/%s/invariant/{%s}"}
 	QueryBlock               = Query{Key: "block", EndpointTemplate: "/%s/block"}
+	QueryChurn               = Query{Key: "churn", EndpointTemplate: "/%s/churn"}
 
 	// queries only available on regtest builds
 	QueryExport = Query{Key: "export", EndpointTemplate: "/%s/export"}
@@ -161,4 +162,5 @@ var Queries = []Query{
 	QueryInvariant,
 	QueryBlock,
 	QueryExport,
+	QueryChurn,
 }
