@@ -73,11 +73,6 @@ func (h LoanOpenHandler) validateV125(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
-		return fmt.Errorf("loans are currently paused")
-	}
-
 	// ensure that while derived assets are disabled, borrower cannot receive a
 	// derived asset as their debt
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
@@ -156,6 +151,10 @@ func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, c
 	}
 	if supply.GTE(cosmos.NewUint(uint64(maxAmt))) {
 		return types.Uint{}, fmt.Errorf("loans are currently paused, due to rune supply cap (%d/%d)", supply.Uint64(), maxAmt)
+	}
+	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
+	if pauseLoans > 0 {
+		return types.Uint{}, fmt.Errorf("loans are currently paused")
 	}
 	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
