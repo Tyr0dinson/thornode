@@ -184,6 +184,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryInvariant(ctx, path[1:], mgr)
 		case q.QueryBlock.Key:
 			return queryBlock(ctx, mgr)
+		case q.QueryChurn.Key:
+			return queryChurnInfo(ctx, mgr)
 		default:
 			return optionalQuery(ctx, path, req, mgr)
 		}
@@ -1752,7 +1754,7 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 }
 
 // ThorChurn
-func queryChurnInfo(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+func queryChurnInfo(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	nextChurnHeight, nodesIn, nodesOut := mgr.validatorMgr.ChurnState(ctx)
 
 	churn := QueryChurn{
