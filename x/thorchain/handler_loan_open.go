@@ -176,7 +176,8 @@ func (h LoanOpenHandler) GetTotalAvailableAssetForPool(ctx cosmos.Context, maxAm
 }
 
 func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, maxAmt int64, supply types.Uint,
-	collateralAsset common.Asset) (types.Uint, error) {
+	collateralAsset common.Asset,
+) (types.Uint, error) {
 	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
 	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
