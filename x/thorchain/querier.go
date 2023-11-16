@@ -1230,11 +1230,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 
 	handler := NewLoanOpenHandler(mgr)
-	totalCollateralRemaining, err := handler.GetTotalAvailableAssetForPool(ctx, pool.Asset)
-	if err != nil {
-		// it means loans are currently paused or no liquidity available
-		totalCollateralRemaining = sdk.ZeroUint()
-	}
+	totalCollateralRemaining := handler.GetTotalRemainingCollateral(ctx, pool.Asset)
 
 	p := NewQueryPool(pool)
 	p.SynthSupply = synthSupply.String()
@@ -1297,11 +1293,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 		}
 
-		totalCollateralRemaining, err := handler.GetTotalAvailableAssetForPool(ctx, pool.Asset)
-		if err != nil {
-			// it means loans are currently paused or no liquidity available
-			totalCollateralRemaining = sdk.ZeroUint()
-		}
+		totalCollateralRemaining := handler.GetTotalRemainingCollateral(ctx, pool.Asset)
 
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
