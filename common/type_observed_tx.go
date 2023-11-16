@@ -52,8 +52,7 @@ func (m *ObservedTx) IsEmpty() bool {
 // Hash calculate a hash based on tx data
 func (m ObservedTx) Hash() TxID {
 	str := fmt.Sprintf(
-		"%d|%s|%s|%s|%s|%s|%s|%s",
-		m.BlockHeight,
+		"%s|%s|%s|%s|%s|%s|%s",
 		m.Tx.ID.String(),
 		m.Tx.Chain.String(),
 		m.Tx.FromAddress,
