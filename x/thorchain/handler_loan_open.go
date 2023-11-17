@@ -136,7 +136,7 @@ func (h LoanOpenHandler) validateV125(ctx cosmos.Context, msg MsgLoanOpen) error
 }
 
 // GetMaxAllowedLoanAmount maximum allowed loan if not paused or capped
-func (h LoanOpenHandler) GetMaxAllowedLoanAmount(ctx cosmos.Context, supply types.Uint) (int64, error) {
+func (h LoanOpenHandler) GetMaxAllowedLoanAmount(ctx cosmos.Context, supply cosmos.Uint) (int64, error) {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.125.0")):
@@ -146,7 +146,7 @@ func (h LoanOpenHandler) GetMaxAllowedLoanAmount(ctx cosmos.Context, supply type
 	}
 }
 
-func (h LoanOpenHandler) getMaxAllowedLoanAmount125(ctx cosmos.Context, supply types.Uint) (int64, error) {
+func (h LoanOpenHandler) getMaxAllowedLoanAmount125(ctx cosmos.Context, supply cosmos.Uint) (int64, error) {
 	// Circuit Breaker: check if we're hit the max supply
 	maxAmt := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
 	if maxAmt <= 0 {
@@ -164,37 +164,37 @@ func (h LoanOpenHandler) getMaxAllowedLoanAmount125(ctx cosmos.Context, supply t
 }
 
 // getTotalAvailableAssetForPool returns total available collateral for a certain asset to be lended
-func (h LoanOpenHandler) GetTotalAvailableAssetForPool(ctx cosmos.Context, maxAmt int64, supply types.Uint, collateralAsset common.Asset,
-) (types.Uint, error) {
+func (h LoanOpenHandler) GetTotalAvailableAssetForPool(ctx cosmos.Context, maxAmt int64, supply cosmos.Uint, collateralAsset common.Asset,
+) (cosmos.Uint, error) {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.125.0")):
 		return h.getTotalAvailableAssetForPoolV125(ctx, maxAmt, supply, collateralAsset)
 	default:
-		return types.Uint{}, errBadVersion
+		return cosmos.Uint{}, errBadVersion
 	}
 }
 
-func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, maxAmt int64, supply types.Uint,
+func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, maxAmt int64, supply cosmos.Uint,
 	collateralAsset common.Asset,
-) (types.Uint, error) {
+) (cosmos.Uint, error) {
 	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxAmt)), supply)
 	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
 	if totalAvailableRuneForProtocol.IsZero() {
-		return types.Uint{}, fmt.Errorf("no availability (0), lending unavailable")
+		return cosmos.Uint{}, fmt.Errorf("no availability (0), lending unavailable")
 	}
 	pool, err := h.mgr.Keeper().GetPool(ctx, collateralAsset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool", "error", err)
-		return types.Uint{}, err
+		return cosmos.Uint{}, err
 	}
 	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
 	if err != nil {
-		return types.Uint{}, err
+		return cosmos.Uint{}, err
 	}
 	if totalRune.IsZero() {
-		return types.Uint{}, fmt.Errorf("no liquidity, lending unavailable")
+		return cosmos.Uint{}, fmt.Errorf("no liquidity, lending unavailable")
 	}
 	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
 	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
@@ -202,7 +202,7 @@ func (h LoanOpenHandler) getTotalAvailableAssetForPoolV125(ctx cosmos.Context, m
 }
 
 // GetTotalRemainingCollateral returns total remainin collateral asset of the corresponding pool.
-func (h LoanOpenHandler) GetTotalRemainingCollateral(ctx cosmos.Context, collateralAsset common.Asset) types.Uint {
+func (h LoanOpenHandler) GetTotalRemainingCollateral(ctx cosmos.Context, collateralAsset common.Asset) cosmos.Uint {
 	supply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	maxAmt, err := h.GetMaxAllowedLoanAmount(ctx, supply)
 	if err != nil {
