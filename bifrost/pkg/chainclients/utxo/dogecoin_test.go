@@ -246,8 +246,8 @@ func (s *DogecoinSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Sender, Equals, "nfWiQeddE4zsYsDuYhvpgVC7y4gjr5RyqK")
 	c.Assert(txs.TxArray[0].To, Equals, vaultAddressString)
 	c.Assert(txs.TxArray[0].Coins.EqualsEx(common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(407250300))}), Equals, true)
-	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.DOGEAsset, cosmos.NewUint(1108335500))}), Equals, true)
-	c.Assert(len(txs.TxArray), Equals, 1)
+	c.Assert(txs.GetTotalGas().Equal(cosmos.NewUint(1108335500)), Equals, true)
+	c.Assert(len(txs.TxArray), Equals, 2)
 }
 
 func (s *DogecoinSuite) TestGetSender(c *C) {
@@ -929,7 +929,7 @@ func (s *DogecoinSuite) TestProcessReOrg(c *C) {
 func (s *DogecoinSuite) TestGetMemPool(c *C) {
 	txIns, err := s.client.FetchMemPool(1024)
 	c.Assert(err, IsNil)
-	c.Assert(txIns.TxArray, HasLen, 1)
+	c.Assert(txIns.TxArray, HasLen, 2)
 
 	// process it again , the tx will be ignored
 	txIns, err = s.client.FetchMemPool(1024)

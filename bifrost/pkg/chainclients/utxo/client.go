@@ -607,21 +607,14 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 				continue
 			}
 
-			// filter transactions
-			var txInItem types.TxInItem
-			txInItem, err = c.getTxIn(result, height, true, nil)
+			txInItems, err := c.getTxIns(result, height, true, nil)
 			if err != nil {
-				c.log.Debug().Err(err).Msg("fail to get TxInItem")
+				c.log.Debug().Err(err).Msg("fail to get TxInItems")
 				continue
 			}
-			if txInItem.IsEmpty() {
-				continue
+			for idx := range txInItems {
+				txIn.TxArray = append(txIn.TxArray, &txInItems[idx])
 			}
-			if txInItem.Coins.IsEmpty() {
-				continue
-			}
-
-			txIn.TxArray = append(txIn.TxArray, &txInItem)
 		}
 	}
 

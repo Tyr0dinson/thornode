@@ -464,75 +464,54 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	return false
 }
 
-func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) (types.TxInItem, error) {
+func (c *Client) getTxIns(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) ([]types.TxInItem, error) {
 	if c.ignoreTx(tx, height) {
 		c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
-		return types.TxInItem{}, nil
+		return nil, nil
 	}
 	// RBF enabled transaction will not be observed until committed to block
 	if c.isRBFEnabled(tx) && isMemPool {
-		return types.TxInItem{}, nil
+		return nil, nil
 	}
 	sender, err := c.getSender(tx, vinZeroTxs)
 	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to get sender from tx: %w", err)
+		return nil, fmt.Errorf("fail to get sender from tx: %w", err)
 	}
-	memo, err := c.getMemo(tx)
-	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to get memo from tx: %w", err)
-	}
-	if len([]byte(memo)) > constants.MaxMemoSize {
-		return types.TxInItem{}, fmt.Errorf("memo (%s) longer than max allow length (%d)", memo, constants.MaxMemoSize)
-	}
-	m, err := mem.ParseMemo(common.LatestVersion, memo)
-	if err != nil {
-		c.log.Debug().Err(err).Str("memo", memo).Msg("fail to parse memo")
-	}
-	output, err := c.getOutput(sender, tx, m.IsType(mem.TxConsolidate))
+
+	outputs, err := c.getOutputs(sender, tx)
 	if err != nil {
 		if errors.Is(err, btypes.ErrFailOutputMatchCriteria) {
 			c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
-			return types.TxInItem{}, nil
+			return nil, nil
 		}
-		return types.TxInItem{}, fmt.Errorf("fail to get output from tx: %w", err)
+		return nil, fmt.Errorf("fail to get outputs from tx: %w", err)
 	}
 
-	addresses := c.getAddressesFromScriptPubKey(output.ScriptPubKey)
-	toAddr := addresses[0]
-
-	// strip BCH address prefixes
-	if c.cfg.ChainID.Equals(common.BCHChain) {
-		toAddr = c.stripBCHAddress(toAddr)
+	// FIXME: does this correctly determine if the tx is an inbound?
+	isInbound := false
+	for _, output := range outputs {
+		isInbound = isInbound || c.isAsgardAddress(output.Reciever)
 	}
-
-	isInbound := c.isAsgardAddress(toAddr)
-	if isInbound {
-		// only inbound UTXO need to be validated against multi-sig
-		if !c.isValidUTXO(output.ScriptPubKey.Hex) {
-			return types.TxInItem{}, fmt.Errorf("invalid utxo")
-		}
-	}
-	amount, err := btcutil.NewAmount(output.Value)
-	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to parse float64: %w", err)
-	}
-	amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
-
 	gas, err := c.getGas(tx, isInbound)
 	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to get gas from tx: %w", err)
+		return nil, fmt.Errorf("fail to get gas from tx: %w", err)
 	}
-	return types.TxInItem{
-		BlockHeight: height,
-		Tx:          tx.Txid,
-		Sender:      sender,
-		To:          toAddr,
-		Coins: common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amt)),
-		},
-		Memo: memo,
-		Gas:  gas,
-	}, nil
+
+	items := make([]types.TxInItem, len(outputs))
+	for i, output := range outputs {
+		items[i] = types.TxInItem{
+			BlockHeight: height,
+			Tx:          tx.Txid,
+			Sender:      output.Sender,
+			To:          output.Reciever,
+			Coins: common.Coins{
+				common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(output.Amount)),
+			},
+			Memo: output.Memo,
+			Gas:  gas,
+		}
+	}
+	return items, nil
 }
 
 // stripBCHAddress removes prefix on bch addresses.
@@ -658,32 +637,37 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 	for idx, tx := range block.Tx {
 		// mempool transaction get committed to block , thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
-		var txInItem types.TxInItem
-		txInItem, err = c.getTxIn(&block.Tx[idx], block.Height, false, vinZeroTxs)
+		txInItems, err := c.getTxIns(&block.Tx[idx], block.Height, false, vinZeroTxs)
 		if err != nil {
 			// expected since vouts below dust threshold are skipped for vinZeroTxs
-			c.log.Debug().Str("txid", tx.Txid).Err(err).Msg("fail to get TxInItem")
+			c.log.Debug().Str("txid", tx.Txid).Err(err).Msg("fail to get TxInItems")
 			continue
 		}
-		if txInItem.IsEmpty() {
-			continue
+		for _, txInItem := range txInItems {
+			if txInItem.IsEmpty() {
+				continue
+			}
+			if txInItem.Coins.IsEmpty() {
+				continue
+			}
+			if txInItem.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
+				continue
+			}
+			added, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
+			if err != nil {
+				c.log.Err(err).Msgf("fail to determine whether hash(%s) had been observed before", txInItem.Tx)
+			}
+			if !added {
+				c.log.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
+				if err := c.temporalStorage.UntrackObservedTx(txInItem.Tx); err != nil {
+					c.log.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
+				}
+				continue
+			}
 		}
-		if txInItem.Coins.IsEmpty() {
-			continue
+		for idx := range txInItems {
+			txItems = append(txItems, &txInItems[idx])
 		}
-		if txInItem.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
-			continue
-		}
-		var added bool
-		added, err = c.temporalStorage.TrackObservedTx(txInItem.Tx)
-		if err != nil {
-			c.log.Err(err).Msgf("fail to determine whether hash(%s) had been observed before", txInItem.Tx)
-		}
-		if !added {
-			c.log.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-			continue
-		}
-		txItems = append(txItems, &txInItem)
 	}
 	txIn.TxArray = txItems
 	return txIn, nil
@@ -720,6 +704,123 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
 		return true
 	}
 	return false
+}
+
+type transfer struct {
+	Sender   string
+	Reciever string
+	Amount   uint64
+	Memo     string
+}
+
+func (c *Client) getOutputs(sender string, tx *btcjson.TxRawResult) ([]transfer, error) {
+	transfers := make([]transfer, 0)
+	isSenderAsgard := c.isAsgardAddress(sender)
+	for _, vout := range tx.Vout {
+		isOpReturn := strings.EqualFold(vout.ScriptPubKey.Type, "nulldata")
+
+		if isOpReturn {
+			buf, err := hex.DecodeString(vout.ScriptPubKey.Hex)
+			if err != nil {
+				c.log.Err(err).Msg("fail to hex decode scriptPubKey")
+				continue
+			}
+			var asm string
+			switch c.cfg.ChainID {
+			case common.DOGEChain:
+				asm, err = dogetxscript.DisasmString(buf)
+			case common.BCHChain:
+				asm, err = bchtxscript.DisasmString(buf)
+			case common.LTCChain:
+				asm, err = ltctxscript.DisasmString(buf)
+			case common.BTCChain:
+				asm, err = btctxscript.DisasmString(buf)
+			default:
+				c.log.Fatal().Msg("unsupported chain")
+			}
+
+			if err != nil {
+				c.log.Err(err).Msg("fail to disasm script pubkey")
+				continue
+			}
+			opReturnFields := strings.Fields(asm)
+			var memo string
+			if len(opReturnFields) == 2 {
+				var decoded []byte
+				decoded, err = hex.DecodeString(opReturnFields[1])
+				if err != nil {
+					c.log.Err(err).Msgf("fail to decode OP_RETURN string: %s", opReturnFields[1])
+					continue
+				}
+				memo += string(decoded)
+			}
+			if len([]byte(memo)) > constants.MaxMemoSize {
+				return nil, fmt.Errorf("memo (%s) longer than max allow length(%d)", memo, constants.MaxMemoSize)
+			}
+
+			m, err := mem.ParseMemo(common.LatestVersion, memo)
+			if err != nil {
+				c.log.Debug().Msgf("fail to parse memo: %s,err : %s", memo, err)
+				continue
+			}
+
+			// add memo
+			if len(transfers) > 0 {
+				transfers[len(transfers)-1].Memo = memo
+				if m.GetType() == mem.TxConsolidate && transfers[len(transfers)-1].Receiver != sender {
+					transfers = transfers[:len(transfers)-1]
+				}
+				if m.GetType() != mem.TxConsolidate && transfers[len(transfers)-1].Receiver == sender {
+					transfers = transfers[:len(transfers)-1]
+				}
+			}
+		} else {
+			if vout.Value <= 0 {
+				continue
+			}
+			addresses := c.getAddressesFromScriptPubKey(vout.ScriptPubKey)
+			if len(addresses) != 1 {
+				// If more than one address, ignore this Vout.
+				// TODO check what we do if get multiple addresses
+				continue
+			}
+			receiver := addresses[0]
+			if c.cfg.ChainID.Equals(common.BCHChain) {
+				receiver = c.stripBCHAddress(receiver)
+			}
+			// To be observed, either the sender or receiver must be an observed THORChain vault;
+			// if the sender is a vault then assume the first Vout is the output (and a later Vout could be change).
+			// If the sender isn't a vault, then do do not for instance
+			// return a change address Vout as the output if before the vault-inbound Vout.
+			if !isSenderAsgard && !c.isAsgardAddress(receiver) {
+				continue
+			}
+
+			// If a UTXO is outbound , there is no need to validate the UTXO against mutisig
+			if c.isAsgardAddress(receiver) {
+				if !c.isValidUTXO(vout.ScriptPubKey.Hex) {
+					return nil, fmt.Errorf("invalid utxo")
+				}
+			}
+
+			amount, err := btcutil.NewAmount(vout.Value)
+			if err != nil {
+				return nil, fmt.Errorf("fail to parse float64: %w", err)
+			}
+			amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
+			if cosmos.NewUint(amt).LT(c.cfg.ChainID.DustThreshold()) {
+				continue
+			}
+
+			transfers = append(transfers, transfer{
+				Sender:   sender,
+				Reciever: receiver,
+				Amount:   amt,
+			})
+		}
+	}
+
+	return transfers, nil
 }
 
 // getOutput retrieve the correct output for both inbound
