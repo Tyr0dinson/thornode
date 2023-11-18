@@ -1519,25 +1519,51 @@ func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAcc
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 	nextChurnHeight := lastChurnHeight + churnInterval
 
-	iterator := vm.k.GetNodeAccountIterator(ctx)
-	defer iterator.Close()
-	var churnIn types.NodeAccounts
-	var churnOut types.NodeAccounts
-	for ; iterator.Valid(); iterator.Next() {
-		var na NodeAccount
-		vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
-		if !(na.Status == NodeStandby || na.Status == NodeReady) {
-			continue
-		}
+	activeNodes, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get active nodes", "error", err)
+	}
 
-		nextStatus, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
-		if nextStatus == NodeReady && na.Status == NodeStandby {
-			churnIn = append(churnIn, na)
-		}
-		if nextStatus != NodeReady && na.Status == NodeReady {
-			churnOut = append(churnOut, na)
+	// Simulate a churn and see which nodes churn in and which churn out
+	cacheCtx, _ := ctx.CacheContext()
+	vm.churn(cacheCtx)
+	nextNodes, err := vm.k.ListActiveValidators(cacheCtx)
+
+	// Diff the active nodes and new node set after simulated churn
+	var churnIn, churnOut types.NodeAccounts
+	for _, node := range activeNodes {
+		if !nextNodes.Contains(node) {
+			churnOut = append(churnOut, node)
 		}
 	}
+
+	for _, node := range nextNodes {
+		if !activeNodes.Contains(node) {
+			churnIn = append(churnIn, node)
+		}
+	}
+
+	/*
+		iterator := vm.k.GetNodeAccountIterator(ctx)
+		defer iterator.Close()
+		var churnIn types.NodeAccounts
+		var churnOut types.NodeAccounts
+		for ; iterator.Valid(); iterator.Next() {
+			var na NodeAccount
+			vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
+			if !(na.Status == NodeStandby || na.Status == NodeReady) {
+				continue
+			}
+
+			nextStatus, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
+			if nextStatus == NodeReady && na.Status == NodeStandby {
+				churnIn = append(churnIn, na)
+			}
+			if nextStatus != NodeReady && na.Status == NodeReady {
+				churnOut = append(churnOut, na)
+			}
+		}
+	*/
 
 	return nextChurnHeight, churnIn, churnOut
 }
