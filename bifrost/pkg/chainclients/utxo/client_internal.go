@@ -497,7 +497,9 @@ func (c *Client) getTxIns(tx *btcjson.TxRawResult, height int64, isMemPool bool,
 		return nil, fmt.Errorf("fail to get gas from tx: %w", err)
 	}
 
-	gas[0].Amount = gas[0].Amount.QuoUint64(uint64(len(outputs)))
+	if len(outputs) > 0 {
+		gas[0].Amount = gas[0].Amount.QuoUint64(uint64(len(outputs)))
+	}
 
 	items := make([]types.TxInItem, len(outputs))
 	for i, output := range outputs {
