@@ -1513,38 +1513,21 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 }
 
 // Info returned for the API endpoint /churn
-func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts) {
+func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts, error) {
 	// Calculate the next churn height
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 	nextChurnHeight := lastChurnHeight + churnInterval
 
-	// Get the active validators and diff them from the next set
-	activeNodes, err := vm.k.ListActiveValidators(ctx)
+	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
 	if err != nil {
-		fmt.Errorf("fail to get active nodes: %w", err)
-		return nextChurnHeight, nil, nil
+		return nextChurnHeight, nil, nil, err
 	}
-	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
-	nextNodes, _, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
+
+	leaving, err := vm.k.ListValidatorsByStatus(ctx, NodeStandby)
 	if err != nil {
-		fmt.Errorf("fail to get next nodes: %w", err)
-		return nextChurnHeight, nil, nil
+		return nextChurnHeight, nil, nil, err
 	}
 
-	nodesIn := make(types.NodeAccounts, 0)
-	for _, node := range nextNodes {
-		if !activeNodes.Contains(node) {
-			nodesIn = append(nodesIn, node)
-		}
-	}
-
-	nodesOut := make(types.NodeAccounts, 0)
-	for _, node := range activeNodes {
-		if !nextNodes.Contains(node) {
-			nodesOut = append(nodesOut, node)
-		}
-	}
-
-	return nextChurnHeight, nodesIn, nodesOut
+	return nextChurnHeight, ready, leaving, nil
 }
