@@ -140,13 +140,13 @@ func (h LoanOpenHandler) GetMaxAllowedLoanAmount(ctx cosmos.Context, supply cosm
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.125.0")):
-		return h.getMaxAllowedLoanAmount125(ctx, supply)
+		return h.getMaxAllowedLoanAmountV125(ctx, supply)
 	default:
 		return 0, errBadVersion
 	}
 }
 
-func (h LoanOpenHandler) getMaxAllowedLoanAmount125(ctx cosmos.Context, supply cosmos.Uint) (int64, error) {
+func (h LoanOpenHandler) getMaxAllowedLoanAmountV125(ctx cosmos.Context, supply cosmos.Uint) (int64, error) {
 	// Circuit Breaker: check if we're hit the max supply
 	maxAmt := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
 	if maxAmt <= 0 {
