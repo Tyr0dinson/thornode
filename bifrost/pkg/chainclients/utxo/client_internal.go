@@ -490,7 +490,7 @@ func (c *Client) getTxIns(tx *btcjson.TxRawResult, height int64, isMemPool bool,
 	// FIXME: does this correctly determine if the tx is an inbound?
 	isInbound := false
 	for _, output := range outputs {
-		isInbound = isInbound || c.isAsgardAddress(output.Reciever)
+		isInbound = isInbound || c.isAsgardAddress(output.Receiver)
 	}
 	gas, err := c.getGas(tx, isInbound)
 	if err != nil {
@@ -503,7 +503,7 @@ func (c *Client) getTxIns(tx *btcjson.TxRawResult, height int64, isMemPool bool,
 			BlockHeight: height,
 			Tx:          tx.Txid,
 			Sender:      output.Sender,
-			To:          output.Reciever,
+			To:          output.Receiver,
 			Coins: common.Coins{
 				common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(output.Amount)),
 			},
@@ -708,7 +708,7 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
 
 type transfer struct {
 	Sender   string
-	Reciever string
+	Receiver string
 	Amount   uint64
 	Memo     string
 }
@@ -814,7 +814,7 @@ func (c *Client) getOutputs(sender string, tx *btcjson.TxRawResult) ([]transfer,
 
 			transfers = append(transfers, transfer{
 				Sender:   sender,
-				Reciever: receiver,
+				Receiver: receiver,
 				Amount:   amt,
 			})
 		}
