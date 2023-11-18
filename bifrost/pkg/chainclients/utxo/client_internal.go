@@ -497,12 +497,14 @@ func (c *Client) getTxIns(tx *btcjson.TxRawResult, height int64, isMemPool bool,
 		return nil, fmt.Errorf("fail to get gas from tx: %w", err)
 	}
 
+	gas[0].Amount = gas[0].Amount.QuoUint64(uint64(len(outputs)))
+
 	items := make([]types.TxInItem, len(outputs))
 	for i, output := range outputs {
 		items[i] = types.TxInItem{
 			BlockHeight: height,
 			Tx:          tx.Txid,
-			Sender:      output.Sender,
+			Sender:      sender,
 			To:          output.Receiver,
 			Coins: common.Coins{
 				common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(output.Amount)),
