@@ -1513,21 +1513,31 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 }
 
 // Info returned for the API endpoint /churn
-func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts, error) {
+func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts) {
 	// Calculate the next churn height
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 	nextChurnHeight := lastChurnHeight + churnInterval
 
-	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
-	if err != nil {
-		return nextChurnHeight, nil, nil, err
+	iterator := vm.k.GetNodeAccountIterator(ctx)
+	defer iterator.Close()
+	var churnIn types.NodeAccounts
+	var churnOut types.NodeAccounts
+	for ; iterator.Valid(); iterator.Next() {
+		var na NodeAccount
+		vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
+		if !(na.Status == NodeStandby || na.Status == NodeReady) {
+			continue
+		}
+
+		nextStatus, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
+		if nextStatus == NodeReady && na.Status == NodeStandby {
+			churnIn = append(churnIn, na)
+		}
+		if nextStatus != NodeReady && na.Status == NodeReady {
+			churnOut = append(churnOut, na)
+		}
 	}
 
-	leaving, err := vm.k.ListValidatorsByStatus(ctx, NodeStandby)
-	if err != nil {
-		return nextChurnHeight, nil, nil, err
-	}
-
-	return nextChurnHeight, ready, leaving, nil
+	return nextChurnHeight, churnIn, churnOut
 }
