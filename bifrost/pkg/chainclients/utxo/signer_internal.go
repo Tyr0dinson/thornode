@@ -447,12 +447,7 @@ func (c *Client) consolidateUTXOs() {
 			MaxGas:  nil,
 			GasRate: int64(feeRate),
 		}
-		height, err := c.bridge.GetBlockHeight()
-		if err != nil {
-			c.log.Err(err).Msg("fail to get THORChain block height")
-			continue
-		}
-		rawTx, _, _, err := c.SignTx(txOutItem, height)
+		rawTx, _, _, err := c.SignTx([]stypes.TxOutItem{txOutItem})
 		if err != nil {
 			c.log.Err(err).Msg("fail to sign consolidate txout item")
 			continue

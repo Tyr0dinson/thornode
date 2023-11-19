@@ -32,7 +32,8 @@ import (
 
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, and an error.
-func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInItem, error) {
+	tx := txs[0]
 	if !tx.Chain.Equals(c.cfg.ChainID) {
 		return nil, nil, nil, errors.New("wrong chain")
 	}
@@ -173,11 +174,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			// chain specific signing
 			switch c.cfg.ChainID {
 			case common.DOGEChain:
-				err = c.signUTXODOGE(stx.(*dogewire.MsgTx), tx, amount, sourceScript, i, thorchainHeight)
+				err = c.signUTXODOGE(stx.(*dogewire.MsgTx), tx, amount, sourceScript, i)
 			case common.BCHChain:
-				err = c.signUTXOBCH(stx.(*bchwire.MsgTx), tx, amount, sourceScript, i, thorchainHeight)
+				err = c.signUTXOBCH(stx.(*bchwire.MsgTx), tx, amount, sourceScript, i)
 			case common.LTCChain:
-				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), tx, amount, sourceScript, i, thorchainHeight)
+				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), tx, amount, sourceScript, i)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
@@ -191,7 +192,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 	wg.Wait()
 	if utxoErr != nil {
-		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
+		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, utxoErr)
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 
@@ -248,7 +249,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		)
 	}
 
-	return signedTx.Bytes(), nil, txIn, nil
+	return signedTx.Bytes(), nil, []*stypes.TxInItem{txIn}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

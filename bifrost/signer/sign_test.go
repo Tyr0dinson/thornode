@@ -177,7 +177,8 @@ func (b *MockChainClient) IsBlockScannerHealthy() bool {
 	return true
 }
 
-func (b *MockChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *MockChainClient) SignTx(tais []types.TxOutItem) ([]byte, []byte, []*types.TxInItem, error) {
+	tai := tais[0]
 	if b.ks == nil {
 		return nil, nil, nil, nil
 	}

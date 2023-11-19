@@ -176,21 +176,20 @@ func (s *BitcoinSignerSuite) TestSignTx(c *C) {
 		OutHash: "",
 	}
 	// incorrect chain should return an error
-	result, _, _, err := s.client.SignTx(txOutItem, 1)
-	c.Assert(err, NotNil)
+	result, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
+	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)
 
 	// invalid pubkey should return an error
 	txOutItem.Chain = common.BTCChain
 	txOutItem.VaultPubKey = common.PubKey("helloworld")
-	result, _, _, err = s.client.SignTx(txOutItem, 2)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
-	// invalid to address should return an error
 	txOutItem.VaultPubKey = types2.GetRandomPubKey()
-	result, _, _, err = s.client.SignTx(txOutItem, 3)
-	c.Assert(err, NotNil)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
+	c.Assert(err, IsNil)
 	c.Assert(result, IsNil)
 
 	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
@@ -198,7 +197,7 @@ func (s *BitcoinSignerSuite) TestSignTx(c *C) {
 	txOutItem.ToAddress = addr
 
 	// nothing to sign , because there is not enough UTXO
-	result, _, _, err = s.client.SignTx(txOutItem, 4)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 }
@@ -237,7 +236,7 @@ func (s *BitcoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 	vaultPubKey, err := GetBech32AccountPubKey(pkey)
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = vaultPubKey
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 }
@@ -275,12 +274,12 @@ func (s *BitcoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 	vaultPubKey, err := GetBech32AccountPubKey(pkey)
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = vaultPubKey
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 
 	c.Assert(s.client.temporalStorage.UpsertTransactionFee(0.001, 10), IsNil)
-	buf, _, _, err = s.client.SignTx(txOutItem, 1)
+	buf, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 }
@@ -318,7 +317,7 @@ func (s *BitcoinSignerSuite) TestIsSelfTransaction(c *C) {
 }
 
 func (s *BitcoinSignerSuite) TestEstimateTxSize(c *C) {
-	size := s.client.estimateTxSize("OUT:2180B871F2DEA2546E1403DBFE9C26B062ABAFFD979CF3A65F2B4D2230105CF1", []btcjson.ListUnspentResult{
+	size := s.client.estimateTxSize(len("OUT:2180B871F2DEA2546E1403DBFE9C26B062ABAFFD979CF3A65F2B4D2230105CF1"), []btcjson.ListUnspentResult{
 		{
 			TxID:      "66d2d6b5eb564972c59e4797683a1225a02515a41119f0a8919381236b63e948",
 			Vout:      0,
@@ -365,7 +364,7 @@ func (s *BitcoinSignerSuite) TestSignTxWithAddressPubkey(c *C) {
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = vaultPubKey
 	// The transaction will not signed, but ignored instead
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
 }
@@ -402,7 +401,7 @@ func (s *BitcoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = vaultPubKey
 	// The transaction will not signed, but ignored instead
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
 }

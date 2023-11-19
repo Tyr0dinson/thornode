@@ -349,7 +349,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	out := txOut.TxArray[0].TxOutItem()
 	out.Chain = common.ETHChain
 	out.Memo = "OUT:B6BD1A69831B9CCC0A1E9939E9AFBFCA144C427B3F61E176EBDCB14E57981C1B"
-	r, _, _, err := e2.SignTx(out, 1)
+	r, _, _, err := e2.SignTx([]stypes.TxOutItem{out})
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 
@@ -399,159 +399,183 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 	// Not ETH chain
-	result, _, _, err := e.SignTx(stypes.TxOutItem{
-		Chain:       common.BTCChain,
-		ToAddress:   addr,
-		VaultPubKey: "",
-	}, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.BTCChain,
+			ToAddress:   addr,
+			VaultPubKey: "",
+		},
+	})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// to address is empty
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		VaultPubKey: "",
-	}, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: "",
+		},
+	})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// vault pub key is empty
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: "",
-	}, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: "",
+		},
+	})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// memo is empty
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-	}, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+		},
+	})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// memo can't be parsed
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Memo:        "whatever",
-	}, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Memo:        "whatever",
+		},
+	})
 
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	// memo is inbound
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Memo:        "swap:ETH.ETH",
-	}, 1)
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Memo:        "swap:ETH.ETH",
+		},
+	})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// Outbound
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
 	asset, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(err, IsNil)
 	// Outbound
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
 	// refund
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	// refund
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
 	// migrate
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "MIGRATE:1024",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "MIGRATE:1024",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	// migrate
-	result, _, _, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(1e18)),
+	result, _, _, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
+			},
+			GasRate: 1,
+			Memo:    "MIGRATE:1024",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(MaxContractGas)),
-		},
-		GasRate: 1,
-		Memo:    "MIGRATE:1024",
-	}, 1)
+	})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 }

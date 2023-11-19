@@ -345,7 +345,8 @@ func (c *Client) convertThorchainAmountToWei(amt *big.Int) *big.Int {
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInItem, error) {
+	tx := txs[0]
 	if !tx.Chain.Equals(common.ETHChain) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)
 	}
@@ -548,7 +549,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 	}
 
-	rawTx, err := c.sign(createdTx, tx.VaultPubKey, height, tx)
+	rawTx, err := c.sign(createdTx, tx.VaultPubKey, tx)
 	if err != nil || len(rawTx) == 0 {
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
@@ -586,11 +587,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		)
 	}
 
-	return rawTx, nil, txIn, nil
+	return rawTx, nil, []*stypes.TxInItem{txIn}, nil
 }
 
 // sign is design to sign a given message with keysign party and keysign wrapper
-func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
+func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, txOutItem stypes.TxOutItem) ([]byte, error) {
 	rawBytes, err := c.kw.Sign(tx, poolPubKey)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
@@ -602,7 +603,7 @@ func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height i
 			return nil, fmt.Errorf("fail to sign tx: %w", err)
 		}
 		// key sign error forward the keysign blame to thorchain
-		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
 		if errPostKeysignFail != nil {
 			return nil, multierror.Append(err, errPostKeysignFail)
 		}

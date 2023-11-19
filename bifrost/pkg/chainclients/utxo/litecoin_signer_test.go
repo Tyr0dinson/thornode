@@ -178,20 +178,20 @@ func (s *LitecoinSignerSuite) TestSignTx(c *C) {
 		OutHash: "",
 	}
 	// incorrect chain should return an error
-	result, _, _, err := s.client.SignTx(txOutItem, 1)
+	result, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// invalid pubkey should return an error
 	txOutItem.Chain = common.LTCChain
 	txOutItem.VaultPubKey = common.PubKey("helloworld")
-	result, _, _, err = s.client.SignTx(txOutItem, 2)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
 	// invalid to address should return an error
 	txOutItem.VaultPubKey = types2.GetRandomPubKey()
-	result, _, _, err = s.client.SignTx(txOutItem, 3)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 
@@ -200,7 +200,7 @@ func (s *LitecoinSignerSuite) TestSignTx(c *C) {
 	txOutItem.ToAddress = addr
 
 	// nothing to sign , because there is not enough UTXO
-	result, _, _, err = s.client.SignTx(txOutItem, 4)
+	result, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 }
@@ -236,7 +236,7 @@ func (s *LitecoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 	s.client.nodePubKey, err = bech32AccountPubKey(pkey)
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = s.client.nodePubKey
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 }
@@ -271,12 +271,12 @@ func (s *LitecoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 	s.client.nodePubKey, err = bech32AccountPubKey(pkey)
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = s.client.nodePubKey
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 
 	c.Assert(s.client.temporalStorage.UpsertTransactionFee(0.001, 10), IsNil)
-	buf, _, _, err = s.client.SignTx(txOutItem, 1)
+	buf, _, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, NotNil)
 }
@@ -357,7 +357,7 @@ func (s *LitecoinSignerSuite) TestSignAddressPubKeyShouldFail(c *C) {
 	s.client.nodePubKey, err = bech32AccountPubKey(pkey)
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = s.client.nodePubKey
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
 }
@@ -391,7 +391,7 @@ func (s *LitecoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	c.Assert(err, IsNil)
 	txOutItem.VaultPubKey = s.client.nodePubKey
 	// The transaction will not signed, but ignored instead
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem})
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
 }

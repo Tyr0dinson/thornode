@@ -94,7 +94,7 @@ type ThorchainBridge interface {
 	GetThorchainVersion() (semver.Version, error)
 	IsCatchingUp() (bool, error)
 	HasNetworkFee(chain common.Chain) (bool, error)
-	PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error)
+	PostKeysignFailure(blame stypes.Blame, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error)
 	PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error)
 	RagnarokInProgress() (bool, error)
 	WaitToCatchUp() error
@@ -279,7 +279,7 @@ func (b *thorchainBridge) GetConfig() config.BifrostClientConfiguration {
 }
 
 // PostKeysignFailure generate and  post a keysign fail tx to thorchan
-func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	start := time.Now()
 	defer func() {
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
@@ -288,6 +288,10 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 	if blame.IsEmpty() {
 		// MsgTssKeysignFail will fail validation if having no FailReason.
 		blame.FailReason = "no fail reason available"
+	}
+	height, err := b.GetBlockHeight()
+	if err != nil {
+		return common.BlankTxID, err
 	}
 	msg, err := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, b.keys.GetSignerInfo().GetAddress(), pubkey)
 	if err != nil {

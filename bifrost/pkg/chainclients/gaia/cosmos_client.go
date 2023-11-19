@@ -276,7 +276,7 @@ func (c *CosmosClient) GetAccountByAddress(address string, _ *big.Int) (common.A
 	}, nil
 }
 
-func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight int64) (*btypes.MsgSend, error) {
+func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem) (*btypes.MsgSend, error) {
 	fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert address (%s) to bech32: %w", tx.VaultPubKey.String(), err)
@@ -302,7 +302,8 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
+func (c *CosmosClient) SignTx(txs []stypes.TxOutItem) (signedTx, checkpoint []byte, _ []*stypes.TxInItem, err error) {
+	tx := txs[0]
 	defer func() {
 		if err != nil {
 			var keysignError tss.KeysignError
@@ -313,7 +314,7 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 				}
 
 				// key sign error forward the keysign blame to thorchain
-				txID, err := c.thorchainBridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKey)
+				txID, err := c.thorchainBridge.PostKeysignFailure(keysignError.Blame, tx.Memo, tx.Coins, tx.VaultPubKey)
 				if err != nil {
 					c.logger.Err(err).Msg("fail to post keysign failure to THORChain")
 					return
@@ -330,7 +331,7 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		return nil, nil, nil, nil
 	}
 
-	msg, err := c.processOutboundTx(tx, thorchainHeight)
+	msg, err := c.processOutboundTx(tx)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to process outbound tx")
 		return nil, nil, nil, err

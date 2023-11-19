@@ -185,10 +185,10 @@ func (s *Signer) signTransactions() {
 	}
 }
 
-func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, error)) ([]byte, *types.TxInItem, error) {
+func runWithContext(ctx context.Context, fn func() ([]byte, []*types.TxInItem, error)) ([]byte, []*types.TxInItem, error) {
 	ch := make(chan error, 1)
 	var checkpoint []byte
-	var txIn *types.TxInItem
+	var txIn []*types.TxInItem
 	go func() {
 		var err error
 		checkpoint, txIn, err = fn()
@@ -264,7 +264,7 @@ func (s *Signer) processTransactions() {
 					s.logger.Info().Int("num", i).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
 					// a single keysign should not take longer than 5 minutes , regardless TSS or local
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
 						return s.signAndBroadcast(item)
 					})
 					if err != nil {
@@ -296,7 +296,9 @@ func (s *Signer) processTransactions() {
 
 					// if enabled and the observation is non-nil, add to this batch's observations
 					if s.cfg.AutoObserve && obs != nil {
-						observations = append(observations, *obs)
+						for _, ob := range obs {
+							observations = append(observations, *ob)
+						}
 					}
 
 					// We have a successful broadcast! Remove the item from our store
@@ -513,7 +515,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 // with the error so they can be set on the TxOutStoreItem and re-used on a subsequent
 // retry to avoid double spend. The second returned value is an optional observation
 // that should be submitted to THORChain.
-func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem, error) {
+func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInItem, error) {
 	height := item.Height
 	tx := item.TxOutItem
 
@@ -614,13 +616,13 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// If SignedTx is set, we already signed and should only retry broadcast.
 	var signedTx, checkpoint []byte
 	var elapse time.Duration
-	var observation *types.TxInItem
+	var observation []*types.TxInItem
 	if len(item.SignedTx) > 0 {
 		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
 		signedTx = item.SignedTx
 	} else {
 		startKeySign := time.Now()
-		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
+		signedTx, checkpoint, observation, err = chain.SignTx([]types.TxOutItem{tx})
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to sign tx")
 			return checkpoint, nil, err

@@ -22,7 +22,6 @@ func PostKeysignFailure(
 	thorchainBridge thorclient.ThorchainBridge,
 	tx stypes.TxOutItem,
 	logger zerolog.Logger,
-	thorchainHeight int64,
 	utxoErr error,
 ) error {
 	// PostKeysignFailure only once per SignTx, to not broadcast duplicate messages.
@@ -35,7 +34,7 @@ func PostKeysignFailure(
 		}
 
 		// key sign error forward the keysign blame to thorchain
-		txID, err := thorchainBridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKey)
+		txID, err := thorchainBridge.PostKeysignFailure(keysignError.Blame, tx.Memo, tx.Coins, tx.VaultPubKey)
 		if err != nil {
 			logger.Error().Err(err).Msg("fail to post keysign failure to thorchain")
 			utxoErr = multierror.Append(utxoErr, fmt.Errorf("fail to post keysign failure to THORChain: %w", err))

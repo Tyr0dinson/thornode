@@ -3,7 +3,6 @@ package bitcoin
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -58,8 +57,7 @@ func (c *Client) getChainCfg() *chaincfg.Params {
 	return nil
 }
 
-func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
-	gasRate := tx.GasRate
+func (c *Client) getGasCoin(gasRate, vSize int64) common.Coin {
 	// if the gas rate is zero , then try to get from last transaction fee
 	if gasRate == 0 {
 		fee, vBytes, err := c.temporalStorage.GetTransactionFee()
@@ -180,19 +178,20 @@ func (c *Client) getBlockHeight() (int64, error) {
 	return blockInfo.Height, nil
 }
 
-func (c *Client) getBTCPaymentAmount(tx stypes.TxOutItem) float64 {
-	amtToPay := tx.Coins.GetCoin(common.BTCAsset).Amount.Uint64()
-	amtToPayInBTC := btcutil.Amount(int64(amtToPay)).ToBTC()
-	if !tx.MaxGas.IsEmpty() {
-		gasAmt := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount
-		amtToPayInBTC += btcutil.Amount(int64(gasAmt.Uint64())).ToBTC()
+func (c *Client) getBTCPaymentAmount(txs []stypes.TxOutItem) float64 {
+	var amtToPay uint64
+	for _, tx := range txs {
+		amtToPay += tx.Coins.GetCoin(common.BTCAsset).Amount.Uint64()
+		if !tx.MaxGas.IsEmpty() {
+			amtToPay += tx.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount.Uint64()
+		}
 	}
-	return amtToPayInBTC
+	return btcutil.Amount(int64(amtToPay)).ToBTC()
 }
 
 // getSourceScript retrieve pay to addr script from tx source
 func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
-	sourceAddr, err := tx.VaultPubKey.GetAddress(common.BTCChain)
+	sourceAddr, err := tx.VaultPubKey.GetAddress(c.chain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get source address: %w", err)
 	}
@@ -207,7 +206,7 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 // estimateTxSize will create a temporary MsgTx, and use it to estimate the final tx size
 // the value in the temporary MsgTx is not real
 // https://bitcoinops.org/en/tools/calc-size/
-func (c *Client) estimateTxSize(memo string, txes []btcjson.ListUnspentResult) int64 {
+func (c *Client) estimateTxSize(memoSize int, txes []btcjson.ListUnspentResult) int64 {
 	// overhead - 10.75
 	// Per Input - 67.75
 	// Per output - 31 , we sometimes have 2 output , and sometimes only have 1 , it depends ,here we only count 1
@@ -216,11 +215,16 @@ func (c *Client) estimateTxSize(memo string, txes []btcjson.ListUnspentResult) i
 	// len(memo) is the size of memo put in null data
 	// these get us very close to the final vbytes.
 	//  multiple by 100 , so don't need to deal with float
-	return int64((1075+6775*len(txes)+1050)/100) + int64(31+len([]byte(memo)))
+	return int64((1075+6775*len(txes)+1050)/100) + int64(31+memoSize)
 }
 
-func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
-	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getBTCPaymentAmount(tx))
+func (c *Client) buildTx(txs []stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
+	var vaultPubKey common.PubKey
+	if len(txs) > 0 {
+		vaultPubKey = txs[0].VaultPubKey
+	}
+
+	txes, err := c.getUtxoToSpend(vaultPubKey, c.getBTCPaymentAmount(txs))
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get unspent UTXO")
 	}
@@ -244,21 +248,22 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		individualAmounts[fmt.Sprintf("%s-%d", txID, item.Vout)] = int64(amt)
 	}
 
-	outputAddr, err := btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfg())
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-	}
-	buf, err := txscript.PayToAddrScript(outputAddr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+	var totalMemoSize int
+	var gasRate int64
+	var maxGas common.Gas
+	for _, tx := range txs {
+		totalMemoSize += len([]byte(tx.Memo))
+		if tx.GasRate > gasRate {
+			gasRate = tx.GasRate
+		}
+		maxGas = maxGas.Add(tx.MaxGas)
 	}
 
 	total, err := btcutil.NewAmount(totalAmt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to parse total amount(%f),err: %w", totalAmt, err)
 	}
-	coinToCustomer := tx.Coins.GetCoin(common.BTCAsset)
-	totalSize := c.estimateTxSize(tx.Memo, txes)
+	totalSize := c.estimateTxSize(totalMemoSize, txes)
 
 	// bitcoind has a default rule max fee rate should less than 0.1 BTC / kb
 	// the MaxGas coming from THORChain doesn't follow this rule , thus the MaxGas might be over the limit
@@ -266,8 +271,9 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	// the rest paid to customer to make sure the total doesn't change
 
 	// maxFee in sats
+	var gap uint64
 	maxFeeSats := totalSize * defaultMaxBTCFeeRate / 1024
-	gasCoin := c.getGasCoin(tx, totalSize)
+	gasCoin := c.getGasCoin(gasRate, totalSize)
 	gasAmtSats := gasCoin.Amount.Uint64()
 
 	// make sure the transaction fee is not more than 0.1 BTC / kb , otherwise it might reject the transaction
@@ -282,26 +288,15 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	}
 
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
-	if !tx.MaxGas.IsEmpty() {
-		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(common.BTCAsset)
+	if !maxGas.IsEmpty() {
+		maxGasCoin := maxGas.ToCoins().GetCoin(common.BTCAsset)
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
-			c.logger.Info().Msgf("max gas: %s, however estimated gas need %d", tx.MaxGas, gasAmtSats)
+			c.logger.Info().Msgf("max gas: %s, however estimated gas need %d", maxGas, gasAmtSats)
 			gasAmtSats = maxGasCoin.Amount.Uint64()
 		} else if gasAmtSats < maxGasCoin.Amount.Uint64() {
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
-			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
-			c.logger.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to customer", tx.MaxGas, gasAmtSats, gap)
-			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
-		}
-	} else {
-		memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
-		}
-		if memo.GetType() == mem.TxConsolidate {
-			gap := gasAmtSats
-			c.logger.Info().Msgf("consolidate tx, need gas: %d", gap)
-			coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
+			gap = maxGasCoin.Amount.Uint64() - gasAmtSats
+			c.logger.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to customer", maxGas, gasAmtSats, gap)
 		}
 	}
 	gasAmt := btcutil.Amount(gasAmtSats)
@@ -309,14 +304,51 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		c.logger.Err(err).Msg("fail to save gas info to UTXO storage")
 	}
 
-	// pay to customer
-	redeemTxOut := wire.NewTxOut(int64(coinToCustomer.Amount.Uint64()), buf)
-	redeemTx.AddTxOut(redeemTxOut)
+	// build vOuts
+	var vOutTotalValue int64
+	for _, tx := range txs {
+		outputAddr, err := btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfg())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err := txscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
+
+		// pay to customer
+		coinToCustomer := tx.Coins.GetCoin(common.BTCAsset)
+		coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap / uint64(len(txs))))
+
+		if len(tx.Memo) != 0 && maxGas.IsEmpty() {
+			memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
+			if err != nil {
+				return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+			}
+			if memo.GetType() == mem.TxConsolidate {
+				c.logger.Info().Msgf("consolidate tx, need gas: %d", gasAmtSats)
+				coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gasAmtSats))
+			}
+		}
+
+		redeemTxOut := wire.NewTxOut(int64(coinToCustomer.Amount.Uint64()), buf)
+		redeemTx.AddTxOut(redeemTxOut)
+		vOutTotalValue += redeemTxOut.Value
+
+		// memo
+		if len(tx.Memo) != 0 {
+			nullDataScript, err := txscript.NullDataScript([]byte(tx.Memo))
+			if err != nil {
+				return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+			redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
+		}
+	}
 
 	// balance to ourselves
 	// add output to pay the balance back ourselves
-	balance := int64(total) - redeemTxOut.Value - int64(gasAmt)
-	c.logger.Info().Msgf("total: %d, to customer: %d, gas: %d", int64(total), redeemTxOut.Value, int64(gasAmt))
+	balance := int64(total) - vOutTotalValue - int64(gasAmt)
+	c.logger.Info().Msgf("total: %d, to customer: %d, gas: %d", int64(total), vOutTotalValue, int64(gasAmt))
 	if balance < 0 {
 		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
 	}
@@ -325,78 +357,105 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
-	// memo
-	if len(tx.Memo) != 0 {
-		nullDataScript, err := txscript.NullDataScript([]byte(tx.Memo))
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScript))
-	}
-
 	return redeemTx, individualAmounts, nil
 }
 
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, a corresponding observation tx, and an error.
-func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
-	if !tx.Chain.Equals(common.BTCChain) {
-		return nil, nil, nil, errors.New("not BTC chain")
+func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInItem, error) {
+	var err error
+	// filter items
+	txItems := make([]stypes.TxOutItem, 0)
+	var vaultPubKey common.PubKey
+	var sourceScript []byte
+	if len(txs) > 0 {
+		vaultPubKey = txs[0].VaultPubKey
+		sourceScript, err = c.getSourceScript(txs[0])
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to get source pay to address script: %w", err)
+		}
+	}
+	for _, tx := range txs {
+		// is not a BTC transaction
+		if !tx.Chain.Equals(c.chain) {
+			fmt.Println("FILTER 1")
+			continue
+		}
+		// has no value
+		if tx.Coins.IsEmpty() {
+			fmt.Println("FILTER 2")
+			continue
+		}
+		// does not match the same pubkey, can only batch from the same wallet
+		if !tx.VaultPubKey.Equals(vaultPubKey) {
+			fmt.Println("FILTER 3", tx.VaultPubKey, vaultPubKey)
+			continue
+		}
+
+		// verify output address
+		outputAddr, err := btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfg())
+		if err != nil {
+			fmt.Println("FILTER 4")
+			continue
+		}
+		if !strings.EqualFold(outputAddr.String(), tx.ToAddress.String()) {
+			fmt.Println("FILTER 5")
+			continue
+		}
+		switch outputAddr.(type) {
+		case *btcutil.AddressPubKey:
+			c.logger.Info().Msgf("address: %s is address pubkey type, should not be used", outputAddr)
+			fmt.Println("FILTER 6")
+			continue
+		default: // keep lint happy
+		}
+
+		// skip outbounds that have been signed
+		if c.signerCacheManager.HasSigned(tx.CacheHash()) {
+			fmt.Println("FILTER 7")
+			continue
+		}
+
+		txItems = append(txItems, tx)
 	}
 
-	// skip outbounds without coins
-	if tx.Coins.IsEmpty() {
-		return nil, nil, nil, nil
-	}
-
-	// skip outbounds that have been signed
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-		c.logger.Info().Msgf("transaction(%+v), signed before , ignore", tx)
+	if len(txItems) == 0 {
+		fmt.Println("FOO BAR 1")
 		return nil, nil, nil, nil
 	}
 
 	// only one keysign per chain at a time
-	vaultSignerLock := c.getVaultSignerLock(tx.VaultPubKey.String())
+	vaultSignerLock := c.getVaultSignerLock(vaultPubKey.String())
 	if vaultSignerLock == nil {
-		c.logger.Error().Msgf("fail to get signer lock for vault pub key: %s", tx.VaultPubKey.String())
+		c.logger.Error().Msgf("fail to get signer lock for vault pub key: %s", vaultPubKey.String())
 		return nil, nil, nil, fmt.Errorf("fail to get signer lock")
 	}
 	vaultSignerLock.Lock()
 	defer vaultSignerLock.Unlock()
 
-	sourceScript, err := c.getSourceScript(tx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to get source pay to address script: %w", err)
-	}
-
-	// verify output address
-	outputAddr, err := btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfg())
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-	}
-	if !strings.EqualFold(outputAddr.String(), tx.ToAddress.String()) {
-		c.logger.Info().Msgf("output address: %s, to address: %s can't roundtrip", outputAddr.String(), tx.ToAddress.String())
-		return nil, nil, nil, nil
-	}
-	switch outputAddr.(type) {
-	case *btcutil.AddressPubKey:
-		c.logger.Info().Msgf("address: %s is address pubkey type, should not be used", outputAddr)
-		return nil, nil, nil, nil
-	default: // keep lint happy
-	}
-
 	// load from checkpoint if it exists
-	checkpoint := utxo.SignCheckpoint{}
 	redeemTx := &wire.MsgTx{}
-	if tx.Checkpoint != nil {
-		if err := json.Unmarshal(tx.Checkpoint, &checkpoint); err != nil {
+	checkpoint := utxo.SignCheckpoint{}
+	// fetch checkpoint if available
+	// get hashes, used as unique key for storing the checkpoint
+	hashes := make([]string, len(txItems))
+	for _, item := range txItems {
+		hashes = append(hashes, item.Hash())
+	}
+	sort.Strings(hashes) // sort to be order insensitive
+	ckpt, err := c.signerCacheManager.GetCheckpoint(hashes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get checkpoint: %s", err)
+	}
+	if ckpt != nil {
+		if err := json.Unmarshal(ckpt, &checkpoint); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
 		if err := redeemTx.Deserialize(bytes.NewReader(checkpoint.UnsignedTx)); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to deserialize tx: %w", err)
 		}
 	} else {
-		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript)
+		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(txs, sourceScript)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -406,12 +465,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to serialize tx: %w", err)
 		}
 		checkpoint.UnsignedTx = buf.Bytes()
-	}
-
-	// serialize the checkpoint for later
-	checkpointBytes, err := json.Marshal(checkpoint)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
 	wg := &sync.WaitGroup{}
@@ -426,7 +479,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		wg.Add(1)
 		go func(i int, amount int64) {
 			defer wg.Done()
-			if err := c.signUTXO(redeemTx, tx, amount, sourceScript, i, thorchainHeight); err != nil {
+			if err := c.signUTXO(redeemTx, vaultPubKey, amount, sourceScript, i); err != nil {
 				if nil == utxoErr {
 					utxoErr = err
 				} else {
@@ -438,7 +491,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	wg.Wait()
 
 	if utxoErr != nil {
-		err = utxo.PostKeysignFailure(c.bridge, tx, c.logger, thorchainHeight, utxoErr)
+		// serialize the checkpoint for later
+		checkpointBytes, err := json.Marshal(checkpoint)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
+		}
+		_ = c.signerCacheManager.SetCheckpoint(hashes, checkpointBytes)
+		for _, tx := range txItems {
+			err = utxo.PostKeysignFailure(c.bridge, tx, c.logger, utxoErr)
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 	finalSize := redeemTx.SerializeSize()
@@ -459,34 +520,37 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	for _, txOut := range redeemTx.TxOut { // subtract all vouts to from vins to get the gas
 		gas -= txOut.Value
 	}
-	var txIn *stypes.TxInItem
-	sender, err := tx.VaultPubKey.GetAddress(tx.Chain)
+	txIn := make([]*stypes.TxInItem, 0)
+	sender, err := vaultPubKey.GetAddress(c.chain)
 	if err == nil {
-		txIn = stypes.NewTxInItem(
-			chainHeight+1,
-			redeemTx.TxHash().String(),
-			tx.Memo,
-			sender.String(),
-			tx.ToAddress.String(),
-			common.NewCoins(
-				common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(amt))),
-			),
-			common.Gas(common.NewCoins(
-				common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(gas))),
-			)),
-			tx.VaultPubKey,
-			"",
-			"",
-			nil,
-		)
+		for _, tx := range txItems {
+			txIn = append(txIn, stypes.NewTxInItem(
+				chainHeight+1,
+				redeemTx.TxHash().String(),
+				tx.Memo,
+				sender.String(),
+				tx.ToAddress.String(),
+				common.NewCoins(
+					common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(amt))),
+				),
+				common.Gas(common.NewCoins(
+					common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(gas))),
+				)),
+				tx.VaultPubKey,
+				"",
+				"",
+				nil,
+			))
+		}
 	}
 
+	fmt.Println("FOO BAR 2")
 	return signedTx.Bytes(), nil, txIn, nil
 }
 
-func (c *Client) signUTXO(redeemTx *wire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXO(redeemTx *wire.MsgTx, pubkey common.PubKey, amount int64, sourceScript []byte, idx int) error {
 	sigHashes := txscript.NewTxSigHashes(redeemTx)
-	sig := c.ksWrapper.GetSignable(tx.VaultPubKey)
+	sig := c.ksWrapper.GetSignable(pubkey)
 	witness, err := txscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, txscript.SigHashAll, sig, true)
 	if err != nil {
 		return fmt.Errorf("fail to get witness: %w", err)
@@ -594,7 +658,7 @@ func (c *Client) consolidateUTXOs() {
 		for _, item := range utxos {
 			total += item.Amount
 		}
-		addr, err := vault.PubKey.GetAddress(common.BTCChain)
+		addr, err := vault.PubKey.GetAddress(c.chain)
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get BTC address for pubkey:%s", vault.PubKey)
 			continue
@@ -608,7 +672,7 @@ func (c *Client) consolidateUTXOs() {
 		}
 
 		txOutItem := stypes.TxOutItem{
-			Chain:       common.BTCChain,
+			Chain:       c.chain,
 			ToAddress:   addr,
 			VaultPubKey: vault.PubKey,
 			Coins: common.Coins{
@@ -618,13 +682,8 @@ func (c *Client) consolidateUTXOs() {
 			MaxGas:  nil,
 			GasRate: int64(feeRate),
 		}
-		height, err := c.bridge.GetBlockHeight()
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get THORChain block height")
-			continue
-		}
 		// ignore checkpoint since there is no risk of double spend on consolidate
-		rawTx, _, _, err := c.SignTx(txOutItem, height)
+		rawTx, _, _, err := c.SignTx([]stypes.TxOutItem{txOutItem})
 		if err != nil {
 			c.logger.Err(err).Msg("fail to sign consolidate txout item")
 			continue

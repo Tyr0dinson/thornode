@@ -292,7 +292,8 @@ func (b *Binance) checkAccountMemoFlag(addr string) bool {
 }
 
 // SignTx sign the the given TxArrayItem
-func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (b *Binance) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInItem, error) {
+	tx := txs[0]
 	var payload []msg.Transfer
 	if b.signerCacheManager.HasSigned(tx.CacheHash()) {
 		b.logger.Info().Msgf("transaction(%+v), signed before , ignore", tx)
@@ -385,7 +386,7 @@ func (b *Binance) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []
 		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
-	rawBz, err := b.signMsg(signMsg, fromAddr, tx.VaultPubKey, thorchainHeight, tx)
+	rawBz, err := b.signMsg(signMsg, fromAddr, tx.VaultPubKey, tx)
 	if err != nil {
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
@@ -408,7 +409,7 @@ func (b *Binance) sign(signMsg btx.StdSignMsg, poolPubKey common.PubKey) ([]byte
 }
 
 // signMsg is design to sign a given message until it success or the same message had been send out by other signer
-func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common.PubKey, thorchainHeight int64, txOutItem stypes.TxOutItem) ([]byte, error) {
+func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common.PubKey, txOutItem stypes.TxOutItem) ([]byte, error) {
 	rawBytes, err := b.sign(signMsg, poolPubKey)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
@@ -420,7 +421,7 @@ func (b *Binance) signMsg(signMsg btx.StdSignMsg, from string, poolPubKey common
 			return nil, err
 		}
 		// fail to sign a message , forward keysign failure to THORChain , so the relevant party can be blamed
-		txID, errPostKeysignFail := b.thorchainBridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, txOutItem.Memo, txOutItem.Coins, poolPubKey)
+		txID, errPostKeysignFail := b.thorchainBridge.PostKeysignFailure(keysignError.Blame, txOutItem.Memo, txOutItem.Coins, poolPubKey)
 		if errPostKeysignFail != nil {
 			b.logger.Error().Err(errPostKeysignFail).Msg("fail to post keysign failure to thorchain")
 			return nil, multierror.Append(err, errPostKeysignFail)

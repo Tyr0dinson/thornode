@@ -158,7 +158,7 @@ func (s *CosmosTestSuite) TestProcessOutboundTx(c *C) {
 		InHash:      "hash",
 	}
 
-	msg, err := client.processOutboundTx(txOut, 1)
+	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 
 	expectedAmount := int64(245283)
@@ -226,7 +226,7 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 		InHash:      "hash",
 	}
 
-	msg, err := client.processOutboundTx(txOut, 1)
+	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 
 	meta := client.accts.Get(pk)

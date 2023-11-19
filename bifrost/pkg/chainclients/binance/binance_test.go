@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
+	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -282,7 +283,7 @@ func (s *BinancechainSuite) TestSignTx(c *C) {
 	txOut := getTxOutFromJsonInput(`{ "height": 1718, "hash": "", "tx_array": [ { "vault_pub_key":"tthorpub1addwnpepq2jgpsw2lalzuk7sgtmyakj7l6890f5cfpwjyfp8k4y4t7cw2vk8v2ch5uz","to_address": "tbnb1hzwfk6t3sqjfuzlr0ur9lj920gs37gg92gtay9", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk
 	out := txOut.TxArray[0].TxOutItem()
-	r, _, _, err := b2.SignTx(out, 1440)
+	r, _, _, err := b2.SignTx([]stypes.TxOutItem{out})
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 

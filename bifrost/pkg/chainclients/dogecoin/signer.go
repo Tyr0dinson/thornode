@@ -344,7 +344,8 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, and an error.
-func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInItem, error) {
+	tx := txs[0]
 	if !tx.Chain.Equals(common.DOGEChain) {
 		return nil, nil, nil, errors.New("not DOGE chain")
 	}
@@ -431,7 +432,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		wg.Add(1)
 		go func(i int, amount int64) {
 			defer wg.Done()
-			if err := c.signUTXO(redeemTx, tx, amount, sourceScript, i, thorchainHeight); err != nil {
+			if err := c.signUTXO(redeemTx, tx, amount, sourceScript, i); err != nil {
 				if nil == utxoErr {
 					utxoErr = err
 				} else {
@@ -442,7 +443,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 	wg.Wait()
 	if utxoErr != nil {
-		err = utxo.PostKeysignFailure(c.bridge, tx, c.logger, thorchainHeight, utxoErr)
+		err = utxo.PostKeysignFailure(c.bridge, tx, c.logger, utxoErr)
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 	finalSize := redeemTx.SerializeSize()
@@ -485,10 +486,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		)
 	}
 
-	return signedTx.Bytes(), nil, txIn, nil
+	return signedTx.Bytes(), nil, []*stypes.TxInItem{txIn}, nil
 }
 
-func (c *Client) signUTXO(redeemTx *wire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXO(redeemTx *wire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int) error {
 	signable := c.ksWrapper.GetSignable(tx.VaultPubKey)
 	sig, err := txscript.RawTxInSignature(redeemTx, idx, sourceScript, txscript.SigHashAll, signable)
 	if err != nil {
@@ -627,12 +628,7 @@ func (c *Client) consolidateUTXOs() {
 			MaxGas:  nil,
 			GasRate: int64(feeRate),
 		}
-		height, err := c.bridge.GetBlockHeight()
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get THORChain block height")
-			continue
-		}
-		rawTx, _, _, err := c.SignTx(txOutItem, height)
+		rawTx, _, _, err := c.SignTx([]stypes.TxOutItem{txOutItem})
 		if err != nil {
 			c.logger.Err(err).Msg("fail to sign consolidate txout item")
 			continue
