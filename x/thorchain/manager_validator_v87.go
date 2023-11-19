@@ -1486,7 +1486,7 @@ func (vm *validatorMgrV87) nextVaultNodeAccounts(ctx cosmos.Context, targetCount
 }
 
 // Info returned for the API endpoint /churn
-func (vm *validatorMgrV87) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
+func (vm *validatorMgrV87) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress, err error) {
 	// Calculate the next churn height
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)

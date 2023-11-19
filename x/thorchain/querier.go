@@ -1755,7 +1755,10 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 // ThorChurn
 func queryChurnInfo(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	nextChurnHeight, nodesIn, nodesOut := mgr.validatorMgr.ChurnState(ctx)
+	nextChurnHeight, nodesIn, nodesOut, err := mgr.validatorMgr.ChurnState(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	churn := QueryChurn{
 		NextChurnHeight: nextChurnHeight,

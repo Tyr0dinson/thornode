@@ -35,6 +35,6 @@ func (vm *ValidatorDummyMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na No
 	return NodeDisabled, errKaboom
 }
 
-func (vm *ValidatorDummyMgr) ChurnState(_ cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
-	return 0, nil, nil
+func (vm *ValidatorDummyMgr) ChurnState(_ cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress, err error) {
+	return 0, nil, nil, errKaboom
 }
