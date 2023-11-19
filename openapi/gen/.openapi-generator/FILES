@@ -4,6 +4,7 @@ README.md
 api/openapi.yaml
 api_block.go
 api_borrowers.go
+api_churn.go
 api_health.go
 api_invariants.go
 api_liquidity_providers.go
@@ -35,6 +36,8 @@ docs/BlockTxResult.md
 docs/Borrower.md
 docs/BorrowersApi.md
 docs/ChainHeight.md
+docs/ChurnApi.md
+docs/ChurnResponse.md
 docs/Coin.md
 docs/ConstantsResponse.md
 docs/DerivedPool.md
@@ -130,6 +133,7 @@ model_block_tx.go
 model_block_tx_result.go
 model_borrower.go
 model_chain_height.go
+model_churn_response.go
 model_coin.go
 model_constants_response.go
 model_derived_pool.go

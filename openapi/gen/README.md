@@ -80,6 +80,7 @@ Class | Method | HTTP request | Description
 *BlockApi* | [**Block**](docs/BlockApi.md#block) | **Get** /thorchain/block | 
 *BorrowersApi* | [**Borrower**](docs/BorrowersApi.md#borrower) | **Get** /thorchain/pool/{asset}/borrower/{address} | 
 *BorrowersApi* | [**Borrowers**](docs/BorrowersApi.md#borrowers) | **Get** /thorchain/pool/{asset}/borrowers | 
+*ChurnApi* | [**Churn**](docs/ChurnApi.md#churn) | **Get** /thorchain/churn | 
 *HealthApi* | [**Ping**](docs/HealthApi.md#ping) | **Get** /thorchain/ping | 
 *InvariantsApi* | [**Invariant**](docs/InvariantsApi.md#invariant) | **Get** /thorchain/invariant/{invariant} | 
 *InvariantsApi* | [**Invariants**](docs/InvariantsApi.md#invariants) | **Get** /thorchain/invariants | 
@@ -149,6 +150,7 @@ Class | Method | HTTP request | Description
  - [BlockTxResult](docs/BlockTxResult.md)
  - [Borrower](docs/Borrower.md)
  - [ChainHeight](docs/ChainHeight.md)
+ - [ChurnResponse](docs/ChurnResponse.md)
  - [Coin](docs/Coin.md)
  - [ConstantsResponse](docs/ConstantsResponse.md)
  - [DerivedPool](docs/DerivedPool.md)
