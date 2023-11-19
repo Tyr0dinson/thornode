@@ -92,7 +92,7 @@ type ValidatorManager interface {
 	RequestYggReturn(ctx cosmos.Context, node NodeAccount, mgr Manager) error // TODO remove on hard fork
 	processRagnarok(ctx cosmos.Context, mgr Manager) error
 	NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error)
-	ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts)
+	ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress)
 }
 
 // NetworkManager interface define the contract of network Manager

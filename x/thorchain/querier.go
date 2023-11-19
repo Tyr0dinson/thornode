@@ -1679,8 +1679,8 @@ func queryChurnInfo(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 	churn := QueryChurn{
 		NextChurnHeight: nextChurnHeight,
-		NodesIn:         nodesIn.GetNodeAddresses(),
-		NodesOut:        nodesOut.GetNodeAddresses(),
+		NodesIn:         nodesIn,
+		NodesOut:        nodesOut,
 	}
 
 	return jsonify(ctx, churn)

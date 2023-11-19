@@ -13,7 +13,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // ValidatorMgrVCUR is to manage a list of validators , and rotate them
@@ -1513,57 +1512,31 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 }
 
 // Info returned for the API endpoint /churn
-func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (int64, types.NodeAccounts, types.NodeAccounts) {
+func (vm *ValidatorMgrVCUR) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
 	// Calculate the next churn height
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
-	nextChurnHeight := lastChurnHeight + churnInterval
+	nextChurnHeight = lastChurnHeight + churnInterval
 
-	activeNodes, err := vm.k.ListActiveValidators(ctx)
-	if err != nil {
-		ctx.Logger().Error("fail to get active nodes", "error", err)
-	}
-
-	// Simulate a churn and see which nodes churn in and which churn out
+	// Simulate a keygen block without committing state changes.
 	cacheCtx, _ := ctx.CacheContext()
 	vm.churn(cacheCtx)
-	nextNodes, err := vm.k.ListActiveValidators(cacheCtx)
 
-	// Diff the active nodes and new node set after simulated churn
-	var churnIn, churnOut types.NodeAccounts
-	for _, node := range activeNodes {
-		if !nextNodes.Contains(node) {
-			churnOut = append(churnOut, node)
+	iterator := vm.k.GetNodeAccountIterator(cacheCtx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var na NodeAccount
+		vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
+		// Ready nodes are keygen members which would churn in if keygens were successful.
+		if na.Status == NodeReady {
+			churnIn = append(churnIn, na.NodeAddress)
+			continue
+		}
+		// Active nodes with non-zero LeaveScore would churn out if keygens were successful.
+		if na.Status == NodeActive && na.LeaveScore > 0 {
+			churnOut = append(churnOut, na.NodeAddress)
 		}
 	}
-
-	for _, node := range nextNodes {
-		if !activeNodes.Contains(node) {
-			churnIn = append(churnIn, node)
-		}
-	}
-
-	/*
-		iterator := vm.k.GetNodeAccountIterator(ctx)
-		defer iterator.Close()
-		var churnIn types.NodeAccounts
-		var churnOut types.NodeAccounts
-		for ; iterator.Valid(); iterator.Next() {
-			var na NodeAccount
-			vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
-			if !(na.Status == NodeStandby || na.Status == NodeReady) {
-				continue
-			}
-
-			nextStatus, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
-			if nextStatus == NodeReady && na.Status == NodeStandby {
-				churnIn = append(churnIn, na)
-			}
-			if nextStatus != NodeReady && na.Status == NodeReady {
-				churnOut = append(churnOut, na)
-			}
-		}
-	*/
 
 	return nextChurnHeight, churnIn, churnOut
 }
