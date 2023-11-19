@@ -1646,3 +1646,33 @@ func (vm *ValidatorMgrV119) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 
 	return active, rotation, nil
 }
+
+// Info returned for the API endpoint /churn
+func (vm *ValidatorMgrV119) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
+	// Calculate the next churn height
+	lastChurnHeight := vm.getLastChurnHeight(ctx)
+	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
+	nextChurnHeight = lastChurnHeight + churnInterval
+
+	// Simulate a keygen block without committing state changes.
+	cacheCtx, _ := ctx.CacheContext()
+	vm.churn(cacheCtx)
+
+	iterator := vm.k.GetNodeAccountIterator(cacheCtx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var na NodeAccount
+		vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
+		// Ready nodes are keygen members which would churn in if keygens were successful.
+		if na.Status == NodeReady {
+			churnIn = append(churnIn, na.NodeAddress)
+			continue
+		}
+		// Active nodes with non-zero LeaveScore would churn out if keygens were successful.
+		if na.Status == NodeActive && na.LeaveScore > 0 {
+			churnOut = append(churnOut, na.NodeAddress)
+		}
+	}
+
+	return nextChurnHeight, churnIn, churnOut
+}
