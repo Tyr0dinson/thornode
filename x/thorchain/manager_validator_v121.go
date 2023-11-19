@@ -1648,7 +1648,7 @@ func (vm *ValidatorMgrV121) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 }
 
 // Info returned for the API endpoint /churn
-func (vm *ValidatorMgrV121) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
+func (vm *ValidatorMgrV121) ChurnState(ctx cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress, err error) {
 	// Calculate the next churn height
 	lastChurnHeight := vm.getLastChurnHeight(ctx)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
@@ -1656,7 +1656,9 @@ func (vm *ValidatorMgrV121) ChurnState(ctx cosmos.Context) (nextChurnHeight int6
 
 	// Simulate a keygen block without committing state changes.
 	cacheCtx, _ := ctx.CacheContext()
-	vm.churn(cacheCtx)
+	if err := vm.churn(cacheCtx); err != nil {
+		return 0, nil, nil, err
+	}
 
 	iterator := vm.k.GetNodeAccountIterator(cacheCtx)
 	defer iterator.Close()
@@ -1674,5 +1676,5 @@ func (vm *ValidatorMgrV121) ChurnState(ctx cosmos.Context) (nextChurnHeight int6
 		}
 	}
 
-	return nextChurnHeight, churnIn, churnOut
+	return nextChurnHeight, churnIn, churnOut, nil
 }
