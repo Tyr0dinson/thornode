@@ -127,11 +127,6 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
 	minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
 
-	// update list of ready actors
-	if err := vm.markReadyActors(ctx); err != nil {
-		return err
-	}
-
 	// clear leave scores
 	if err := vm.clearLeaveScores(ctx); err != nil {
 		return err
@@ -1336,27 +1331,24 @@ func (vm *ValidatorMgrVCUR) clearLeaveScores(ctx cosmos.Context) error {
 }
 
 // find any actor that are ready to become "ready" status
-func (vm *ValidatorMgrVCUR) markReadyActors(ctx cosmos.Context) error {
+func (vm *ValidatorMgrVCUR) selectReadyCandidates(ctx cosmos.Context) (readyCandidates NodeAccounts, err error) {
 	standby, err := vm.k.ListValidatorsByStatus(ctx, NodeStandby)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// check all ready and standby nodes are in "ready" state (upgrade/downgrade as needed)
 	for _, na := range append(standby, ready...) {
-		status, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
-		na.UpdateStatus(status, ctx.BlockHeight())
-
-		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
-			return err
+		if status, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants()); status == NodeReady {
+			readyCandidates = append(readyCandidates, na)
 		}
 	}
 
-	return nil
+	return readyCandidates, nil
 }
 
 // NodeAccountPreflightCheck preflight check to find out what the node account's next status will be
@@ -1431,7 +1423,7 @@ func (vm *ValidatorMgrVCUR) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCount int) (NodeAccounts, bool, error) {
 	rotation := false // track if are making any changes to the current active node accounts
 
-	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
+	ready, err := vm.selectReadyCandidates(ctx)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1505,6 +1497,12 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 
 	for i := 1; targetCount > len(active); i++ {
 		if len(ready) >= i {
+			// Set Ready Status of the keygen member Ready candidates.
+			ready[i-1].UpdateStatus(NodeReady, ctx.BlockHeight())
+			if err := vm.k.SetNodeAccount(ctx, ready[i-1]); err != nil {
+				// Drop any errors and continue as with the NodeAccountPreflightCheck error.
+				continue
+			}
 			rotation = true
 			active = append(active, ready[i-1])
 		}
