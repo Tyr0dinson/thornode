@@ -1660,16 +1660,27 @@ func (vm *ValidatorMgrV123) ChurnState(ctx cosmos.Context) (nextChurnHeight int6
 		return 0, nil, nil, err
 	}
 
+	desiredValidatorSet := vm.k.GetConfigInt64(cacheCtx, constants.DesiredValidatorSet)
+	next, ok, err := vm.nextVaultNodeAccounts(cacheCtx, int(desiredValidatorSet))
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	// ok represents that any nodes at all would change.
+	if !ok {
+		return nextChurnHeight, nil, nil, nil
+	}
+	for _, na := range next {
+		// The Ready nodes in this set are the keygen members which would churn in if keygens were successful.
+		if na.Status == NodeReady {
+			churnIn = append(churnIn, na.NodeAddress)
+		}
+	}
+
 	iterator := vm.k.GetNodeAccountIterator(cacheCtx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var na NodeAccount
 		vm.k.Cdc().MustUnmarshal(iterator.Value(), &na)
-		// Ready nodes are keygen members which would churn in if keygens were successful.
-		if na.Status == NodeReady {
-			churnIn = append(churnIn, na.NodeAddress)
-			continue
-		}
 		// Active nodes with non-zero LeaveScore would churn out if keygens were successful.
 		if na.Status == NodeActive && na.LeaveScore > 0 {
 			churnOut = append(churnOut, na.NodeAddress)
