@@ -693,6 +693,31 @@ paths:
           description: OK
       tags:
       - Network
+  /thorchain/churn:
+    get:
+      description: Returns first keygen block of the next churn and the attempted
+        changes to Active nodes.
+      operationId: churn
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChurnResponse'
+          description: OK
+      tags:
+      - Churn
   /thorchain/pol:
     get:
       description: Returns protocol owned liquidity overview statistics.
@@ -4213,6 +4238,51 @@ components:
       - total_bond_units
       - total_reserve
       - vaults_migrating
+      type: object
+    ChurnResponse:
+      example:
+        next_churn_height: 13501568
+        nodes_out:
+        - thor1jk93saw08vwmqdj684f4w5y6v4dkgdfy2jkrdp
+        - thor1zfy2dm8urvwzc6shcmfpewdxamf8v35zq593ev
+        - thor1zga95gkv87356lmjj0mvw3geylfuv3ph7wa9t0
+        nodes_in:
+        - thor1w8mntay3xuk3c77j8fgvyyt0nfvl2sk398a3ww
+        - thor1luvyfs2r4cedmmv0fqr2dqdcr4j4fd764hquu3
+        - thor1ypjwdplx07vf42qdfkex39dp8zxqnaects270v
+        - thor175jn909du3pwkwradsufuypzgjg4q5d8e26gh0
+        - thor13xa9eseegag6lcg4qa3eaj7uhljc9kmtxld84v
+      properties:
+        next_churn_height:
+          description: First keygen block of next churn
+          example: 13501568
+          format: int64
+          type: integer
+        nodes_in:
+          description: Non-Active nodes which would currently be chosen as keygen
+            members to potentially churn in.
+          example:
+          - thor1w8mntay3xuk3c77j8fgvyyt0nfvl2sk398a3ww
+          - thor1luvyfs2r4cedmmv0fqr2dqdcr4j4fd764hquu3
+          - thor1ypjwdplx07vf42qdfkex39dp8zxqnaects270v
+          - thor175jn909du3pwkwradsufuypzgjg4q5d8e26gh0
+          - thor13xa9eseegag6lcg4qa3eaj7uhljc9kmtxld84v
+          items:
+            type: string
+          type: array
+        nodes_out:
+          description: Active nodes which would currently be marked to churn out.
+          example:
+          - thor1jk93saw08vwmqdj684f4w5y6v4dkgdfy2jkrdp
+          - thor1zfy2dm8urvwzc6shcmfpewdxamf8v35zq593ev
+          - thor1zga95gkv87356lmjj0mvw3geylfuv3ph7wa9t0
+          items:
+            type: string
+          type: array
+      required:
+      - next_churn_height
+      - nodes_in
+      - nodes_out
       type: object
     POLResponse:
       example:

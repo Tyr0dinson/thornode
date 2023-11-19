@@ -75,6 +75,7 @@ func (Test) TestJSONSpec(c *C) {
 	assertJSONStructTagsMatch(c, types.BanVoter{}, gen.BanResponse{})
 	assertJSONStructTagsMatch(c, types.QueryResLastBlockHeights{}, gen.LastBlock{})
 	assertJSONStructTagsMatch(c, types.QueryVersion{}, gen.VersionResponse{})
+	assertJSONStructTagsMatch(c, types.QueryChurn{}, gen.ChurnResponse{})
 }
 
 // -------------------------------------------------------------------------------------
