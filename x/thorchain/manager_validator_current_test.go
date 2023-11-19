@@ -721,7 +721,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindNextVaultNodeAccounts(c *C) {
 	for _, item := range nas {
 		c.Assert(k.SetNodeAccount(ctx, item), IsNil)
 	}
-	err := validatorMgr.markReadyActors(ctx)
+	_, err := validatorMgr.selectReadyCandidates(ctx)
 	c.Assert(err, IsNil)
 	nasAfter, rotate, err := validatorMgr.nextVaultNodeAccounts(ctx, 12)
 	c.Assert(err, IsNil)
@@ -747,7 +747,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindNextVaultNodeAccountsMax(c *C) {
 		na := GetRandomValidatorNode(NodeStandby)
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	}
-	err := validatorMgr.markReadyActors(ctx)
+	_, err := validatorMgr.selectReadyCandidates(ctx)
 	c.Assert(err, IsNil)
 	nasAfter, rotate, err := validatorMgr.nextVaultNodeAccounts(ctx, 12)
 	c.Assert(err, IsNil)
@@ -774,7 +774,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestFindNextVaultNodeAccountsBFT(c *C) {
 		na := GetRandomValidatorNode(NodeReady)
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	}
-	err := validatorMgr.markReadyActors(ctx)
+	_, err := validatorMgr.selectReadyCandidates(ctx)
 	c.Assert(err, IsNil)
 	nasAfter, rotate, err := validatorMgr.nextVaultNodeAccounts(ctx, 4)
 	c.Assert(err, IsNil)
