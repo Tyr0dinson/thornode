@@ -521,6 +521,6 @@ func (m *mockChainClient) GetLatestTxForVault(string) (string, string, error) {
 
 func (m *mockChainClient) OnObservedTxIn(types.TxInItem, int64) {}
 
-func (m *mockChainClient) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.TxInItem, error) {
+func (m *mockChainClient) SignTx([]types.TxOutItem, int64) ([]byte, []byte, []*types.TxInItem, error) {
 	return nil, nil, nil, nil
 }

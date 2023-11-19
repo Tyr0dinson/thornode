@@ -86,7 +86,7 @@ func (c *EVMClient) approvalGasPrice(tx stypes.TxOutItem) *big.Int {
 	return gasPrice
 }
 
-func (c *EVMClient) retryApproval(tx stypes.TxOutItem, height int64) ([]byte, error) {
+func (c *EVMClient) retryApproval(tx stypes.TxOutItem) ([]byte, error) {
 	var checkpoint signingCheckpoint
 	if err := json.Unmarshal(tx.Checkpoint, &checkpoint); err != nil {
 		return tx.Checkpoint, fmt.Errorf("decode approval checkpoint: %w", err)
@@ -140,7 +140,7 @@ func (c *EVMClient) retryApproval(tx stypes.TxOutItem, height int64) ([]byte, er
 		return nil, nil
 	}
 
-	raw, err := c.sign(approval, tx.VaultPubKey, height, tx)
+	raw, err := c.sign(approval, tx.VaultPubKey, tx)
 	if err != nil {
 		var keysignErr tss.KeysignError
 		if errors.As(err, &keysignErr) && keysignErr.IsJoinPartyFailure() && approval.Type() == etypes.LegacyTxType {

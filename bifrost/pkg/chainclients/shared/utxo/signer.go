@@ -11,6 +11,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 )
 
+// BatchTxInfo contains per-transaction data for batch signed transactions
+type BatchTxInfo struct {
+	OutputAmount uint64 `json:"output_amount"` // Amount sent in this output (in sats)
+	UnbatchedGas uint64 `json:"unbatched_gas"` // Gas this tx would use if sent alone (in sats)
+	OutputIndex  int    `json:"output_index"`  // Index of the customer output in the wire transaction
+}
+
 // SignCheckpoint is used to checkpoint the built transaction before signing, for use in
 // round 7 signing errors which must reuse the same inputs.
 type SignCheckpoint struct {
@@ -18,15 +25,15 @@ type SignCheckpoint struct {
 	IndividualAmounts map[string]int64 `json:"individual_amounts"`
 	// Bitcoin wire encoding omits Zcash's expiry and consensus branch.
 	// Preserve both so retries sign the original digest.
-	ZecExpiryHeight      uint32 `json:"zec_expiry_height,omitempty"`
-	ZecConsensusBranchID uint32 `json:"zec_consensus_branch_id,omitempty"`
+	ZecExpiryHeight      uint32        `json:"zec_expiry_height,omitempty"`
+	ZecConsensusBranchID uint32        `json:"zec_consensus_branch_id,omitempty"`
+	BatchTxInfos         []BatchTxInfo `json:"batch_tx_infos,omitempty"`
 }
 
 func PostKeysignFailure(
 	thorchainBridge thorclient.ThorchainBridge,
 	tx stypes.TxOutItem,
 	logger zerolog.Logger,
-	thorchainHeight int64,
 	utxoErr error,
 ) error {
 	// PostKeysignFailure only once per SignTx, to not broadcast duplicate messages.
@@ -39,7 +46,7 @@ func PostKeysignFailure(
 		}
 
 		// key sign error forward the keysign blame to thorchain
-		txID, err := thorchainBridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKey)
+		txID, err := thorchainBridge.PostKeysignFailure(keysignError.Blame, tx.Height, tx.GetMemo(), tx.Coins, tx.VaultPubKey)
 		if err != nil {
 			logger.Error().Err(err).Msg("fail to post keysign failure to thorchain")
 			utxoErr = multierror.Append(utxoErr, fmt.Errorf("fail to post keysign failure to THORChain: %w", err))

@@ -638,12 +638,12 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 }
 
 // SignTx sign the the given TxArrayItem
-func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem, _ int64) ([]byte, []byte, []*stypes.TxInItem, error) {
 	// Wait for liability reconstruction to complete before signing
 	if !c.signingReady.Load() {
 		return nil, nil, nil, fmt.Errorf("client still initializing, cannot sign yet")
 	}
-
+	tx := txs[0]
 	if !tx.Chain.Equals(common.ETHChain) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)
 	}
@@ -844,7 +844,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if approvalTx != nil {
 		// Sign approval transaction
 		var approvalRawTx []byte
-		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, height, tx)
+		approvalRawTx, err = c.sign(approvalTx, tx.VaultPubKey, tx)
 		if err != nil {
 			if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 				return nil, nil, nil, nil
@@ -1107,7 +1107,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	var rawTx []byte
 
 	// Sign main transaction
-	rawTx, err = c.sign(createdTx, tx.VaultPubKey, height, tx)
+	rawTx, err = c.sign(createdTx, tx.VaultPubKey, tx)
 	if err != nil || len(rawTx) == 0 {
 		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
 			return nil, nil, nil, nil
@@ -1153,12 +1153,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		)
 	}
 
-	return rawTx, nonceBytes, txIn, nil
+	return rawTx, nonceBytes, []*stypes.TxInItem{txIn}, nil
 }
 
 // sign is design to sign a given message with keysign party and keysign wrapper
-func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
+func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, txOutItem stypes.TxOutItem) ([]byte, error) {
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, txOutItem.Height)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
 	}
@@ -1172,7 +1172,7 @@ func (c *Client) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height i
 			return nil, fmt.Errorf("fail to sign tx: %w", err)
 		}
 		// key sign error forward the keysign blame to thorchain
-		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, txOutItem.Height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
 		if errPostKeysignFail != nil {
 			return nil, multierror.Append(err, errPostKeysignFail)
 		}

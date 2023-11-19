@@ -1023,12 +1023,12 @@ func (c *EVMClient) verifyBroadcast(sig string) signercache.LookupResult {
 }
 
 // SignTx returns the signed transaction.
-func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *EVMClient) SignTx(txs []stypes.TxOutItem, _ int64) ([]byte, []byte, []*stypes.TxInItem, error) {
 	// Wait for liability reconstruction to complete before signing
 	if !c.signingReady.Load() {
 		return nil, nil, nil, fmt.Errorf("client still initializing, cannot sign yet")
 	}
-
+	tx := txs[0]
 	if !tx.Chain.Equals(c.cfg.ChainID) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by evm chain client", tx.Chain)
 	}
@@ -1101,7 +1101,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 				return nil, nil, nil, fmt.Errorf("decode signing checkpoint: %w", err)
 			}
 			if checkpoint.UnsignedTransferNonce == nil {
-				next, err := c.retryApproval(tx, height)
+				next, err := c.retryApproval(tx)
 				return nil, next, nil, err
 			}
 			if checkpoint.Version != 1 || checkpoint.Outbound != tx.Hash() || checkpoint.Transaction != nil || checkpoint.SignedApproval != nil {
@@ -1200,7 +1200,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	var rawTx []byte
 
 	// Sign main transaction
-	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, height, tx)
+	rawTx, err = c.sign(outboundTx, tx.VaultPubKey, tx)
 	if err != nil || len(rawTx) == 0 {
 		// Nonselection without a received signature is unfinished work. Keep
 		// this outbound (and nonce) queued ahead of the next vault/chain item.
@@ -1255,7 +1255,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		nil,
 	)
 
-	return rawTx, nonceBytes, txIn, nil
+	return rawTx, nonceBytes, []*stypes.TxInItem{txIn}, nil
 }
 
 // checkAndApproveAllowance creates an approval if needed and returns its recovery
@@ -1413,8 +1413,8 @@ func (c *EVMClient) checkAndApproveAllowance(tx stypes.TxOutItem, nonce uint64) 
 }
 
 // sign is design to sign a given message with keysign party and keysign wrapper
-func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-	rawBytes, err := c.kw.Sign(tx, poolPubKey, height)
+func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, txOutItem stypes.TxOutItem) ([]byte, error) {
+	rawBytes, err := c.kw.Sign(tx, poolPubKey, txOutItem.Height)
 	if err == nil && rawBytes != nil {
 		return rawBytes, nil
 	}
@@ -1428,7 +1428,7 @@ func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, heigh
 			return nil, fmt.Errorf("fail to sign tx: %w", err)
 		}
 		// key sign error forward the keysign blame to thorchain
-		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, txOutItem.Height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
 		if errPostKeysignFail != nil {
 			return nil, multierror.Append(err, errPostKeysignFail)
 		}

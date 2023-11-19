@@ -1442,7 +1442,7 @@ func (c *Client) consolidateVault(
 			SigningID: fmt.Sprintf("xmr-consolidation:%s:%d:%d:%d", stateKey, thorchainHeight, attempt, amountAtomic),
 		}
 
-		rawTx, _, observation, signErr := c.SignTx(txOutItem, thorchainHeight)
+		rawTx, _, observations, signErr := c.SignTx([]stypes.TxOutItem{txOutItem}, thorchainHeight)
 		if signErr != nil {
 			lastErr = signErr
 			if !isRetryableConsolidationErr(signErr) {
@@ -1454,6 +1454,10 @@ func (c *Client) consolidateVault(
 		if len(rawTx) == 0 {
 			lastErr = errors.New("signed consolidation transaction is empty")
 			break
+		}
+		var observation *stypes.TxInItem
+		if len(observations) > 0 {
+			observation = observations[0]
 		}
 		c.applySpentOutputRefsFromTxInItem(observation)
 
@@ -1823,7 +1827,11 @@ func (c *Client) CanSkipUnsupportedXMRDestination(tx stypes.TxOutItem) (bool, er
 	return true, nil
 }
 
-func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem, height int64) ([]byte, []byte, []*stypes.TxInItem, error) {
+	if len(txs) == 0 {
+		return nil, nil, nil, nil
+	}
+	tx := txs[0]
 	if !tx.Chain.Equals(c.chain) {
 		return nil, nil, nil, fmt.Errorf("cannot sign non-xmr tx on monero client: %s", tx.Chain)
 	}
@@ -1832,7 +1840,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		c.reportXMRMaxGasExceeded(err)
 		err = c.postKeysignFailure(tx, height, err)
 	}
-	return signedTx, checkpoint, observation, err
+	var observations []*stypes.TxInItem
+	if observation != nil {
+		observations = []*stypes.TxInItem{observation}
+	}
+	return signedTx, checkpoint, observations, err
 }
 
 func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {

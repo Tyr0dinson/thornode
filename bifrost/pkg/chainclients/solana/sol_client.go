@@ -579,7 +579,8 @@ func (c *SOLClient) countAbstain(reason string) {
 }
 
 // SignTx returns the signed transaction.
-func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *SOLClient) SignTx(txs []stypes.TxOutItem, height int64) ([]byte, []byte, []*stypes.TxInItem, error) {
+	tx := txs[0]
 	if tx.Chain != common.SOLChain {
 		return nil, nil, nil, errors.New("tx chain is not solana")
 	}
@@ -845,7 +846,7 @@ func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, mem
 		nil,
 	)
 
-	return signedBytes, nil, txIn, nil
+	return signedBytes, nil, []*stypes.TxInItem{txIn}, nil
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey

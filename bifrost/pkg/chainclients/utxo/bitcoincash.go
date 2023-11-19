@@ -8,7 +8,6 @@ import (
 	bchwire "github.com/gcash/bchd/wire"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
@@ -24,12 +23,12 @@ func (c *Client) getChainCfgBCH() *bchchaincfg.Params {
 	}
 }
 
-func (c *Client) signUTXOBCH(redeemTx *bchwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXOBCH(redeemTx *bchwire.MsgTx, pubkey common.PubKey, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
 	var signable bchtxscript.Signable
-	if tx.VaultPubKey.Equals(c.nodePubKey) {
+	if pubkey.Equals(c.nodePubKey) {
 		signable = bchtxscript.NewPrivateKeySignable((*bchec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableBCH(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		signable = newTssSignableBCH(pubkey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	sig, err := bchtxscript.RawTxInECDSASignature(redeemTx, idx, sourceScript, bchtxscript.SigHashAll, signable, amount)

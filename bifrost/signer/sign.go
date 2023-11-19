@@ -322,10 +322,10 @@ func (s *Signer) signTransactions() {
 	}
 }
 
-func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, error)) ([]byte, *types.TxInItem, error) {
+func runWithContext(ctx context.Context, fn func() ([]byte, []*types.TxInItem, error)) ([]byte, []*types.TxInItem, error) {
 	ch := make(chan error, 1)
 	var checkpoint []byte
-	var txIn *types.TxInItem
+	var txIn []*types.TxInItem
 	go func() {
 		var err error
 		checkpoint, txIn, err = fn()
@@ -1173,7 +1173,7 @@ func (s *Signer) broadcastKeygenMsgs(height int64, msgs ...sdktypes.Msg) (common
 // with the error so they can be set on the TxOutStoreItem and re-used on a subsequent
 // retry to avoid double spend. The second returned value is an optional observation
 // that should be submitted to THORChain.
-func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem, error) {
+func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInItem, error) {
 	height := item.Height
 	tx := item.TxOutItem
 
@@ -1360,15 +1360,15 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// If SignedTx is set, we already signed and should only retry broadcast.
 	var signedTx, checkpoint []byte
 	var elapse time.Duration
-	var observation *types.TxInItem
+	var observation []*types.TxInItem
 	if hasSignedRetry {
 		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
 		signedTx = item.SignedTx
-		observation = item.Observation
+		observation = append(observation, item.Observation)
 	} else {
 		tx.SigningID = item.Key()
 		startKeySign := time.Now()
-		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
+		signedTx, checkpoint, observation, err = chain.SignTx([]types.TxOutItem{tx}, height)
 		if err != nil {
 			if errors.Is(err, chainclienttypes.ErrTxPending) || errors.Is(err, tss.ErrNotSelectedForKeysign) {
 				s.logger.Debug().Err(err).Msg("signing transaction pending")
@@ -1424,7 +1424,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
-		item.Observation = observation
+		observation = append(observation, item.Observation)
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
 		}
@@ -1517,7 +1517,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		Msg("Signing transaction")
 
 	ctx, cancel := context.WithTimeout(context.Background(), signingTimeoutForChain(item.TxOutItem.Chain))
-	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
 		return s.signAndBroadcast(item)
 	})
 
@@ -1541,8 +1541,10 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	// If the chain client can report import durability, keep the txout item
 	// until refs are applied so a restart can retry the same signed payload.
 	// Fall back to the stored observation from a prior signing attempt.
-	obsForRefs := obs
-	if obsForRefs == nil {
+	var obsForRefs *types.TxInItem
+	if len(obs) > 0 {
+		obsForRefs = obs[0]
+	} else {
 		obsForRefs = item.Observation
 	}
 	if !s.applySpentOutputRefsFromObs(ctx, item.TxOutItem, obsForRefs) {
@@ -1624,7 +1626,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	if s.shouldAutoObserve(item.TxOutItem) && obs != nil {
 		s.observer.ObserveSigned(types.TxIn{
 			Chain:                  item.TxOutItem.Chain,
-			TxArray:                []*types.TxInItem{obs},
+			TxArray:                obs,
 			MemPool:                true,
 			Filtered:               true,
 			ConfirmationRequired:   0,

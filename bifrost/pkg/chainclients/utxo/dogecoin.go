@@ -8,7 +8,6 @@ import (
 	dogewire "github.com/eager7/dogd/wire"
 	dogetxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/dogd-txscript"
 
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
@@ -24,12 +23,12 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 	}
 }
 
-func (c *Client) signUTXODOGE(redeemTx *dogewire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXODOGE(redeemTx *dogewire.MsgTx, pubkey common.PubKey, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
 	var signable dogetxscript.Signable
-	if tx.VaultPubKey.Equals(c.nodePubKey) {
+	if pubkey.Equals(c.nodePubKey) {
 		signable = dogetxscript.NewPrivateKeySignable((*dogeec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableDOGE(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		signable = newTssSignableDOGE(pubkey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	sig, err := dogetxscript.RawTxInSignature(redeemTx, idx, sourceScript, dogetxscript.SigHashAll, signable)

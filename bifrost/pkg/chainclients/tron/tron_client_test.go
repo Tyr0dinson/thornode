@@ -284,7 +284,7 @@ func (s *TronTestSuite) TestSignAndBroadcastTx(c *C) {
 	}
 
 	//
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 

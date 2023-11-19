@@ -21,6 +21,8 @@ type StorageAccessor interface {
 	GetSignedTxHash(txOutItemHash string) (string, bool)
 	SetLatestRecordedTx(vaultKey, transactionHash string) error
 	GetLatestRecordedTx(vaultKey string) (string, error)
+	SetCheckpoint(hash []string, data []byte) error
+	GetCheckpoint(hash []string) ([]byte, error)
 }
 
 // CacheManager maintain a store of the transaction that signer already signed
@@ -125,4 +127,12 @@ func (cm *CacheManager) RemoveSigned(transactionHash string) {
 	if err := cm.storageAccessor.RemoveSigned(transactionHash); err != nil {
 		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
 	}
+}
+
+func (cm *CacheManager) GetCheckpoint(hashes []string) ([]byte, error) {
+	return cm.storageAccessor.GetCheckpoint(hashes)
+}
+
+func (cm *CacheManager) SetCheckpoint(hashes []string, data []byte) error {
+	return cm.storageAccessor.SetCheckpoint(hashes, data)
 }

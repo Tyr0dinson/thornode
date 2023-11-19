@@ -855,29 +855,33 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	pubkeys := pubkeyMgr.GetPubKeys()
 
 	// Not SOL chain
-	result, _, obs, err := e.SignTx(stypes.TxOutItem{
-		Chain:       common.BTCChain,
-		ToAddress:   "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
-		VaultPubKey: "",
+	result, _, obs, err := e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.BTCChain,
+			ToAddress:   "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+			VaultPubKey: "",
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// Valid outbound
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:            common.SOLChain,
-		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
-		VaultPubKey:      pubkeys[0],
-		VaultPubKeyEddsa: pubkeys[0],
-		Coins: common.Coins{
-			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:            common.SOLChain,
+			ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+			VaultPubKey:      pubkeys[0],
+			VaultPubKeyEddsa: pubkeys[0],
+			Coins: common.Coins{
+				common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 
 	c.Assert(err, IsNil)

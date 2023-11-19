@@ -475,14 +475,15 @@ func (s *EthereumSuite) TestClient(c *C) {
 	out := txOut.TxArray[0].TxOutItem(txOut.Height)
 	out.Chain = common.ETHChain
 	out.Memo = "OUT:B6BD1A69831B9CCC0A1E9939E9AFBFCA144C427B3F61E176EBDCB14E57981C1B"
-	r, _, obs, err := e2.SignTx(out, 1)
+	r, _, obs, err := e2.SignTx([]stypes.TxOutItem{out}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err := out.VaultPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
-
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 	_, err = e2.BroadcastTx(out, r)
 	c.Assert(err, IsNil)
 }
@@ -588,194 +589,231 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	c.Assert(err, IsNil)
 
 	// Not ETH chain
-	result, _, obs, err := e.SignTx(stypes.TxOutItem{
-		Chain:       common.BTCChain,
-		ToAddress:   addr,
-		VaultPubKey: "",
+	result, _, obs, err := e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.BTCChain,
+			ToAddress:   addr,
+			VaultPubKey: "",
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// to address is empty
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		VaultPubKey: "",
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: "",
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// vault pub key is empty
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: "",
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: "",
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// memo is empty
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// memo can't be parsed
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Memo:        "whatever",
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Memo:        "whatever",
+		},
 	}, 1)
+
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// memo is inbound
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Memo:        "swap:ETH.ETH",
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Memo:        "swap:ETH.ETH",
+		},
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
 	// Outbound
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 10, // 10 gwei
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 10, // 10 gwei
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err := e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 
 	asset, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(err, IsNil)
 
 	// Outbound
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(1e18)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(1e18)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err = e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 
 	// refund
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err = e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 
 	// refund
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(common.One)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err = e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 
 	// migrate
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "MIGRATE:1024",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "MIGRATE:1024",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err = e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 
 	// migrate
-	result, _, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(asset, cosmos.NewUint(common.One)),
+	result, _, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(asset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "MIGRATE:1024",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "MIGRATE:1024",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)
 	fromAddr, err = e.localPubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(obs.Sender, Equals, fromAddr.String())
+	for _, ob := range obs {
+		c.Assert(ob.Sender, Equals, fromAddr.String())
+	}
 }
 
 func (s *EthereumSuite) TestGetAsgardAddresses(c *C) {
@@ -911,7 +949,7 @@ func (s *EthereumSuite) TestSignTxChecksMemLiability(c *C) {
 	}
 
 	// First transaction should succeed
-	rawTx1, _, _, err := e.SignTx(txOutItem1, 100)
+	rawTx1, _, _, err := e.SignTx([]stypes.TxOutItem{txOutItem1}, 100)
 	c.Assert(err, IsNil, Commentf("First SignTx should succeed"))
 	c.Assert(rawTx1, NotNil)
 
@@ -930,7 +968,7 @@ func (s *EthereumSuite) TestSignTxChecksMemLiability(c *C) {
 		MaxGas:      common.Gas(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)))),
 	}
 
-	rawTx2, _, _, err := e.SignTx(txOutItem2, 101)
+	rawTx2, _, _, err := e.SignTx([]stypes.TxOutItem{txOutItem2}, 101)
 	c.Assert(err, NotNil, Commentf("Second SignTx should fail due to liability"))
 	c.Assert(err.Error(), Matches, "insufficient gas asset balance.*")
 	c.Assert(rawTx2, IsNil)
@@ -1048,18 +1086,20 @@ func (s *EthereumSuite) TestSignTxWithAllowanceFlow(c *C) {
 	c.Assert(err, IsNil)
 
 	// Test SignTx with native asset (should work normally)
-	result, checkpoint, obs, err := e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	result, checkpoint, obs, err := e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -1076,18 +1116,20 @@ func (s *EthereumSuite) TestSignTxWithAllowanceFlow(c *C) {
 	tokenAsset, err := common.NewAsset("ETH.USDC-0xA0b86a33E6441e60DDB6B6B84b7efF8e6f3C5d0C")
 	c.Assert(err, IsNil)
 
-	result, checkpoint, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(tokenAsset, cosmos.NewUint(1000000)), // 1 USDC
+	result, checkpoint, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(tokenAsset, cosmos.NewUint(1000000)), // 1 USDC
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -1110,18 +1152,20 @@ func (s *EthereumSuite) TestSignTxWithAllowanceFlow(c *C) {
 	// Test SignTx with token asset and enabled mimir (triggers approval + sign flow).
 	// After broadcasting the approval, SignTx waits for it to be mined then proceeds
 	// to build and sign the outbound.
-	result, checkpoint, obs, err = e.SignTx(stypes.TxOutItem{
-		Chain:       common.ETHChain,
-		ToAddress:   addr,
-		VaultPubKey: e.localPubKey,
-		Coins: common.Coins{
-			common.NewCoin(tokenAsset, cosmos.NewUint(1000000)), // 1 USDC
+	result, checkpoint, obs, err = e.SignTx([]stypes.TxOutItem{
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   addr,
+			VaultPubKey: e.localPubKey,
+			Coins: common.Coins{
+				common.NewCoin(tokenAsset, cosmos.NewUint(1000000)), // 1 USDC
+			},
+			MaxGas: common.Gas{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
+			},
+			GasRate: 1,
+			Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 		},
-		MaxGas: common.Gas{
-			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
-		},
-		GasRate: 1,
-		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)

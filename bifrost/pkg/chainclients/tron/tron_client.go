@@ -477,9 +477,10 @@ func (c *TronClient) getSignerCacheExpiry() time.Duration {
 
 // SignTx returns the signed transaction.
 func (c *TronClient) SignTx(
-	txOutItem types.TxOutItem,
+	txOutItems []types.TxOutItem,
 	thorchainHeight int64,
-) ([]byte, []byte, *types.TxInItem, error) {
+) ([]byte, []byte, []*types.TxInItem, error) {
+	txOutItem := txOutItems[0]
 	// Recovery remains expiry- and mimir-gated. An existing transaction may
 	// only be replaced once its execution is definitively failed and solidified.
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.config.ChainID)
@@ -660,7 +661,7 @@ func (c *TronClient) signTronTransaction(
 	tronTx api.Transaction,
 	checkpoint []byte,
 	sign func([]byte, types.TxOutItem, int64) ([]byte, error),
-) ([]byte, []byte, *types.TxInItem, error) {
+) ([]byte, []byte, []*types.TxInItem, error) {
 	hash, err := hex.DecodeString(tronTx.TxId)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to decode tx hash")
@@ -704,7 +705,7 @@ func (c *TronClient) signTronTransaction(
 		nil,
 	)
 
-	return txBytes, nil, txIn, nil
+	return txBytes, nil, []*types.TxInItem{txIn}, nil
 }
 
 // BroadcastTx sends the transaction to Tron chain

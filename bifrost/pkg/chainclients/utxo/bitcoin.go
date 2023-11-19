@@ -9,7 +9,6 @@ import (
 	btcwire "github.com/btcsuite/btcd/wire"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
@@ -27,14 +26,14 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 	}
 }
 
-func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, pubkey common.PubKey, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
 	sigHashes := btctxscript.NewTxSigHashes(redeemTx)
 
 	var signable btctxscript.Signable
-	if tx.VaultPubKey.Equals(c.nodePubKey) {
+	if pubkey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
 	} else {
-		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		signable = newTssSignableBTC(pubkey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	witness, err := btctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, btctxscript.SigHashAll, signable, true)

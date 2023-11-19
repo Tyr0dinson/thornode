@@ -335,12 +335,12 @@ func decodeZecDustProofScript(value string) ([]byte, error) {
 	return script, nil
 }
 
-func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, tx stypes.TxOutItem, idx int, thorchainHeight int64) (err error) {
+func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, pubkey common.PubKey, idx int, thorchainHeight int64) (err error) {
 	var signable btctxscript.Signable
-	if tx.VaultPubKey.Equals(c.nodePubKey) {
+	if pubkey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
 	} else {
-		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		signable = newTssSignableBTC(pubkey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	blakeHash, err := hashes.SignatureHash(idx)

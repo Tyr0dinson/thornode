@@ -8,7 +8,6 @@ import (
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
@@ -23,14 +22,14 @@ func (c *Client) getChainCfgLTC() *ltcchaincfg.Params {
 	return nil
 }
 
-func (c *Client) signUTXOLTC(redeemTx *ltcwire.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
+func (c *Client) signUTXOLTC(redeemTx *ltcwire.MsgTx, pubkey common.PubKey, amount int64, sourceScript []byte, idx int, thorchainHeight int64) error {
 	sigHashes := ltctxscript.NewTxSigHashes(redeemTx)
 
 	var signable ltctxscript.Signable
-	if tx.VaultPubKey.Equals(c.nodePubKey) {
+	if pubkey.Equals(c.nodePubKey) {
 		signable = ltctxscript.NewPrivateKeySignable((*ltcec.PrivateKey)(c.nodePrivKey))
 	} else {
-		signable = newTssSignableLTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
+		signable = newTssSignableLTC(pubkey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
 	witness, err := ltctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, ltctxscript.SigHashAll, signable, true)

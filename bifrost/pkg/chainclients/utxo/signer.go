@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -73,24 +74,22 @@ const ZecExtraFee = int(0)
 
 // SignTx builds and signs the outbound transaction. Returns the signed transaction, a
 // serialized checkpoint on error, and an error.
-func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, *stypes.TxInItem, error) {
-	if !tx.Chain.Equals(c.cfg.ChainID) {
-		return nil, nil, nil, errors.New("wrong chain")
-	}
-
-	// skip outbounds without coins
-	if tx.Coins.IsEmpty() {
-		return nil, nil, nil, nil
-	}
-
-	if c.cfg.ChainID.Equals(common.BCHChain) {
-		if !tx.ToAddress.IsValidBCHAddress() {
-			c.log.Error().Msgf("to address: %s is legacy not allowed ", tx.ToAddress)
-			return nil, nil, nil, nil
+func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, []byte, []*stypes.TxInItem, error) {
+	var err error
+	// filter items
+	txItems := make([]stypes.TxOutItem, 0)
+	var vaultPubKey common.PubKey
+	var sourceScript []byte
+	if len(txs) > 0 {
+		vaultPubKey = txs[0].VaultPubKey
+		sourceScript, err = c.getSourceScript(txs[0])
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to get source pay to address script: %w", err)
 		}
 	}
-
-	// skip outbounds that have been signed
+	// Signer-cache check, standardized across chains: respect the cache while fresh;
+	// after the expiry window, only bypass when the operational SkipSignerCache<Chain>
+	// mimir is set AND the recorded broadcast is verified absent on chain.
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
 	gateFn := func() bool {
 		skipCache, err := c.bridge.GetMimir(mimirKey)
@@ -100,98 +99,121 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		verbose, txLookupErr := c.rpc.GetRawTransactionVerbose(sig)
 		return utxoVerifyPresence(verbose, txLookupErr)
 	}
-	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, verifyFn)
-	if check.Phase != signercache.PhaseNoEntry {
-		ev := c.log.Info()
-		if check.Noteworthy() {
-			ev = c.log.Warn()
+	for _, tx := range txs {
+		// transaction is not on the same chain
+		if !tx.Chain.Equals(c.cfg.ChainID) {
+			continue
 		}
-		ev.Stringer("phase", check.Phase).
-			Str("sig", check.Sig).
-			Interface("tx", tx).
-			Msg(check.Phase.String())
-	}
-	if check.SkipSign {
-		return nil, nil, nil, nil
+		// has no value
+		if tx.Coins.IsEmpty() {
+			continue
+		}
+
+		if c.cfg.ChainID.Equals(common.BCHChain) {
+			if !tx.ToAddress.IsValidBCHAddress() {
+				c.log.Error().Msgf("to address: %s is legacy not allowed ", tx.ToAddress)
+				continue
+			}
+		}
+
+		// does not match the same pubkey, can only batch from the same wallet
+		if !tx.VaultPubKey.Equals(vaultPubKey) {
+			continue
+		}
+
+		// get chain specific address type
+		var outputAddr interface{}
+		var outputAddrStr string
+		switch c.cfg.ChainID {
+		case common.DOGEChain:
+			outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())
+			if err != nil {
+				continue
+			}
+			outputAddrStr = outputAddr.(dogutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		case common.BCHChain:
+			outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
+			if err != nil {
+				continue
+			}
+			outputAddrStr = outputAddr.(bchutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		case common.LTCChain:
+			outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
+			if err != nil {
+				continue
+			}
+			outputAddrStr = outputAddr.(ltcutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+		case common.BTCChain:
+			outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
+			if err != nil {
+				continue
+			}
+			outputAddrStr = outputAddr.(btcutil.Address).String()
+		case common.ZECChain:
+			outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+			if err != nil {
+				continue
+			}
+			// re-encoding addresses would break tex address support
+			outputAddrStr = tx.ToAddress.String()
+		default:
+			c.log.Fatal().Msg("unsupported chain")
+			continue
+		}
+
+		// verify address
+		if !strings.EqualFold(outputAddrStr, tx.ToAddress.String()) {
+			c.log.Info().Msgf("output address: %s, to address: %s can't roundtrip", outputAddrStr, tx.ToAddress.String())
+			continue
+		}
+		switch outputAddr.(type) {
+		case *dogutil.AddressPubKey, *bchutil.AddressPubKey, *ltcutil.AddressPubKey, *btcutil.AddressPubKey:
+			c.log.Info().Msgf("address: %s is address pubkey type, should not be used", outputAddrStr)
+			continue
+		default: // keep lint happy
+		}
+
+		// skip outbounds that have been signed
+		check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, verifyFn)
+		if check.Phase != signercache.PhaseNoEntry {
+			ev := c.log.Info()
+			if check.Noteworthy() {
+				ev = c.log.Warn()
+			}
+			ev.Stringer("phase", check.Phase).
+				Str("sig", check.Sig).
+				Interface("tx", tx).
+				Msg(check.Phase.String())
+		}
+		if check.SkipSign {
+			continue
+		}
+
+		txItems = append(txItems, tx)
 	}
 
-	sourceScript, err := c.getSourceScript(tx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to get source pay to address script: %w", err)
-	}
-
-	// get chain specific address type
-	var outputAddr interface{}
-	var outputAddrStr string
-	switch c.cfg.ChainID {
-	case common.DOGEChain:
-		outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		dogeAddr, ok := outputAddr.(dogutil.Address)
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("decoded doge address has unexpected type %T", outputAddr)
-		}
-		outputAddrStr = dogeAddr.String()
-	case common.BCHChain:
-		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		bchAddr, ok := outputAddr.(bchutil.Address)
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("decoded bch address has unexpected type %T", outputAddr)
-		}
-		outputAddrStr = bchAddr.String()
-	case common.LTCChain:
-		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		ltcAddr, ok := outputAddr.(ltcutil.Address)
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("decoded ltc address has unexpected type %T", outputAddr)
-		}
-		outputAddrStr = ltcAddr.String()
-	case common.BTCChain:
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		btcAddr, ok := outputAddr.(btcutil.Address)
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("decoded btc address has unexpected type %T", outputAddr)
-		}
-		outputAddrStr = btcAddr.String()
-	case common.ZECChain:
-		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		// re-encoding addresses would break tex address support
-		outputAddrStr = tx.ToAddress.String()
-	default:
-		c.log.Fatal().Msg("unsupported chain")
-	}
-
-	// verify address
-	if !strings.EqualFold(outputAddrStr, tx.ToAddress.String()) {
-		c.log.Info().Msgf("output address: %s, to address: %s can't roundtrip", outputAddrStr, tx.ToAddress.String())
+	if len(txItems) == 0 {
 		return nil, nil, nil, nil
-	}
-	switch outputAddr.(type) {
-	case *dogutil.AddressPubKey, *bchutil.AddressPubKey, *ltcutil.AddressPubKey, *btcutil.AddressPubKey:
-		c.log.Info().Msgf("address: %s is address pubkey type, should not be used", outputAddrStr)
-		return nil, nil, nil, nil
-	default: // keep lint happy
 	}
 
 	// load from checkpoint if it exists
-	checkpoint := utxo.SignCheckpoint{}
 	redeemTx := &btcwire.MsgTx{}
-	if tx.Checkpoint != nil {
-		if err = json.Unmarshal(tx.Checkpoint, &checkpoint); err != nil {
+	checkpoint := utxo.SignCheckpoint{}
+	// fetch checkpoint if available
+	// get hashes, used as unique key for storing the checkpoint
+	hashes := make([]string, len(txItems))
+	for _, item := range txItems {
+		hashes = append(hashes, item.Hash())
+	}
+	sort.Strings(hashes) // sort to be order insensitive
+	ckpt, err := c.signerCacheManager.GetCheckpoint(hashes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get checkpoint: %s", err)
+	}
+	if ckpt != nil {
+		c.log.Info().Msgf("checkpoint loaded: %s / %s", c.cfg.ChainID, vaultPubKey)
+		err = json.Unmarshal(ckpt, &checkpoint)
+		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
 		if c.cfg.ChainID == common.ZECChain && checkpoint.ZecExpiryHeight == 0 {
@@ -208,14 +230,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 
 		// abort if any checkpoint VIN is spent
-		c.log.Info().Stringer("in_hash", tx.InHash).Msgf("verifying checkpoint vins")
-		var unspent bool
-		unspent, err = c.vinsUnspent(tx, redeemTx.TxIn)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to verify checkpoint vins: %w", err)
-		}
-		if !unspent {
-			return nil, nil, nil, nil
+		for _, tx := range txItems {
+			c.log.Info().Stringer("in_hash", tx.InHash).Msgf("verifying checkpoint vins")
+			var unspent bool
+			unspent, err = c.vinsUnspent(tx, redeemTx.TxIn)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to verify checkpoint vins: %w", err)
+			}
+			if !unspent {
+				return nil, nil, nil, nil
+			}
 		}
 
 	} else {
@@ -256,7 +280,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				return nil, nil, nil, err
 			}
 		}
-		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript, zecReference)
+		redeemTx, checkpoint.IndividualAmounts, checkpoint.BatchTxInfos, err = c.buildTx(txs, sourceScript, zecReference)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -387,30 +411,30 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 					signErr = fmt.Errorf("unexpected doge signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXODOGE(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+				signErr = c.signUTXODOGE(msgTx, vaultPubKey, amount, sourceScript, i, thorchainHeight)
 			case common.BCHChain:
 				msgTx, ok := stx.(*bchwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected bch signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOBCH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+				signErr = c.signUTXOBCH(msgTx, vaultPubKey, amount, sourceScript, i, thorchainHeight)
 			case common.LTCChain:
 				msgTx, ok := stx.(*ltcwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected ltc signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOLTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+				signErr = c.signUTXOLTC(msgTx, vaultPubKey, amount, sourceScript, i, thorchainHeight)
 			case common.BTCChain:
 				msgTx, ok := stx.(*btcwire.MsgTx)
 				if !ok {
 					signErr = fmt.Errorf("unexpected btc signing tx type %T", stx)
 					break
 				}
-				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+				signErr = c.signUTXOBTC(msgTx, vaultPubKey, amount, sourceScript, i, thorchainHeight)
 			case common.ZECChain:
-				signErr = c.signUTXOZEC(zecTx, zecHashes, tx, i, thorchainHeight)
+				signErr = c.signUTXOZEC(zecTx, zecHashes, vaultPubKey, i, thorchainHeight)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
@@ -429,22 +453,26 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 		// Classify before posting: PostKeysignFailure appends to utxoErr in place.
 		partyNeverFormed := allJoinPartyFailures(utxoErr, len(signings))
-		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
+		for _, tx := range txItems {
+			err = utxo.PostKeysignFailure(c.bridge, tx, c.log, utxoErr)
+		}
 
-		// The checkpoint pins this outbound to one tx, so a vault never signs
-		// two different txs for it. That only matters once signing may have
+		// The checkpoint pins these outbounds to one tx, so a vault never signs
+		// two different txs for them. That only matters once signing may have
 		// produced a signature. If the party never formed for any input, no
 		// signing round ran, so keep no checkpoint and rebuild next attempt.
 		// Members that built different txs (their bitcoind views of the vault
 		// UTXOs differ) otherwise keep retrying their own tx and never form a
 		// party until THORChain reschedules the outbound.
-		if tx.Checkpoint == nil && partyNeverFormed {
+		if ckpt == nil && partyNeverFormed {
 			c.log.Warn().
-				Stringer("in_hash", tx.InHash).
+				Strs("hashes", hashes).
 				Msg("keysign party did not form, discarding unsigned tx so the next attempt rebuilds it")
 			c.countPartyNotFormed()
 			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
 		}
+		_ = c.signerCacheManager.SetCheckpoint(hashes, checkpointBytes)
+
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 
@@ -518,10 +546,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 
 	// create the observation to be sent by the signer before broadcast
-	amt := redeemTx.TxOut[0].Value // the first output is the outbound amount
-	gas := totalAmount
-	for _, txOut := range redeemTx.TxOut { // subtract all vouts to from vins to get the gas
-		gas -= txOut.Value
+	// Calculate total batch gas
+	totalBatchGas := totalAmount
+	for _, txOut := range redeemTx.TxOut { // subtract all vouts from vins to get the gas
+		totalBatchGas -= txOut.Value
 	}
 
 	// ZEC hash is computed from zecTx instead of redeemTx
@@ -534,26 +562,69 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		txHash = hash.String()
 	}
 
-	var txIn *stypes.TxInItem
-	sender, err := tx.VaultPubKey.GetAddress(tx.Chain)
+	// Calculate total unbatched gas for proportional distribution
+	var totalUnbatchedGas uint64
+	for _, info := range checkpoint.BatchTxInfos {
+		totalUnbatchedGas += info.UnbatchedGas
+	}
+
+	txIn := make([]*stypes.TxInItem, 0)
+	sender, err := vaultPubKey.GetAddress(c.cfg.ChainID)
 	if err == nil {
-		txIn = stypes.NewTxInItem(
-			chainHeight,
-			txHash,
-			tx.Memo,
-			sender.String(),
-			tx.ToAddress.String(),
-			common.NewCoins(
-				common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(amt))),
-			),
-			common.Gas(common.NewCoins(
-				common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(gas))),
-			)),
-			tx.VaultPubKey,
-			"",
-			"",
-			nil,
-		)
+		c.log.Info().
+			Int64("total_batch_gas", totalBatchGas).
+			Uint64("total_unbatched_gas", totalUnbatchedGas).
+			Int("batch_size", len(txItems)).
+			Str("tx_hash", txHash).
+			Msg("Creating TxInItems for batch transaction")
+
+		for idx, tx := range txItems {
+			// Get per-transaction data from BatchTxInfos
+			var txAmount uint64
+			var txGas uint64
+
+			if idx < len(checkpoint.BatchTxInfos) {
+				txAmount = checkpoint.BatchTxInfos[idx].OutputAmount
+				// Calculate proportional gas: batchGas * (txUnbatchedGas / totalUnbatchedGas)
+				if totalUnbatchedGas > 0 {
+					txGas = uint64(totalBatchGas) * checkpoint.BatchTxInfos[idx].UnbatchedGas / totalUnbatchedGas
+				}
+				c.log.Info().
+					Int("tx_index", idx).
+					Uint64("output_amount", txAmount).
+					Uint64("unbatched_gas", checkpoint.BatchTxInfos[idx].UnbatchedGas).
+					Uint64("proportional_gas", txGas).
+					Str("memo", tx.Memo).
+					Msg("Batched transaction gas distribution")
+			} else {
+				// Fallback for single transaction or missing data
+				txAmount = uint64(redeemTx.TxOut[0].Value)
+				txGas = uint64(totalBatchGas)
+				c.log.Warn().
+					Int("tx_index", idx).
+					Uint64("amount", txAmount).
+					Uint64("gas", txGas).
+					Msg("Using fallback gas calculation (not batched)")
+			}
+
+			txIn = append(txIn, stypes.NewTxInItem(
+				chainHeight,
+				txHash,
+				tx.Memo,
+				sender.String(),
+				tx.ToAddress.String(),
+				common.NewCoins(
+					common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(txAmount)),
+				),
+				common.Gas(common.NewCoins(
+					common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(txGas)),
+				)),
+				tx.VaultPubKey,
+				"",
+				"",
+				nil,
+			))
+		}
 	}
 
 	// keep track of used utxos for Zcash

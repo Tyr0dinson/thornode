@@ -30,6 +30,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
+	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -298,12 +300,14 @@ func (c *Client) isSelfTransaction(txID string) bool {
 	return false
 }
 
-func (c *Client) getPaymentAmount(tx stypes.TxOutItem) btcutil.Amount {
-	amtToPay := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
-	// ZEC gas is calculated differently, see getUtxoToSpend()
-	if !tx.MaxGas.IsEmpty() && c.cfg.ChainID != common.ZECChain {
-		gasAmt := tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset()).Amount
-		amtToPay += gasAmt.Uint64()
+func (c *Client) getPaymentAmount(txs []stypes.TxOutItem) btcutil.Amount {
+	var amtToPay uint64
+	for _, tx := range txs {
+		amtToPay += tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
+		// ZEC gas is calculated differently, see getUtxoToSpend()
+		if !tx.MaxGas.IsEmpty() && c.cfg.ChainID != common.ZECChain {
+			amtToPay += tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
+		}
 	}
 	return btcutil.Amount(amtToPay)
 }
@@ -378,24 +382,24 @@ const (
 // returns the exact virtual size (vbytes) according to BIP141.
 // For non-segwit chains, it returns the actual serialized size.
 // A nil changeScript estimates a transaction without a change output.
-func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
-	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, estimateSigLen)
+func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts, customerScripts [][]byte, changeScript []byte) int64 {
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScripts, changeScript, estimateSigLen)
 }
 
 // maxFeeSats returns the largest fee that keeps the signed transaction within
 // MaxSatsPerVByte. It sizes the transaction with the outputs it will contain and the
 // shortest expected signatures, so the cap still holds against the final signed size.
-func (c *Client) maxFeeSats(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
+func (c *Client) maxFeeSats(txes []btcjson.ListUnspentResult, memoScripts, customerScripts [][]byte, changeScript []byte) int64 {
 	satsPerVByte := c.cfg.UTXO.MaxSatsPerVByte
 	switch c.cfg.ChainID {
 	case common.BTCChain, common.LTCChain:
 		// never exceed the maxfeerate BroadcastTx asks the daemon to enforce
 		satsPerVByte = min(satsPerVByte, broadcastMaxSatsPerVByte)
 	}
-	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, feeCapSigLen) * satsPerVByte
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScripts, changeScript, feeCapSigLen) * satsPerVByte
 }
 
-func (c *Client) estimateTxSizeWithSigLen(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte, sigLen int) int64 {
+func (c *Client) estimateTxSizeWithSigLen(txes []btcjson.ListUnspentResult, memoScripts, customerScripts [][]byte, changeScript []byte, sigLen int) int64 {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	// Add inputs with realistic witness/scriptSig data for size estimation
@@ -424,9 +428,10 @@ func (c *Client) estimateTxSizeWithSigLen(txes []btcjson.ListUnspentResult, memo
 		tx.AddTxIn(txIn)
 	}
 
-	// Add customer output
-	tx.AddTxOut(wire.NewTxOut(0, customerScript))
-
+	// Add customer outputs
+	for _, customerScript := range customerScripts {
+		tx.AddTxOut(wire.NewTxOut(0, customerScript))
+	}
 	// Add change output (will be added if balance > 0)
 	if changeScript != nil {
 		tx.AddTxOut(wire.NewTxOut(0, changeScript))
@@ -469,9 +474,7 @@ func (c *Client) isSegwitChain() bool {
 	}
 }
 
-func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
-	gasRate := tx.GasRate
-
+func (c *Client) getGasCoin(gasRate, vSize int64) common.Coin {
 	// if the gas rate is zero, try to get from last transaction fee
 	if gasRate == 0 {
 		fee, vBytes, err := c.temporalStorage.GetTransactionFee()
@@ -519,141 +522,196 @@ func zecFeeForInputCount(inputCount int, memo string) btcutil.Amount {
 	return btcutil.Amount(amount)
 }
 
-func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference int64) (*wire.MsgTx, map[string]int64, error) {
+func (c *Client) buildTx(txs []stypes.TxOutItem, sourceScript []byte, zecReference int64) (*wire.MsgTx, map[string]int64, []sutxo.BatchTxInfo, error) {
+	var vaultPubKey common.PubKey
+	if len(txs) > 0 {
+		vaultPubKey = txs[0].VaultPubKey
+	}
+
 	var txes []btcjson.ListUnspentResult
 	var err error
 	if c.cfg.ChainID != common.ZECChain {
 		// MaxGas is only a fee ceiling, so a vault short of amount + MaxGas may still pay
 		// the actual fee; the balance check below rejects it if not.
-		floor := btcutil.Amount(tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64())
-		txes, err = c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx), floor)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
+		var floorSats uint64
+		for _, tx := range txs {
+			floorSats += tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
 		}
-	}
-	var buf []byte
-	var nullDataScripts [][]byte
-	switch c.cfg.ChainID {
-	case common.DOGEChain:
-		var outputAddr dogutil.Address
-		outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())
+		txes, err = c.getUtxoToSpend(vaultPubKey, c.getPaymentAmount(txs), btcutil.Amount(floorSats))
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		buf, err = dogetxscript.PayToAddrScript(outputAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
-		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-	case common.BCHChain:
-		var outputAddr bchutil.Address
-		outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		buf, err = bchtxscript.PayToAddrScript(outputAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
-		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-	case common.LTCChain:
-		var outputAddr ltcutil.Address
-		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		buf, err = ltctxscript.PayToAddrScript(outputAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
-		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-	case common.BTCChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		buf, err = btctxscript.PayToAddrScript(outputAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
-		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-	case common.ZECChain:
-		var outputAddr *zcash.Address
-		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
-		}
-		buf, err = outputAddr.Script()
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
-		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
-		}
-	default:
-		c.log.Fatal().Msg("unsupported chain")
-	}
-
-	// For memoless outbounds, allow empty nullDataScripts
-	if len(nullDataScripts) == 0 && len(tx.Memo) != 0 {
-		return nil, nil, fmt.Errorf("no null data scripts generated, memo will not be included in the transaction")
-	}
-
-	// Parse the memo to be able to identify Migrate or Consolidate outbounds.
-	// Use GetMemo() which returns OriginalMemo for memoless outbounds
-	memoForParsing := tx.GetMemo()
-	var memo mem.Memo
-	if memoForParsing == "" {
-		memo = mem.NewOutboundMemo(tx.InHash)
-	} else {
-		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+			return nil, nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 		}
 	}
 
-	if c.cfg.ChainID == common.ZECChain {
-		consolidate := memo.GetType() == mem.TxConsolidate
-		target := tx.Coins.GetCoin(common.ZECAsset).Amount
-		if !tx.MaxGas.IsEmpty() {
-			target = target.Add(tx.MaxGas.ToCoins().GetCoin(common.ZECAsset).Amount)
+	var totalMemoSize int
+	var unbatchedGasSats uint64
+	var unbatchedSize int64
+	var maxGas common.Gas
+	for _, tx := range txs {
+		totalMemoSize += len([]byte(tx.Memo))
+		maxGas = maxGas.Adds_deprecated(tx.MaxGas)
+	}
+
+	// build vOuts
+	var vOutTotalValue int64
+	type TxInfo struct {
+		CoinToCustomer common.Coin
+		MemoType       mem.TxType
+	}
+	// maps coinToCustomer tx output indexes to their associated tx info
+	coinToCustomerTxOutIdxsToTxInfo := make(map[int]TxInfo, len(txs))
+	// track per-transaction data for batch signing
+	batchTxInfos := make([]sutxo.BatchTxInfo, len(txs))
+	var txNullDataScripts [][][]byte
+	var txBufs [][]byte
+	// Calculate the total cost of P2WPKH outputs for extended memos
+	p2wpkhOutputsCost := int64(0)
+	for idx, tx := range txs {
+		var buf []byte
+		var nullDataScripts [][]byte
+		switch c.cfg.ChainID {
+		case common.DOGEChain:
+			var outputAddr dogutil.Address
+			outputAddr, err = dogutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDOGE())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			}
+			buf, err = dogetxscript.PayToAddrScript(outputAddr)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			}
+			nullDataScripts, err = MemoToScripts(tx.Memo, dogetxscript.MaxDataCarrierSize, dogetxscript.NullDataScript, dogetxscript.PayToWitnessScript)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+		case common.BCHChain:
+			var outputAddr bchutil.Address
+			outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			}
+			buf, err = bchtxscript.PayToAddrScript(outputAddr)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			}
+			nullDataScripts, err = MemoToScripts(tx.Memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+		case common.LTCChain:
+			var outputAddr ltcutil.Address
+			outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			}
+			buf, err = ltctxscript.PayToAddrScript(outputAddr)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			}
+			nullDataScripts, err = MemoToScripts(tx.Memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+		case common.BTCChain:
+			var outputAddr btcutil.Address
+			outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			}
+			buf, err = btctxscript.PayToAddrScript(outputAddr)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			}
+			nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+		case common.ZECChain:
+			var outputAddr *zcash.Address
+			outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			}
+			buf, err = outputAddr.Script()
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			}
+			nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			}
+		default:
+			c.log.Fatal().Msg("unsupported chain")
+		}
+
+		// For memoless outbounds, allow empty nullDataScripts
+		if len(nullDataScripts) == 0 && len(tx.Memo) != 0 {
+			return nil, nil, nil, fmt.Errorf("no null data scripts generated, memo will not be included in the transaction")
 		}
 		if len(nullDataScripts) > 1 {
-			target = target.AddUint64(uint64(len(nullDataScripts)-1) * uint64(tx.Chain.P2WPKHOutputValue()))
+			// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
+			p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
+		}
+		txNullDataScripts = append(txNullDataScripts, nullDataScripts)
+		txBufs = append(txBufs, buf)
+	}
+	var allNullDataScripts [][]byte
+	for _, nullDataScripts := range txNullDataScripts {
+		for idx, nullDataScript := range nullDataScripts {
+			if idx != 0 || len(allNullDataScripts) == 0 {
+				allNullDataScripts = append(allNullDataScripts, nullDataScript)
+			}
+		}
+	}
+
+	// ZEC selects confirmed inputs only after the outputs are known, since the
+	// target includes the committed gas allowance and extended memo outputs.
+	var zecConsolidate bool
+	var zecFeeMemo string
+	if c.cfg.ChainID == common.ZECChain {
+		target := cosmos.ZeroUint()
+		for idx, tx := range txs {
+			memoForParsing := tx.GetMemo()
+			var memo mem.Memo
+			if memoForParsing == "" {
+				memo = mem.NewOutboundMemo(tx.InHash)
+			} else {
+				memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+				}
+			}
+			if memo.GetType() == mem.TxConsolidate {
+				zecConsolidate = true
+			}
+			zecFeeMemo += memo.String()
+			target = target.Add(tx.Coins.GetCoin(common.ZECAsset).Amount)
+			if len(txNullDataScripts[idx]) > 1 {
+				target = target.AddUint64(uint64(len(txNullDataScripts[idx])-1) * uint64(tx.Chain.P2WPKHOutputValue()))
+			}
+		}
+		if !maxGas.IsEmpty() {
+			target = target.Add(maxGas.ToCoins().GetCoin(common.ZECAsset).Amount)
 		}
 		if !target.BigInt().IsInt64() {
-			return nil, nil, fmt.Errorf("ZEC input target exceeds the supported amount range")
+			return nil, nil, nil, fmt.Errorf("ZEC input target exceeds the supported amount range")
 		}
 		amount := btcutil.Amount(target.BigInt().Int64())
 		switch {
-		case !consolidate && tx.MaxGas.IsEmpty():
-			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, 0, zecReference, false, func(inputCount int) btcutil.Amount {
-				return zecFeeForInputCount(inputCount, memo.String())
+		case !zecConsolidate && maxGas.IsEmpty():
+			txes, err = c.selectZecUtxos(vaultPubKey, amount, 0, zecReference, false, func(inputCount int) btcutil.Amount {
+				return zecFeeForInputCount(inputCount, zecFeeMemo)
 			})
-		case !consolidate:
+		case !zecConsolidate:
 			// as for other chains, MaxGas only bounds the fee: inputs covering the payment
 			// without it may still pay the actual fee, which the balance check verifies
-			floor := amount - btcutil.Amount(tx.MaxGas.ToCoins().GetCoin(common.ZECAsset).Amount.Uint64())
-			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, floor, zecReference, false, nil)
+			floor := amount - btcutil.Amount(maxGas.ToCoins().GetCoin(common.ZECAsset).Amount.Uint64())
+			txes, err = c.selectZecUtxos(vaultPubKey, amount, floor, zecReference, false, nil)
 		default:
-			txes, err = c.getZecUtxoToSpend(tx.VaultPubKey, amount, zecReference, consolidate)
+			txes, err = c.getZecUtxoToSpend(vaultPubKey, amount, zecReference, zecConsolidate)
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get confirmed ZEC inputs: %w", err)
+			return nil, nil, nil, fmt.Errorf("fail to get confirmed ZEC inputs: %w", err)
 		}
 	}
 
@@ -664,7 +722,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		var txID *chainhash.Hash
 		txID, err = chainhash.NewHashFromStr(item.TxID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
+			return nil, nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
 		}
 		// double check that the utxo is still valid
 		outputPoint := wire.NewOutPoint(txID, item.Vout)
@@ -673,54 +731,132 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		var amt btcutil.Amount
 		amt, err = btcutil.NewAmount(item.Amount)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
+			return nil, nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
 		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
 		totalAmt += int64(amt)
 	}
 
-	totalSize := c.estimateTxSize(txes, nullDataScripts, buf, sourceScript)
+	for idx, tx := range txs {
+		size := c.estimateTxSize(txes, txNullDataScripts[idx], [][]byte{txBufs[idx]}, sourceScript)
+		unbatchedSize += size
+		txUnbatchedGas := c.getGasCoin(tx.GasRate, size).Amount.Uint64()
+		unbatchedGasSats += txUnbatchedGas
+		// Store unbatched gas for this transaction
+		batchTxInfos[idx].UnbatchedGas = txUnbatchedGas
+	}
 
-	coinToCustomer := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset())
+	totalSize := c.estimateTxSize(txes, allNullDataScripts, txBufs, sourceScript)
 
 	var gasCoin common.Coin
 	switch c.cfg.ChainID {
 	case common.ZECChain:
-		gasCoin = c.getGasCoinZEC(redeemTx, memo.String())
+		// Use the same combined memo as input selection so the fee matches it
+		gasCoin = c.getGasCoinZEC(redeemTx, zecFeeMemo)
 	default:
-		gasCoin = c.getGasCoin(tx, totalSize)
+		unbatchedGasRate := int64(unbatchedGasSats) / unbatchedSize
+		gasCoin = c.getGasCoin(unbatchedGasRate, totalSize)
 	}
 
-	// Calculate the total cost of P2WPKH outputs for extended memos
-	p2wpkhOutputsCost := int64(0)
-	if len(nullDataScripts) > 1 {
-		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
-		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
+	for idx, tx := range txs {
+		if len(tx.Memo) != 0 {
+			// Parse the memo to be able to identify Migrate or Consolidate outbounds.
+			// Use GetMemo() which returns OriginalMemo for memoless outbounds
+			memoForParsing := tx.GetMemo()
+			var memo mem.Memo
+			if memoForParsing == "" {
+				memo = mem.NewOutboundMemo(tx.InHash)
+			} else {
+				memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+				}
+			}
+			txInfo := TxInfo{
+				CoinToCustomer: tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()),
+				MemoType:       memo.GetType(),
+			}
+			coinToCustomerTxOutIdxsToTxInfo[len(redeemTx.TxOut)] = txInfo
+		} else {
+			txInfo := TxInfo{
+				CoinToCustomer: tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()),
+				MemoType:       mem.EmptyMemo.TxType,
+			}
+			coinToCustomerTxOutIdxsToTxInfo[len(redeemTx.TxOut)] = txInfo
+		}
+
+		// Store the output index for this transaction
+		outputIdx := len(redeemTx.TxOut)
+		batchTxInfos[idx].OutputIndex = outputIdx
+
+		redeemTxOut := wire.NewTxOut(0, txBufs[idx])
+		redeemTx.AddTxOut(redeemTxOut)
+
+		// NOTE: Memo outputs will be added AFTER the change output to ensure proper gas calculation
+	}
+	migrateMemoCount := 0
+	for _, txInfo := range coinToCustomerTxOutIdxsToTxInfo {
+		if txInfo.MemoType == mem.TxMigrate {
+			migrateMemoCount++
+		}
 	}
 
-	var gasAmtSats, toCustomer uint64
+	var gasAmtSats uint64
+	var toCustomer map[int]uint64
 	var balance int64
-	if c.cfg.ChainID == common.ZECChain && tx.MaxGas.IsEmpty() && memo.GetType() != mem.TxConsolidate {
+	if c.cfg.ChainID == common.ZECChain && maxGas.IsEmpty() && !zecConsolidate {
 		// There is no committed fee allowance. Use the same ZIP-317 fee as input
 		// selection; local relay policy can veto it but cannot change the digest.
-		gasAmtSats, toCustomer = gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64()
-		balance = totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		gasAmtSats = gasCoin.Amount.Uint64()
+		toCustomer = make(map[int]uint64, len(coinToCustomerTxOutIdxsToTxInfo))
+		balance = totalAmt - int64(gasAmtSats) - p2wpkhOutputsCost
+		for outputIdx, txInfo := range coinToCustomerTxOutIdxsToTxInfo {
+			amt := txInfo.CoinToCustomer.Amount.Uint64()
+			toCustomer[outputIdx] = amt
+			balance -= int64(amt)
+		}
 		changeScript := sourceScript
 		if balance == 0 {
 			changeScript = nil
 		}
-		maxFeeSats := c.maxFeeSats(txes, nullDataScripts, buf, changeScript)
+		maxFeeSats := c.maxFeeSats(txes, allNullDataScripts, txBufs, changeScript)
 		if maxFeeSats < 0 || gasAmtSats > uint64(maxFeeSats) {
-			return nil, nil, fmt.Errorf("ZEC conventional fee %d exceeds configured cap %d", gasAmtSats, maxFeeSats)
+			return nil, nil, nil, fmt.Errorf("ZEC conventional fee %d exceeds configured cap %d", gasAmtSats, maxFeeSats)
 		}
 		if relay := c.minRelayFeeSats.Load(); gasAmtSats < relay {
-			return nil, nil, fmt.Errorf("ZEC conventional fee %d is below local relay minimum %d", gasAmtSats, relay)
+			return nil, nil, nil, fmt.Errorf("ZEC conventional fee %d is below local relay minimum %d", gasAmtSats, relay)
 		}
 	} else {
-		settleFee := func(changeScript []byte) (gasAmtSats, toCustomer uint64, balance int64) {
-			gasAmtSats, toCustomer = c.applyFeeLimits(tx, memo, gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64(),
-				c.maxFeeSats(txes, nullDataScripts, buf, changeScript))
-			return gasAmtSats, toCustomer, totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		// settleFee bounds the gas against the transaction with the given change output
+		// (nil for none), then returns the gas, the amount paid to each customer output
+		// (keyed by output index) and the balance left for change.
+		settleFee := func(changeScript []byte) (gasAmtSats uint64, toCustomer map[int]uint64, balance int64) {
+			var gap uint64
+			gasAmtSats, gap = c.applyFeeLimits(maxGas, gasCoin.Amount.Uint64(),
+				c.maxFeeSats(txes, allNullDataScripts, txBufs, changeScript))
+			// the gap between MaxGas and the gas spent is shared among the migrate outputs
+			var gapShareSats uint64
+			if migrateMemoCount > 0 {
+				gapShareSats = gap / uint64(migrateMemoCount)
+			}
+			toCustomer = make(map[int]uint64, len(coinToCustomerTxOutIdxsToTxInfo))
+			balance = totalAmt - int64(gasAmtSats) - p2wpkhOutputsCost
+			for outputIdx, txInfo := range coinToCustomerTxOutIdxsToTxInfo {
+				amt := txInfo.CoinToCustomer.Amount.Uint64()
+				switch txInfo.MemoType {
+				case mem.TxMigrate:
+					amt += gapShareSats
+				case mem.TxConsolidate:
+					// without MaxGas the consolidation pays its own gas
+					if maxGas.IsEmpty() {
+						amt -= min(gasAmtSats, amt)
+					}
+				default:
+				}
+				toCustomer[outputIdx] = amt
+				balance -= int64(amt)
+			}
+			return gasAmtSats, toCustomer, balance
 		}
 
 		// Cap the fee assuming a change output first. When no balance is left for change
@@ -738,37 +874,64 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
 	}
 
-	// pay to customer
-	redeemTxOut := wire.NewTxOut(int64(toCustomer), buf)
-	redeemTx.AddTxOut(redeemTxOut)
+	// pay to customers
+	for outputIdx, txInfo := range coinToCustomerTxOutIdxsToTxInfo {
+		if txInfo.MemoType == mem.TxConsolidate && maxGas.IsEmpty() {
+			c.log.Info().Msgf("consolidate tx, need gas: %d", gasAmtSats)
+		}
+		redeemTx.TxOut[outputIdx].Value = int64(toCustomer[outputIdx])
+		vOutTotalValue += redeemTx.TxOut[outputIdx].Value
+	}
+
+	// Store final output amounts in batchTxInfos
+	for i := range batchTxInfos {
+		outputIdx := batchTxInfos[i].OutputIndex
+		batchTxInfos[i].OutputAmount = uint64(redeemTx.TxOut[outputIdx].Value)
+	}
 
 	// balance to ourselves
 	// add output to pay the balance back ourselves
 	// Now properly account for P2WPKH outputs cost
-	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
+	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, vOutTotalValue, int64(gasAmt), p2wpkhOutputsCost)
 	if balance < 0 {
-		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d (inputs: %d, to customer: %d, gas: %d)",
-			balance, totalAmt, toCustomer, gasAmtSats)
+		return nil, nil, nil, fmt.Errorf("not enough balance to pay customer: %d (inputs: %d, to customer: %d, gas: %d)",
+			balance, totalAmt, vOutTotalValue, gasAmtSats)
 	}
 	if balance > 0 {
 		c.log.Info().Msgf("send %d back to self", balance)
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}
 
-	// memo
-	if len(tx.Memo) != 0 {
-		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
-		for _, script := range nullDataScripts[1:] {
-			redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
+	// Add memo outputs AFTER the change output
+	// This ensures the change output is counted in sumVout when calculating gas,
+	// and only the P2WPKH memo data outputs (after OP_RETURN) are treated as gas.
+	for idx, tx := range txs {
+		if len(tx.Memo) != 0 {
+			redeemTx.AddTxOut(wire.NewTxOut(0, txNullDataScripts[idx][0]))
+			for _, script := range txNullDataScripts[idx][1:] {
+				redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
+			}
 		}
 	}
 
-	return redeemTx, individualAmounts, nil
+	// Log batch transaction info for debugging
+	if len(batchTxInfos) > 1 {
+		c.log.Info().Msgf("Built batch transaction with %d outputs", len(batchTxInfos))
+		var totalUnbatchedGas uint64
+		for i, info := range batchTxInfos {
+			totalUnbatchedGas += info.UnbatchedGas
+			c.log.Info().Msgf("  Output %d: amount=%d, unbatched_gas=%d, output_index=%d",
+				i, info.OutputAmount, info.UnbatchedGas, info.OutputIndex)
+		}
+		c.log.Info().Msgf("Total unbatched gas: %d sats", totalUnbatchedGas)
+	}
+
+	return redeemTx, individualAmounts, batchTxInfos, nil
 }
 
 // applyFeeLimits bounds the estimated gas by maxFeeSats, the min relay fee and the
-// outbound's MaxGas, and returns the gas and the amount to pay the customer.
-func (c *Client) applyFeeLimits(tx stypes.TxOutItem, memo mem.Memo, gasAmtSats, toCustomer uint64, maxFeeSats int64) (uint64, uint64) {
+// batch's combined MaxGas, and returns the gas and the gap between MaxGas and the gas.
+func (c *Client) applyFeeLimits(maxGas common.Gas, gasAmtSats uint64, maxFeeSats int64) (uint64, uint64) {
 	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
 	if gasAmtSats > uint64(maxFeeSats) {
 		diffSats := gasAmtSats - uint64(maxFeeSats) // in sats
@@ -784,24 +947,20 @@ func (c *Client) applyFeeLimits(tx stypes.TxOutItem, memo mem.Memo, gasAmtSats, 
 	}
 
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
-	if !tx.MaxGas.IsEmpty() {
-		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset())
+	var gap uint64
+	if !maxGas.IsEmpty() {
+		maxGasCoin := maxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset())
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
-			c.log.Info().Msgf("max gas: %s, however estimated gas need %d", tx.MaxGas, gasAmtSats)
+			c.log.Info().Msgf("max gas: %s, however estimated gas need %d", maxGas, gasAmtSats)
 			gasAmtSats = maxGasCoin.Amount.Uint64()
-		} else if gasAmtSats < maxGasCoin.Amount.Uint64() && memo.GetType() == mem.TxMigrate {
+		} else if gasAmtSats < maxGasCoin.Amount.Uint64() {
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
-			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
-			c.log.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to the vault migrated to", tx.MaxGas, gasAmtSats, gap)
-			toCustomer += gap
+			gap = maxGasCoin.Amount.Uint64() - gasAmtSats
+			c.log.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to the vault(s) migrated to", maxGas, gasAmtSats, gap)
 		}
-	} else if memo.GetType() == mem.TxConsolidate {
-		gap := gasAmtSats
-		c.log.Info().Msgf("consolidate tx, need gas: %d", gap)
-		toCustomer -= min(gap, toCustomer)
 	}
 
-	return gasAmtSats, toCustomer
+	return gasAmtSats, gap
 }
 
 // MemoToScripts converts a memo to UTXO scripts.
@@ -957,7 +1116,7 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		height = anchorConsolidateHeight(height)
 	}
 
-	rawTx, _, _, err := c.SignTx(txOutItem, height)
+	rawTx, _, _, err := c.SignTx([]stypes.TxOutItem{txOutItem}, height)
 	if err != nil {
 		return fmt.Errorf("sign consolidate txout item: %w", err)
 	}

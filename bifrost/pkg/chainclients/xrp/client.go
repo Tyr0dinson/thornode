@@ -469,7 +469,8 @@ func (c *Client) signingMetadata(tx stypes.TxOutItem, currentHeight int64) (XrpM
 }
 
 // SignTx signs the given TxArrayItem.
-func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ *stypes.TxInItem, err error) {
+func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ []*stypes.TxInItem, err error) {
+	tx := txs[0]
 	defer func() {
 		if err != nil {
 			// The serial-drain gate defers a new outbound with ErrTxPending before any
@@ -487,7 +488,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 
 				// key sign error forward the keysign blame to thorchain
 				var txID common.TxID
-				txID, err = c.thorchainBridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, tx.Memo, tx.Coins, tx.VaultPubKey)
+				txID, err = c.thorchainBridge.PostKeysignFailure(keysignError.Blame, tx.Height, tx.Memo, tx.Coins, tx.VaultPubKey)
 				if err != nil {
 					c.logger.Err(err).Msg("fail to post keysign failure to THORChain")
 					return
@@ -629,7 +630,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		nil,
 	)
 
-	return txBytes, nil, txIn, nil
+	return txBytes, nil, []*stypes.TxInItem{txIn}, nil
 }
 
 // signMsg takes a payment msg and signs it using either private key or TSS.

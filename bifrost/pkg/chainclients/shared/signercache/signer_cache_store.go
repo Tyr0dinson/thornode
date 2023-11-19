@@ -1,9 +1,11 @@
 package signercache
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,6 +18,7 @@ const (
 	txMapPrefix       = "tx-map-v6-"
 	txOutMapPrefix    = "txout-map-v1-"
 	vaultCachePrefix  = "vault-v6-"
+	checkpointPrefix  = "chpt-"
 )
 
 // signedExpiryBytes is the length of the expiry-timestamp prefix written by
@@ -88,6 +91,36 @@ func (s *CacheStore) getVaultKey(vaultKey string) string {
 
 func (s *CacheStore) getTxOutKey(txOutItemHash string) string {
 	return fmt.Sprintf("%s%s", txOutMapPrefix, txOutItemHash)
+}
+
+func (s *CacheStore) getCheckpointKey(hashes []string) string {
+	return fmt.Sprintf("%s%s", checkpointPrefix, s.hashHashes(hashes))
+}
+
+func (s *CacheStore) hashHashes(hashes []string) string {
+	switch len(hashes) {
+	case 0:
+		return ""
+	case 1:
+		return hashes[0]
+	default:
+		longHash := strings.Join(hashes, "")
+		return fmt.Sprintf("%X", sha256.Sum256([]byte(longHash)))
+	}
+}
+
+func (s *CacheStore) GetCheckpoint(hashes []string) ([]byte, error) {
+	key := s.getCheckpointKey(hashes)
+	exist, _ := s.db.Has([]byte(key), nil)
+	if !exist {
+		return nil, nil
+	}
+	return s.db.Get([]byte(key), nil)
+}
+
+func (s *CacheStore) SetCheckpoint(hashes []string, data []byte) error {
+	key := s.getCheckpointKey(hashes)
+	return s.db.Put([]byte(key), data, nil)
 }
 
 // HasSigned returns true if a signed-cache entry exists for the given hash.
