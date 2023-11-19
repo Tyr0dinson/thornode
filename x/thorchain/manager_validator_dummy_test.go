@@ -34,3 +34,7 @@ func (vm *ValidatorDummyMgr) processRagnarok(_ cosmos.Context, _ Manager) error 
 func (vm *ValidatorDummyMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error) {
 	return NodeDisabled, errKaboom
 }
+
+func (vm *ValidatorDummyMgr) ChurnState(_ cosmos.Context) (nextChurnHeight int64, churnIn, churnOut []cosmos.AccAddress) {
+	return 0, nil, nil
+}
