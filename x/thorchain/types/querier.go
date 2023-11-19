@@ -830,5 +830,5 @@ type QueryVaultsPubKeys struct {
 type QueryChurn struct {
 	NextChurnHeight int64               `json:"next_churn_height"`
 	NodesIn         []cosmos.AccAddress `json:"nodes_in"`
-	NodesOut        []cosmos.AccAddress `json:"last_signed_out"`
+	NodesOut        []cosmos.AccAddress `json:"nodes_out"`
 }
