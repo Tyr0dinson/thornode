@@ -378,41 +378,34 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 	for _, tx := range txs {
 		// is not a BTC transaction
 		if !tx.Chain.Equals(c.chain) {
-			fmt.Println("FILTER 1")
 			continue
 		}
 		// has no value
 		if tx.Coins.IsEmpty() {
-			fmt.Println("FILTER 2")
 			continue
 		}
 		// does not match the same pubkey, can only batch from the same wallet
 		if !tx.VaultPubKey.Equals(vaultPubKey) {
-			fmt.Println("FILTER 3", tx.VaultPubKey, vaultPubKey)
 			continue
 		}
 
 		// verify output address
 		outputAddr, err := btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfg())
 		if err != nil {
-			fmt.Println("FILTER 4")
 			continue
 		}
 		if !strings.EqualFold(outputAddr.String(), tx.ToAddress.String()) {
-			fmt.Println("FILTER 5")
 			continue
 		}
 		switch outputAddr.(type) {
 		case *btcutil.AddressPubKey:
 			c.logger.Info().Msgf("address: %s is address pubkey type, should not be used", outputAddr)
-			fmt.Println("FILTER 6")
 			continue
 		default: // keep lint happy
 		}
 
 		// skip outbounds that have been signed
 		if c.signerCacheManager.HasSigned(tx.CacheHash()) {
-			fmt.Println("FILTER 7")
 			continue
 		}
 
@@ -420,7 +413,6 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 	}
 
 	if len(txItems) == 0 {
-		fmt.Println("FOO BAR 1")
 		return nil, nil, nil, nil
 	}
 
@@ -436,18 +428,12 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 	// load from checkpoint if it exists
 	redeemTx := &wire.MsgTx{}
 	checkpoint := utxo.SignCheckpoint{}
-	// fetch checkpoint if available
-	// get hashes, used as unique key for storing the checkpoint
-	hashes := make([]string, len(txItems))
-	for _, item := range txItems {
-		hashes = append(hashes, item.Hash())
-	}
-	sort.Strings(hashes) // sort to be order insensitive
-	ckpt, err := c.signerCacheManager.GetCheckpoint(hashes)
+	ckpt, err := c.signerCacheManager.GetCheckpoint(vaultPubKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get checkpoint: %s", err)
 	}
 	if ckpt != nil {
+		c.logger.Info().Msgf("checkpoint loaded: %s / %s", c.chain, vaultPubKey)
 		if err := json.Unmarshal(ckpt, &checkpoint); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
@@ -496,7 +482,7 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 		}
-		_ = c.signerCacheManager.SetCheckpoint(hashes, checkpointBytes)
+		_ = c.signerCacheManager.SetCheckpoint(vaultPubKey, checkpointBytes)
 		for _, tx := range txItems {
 			err = utxo.PostKeysignFailure(c.bridge, tx, c.logger, utxoErr)
 		}
@@ -509,6 +495,7 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 	if err := redeemTx.Serialize(&signedTx); err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize tx to bytes: %w", err)
 	}
+	_ = c.signerCacheManager.RemoveCheckpoint(vaultPubKey)
 
 	// create the observation to be sent by the signer before broadcast
 	chainHeight, err := c.getBlockHeight()
@@ -544,7 +531,6 @@ func (c *Client) SignTx(txs []stypes.TxOutItem) ([]byte, []byte, []*stypes.TxInI
 		}
 	}
 
-	fmt.Println("FOO BAR 2")
 	return signedTx.Bytes(), nil, txIn, nil
 }
 

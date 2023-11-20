@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
+	"gitlab.com/thorchain/thornode/common"
 )
 
 // StorageAccessor define the necessary methods to access the key value store
@@ -14,8 +15,9 @@ type StorageAccessor interface {
 	HasSigned(hash string) bool
 	RemoveSigned(transactionHash string) error
 	SetTransactionHashMap(txOutItemHash, transactionHash string) error
-	SetCheckpoint(hash []string, data []byte) error
-	GetCheckpoint(hash []string) ([]byte, error)
+	SetCheckpoint(pubkey common.PubKey, data []byte) error
+	GetCheckpoint(pubkey common.PubKey) ([]byte, error)
+	RemoveCheckpoint(pubkey common.PubKey) error
 }
 
 // CacheManager maintain a store of the transaction that signer already signed
@@ -61,10 +63,14 @@ func (cm *CacheManager) RemoveSigned(transactionHash string) {
 	}
 }
 
-func (cm *CacheManager) GetCheckpoint(hashes []string) ([]byte, error) {
-	return cm.storageAccessor.GetCheckpoint(hashes)
+func (cm *CacheManager) GetCheckpoint(pubkey common.PubKey) ([]byte, error) {
+	return cm.storageAccessor.GetCheckpoint(pubkey)
 }
 
-func (cm *CacheManager) SetCheckpoint(hashes []string, data []byte) error {
-	return cm.storageAccessor.SetCheckpoint(hashes, data)
+func (cm *CacheManager) SetCheckpoint(pubkey common.PubKey, data []byte) error {
+	return cm.storageAccessor.SetCheckpoint(pubkey, data)
+}
+
+func (cm *CacheManager) RemoveCheckpoint(pubkey common.PubKey) error {
+	return cm.storageAccessor.RemoveCheckpoint(pubkey)
 }

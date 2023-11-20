@@ -1,14 +1,13 @@
 package signercache
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
+	"gitlab.com/thorchain/thornode/common"
 )
 
 const (
@@ -46,24 +45,12 @@ func (s *CacheStore) getMapKey(txHash string) string {
 	return fmt.Sprintf("%s%s", txMapPrefix, txHash)
 }
 
-func (s *CacheStore) getCheckpointKey(hashes []string) string {
-	return fmt.Sprintf("%s%s", checkpointPrefix, s.hashHashes(hashes))
+func (s *CacheStore) getCheckpointKey(pubkey common.PubKey) string {
+	return fmt.Sprintf("%s%s", checkpointPrefix, pubkey)
 }
 
-func (s *CacheStore) hashHashes(hashes []string) string {
-	switch len(hashes) {
-	case 0:
-		return ""
-	case 1:
-		return hashes[0]
-	default:
-		longHash := strings.Join(hashes, "")
-		return fmt.Sprintf("%X", sha256.Sum256([]byte(longHash)))
-	}
-}
-
-func (s *CacheStore) GetCheckpoint(hashes []string) ([]byte, error) {
-	key := s.getCheckpointKey(hashes)
+func (s *CacheStore) GetCheckpoint(pubkey common.PubKey) ([]byte, error) {
+	key := s.getCheckpointKey(pubkey)
 	exist, _ := s.db.Has([]byte(key), nil)
 	if !exist {
 		return nil, nil
@@ -71,9 +58,14 @@ func (s *CacheStore) GetCheckpoint(hashes []string) ([]byte, error) {
 	return s.db.Get([]byte(key), nil)
 }
 
-func (s *CacheStore) SetCheckpoint(hashes []string, data []byte) error {
-	key := s.getCheckpointKey(hashes)
+func (s *CacheStore) SetCheckpoint(pubkey common.PubKey, data []byte) error {
+	key := s.getCheckpointKey(pubkey)
 	return s.db.Put([]byte(key), data, nil)
+}
+
+func (s *CacheStore) RemoveCheckpoint(pubkey common.PubKey) error {
+	key := s.getCheckpointKey(pubkey)
+	return s.db.Delete([]byte(key), nil)
 }
 
 // HasSigned check whether the given height and hash has been signed before or not
