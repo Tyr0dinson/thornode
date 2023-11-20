@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -199,14 +198,7 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, 
 	// load from checkpoint if it exists
 	redeemTx := &btcwire.MsgTx{}
 	checkpoint := utxo.SignCheckpoint{}
-	// fetch checkpoint if available
-	// get hashes, used as unique key for storing the checkpoint
-	hashes := make([]string, len(txItems))
-	for _, item := range txItems {
-		hashes = append(hashes, item.Hash())
-	}
-	sort.Strings(hashes) // sort to be order insensitive
-	ckpt, err := c.signerCacheManager.GetCheckpoint(hashes)
+	ckpt, err := c.signerCacheManager.GetCheckpoint(vaultPubKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get checkpoint: %s", err)
 	}
@@ -466,12 +458,12 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, 
 		// party until THORChain reschedules the outbound.
 		if ckpt == nil && partyNeverFormed {
 			c.log.Warn().
-				Strs("hashes", hashes).
+				Stringer("vault_pubkey", vaultPubKey).
 				Msg("keysign party did not form, discarding unsigned tx so the next attempt rebuilds it")
 			c.countPartyNotFormed()
 			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
 		}
-		_ = c.signerCacheManager.SetCheckpoint(hashes, checkpointBytes)
+		_ = c.signerCacheManager.SetCheckpoint(vaultPubKey, checkpointBytes)
 
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
@@ -544,6 +536,7 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, 
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize tx to bytes: %w", err)
 	}
+	_ = c.signerCacheManager.RemoveCheckpoint(vaultPubKey)
 
 	// create the observation to be sent by the signer before broadcast
 	// Calculate total batch gas
