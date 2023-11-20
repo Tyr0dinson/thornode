@@ -1655,13 +1655,13 @@ func (vm *ValidatorMgrV119) ChurnState(ctx cosmos.Context) (nextChurnHeight int6
 	nextChurnHeight = lastChurnHeight + churnInterval
 
 	// Simulate a keygen block without committing state changes.
-	cacheCtx, _ := ctx.CacheContext()
-	if err := vm.churn(cacheCtx); err != nil {
+	ctx, _ = ctx.CacheContext()
+	if err := vm.churn(ctx); err != nil {
 		return 0, nil, nil, err
 	}
 
-	desiredValidatorSet := vm.k.GetConfigInt64(cacheCtx, constants.DesiredValidatorSet)
-	next, ok, err := vm.nextVaultNodeAccounts(cacheCtx, int(desiredValidatorSet))
+	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
+	next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -1676,7 +1676,7 @@ func (vm *ValidatorMgrV119) ChurnState(ctx cosmos.Context) (nextChurnHeight int6
 		}
 	}
 
-	iterator := vm.k.GetNodeAccountIterator(cacheCtx)
+	iterator := vm.k.GetNodeAccountIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var na NodeAccount
