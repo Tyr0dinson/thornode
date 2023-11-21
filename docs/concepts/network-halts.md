@@ -1,5 +1,5 @@
 ---
-description: Interfaces need to monitor and react to keep network paramaters.
+description: Interfaces need to monitor and react to keep network parameters.
 ---
 
 # Network Halts

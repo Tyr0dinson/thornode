@@ -8,7 +8,7 @@ description: How THORChain supports cross-chain aggregation.
 
 THORChain will only support a set number of assets and is not designed to support log tailed assets. If a user wants to swap from a long tail ERC20 asset to Bitcoin, they have to use an Ethereum AMM like Sushi Swap to swap the ERC20 asset to ETH then they can swap the ETH to BTC.&#x20;
 
-The same process applies for long tail tokens on other chains such as Avalance and Cosmos.&#x20;
+The same process applies for long tail tokens on other chains such as Avalanche and Cosmos.&#x20;
 
 **Aggregator** is the ability for a user swap long tail assets via leveraging a supported on-chain AMMs and THORChain in one transaction.&#x20;
 

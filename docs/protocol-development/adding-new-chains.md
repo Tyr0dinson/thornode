@@ -12,6 +12,6 @@ There is now a specific process for the addition of new chains, see: [https://gi
 4. Smoke Tests: Build out the smoke tests for the chain. This ensures the connection is robustly tested.&#x20;
 5. [XChainJS](https://github.com/xchainjs/xchainjs-lib): Add a new chain package to xchainjs so the entire ecosystem of wallets can easily support.&#x20;
 
-Once this is complete, the chain can be added to Stagenet. After some time of demonstrating Stablity on Stagenet, the THORChain Node Operator community is polled and if supported, it can be merged to Mainnet.&#x20;
+Once this is complete, the chain can be added to Stagenet. After some time of demonstrating Stability on Stagenet, the THORChain Node Operator community is polled and if supported, it can be merged to Mainnet.&#x20;
 
 Once on mainnet, the chain is typically given a period of 12 months to demonstrate uptake and usage. If the chain cannot maintain sufficient demand, it may be removed from the network and all liquidity refunded to LPs.&#x20;

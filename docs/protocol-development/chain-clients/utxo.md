@@ -18,7 +18,7 @@ Example for Bitcoin.
 
 ### Scanning Blocks
 
-The block scanner monitors the Asgard Addresses and looks for incoming UTXOs spending to those addresses. When it sees one performs validation on it and witnesses to THORChain. For Bitcoin, it looks that at least 1 output is spent to Asgard, and searchs for another output to have an `OP_RETURN`. These two outputs form the `amount` and `memo` witness to THORChain.
+The block scanner monitors the Asgard Addresses and looks for incoming UTXOs spending to those addresses. When it sees one performs validation on it and witnesses to THORChain. For Bitcoin, it looks that at least 1 output is spent to Asgard, and searches for another output to have an `OP_RETURN`. These two outputs form the `amount` and `memo` witness to THORChain.
 
 [https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/blockscanner/blockscanner.go](https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/blockscanner/blockscanner.go)
 

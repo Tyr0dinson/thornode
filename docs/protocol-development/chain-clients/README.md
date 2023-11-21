@@ -38,7 +38,7 @@ Although THORChain will not act on an inbound transaction that is undergoing con
 {% endhint %}
 
 {% hint style="info" %}
-A malicous re-org would never happen unless the value to gain from re-org exceeds the cost to re-org. The value to gain is the sum of the transactions sent to Asgard, whilst the cost to re-org is taken to be the value of each block -- the sum of fees and subsidies.
+A malicious re-org would never happen unless the value to gain from re-org exceeds the cost to re-org. The value to gain is the sum of the transactions sent to Asgard, whilst the cost to re-org is taken to be the value of each block -- the sum of fees and subsidies.
 {% endhint %}
 
 ### Re-orgs
