@@ -1502,11 +1502,13 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 		na := ready[0]
 		ready = ready[1:]
 
-		// Set Ready Status of the keygen member Ready candidates.
-		na.UpdateStatus(NodeReady, ctx.BlockHeight())
-		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
-			// Drop any errors and continue as with the NodeAccountPreflightCheck error.
-			continue
+		// Ensure Ready Status of keygen member Ready candidates.
+		if na.Status != NodeReady {
+			na.UpdateStatus(NodeReady, ctx.BlockHeight())
+			if err := vm.k.SetNodeAccount(ctx, na); err != nil {
+				// Drop any errors and continue as with the NodeAccountPreflightCheck error.
+				continue
+			}
 		}
 		rotation = true
 		active = append(active, na)
@@ -1516,7 +1518,7 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 		}
 	}
 
-	// Ensure non-keygen-member Ready candidates are Standby.
+	// Ensure Standby status of non-keygen-member Ready candidates.
 	for _, na := range ready {
 		if na.Status == NodeStandby {
 			continue
