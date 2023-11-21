@@ -77,4 +77,4 @@ Do not consume pending transactions when spending to Asgard (with a memo) since 
 
 ### MEMO
 
-The memo is inserted as an OP\_RETURN in an output. It can be any output. The MEMO is limited to 80bytes, so it should be trimmed and use abbreviated memos or Asset identifiers where possible.
+The memo is inserted as an OP_RETURN in an output. It can be any output. The MEMO is limited to 80bytes, so it should be trimmed and use abbreviated memos or Asset identifiers where possible.

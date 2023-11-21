@@ -109,32 +109,31 @@ Here's a reference implementation of calculating slip for a double swap:
 // Calculate swap output with slippage
 function calcSwapOutput(inputAmount, pool, toRune) {
   // formula: (inputAmount * inputBalance * outputBalance) / (inputAmount + inputBalance) ^ 2
-  const inputBalance = toRune ? pool.assetBalance : pool.runeBalance // input is asset if toRune
-  const outputBalance = toRune ? pool.runeBalance : pool.assetBalance // output is rune if toRune
-  const numerator = inputAmount * inputBalance * outputBalance
-  const denominator = Math.pow((inputAmount + inputBalance), 2)
-  const result = numerator / denominator
-  return result
+  const inputBalance = toRune ? pool.assetBalance : pool.runeBalance; // input is asset if toRune
+  const outputBalance = toRune ? pool.runeBalance : pool.assetBalance; // output is rune if toRune
+  const numerator = inputAmount * inputBalance * outputBalance;
+  const denominator = Math.pow(inputAmount + inputBalance, 2);
+  const result = numerator / denominator;
+  return result;
 }
 
 // Calculate swap slippage
 function calcSwapSlip(inputAmount, pool, toRune) {
   // formula: (inputAmount) / (inputAmount + inputBalance)
-  const inputBalance = toRune ? pool.assetBalance : pool.runeBalance// input is asset if toRune
-  const result = inputAmount / (inputAmount + inputBalance)
-  return result
+  const inputBalance = toRune ? pool.assetBalance : pool.runeBalance; // input is asset if toRune
+  const result = inputAmount / (inputAmount + inputBalance);
+  return result;
 }
 
 // Calculate swap slippage for double swap
 function calcDoubleSwapSlip(inputAmount, pool1, pool2) {
   // formula: calcSwapSlip1(input1) + calcSwapSlip2(calcSwapOutput1 => input2)
-  const swapSlip1 = calcSwapSlip(inputAmount, pool1, true)
-  const r = calcSwapOutput(inputAmount, pool1, true)
-  const swapSlip2 = calcSwapSlip(r, pool2, false)
-  const result = swapSlip1 + swapSlip2
-  return result
+  const swapSlip1 = calcSwapSlip(inputAmount, pool1, true);
+  const r = calcSwapOutput(inputAmount, pool1, true);
+  const swapSlip2 = calcSwapSlip(r, pool2, false);
+  const result = swapSlip1 + swapSlip2;
+  return result;
 }
-
 ```
 
 _Source:_ [_https://gitlab.com/thorchain/asgardex-common/asgardex-util/-/blob/master/src/calc/swap.ts_](https://gitlab.com/thorchain/asgardex-common/asgardex-util/-/blob/master/src/calc/swap.ts)
@@ -209,8 +208,6 @@ _R = runeBalance, A = assetBalance_
 _r = runeAdded, a = assetAdded_
 
 The units to give an LP depend on the existing units, as well as the assets they are adding, and the depths of the pool they are adding to.&#x20;
-
-
 
 ## LP Units Withdrawn
 

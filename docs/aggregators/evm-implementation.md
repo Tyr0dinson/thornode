@@ -8,7 +8,7 @@ THORChain Aggregator Example
 
 {% embed url="https://gitlab.com/thorchain/ethereum/eth-router/-/blob/master/contracts/THORChain_Aggregator.sol" %}
 
-Tokens must be on the [ETH Whitelist](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/evm\_whitelist\_procedure.md#dex-token). The destination address should be a user control address, not a contract address.&#x20;
+Tokens must be on the [ETH Whitelist](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/evm_whitelist_procedure.md#dex-token). The destination address should be a user control address, not a contract address.&#x20;
 
 ### SwapIn
 
@@ -16,12 +16,12 @@ The aggregator contract needs a **swapIn** function similar to the one below. Fi
 
 ```go
 function swapIn(
-    address tcVault, 
-    address tcRouter, 
-    string calldata tcMemo, 
+    address tcVault,
+    address tcRouter,
+    string calldata tcMemo,
     address token,
-    uint amount, 
-    uint amountOutMin, 
+    uint amount,
+    uint amountOutMin,
     uint256 deadline
     ) public nonReentrant {
     uint256 _safeAmount = safeTransferFrom(token, amount); // Transfer asset
@@ -66,4 +66,3 @@ function swapOut(address token, address to, uint256 amountOutMin) public payable
         swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, to, type(uint).max);
     }
 ```
-

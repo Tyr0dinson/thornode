@@ -8,7 +8,7 @@ description: How to Query THORChain
 
 Vaults are fetched from the `/inbound_addresses` :
 
-[https://thornode.ninerealms.com/thorchain/inbound\_addresses](https://thornode.ninerealms.com/thorchain/inbound\_addresses)
+[https://thornode.ninerealms.com/thorchain/inbound_addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses)
 
 You need to select the address of the Chain the inbound transaction will go to.&#x20;
 
@@ -65,16 +65,17 @@ Note: you can transfer the base asset, eg ETH, directly to the address and skip 
    "router": "0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146"
    }
 ```
+
 {% endhint %}
 
 {% hint style="warning" %}
 If you connect to a public Midgard, you must be conscious of the fact that you can be phished and could send money to the WRONG vault. You should do safety checks, i.e. comparing with other nodes, or even inspecting the vault itself for the presence of funds. You should also consider running your own '[fullnode](https://docs.thorchain.org/thornodes/overview)' instance to query for trusted data.
 {% endhint %}
 
-* `Chain`: Chain Name
-* `Address`: Asgard Vault inbound address for that chain.,&#x20;
-* `Halted`: Boolean, if the chain is halted. This should be monitored.
-* `gas_rate`: rate to be used, e.g. in Stats or GWei. See Fees.
+- `Chain`: Chain Name
+- `Address`: Asgard Vault inbound address for that chain.,&#x20;
+- `Halted`: Boolean, if the chain is halted. This should be monitored.
+- `gas_rate`: rate to be used, e.g. in Stats or GWei. See Fees.
 
 ### Displaying available pairs
 
@@ -82,18 +83,18 @@ Use the `/pools` [endpoint ](https://midgard.thorchain.info/v2/pools)of Midgard 
 
 ```json
 {
-    "asset": "BNB.BTCB-1DE",
-    "assetDepth": "11262499812",
-    "assetPrice": "11205.698400479405",
-    "assetPriceUSD": "38316.644098172634",
-    "liquidityUnits": "61816750778660",
-    "poolAPY": "0.24483254735655713",
-    "runeDepth": "126204176128728",
-    "status": "available",
-    "synthSupply": "0",
-    "synthUnits": "0",
-    "units": "61816750778660",
-    "volume24h": "67544420820530"
+  "asset": "BNB.BTCB-1DE",
+  "assetDepth": "11262499812",
+  "assetPrice": "11205.698400479405",
+  "assetPriceUSD": "38316.644098172634",
+  "liquidityUnits": "61816750778660",
+  "poolAPY": "0.24483254735655713",
+  "runeDepth": "126204176128728",
+  "status": "available",
+  "synthSupply": "0",
+  "synthUnits": "0",
+  "units": "61816750778660",
+  "volume24h": "67544420820530"
 }
 ```
 
@@ -121,5 +122,5 @@ See code examples using the THORChain xchain package here [https://github.com/xc
 
 There are two ways to see if a Chain is halted.&#x20;
 
-1. Looking at the `/inbound_addresses` [endpoint](https://thornode.ninerealms.com/thorchain/inbound\_addresses) and inspecting the halted flag.
+1. Looking at the `/inbound_addresses` [endpoint](https://thornode.ninerealms.com/thorchain/inbound_addresses) and inspecting the halted flag.
 2. Looking at Mimir and inspecting the HALT\[Chain]TRADING setting. See [network-halts.md](network-halts.md "mention") for more details.

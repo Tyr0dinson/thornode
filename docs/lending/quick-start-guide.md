@@ -14,7 +14,7 @@ Lending Quote endpoints have been created to simplify the implementation process
 
 **Request:** Loan quote using 1 BTC as collateral, target debt asset is USDT at 0XDAC17F958D2EE523A2206206994597C13D831EC7
 
-[https://thornode.ninerealms.com/thorchain/quote/loan/open?from\_asset=BTC.BTC\&amount=10000000\&to\_asset=ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7\&destination=0xe7062003a7be4df3a86127293a0d6b1f54c04220](https://thornode.ninerealms.com/thorchain/quote/loan/open?from\_asset=BTC.BTC\&amount=10000000\&to\_asset=ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7\&destination=0xe7062003a7be4df3a86127293a0d6b1f54c04220)
+[https://thornode.ninerealms.com/thorchain/quote/loan/open?from_asset=BTC.BTC\&amount=10000000\&to_asset=ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7\&destination=0xe7062003a7be4df3a86127293a0d6b1f54c04220](https://thornode.ninerealms.com/thorchain/quote/loan/open?from_asset=BTC.BTC&amount=10000000&to_asset=ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7&destination=0xe7062003a7be4df3a86127293a0d6b1f54c04220)
 
 **Response:**
 
@@ -58,7 +58,7 @@ Loans cannot be repaid until a minimum time has passed, as determined by [LOANRE
 
 ### **Close a Loan**
 
-**Request**: Repay a loan using USDT where BTC.BTC was used as colloteral. Note any asset can be used to repay a loan. [https://thornode.ninerealms.com/thorchain/quote/loan/close?from\_asset=BTC.BTC\&amount=114947930000\&to\_asset=BTC.BTC\&loan\_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3](https://thornode.ninerealms.com/thorchain/quote/loan/close?from\_asset=BTC.BTC\&amount=114947930000\&to\_asset=BTC.BTC\&loan\_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3)&#x20;
+**Request**: Repay a loan using USDT where BTC.BTC was used as colloteral. Note any asset can be used to repay a loan. [https://thornode.ninerealms.com/thorchain/quote/loan/close?from_asset=BTC.BTC\&amount=114947930000\&to_asset=BTC.BTC\&loan_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3](https://thornode.ninerealms.com/thorchain/quote/loan/close?from_asset=BTC.BTC&amount=114947930000&to_asset=BTC.BTC&loan_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3)&#x20;
 
 **Response:**
 
@@ -96,7 +96,6 @@ _If you send 1149.47 USDT with a memo `$-:BTC.BTC:bc1q089j003xwj07uuavt2as5r45a9
 **Request:**\
 Get brower's positin in the BTC pool who tool out a loan from `bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3`\
 [https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/borrower/bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3](https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/borrower/bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3)\
-
 
 **Response:**
 

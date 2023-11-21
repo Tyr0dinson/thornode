@@ -32,7 +32,7 @@ Each chain has granular control allowing each chain to be halted or resumed on a
    1. Mimir setting is `HALTSIGNING[Chain]`, e.g. `HALTSIGNINGBNB`
 2. **Specific Chain Liquidity Provider Pause -** addition and withdrawal of liquidity are suspended but swaps and other transactions are processed.&#x20;
    1. Mimir setting is `PAUSELP[Chain]`, e,g, `PAUSELPBCH`for BCH
-3. **Specific Chain Trading Halt** - Transactions on external chains are observed but not processed, only [refunds ](memos.md#refunds)are given.  THORNode's Bifrost is running, nodes are synced to the tip therefore trading resumption can happen very quickly.&#x20;
+3. **Specific Chain Trading Halt** - Transactions on external chains are observed but not processed, only [refunds ](memos.md#refunds)are given. THORNode's Bifrost is running, nodes are synced to the tip therefore trading resumption can happen very quickly.&#x20;
    1. Mimir setting is `HALT[Chain]TRADING`, e,g, `HALTBCHTRADING`for BCH
 4. **Specific Chain Halt** - Serious halt where transitions on that chain are no longer observed and THORNodes will not be synced to the chain tip, usually their Bifrost offline. Resumption will require a majority of nodes syncing to the tip before trading can commence.&#x20;
    1. Mimir setting is `HALT[Chain]CHAIN`, e,g, `HALTBCHCHAIN` for BCH.
@@ -43,7 +43,7 @@ Chain specific halts do occur and need to be monitored and reacted to when they 
 
 ### **Network Level Halts**
 
-**Network Pause LP**  `PAUSELP =` 1 Addition and withdrawal of liquidity are suspended for all pools but swaps and other transactions are processed.
+**Network Pause LP** `PAUSELP =` 1 Addition and withdrawal of liquidity are suspended for all pools but swaps and other transactions are processed.
 
 **Network Pause Lending** `PAUSELOANS = 1` Opening and closing of loans is paused for all loans.&#x20;
 
@@ -61,13 +61,13 @@ While very rare, a network level halt is possible and should be monitored for.&#
 
 Synths minting and redeeming can be enabled and disabled using flags. There is also a Synth mint limit. The setting are:
 
-* `MINTSYNTHS` - controls whether synths can be minted (swapping from L1 to synth)&#x20;
-* `BURNSYNTHS` controls whether synths can be burned (swapping from synth to L1)
-* `MAXSYNTHPERPOOLDEPTH` - controls the synth depth limit for each pool, expressed in basis points of the total pool depth (asset + RUNE). For example: `5000` basis points equals 50% of the total pool. If the pool contains 100 BTC and 100 BTC worth of RUNE, a 50% `MAXSYNTHPERPOOLDEPTH` allows 100 BTC of synthetic assets to be minted.
+- `MINTSYNTHS` - controls whether synths can be minted (swapping from L1 to synth)&#x20;
+- `BURNSYNTHS` controls whether synths can be burned (swapping from synth to L1)
+- `MAXSYNTHPERPOOLDEPTH` - controls the synth depth limit for each pool, expressed in basis points of the total pool depth (asset + RUNE). For example: `5000` basis points equals 50% of the total pool. If the pool contains 100 BTC and 100 BTC worth of RUNE, a 50% `MAXSYNTHPERPOOLDEPTH` allows 100 BTC of synthetic assets to be minted.
 
 ### ILP Management
 
-* ILP is managed by the integer setting `FULLIMPLOSSPROTECTIONBLOCKS`, the number of blocks after which impermanent loss protection reaches 100% (zero = disabled). Impermanent loss protection scales linearly between an LP's `last_add_height` and `last_add_heigh`t + \```FULLIMPLOSSPROTECTIONBLOCKS`.``
-* As of January 2023, nodes voted to `DEPRECATEILP`([ADR 005](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/architecture/adr-005-deprecate-ilp.md)). As a result, the `ILPCUTOFF` mimir was set to block height `9450000` (approx. 30 days after node voted passed). After this block, new LPs (or changes to existing LPs) do not receive impermanent loss protection. Existing LPs that have not added to their LP continue to receive ILP in perpetuity.
+- ILP is managed by the integer setting `FULLIMPLOSSPROTECTIONBLOCKS`, the number of blocks after which impermanent loss protection reaches 100% (zero = disabled). Impermanent loss protection scales linearly between an LP's `last_add_height` and `last_add_heigh`t + \```FULLIMPLOSSPROTECTIONBLOCKS`.``
+- As of January 2023, nodes voted to `DEPRECATEILP`([ADR 005](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/architecture/adr-005-deprecate-ilp.md)). As a result, the `ILPCUTOFF` mimir was set to block height `9450000` (approx. 30 days after node voted passed). After this block, new LPs (or changes to existing LPs) do not receive impermanent loss protection. Existing LPs that have not added to their LP continue to receive ILP in perpetuity.
 
 See also [Constants and Mimir](https://docs.thorchain.org/network/constants-and-mimir).&#x20;

@@ -4,17 +4,17 @@ description: Aggregator Memos
 
 # Memos
 
-#### Swap Memo (from [here](https://gitlab.com/thorchain/thornode/-/merge\_requests/2218))
+#### Swap Memo (from [here](https://gitlab.com/thorchain/thornode/-/merge_requests/2218))
 
 In order to support SwapOut DEX Aggregation feature, a few more fields added into the swap memo.
 
 **SWAP:ASSET:DESTADDR:LIM:AFFILIATE:FEE:DEXAggregatorAddr:FinalTokenAddr:MinAmountOut|**
 
-| Parameter            | Nodes                                                      | Conditions                                                                                                                                                                                                 |
-| -------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `:DEXAggregatorAddr` | The whitelisted aggregator contract.                       | Can use the last x characters of the address to fuzz match it.                                                                                                                                             |
-| `:FinalTokenAddr`    | The final token (must be on 1INCH Whitelist)               | Can be shortened                                                                                                                                                                                           |
-| `:minAmountOut`      | The parameter to pass into AmountOutMin in AMM contracts.  | <p>Handled by the aggregator, so:</p><p>1) Can be 0 (no protection). <br>2) Can be in any decimals.<br>3) Can be in % or BasisPoints, then converted to a price at the time of swap by the aggregator.</p> |
+| Parameter            | Nodes                                                     | Conditions                                                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `:DEXAggregatorAddr` | The whitelisted aggregator contract.                      | Can use the last x characters of the address to fuzz match it.                                                                                                                                             |
+| `:FinalTokenAddr`    | The final token (must be on 1INCH Whitelist)              | Can be shortened                                                                                                                                                                                           |
+| `:minAmountOut`      | The parameter to pass into AmountOutMin in AMM contracts. | <p>Handled by the aggregator, so:</p><p>1) Can be 0 (no protection). <br>2) Can be in any decimals.<br>3) Can be in % or BasisPoints, then converted to a price at the time of swap by the aggregator.</p> |
 
 {% hint style="success" %}
 If you include a vertical pipe (|) at the end of the memo, any data following it will be sent as an outbound memo to the specified outbound address. This feature enables developers to send generic data to contracts cross-chain.

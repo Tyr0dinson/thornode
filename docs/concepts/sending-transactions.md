@@ -8,20 +8,20 @@ description: >-
 
 Confirm you have:
 
-* [ ] Connected to Midgard or THORNode
-* [ ] Located the latest vault (and router) for the chain
-* [ ] Prepared the transaction details (and memo)
-* [ ] Checked the network is not halted for your transaction
+- [ ] Connected to Midgard or THORNode
+- [ ] Located the latest vault (and router) for the chain
+- [ ] Prepared the transaction details (and memo)
+- [ ] Checked the network is not halted for your transaction
 
 You are ready to make the transaction and swap via THORChain.&#x20;
 
 ### UTXO Chains
 
-* [ ] Send the transaction with Asgard vault as VOUT0
-* [ ] Include the memo as an OP\_RETURN in VOUT1
-* [ ] Pass all change back to the VIN0 address in VOUT3
-* [ ] Use a high enough `gas_rate` to be included
-* [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound\_addresses) endpoint&#x20;
+- [ ] Send the transaction with Asgard vault as VOUT0
+- [ ] Include the memo as an OP_RETURN in VOUT1
+- [ ] Pass all change back to the VIN0 address in VOUT3
+- [ ] Use a high enough `gas_rate` to be included
+- [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint&#x20;
 
 {% hint style="warning" %}
 Inbound transactions should not be delayed for any reason else there is risk funds will be sent to an unreachable address. Use standard transactions, check the [`Inbound_Address`](querying-thorchain.md#getting-the-asgard-vault) before sending and use the recommended [`gas rate`](querying-thorchain.md#getting-the-asgard-vault) to ensure transactions are confirmed in the next block to the latest `Inbound_Address`.
@@ -47,11 +47,11 @@ Override randomised VOUT ordering; THORChain requires specific output ordering.&
 depositWithExpiry(vault, asset, amount, memo, expiry)
 ```
 
-* [ ] If ERC20, approve the router to spend an allowance of the token first
-* [ ] Send the transaction as a `depositWithExpiry()` on the router
-* [ ] Vault is the Asgard vault address, asset is the token address to swap, memo as a string
-* [ ] Use an expiry which is +60mins on the current time (if the tx is delayed, it will get refunded)
-* [ ] Use a high enough `gas_rate` to be included, otherwise the tx will get stuck
+- [ ] If ERC20, approve the router to spend an allowance of the token first
+- [ ] Send the transaction as a `depositWithExpiry()` on the router
+- [ ] Vault is the Asgard vault address, asset is the token address to swap, memo as a string
+- [ ] Use an expiry which is +60mins on the current time (if the tx is delayed, it will get refunded)
+- [ ] Use a high enough `gas_rate` to be included, otherwise the tx will get stuck
 
 {% hint style="info" %}
 ETH is `0x0000000000000000000000000000000000000000`
@@ -63,13 +63,13 @@ ETH is sent and received as an internal transaction. Your wallet may not be set 
 
 ### BFT Chains
 
-* [ ] Send the transaction to the Asgard vault
-* [ ] Include the memo
-* [ ] Only use the base asset as the choice for gas asset
+- [ ] Send the transaction to the Asgard vault
+- [ ] Include the memo
+- [ ] Only use the base asset as the choice for gas asset
 
 ## THORChain
 
-To initiate a $RUNE -> $ASSET swap a `MsgDeposit` must be broadcasted to the THORChain blockchain. The `MsgDeposit` does not have a destination address, and has the following properties. The full definition can be found [here](https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/types/msg\_deposit.go).
+To initiate a $RUNE -> $ASSET swap a `MsgDeposit` must be broadcasted to the THORChain blockchain. The `MsgDeposit` does not have a destination address, and has the following properties. The full definition can be found [here](https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/types/msg_deposit.go).
 
 ```go
 MsgDeposit{
@@ -79,7 +79,7 @@ MsgDeposit{
 }
 ```
 
-If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the recommended package to build and broadcast custom message types. [Here is a walkthrough](https://github.com/cosmos/cosmjs/blob/main/packages/stargate/CUSTOM\_PROTOBUF\_CODECS.md).&#x20;
+If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the recommended package to build and broadcast custom message types. [Here is a walkthrough](https://github.com/cosmos/cosmjs/blob/main/packages/stargate/CUSTOM_PROTOBUF_CODECS.md).&#x20;
 
 ### Code Examples (Javascript)
 
@@ -115,26 +115,26 @@ rm -rf $TMP_DIR
 
 ```javascript
 const { DirectSecp256k1HdWallet, Registry } = require("@cosmjs/proto-signing");
-const { defaultRegistryTypes: defaultStargateTypes, SigningStargateClient } = require("@cosmjs/stargate");
+const {
+  defaultRegistryTypes: defaultStargateTypes,
+  SigningStargateClient,
+} = require("@cosmjs/stargate");
 const { stringToPath } = require("@cosmjs/crypto");
 const bech32 = require("bech32-buffer");
 
-const { MsgDeposit } = require('./types/MsgCompiled').types
+const { MsgDeposit } = require("./types/MsgCompiled").types;
 
 async function main() {
   const myRegistry = new Registry(defaultStargateTypes);
-  myRegistry.register("/types.MsgDeposit", MsgDeposit); 
+  myRegistry.register("/types.MsgDeposit", MsgDeposit);
 
-  const signerMnemonic = "mnemonic here"
-  const signerAddr = "thor1..."
+  const signerMnemonic = "mnemonic here";
+  const signerAddr = "thor1...";
 
-  const signer = await DirectSecp256k1HdWallet.fromMnemonic(
-    signerMnemonic,
-    { 
-      prefix: "thor", // THORChain prefix
-      hdPaths: [ stringToPath("m/44'/931'/0'/0/0")] // THORChain HD Path
-    },
-  );
+  const signer = await DirectSecp256k1HdWallet.fromMnemonic(signerMnemonic, {
+    prefix: "thor", // THORChain prefix
+    hdPaths: [stringToPath("m/44'/931'/0'/0/0")], // THORChain HD Path
+  });
 
   const client = await SigningStargateClient.connectWithSigner(
     "https://rpc.ninerealms.com/",
@@ -142,7 +142,7 @@ async function main() {
     { registry: myRegistry },
   );
 
-  const memo = `=:BNB/BNB:${signerAddr}` // THORChain memo
+  const memo = `=:BNB/BNB:${signerAddr}`; // THORChain memo
 
   const msg = {
     coins: [
@@ -150,14 +150,14 @@ async function main() {
         asset: {
           chain: "THOR",
           symbol: "RUNE",
-          ticker: "RUNE"
+          ticker: "RUNE",
         },
-        amount: "100000000" // Value in 1e8 (100000000 = 1 RUNE)
-      }
+        amount: "100000000", // Value in 1e8 (100000000 = 1 RUNE)
+      },
     ],
     memo: memo,
     signer: bech32.decode(signerAddr).data,
-  }
+  };
 
   const depositMsg = {
     typeUrl: "/types.MsgDeposit",
@@ -166,20 +166,25 @@ async function main() {
 
   const fee = {
     amount: [],
-    gas: "50000000", // Set arbitrarily high gas limit; this is not actually deducted from user account. 
+    gas: "50000000", // Set arbitrarily high gas limit; this is not actually deducted from user account.
   };
 
-  const response = await client.signAndBroadcast(signerAddr, [depositMsg], fee, memo);
-  console.log('response: ', response)
+  const response = await client.signAndBroadcast(
+    signerAddr,
+    [depositMsg],
+    fee,
+    memo,
+  );
+  console.log("response: ", response);
 
   if (response.code !== 0) {
-    console.log('Error: ', response.rawLog)
+    console.log("Error: ", response.rawLog);
   } else {
-    console.log('Success!')
+    console.log("Success!");
   }
 }
 
-main()
+main();
 ```
 
 ### Native Transaction Fee

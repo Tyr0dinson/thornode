@@ -12,9 +12,9 @@ The same process applies for long tail tokens on other chains such as Avalance a
 
 **Aggregator** is the ability for a user swap long tail assets via leveraging a supported on-chain AMMs and THORChain in one transaction.&#x20;
 
-To support cross-chain aggregation, THORChain whitelists [aggregator contracts](https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/aggregators/dex\_mainnet.go) that can call into THORChain (**Swap In)**, or receive calls (**Swap Out**). Chains that do not have on-chain AMMs (like Bitcoin) cannot support **SwapIn**, but they can support **SwapOut**, since they can pass a memo to THORChain.&#x20;
+To support cross-chain aggregation, THORChain whitelists [aggregator contracts](https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/aggregators/dex_mainnet.go) that can call into THORChain (**Swap In)**, or receive calls (**Swap Out**). Chains that do not have on-chain AMMs (like Bitcoin) cannot support **SwapIn**, but they can support **SwapOut**, since they can pass a memo to THORChain.&#x20;
 
-ETH swap contracts such as Sushi Swap to convert to/from THORChain support L1 tokens such as BTC.  Example, in one transaction:
+ETH swap contracts such as Sushi Swap to convert to/from THORChain support L1 tokens such as BTC. Example, in one transaction:
 
 1. User swaps long-tail ERC20 to ETH in SushiSwap, then swaps that ETH to BTC.
 2. User swaps BTC into ETH, then swaps that ETH into long-tail ERC20

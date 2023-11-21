@@ -9,6 +9,7 @@ Given the complexity of memos, they can become very long, beyond the limits of c
 1.  `SWAP:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:1612345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`&#x20;
 
     can be reduced to `=:e:dx:161e6:t:10`
+
 2.  `SWAP:ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:10012345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`&#x20;
 
     can be reduced to `=:ETH.USDT:dx:100e7:t:10`
@@ -41,8 +42,8 @@ Native asset names can be shortened to reduce the length of the memo. The exact 
 
 **Example Swaps**:
 
-* `=:ETH.ETH:0x388C818CA8B9251b393131C08a736A67ccB19297` is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297,` Swap for Ether.
-* `=:r:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym` - Swap to RUNE.
+- `=:ETH.ETH:0x388C818CA8B9251b393131C08a736A67ccB19297` is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297,` Swap for Ether.
+- `=:r:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym` - Swap to RUNE.
 
 ### Asset Abbreviations
 
@@ -61,7 +62,7 @@ THORNames allows a custom name to be assigned to an address, like an alias, so t
 
 Example:
 
-* `thor1nt2d4kmj0xd6xxm3m82tac3d20y05dm0vv7ur3` can be specified as `tr`.&#x20;
+- `thor1nt2d4kmj0xd6xxm3m82tac3d20y05dm0vv7ur3` can be specified as `tr`.&#x20;
 
 See the [THORName Creation Guide](../affiliate-guide/thorname-guide.md) to create your own. This is used greatly to specify the affiliate address.
 
@@ -69,15 +70,15 @@ See the [THORName Creation Guide](../affiliate-guide/thorname-guide.md) to creat
 
 Memos contain functions such as Swap or Add, which describe the user's intent and are sent along with specific parameters. Functions can be reduced in the following way:
 
-| Function      |  Abbreviated | Recommended |
-| ------------- | ------------ | ----------- |
-| Swap          | s            | =           |
-| Add / Deposit |              | +           |
-| Withdraw      | wd           | -           |
-| Loan Open     | Loan+        | $+          |
-| Loan Close    | Loan-        | $-          |
-| THORName      | name, n      | \~          |
-| Limit Order   | Limitto      | lo          |
+| Function      | Abbreviated | Recommended |
+| ------------- | ----------- | ----------- |
+| Swap          | s           | =           |
+| Add / Deposit |             | +           |
+| Withdraw      | wd          | -           |
+| Loan Open     | Loan+       | $+          |
+| Loan Close    | Loan-       | $-          |
+| THORName      | name, n     | \~          |
+| Limit Order   | Limitto     | lo          |
 
 **Example**:
 
@@ -91,11 +92,11 @@ To help save space in memos, scientific notation can shorten memos by specifying
 
 **Examples:**
 
-* In memo: `1e8` -> THORChain reads: `100000000`
-* In memo: `51e7` -> THORChain reads: `510000000`
+- In memo: `1e8` -> THORChain reads: `100000000`
+- In memo: `51e7` -> THORChain reads: `510000000`
 
 **Full Memo Example:**
 
-*   `SWAP:ETH.ETH:0x388C818CA8B9251b393131C08a736A67ccB19297:1612341234:thor19emplkuphjk2y9gkkv06m8vcstc0ufn4pevv5u:10`
+- `SWAP:ETH.ETH:0x388C818CA8B9251b393131C08a736A67ccB19297:1612341234:thor19emplkuphjk2y9gkkv06m8vcstc0ufn4pevv5u:10`
 
-    is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297:161e6:t:10`
+  is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297:161e6:t:10`

@@ -11,7 +11,7 @@ THORChain allows native L1 Swaps. On-chain [Memos](../concepts/memos.md) are use
 Let's demonstrate decentralized, non-custodial cross-chain swaps. In this example, we will build a transaction that instructs THORChain to swap native Bitcoin to native Ethereum in one transaction.
 
 {% hint style="info" %}
-The following examples use a free, hosted API provided by [Nine Realms](https://twitter.com/ninerealms\_cap). If you want to run your own full node, please see [connecting-to-thorchain.md](../concepts/connecting-to-thorchain.md "mention").
+The following examples use a free, hosted API provided by [Nine Realms](https://twitter.com/ninerealms_cap). If you want to run your own full node, please see [connecting-to-thorchain.md](../concepts/connecting-to-thorchain.md "mention").
 {% endhint %}
 
 ### 1. Determine the correct asset name.
@@ -33,7 +33,7 @@ All amounts are 1e8. Multiply native asset amounts by 100000000 when dealing wit
 
 **Request**: _Swap 1 BTC to ETH and send the ETH to_ `0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430`.
 
-[https://thornode.ninerealms.com/thorchain/quote/swap?from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&amount=100000000\&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1](https://thornode.ninerealms.com/thorchain/quote/swap?from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&amount=100000000\&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1)
+[https://thornode.ninerealms.com/thorchain/quote/swap?from_asset=BTC.BTC\&to_asset=ETH.ETH\&amount=100000000\&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1](https://thornode.ninerealms.com/thorchain/quote/swap?from_asset=BTC.BTC&to_asset=ETH.ETH&amount=100000000&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1)
 
 **Response**:&#x20;
 
@@ -65,7 +65,7 @@ All amounts are 1e8. Multiply native asset amounts by 100000000 when dealing wit
 
 _If you send 1 BTC to `bc1qlccxv985m20qvd8g5yp6g9lc0wlc70v6zlalz8` with the memo `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430`, you can expect to receive `13.4493552` ETH._&#x20;
 
-_For security reasons, your inbound transaction will be delayed by 600 seconds (1 BTC Block) and 2040 seconds (or 136 native THORChain blocks) for the outbound transaction,_ 2640 seconds all up_. You will pay an outbound gas fee of 0.0048 ETH and will incur 41 basis points (0.41%) of slippage._
+_For security reasons, your inbound transaction will be delayed by 600 seconds (1 BTC Block) and 2040 seconds (or 136 native THORChain blocks) for the outbound transaction,_ 2640 seconds all up*. You will pay an outbound gas fee of 0.0048 ETH and will incur 41 basis points (0.41%) of slippage.*
 
 {% hint style="info" %}
 Full quote swap endpoint specification can be found here: [https://thornode.ninerealms.com/thorchain/doc/. ](https://thornode.ninerealms.com/thorchain/doc/)
@@ -75,7 +75,7 @@ See an example implementation [here.](https://replit.com/@thorchain/quoteSwap#in
 
 If you'd prefer to calculate the swap yourself, see the [Fees](fees-and-wait-times.md) section to understand what fees need to be accounted for in the output amount. Also, review the [Transaction Memos](../concepts/memos.md) section to understand how to create the swap memos.&#x20;
 
-### 3. Sign and send transactions on the from\_asset chain.
+### 3. Sign and send transactions on the from_asset chain.
 
 Construct, sign and broadcast a transaction on the BTC network with the following parameters:
 
@@ -104,26 +104,26 @@ There is a rate limit of 1 request per second per IP address on /quote endpoints
 {% endhint %}
 
 {% hint style="success" %}
-For best results, request a new quote right before the user submits a transaction. This will tell you whether the _expected\_amount\_out_ has changed or if the _inbound\_address_ has changed. Ensuring that the _expected\_amount\_out_ is still valid will lead to better user experience and less frequent failed transactions.
+For best results, request a new quote right before the user submits a transaction. This will tell you whether the _expected_amount_out_ has changed or if the _inbound_address_ has changed. Ensuring that the _expected_amount_out_ is still valid will lead to better user experience and less frequent failed transactions.
 {% endhint %}
 
 ### Price Limits
 
-Specify _tolerance\_bps_ to give users control over the maximum slip they are willing to experience before canceling the trade. If not specified, users will pay an unbounded amount of slip.
+Specify _tolerance_bps_ to give users control over the maximum slip they are willing to experience before canceling the trade. If not specified, users will pay an unbounded amount of slip.
 
-[https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&tolerance\_bps=100](https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&tolerance\_bps=100)
+[https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from_asset=BTC.BTC\&to_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&tolerance_bps=100](https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000&from_asset=BTC.BTC&to_asset=ETH.ETH&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430&tolerance_bps=100)
 
 ```json
 https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000&from_asset=BTC.BTC&to_asset=ETH.ETH&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430&tolerance_bps=100
 ```
 
-Notice how a minimum amount (1342846539 / \~13.42 ETH) has been appended to the end of the memo. This tells THORChain to revert the transaction if the transacted amount is more than 100 basis points less than what the _expected\_amount\_out_ returns.
+Notice how a minimum amount (1342846539 / \~13.42 ETH) has been appended to the end of the memo. This tells THORChain to revert the transaction if the transacted amount is more than 100 basis points less than what the _expected_amount_out_ returns.
 
 ### Affiliate Fees
 
-Specify affiliate\__address_ and _affiliate\_bps t_o skim a percentage of the _expected_\__amount\_out._
+Specify affiliate\__address_ and _affiliate_bps t_o skim a percentage of the \_expected_\__amount_out._
 
-[https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&affiliate=thorname\&affiliate\_bps=10](https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&affiliate=thorname\&affiliate\_bps=10)
+[https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from_asset=BTC.BTC\&to_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&affiliate=thorname\&affiliate_bps=10](https://thornode.ninerealms.com/thorchain/quote/swap?amount=100000000&from_asset=BTC.BTC&to_asset=ETH.ETH&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430&affiliate=thorname&affiliate_bps=10)
 
 ```json
 {
@@ -151,7 +151,7 @@ Specify affiliate\__address_ and _affiliate\_bps t_o skim a percentage of the _e
 }
 ```
 
-Notice how `thorname:10` has been appended to the end of the memo. This instructs THORChain to skim 10 basis points from the swap. The user should still expect to receive the _expected\_amount\_out,_ meaning the affiliate fee has already been subtracted from this number.
+Notice how `thorname:10` has been appended to the end of the memo. This instructs THORChain to skim 10 basis points from the swap. The user should still expect to receive the _expected_amount_out,_ meaning the affiliate fee has already been subtracted from this number.
 
 For more information on affiliate fees: [fees.md](../concepts/fees.md "mention").
 
@@ -161,7 +161,7 @@ For more information on affiliate fees: [fees.md](../concepts/fees.md "mention")
 
 Specify `streaming_interval` to define the interval in which streaming swaps are swapped.
 
-[_https://stagenet-thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&streaming\_interval=10_](https://stagenet-thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from\_asset=BTC.BTC\&to\_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&streaming\_interval=10)
+[_https://stagenet-thornode.ninerealms.com/thorchain/quote/swap?amount=100000000\&from_asset=BTC.BTC\&to_asset=ETH.ETH\&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430\&streaming_interval=10_](https://stagenet-thornode.ninerealms.com/thorchain/quote/swap?amount=100000000&from_asset=BTC.BTC&to_asset=ETH.ETH&destination=0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430&streaming_interval=10)
 
 ```json
 {

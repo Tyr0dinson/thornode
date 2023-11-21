@@ -10,18 +10,18 @@ description: Create and manage a THORName to earn fees and monitor your integrat
 
 THORNames have the following properties:
 
-* **Name:** The THORName's string. Between 1-30 hexadecimal characters and `-_+` special characters.&#x20;
-* **Owner**: This is the THORChain address that owns the THORName
-* **Aliases**: THORNames can have an alias address for any external chain supported by THORChain, and can have an alias for the THORChain L1 that is different than the owner.
-* **Expiry:** THORChain Block-height at which the THORName expires.
-* **Preferred Asset:** The asset to pay out affiliate fees in. This can be any asset supported by THORChain.&#x20;
+- **Name:** The THORName's string. Between 1-30 hexadecimal characters and `-_+` special characters.&#x20;
+- **Owner**: This is the THORChain address that owns the THORName
+- **Aliases**: THORNames can have an alias address for any external chain supported by THORChain, and can have an alias for the THORChain L1 that is different than the owner.
+- **Expiry:** THORChain Block-height at which the THORName expires.
+- **Preferred Asset:** The asset to pay out affiliate fees in. This can be any asset supported by THORChain.&#x20;
 
 ## Create a THORName
 
 THORNames are created by posting a `MsgDeposit` to the THORChain network with the appropriate [memo](../concepts/memos.md) and enough $RUNE to cover the registration fee and to pay for the amount of blocks the THORName should be registered for.&#x20;
 
-* **Registration fee**: `tns_register_fee_rune` on the [Network endpoint](https://thornode.ninerealms.com/thorchain/network). This value is in 1e8, so `100000000 = 1 $RUNE`
-* **Per block fee**: `tns_fee_per_block_rune` on the same endpoint, also in 1e8.&#x20;
+- **Registration fee**: `tns_register_fee_rune` on the [Network endpoint](https://thornode.ninerealms.com/thorchain/network). This value is in 1e8, so `100000000 = 1 $RUNE`
+- **Per block fee**: `tns_fee_per_block_rune` on the same endpoint, also in 1e8.&#x20;
 
 For example, for a new THORName to be registered for 10 years the amount paid would be:
 
@@ -35,11 +35,11 @@ The expiration of the THORName will automatically be set to the number of blocks
 
 Memo template is: `~:name:chain:address:?owner:?preferredAsset:?expiry`
 
-* **name**: Your THORName. Must be unique, between 1-30 characters, hexadecimal and `-_+` special characters.&#x20;
-* **chain:** The chain of the alias to set.&#x20;
-* **address**: The alias address. Must be an address of chain.
-* **owner**: THORChain address of owner (optional).
-* **preferredAsset:** Asset to receive fees in. Must be supported be an active pool on THORChain. Value should be `asset` property from the [Pools endpoint](https://thornode.ninerealms.com/thorchain/pools).&#x20;
+- **name**: Your THORName. Must be unique, between 1-30 characters, hexadecimal and `-_+` special characters.&#x20;
+- **chain:** The chain of the alias to set.&#x20;
+- **address**: The alias address. Must be an address of chain.
+- **owner**: THORChain address of owner (optional).
+- **preferredAsset:** Asset to receive fees in. Must be supported be an active pool on THORChain. Value should be `asset` property from the [Pools endpoint](https://thornode.ninerealms.com/thorchain/pools).&#x20;
 
 {% hint style="info" %}
 Example: `~:ODIN:BTC:bc1Address:thorAddress:BTC.BTC`
@@ -81,7 +81,7 @@ Starting in THORNode V116, affiliates can collect their fees in the asset of the
 
 #### How it Works
 
-If an affiliate's THORName has the proper preferred asset configuration set, the network will begin collecting their affiliate fees in $RUNE in the [AffiliateCollector module](https://thornode.ninerealms.com/thorchain/balance/module/affiliate\_collector). Once the accrued RUNE in the module is greater than [`PreferredAssetOutboundFeeMultiplier`](https://gitlab.com/thorchain/thornode/-/blob/develop/constants/constants\_v1.go#L107)`* outbound_fee` of the preferred asset's chain, the network initiates a swap from $RUNE -> Preferred Asset on behalf of the affiliate. At the time of writing, `PreferredAssetOutboundFeeMultiplier` is set to `100`, so the preferred asset swap happens when the outbound fee is 1% of the accrued $RUNE.&#x20;
+If an affiliate's THORName has the proper preferred asset configuration set, the network will begin collecting their affiliate fees in $RUNE in the [AffiliateCollector module](https://thornode.ninerealms.com/thorchain/balance/module/affiliate_collector). Once the accrued RUNE in the module is greater than [`PreferredAssetOutboundFeeMultiplier`](https://gitlab.com/thorchain/thornode/-/blob/develop/constants/constants_v1.go#L107)`* outbound_fee` of the preferred asset's chain, the network initiates a swap from $RUNE -> Preferred Asset on behalf of the affiliate. At the time of writing, `PreferredAssetOutboundFeeMultiplier` is set to `100`, so the preferred asset swap happens when the outbound fee is 1% of the accrued $RUNE.&#x20;
 
 **Configuring a Preferred Asset for a THORName**
 
@@ -91,18 +91,20 @@ If an affiliate's THORName has the proper preferred asset configuration set, the
 For example, if you wanted to be paid out in USDC you would:
 
 1. Grab the full USDC name from the [Pools](https://thornode.ninerealms.com/thorchain/pools) endpoint: `ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48`
-2.  Post a `MsgDeposit` to the THORChain network with the appropriate memo to register your THORName, set your preferred asset as USDC, and set your Ethereum network address alias. Assuming the following info:
+2. Post a `MsgDeposit` to the THORChain network with the appropriate memo to register your THORName, set your preferred asset as USDC, and set your Ethereum network address alias. Assuming the following info:
 
-    1. THORChain address: `thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd`
-    2. THORName: `ac-test`
-    3. ETH payout address: `0x6621d872f17109d6601c49edba526ebcfd332d5d`&#x20;
+   1. THORChain address: `thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd`
+   2. THORName: `ac-test`
+   3. ETH payout address: `0x6621d872f17109d6601c49edba526ebcfd332d5d`&#x20;
 
-    The full memo would look like:
+   The full memo would look like:
 
 {% code overflow="wrap" %}
+
 ```
 ~:ac-test:ETH:0x6621d872f17109d6601c49edba526ebcfd332d5d:thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
 ```
+
 {% endcode %}
 
 {% hint style="info" %}

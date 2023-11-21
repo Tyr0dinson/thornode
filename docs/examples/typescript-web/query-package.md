@@ -16,15 +16,15 @@ Currently implemented functions are listed below with code examples. Press the R
 
 Provides estimated swap information for a single or double swap for any given two assets within THORChain. Designed to be used by interfaces, see more info [here](coding-guide.md#query). EstimateSwap will do the following:
 
-* Validate swap inputs
-* Checks for [network or chain halts](../../concepts/network-halts.md)
-* Get the latest pool data from [Midgard](../../concepts/connecting-to-thorchain.md#midgard)
-* Work out the swap [slip](../../concepts/math.md#slippage), swap [fee ](../../concepts/fees.md#fee-ordering-for-swaps)and [output](../../concepts/math.md#swap-output)
-* Deducts all [fees ](../../concepts/fees.md#overview)from the input amount (inbound, swap, outbound and any affiliate) in the correct order to produce `netOutput` and detail fees in `totalFees`
-* Ensures `totalFees` is not greater than `input`.
-* Work out the expected [wait time](../../concepts/delays.md#overview) including confirmation counting and outbound delay.&#x20;
-* Get the current [Asgard Vault address](../../concepts/querying-thorchain.md#getting-the-asgard-vault) for the inbound asset
-* Advise if a swap is possible and provide a reason if it is not.&#x20;
+- Validate swap inputs
+- Checks for [network or chain halts](../../concepts/network-halts.md)
+- Get the latest pool data from [Midgard](../../concepts/connecting-to-thorchain.md#midgard)
+- Work out the swap [slip](../../concepts/math.md#slippage), swap [fee ](../../concepts/fees.md#fee-ordering-for-swaps)and [output](../../concepts/math.md#swap-output)
+- Deducts all [fees ](../../concepts/fees.md#overview)from the input amount (inbound, swap, outbound and any affiliate) in the correct order to produce `netOutput` and detail fees in `totalFees`
+- Ensures `totalFees` is not greater than `input`.
+- Work out the expected [wait time](../../concepts/delays.md#overview) including confirmation counting and outbound delay.&#x20;
+- Get the current [Asgard Vault address](../../concepts/querying-thorchain.md#getting-the-asgard-vault) for the inbound asset
+- Advise if a swap is possible and provide a reason if it is not.&#x20;
 
 Note: This will be the best estimate using the information available, however exact values will be different depending on pool depth changes and network congestion.&#x20;
 
