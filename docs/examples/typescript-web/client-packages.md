@@ -26,10 +26,10 @@ Some chains require address history to query balances and Txs
 
 All clients implement these functions. While most can use the same code, some have slight client differences.&#x20;
 
-* Get Explorer URL - for the specific blockchain
-* Get Balance - returns the balance of an address
-* Get Transactions - returns a simplified array of recent transactions for an address.
-* Get Transaction Data - returns transaction information from the transaction ID/hash.
+- Get Explorer URL - for the specific blockchain
+- Get Balance - returns the balance of an address
+- Get Transactions - returns a simplified array of recent transactions for an address.
+- Get Transaction Data - returns transaction information from the transaction ID/hash.
 
 See below for a Bitcoin example. Also see [Ethereum](https://replit.com/@thorchain/xchain-ethereum#index.ts), [Binance](https://replit.com/@thorchain/xchain-binance#index.ts), [THORChain](https://replit.com/@thorchain/xchain-thorchain), [Cosmos](https://replit.com/@thorchain/xchain-cosmos#index.ts), and [Avalance ](https://replit.com/@thorchain/xchain-avax)examples. &#x20;
 
@@ -39,13 +39,8 @@ Some chains require address history to query balances and Txs
 
 ### Transactions
 
-* Get Fees - get the transaction fee for the chain, separate from THORChain fees
-* Transfer - transfer funds from one wallet to another.&#x20;
-* Purge - When a wallet is "locked" the private key should be purged in each client by setting it back to null.
+- Get Fees - get the transaction fee for the chain, separate from THORChain fees
+- Transfer - transfer funds from one wallet to another.&#x20;
+- Purge - When a wallet is "locked" the private key should be purged in each client by setting it back to null.
 
 See [http://docs.xchainjs.org/xchain-client/overview.html](http://docs.xchainjs.org/xchain-client/overview.html) for more information.&#x20;
-
-
-
-
-

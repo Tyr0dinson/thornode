@@ -22,10 +22,10 @@ This package is built from OpenAPI-generator. It is used by the thorchain-query.
 
 Thorchain-query contains midgard class that uses xchain-midgard and the following end points:&#x20;
 
-* /v2/thorchain/mimir&#x20;
-* /v2/thorchain/inbound\_addresses&#x20;
-* /v2/thorchain/constants&#x20;
-* /v2/thorchain/queue
+- /v2/thorchain/mimir&#x20;
+- /v2/thorchain/inbound_addresses&#x20;
+- /v2/thorchain/constants&#x20;
+- /v2/thorchain/queue
 
 For simplicity, is recommended to use the midgard class within thorchain-query instead of using the midgard package directly.&#x20;
 
@@ -68,8 +68,8 @@ Custom Midgard endpoints can be provided in the constructor using the `MidgardCo
     midgardBaseUrls: [
       'https://midgard.customURL.com',
     ],
-  }  
-  const midgard = new Midgard(network, customMidgardConfig)  
+  }
+  const midgard = new Midgard(network, customMidgardConfig)
 }
 ```
 
@@ -119,8 +119,8 @@ As with the midgard package, thornode can also be given custom end points via th
 
 A helper packager used by all the other packages. It has the following modules:
 
-* `asset` - Utilities for handling assets
-* `async` - Utitilies for `async` handling
-* `bn` - Utitilies for using `bignumber.js`
-* `chain` - Utilities for multi-chain
-* `string` - Utilities for strings
+- `asset` - Utilities for handling assets
+- `async` - Utitilies for `async` handling
+- `bn` - Utitilies for using `bignumber.js`
+- `chain` - Utilities for multi-chain
+- `string` - Utilities for strings

@@ -16,7 +16,7 @@ Savers Quote endpoints have been created to simplify the implementation process.
 
 **Request:** _Add 1_ _BTC to Savers_
 
-[https://thornode.ninerealms.com/thorchain/quote/saver/deposit?asset=BTC.BTC\&amount=100000000](https://thornode.ninerealms.com/thorchain/quote/saver/deposit?asset=BTC.BTC\&amount=100000000)
+[https://thornode.ninerealms.com/thorchain/quote/saver/deposit?asset=BTC.BTC\&amount=100000000](https://thornode.ninerealms.com/thorchain/quote/saver/deposit?asset=BTC.BTC&amount=100000000)
 
 **Response**
 
@@ -46,7 +46,7 @@ Savers Quote endpoints have been created to simplify the implementation process.
 }
 ```
 
-_If you send 1 BTC to_ bc1quuf5sr444km2zlgrg654mjdfgkuzayfs7nqrfm_with the memo_ `+:BTC/BTC`_, you can expect `0.99932` BTC will and will incur 13 basis points (0.13%) of slippage._
+_If you send 1 BTC to_ bc1quuf5sr444km2zlgrg654mjdfgkuzayfs7nqrfm*with the memo* `+:BTC/BTC`_, you can expect `0.99932` BTC will and will incur 13 basis points (0.13%) of slippage._
 
 {% hint style="danger" %}
 The `Inbound_Address` changes regularly, do not cache!
@@ -68,7 +68,7 @@ See an example implementation [here](https://replit.com/@thorchain/quoteSavers#i
 
 **Request:** _Withdraw 100% of BTC Savers for_ `bc1qy9rjlz5w3tqn7m3reh3y48n8del4y8z42sswx5`
 
-[https://thornode.ninerealms.com/thorchain/quote/saver/withdraw?asset=BTC.BTC\&address=bc1qy9rjlz5w3tqn7m3reh3y48n8del4y8z42sswx5\&withdraw\_bps=10000](https://thornode.ninerealms.com/thorchain/quote/saver/withdraw?asset=BTC.BTC\&address=bc1qy9rjlz5w3tqn7m3reh3y48n8del4y8z42sswx5\&withdraw\_bps=10000)
+[https://thornode.ninerealms.com/thorchain/quote/saver/withdraw?asset=BTC.BTC\&address=bc1qy9rjlz5w3tqn7m3reh3y48n8del4y8z42sswx5\&withdraw_bps=10000](https://thornode.ninerealms.com/thorchain/quote/saver/withdraw?asset=BTC.BTC&address=bc1qy9rjlz5w3tqn7m3reh3y48n8del4y8z42sswx5&withdraw_bps=10000)
 
 **Response**
 
@@ -105,9 +105,9 @@ Deposit and withdraw interfaces will return `inbound_address` and `memo` fields 
 
 Users can add assets to a vault by sending assets directly to the chain’s vault `address` found on the `/thorchain/inbound_addresses` endpoint. Quote endpoints will also return this.&#x20;
 
-#### 1.  Find the L1 vault address.
+#### 1. Find the L1 vault address.
 
-[`https://thornode.ninerealms.com/thorchain/inbound_addresses`](https://thornode.ninerealms.com/thorchain/inbound\_addresses)
+[`https://thornode.ninerealms.com/thorchain/inbound_addresses`](https://thornode.ninerealms.com/thorchain/inbound_addresses)
 
 Example:
 
@@ -116,7 +116,7 @@ curl -SL https://thornode.ninerealms.com/thorchain/inbound_addresses | jq '.[] |
 => “bc1q556ljv5y4rkdt4p46usx86esljs3xqjxyntlyd”
 ```
 
-#### 2.  Determine if there is capacity available to mint new synths
+#### 2. Determine if there is capacity available to mint new synths
 
 There is a cap on how many synths can be minted as a function of liquidity depth. To do this, find `synth_mint_paused = false` on the `/pool` endpoint
 
@@ -124,7 +124,7 @@ There is a cap on how many synths can be minted as a function of liquidity depth
 curl -SL https://thornode.ninerealms.com/thorchain/pools | jq '.[] | select(.asset == "BTC.BTC") | .synth_mint_paused'
 ```
 
-#### 3.  Send memoless savers transactions.
+#### 3. Send memoless savers transactions.
 
 Both Saver **Deposit** and **Withdraw** transactions can be done without memos _(optional memos can be included if a wallet wishes, see_ [_`Transaction Memos`_](../concepts/memos.md)_, since there is a marginal transaction cost savings to including memos)._
 
@@ -139,19 +139,19 @@ The dust threshold is the point at which the network will ignore the amount sent
 
 Specific rules for each chain and action are as follows:&#x20;
 
-* Each chain has a defined `dust_threshold` in base units&#x20;
-* For asset amounts in the range: `[ dust_threshold + 1 : dust_threshold + 10,000]`, the network will withdraw `dust_threshold - 10,000` basis points from the user’s Savers position&#x20;
-* For asset amounts greater than `dust_threshold + 10,000`, the network will add to the user’s Savers position
+- Each chain has a defined `dust_threshold` in base units&#x20;
+- For asset amounts in the range: `[ dust_threshold + 1 : dust_threshold + 10,000]`, the network will withdraw `dust_threshold - 10,000` basis points from the user’s Savers position&#x20;
+- For asset amounts greater than `dust_threshold + 10,000`, the network will add to the user’s Savers position
 
 The `dust_threshold` for each chain are defined as:&#x20;
 
-* BTC: 10,000 sats&#x20;
-* BCH: 10,000 sats&#x20;
-* LTC: 10,000 sats&#x20;
-* DOGE: 100,000,000 sats&#x20;
-* ETH,AVAX: 0 wei&#x20;
-* ATOM: 0 uatom&#x20;
-* BNB: 0 nbnb
+- BTC: 10,000 sats&#x20;
+- BCH: 10,000 sats&#x20;
+- LTC: 10,000 sats&#x20;
+- DOGE: 100,000,000 sats&#x20;
+- ETH,AVAX: 0 wei&#x20;
+- ATOM: 0 uatom&#x20;
+- BNB: 0 nbnb
 
 {% hint style="info" %}
 Transactions with asset amounts equal to or below the `dust_threshold` for the chain will be ignored to prevent dust attacks. Ensure you are converting the “human readable” amount (1 BTC) to the correct gas units (100,000,000 sats)
@@ -159,11 +159,11 @@ Transactions with asset amounts equal to or below the `dust_threshold` for the c
 
 **Examples:**
 
-* User wants to deposit 100,000 sats (0.001 BTC): Wallet signs an inbound tx to THORChain’s BTC `/inbound_addresses` vault address from the user with 100,000 sats. This will be added to the user’s Savers position.
-* User wants to withdraw 50% of their BTC Savers position: Wallet signs an inbound with 15,000 sats `50% = 5,000 basis points + 10,000[BTC dust_threshold` to THORChain’s BTC vault
-* User wants to withdraw 10% of their ETH Savers position: Wallet signs an inbound with 1,000 wei `(10% = 1,000 basis points + 0 [ETH dust_threshold])` to THORChain’s ETH vault
-* User wants to deposit 10,000 sats to their DOGE Savers position: Not possible transactions below the `dust_threshold` for each chain are ignored to prevent dust attacks.
-* User wants to deposit 20,000 sats to their BTC Savers position: Not possible with memoless, the user’s deposit will be interpreted as a `withdraw:100%`. Instead the user should use a memo.
+- User wants to deposit 100,000 sats (0.001 BTC): Wallet signs an inbound tx to THORChain’s BTC `/inbound_addresses` vault address from the user with 100,000 sats. This will be added to the user’s Savers position.
+- User wants to withdraw 50% of their BTC Savers position: Wallet signs an inbound with 15,000 sats `50% = 5,000 basis points + 10,000[BTC dust_threshold` to THORChain’s BTC vault
+- User wants to withdraw 10% of their ETH Savers position: Wallet signs an inbound with 1,000 wei `(10% = 1,000 basis points + 0 [ETH dust_threshold])` to THORChain’s ETH vault
+- User wants to deposit 10,000 sats to their DOGE Savers position: Not possible transactions below the `dust_threshold` for each chain are ignored to prevent dust attacks.
+- User wants to deposit 20,000 sats to their BTC Savers position: Not possible with memoless, the user’s deposit will be interpreted as a `withdraw:100%`. Instead the user should use a memo.
 
 _(translates to: “withdraw 10,000 basis points, or 100% of address’ savings_&#x20;
 
@@ -171,15 +171,15 @@ _(translates to: “withdraw 10,000 basis points, or 100% of address’ savings_
 
 An important consideration for UIs when implementing this feature is how to display:
 
-* an address’ present performance (targeted at retaining current savers)&#x20;
-* past performance of savings vaults (targeted at attracting potential savers)
+- an address’ present performance (targeted at retaining current savers)&#x20;
+- past performance of savings vaults (targeted at attracting potential savers)
 
 #### Present Performance
 
 A user is likely to want to know the following things:&#x20;
 
-* What is the redeemable value of my share in the Savings Vault?&#x20;
-* What is the absolute amount and % yield I have earned to date on my stake?
+- What is the redeemable value of my share in the Savings Vault?&#x20;
+- What is the absolute amount and % yield I have earned to date on my stake?
 
 The latter can be derived from the former.
 
@@ -197,7 +197,6 @@ saverDepth => curl -SL https://thornode.ninerealms.com/thorchain/pools | jq '.[]
 The easy way to determine lifetime performance of the savers vault is to look back 7 days, find the saver value, then compare it with the current saver value.&#x20;
 
 Example code:\
-
 
 {% embed url="https://replit.com/@thorchain/THORChain-Savers-Tracker#index.js" %}
 

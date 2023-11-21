@@ -58,7 +58,7 @@ Similar to savers, looking up the liquidity position with a given address is pos
 
 ### **Liquidity Provider Position using Thornode**
 
-**Request**: _Get liquidity provider information in the BTC pool for the address_ bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn [https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/liquidity\_provider/bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn](https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/liquidity\_provider/bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn)
+**Request**: _Get liquidity provider information in the BTC pool for the address_ bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn [https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/liquidity_provider/bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn](https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/liquidity_provider/bc1q00nrswtpp3zddgc0uvppuszhnr8k8zfcdps9gn)
 
 **Response:**
 

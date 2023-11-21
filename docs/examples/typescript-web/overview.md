@@ -32,16 +32,16 @@ For every blockchain connected to THORChain with a common interface.&#x20;
 
 Current clients implemented are**:**
 
-* xchain-avax
-* xchain-binance&#x20;
-* xchain-bitcoin&#x20;
-* xchain-bitcoincash&#x20;
-* xchain-cosmos&#x20;
-* xchain-doge
-* xchain-ethereum
-* xchain-litecoin
-* xchain-mayachain
-* xchain-thorchain
+- xchain-avax
+- xchain-binance&#x20;
+- xchain-bitcoin&#x20;
+- xchain-bitcoincash&#x20;
+- xchain-cosmos&#x20;
+- xchain-doge
+- xchain-ethereum
+- xchain-litecoin
+- xchain-mayachain
+- xchain-thorchain
 
 {% content-ref url="client-packages.md" %}
 [client-packages.md](client-packages.md)
@@ -49,8 +49,8 @@ Current clients implemented are**:**
 
 **APIs** for getting data from THORChain.
 
-* Midgard
-* Thornode
+- Midgard
+- Thornode
 
 {% content-ref url="packages-breakdown.md" %}
 [packages-breakdown.md](packages-breakdown.md)
@@ -62,9 +62,9 @@ See the package breakdown for more information.&#x20;
 
 Ensure you have the following
 
-* npm --version v8.5.5 or above
-* node --version v16.15.0
-* yarn --version v1.22.18 or above &#x20;
+- npm --version v8.5.5 or above
+- node --version v16.15.0
+- yarn --version v1.22.18 or above &#x20;
 
 Create a new project by creating a new folder, then type `npx tsc --init`.
 

@@ -1,6 +1,6 @@
 # Streaming Swaps
 
-Streaming Swaps is a means for a swapper to get better price execution if they are patient.  This ensures Capital Efficiency while still keeping with the philosophy "impatient people pay more".
+Streaming Swaps is a means for a swapper to get better price execution if they are patient. This ensures Capital Efficiency while still keeping with the philosophy "impatient people pay more".
 
 There are two important parts to streaming swaps:&#x20;
 
@@ -19,9 +19,9 @@ To utilise a streaming swap, use the following within a [Memo](../concepts/memos
 
 Trade Target or Limit / Swap Interval / Swap Quantity.
 
-* **Limit** or Trade Target: Uses the trade limit to set the maximum asset ratio at which a mini-swap can occur; otherwise, a refund is issued.
-* **Interval**: Block separation of each swap. For example, a value of 10 means a mini-swap is performed every 10 blocks.
-* **Quantity**: The number of swaps to be conducted. If set to 0, the network will determine the appropriate quantity.
+- **Limit** or Trade Target: Uses the trade limit to set the maximum asset ratio at which a mini-swap can occur; otherwise, a refund is issued.
+- **Interval**: Block separation of each swap. For example, a value of 10 means a mini-swap is performed every 10 blocks.
+- **Quantity**: The number of swaps to be conducted. If set to 0, the network will determine the appropriate quantity.
 
 Using the values Limit/10/5 would conduct five mini-swaps with a block separation of 10. Only swaps that achieve the specified asset ratio (defined by Limit) will be performed, while others will result in a refund.
 
@@ -45,8 +45,8 @@ $$
 
 Example using BTC Pool:
 
-* BTC Rune Depth = 20,007,476 RUNE
-* StreamingSwapMinBPFee = 5 bp
+- BTC Rune Depth = 20,007,476 RUNE
+- StreamingSwapMinBPFee = 5 bp
 
 MinimumSwapSize = 0.0005 \* 20,007,476 = 10,003. RUNE
 
@@ -70,9 +70,9 @@ The larger the difference between the pools, the more the virtual pool skews tow
 
 Example using BTC and ETH Pool
 
-* BTC Rune Depth = 20,007,476 RUNE
-* ETH Rune Depth = 8,870,648 RUNE
-* StreamingSwapMinBPFee = 5 bp
+- BTC Rune Depth = 20,007,476 RUNE
+- ETH Rune Depth = 8,870,648 RUNE
+- StreamingSwapMinBPFee = 5 bp
 
 virtualRuneDepth = (2\*20,007,476\*8,870,648) / (20,007,476 + 8,870,648) = 12,291,607 RUNE
 
@@ -104,4 +104,4 @@ The `difference`value represents the percentage of the swap fee saved compared t
 
 Example:&#x20;
 
-* (7-1)/7 = 6/7 = 85% better price execution by being patient.&#x20;
+- (7-1)/7 = 6/7 = 85% better price execution by being patient.&#x20;

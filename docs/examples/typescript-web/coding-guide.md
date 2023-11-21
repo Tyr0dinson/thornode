@@ -6,10 +6,10 @@ A coding overview to xchainjs.
 
 The foundation of xchainjs is defined in the [xchain-util](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-util) package
 
-* `Address`: a crypto address as a string.
-* `BaseAmount`:  a bigNumber in 1e8 format. E.g. 1 BTC = 100,000,000 in BaseAmount
-* `AssetAmount`: a BaseAmount\*10^8. E.g. 1 BTC = 1 in Asset Amount.&#x20;
-* `Asset`: Asset details {Chain, symbol, ticker, isSynth}
+- `Address`: a crypto address as a string.
+- `BaseAmount`: a bigNumber in 1e8 format. E.g. 1 BTC = 100,000,000 in BaseAmount
+- `AssetAmount`: a BaseAmount\*10^8. E.g. 1 BTC = 1 in Asset Amount.&#x20;
+- `Asset`: Asset details {Chain, symbol, ticker, isSynth}
 
 {% hint style="info" %}
 All `Assets` must conform to the [Asset Notation](../../concepts/memos.md#asset-notation)
@@ -17,7 +17,7 @@ All `Assets` must conform to the [Asset Notation](../../concepts/memos.md#asset-
 `assetFromString()` is used to quickly create assets and will assign chain and synth.
 {% endhint %}
 
-* `CryptoAmount:` is a class that has:
+- `CryptoAmount:` is a class that has:
 
 ```
  baseAmount: BaseAmount
@@ -28,21 +28,24 @@ All crypto should use the `CryptoAmount` object with the understanding they are 
 
 ```typescript
 // Define 1 BTC as CryptoAmount
-oneBtc = new CryptoAmount(assetToBase(assetAmount(1)), assetFromStringEx(`BTC.BTC`))
-// Print 1 BTC in BaseAmount 
-console.log(oneBtc.amount().toNumber().toFixed()) // 100000000
-// Print 1 BTC in Asset Amount 
-console.log(oneBtc.AssetAmount().amount().toNumber().toFixed()) // 1
+oneBtc = new CryptoAmount(
+  assetToBase(assetAmount(1)),
+  assetFromStringEx(`BTC.BTC`),
+);
+// Print 1 BTC in BaseAmount
+console.log(oneBtc.amount().toNumber().toFixed()); // 100000000
+// Print 1 BTC in Asset Amount
+console.log(oneBtc.AssetAmount().amount().toNumber().toFixed()); // 1
 ```
 
 ## Query
 
 Major data types for the thorchain-query package.&#x20;
 
-* [Package description](query-package.md)
-* [Github source code](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain-query)
-* [Code examples](query-package.md#code-examples-in-replit)
-* [Install procedures](overview.md#install-procedures)
+- [Package description](query-package.md)
+- [Github source code](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain-query)
+- [Code examples](query-package.md#code-examples-in-replit)
+- [Install procedures](overview.md#install-procedures)
 
 ### **EstimateSwapParams**
 
@@ -70,10 +73,10 @@ Do not use `toAddress` after `expiry` as the Asgard vault rotates
 
 Major data types for the thorchain-query package.&#x20;
 
-* [Package description](amm-package.md)
-* [Github source code](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain-amm)
-* [Code examples](amm-package.md#code-examples-in-replit)
-* [Install procedures](overview.md#install-procedures)
+- [Package description](amm-package.md)
+- [Github source code](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain-amm)
+- [Code examples](amm-package.md#code-examples-in-replit)
+- [Install procedures](overview.md#install-procedures)
 
 ### **ExecuteSwap**
 

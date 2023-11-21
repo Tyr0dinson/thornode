@@ -36,7 +36,7 @@ totalFee = networkFee + liquidityFee
 
 networkFee = 0.33 * outboundFee = 10,000 sats
 
-liquidityFee = depositAmount / (depositAmount + poolDepth) * depositAmount 
+liquidityFee = depositAmount / (depositAmount + poolDepth) * depositAmount
 liquidityFee = 1.0 / (1.0+10000) * 1.0 = 99000 sats
 
 total fee = 109,000 sats
@@ -51,7 +51,7 @@ totalFee = networkFee + liquidityFee
 
 networkFee = outboundFee = 30,000 sats
 
-liquidityFee = withdrawAmount / (withdrawAmount + poolDepth) * withdrawAmount 
+liquidityFee = withdrawAmount / (withdrawAmount + poolDepth) * withdrawAmount
 liquidityFee = 1.1 / (1.1 + 1001.1) * 1.1 = 120,734 sats
 
 total fee = 150,734 sats

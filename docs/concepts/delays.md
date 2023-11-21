@@ -20,11 +20,11 @@ Wait times can be between a few seconds to several hours. The assets being swapp
 
 This depends purely on the host chain and is out of the control of THORChain.&#x20;
 
-* Bitcoin/BitcoinCash: \~10 minutes
-* Litecoin: \~2.5 minutes
-* Dogecoin: \~60 seconds
-* ETH: \~15 seconds
-* Cosmos: \~6 seconds
+- Bitcoin/BitcoinCash: \~10 minutes
+- Litecoin: \~2.5 minutes
+- Dogecoin: \~60 seconds
+- ETH: \~15 seconds
+- Cosmos: \~6 seconds
 
 ### Observation Counting
 
@@ -48,9 +48,9 @@ An event is not sent until the external block height crosses `finalise_height` s
 
 Examples:
 
-* 10 BTC: 2 blocks
-* 50 ETH: 16 blocks
-* 100 LTC: 9 blocks
+- 10 BTC: 2 blocks
+- 50 ETH: 16 blocks
+- 100 LTC: 9 blocks
 
 ### Outbound Delay
 
@@ -72,11 +72,11 @@ THORChain throttles all outputs to prevent fund loss attacks, but the maximum de
 
 This depends purely on the host chain and is out of the control of THORChain.&#x20;
 
-* Bitcoin/BitcoinCash: \~10 minutes
-* Litecoin: \~2.5 minutes
-* Dogecoin: \~60 seconds
-* ETH: \~15 seconds
-* Cosmos: \~6 seconds
+- Bitcoin/BitcoinCash: \~10 minutes
+- Litecoin: \~2.5 minutes
+- Dogecoin: \~60 seconds
+- ETH: \~15 seconds
+- Cosmos: \~6 seconds
 
 ## How to Handle Delays
 

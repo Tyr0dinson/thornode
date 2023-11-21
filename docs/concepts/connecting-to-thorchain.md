@@ -12,7 +12,7 @@ The Network Information comes from four sources:
 4. **Tendermint RPC**: Used to query for consensus-related information.
 
 {% hint style="info" %}
-The below endpoints are run by specific organisations for public use.  There is a cost to running these services. If you want to run your own full node, please see [https://docs.thorchain.org/thornodes/overview. ](https://docs.thorchain.org/thornodes/overview)
+The below endpoints are run by specific organisations for public use. There is a cost to running these services. If you want to run your own full node, please see [https://docs.thorchain.org/thornodes/overview. ](https://docs.thorchain.org/thornodes/overview)
 {% endhint %}
 
 ### Midgard
@@ -21,18 +21,18 @@ Midgard returns time-series information regarding the THORChain network, such as
 
 **Mainnet**
 
-* [https://midgard.thorswap.net/v2/doc](https://midgard.thorswap.net/v2/doc)
-* [https://midgard.ninerealms.com/v2/doc](https://midgard.ninerealms.com/v2/doc)
-* [https://midgard.thorchain.liquify.com/v2/doc](https://midgard.thorchain.liquify.com/v2/doc)
+- [https://midgard.thorswap.net/v2/doc](https://midgard.thorswap.net/v2/doc)
+- [https://midgard.ninerealms.com/v2/doc](https://midgard.ninerealms.com/v2/doc)
+- [https://midgard.thorchain.liquify.com/v2/doc](https://midgard.thorchain.liquify.com/v2/doc)
 
 **Stagenet**
 
-* [https://stagenet-midgard.ninerealms.com/v2/doc](https://stagenet-midgard.ninerealms.com/v2/doc)
+- [https://stagenet-midgard.ninerealms.com/v2/doc](https://stagenet-midgard.ninerealms.com/v2/doc)
 
 #### Testnet
 
-* [https://testnet.midgard.thorchain.info/v2/doc](https://testnet.midgard.thorchain.info/v2/doc)
-* Example URL: [https://midgard.thorswap.net/v2/debug/block/6000000](https://midgard.thorswap.net/v2/debug/block/6000000)
+- [https://testnet.midgard.thorchain.info/v2/doc](https://testnet.midgard.thorchain.info/v2/doc)
+- Example URL: [https://midgard.thorswap.net/v2/debug/block/6000000](https://midgard.thorswap.net/v2/debug/block/6000000)
 
 ### THORNode
 
@@ -40,23 +40,23 @@ THORNode returns application-specific information regarding the THORChain state 
 
 **Mainnet (for post-hard-fork blocks 4786560 and later)**
 
-* [https://thornode.thorswap.net/thorchain/doc](https://thornode.thorswap.net/thorchain/doc)
-* [https://thornode.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc)
-* [https://thornode.thorchain.liquify.com/thorchain/doc](https://thornode.thorchain.liquify.com/thorchain/doc)
-* **Pre-hard-fork blocks 4786559 and earlier**\
+- [https://thornode.thorswap.net/thorchain/doc](https://thornode.thorswap.net/thorchain/doc)
+- [https://thornode.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc)
+- [https://thornode.thorchain.liquify.com/thorchain/doc](https://thornode.thorchain.liquify.com/thorchain/doc)
+- **Pre-hard-fork blocks 4786559 and earlier**\
   [https://thornode-v0.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc/)
 
 **Stagenet**
 
-* [https://stagenet-thornode.ninerealms.com/thorchain/doc](https://stagenet-thornode.ninerealms.com/thorchain/doc)
+- [https://stagenet-thornode.ninerealms.com/thorchain/doc](https://stagenet-thornode.ninerealms.com/thorchain/doc)
 
 #### **Testnet**
 
-* [https://testnet.thornode.thorchain.info/thorchain/doc](https://testnet.thornode.thorchain.info/thorchain/doc)
+- [https://testnet.thornode.thorchain.info/thorchain/doc](https://testnet.thornode.thorchain.info/thorchain/doc)
 
 ### Cosmos RPC
 
-The Cosmos RPC allows Cosmos base blockchain information to be returned.  However, not all endpoints have been enabled.\
+The Cosmos RPC allows Cosmos base blockchain information to be returned. However, not all endpoints have been enabled.\
 \
 **Endpoints guide**&#x20;
 
@@ -70,9 +70,9 @@ The Tendermint RPC allows Tendermint consensus information to be returned.
 
 **Any Node Ports**
 
-* MAINNET Port: `27147`
-* STAGENET Port: `26657`
-* TESTNET Port: `26657`
+- MAINNET Port: `27147`
+- STAGENET Port: `26657`
+- TESTNET Port: `26657`
 
 **Endpoints guide**\
 \
@@ -82,17 +82,17 @@ The Tendermint RPC allows Tendermint consensus information to be returned.
 
 **`URLs` (for post-hard-fork blocks 4786560 and later)**
 
-* [https://rpc.ninerealms.com](https://rpc.ninerealms.com)
-* [https://rpc.thorchain.liquify.com/genesis](https://rpc.thorchain.liquify.com/genesis)
-* [https://rpc.thorswap.net/](https://rpc.thorswap.net/)
+- [https://rpc.ninerealms.com](https://rpc.ninerealms.com)
+- [https://rpc.thorchain.liquify.com/genesis](https://rpc.thorchain.liquify.com/genesis)
+- [https://rpc.thorswap.net/](https://rpc.thorswap.net/)
 
 **Pre-hard-fork blocks 4786559 and earlier**
 
-* [https://rpc-v0.ninerealms.com](https://rpc-v0.ninerealms.com)
+- [https://rpc-v0.ninerealms.com](https://rpc-v0.ninerealms.com)
 
 **Stagenet**
 
-* [https://stagenet-rpc.ninerealms.com](https://stagenet-rpc.ninerealms.com/)
+- [https://stagenet-rpc.ninerealms.com](https://stagenet-rpc.ninerealms.com/)
 
 ### **P2P**
 
