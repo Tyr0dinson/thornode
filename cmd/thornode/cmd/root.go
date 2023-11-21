@@ -37,6 +37,10 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 )
 
+var (
+	FlagIAVLCacheSize = "iavl-cache-size"
+)
+
 // NewRootCmd creates a new root command for thornode.
 // It is called once in the main function.
 func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
@@ -116,6 +120,7 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 		}
 		return nil
 	}
+	startCmd.Flags().Int(FlagIAVLCacheSize, 781250, "Set Iavl Cache Size")
 }
 
 func queryCommand() *cobra.Command {
@@ -240,6 +245,7 @@ func newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, appOpts serverty
 		baseapp.SetTrace(cast.ToBool(appOpts.Get(server.FlagTrace))),
 		baseapp.SetIndexEvents(cast.ToStringSlice(appOpts.Get(server.FlagIndexEvents))),
 		baseapp.SetSnapshotStore(snapshotStore),
+		baseapp.SetIAVLCacheSize(cast.ToInt(appOpts.Get(FlagIAVLCacheSize))),
 		baseapp.SetSnapshotInterval(cast.ToUint64(appOpts.Get(server.FlagStateSyncSnapshotInterval))),
 		baseapp.SetSnapshotKeepRecent(cast.ToUint32(appOpts.Get(server.FlagStateSyncSnapshotKeepRecent))),
 	)
