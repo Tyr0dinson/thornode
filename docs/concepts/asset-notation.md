@@ -14,7 +14,7 @@ There are three kinds of assets within THORChain:
 2. [Synthetic Assets](asset-notation.md#synthetic-assets) - CHAIN/Asset
 3. [Derived Assets](asset-notation.md#derived-assets) - THOR.ASSET
 
-#### Examples
+## Examples
 
 | Asset         | Notation                                            |
 | ------------- | --------------------------------------------------- |
@@ -30,13 +30,13 @@ There are three kinds of assets within THORChain:
 
 ### Layer 1 Assets
 
-- Layer 1 (L1) chains are always denoted as `CHAIN.ASSET`, e.g. BTC.BTC.&#x20;
-- As two tokens can live on different blockchains, the chain can be used to distinguish them. Example: USDC is on the Ethereum Chain and Avalanche Chain and is denoted as `ETH.USDC` and `AVAX.USDC` respectively; note the contract address (ticker) was removed for simplicity.&#x20;
-- Tickers are added to denote assets and are required in the full name. For EVM based Chains, the ticker is the ERC20 Contract address, e.g. `ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48`. This ensures the asset is specific to the contract address. The [pools list ](https://midgard.ninerealms.com/v2/pools)shows assets using the full notation.&#x20;
+- Layer 1 (L1) chains are always denoted as `CHAIN.ASSET`, e.g. BTC.BTC.
+- As two tokens can live on different blockchains, the chain can be used to distinguish them. Example: USDC is on the Ethereum Chain and Avalanche Chain and is denoted as `ETH.USDC` and `AVAX.USDC` respectively; note the contract address (ticker) was removed for simplicity.
+- Tickers are added to denote assets and are required in the full name. For EVM based Chains, the ticker is the ERC20 Contract address, e.g. `ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48`. This ensures the asset is specific to the contract address. The [pools list](https://midgard.ninerealms.com/v2/pools)shows assets using the full notation.
 - IDs are required for the Binance Beacon chain as BNB.RUNE is not sufficient to distinguish between Mainnet and Testnet assets. For example, `BNB.RUNE-B1A` denoted Mainnet RUNE and `BNB.RUNE-67C` denoted Testnet RUNE.
 
 {% hint style="danger" %}
-THOR.RUNE is the only RUNE asset in use. All other RUNE assets on other chains are no longer in use and have no value within THORChain.&#x20;
+THOR.RUNE is the only RUNE asset in use. All other RUNE assets on other chains are no longer in use and have no value within THORChain.
 {% endhint %}
 
 ### Synthetic Assets
@@ -47,6 +47,6 @@ THOR.RUNE is the only RUNE asset in use. All other RUNE assets on other chains a
 
 ### **Derived Assets**
 
-- Derived Assets, currently specific to Lending, are denoted as `THOR.ASSET.` E.g. `THOR.BTC` is Derived Bitcoin.&#x20;
-- All Derived Assets live on the THORChain blockchain and do not have a Chain identifier.&#x20;
-- Currently, Derived Assets are used internally within THORChain only.&#x20;
+- Derived Assets, currently specific to Lending, are denoted as `THOR.ASSET.` E.g. `THOR.BTC` is Derived Bitcoin.
+- All Derived Assets live on the THORChain blockchain and do not have a Chain identifier.
+- Currently, Derived Assets are used internally within THORChain only.

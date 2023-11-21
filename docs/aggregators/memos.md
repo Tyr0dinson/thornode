@@ -4,11 +4,11 @@ description: Aggregator Memos
 
 # Memos
 
-#### Swap Memo (from [here](https://gitlab.com/thorchain/thornode/-/merge_requests/2218))
+## Swap Memo (from [here](https://gitlab.com/thorchain/thornode/-/merge_requests/2218))
 
 In order to support SwapOut DEX Aggregation feature, a few more fields added into the swap memo.
 
-**SWAP:ASSET:DESTADDR:LIM:AFFILIATE:FEE:DEXAggregatorAddr:FinalTokenAddr:MinAmountOut|**
+**`SWAP:ASSET:DESTADDR:LIM:AFFILIATE:FEE:DEXAggregatorAddr:FinalTokenAddr:MinAmountOut|`**
 
 | Parameter            | Nodes                                                     | Conditions                                                                                                                                                                                                 |
 | -------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,11 +20,11 @@ In order to support SwapOut DEX Aggregation feature, a few more fields added int
 If you include a vertical pipe (|) at the end of the memo, any data following it will be sent as an outbound memo to the specified outbound address. This feature enables developers to send generic data to contracts cross-chain.
 {% endhint %}
 
-#### Additional ObserveTxIn field <a href="#user-content-additional-observetxin-field" id="user-content-additional-observetxin-field"></a>
+### Additional ObserveTxIn field
 
 In order to support SwapOut Dex Aggregation feature safely , a few more fields have been added into tx out item
 
-```
+``` json
 [
   {
     "chain": "ETH",
@@ -53,11 +53,11 @@ In order to support SwapOut Dex Aggregation feature safely , a few more fields h
 
 Also the same fields have been added to `ObservedTx` so THORNode can verify that bifrost did send out the transaction per instruction, use the aggregator per instructed , and pass target asset and target limit to the aggregator correctly
 
-### How to swap out with dex aggregator? <a href="#user-content-how-to-swap-out-with-dex-aggregator" id="user-content-how-to-swap-out-with-dex-aggregator"></a>
+### How to swap out with dex aggregator?
 
 If i want to swap RUNE to random ERC20 asset that is not list on THORChain , but is list on SushiSwap for example
 
-```
+``` text
 thornode tx thorchain deposit 200000000000 RUNE '=:ETH.ETH:0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473::::2386f3848:0x0a44986b70527154e9F4290eC14e5f0D1C861822' --chain-id thorchain --node tcp://$THORNODE_IP:26657 --from {from user} --keyring-backend=file --yes --gas 20000000
 ```
 

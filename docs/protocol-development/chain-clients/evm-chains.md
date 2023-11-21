@@ -8,7 +8,7 @@ description: This page describes how ETH and EVM chains are implemented
 
 Example for Ethereum.
 
-#### Observer And Signer:
+### Observer And Signer
 
 {% embed url="https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/ethereum/ethereum.go" %}
 

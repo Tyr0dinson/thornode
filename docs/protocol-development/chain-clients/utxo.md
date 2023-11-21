@@ -8,7 +8,7 @@ description: How the Bifrost works for UTXO chains like Bitcoin and its forks.
 
 Example for Bitcoin.
 
-#### Observer
+### Observer
 
 {% embed url="https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/bitcoin/client.go" %}
 

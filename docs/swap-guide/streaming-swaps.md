@@ -13,7 +13,7 @@ Once all swaps are executed and the streaming swap is completed, the target toke
 
 Streaming Swaps is similar to a Time Weighted Average Price (TWAP) trade however it is restricted to 24 hours (Mimir `STREAMINGSWAPMAXLENGTH = 14400` blocks).&#x20;
 
-**Using Streaming Swaps**
+## Using Streaming Swaps
 
 To utilise a streaming swap, use the following within a [Memo](../concepts/memos.md#swap):
 
@@ -29,7 +29,7 @@ On each swap attempt, the network will track how much (in funds) failed to swap 
 
 If the first swap attempt fails for some reason, the entire streaming swap is refunded and no further attempts will be made. If the `swap quantity` is set to zero, the network will determine the number of swaps on its own with a focus on the lowest fees and maximize the number of trades.
 
-**Minimum Swap Size**
+## Minimum Swap Size
 
 A min swap size is placed on the network for streaming swaps (Mimir `StreamingSwapMinBPFee = 10` Basis Points). This is the minimum slip for each individual swap within a streaming swap allowed. This also puts a cap on the number of swaps in a streaming swap. This allows the network to be more friendly to large trades, while also keeping revenues up for small or medium-sized trades.
 
@@ -78,7 +78,7 @@ virtualRuneDepth = (2\*20,007,476\*8,870,648) / (20,007,476 + 8,870,648) = 12,29
 
 MinimumSwapSize = (0.0005/4) \* 12,291,607 = 1536.45 RUNE
 
-**Swap Count**
+### Swap Count
 
 The number of swaps required is determined by dividing the `swap Amount` by the minimum swap size calculated in the previous step.
 
@@ -92,7 +92,7 @@ Example: swap 20,000 RUNE worth of BTC to ETH. (approx 0.653 BTC).
 
 20,000 / 3,072.90 = 6.5 = 7 Swaps.
 
-**Comparing Price Execution**
+### Comparing Price Execution
 
 The difference between streaming swaps and non-streaming swaps can be calculated using the swap count with the following formula:
 

@@ -1,14 +1,14 @@
 # Math
 
-### ​Math Library
+## ​Math Library
 
 The following libraries implement the math below.&#x20;
 
-{% embed url="https://gitlab.com/thorchain/asgardex-common/asgardex-util/-/tree/master/src/calc" %}
+{% embed url="<https://gitlab.com/thorchain/asgardex-common/asgardex-util/-/tree/master/src/calc>" %}
 
-{% embed url="https://github.com/xchainjs/xchainjs-lib/blob/master/packages/xchain-thorchain-query/src/utils/swap.ts" %}
+{% embed url="<https://github.com/xchainjs/xchainjs-lib/blob/master/packages/xchain-thorchain-query/src/utils/swap.ts>" %}
 
-### Example Data <a href="#example" id="example"></a>
+### Example Data
 
 All the examples below use the following snapshotted BTC and BUSD Pool data&#x20;
 
@@ -16,28 +16,28 @@ All the examples below use the following snapshotted BTC and BUSD Pool data&#x20
 
 ```json
 {
-	"LP_units": "117582615428135",
-	"asset": "BNB.BUSD-BD1",
-	"balance_asset": "952382623537567",
-	"balance_rune": "508868258770825",
-	"pending_inbound_asset": "310872270739",
-	"pending_inbound_rune": "1701596418307",
-	"pool_units": "134664599295503",
-	"status": "Available",
-	"synth_supply": "241616351972821",
-	"synth_units": "17081983867368"
+ "LP_units": "117582615428135",
+ "asset": "BNB.BUSD-BD1",
+ "balance_asset": "952382623537567",
+ "balance_rune": "508868258770825",
+ "pending_inbound_asset": "310872270739",
+ "pending_inbound_rune": "1701596418307",
+ "pool_units": "134664599295503",
+ "status": "Available",
+ "synth_supply": "241616351972821",
+ "synth_units": "17081983867368"
 },
 {
-	"LP_units": "476785169622350",
-	"asset": "BTC.BTC",
-	"balance_asset": "81439552768",
-	"balance_rune": "863897777396922",
-	"pending_inbound_asset": "386699833",
-	"pending_inbound_rune": "216117023429",
-	"pool_units": "492710913491074",
-	"status": "Available",
-	"synth_supply": "5264691415",
-	"synth_units": "15925743868724"
+ "LP_units": "476785169622350",
+ "asset": "BTC.BTC",
+ "balance_asset": "81439552768",
+ "balance_rune": "863897777396922",
+ "pending_inbound_asset": "386699833",
+ "pending_inbound_rune": "216117023429",
+ "pool_units": "492710913491074",
+ "status": "Available",
+ "synth_supply": "5264691415",
+ "synth_units": "15925743868724"
 }
 ```
 
@@ -49,7 +49,7 @@ $$
 
 Prices of all assets on THORChain are in ratios of each other, based on the depths of the pools. The quote asset is the "pricing" asset, and the base asset is the asset to be quoted. Ie, for the $ value of RUNE, the quote asset is USD and the base asset is RUNE.&#x20;
 
-#### Example
+### Example
 
 Let's take the BTC and BUSD Pool data
 
@@ -171,12 +171,12 @@ export const getDoubleSwapOutput = (inputAmount: BaseAmount, pool1: PoolData, po
 ## Swap Input
 
 $$
-input = \frac{X(-\sqrt{Y (Y - 4 y)- 2 y + Y}}{2y}
+\text{input} = \frac{X(-\sqrt{Y (Y - 4y) - 2y + Y})}{2y}
 $$
 
-_X = inputBalance_
+`X = inputBalance`
 
-_Y = outputBalance, y = outputAmount_
+`Y = outputBalance`, `y = outputAmount`
 
 The swap formula can be reversed to specify what needs to be deposited to get a certain output.&#x20;
 
@@ -195,31 +195,27 @@ export const getSwapInput = (toRune: boolean, pool: PoolData, outputAmount: Base
 
 ```
 
-## LP Units Add
+### LP Units Add
 
 $$
-units = \frac{P(Ra + rA)}{2RA}
+\text{units} = \frac{P(R_a + rA)}{2RA}
 $$
 
-_​P = Existing Pool Units_
+- \(P\): Existing Pool Units
+- \(R\): runeBalance, \(A\): assetBalance
+- \(r\): runeAdded, \(a\): assetAdded
 
-_R = runeBalance, A = assetBalance_
-
-_r = runeAdded, a = assetAdded_
-
-The units to give an LP depend on the existing units, as well as the assets they are adding, and the depths of the pool they are adding to.&#x20;
+The units to give an LP depend on the existing units, as well as the assets they are adding, and the depths of the pool they are adding to.
 
 ## LP Units Withdrawn
 
 $$
-output= (basisPoints * L * X)/ (10000 * P)
+\text{output} = \frac{\text{basisPoints} \cdot L \cdot X}{10000 \cdot P}
 $$
 
-_​L = Liquidity units owned_
-
-_P = Pool Units_
-
-_X = depth of side_
+- \(L\): Liquidity units owned
+- \(P\): Pool Units
+- \(X\): depth of side
 
 THORChain allows LPs to redeem a Basis Points amount of their position (out of 10000). To find out how much the user will get, multiply this by each side.
 

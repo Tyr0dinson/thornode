@@ -1,16 +1,16 @@
 # Memo Length Reduction
 
-### Reducing Memo Size <a href="#mechanism-for-transaction-intent" id="mechanism-for-transaction-intent"></a>
+## Reducing Memo Size
 
 Given the complexity of memos, they can become very long, beyond the limits of chains like Bitcoin. Various methods have been developed to significantly shorten memo length. \
 \
 **Example**:
 
-1.  `SWAP:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:1612345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`&#x20;
+1. `SWAP:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:1612345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`
 
     can be reduced to `=:e:dx:161e6:t:10`
 
-2.  `SWAP:ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:10012345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`&#x20;
+2. `SWAP:ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:10012345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`
 
     can be reduced to `=:ETH.USDT:dx:100e7:t:10`
 
@@ -24,7 +24,7 @@ The examples below use the following features to reduce memo length:
 
 ### **Shortened Asset Names**
 
-Native asset names can be shortened to reduce the length of the memo. The exact list is [here](https://gitlab.com/thorchain/thornode/-/blob/develop/common/asset.go#L198).&#x20;
+Native asset names can be shortened to reduce the length of the memo. The exact list is [here](https://gitlab.com/thorchain/thornode/-/blob/develop/common/asset.go#L198).
 
 | Shorten Asset | Asset Notation |
 | ------------- | -------------- |
@@ -56,17 +56,17 @@ Assets can be abbreviated using fuzzy logic. The following will all be matched a
 | ETH.USDT-6994597c13d831ec7                          |
 | ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7 |
 
-### THORNames <a href="#mechanism-for-transaction-intent" id="mechanism-for-transaction-intent"></a>
+### THORNames
 
-THORNames allows a custom name to be assigned to an address, like an alias, so the address does not need to be specified.&#x20;
+THORNames allows a custom name to be assigned to an address, like an alias, so the address does not need to be specified.
 
 Example:
 
-- `thor1nt2d4kmj0xd6xxm3m82tac3d20y05dm0vv7ur3` can be specified as `tr`.&#x20;
+- `thor1nt2d4kmj0xd6xxm3m82tac3d20y05dm0vv7ur3` can be specified as `tr`.
 
 See the [THORName Creation Guide](../affiliate-guide/thorname-guide.md) to create your own. This is used greatly to specify the affiliate address.
 
-### Shortened Functions <a href="#mechanism-for-transaction-intent" id="mechanism-for-transaction-intent"></a>
+### Shortened Functions
 
 Memos contain functions such as Swap or Add, which describe the user's intent and are sent along with specific parameters. Functions can be reduced in the following way:
 
@@ -82,7 +82,7 @@ Memos contain functions such as Swap or Add, which describe the user's intent an
 
 **Example**:
 
-`=SWAP:e:0x388C818CA8B9251b393131C08a736A67ccB19297` is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297`&#x20;
+`=SWAP:e:0x388C818CA8B9251b393131C08a736A67ccB19297` is reduced to `=:e:0x388C818CA8B9251b393131C08a736A67ccB19297`
 
 ### Scientific Notation
 
