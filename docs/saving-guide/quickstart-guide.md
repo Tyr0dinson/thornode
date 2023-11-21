@@ -6,7 +6,7 @@ THORChain allows users to deposit Layer1 assets into its network to earn asset-d
 
 There is no permission, authentication or prior steps, so developers can get started and allow their users to earn asset-denominated yield simply by sending layer1 transactions to THORChain vaults.
 
-Under the hood, THORChain deposits the user’s Layer1 asset into a liquidity pool which earns yield. This yield is tracked and paid to the user’s deposit value. Users can withdraw their Layer1 asset, including the yield earnt. There is no slashing, penalties, timelocks, or account minimum/maximums. The only fees paid are the Layer1 fees to make a deposit and withdraw transaction (as necessitated), and a slip-based fee on entry and exit to stop price manipulation attacks. Both of these are transparent and within the user’s control.
+Under the hood, THORChain deposits the user’s Layer1 asset into a liquidity pool which earns yield. This yield is tracked and paid to the user’s deposit value. Users can withdraw their Layer1 asset, including the yield earned. There is no slashing, penalties, timelocks, or account minimum/maximums. The only fees paid are the Layer1 fees to make a deposit and withdraw transaction (as necessitated), and a slip-based fee on entry and exit to stop price manipulation attacks. Both of these are transparent and within the user’s control.
 
 ### Quote for a Savers Quote
 

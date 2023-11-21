@@ -4,7 +4,7 @@ description: Adding ERC20 tokens to THORChain.
 
 # ERC20 Tokens
 
-To minimise the attack surface for ERC20 tokens, THORChain's EVM implemention whitelists ERC20 contracts. The whitelist is managed by 1INCH:
+To minimise the attack surface for ERC20 tokens, THORChain's EVM implementation whitelists ERC20 contracts. The whitelist is managed by 1INCH:
 
 {% embed url="https://tokenlists.org/token-list?url=tokens.1inch.eth" %}
 

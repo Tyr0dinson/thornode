@@ -54,7 +54,7 @@ Examples:
 
 ### Outbound Delay
 
-THORChain throttles all outputs to prevent fund loss attacks, but the maximum delay is 1hr. It does this by computing the value of the outbound transaction then applying an artificial delay. If the tx is in "scheduled", it will be delayed by a number of blocks. Once it is "outbound" it is being processeed. See more information [here](https://docs.thorchain.org/how-it-works/security#b905-1).&#x20;
+THORChain throttles all outputs to prevent fund loss attacks, but the maximum delay is 1hr. It does this by computing the value of the outbound transaction then applying an artificial delay. If the tx is in "scheduled", it will be delayed by a number of blocks. Once it is "outbound" it is being processed. See more information [here](https://docs.thorchain.org/how-it-works/security#b905-1).&#x20;
 
 **Queue**
 
