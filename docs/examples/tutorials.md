@@ -4,9 +4,9 @@ description: Example actions within THORChain
 
 # Tutorials
 
-### Find Savers Position
+## Find Savers Position
 
-Endpoints have been made to look up a savers position quickly.&#x20;
+Endpoints have been made to look up a savers position quickly.
 
 ### **Savers Position using Thornode**
 
@@ -52,7 +52,7 @@ Returns all savers for a given asset. To get all savers you can use [https://tho
 }
 ```
 
-**Find Liquidity Position**
+## **Find Liquidity Position**
 
 Similar to savers, looking up the liquidity position with a given address is possible.
 
@@ -82,7 +82,7 @@ Similar to savers, looking up the liquidity position with a given address is pos
 
 ### **Liquidity Provider Position using Midgard**
 
-Several endpoints exist however the member's endpoint is the most comprehensive&#x20;
+Several endpoints exist however the member's endpoint is the most comprehensive
 
 **Request**: Get _liquidity provider information for the address_ bc1q0kmdagyqhkzw4sgs7f0vycxw7jhexw0rl9x9as
 
@@ -112,13 +112,13 @@ Several endpoints exist however the member's endpoint is the most comprehensive&
 }
 ```
 
-Any address can be used with this endpoint, e.g. bc1q0kmdagyqhkzw4sgs7f0vycxw7jhexw0rl9x9as with `?showSavers=true` to show any savers position also.&#x20;
+Any address can be used with this endpoint, e.g. bc1q0kmdagyqhkzw4sgs7f0vycxw7jhexw0rl9x9as with `?showSavers=true` to show any savers position also.
 
 [https://midgard.ninerealms.com/v2/member/bc1q0kmdagyqhkzw4sgs7f0vycxw7jhexw0rl9x9as?showSavers=true](https://midgard.ninerealms.com/v2/member/bc1q0kmdagyqhkzw4sgs7f0vycxw7jhexw0rl9x9as?showSavers=true)
 
-**User Transaction History**
+### **User Transaction History**
 
-Actions within THORChain can be obtained from Midgard which will list the actions taken by any given address.&#x20;
+Actions within THORChain can be obtained from Midgard which will list the actions taken by any given address.
 
 **Request**: _List actions by the address bnb1hsmrred449qcmhg9sa42deejr8nurwsqgu9ga4_
 
@@ -176,7 +176,7 @@ Will also include savers' actions. The Action endpoint is very flexible, see the
 
 ### Check the status of a Transaction
 
-Transactions can[ take time to fully process](../concepts/delays.md) once sent to THORChain.&#x20;
+Transactions can [take time to fully process](../concepts/delays.md) once sent to THORChain.
 
 **Request**: Get the status for BTC tx A56B423250020E4960D9836C6F843E1D3333FAE583C9CA26776F0D68DA69CE4A sent to the Savers vault. [https://thornode.ninerealms.com/thorchain/alpha/tx/status/A56B423250020E4960D9836C6F843E1D3333FAE583C9CA26776F0D68DA69CE4A](https://thornode.ninerealms.com/thorchain/alpha/tx/status/A56B423250020E4960D9836C6F843E1D3333FAE583C9CA26776F0D68DA69CE4A)
 
@@ -214,6 +214,6 @@ Transactions can[ take time to fully process](../concepts/delays.md) once sent t
 }
 ```
 
-Note this endpoint is in alpha and the response will differ for swaps.&#x20;
+Note this endpoint is in alpha and the response will differ for swaps.
 
 For more details information, [https://thornode.ninerealms.com/thorchain/tx/A56B423250020E4960D9836C6F843E1D3333FAE583C9CA26776F0D68DA69CE4A/signers](https://thornode.ninerealms.com/thorchain/tx/A56B423250020E4960D9836C6F843E1D3333FAE583C9CA26776F0D68DA69CE4A/signers) can be used looking for `updated_vault`

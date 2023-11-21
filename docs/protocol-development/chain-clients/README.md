@@ -49,7 +49,7 @@ If so, the Bifrost will prepare an `ErrataTx` which instructs the state machine 
 
 ### Network Fees
 
-THORChain maintains accurate block-by-block awareness of gas fees, and reports them on `/inbound_addresses` [end-point ](https://thornode.thorchain.info/thorchain/inbound_addresses)for anyone to query. These gas fees ensure that state machine can always perform transactions at "next-block" speed. If the network uses too low gas rates then bad things happen, although it can recover. See Outbound Fee.
+THORChain maintains accurate block-by-block awareness of gas fees, and reports them on `/inbound_addresses` [end-point](https://thornode.thorchain.info/thorchain/inbound_addresses) for anyone to query. These gas fees ensure that state machine can always perform transactions at "next-block" speed. If the network uses too low gas rates then bad things happen, although it can recover. See Outbound Fee.
 
 To do this:
 
@@ -59,4 +59,4 @@ To do this:
 
 ### Handling Gas
 
-Every transaction in and out from THORChain vaults need to have gas amount reported, as well as the gas asset used. This is needed by THORChain to accurately deduct this gas from the pools in order to keep the system solvent.&#x20;
+Every transaction in and out from THORChain vaults need to have gas amount reported, as well as the gas asset used. This is needed by THORChain to accurately deduct this gas from the pools in order to keep the system solvent.

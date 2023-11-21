@@ -1,6 +1,6 @@
 # Packages Breakdown
 
-### How xChainjs is constructed
+## How xChainjs is constructed
 
 ### xchain-\[chain] clients
 
@@ -12,26 +12,26 @@ Thorchain automatic market maker that uses Thornode & Midgard Api's AMM function
 
 ### xchain-thorchain-query
 
-Uses midgard and thornode Api's to query Thorchain for information. This module should be used as the starting place get any THORChain information that resides in THORNode or Midgard as it does the heaving lifting and configuration.&#x20;
+Uses midgard and thornode Api's to query Thorchain for information. This module should be used as the starting place get any THORChain information that resides in THORNode or Midgard as it does the heaving lifting and configuration.
 
-Default endpoints are provided with redundancy, custom THORNode or Midgard endpoints can be provided in the constructor.&#x20;
+Default endpoints are provided with redundancy, custom THORNode or Midgard endpoints can be provided in the constructor.
 
-### **xchain-midgard**&#x20;
+### **xchain-midgard**
 
-This package is built from OpenAPI-generator. It is used by the thorchain-query.&#x20;
+This package is built from OpenAPI-generator. It is used by the thorchain-query.
 
-Thorchain-query contains midgard class that uses xchain-midgard and the following end points:&#x20;
+Thorchain-query contains midgard class that uses xchain-midgard and the following end points:
 
-- /v2/thorchain/mimir&#x20;
-- /v2/thorchain/inbound_addresses&#x20;
-- /v2/thorchain/constants&#x20;
+- /v2/thorchain/mimir
+- /v2/thorchain/inbound_addresses
+- /v2/thorchain/constants
 - /v2/thorchain/queue
 
-For simplicity, is recommended to use the midgard class within thorchain-query instead of using the midgard package directly.&#x20;
+For simplicity, is recommended to use the midgard class within thorchain-query instead of using the midgard package directly.
 
 #### Midgard Configuration in thorchain-query
 
-Default endpoints `defaultMidgardConfig` are provided with redundancy within the Midgard class.&#x20;
+Default endpoints `defaultMidgardConfig` are provided with redundancy within the Midgard class.
 
 ```typescript
 // How thorchain-query constructs midgard
@@ -58,7 +58,7 @@ const defaultMidgardConfig: Record<Network, MidgardConfig> = {
   }
 ```
 
-Custom Midgard endpoints can be provided in the constructor using the `MidgardConfig` type.&#x20;
+Custom Midgard endpoints can be provided in the constructor using the `MidgardConfig` type.
 
 ```typescript
 // adding custom endpoints
@@ -73,11 +73,11 @@ Custom Midgard endpoints can be provided in the constructor using the `MidgardCo
 }
 ```
 
-See [ListPools ](query-package.md#list-pools)for a working example.&#x20;
+See [ListPools](query-package.md#list-pools) for a working example.
 
 ### xchain-thornode
 
-This package is built from OpenAPI-generator and is also used by the thorchain-query. The design is similar to the midgard. Thornode should only be used when time-sensitive data is required else midgard should be used.&#x20;
+This package is built from OpenAPI-generator and is also used by the thorchain-query. The design is similar to the midgard. Thornode should only be used when time-sensitive data is required else midgard should be used.
 
 ```typescript
 // How thorchain-query constructs thornode
@@ -111,11 +111,11 @@ const defaultThornodeConfig: Record<Network, ThornodeConfig> = {
   }
 ```
 
-#### Thornode Configuration in thorchain-query
+### Thornode Configuration in thorchain-query
 
-As with the midgard package, thornode can also be given custom end points via the `ThornodeConfig` type.&#x20;
+As with the midgard package, thornode can also be given custom end points via the `ThornodeConfig` type.
 
-**xchain-util**
+## **xchain-util**
 
 A helper packager used by all the other packages. It has the following modules:
 

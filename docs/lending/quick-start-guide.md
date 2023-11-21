@@ -8,7 +8,7 @@ Lending allows users to deposit native collateral, and then create a debt at a c
 
 Streaming swaps is enabled for lending.&#x20;
 
-### Open a Loan Quote
+## Open a Loan Quote
 
 Lending Quote endpoints have been created to simplify the implementation process.&#x20;
 
@@ -56,7 +56,7 @@ The `Inbound_Address` changes regularly, do not cache!
 Loans cannot be repaid until a minimum time has passed, as determined by [LOANREPAYMENTMATURITY](https://thornode.ninerealms.com/thorchain/mimir), which is currently set as the current block height plus LOANREPAYMENTMATURITY. Currently, LOANREPAYMENTMATURITY is set to 432,000 blocks, equivalent to 30 days. Increasing the collateral on an existing loan to obtain additional debit resets the period.
 {% endhint %}
 
-### **Close a Loan**
+## **Close a Loan**
 
 **Request**: Repay a loan using USDT where BTC.BTC was used as colloteral. Note any asset can be used to repay a loan. [https://thornode.ninerealms.com/thorchain/quote/loan/close?from_asset=BTC.BTC\&amount=114947930000\&to_asset=BTC.BTC\&loan_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3](https://thornode.ninerealms.com/thorchain/quote/loan/close?from_asset=BTC.BTC&amount=114947930000&to_asset=BTC.BTC&loan_owner=bc1q089j003xwj07uuavt2as5r45a95k5zzrhe4ac3)&#x20;
 

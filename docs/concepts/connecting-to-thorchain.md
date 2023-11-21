@@ -12,33 +12,33 @@ The Network Information comes from four sources:
 4. **Tendermint RPC**: Used to query for consensus-related information.
 
 {% hint style="info" %}
-The below endpoints are run by specific organisations for public use. There is a cost to running these services. If you want to run your own full node, please see [https://docs.thorchain.org/thornodes/overview. ](https://docs.thorchain.org/thornodes/overview)
+The below endpoints are run by specific organisations for public use. There is a cost to running these services. If you want to run your own full node, please see [https://docs.thorchain.org/thornodes/overview.](https://docs.thorchain.org/thornodes/overview)
 {% endhint %}
 
-### Midgard
+## Midgard
 
 Midgard returns time-series information regarding the THORChain network, such as volume, pool information, users, liquidity providers and more. It also proxies to THORNode to reduce burden on the network. Runs on every node.
 
-**Mainnet**
+**Mainnet:**
 
 - [https://midgard.thorswap.net/v2/doc](https://midgard.thorswap.net/v2/doc)
 - [https://midgard.ninerealms.com/v2/doc](https://midgard.ninerealms.com/v2/doc)
 - [https://midgard.thorchain.liquify.com/v2/doc](https://midgard.thorchain.liquify.com/v2/doc)
 
-**Stagenet**
+**Stagenet:**
 
 - [https://stagenet-midgard.ninerealms.com/v2/doc](https://stagenet-midgard.ninerealms.com/v2/doc)
 
-#### Testnet
+### Testnet
 
 - [https://testnet.midgard.thorchain.info/v2/doc](https://testnet.midgard.thorchain.info/v2/doc)
 - Example URL: [https://midgard.thorswap.net/v2/debug/block/6000000](https://midgard.thorswap.net/v2/debug/block/6000000)
 
-### THORNode
+## THORNode
 
 THORNode returns application-specific information regarding the THORChain state machine, such as balances, transactions and more. Careful querying this too much - you could overload the public nodes. Consider running your own node. Runs on every node.
 
-**Mainnet (for post-hard-fork blocks 4786560 and later)**
+**Mainnet (for post-hard-fork blocks 4786560 and later):**
 
 - [https://thornode.thorswap.net/thorchain/doc](https://thornode.thorswap.net/thorchain/doc)
 - [https://thornode.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc)
@@ -46,39 +46,38 @@ THORNode returns application-specific information regarding the THORChain state 
 - **Pre-hard-fork blocks 4786559 and earlier**\
   [https://thornode-v0.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc/)
 
-**Stagenet**
+**Stagenet:**
 
 - [https://stagenet-thornode.ninerealms.com/thorchain/doc](https://stagenet-thornode.ninerealms.com/thorchain/doc)
 
-#### **Testnet**
+**Testnet:**
 
 - [https://testnet.thornode.thorchain.info/thorchain/doc](https://testnet.thornode.thorchain.info/thorchain/doc)
 
-### Cosmos RPC
+## Cosmos RPC
 
 The Cosmos RPC allows Cosmos base blockchain information to be returned. However, not all endpoints have been enabled.\
 \
-**Endpoints guide**&#x20;
-
+**Endpoints guide:**
 [https://v1.cosmos.network/rpc/v0.45.1](https://v1.cosmos.network/rpc/v0.45.1)
 
 **Example URL** [https://thornode.ninerealms.com/cosmos/bank/v1beta1/balances/thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt](https://thornode.ninerealms.com/cosmos/bank/v1beta1/balances/thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt)
 
-### Tendermint RPC
+## Tendermint RPC
 
 The Tendermint RPC allows Tendermint consensus information to be returned.
 
-**Any Node Ports**
+**Any Node Ports:**
 
 - MAINNET Port: `27147`
 - STAGENET Port: `26657`
 - TESTNET Port: `26657`
 
-**Endpoints guide**\
-\
+**Endpoints guide.**
+
 [https://docs.tendermint.com/master/rpc/#/](https://docs.tendermint.com/master/rpc/#/)
 
-**Mainnet**
+**Mainnet:**
 
 **`URLs` (for post-hard-fork blocks 4786560 and later)**
 
@@ -86,11 +85,11 @@ The Tendermint RPC allows Tendermint consensus information to be returned.
 - [https://rpc.thorchain.liquify.com/genesis](https://rpc.thorchain.liquify.com/genesis)
 - [https://rpc.thorswap.net/](https://rpc.thorswap.net/)
 
-**Pre-hard-fork blocks 4786559 and earlier**
+**Pre-hard-fork blocks 4786559 and earlier.**
 
 - [https://rpc-v0.ninerealms.com](https://rpc-v0.ninerealms.com)
 
-**Stagenet**
+**Stagenet:**
 
 - [https://stagenet-rpc.ninerealms.com](https://stagenet-rpc.ninerealms.com/)
 

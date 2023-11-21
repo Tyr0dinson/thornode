@@ -6,12 +6,12 @@ description: Overview of THORChain and links to frontend guides.
 
 ## Overview
 
-THORChain is a decentralised cross-chain liquidity protocol that allows users to add liquidity or swap over that liquidity. It does not peg or wrap assets. Swaps are processed as easily as making a single on-chain transaction.&#x20;
+THORChain is a decentralised cross-chain liquidity protocol that allows users to add liquidity or swap over that liquidity. It does not peg or wrap assets. Swaps are processed as easily as making a single on-chain transaction.
 
 THORChain works by observing transactions to its vaults across all the chains it supports. When the majority of nodes observe funds flowing into the system, they agree on the user's intent (usually expressed through a [memo](concepts/memos.md) within a transaction) and take the appropriate action.
 
 {% hint style="info" %}
-For more information see [Understanding THORChain, ](https://docs.thorchain.org/learn/understanding-thorchain)[Technology](https://docs.thorchain.org/how-it-works/technology) or [Concepts](broken-reference).
+For more information see [Understanding THORChain](https://docs.thorchain.org/learn/understanding-thorchain) [Technology](https://docs.thorchain.org/how-it-works/technology) or [Concepts](broken-reference).
 {% endhint %}
 
 For wallets/interfaces to interact with THORChain, they need to:
@@ -44,9 +44,9 @@ THORChain offers a Savings product, which earns yield from Swap fees. Deposit La
 
 ### Aggregators
 
-Aggregators can deploy contracts that use custom `swapIn` and `swapOut` cross-chain aggregation to perform swaps before and after THORChain.&#x20;
+Aggregators can deploy contracts that use custom `swapIn` and `swapOut` cross-chain aggregation to perform swaps before and after THORChain.
 
-Eg, swap from an asset on Sushiswap, then THORChain, then an asset on TraderJoe in one transaction.&#x20;
+Eg, swap from an asset on Sushiswap, then THORChain, then an asset on TraderJoe in one transaction.
 
 {% content-ref url="aggregators/aggregator-overview.md" %}
 [aggregator-overview.md](aggregators/aggregator-overview.md)
@@ -62,19 +62,19 @@ In-depth guides to understand THORChain's implementation have been created.
 
 ### Libraries
 
-Several libraries exist to allow for rapid integration. xchainjs has seen the most development is recommended.&#x20;
+Several libraries exist to allow for rapid integration. xchainjs has seen the most development is recommended.
 
 {% content-ref url="concepts/code-libraries.md" %}
 [code-libraries.md](concepts/code-libraries.md)
 {% endcontent-ref %}
 
-Eg, swap from layer 1 ETH to BTC and back.&#x20;
+Eg, swap from layer 1 ETH to BTC and back.
 
 {% embed url="https://docs.xchainjs.org/overview/" %}
 
 ### Analytics
 
-Analysts can build on Midgard or Flipside to access cross-chain metrics and analytics.&#x20;
+Analysts can build on Midgard or Flipside to access cross-chain metrics and analytics.
 
 Eg, gather information on cross-chain liquidity
 
@@ -94,4 +94,4 @@ See [connecting-to-thorchain.md](concepts/connecting-to-thorchain.md "mention")[
 
 ### Support and Questions
 
-Join the [THORChain Dev Discord ](https://discord.gg/7RRmc35UEG)for any questions or assistance.&#x20;
+Join the [THORChain Dev Discord ](https://discord.gg/7RRmc35UEG)for any questions or assistance.

@@ -4,7 +4,7 @@ description: How to Query THORChain
 
 # Querying THORChain
 
-### Getting the Asgard Vault
+## Getting the Asgard Vault
 
 Vaults are fetched from the `/inbound_addresses` :
 
@@ -56,7 +56,7 @@ This is done because "tokens" on protocols don't support memos on-chain, thus ne
 
 Note: you can transfer the base asset, eg ETH, directly to the address and skip the router, but it is recommended to deposit everything via the router.&#x20;
 
-```
+``` json
 {  "address": "0x500b62a37c1afe79d59b373639512d03e3c4f5e8",
    "chain": "ETH",
    "gas_rate": "70",
@@ -79,7 +79,7 @@ If you connect to a public Midgard, you must be conscious of the fact that you c
 
 ### Displaying available pairs
 
-Use the `/pools` [endpoint ](https://midgard.thorchain.info/v2/pools)of Midgard to retrieve all swappable assets on THORChain. The response will be an array of objects like this:
+Use the `/pools` [endpoint](https://midgard.thorchain.info/v2/pools) of Midgard to retrieve all swappable assets on THORChain. The response will be an array of objects like this:
 
 ```json
 {

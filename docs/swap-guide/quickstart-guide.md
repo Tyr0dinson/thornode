@@ -4,7 +4,7 @@ description: Make a cross-chain swap on THORChain in less than 5 minutes.
 
 # Quickstart Guide
 
-### Introduction
+## Introduction
 
 THORChain allows native L1 Swaps. On-chain [Memos](../concepts/memos.md) are used instruct THORChain how to swap, with the option to add [price limits](quickstart-guide.md#price-limits) and [affiliate fees](quickstart-guide.md#affiliate-fees). THORChain nodes observe the inbound transactions and when the majority have observed the transactions, the transaction is processed by threshold-signature transactions from THORChain vaults.
 
@@ -14,18 +14,18 @@ Let's demonstrate decentralized, non-custodial cross-chain swaps. In this exampl
 The following examples use a free, hosted API provided by [Nine Realms](https://twitter.com/ninerealms_cap). If you want to run your own full node, please see [connecting-to-thorchain.md](../concepts/connecting-to-thorchain.md "mention").
 {% endhint %}
 
-### 1. Determine the correct asset name.
+### 1. Determine the correct asset name
 
 THORChain uses a specific [asset notation](../concepts/asset-notation.md#layer-1-assets). Available assets are at: [Pools Endpoint.](https://thornode.ninerealms.com/thorchain/pools)
 
 BTC => `BTC.BTC`\
-ETH => `ETH.ETH`&#x20;
+ETH => `ETH.ETH`
 
 {% hint style="info" %}
 Only available pools can be used. (`where 'status' == Available)`
 {% endhint %}
 
-### 2. Query for a swap quote.
+### 2. Query for a swap quote
 
 {% hint style="info" %}
 All amounts are 1e8. Multiply native asset amounts by 100000000 when dealing with amounts in THORChain. 1 BTC = 100,000,000.
@@ -35,7 +35,7 @@ All amounts are 1e8. Multiply native asset amounts by 100000000 when dealing wit
 
 [https://thornode.ninerealms.com/thorchain/quote/swap?from_asset=BTC.BTC\&to_asset=ETH.ETH\&amount=100000000\&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1](https://thornode.ninerealms.com/thorchain/quote/swap?from_asset=BTC.BTC&to_asset=ETH.ETH&amount=100000000&destination=0x86d526d6624AbC0178cF7296cD538Ecc080A95F1)
 
-**Response**:&#x20;
+**Response**:
 
 ```json
 {
@@ -63,19 +63,19 @@ All amounts are 1e8. Multiply native asset amounts by 100000000 when dealing wit
 }
 ```
 
-_If you send 1 BTC to `bc1qlccxv985m20qvd8g5yp6g9lc0wlc70v6zlalz8` with the memo `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430`, you can expect to receive `13.4493552` ETH._&#x20;
+_If you send 1 BTC to `bc1qlccxv985m20qvd8g5yp6g9lc0wlc70v6zlalz8` with the memo `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430`, you can expect to receive `13.4493552` ETH._
 
 _For security reasons, your inbound transaction will be delayed by 600 seconds (1 BTC Block) and 2040 seconds (or 136 native THORChain blocks) for the outbound transaction,_ 2640 seconds all up*. You will pay an outbound gas fee of 0.0048 ETH and will incur 41 basis points (0.41%) of slippage.*
 
 {% hint style="info" %}
-Full quote swap endpoint specification can be found here: [https://thornode.ninerealms.com/thorchain/doc/. ](https://thornode.ninerealms.com/thorchain/doc/)
+Full quote swap endpoint specification can be found here: [https://thornode.ninerealms.com/thorchain/doc/](https://thornode.ninerealms.com/thorchain/doc/).
 
 See an example implementation [here.](https://replit.com/@thorchain/quoteSwap#index.js)
 {% endhint %}
 
-If you'd prefer to calculate the swap yourself, see the [Fees](fees-and-wait-times.md) section to understand what fees need to be accounted for in the output amount. Also, review the [Transaction Memos](../concepts/memos.md) section to understand how to create the swap memos.&#x20;
+If you'd prefer to calculate the swap yourself, see the [Fees](fees-and-wait-times.md) section to understand what fees need to be accounted for in the output amount. Also, review the [Transaction Memos](../concepts/memos.md) section to understand how to create the swap memos.
 
-### 3. Sign and send transactions on the from_asset chain.
+### 3. Sign and send transactions on the from_asset chain
 
 Construct, sign and broadcast a transaction on the BTC network with the following parameters:
 
@@ -93,7 +93,7 @@ Never cache inbound addresses! Quotes should only be considered valid for 10 min
 Learn more about how to construct inbound transactions for each chain type here: [Sending Transactions](../concepts/sending-transactions.md)
 {% endhint %}
 
-### 4. Receive tokens.
+### 4. Receive tokens
 
 Once a majority of nodes have observed your inbound BTC transaction, they will sign the Ethereum funds out of the network and send them to the address specified in your transaction. You have just completed a non-custodial, cross-chain swap by simply sending a native L1 transaction.
 
@@ -157,7 +157,7 @@ For more information on affiliate fees: [fees.md](../concepts/fees.md "mention")
 
 ### Streaming Swaps
 
-[_Streaming Swaps_](streaming-swaps.md) _can be used to break up the trade to reduce slip fees._&#x20;
+[_Streaming Swaps_](streaming-swaps.md) _can be used to break up the trade to reduce slip fees._
 
 Specify `streaming_interval` to define the interval in which streaming swaps are swapped.
 
@@ -191,21 +191,26 @@ Specify `streaming_interval` to define the interval in which streaming swaps are
 }
 ```
 
-Notice how `approx_streaming_savings` shows the savings by using streaming swaps. `total_swap_seconds` also shows the amount of time the swap will take.&#x20;
+Notice how `approx_streaming_savings` shows the savings by using streaming swaps. `total_swap_seconds` also shows the amount of time the swap will take.
 
 ### Error Handling
 
 The quote swap endpoint simulates all of the logic of an actual swap transaction. It ships with comprehensive error handling.
 
-<figure><img src="../.gitbook/assets/image (6).png" alt=""><figcaption><p>This error means the swap cannot be completed given your price tolerance.</p></figcaption></figure>
+![Price Tolerance Error](../.gitbook/assets/image (6).png)
+*This error means the swap cannot be completed given your price tolerance.*
 
-<figure><img src="../.gitbook/assets/image (1).png" alt=""><figcaption><p>This error ensures the destination address is for the chain specified by to_asset.</p></figcaption></figure>
+![Destination Address Error](../.gitbook/assets/image (1).png)
+*This error ensures the destination address is for the chain specified by `to_asset`.*
 
-<figure><img src="../.gitbook/assets/image (4).png" alt=""><figcaption><p>This error is due to the fact the affiliate address is too long given the source chain's memo length requirements. Try registering a THORName to shorten the memo.</p></figcaption></figure>
+![Affiliate Address Length Error](../.gitbook/assets/image (4).png)
+*This error is due to the fact the affiliate address is too long given the source chain's memo length requirements. Try registering a THORName to shorten the memo.*
 
-<figure><img src="../.gitbook/assets/image (2).png" alt=""><figcaption><p>This error means the requested asset does not exist.</p></figcaption></figure>
+![Asset Not Found Error](../.gitbook/assets/image (2).png)
+*This error means the requested asset does not exist.*
 
-<figure><img src="../.gitbook/assets/image (3).png" alt=""><figcaption><p>Bound checks are made on both affiliate_<em>bps</em> and tolerance_bps.</p></figcaption></figure>
+![Bound Checks Error](../.gitbook/assets/image (3).png)
+*Bound checks are made on both `affiliate_bps` and `tolerance_bps`.*
 
 ### Support
 
