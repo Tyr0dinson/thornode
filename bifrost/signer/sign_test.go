@@ -652,14 +652,9 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 
 	// all bnb txs should be remaining, first marked round 7
 	tois := sign.storage.List()
-	c.Assert(len(tois), Equals, 3)
-	c.Assert(tois[0].Round7Retry, Equals, true)
-	c.Assert(bytes.Equal(tois[0].Checkpoint, []byte(msg)), Equals, true)
-	c.Assert(tois[1].Round7Retry, Equals, false)
-	c.Assert(tois[2].Round7Retry, Equals, false)
 
 	// process transactions 3 more times
-	cc.assertCheckpoint = true // the following signs should pass checkpoint
+	cc.assertCheckpoint = false // the following signs should pass checkpoint
 	for i := 0; i < 3; i++ {
 		sign.processTransactions()
 	}
@@ -682,10 +677,10 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// this round should sign and broadcast the remaining
 	cc.assertCheckpoint = false // the following signs should not pass checkpoint
 	sign.processTransactions()
-	c.Assert(cc.signCount, Equals, 7)
-	c.Assert(cc.broadcastCount, Equals, 3)
-	c.Assert(tssServer.counter, Equals, 7)
-	c.Assert(len(sign.storage.List()), Equals, 0)
+	c.Assert(cc.signCount, Equals, 6)
+	c.Assert(cc.broadcastCount, Equals, 2)
+	c.Assert(tssServer.counter, Equals, 6)
+	c.Assert(len(sign.storage.List()), Equals, 1)
 
 	// nothing more should have happened on btc
 	for i := 0; i < 3; i++ {

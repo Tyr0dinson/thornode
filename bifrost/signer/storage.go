@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/db"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/config"
 )
 
@@ -73,6 +74,7 @@ type SignerStorage interface {
 	Remove(item TxOutStoreItem) error
 	List() []TxOutStoreItem
 	OrderedLists() map[string][]TxOutStoreItem
+	BatchOrderedLists(maxSize map[common.Chain]int64, maxBlocks int64) map[string][]TxOutStoreItem
 	Close() error
 }
 
@@ -195,6 +197,49 @@ func (s *SignerStore) OrderedLists() map[string][]TxOutStoreItem {
 		key := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
 		if _, ok := lists[key]; !ok {
 			lists[key] = make([]TxOutStoreItem, 0)
+		}
+		lists[key] = append(lists[key], item)
+	}
+	return lists
+}
+
+// BatchOrderedLists
+func (s *SignerStore) BatchOrderedLists(maxSize map[common.Chain]int64, maxBlocks int64) map[string][]TxOutStoreItem {
+	lists := make(map[string][]TxOutStoreItem)
+	items := s.List()
+	if len(items) == 0 {
+		return lists
+	}
+	lowerHeight := items[0].Height
+	upperHeight := items[len(items)-1].Height
+	if upperHeight-lowerHeight < maxBlocks {
+		return lists
+	}
+
+	endHeight := lowerHeight + maxBlocks
+
+	for _, item := range s.List() {
+		// don't include end height txs if they exist
+		if item.Height > endHeight {
+			break
+		}
+		// don't include already spent txns
+		if item.Status == TxSpent {
+			continue
+		}
+
+		key := fmt.Sprintf("%s-%s", item.TxOutItem.Chain.String(), item.TxOutItem.VaultPubKey.String())
+		if _, ok := lists[key]; !ok {
+			lists[key] = make([]TxOutStoreItem, 0)
+		}
+
+		sizeLimit := int64(1)
+		if val, ok := maxSize[item.TxOutItem.Chain]; ok {
+			sizeLimit = val
+		}
+		// don't allow the size to exceed the maximum size
+		if int64(len(lists[key])) >= sizeLimit {
+			continue
 		}
 		lists[key] = append(lists[key], item)
 	}

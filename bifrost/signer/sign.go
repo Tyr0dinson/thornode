@@ -204,7 +204,12 @@ func runWithContext(ctx context.Context, fn func() ([]byte, []*types.TxInItem, e
 
 func (s *Signer) processTransactions() {
 	wg := &sync.WaitGroup{}
-	for _, items := range s.storage.OrderedLists() {
+
+	maxSize := make(map[common.Chain]int64)
+	maxSize[common.BTCChain] = 100 // TODO: mimir this bitch
+	maxBlocks := int64(0)          // TODO: mimir this bitch
+
+	for _, items := range s.storage.BatchOrderedLists(maxSize, maxBlocks) {
 		wg.Add(1)
 
 		go func(items []TxOutStoreItem) {
@@ -229,79 +234,43 @@ func (s *Signer) processTransactions() {
 				wg.Done()
 			}()
 
-			// precondition: all transactions should be for the same chain
-			for _, item := range items {
-				if !item.TxOutItem.Chain.Equals(chain) {
-					s.logger.Error().Msgf("tx out items for different chains in the same batch: %s, %s", item.TxOutItem.Chain, items[0].TxOutItem.Chain)
-					return
-				}
-			}
-
-			// if any tx out items are in broadcast or round 7 failure retry, only proceed with those
-			retryItems := []TxOutStoreItem{}
-			for _, item := range items {
-				if item.Round7Retry || len(item.SignedTx) > 0 {
-					retryItems = append(retryItems, item)
-				}
-			}
-			if len(retryItems) > 0 {
-				s.logger.Info().Msgf("found %d retry items", len(retryItems))
-				items = retryItems
-			}
-			if len(retryItems) > 1 {
-				s.logger.Error().Msgf("found %d retry items, there should only be one", len(retryItems))
-			}
-
-			for i, item := range items {
-				select {
-				case <-s.stopChan:
-					return
-				default:
-					if item.Status == TxSpent { // don't rebroadcast spent transactions
-						continue
-					}
-
+			select {
+			case <-s.stopChan:
+				return
+			default:
+				for i, item := range items {
 					s.logger.Info().Int("num", i).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
-					// a single keysign should not take longer than 5 minutes , regardless TSS or local
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
-						return s.signAndBroadcast(item)
-					})
-					if err != nil {
-						// mark the txout on round 7 failure to block other txs for the chain / pubkey
-						ksErr := tss.KeysignError{}
-						if errors.As(err, &ksErr) && ksErr.IsRound7() {
-							s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
-							item.Round7Retry = true
-							item.Checkpoint = checkpoint
-							if err := s.storage.Set(item); err != nil {
-								s.logger.Error().Err(err).Msg("fail to update tx out store item with round 7 retry")
-							}
-						}
-
-						if errors.Is(err, context.DeadlineExceeded) {
-							panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
-						}
-						s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
-						cancel()
-						return
-						// The 'item' for loop should not be items[0],
-						// because problems which return 'nil, nil' should be skipped over instead of blocking others.
-						// When signAndBroadcast returns an error (such as from a keysign timeout),
-						// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
-						// for when the keysign failure was from a loss of list synchrony.
-						// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
+				}
+				// a single keysign should not take longer than 5 minutes , regardless TSS or local
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				_, obs, err := runWithContext(ctx, func() ([]byte, []*types.TxInItem, error) {
+					return s.signAndBroadcast(items)
+				})
+				if err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						panic(fmt.Errorf("keysign timeout : %w", err))
 					}
+					s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
 					cancel()
+					return
+					// The 'item' for loop should not be items[0],
+					// because problems which return 'nil, nil' should be skipped over instead of blocking others.
+					// When signAndBroadcast returns an error (such as from a keysign timeout),
+					// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
+					// for when the keysign failure was from a loss of list synchrony.
+					// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
+				}
+				cancel()
 
-					// if enabled and the observation is non-nil, add to this batch's observations
-					if s.cfg.AutoObserve && obs != nil {
-						for _, ob := range obs {
-							observations = append(observations, *ob)
-						}
+				// if enabled and the observation is non-nil, add to this batch's observations
+				if s.cfg.AutoObserve && obs != nil {
+					for _, ob := range obs {
+						observations = append(observations, *ob)
 					}
+				}
 
-					// We have a successful broadcast! Remove the item from our store
+				// We have a successful broadcast! Remove the item from our store
+				for _, item := range items {
 					if err := s.storage.Remove(item); err != nil {
 						s.logger.Error().Err(err).Msg("fail to update tx out store item")
 					}
@@ -328,9 +297,40 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 			s.logger.Info().Msgf("Received a TxOut Array of %v from the Thorchain", txOut)
 			items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
 
+			todo := s.storage.List()
 			for i, tx := range txOut.TxArray {
+				// ignore a txn that is a duplicate of an already existing txn.
+				// This is so we don't create confusion when we send the funds
+				// without a memo which saves on gas fees. Instead, bifrost
+				// drops these duplicates on the floor and allows the protocol
+				// to reassign it to another vault (where there likely is no
+				// duplicate)
+				found := false
+				for _, todoItem := range todo {
+					if todoItem.Status == TxSpent {
+						continue
+					}
+					if !todoItem.TxOutItem.Chain.Equals(tx.Chain) {
+						continue
+					}
+					if !todoItem.TxOutItem.ToAddress.Equals(tx.ToAddress) {
+						continue
+					}
+					if !todoItem.TxOutItem.VaultPubKey.Equals(tx.VaultPubKey) {
+						continue
+					}
+					if !todoItem.TxOutItem.Coins.EqualsEx(common.NewCoins(tx.Coin)) {
+						continue
+					}
+					found = true
+					break
+				}
+				if found {
+					continue
+				}
 				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(), int64(i)))
 			}
+
 			if err := s.storage.Batch(items); err != nil {
 				s.logger.Error().Err(err).Msg("fail to save tx out items to storage")
 			}
@@ -515,20 +515,19 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 // with the error so they can be set on the TxOutStoreItem and re-used on a subsequent
 // retry to avoid double spend. The second returned value is an optional observation
 // that should be submitted to THORChain.
-func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInItem, error) {
-	height := item.Height
-	tx := item.TxOutItem
-
-	// set the checkpoint on the tx out item if it was stored
-	if item.Checkpoint != nil {
-		tx.Checkpoint = item.Checkpoint
+func (s *Signer) signAndBroadcast(items []TxOutStoreItem) ([]byte, []*types.TxInItem, error) {
+	if len(items) == 0 {
+		return nil, nil, nil
 	}
+
+	newItems := make([]types.TxOutItem, 0)
 
 	blockHeight, err := s.thorchainBridge.GetBlockHeight()
 	if err != nil {
 		s.logger.Error().Err(err).Msgf("fail to get block height")
 		return nil, nil, err
 	}
+
 	signingTransactionPeriod, err := s.constantsProvider.GetInt64Value(blockHeight, constants.SigningTransactionPeriod)
 	s.logger.Debug().Msgf("signing transaction period:%d", signingTransactionPeriod)
 	if err != nil {
@@ -536,45 +535,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 		return nil, nil, err
 	}
 
-	// if not in round 7 retry, discard outbound if within configured blocks of reschedule
-	if !item.Round7Retry && blockHeight-signingTransactionPeriod > height-s.cfg.RescheduleBufferBlocks {
-		s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingTransactionPeriod)
-		return nil, nil, nil
-	}
-
-	chain, err := s.getChain(tx.Chain)
+	chain, err := s.getChain(items[0].TxOutItem.Chain)
 	if err != nil {
-		s.logger.Error().Err(err).Msgf("not supported %s", tx.Chain.String())
+		s.logger.Error().Err(err).Msgf("not supported %s", chain.GetChain().String())
 		return nil, nil, err
-	}
-	mimirKey := "HALTSIGNING"
-	haltSigningGlobalMimir, err := s.thorchainBridge.GetMimir(mimirKey)
-	if err != nil {
-		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
-		return nil, nil, err
-	}
-	if haltSigningGlobalMimir > 0 {
-		s.logger.Info().Msg("signing has been halted globally")
-		return nil, nil, nil
-	}
-	mimirKey = fmt.Sprintf("HALTSIGNING%s", tx.Chain)
-	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
-	if err != nil {
-		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
-		return nil, nil, err
-	}
-	if haltSigningMimir > 0 {
-		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
-		return nil, nil, nil
-	}
-	if !s.shouldSign(tx) {
-		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
-		return nil, nil, nil
-	}
-
-	if len(tx.ToAddress) == 0 {
-		s.logger.Info().Msg("To address is empty, THORNode don't know where to send the fund , ignore")
-		return nil, nil, nil // return nil and discard item
 	}
 
 	// don't sign if the block scanner is unhealthy. This is because the
@@ -586,49 +550,89 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 		return nil, nil, fmt.Errorf("the block scanner for chain %s is unhealthy, not signing transactions due to it", chain.GetChain())
 	}
 
-	start := time.Now()
-	defer func() {
-		s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
-	}()
-
-	if !tx.OutHash.IsEmpty() {
-		s.logger.Info().Str("OutHash", tx.OutHash.String()).Msg("tx had been sent out before")
-		return nil, nil, nil // return nil and discard item
-	}
-
-	// We get the keysign object from thorchain again to ensure it hasn't
-	// been signed already, and we can skip. This helps us not get stuck on
-	// a task that we'll never sign, because 2/3rds already has and will
-	// never be available to sign again.
-	txOut, err := s.thorchainBridge.GetKeysign(height, tx.VaultPubKey.String())
+	mimirKey := "HALTSIGNING"
+	haltSigningGlobalMimir, err := s.thorchainBridge.GetMimir(mimirKey)
 	if err != nil {
-		s.logger.Error().Err(err).Msg("fail to get keysign items")
+		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 		return nil, nil, err
 	}
-	for _, txArray := range txOut.TxArray {
-		if txArray.TxOutItem().Equals(tx) && !txArray.OutHash.IsEmpty() {
-			// already been signed, we can skip it
-			s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
-			return nil, nil, nil
+	if haltSigningGlobalMimir > 0 {
+		s.logger.Info().Msg("signing has been halted globally")
+		return nil, nil, nil
+	}
+	mimirKey = fmt.Sprintf("HALTSIGNING%s", chain.GetChain())
+	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
+	if err != nil {
+		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
+		return nil, nil, err
+	}
+	if haltSigningMimir > 0 {
+		s.logger.Info().Msgf("signing for %s is halted", chain.GetChain())
+		return nil, nil, nil
+	}
+
+	for _, item := range items {
+		tx := item.TxOutItem
+		height := item.Height
+
+		if blockHeight-signingTransactionPeriod > height-s.cfg.RescheduleBufferBlocks {
+			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingTransactionPeriod)
+			continue
 		}
+
+		if !s.shouldSign(tx) {
+			s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
+			continue
+		}
+
+		if len(tx.ToAddress) == 0 {
+			s.logger.Info().Msg("To address is empty, THORNode don't know where to send the fund , ignore")
+			continue
+		}
+
+		if !tx.OutHash.IsEmpty() {
+			s.logger.Info().Str("OutHash", tx.OutHash.String()).Msg("tx had been sent out before")
+			continue
+		}
+
+		start := time.Now()
+		defer func() {
+			s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
+		}()
+
+		// We get the keysign object from thorchain again to ensure it hasn't
+		// been signed already, and we can skip. This helps us not get stuck on
+		// a task that we'll never sign, because 2/3rds already has and will
+		// never be available to sign again.
+		txOut, err := s.thorchainBridge.GetKeysign(height, tx.VaultPubKey.String())
+		if err != nil {
+			s.logger.Error().Err(err).Msg("fail to get keysign items")
+			return nil, nil, err
+		}
+		found := false
+		for _, txArray := range txOut.TxArray {
+			if txArray.TxOutItem().Equals(tx) && !txArray.OutHash.IsEmpty() {
+				// already been signed, we can skip it
+				s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
+		newItems = append(newItems, item.TxOutItem)
 	}
 
 	// If SignedTx is set, we already signed and should only retry broadcast.
-	var signedTx, checkpoint []byte
-	var elapse time.Duration
-	var observation []*types.TxInItem
-	if len(item.SignedTx) > 0 {
-		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
-		signedTx = item.SignedTx
-	} else {
-		startKeySign := time.Now()
-		signedTx, checkpoint, observation, err = chain.SignTx([]types.TxOutItem{tx})
-		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to sign tx")
-			return checkpoint, nil, err
-		}
-		elapse = time.Since(startKeySign)
+	startKeySign := time.Now()
+	signedTx, checkpoint, observation, err := chain.SignTx(newItems)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to sign tx")
+		return checkpoint, nil, err
 	}
+	elapse := time.Since(startKeySign)
 
 	// looks like the transaction is already signed
 	if len(signedTx) == 0 {
@@ -637,22 +641,21 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, []*types.TxInIte
 	}
 
 	// broadcast the transaction
-	hash, err := chain.BroadcastTx(tx, signedTx)
+	// TODO: send all items here, not just the first
+	hash, err := chain.BroadcastTx(newItems[0], signedTx)
 	if err != nil {
-		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
-
-		// store the signed tx for the next retry
-		item.SignedTx = signedTx
-		if err := s.storage.Set(item); err != nil {
-			s.logger.Error().Err(err).Msg("fail to update tx out store item with signed tx")
+		for _, tx := range newItems {
+			s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 		}
 
 		return nil, observation, err
 	}
-	s.logger.Info().Str("txid", hash).Str("memo", tx.Memo).Msg("broadcasted tx to chain")
+	for _, tx := range newItems {
+		s.logger.Info().Str("txid", hash).Str("memo", tx.Memo).Msg("broadcasted tx to chain")
 
-	if s.isTssKeysign(tx.VaultPubKey) {
-		s.tssKeysignMetricMgr.SetTssKeysignMetric(hash, elapse.Milliseconds())
+		if s.isTssKeysign(tx.VaultPubKey) {
+			s.tssKeysignMetricMgr.SetTssKeysignMetric(hash, elapse.Milliseconds())
+		}
 	}
 
 	return nil, observation, nil
