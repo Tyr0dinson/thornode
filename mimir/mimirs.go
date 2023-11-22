@@ -120,3 +120,19 @@ func NewSynthsMint(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewSynthsBurn(refs ...string) Mimir {
+	id := SynthsBurnId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "synths"},
+		description:  "Enable/Disable burning synths",
+		legacyMimirKey: func(_ string) string {
+			return "BurnSynths"
+		},
+	}
+}
