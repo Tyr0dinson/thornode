@@ -72,3 +72,19 @@ func NewOrderBooksEnable(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewStreamingSwapPause(refs ...string) Mimir {
+	id := StreamingSwapPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "swaps"},
+		description:  "Pauses streaming swaps from being processed or accepted",
+		legacyMimirKey: func(_ string) string {
+			return "StreamingSwapPause"
+		},
+	}
+}

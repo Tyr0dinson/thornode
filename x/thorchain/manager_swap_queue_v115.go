@@ -7,6 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -46,8 +47,7 @@ func (vm *SwapQueueV115) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 		// exclude streaming swaps when its not "their time". Always want to
 		// allow the first sub-swap immediately (ie no LastHeight yet)
 		if msg.IsStreaming() {
-			pausedStreaming := vm.k.GetConfigInt64(ctx, constants.StreamingSwapPause)
-			if pausedStreaming > 0 {
+			if mimir.NewStreamingSwapPause().IsOn(ctx, vm.k) {
 				continue
 			}
 			swp := msg.GetStreamingSwap()

@@ -8,6 +8,7 @@ const (
 	BondPauseId
 	UnbondPauseId
 	OrderBooksEnableId
+	StreamingSwapPauseId
 )
 
 var StringToId = map[string]Id{
@@ -16,6 +17,7 @@ var StringToId = map[string]Id{
 	"BondPause":                  BondPauseId,
 	"UnbondPause":                UnbondPauseId,
 	"OrderBooksEnable":           OrderBooksEnableId,
+	"StreamingSwapPause":         StreamingSwapPauseId,
 }
 
 var mimirRefToStringMap = map[Id]string{
@@ -24,6 +26,7 @@ var mimirRefToStringMap = map[Id]string{
 	BondPauseId:                  "BondPause",
 	UnbondPauseId:                "UnbondPause",
 	OrderBooksEnableId:           "OrderBooksEnable",
+	StreamingSwapPauseId:         "StreamingSwapPause",
 }
 
 // fetches a mimir by id number
