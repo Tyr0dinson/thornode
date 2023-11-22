@@ -56,3 +56,19 @@ func NewUnbondPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewOrderBooksEnable(refs ...string) Mimir {
+	id := OrderBooksEnableId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "swaps"},
+		description:  "Enables order books instead of swap queue",
+		legacyMimirKey: func(_ string) string {
+			return "EnableOrderBooks"
+		},
+	}
+}
