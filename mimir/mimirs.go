@@ -40,3 +40,19 @@ func NewBondPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewUnbondPause(refs ...string) Mimir {
+	id := UnbondPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "unbond"},
+		description:  "Pauses unbonding",
+		legacyMimirKey: func(_ string) string {
+			return "PauseUnbond"
+		},
+	}
+}
