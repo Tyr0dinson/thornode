@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -1577,8 +1578,8 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 }
 
 func isSynthMintPausedV103(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
-	mintHeight, err := mgr.Keeper().GetMimir(ctx, "MintSynths")
-	if (mintHeight > 0 && ctx.BlockHeight() > mintHeight) || err != nil {
+	mintHeight := mimir.NewSynthsMint().FetchValue(ctx, mgr.Keeper())
+	if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 		return fmt.Errorf("minting synthetics has been disabled")
 	}
 

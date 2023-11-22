@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -59,7 +60,7 @@ func (s *SwapperV94) Swap(ctx cosmos.Context,
 		}
 	}
 	if target.IsSyntheticAsset() {
-		mintHeight, _ := keeper.GetMimir(ctx, "MintSynths")
+		mintHeight := mimir.NewSynthsMint().FetchValue(ctx, keeper)
 		if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}

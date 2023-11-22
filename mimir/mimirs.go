@@ -104,3 +104,19 @@ func NewLoansPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewSynthsMint(refs ...string) Mimir {
+	id := SynthsMintId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "synths"},
+		description:  "Enable/Disable minting synths",
+		legacyMimirKey: func(_ string) string {
+			return "MintSynths"
+		},
+	}
+}
