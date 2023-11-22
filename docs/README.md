@@ -56,8 +56,8 @@ Eg, swap from an asset on Sushiswap, then THORChain, then an asset on TraderJoe 
 
 In-depth guides to understand THORChain's implementation have been created.
 
-{% content-ref url="broken-reference" %}
-[Broken link](broken-reference)
+{% content-ref url="concepts/asset-notation.md" %}
+[code-libraries.md](concepts/asset-notation.md)
 {% endcontent-ref %}
 
 ### Libraries
