@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 )
 
 func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error {
@@ -13,8 +14,7 @@ func (h LoanOpenHandler) validateV111(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
+	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 
@@ -88,8 +88,7 @@ func (h LoanOpenHandler) validateV108(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
+	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 
@@ -160,8 +159,7 @@ func (h LoanOpenHandler) validateV107(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
+	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 

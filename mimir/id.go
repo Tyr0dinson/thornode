@@ -9,6 +9,7 @@ const (
 	UnbondPauseId
 	OrderBooksEnableId
 	StreamingSwapPauseId
+	LoansPauseId
 )
 
 var StringToId = map[string]Id{
@@ -18,6 +19,7 @@ var StringToId = map[string]Id{
 	"UnbondPause":                UnbondPauseId,
 	"OrderBooksEnable":           OrderBooksEnableId,
 	"StreamingSwapPause":         StreamingSwapPauseId,
+	"LoansPause":                 LoansPauseId,
 }
 
 var mimirRefToStringMap = map[Id]string{
@@ -27,6 +29,7 @@ var mimirRefToStringMap = map[Id]string{
 	UnbondPauseId:                "UnbondPause",
 	OrderBooksEnableId:           "OrderBooksEnable",
 	StreamingSwapPauseId:         "StreamingSwapPause",
+	LoansPauseId:                 "LoansPause",
 }
 
 // fetches a mimir by id number
@@ -40,6 +43,8 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewUnbondPause(ref), true
 	case OrderBooksEnableId:
 		return NewOrderBooksEnable(ref), true
+	case LoansPauseId:
+		return NewLoansPause(ref), true
 	default:
 		return nil, false
 	}

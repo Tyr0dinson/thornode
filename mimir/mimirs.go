@@ -88,3 +88,19 @@ func NewStreamingSwapPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewLoansPause(refs ...string) Mimir {
+	id := LoansPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "lending"},
+		description:  "Pauses opening new loans and repaying loans",
+		legacyMimirKey: func(_ string) string {
+			return "PauseLoans"
+		},
+	}
+}

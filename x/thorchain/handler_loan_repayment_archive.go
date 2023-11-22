@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 )
 
 func (h LoanRepaymentHandler) validateV110(ctx cosmos.Context, msg MsgLoanRepayment) error {
@@ -21,8 +22,7 @@ func (h LoanRepaymentHandler) validateV110(ctx cosmos.Context, msg MsgLoanRepaym
 		return fmt.Errorf("address %s does not match input coin %s", msg.From.String(), msg.Coin.String())
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
+	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 
@@ -54,8 +54,7 @@ func (h LoanRepaymentHandler) validateV107(ctx cosmos.Context, msg MsgLoanRepaym
 		return err
 	}
 
-	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
-	if pauseLoans > 0 {
+	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 
