@@ -6,22 +6,28 @@
 
 - [Quickstart Guide](swap-guide/quickstart-guide.md)
 - [Fees and Wait Times](swap-guide/fees-and-wait-times.md)
+- [Streaming Swaps](swap-guide/streaming-swaps.md)
 
----
+***
 
-- [Lending](lending.md)
+## Lending
+
+- [Quick Start Guide](lending/quick-start-guide.md)
 
 ## Saving Guide
 
 - [Quickstart Guide](saving-guide/quickstart-guide.md)
 - [Fees and Wait Times](saving-guide/fees-and-wait-times.md)
 
----
+## Affiliate Guide
 
-- [Tutorials](tutorials.md)
+- [THORName Guide](affiliate-guide/thorname-guide.md)
+
+--
 
 ## Examples
 
+- [Examples](examples/tutorials.md)
 - [TypeScript (Web)](examples/typescript-web/README.md)
   - [Overview](examples/typescript-web/overview.md)
   - [Query Package](examples/typescript-web/query-package.md)
@@ -34,14 +40,15 @@
 
 - [Connecting to THORChain](concepts/connecting-to-thorchain.md)
 - [Querying THORChain](concepts/querying-thorchain.md)
-- [Network Halts](concepts/network-halts.md)
 - [Transaction Memos](concepts/memos.md)
+- [Asset Notation](concepts/asset-notation.md)
+- [Memo Length Reduction](concepts/memo-length-reduction.md)
+- [Network Halts](concepts/network-halts.md)
 - [Fees](concepts/fees.md)
 - [Delays](concepts/delays.md)
-- [Math](concepts/math.md)
-- [Streaming Swaps](concepts/streaming-swaps.md)
 - [Sending Transactions](concepts/sending-transactions.md)
 - [Code Libraries](concepts/code-libraries.md)
+- [Math](concepts/math.md)
 
 ## Aggregators
 
@@ -57,12 +64,12 @@
 
 ## THORNode
 
-- [EVM Whitelist Procedure](thornode/thornode.md)
-- [Mimir Abilities](thornode/mimir.md)
-- [How to add a new chain](thornode/newchain.md)
-- [How to run a private chain(mocknet)](thornode/private_mock_chain.md)
-- [Versioning](thornode/release.md)
-- [upgrade/\_router](thornode/upgrade_router.md)
+- [Release Process](release.md)
+- [EVM Whitelist Procedure](evm_whitelist_procedure.md)
+- [Upgrade Router](upgrade_router.md)
+- [Mimir Abilities](mimir.md)
+- [How to add a new chain](newchain.md)
+- [New Chain Integrations](chains/README.md)
 - [Architecture Decision Records (ADR)](architecture/README.md)
   - [ADR Creation Process](architecture/PROCESS.md)
   - [ADR {ADR-NUMBER}: {TITLE}](architecture/TEMPLATE.md)
@@ -76,7 +83,6 @@
   - [ADR 008: Implement a Dynamic Outbound Fee Multiplier (DOFM)](architecture/adr-008-implement-dynamic-outbound-fee-multiplier.md)
   - [ADR 009: Reserve Income and Fee Overhaul](architecture/adr-009-reserve-income-fee-overhaul.md)
   - [ADR 010: Introduction of Streaming Swaps](architecture/adr-010-streaming-swaps.md)
-- [New Chain Integrations](chains/README.md)
 
 ## Protocol Development
 
@@ -87,6 +93,7 @@
   - [BFT Chains](protocol-development/chain-clients/bft-chains.md)
 - [ERC20 Tokens](protocol-development/erc20-tokens.md)
 
----
+--
 
 - [Dev Discord](https://discord.gg/7RRmc35UEG)
+- [Website](https://thorchain.org/)

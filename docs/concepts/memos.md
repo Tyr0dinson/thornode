@@ -313,6 +313,6 @@ Refunds cost fees to prevent Denial of Service attacks. The user will pay the co
 - `donate` - add funds to a pool (example:`DONATE:ETH.ETH`)
 - `consolidate` - consolidate UTXO transactions
 - `ragnarok` - only used to delist pools.
-- `yggdrasilfund` and `yggdrasilreturn` - no longer used as yggdrasil vaults are not longer used (ADR 002)
+- `yggdrasilfund` and `yggdrasilreturn` - not used as Yggdrasil vaults are no longer used (ADR 002)
 - `switch` - no longer used as killswich has ended
 - `reserve` - no longer used.
