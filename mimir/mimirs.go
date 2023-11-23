@@ -200,3 +200,19 @@ func NewChainSigningPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewTorAnchor(refs ...string) Mimir {
+	id := TorAnchorId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "tor"},
+		description:  "Enables tor anchor",
+		legacyMimirKey: func(_ string) string {
+			return "TORANCHOR"
+		},
+	}
+}

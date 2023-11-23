@@ -16,6 +16,7 @@ const (
 	TradingPauseId
 	LPPauseId
 	ChainSigningPauseId
+	TorAnchorId
 )
 
 var StringToId = map[string]Id{
@@ -32,6 +33,7 @@ var StringToId = map[string]Id{
 	"TradingPause":               TradingPauseId,
 	"LPPause":                    LPPauseId,
 	"ChainSigningPause":          ChainSigningPauseId,
+	"TorAnchor":                  TorAnchorId,
 }
 
 var mimirRefToStringMap = map[Id]string{
@@ -48,6 +50,7 @@ var mimirRefToStringMap = map[Id]string{
 	TradingPauseId:               "TradingPause",
 	LPPauseId:                    "LPPause",
 	ChainSigningPauseId:          "ChainSigningPause",
+	TorAnchorId:                  "TorAnchor",
 }
 
 // fetches a mimir by id number
@@ -73,6 +76,8 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewLPPause(ref), true
 	case ChainSigningPauseId:
 		return NewChainSigningPause(ref), true
+	case TorAnchorId:
+		return NewTorAnchor(ref), true
 	default:
 		return nil, false
 	}
