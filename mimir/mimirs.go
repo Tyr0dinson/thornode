@@ -184,3 +184,19 @@ func NewLPPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewChainSigningPause(refs ...string) Mimir {
+	id := ChainSigningPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "chain"},
+		description:  "Halt signing globally",
+		legacyMimirKey: func(_ string) string {
+			return "HALTSIGNING"
+		},
+	}
+}
