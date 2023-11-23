@@ -105,6 +105,22 @@ func NewLoansPause(refs ...string) Mimir {
 	}
 }
 
+func NewChainPause(refs ...string) Mimir {
+	id := ChainPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "chain"},
+		description:  "Halts the referenced chain",
+		legacyMimirKey: func(_ string) string {
+			return "Halt" + getRef(refs) + "Chain"
+		},
+	}
+}
+
 func NewSynthsMint(refs ...string) Mimir {
 	id := SynthsMintId
 	return &mimir{

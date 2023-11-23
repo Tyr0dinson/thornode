@@ -10,6 +10,7 @@ const (
 	OrderBooksEnableId
 	StreamingSwapPauseId
 	LoansPauseId
+	ChainPauseId
 	SynthsMintId
 	SynthsBurnId
 	ChurnPauseId
@@ -27,6 +28,7 @@ var StringToId = map[string]Id{
 	"OrderBooksEnable":           OrderBooksEnableId,
 	"StreamingSwapPause":         StreamingSwapPauseId,
 	"LoansPause":                 LoansPauseId,
+	"ChainPause":                 ChainPauseId,
 	"SynthsMint":                 SynthsMintId,
 	"SynthsBurn":                 SynthsBurnId,
 	"ChurnPause":                 ChurnPauseId,
@@ -44,6 +46,7 @@ var mimirRefToStringMap = map[Id]string{
 	OrderBooksEnableId:           "OrderBooksEnable",
 	StreamingSwapPauseId:         "StreamingSwapPause",
 	LoansPauseId:                 "LoansPause",
+	ChainPauseId:                 "ChainPause",
 	SynthsMintId:                 "SynthsMint",
 	SynthsBurnId:                 "SynthsBurn",
 	ChurnPauseId:                 "ChurnPause",
@@ -64,8 +67,14 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewUnbondPause(ref), true
 	case OrderBooksEnableId:
 		return NewOrderBooksEnable(ref), true
+	case StreamingSwapPauseId:
+		return NewStreamingSwapPause(ref), true
 	case LoansPauseId:
 		return NewLoansPause(ref), true
+	case ChainPauseId:
+		return NewChainPause(ref), true
+	case SynthsMintId:
+		return NewSynthsMint(ref), true
 	case SynthsBurnId:
 		return NewSynthsBurn(ref), true
 	case ChurnPauseId:
