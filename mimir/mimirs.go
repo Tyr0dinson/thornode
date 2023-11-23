@@ -168,3 +168,19 @@ func NewTradingPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewLPPause(refs ...string) Mimir {
+	id := LPPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "lp"},
+		description:  "Pauses the ability for LPs to add/remove liquidity",
+		legacyMimirKey: func(_ string) string {
+			return "PauseLP"
+		},
+	}
+}
