@@ -109,7 +109,7 @@ func NewChainPause(refs ...string) Mimir {
 	id := ChainPauseId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         mimirRefToStringMap[id] + getRef(refs),
 		defaultValue: 0,
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
@@ -173,7 +173,7 @@ func NewTradingPause(refs ...string) Mimir {
 	id := TradingPauseId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         mimirRefToStringMap[id] + getRef(refs),
 		defaultValue: 0,
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
@@ -189,7 +189,7 @@ func NewLPPause(refs ...string) Mimir {
 	id := LPPauseId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         mimirRefToStringMap[id] + getRef(refs),
 		defaultValue: 0,
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
@@ -205,7 +205,7 @@ func NewChainSigningPause(refs ...string) Mimir {
 	id := ChainSigningPauseId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         mimirRefToStringMap[id] + getRef(refs),
 		defaultValue: 0,
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
@@ -221,14 +221,14 @@ func NewTorAnchor(refs ...string) Mimir {
 	id := TorAnchorId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         mimirRefToStringMap[id] + getRef(refs),
 		defaultValue: 0,
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "tor"},
 		description:  "Enables tor anchor",
 		legacyMimirKey: func(_ string) string {
-			return "TORANCHOR"
+			return "TORANCHOR" + getRef(refs)
 		},
 	}
 }
