@@ -210,7 +210,7 @@ func NewChainSigningPause(refs ...string) Mimir {
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
-		description:  "Halt signing globally",
+		description:  "Halts signing",
 		legacyMimirKey: func(_ string) string {
 			return "HALTSIGNING"
 		},
