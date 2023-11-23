@@ -136,3 +136,19 @@ func NewSynthsBurn(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewChurnPause(refs ...string) Mimir {
+	id := ChurnPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "churn", "migration"},
+		description:  "Pauses churning",
+		legacyMimirKey: func(_ string) string {
+			return "HaltChurning"
+		},
+	}
+}
