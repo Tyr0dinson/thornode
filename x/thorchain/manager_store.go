@@ -59,6 +59,14 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 	ctx.Logger().Info("Migrating store to new version", "version", i)
 	// add the logic to migrate store here when it is needed
 
+	// If any malformed migrateStoreV panics, recover and log it; always set the store version.
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store", "version", i, "error", err)
+		}
+		smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
+	}()
+
 	switch i {
 	case 84:
 		migrateStoreV84(ctx, smgr.mgr)
@@ -109,7 +117,6 @@ func (smgr *StoreMgr) migrate(ctx cosmos.Context, i uint64) error {
 		migrateStoreV124(ctx, smgr.mgr)
 	}
 
-	smgr.mgr.Keeper().SetStoreVersion(ctx, int64(i))
 	return nil
 }
 
