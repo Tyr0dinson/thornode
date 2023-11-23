@@ -152,3 +152,19 @@ func NewChurnPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewTradingPause(refs ...string) Mimir {
+	id := TradingPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "swaps"},
+		description:  "Pauses all trading",
+		legacyMimirKey: func(_ string) string {
+			return "HaltTrading"
+		},
+	}
+}

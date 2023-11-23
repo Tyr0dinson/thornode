@@ -13,6 +13,7 @@ const (
 	SynthsMintId
 	SynthsBurnId
 	ChurnPauseId
+	TradingPauseId
 )
 
 var StringToId = map[string]Id{
@@ -26,6 +27,7 @@ var StringToId = map[string]Id{
 	"SynthsMint":                 SynthsMintId,
 	"SynthsBurn":                 SynthsBurnId,
 	"ChurnPause":                 ChurnPauseId,
+	"TradingPause":               TradingPauseId,
 }
 
 var mimirRefToStringMap = map[Id]string{
@@ -39,6 +41,7 @@ var mimirRefToStringMap = map[Id]string{
 	SynthsMintId:                 "SynthsMint",
 	SynthsBurnId:                 "SynthsBurn",
 	ChurnPauseId:                 "ChurnPause",
+	TradingPauseId:               "TradingPause",
 }
 
 // fetches a mimir by id number
@@ -58,6 +61,8 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewSynthsBurn(ref), true
 	case ChurnPauseId:
 		return NewChurnPause(ref), true
+	case TradingPauseId:
+		return NewTradingPause(ref), true
 	default:
 		return nil, false
 	}
