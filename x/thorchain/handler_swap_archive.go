@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 )
 
 func (h SwapHandler) validateV120(ctx cosmos.Context, msg MsgSwap) error {
@@ -21,8 +22,7 @@ func (h SwapHandler) validateV120(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if msg.IsStreaming() {
-		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
-		if pausedStreaming > 0 {
+		if mimir.NewStreamingSwapPause().IsOn(ctx, h.mgr.Keeper()) {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 
@@ -144,8 +144,7 @@ func (h SwapHandler) validateV117(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if msg.IsStreaming() {
-		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
-		if pausedStreaming > 0 {
+		if mimir.NewStreamingSwapPause().IsOn(ctx, h.mgr.Keeper()) {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 
@@ -263,8 +262,7 @@ func (h SwapHandler) validateV116(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if msg.IsStreaming() {
-		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
-		if pausedStreaming > 0 {
+		if mimir.NewStreamingSwapPause().IsOn(ctx, h.mgr.Keeper()) {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 
@@ -389,8 +387,7 @@ func (h SwapHandler) validateV113(ctx cosmos.Context, msg MsgSwap) error {
 	if msg.IsStreaming() {
 		sourceAsset := msg.Tx.Coins[0].Asset
 		targetAsset := msg.TargetAsset
-		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
-		if pausedStreaming > 0 {
+		if mimir.NewStreamingSwapPause().IsOn(ctx, h.mgr.Keeper()) {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 

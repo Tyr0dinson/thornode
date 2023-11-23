@@ -40,3 +40,99 @@ func NewBondPause(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewUnbondPause(refs ...string) Mimir {
+	id := UnbondPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "unbond"},
+		description:  "Pauses unbonding",
+		legacyMimirKey: func(_ string) string {
+			return "PauseUnbond"
+		},
+	}
+}
+
+func NewOrderBooksEnable(refs ...string) Mimir {
+	id := OrderBooksEnableId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "swaps"},
+		description:  "Enables order books instead of swap queue",
+		legacyMimirKey: func(_ string) string {
+			return "EnableOrderBooks"
+		},
+	}
+}
+
+func NewStreamingSwapPause(refs ...string) Mimir {
+	id := StreamingSwapPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "swaps"},
+		description:  "Pauses streaming swaps from being processed or accepted",
+		legacyMimirKey: func(_ string) string {
+			return "StreamingSwapPause"
+		},
+	}
+}
+
+func NewLoansPause(refs ...string) Mimir {
+	id := LoansPauseId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "lending"},
+		description:  "Pauses opening new loans and repaying loans",
+		legacyMimirKey: func(_ string) string {
+			return "PauseLoans"
+		},
+	}
+}
+
+func NewSynthsMint(refs ...string) Mimir {
+	id := SynthsMintId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "synths"},
+		description:  "Enable/Disable minting synths",
+		legacyMimirKey: func(_ string) string {
+			return "MintSynths"
+		},
+	}
+}
+
+func NewSynthsBurn(refs ...string) Mimir {
+	id := SynthsBurnId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    getRef(refs),
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "synths"},
+		description:  "Enable/Disable burning synths",
+		legacyMimirKey: func(_ string) string {
+			return "BurnSynths"
+		},
+	}
+}
