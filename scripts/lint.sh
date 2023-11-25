@@ -25,3 +25,5 @@ go mod verify
 ./scripts/lint-managers.bash
 
 ./scripts/lint-erc20s.bash
+
+./scripts/lint-shadow.sh
