@@ -19,7 +19,7 @@ All `Assets` must conform to the [Asset Notation](../../concepts/memos.md#asset-
 
 - `CryptoAmount:` is a class that has:
 
-``` javascript
+```javascript
  baseAmount: BaseAmount
  readonly asset: Asset
 ```
@@ -53,39 +53,39 @@ Major data types for the thorchain-query package.
 
 The input Type for `estimateSwap`. This is designed to be created by interfaces and passed into EstimateSwap. Also see [Swap Memo](../../concepts/memos.md#swap) for more information.
 
-| Variable            | Data Type    | Comments                    |
-| ------------------- | ------------ | --------------------------- |
-| `input`             | CryptoAmount | Inbound asset and amount   |
-| `destinationAsset`  | Asset        | Outbound asset              |
-| `destinationAddress`| String       | Outbound asset address      |
-| `slipLimit`         | BigNumber    | Optional: Used to set LIM   |
-| `affiliateFeePercent`| number      | Optional: 0-0.1 allowed    |
-| `affiliateAddress`  | Address      | Optional: THOR address      |
-| `interfaceID`       | string       | Optional: Assigned interface ID |
+| Variable              | Data Type    | Comments                        |
+| --------------------- | ------------ | ------------------------------- |
+| `input`               | CryptoAmount | Inbound asset and amount        |
+| `destinationAsset`    | Asset        | Outbound asset                  |
+| `destinationAddress`  | String       | Outbound asset address          |
+| `slipLimit`           | BigNumber    | Optional: Used to set LIM       |
+| `affiliateFeePercent` | number       | Optional: 0-0.1 allowed         |
+| `affiliateAddress`    | Address      | Optional: THOR address          |
+| `interfaceID`         | string       | Optional: Assigned interface ID |
 
 ### **SwapEstimate**
 
 The internal return type is used within `estimateSwap` after the calculation is done.
 
-| Variable          | Data Type    | Comments               |
-| ----------------- | ------------ | ---------------------- |
-| `totalFees`       | TotalFees    | All fees for swap       |
-| `slipPercentage`  | BigNumber    | Actual slip of the swap |
-| `netOutput`       | CryptoAmount | Input - totalFees       |
-| `waitTimeSeconds` | number       | Estimated time for the swap |
-| `canSwap`         | boolean      | False if there is an issue |
+| Variable          | Data Type    | Comments                            |
+| ----------------- | ------------ | ----------------------------------- |
+| `totalFees`       | TotalFees    | All fees for swap                   |
+| `slipPercentage`  | BigNumber    | Actual slip of the swap             |
+| `netOutput`       | CryptoAmount | Input - totalFees                   |
+| `waitTimeSeconds` | number       | Estimated time for the swap         |
+| `canSwap`         | boolean      | False if there is an issue          |
 | `errors`          | string array | Contains info if `canSwap` is false |
 
 ### **TxDetails**
 
 Return type of `estimateSwap`. This is designed to be used by interfaces to give them all the information they need to display to the user.
 
-| Variable      | Data Type    | Comments                                      |
-| ------------- | ------------ | --------------------------------------------- |
-| `txEstimate`  | SwapEstimate | Swap details                                  |
-| `memo`        | string       | Constructed memo THORChain will understand   |
-| `expiry`      | DateTime     | When the `SwapEstimate` information will no longer be valid |
-| `toAddress`   | string       | Current Asgard Vault address from `inbound_address` |
+| Variable     | Data Type    | Comments                                                    |
+| ------------ | ------------ | ----------------------------------------------------------- |
+| `txEstimate` | SwapEstimate | Swap details                                                |
+| `memo`       | string       | Constructed memo THORChain will understand                  |
+| `expiry`     | DateTime     | When the `SwapEstimate` information will no longer be valid |
+| `toAddress`  | string       | Current Asgard Vault address from `inbound_address`         |
 
 {% hint style="danger" %}
 Do not use `toAddress` after `expiry` as the Asgard vault rotates

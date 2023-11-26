@@ -10,10 +10,10 @@ In order to support SwapOut DEX Aggregation feature, a few more fields added int
 
 **`SWAP:ASSET:DESTADDR:LIM:AFFILIATE:FEE:DEXAggregatorAddr:FinalTokenAddr:MinAmountOut|`**
 
-| Parameter            | Nodes                                                     | Conditions                                                                                                                                                                                                 |
-| -------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `:DEXAggregatorAddr` | The whitelisted aggregator contract.                      | Can use the last x characters of the address to fuzz match it.                                                                                                                                             |
-| `:FinalTokenAddr`    | The final token (must be on 1INCH Whitelist)              | Can be shortened                                                                                                                                                                                           |
+| Parameter            | Nodes                                                     | Conditions                                                                                                                                                                                          |
+| -------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `:DEXAggregatorAddr` | The whitelisted aggregator contract.                      | Can use the last x characters of the address to fuzz match it.                                                                                                                                      |
+| `:FinalTokenAddr`    | The final token (must be on 1INCH Whitelist)              | Can be shortened                                                                                                                                                                                    |
 | `:minAmountOut`      | The parameter to pass into AmountOutMin in AMM contracts. | Handled by the aggregator, so:<br>1. Can be 0 (no protection). <br>2. Can be in any decimals<br>3. Can be in % or BasisPoints, then converted to a price at the time of swap by the aggregator.</p> |
 
 {% hint style="success" %}
@@ -24,7 +24,7 @@ If you include a vertical pipe (|) at the end of the memo, any data following it
 
 In order to support SwapOut Dex Aggregation feature safely , a few more fields have been added into tx out item
 
-``` json
+```json
 [
   {
     "chain": "ETH",
@@ -57,7 +57,7 @@ Also the same fields have been added to `ObservedTx` so THORNode can verify that
 
 If i want to swap RUNE to random ERC20 asset that is not list on THORChain , but is list on SushiSwap for example
 
-``` text
+```text
 thornode tx thorchain deposit 200000000000 RUNE '=:ETH.ETH:0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473::::2386f3848:0x0a44986b70527154e9F4290eC14e5f0D1C861822' --chain-id thorchain --node tcp://$THORNODE_IP:26657 --from {from user} --keyring-backend=file --yes --gas 20000000
 ```
 

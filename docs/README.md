@@ -86,9 +86,9 @@ Eg, gather information on cross-chain liquidity
 
 THORChain has several APIs with Swagger documentation.
 
-* Midgard - [https://midgard.ninerealms.com/v2/doc](https://midgard.ninerealms.com/v2/doc)
-* THORNode - [https://thornode.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc)
-* Cosmos RPC - [https://v1.cosmos.network/rpc/v0.45.1](https://v1.cosmos.network/rpc/v0.45.1), [Example Link](https://stagenet-thornode.ninerealms.com/cosmos/base/tendermint/v1beta1/blocks/latest)
+- Midgard - [https://midgard.ninerealms.com/v2/doc](https://midgard.ninerealms.com/v2/doc)
+- THORNode - [https://thornode.ninerealms.com/thorchain/doc](https://thornode.ninerealms.com/thorchain/doc)
+- Cosmos RPC - [https://v1.cosmos.network/rpc/v0.45.1](https://v1.cosmos.network/rpc/v0.45.1), [Example Link](https://stagenet-thornode.ninerealms.com/cosmos/base/tendermint/v1beta1/blocks/latest)
 
 See [connecting-to-thorchain.md](concepts/connecting-to-thorchain.md "mention") for more information.
 

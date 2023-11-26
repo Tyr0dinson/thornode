@@ -8,11 +8,11 @@ Given the complexity of memos, they can become very long, beyond the limits of c
 
 1. `SWAP:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:1612345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`
 
-    can be reduced to `=:e:dx:161e6:t:10`
+   can be reduced to `=:e:dx:161e6:t:10`
 
 2. `SWAP:ETH.USDT-0xdac17f958d2ee523a2206206994597c13d831ec7:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:10012345678:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:10`
 
-    can be reduced to `=:ETH.USDT:dx:100e7:t:10`
+   can be reduced to `=:ETH.USDT:dx:100e7:t:10`
 
 The examples below use the following features to reduce memo length:
 

@@ -196,19 +196,19 @@ Notice how `approx_streaming_savings` shows the savings by using streaming swaps
 The quote swap endpoint simulates all of the logic of an actual swap transaction. It ships with comprehensive error handling.
 
 ![Price Tolerance Error](../.gitbook/assets/image (6).png)
-*This error means the swap cannot be completed given your price tolerance.*
+_This error means the swap cannot be completed given your price tolerance._
 
 ![Destination Address Error](../.gitbook/assets/image (1).png)
-*This error ensures the destination address is for the chain specified by `to_asset`.*
+_This error ensures the destination address is for the chain specified by `to_asset`._
 
 ![Affiliate Address Length Error](../.gitbook/assets/image (4).png)
-*This error is due to the fact the affiliate address is too long given the source chain's memo length requirements. Try registering a THORName to shorten the memo.*
+_This error is due to the fact the affiliate address is too long given the source chain's memo length requirements. Try registering a THORName to shorten the memo._
 
 ![Asset Not Found Error](../.gitbook/assets/image (2).png)
-*This error means the requested asset does not exist.*
+_This error means the requested asset does not exist._
 
 ![Bound Checks Error](../.gitbook/assets/image (3).png)
-*Bound checks are made on both `affiliate_bps` and `tolerance_bps`.*
+_Bound checks are made on both `affiliate_bps` and `tolerance_bps`._
 
 ### Support
 

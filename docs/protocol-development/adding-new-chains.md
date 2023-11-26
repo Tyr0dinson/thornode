@@ -1,6 +1,6 @@
 # Adding New Chains
 
-Chain Developers should be extremely familiar with how THORChain works, and how their own chain works. 
+Chain Developers should be extremely familiar with how THORChain works, and how their own chain works.
 
 There is now a specific process for the addition of new chains, see: [https://gitlab.com/thorchain/thornode/-/blob/develop/docs/chains/README.md](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/chains/README.md)
 

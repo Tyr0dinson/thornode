@@ -56,14 +56,15 @@ This is done because "tokens" on protocols don't support memos on-chain, thus ne
 
 Note: you can transfer the base asset, eg ETH, directly to the address and skip the router, but it is recommended to deposit everything via the router.&#x20;
 
-``` json
-{  "address": "0x500b62a37c1afe79d59b373639512d03e3c4f5e8",
-   "chain": "ETH",
-   "gas_rate": "70",
-   "halted": false,
-   "pub_key": "thorpub1addwnpepq05w4xwaswph29ksls25ymjkypav30t8ktyu2dqzkxqk3pkf2l5zklvfzef",
-   "router": "0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146"
-   }
+```json
+{
+  "address": "0x500b62a37c1afe79d59b373639512d03e3c4f5e8",
+  "chain": "ETH",
+  "gas_rate": "70",
+  "halted": false,
+  "pub_key": "thorpub1addwnpepq05w4xwaswph29ksls25ymjkypav30t8ktyu2dqzkxqk3pkf2l5zklvfzef",
+  "router": "0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146"
+}
 ```
 
 {% endhint %}

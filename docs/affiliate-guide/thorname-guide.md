@@ -67,13 +67,13 @@ To keep your THORName registered you can extend the registration period (move ba
 
 `~:ODIN:THOR:<thor-alias-address>`
 
-*(Chain and alias address are required, so just use current values to keep alias unchanged).*
+_(Chain and alias address are required, so just use current values to keep alias unchanged)._
 
 **$RUNE Amount:**
 
 `rune_amt = num_blocks_to_extend * tns_fee_per_block`
 
-*(Remember this value will be in 1e8, so adjust accordingly for your transaction).*
+_(Remember this value will be in 1e8, so adjust accordingly for your transaction)._
 
 ## Preferred Asset for Affiliate Fees
 
@@ -86,7 +86,7 @@ If an affiliate's THORName has the proper preferred asset configuration set, the
 **Configuring a Preferred Asset for a THORName:**
 
 1. Register your THORName following instructions above.
-2. Set your preferred asset's chain alias (the address you'll be paid out to), and your preferred asset. *Note: your preferred asset must be currently supported by THORChain.*
+2. Set your preferred asset's chain alias (the address you'll be paid out to), and your preferred asset. _Note: your preferred asset must be currently supported by THORChain._
 
 For example, if you wanted to be paid out in USDC you would:
 
@@ -101,7 +101,7 @@ For example, if you wanted to be paid out in USDC you would:
 
 {% code overflow="wrap" %}
 
-``` text
+```text
 ~:ac-test:ETH:0x6621d872f17109d6601c49edba526ebcfd332d5d:thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
 ```
 
@@ -116,7 +116,7 @@ Once you successfully post your MsgDeposit you can verify that your THORName is 
 
 The response should look like:
 
-``` json
+```json
 {
   "affiliate_collector_rune": "0",
   "aliases": [
