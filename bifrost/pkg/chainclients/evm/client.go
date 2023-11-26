@@ -461,10 +461,6 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	if contractAddr.IsEmpty() {
 		// we may be churning from a vault that does not have a contract
 		// try getting the toAddress (new vault) contract instead
-		memo, err := mem.ParseMemo(common.LatestVersion, txOutItem.Memo)
-		if err != nil {
-			return nil, fmt.Errorf("fail to parse memo during empty contract recovery(%s):%w", txOutItem.Memo, err)
-		}
 		if memo.GetType() == mem.TxMigrate {
 			contractAddr = c.getSmartContractByAddress(txOutItem.ToAddress)
 		}
