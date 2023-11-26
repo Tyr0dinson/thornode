@@ -703,7 +703,13 @@ func (c *Client) BroadcastTx(txs []stypes.TxOutItem, payload []byte) (string, er
 	if len(txs) == 0 || len(payload) == 0 {
 		return "", fmt.Errorf("no txns to broadcast")
 	}
-	txOut := txs[0]
+	switch c.cfg.ChainID {
+	case common.BTCChain:
+	default:
+		if len(txs) != 1 {
+			return "", fmt.Errorf("multi broadcast is only supported for BTC")
+		}
+	}
 	height, err := c.rpc.GetBlockCount()
 	if err != nil {
 		return "", fmt.Errorf("fail to get block height: %w", err)
@@ -809,8 +815,10 @@ func (c *Client) BroadcastTx(txs []stypes.TxOutItem, payload []byte) (string, er
 
 	// save tx id to block meta in case we need to errata later
 	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
-	if err = c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry); err != nil {
-		c.log.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+	for _, txOut := range txs {
+		if err = c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry); err != nil {
+			c.log.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOut)
+		}
 	}
 
 	return txid, nil
