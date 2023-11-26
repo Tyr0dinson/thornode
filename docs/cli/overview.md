@@ -64,7 +64,7 @@ make install
 
 `thornode --help`
 
-```
+```text
 THORChain Network
 
 Usage:
@@ -103,19 +103,19 @@ Flags:
 
 #### Add new account
 
-```
+```text
 thornode keys add {accountName}
 ```
 
 #### Add existing account (via mnemonic)
 
-```
+```text
 thornode keys add {accountName} --recover
 ```
 
 #### List all accounts
 
-```
+```text
 thornode keys list
 ```
 
@@ -123,7 +123,7 @@ thornode keys list
 
 ### Create Transaction
 
-```
+```text
 # Sender: thor1505gp5h48zd24uexrfgka70fg8ccedafsnj0e3
 # Receiver: thor1gutjhrw4xlu3n3p3k3r0vexl2xknq3nv8ux9fy
 # Amount: 1 RUNE (in 1e8 notation)
@@ -134,7 +134,7 @@ This will output a file called `tx_raw.json`. Edit this file and change the `@ty
 
 The `tx_raw.json` transaction should look like this:
 
-```
+```json
 {"body":{"messages":[{"@type":"/types.MsgSend","from_address":"thor1505gp5h48zd24uexrfgka70fg8ccedafsnj0e3",
 "to_address":"thor1gutjhrw4xlu3n3p3k3r0vexl2xknq3nv8ux9fy",
 "amount":[{"denom":"rune","amount":"100000000"}]}],"memo":"",
@@ -146,7 +146,7 @@ The `tx_raw.json` transaction should look like this:
 
 ### Sign Transaction
 
-```
+```text
 thornode tx sign tx_raw.json --from {accountName} --sign-mode amino-json --chain-id thorchain-mainnet-v1 --node https://rpc.ninerealms.com:443 >> tx.json
 ```
 
@@ -154,6 +154,6 @@ This will output a file called `tx.json`.
 
 ### Broadcast Transaction
 
-```
+```text
 thornode tx broadcast tx.json --chain-id thorchain-mainnet-v1 --node https://rpc.ninerealms.com:443 --gas auto
 ```

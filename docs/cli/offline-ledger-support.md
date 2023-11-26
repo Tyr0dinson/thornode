@@ -12,7 +12,7 @@ When used in conjunction with a locally-running fullnode, the THORNode CLI + Led
 
 Ledger accounts can be added by appending `--ledger` to the command. The default index is 0.
 
-```
+```text
 thornode keys add ledger1 --ledger --index=1
 ```
 
