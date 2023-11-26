@@ -1335,7 +1335,12 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 }
 
 // BroadcastTx decodes tx using rlp and broadcasts too Ethereum chain
-func (c *Client) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
+func (c *Client) BroadcastTx(txs []stypes.TxOutItem, hexTx []byte) (string, error) {
+	if len(txs) == 0 || len(hexTx) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	txOutItem := txs[0]
+
 	tx := &etypes.Transaction{}
 	if err := tx.UnmarshalJSON(hexTx); err != nil {
 		return "", err

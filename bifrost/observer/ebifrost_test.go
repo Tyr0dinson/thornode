@@ -487,7 +487,7 @@ func (m *mockChainClient) IsBlockScannerHealthy() bool {
 	return true
 }
 
-func (m *mockChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
+func (m *mockChainClient) BroadcastTx([]types.TxOutItem, []byte) (string, error) {
 	return "", nil
 }
 

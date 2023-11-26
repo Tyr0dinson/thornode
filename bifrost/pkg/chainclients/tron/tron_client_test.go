@@ -301,7 +301,7 @@ func (s *TronTestSuite) TestSignAndBroadcastTx(c *C) {
 	c.Assert(len(tx.Signature), Equals, 1)
 	c.Assert(len(tx.Signature[0]), Equals, 130)
 
-	txId, err := s.client.BroadcastTx(txOutItem, signed)
+	txId, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, signed)
 	c.Assert(err, IsNil)
 	// tx id returned by api/test-tron/broadcasttransaction.json
 	c.Assert(txId, Equals, "77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299")

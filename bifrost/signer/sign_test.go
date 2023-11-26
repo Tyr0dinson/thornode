@@ -614,7 +614,7 @@ func (b *MockChainClient) Churn(pubKey common.PubKey, height int64) error {
 	return nil
 }
 
-func (b *MockChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, error) {
+func (b *MockChainClient) BroadcastTx(_ []types.TxOutItem, tx []byte) (string, error) {
 	b.broadcastCount += 1
 	if b.broadcastCount > b.broadcastFailCount {
 		return "", nil

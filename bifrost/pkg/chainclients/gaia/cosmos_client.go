@@ -657,7 +657,12 @@ func (c *CosmosClient) signMsg(
 }
 
 // BroadcastTx is to broadcast the tx to cosmos chain
-func (c *CosmosClient) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
+func (c *CosmosClient) BroadcastTx(txs []stypes.TxOutItem, txBytes []byte) (string, error) {
+	if len(txs) == 0 || len(txBytes) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	tx := txs[0]
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 

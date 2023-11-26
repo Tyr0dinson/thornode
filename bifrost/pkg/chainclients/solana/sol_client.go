@@ -1852,7 +1852,12 @@ func convertToLamports(amount cosmos.Uint) *big.Int {
 // --------------------------------- broadcast ---------------------------------
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
-func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (string, error) {
+func (c *SOLClient) BroadcastTx(txs []stypes.TxOutItem, rawTx []byte) (string, error) {
+	if len(txs) == 0 || len(rawTx) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	txOutItem := txs[0]
+
 	base64Tx := base64.StdEncoding.EncodeToString(rawTx)
 	txSig, err := c.rpcClient.BroadcastTx(base64Tx)
 	if err != nil {

@@ -699,7 +699,11 @@ func (c *Client) GetVaultLock(vaultPubKey string) *sync.Mutex {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // BroadcastTx will broadcast the given payload.
-func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, error) {
+func (c *Client) BroadcastTx(txs []stypes.TxOutItem, payload []byte) (string, error) {
+	if len(txs) == 0 || len(payload) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	txOut := txs[0]
 	height, err := c.rpc.GetBlockCount()
 	if err != nil {
 		return "", fmt.Errorf("fail to get block height: %w", err)

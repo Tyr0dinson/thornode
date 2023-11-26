@@ -966,7 +966,7 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		return nil
 	}
 
-	txID, err := c.BroadcastTx(txOutItem, rawTx)
+	txID, err := c.BroadcastTx([]stypes.TxOutItem{txOutItem}, rawTx)
 	if err != nil {
 		return fmt.Errorf("broadcast consolidate tx: %w", err)
 	}

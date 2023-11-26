@@ -1401,7 +1401,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 
 	// broadcast the transaction
-	hash, err := chain.BroadcastTx(tx, signedTx)
+	hash, err := chain.BroadcastTx([]types.TxOutItem{tx}, signedTx)
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 

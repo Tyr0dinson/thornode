@@ -857,7 +857,12 @@ func (c *Client) cacheSent(tx stypes.TxOutItem, txHash string) {
 // A tx validated with a tec* result is retired for THORChain to reschedule (see
 // retireTecResult), never re-signed here. Nor is a tx re-signed on a mere absence, which
 // would risk paying a delivered tx twice.
-func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
+func (c *Client) BroadcastTx(txs []stypes.TxOutItem, txBytes []byte) (string, error) {
+	if len(txs) == 0 || len(txBytes) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	tx := txs[0]
+
 	txBlob := hex.EncodeToString(txBytes)
 	txHash, err := hash.SignTxBlob(txBlob)
 	if err != nil {

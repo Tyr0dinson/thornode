@@ -709,9 +709,14 @@ func (c *TronClient) signTronTransaction(
 
 // BroadcastTx sends the transaction to Tron chain
 func (c *TronClient) BroadcastTx(
-	txOutItem types.TxOutItem,
+	txs []types.TxOutItem,
 	txBytes []byte,
 ) (string, error) {
+	if len(txs) == 0 || len(txBytes) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	txOutItem := txs[0]
+
 	response, err := c.api.BroadcastTransaction(txBytes)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to broadcast tx")

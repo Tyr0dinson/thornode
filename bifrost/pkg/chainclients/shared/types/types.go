@@ -29,7 +29,7 @@ type ChainClient interface {
 	SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error)
 
 	// BroadcastTx broadcasts the transaction and returns the transaction hash.
-	BroadcastTx(_ types.TxOutItem, _ []byte) (string, error)
+	BroadcastTx(_ []types.TxOutItem, _ []byte) (string, error)
 
 	// GetHeight returns the current height of the chain.
 	GetHeight() (int64, error)

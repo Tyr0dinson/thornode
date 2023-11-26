@@ -1440,7 +1440,12 @@ func (c *EVMClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, heigh
 // --------------------------------- broadcast ---------------------------------
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
-func (c *EVMClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
+func (c *EVMClient) BroadcastTx(txs []stypes.TxOutItem, hexTx []byte) (string, error) {
+	if len(txs) == 0 || len(hexTx) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
+	txOutItem := txs[0]
+
 	// decode the transaction
 	tx := &etypes.Transaction{}
 	if err := tx.UnmarshalJSON(hexTx); err != nil {
