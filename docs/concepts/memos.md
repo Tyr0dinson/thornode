@@ -310,9 +310,9 @@ Refunds cost fees to prevent Denial of Service attacks. The user will pay the co
 
 ### **Other Internal Memos**
 
-- `donate` - add funds to a pool (example:`DONATE:ETH.ETH`)
-- `consolidate` - consolidate UTXO transactions
+- `donate` - add funds to a pool (example:`DONATE:ETH.ETH`).
+- `consolidate` - consolidate UTXO transactions.
 - `ragnarok` - only used to delist pools.
-- `yggdrasilfund` and `yggdrasilreturn` - not used as Yggdrasil vaults are no longer used (ADR 002)
-- `switch` - no longer used as killswich has ended
-- `reserve` - no longer used.
+- `yggdrasilfund` and `yggdrasilreturn` - not used as Yggdrasil vaults are no longer used (ADR 002).
+- `switch` - no longer used as killswich has ended.
+- `reserve` - Used to add RUNE to the Reserve Module as MsgSend to network modules is disallowed.
