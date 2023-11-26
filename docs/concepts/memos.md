@@ -52,17 +52,17 @@ Perform a swap.
 
 **`SWAP:ASSET:DESTADDR:LIM/INTERVAL/QUANTITY:AFFILIATE:FEE`**
 
-| Parameter       | Notes                                      | Conditions                                              |
-| --------------- | ------------------------------------------ | -------------------------------------------------------- |
-| Payload         | Send the asset to swap.                     | Must be an active pool on THORChain.                    |
-| `SWAP`          | The swap handler.                           | [Also](memo-length-reduction.md#mechanism-for-transaction-intent-2) `s`, `=`                                   |
-| `:ASSET`        | The [asset identifier](asset-notation.md).  | Can be [shortened](memo-length-reduction.md#shortened-asset-names).                                      |
-| `:DESTADDR`     | The destination address to send to.         | Can use THORName.                                        |
-| `:LIM`          | The trade limit, i.e., set 100000000 to get a minimum of 1 full asset, else a refund. | Optional, 1e8 or [Scientific Notation](memo-length-reduction.md#scientific-notation). |
-| `/INTERVAL`     | Swap interval in blocks.                    | Optional, 1 means do not stream.                          |
-| `/QUANTITY`     | Swap Quantity. Swap interval times every Interval blocks. | Optional, if 0, network will determine the number of swaps. |
-| `:AFFILIATE`    | The [affiliate address](fees.md#affiliate-fee). RUNE is sent to Affiliate. | Optional. Must be THORName or THOR Address.               |
-| `:FEE`          | The affiliate fee. Limited from 0 to 1000 Basis Points. | Optional. Limited from 0 to 1000 Basis Points.           |
+| Parameter    | Notes                                                                                 | Conditions                                                                            |
+| ------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Payload      | Send the asset to swap.                                                               | Must be an active pool on THORChain.                                                  |
+| `SWAP`       | The swap handler.                                                                     | [Also](memo-length-reduction.md#mechanism-for-transaction-intent-2) `s`, `=`          |
+| `:ASSET`     | The [asset identifier](asset-notation.md).                                            | Can be [shortened](memo-length-reduction.md#shortened-asset-names).                   |
+| `:DESTADDR`  | The destination address to send to.                                                   | Can use THORName.                                                                     |
+| `:LIM`       | The trade limit, i.e., set 100000000 to get a minimum of 1 full asset, else a refund. | Optional, 1e8 or [Scientific Notation](memo-length-reduction.md#scientific-notation). |
+| `/INTERVAL`  | Swap interval in blocks.                                                              | Optional, 1 means do not stream.                                                      |
+| `/QUANTITY`  | Swap Quantity. Swap interval times every Interval blocks.                             | Optional, if 0, network will determine the number of swaps.                           |
+| `:AFFILIATE` | The [affiliate address](fees.md#affiliate-fee). RUNE is sent to Affiliate.            | Optional. Must be THORName or THOR Address.                                           |
+| `:FEE`       | The affiliate fee. Limited from 0 to 1000 Basis Points.                               | Optional. Limited from 0 to 1000 Basis Points.                                        |
 
 **Syntactic Examples:**
 
@@ -131,15 +131,15 @@ Depositing savers can work without a memo; however, memos are recommended to be 
 
 **`LOAN+:ASSET:DESTADDR:MINOUT:AFFILIATE:FEE`**
 
-| Parameter       | Notes                                             | Conditions                                      |
-| --------------- | ------------------------------------------------- | ----------------------------------------------- |
-| Payload         | The collateral to open the loan with.             | Must be L1 supported by THORChain.              |
-| `LOAN+`         | The Loan Open handler.                            | also `$+`                                      |
-| `:ASSET`        | Target debt [asset identifier](asset-notation.md). | Can be [shortened](memo-length-reduction.md).  |
-| `:DESTADDR`     | The destination address to send the debt to.      | Can use THORName.                               |
-| `:MINOUT`       | Similar to LIM, Min debt amount, else a refund.   | Optional, 1e8 format.                           |
-| `:AFFILIATE`    | The [affiliate](fees.md#affiliate-fee) address. The affiliate is added to the pool as an LP. | Optional. Must be THORName or THOR Address.    |
-| `:FEE`          | The affiliate fee. Fee is allocated to the affiliate. | Optional. Limited from 0 to 1000 Basis Points. |
+| Parameter    | Notes                                                                                        | Conditions                                     |
+| ------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Payload      | The collateral to open the loan with.                                                        | Must be L1 supported by THORChain.             |
+| `LOAN+`      | The Loan Open handler.                                                                       | also `$+`                                      |
+| `:ASSET`     | Target debt [asset identifier](asset-notation.md).                                           | Can be [shortened](memo-length-reduction.md).  |
+| `:DESTADDR`  | The destination address to send the debt to.                                                 | Can use THORName.                              |
+| `:MINOUT`    | Similar to LIM, Min debt amount, else a refund.                                              | Optional, 1e8 format.                          |
+| `:AFFILIATE` | The [affiliate](fees.md#affiliate-fee) address. The affiliate is added to the pool as an LP. | Optional. Must be THORName or THOR Address.    |
+| `:FEE`       | The affiliate fee. Fee is allocated to the affiliate.                                        | Optional. Limited from 0 to 1000 Basis Points. |
 
 {% hint style="warning" %}
 Affiliate and Affiliate Fee yet to be implemented
@@ -154,13 +154,13 @@ Affiliate and Affiliate Fee yet to be implemented
 
 **`LOAN-:ASSET:DESTADDR:MINOUT`**
 
-| Parameter       | Notes                                             | Conditions                                      |
-| --------------- | ------------------------------------------------- | ----------------------------------------------- |
-| Payload         | The repayment for the loan.                       | Must be L1 supported on THORChain.              |
-| `LOAN-`         | The Loan Repayment handler.                       | also `$-`                                      |
-| `:ASSET`        | Target collateral [asset identifier](asset-notation.md). | Can be [shortened](memo-length-reduction.md).  |
-| `:DESTADDR`     | The destination address to send the collateral to. | Can use THORName.                               |
-| `:MINOUT`       | Similar to LIM, Min collateral to receive else a refund. | Optional, 1e8 format, loan needs to be fully repaid to close. |
+| Parameter   | Notes                                                    | Conditions                                                    |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------- |
+| Payload     | The repayment for the loan.                              | Must be L1 supported on THORChain.                            |
+| `LOAN-`     | The Loan Repayment handler.                              | also `$-`                                                     |
+| `:ASSET`    | Target collateral [asset identifier](asset-notation.md). | Can be [shortened](memo-length-reduction.md).                 |
+| `:DESTADDR` | The destination address to send the collateral to.       | Can use THORName.                                             |
+| `:MINOUT`   | Similar to LIM, Min collateral to receive else a refund. | Optional, 1e8 format, loan needs to be fully repaid to close. |
 
 **Examples:**
 
@@ -172,14 +172,14 @@ Affiliate and Affiliate Fee yet to be implemented
 There are rules for adding liquidity, see [the rules here](https://docs.thorchain.org/learn/getting-started#entering-and-leaving-a-pool).\
 **`ADD:POOL:PAIREDADDR:AFFILIATE:FEE`**
 
-| Parameter       | Notes                                             | Conditions                                      |
-| --------------- | ------------------------------------------------- | ----------------------------------------------- |
-| Payload         | The asset to add liquidity with.                  | Must be supported by THORChain.                 |
-| `ADD`           | The Add Liquidity handler.                        | also `a` `+`                                   |
-| `:POOL`         | The pool to add liquidity to.                     | Can be [shortened](memo-length-reduction.md).  |
-| `:PAIREDADDR`   | The other address to link with. If on external chain, link to THOR address. If on THORChain, link to external address. If a paired address is found, the LP is matched and added. If none is found, the liquidity is put into pending. | Optional. If not specified, a single-sided add-liquidity action is created. |
-| `:AFFILIATE`    | The [affiliate](fees.md#affiliate-fee) address. The affiliate is added to the pool as an LP. | Optional. Must be THORName or THOR Address.    |
-| `:FEE`          | The affiliate fee. Fee is allocated to the affiliate. | Optional. Limited from 0 to 1000 Basis Points. |
+| Parameter     | Notes                                                                                                                                                                                                                                  | Conditions                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Payload       | The asset to add liquidity with.                                                                                                                                                                                                       | Must be supported by THORChain.                                             |
+| `ADD`         | The Add Liquidity handler.                                                                                                                                                                                                             | also `a` `+`                                                                |
+| `:POOL`       | The pool to add liquidity to.                                                                                                                                                                                                          | Can be [shortened](memo-length-reduction.md).                               |
+| `:PAIREDADDR` | The other address to link with. If on external chain, link to THOR address. If on THORChain, link to external address. If a paired address is found, the LP is matched and added. If none is found, the liquidity is put into pending. | Optional. If not specified, a single-sided add-liquidity action is created. |
+| `:AFFILIATE`  | The [affiliate](fees.md#affiliate-fee) address. The affiliate is added to the pool as an LP.                                                                                                                                           | Optional. Must be THORName or THOR Address.                                 |
+| `:FEE`        | The affiliate fee. Fee is allocated to the affiliate.                                                                                                                                                                                  | Optional. Limited from 0 to 1000 Basis Points.                              |
 
 **Examples:**
 
@@ -195,13 +195,13 @@ A withdrawal can be either dual-sided (withdrawn based on pool's price) or entir
 
 **`WD:POOL:BASISPOINTS:ASSET`**
 
-| Parameter        | Notes                                                                              | Extra                                                             |
-| ---------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Payload          | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | Caution [Dust Limits](https://midgard.ninerealms.com/v2/thorchain/inbound_addresses): BTC,BCH,LTC chains 10k sats; DOGE 1m Sats; ETH 0 wei; THOR 0 RUNE. |
-| `WITHDRAW`       | The withdraw handler.                                                             | Also `-` `wd`                                                      |
-| `:POOL`          | The pool to withdraw liquidity from.                                              | Can be [shortened](memo-length-reduction.md).                       |
-| `:BASISPOINTS`   | Basis points (0-10000, where 10000=100%).                                         |                                                                   |
-| `:ASSET`         | Single-sided withdraw to one side.                                                | Optional. Can be shortened. Must be either RUNE or the ASSET.      |
+| Parameter      | Notes                                                                                       | Extra                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payload        | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | Caution [Dust Limits](https://midgard.ninerealms.com/v2/thorchain/inbound_addresses): BTC,BCH,LTC chains 10k sats; DOGE 1m Sats; ETH 0 wei; THOR 0 RUNE. |
+| `WITHDRAW`     | The withdraw handler.                                                                       | Also `-` `wd`                                                                                                                                            |
+| `:POOL`        | The pool to withdraw liquidity from.                                                        | Can be [shortened](memo-length-reduction.md).                                                                                                            |
+| `:BASISPOINTS` | Basis points (0-10000, where 10000=100%).                                                   |                                                                                                                                                          |
+| `:ASSET`       | Single-sided withdraw to one side.                                                          | Optional. Can be shortened. Must be either RUNE or the ASSET.                                                                                            |
 
 **Examples:**
 
@@ -216,20 +216,20 @@ Donate to a pool or the RESERVE.
 
 **`DONATE:POOL`**
 
-| Parameter       | Notes                                    | Extra                                     |
-| --------------- | ---------------------------------------- | ----------------------------------------- |
-| Payload         | The asset to donate to a THORChain pool. | Must be supported by THORChain. Can be RUNE or ASSET. |
-| `DONATE`        | The donate handler.                      | Also `%`                                  |
-| `:POOL`         | The pool to withdraw liquidity from.     | Can be [shortened](memo-length-reduction.md). |
+| Parameter | Notes                                    | Extra                                                 |
+| --------- | ---------------------------------------- | ----------------------------------------------------- |
+| Payload   | The asset to donate to a THORChain pool. | Must be supported by THORChain. Can be RUNE or ASSET. |
+| `DONATE`  | The donate handler.                      | Also `%`                                              |
+| `:POOL`   | The pool to withdraw liquidity from.     | Can be [shortened](memo-length-reduction.md).         |
 
 **Example:** `DONATE:ETH.ETH` - Donate to the ETH pool.
 
 **`RESERVE`**
 
-| Parameter       | Notes                | Extra                         |
-| --------------- | -------------------- | ------------------------------ |
-| Payload         | THOR.RUNE.           | The RUNE to credit to the RESERVE. |
-| `RESERVE`       | The reserve handler. |                                |
+| Parameter | Notes                | Extra                              |
+| --------- | -------------------- | ---------------------------------- |
+| Payload   | THOR.RUNE.           | The RUNE to credit to the RESERVE. |
+| `RESERVE` | The reserve handler. |                                    |
 
 ### BOND, UNBOND & LEAVE
 
@@ -237,31 +237,31 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 
 **`BOND:NODEADDR:PROVIDER:FEE`**
 
-| Parameter       | Notes                                    | Extra                                       |
-| --------------- | ---------------------------------------- | ------------------------------------------- |
-| Payload         | The asset to bond to a Node.             | Must be RUNE.                               |
-| `BOND`          | The bond handler.                         | Anytime.                                    |
-| `:NODEADDR`     | The node to bond with.                   |                                             |
-| `:PROVIDER`     | Whitelist in a provider.                 | Optional, add a provider                    |
-| `:FEE`          | Specify an Operator Fee in Basis Points. | Optional, default will be the mimir value (2000 Basis Points). Can be changed anytime. |
+| Parameter   | Notes                                    | Extra                                                                                  |
+| ----------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| Payload     | The asset to bond to a Node.             | Must be RUNE.                                                                          |
+| `BOND`      | The bond handler.                        | Anytime.                                                                               |
+| `:NODEADDR` | The node to bond with.                   |                                                                                        |
+| `:PROVIDER` | Whitelist in a provider.                 | Optional, add a provider                                                               |
+| `:FEE`      | Specify an Operator Fee in Basis Points. | Optional, default will be the mimir value (2000 Basis Points). Can be changed anytime. |
 
 **`UNBOND:NODEADDR:AMOUNT`**
 
-| Parameter       | Notes                    | Extra                                       |
-| --------------- | ------------------------ | ------------------------------------------- |
-| Payload         | None required.           | Use `MsgDeposit`.                           |
-| `UNBOND`        | The unbond handler.      |                                             |
-| `:NODEADDR`     | The node to unbond from. | Must be in standby only.                    |
-| `:AMOUNT`       | The amount to unbond.    | In 1e8 format. If setting more than actual bond, then capped at bond. |
-| `:PROVIDER`     | Unwhitelist a provider.  | Optional, remove a provider                |
+| Parameter   | Notes                    | Extra                                                                 |
+| ----------- | ------------------------ | --------------------------------------------------------------------- |
+| Payload     | None required.           | Use `MsgDeposit`.                                                     |
+| `UNBOND`    | The unbond handler.      |                                                                       |
+| `:NODEADDR` | The node to unbond from. | Must be in standby only.                                              |
+| `:AMOUNT`   | The amount to unbond.    | In 1e8 format. If setting more than actual bond, then capped at bond. |
+| `:PROVIDER` | Unwhitelist a provider.  | Optional, remove a provider                                           |
 
 **`LEAVE:NODEADDR`**
 
-| Parameter       | Notes                    | Extra                                       |
-| --------------- | ------------------------ | ------------------------------------------- |
-| Payload         | None required.           | Use `MsgDeposit`.                           |
-| `LEAVE`         | The leave handler.       |                                             |
-| `:NODEADDR`     | The node to force to leave. | If in Active, request a churn out to Standby for 1 churn cycle. If in Standby, forces a permanent leave. |
+| Parameter   | Notes                       | Extra                                                                                                    |
+| ----------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Payload     | None required.              | Use `MsgDeposit`.                                                                                        |
+| `LEAVE`     | The leave handler.          |                                                                                                          |
+| `:NODEADDR` | The node to force to leave. | If in Active, request a churn out to Standby for 1 churn cycle. If in Standby, forces a permanent leave. |
 
 **Examples:**
 
@@ -287,13 +287,13 @@ Internal memo type used to mark migration transactions between a retiring vault 
 
 Dev-centric functions to fix THORChain state. Caution: may cause loss of funds if not done exactly right at the right time.
 
-*`NOOP`**
+\*`NOOP`\*\*
 
-| Parameter       | Notes                            | Extra                                 |
-| --------------- | -------------------------------- | ------------------------------------- |
-| Payload         | The asset to credit to a vault.   | Must be ASSET or RUNE.                |
-| `NOOP`          | The noop handler.                 | Adds to the vault balance, but does not add to the pool. |
-| `:NOVAULT`      | Do not credit the vault.          | Optional. Just fix the insolvency issue. |
+| Parameter  | Notes                           | Extra                                                    |
+| ---------- | ------------------------------- | -------------------------------------------------------- |
+| Payload    | The asset to credit to a vault. | Must be ASSET or RUNE.                                   |
+| `NOOP`     | The noop handler.               | Adds to the vault balance, but does not add to the pool. |
+| `:NOVAULT` | Do not credit the vault.        | Optional. Just fix the insolvency issue.                 |
 
 ### Refunds
 

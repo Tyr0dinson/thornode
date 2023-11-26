@@ -31,7 +31,7 @@ _Example:_ user is depositing 1.0 BTC into the network, which has 1000 BTC in th
 
 The user will pay \~1/3rd of the THORChain's outbound fee to send assets to Savings Vault, using their typical wallet fee settings (note, this is an estimate only).
 
-``` go
+```go
 totalFee = networkFee + liquidityFee
 
 networkFee = 0.33 * outboundFee = 10,000 sats
@@ -46,7 +46,7 @@ total fee = 109,000 sats
 
 Example: user is withdrawing 1.1 BTC from the network, which has 1000 BTC in the pool, with 30k `outboundFee.`
 
-``` go
+```go
 totalFee = networkFee + liquidityFee
 
 networkFee = outboundFee = 30,000 sats

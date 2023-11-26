@@ -8,7 +8,7 @@
 - [Fees and Wait Times](swap-guide/fees-and-wait-times.md)
 - [Streaming Swaps](swap-guide/streaming-swaps.md)
 
-***
+---
 
 ## Lending
 

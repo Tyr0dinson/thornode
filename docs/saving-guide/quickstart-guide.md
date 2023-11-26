@@ -111,7 +111,7 @@ Users can add assets to a vault by sending assets directly to the chain’s vaul
 
 Example:
 
-``` text
+```text
 curl -SL https://thornode.ninerealms.com/thorchain/inbound_addresses | jq '.[] | select(.chain == "BTC") | .address'
 => “bc1q556ljv5y4rkdt4p46usx86esljs3xqjxyntlyd”
 ```
@@ -120,7 +120,7 @@ curl -SL https://thornode.ninerealms.com/thorchain/inbound_addresses | jq '.[] |
 
 There is a cap on how many synths can be minted as a function of liquidity depth. To do this, find `synth_mint_paused = false` on the `/pool` endpoint
 
-``` text
+```text
 curl -SL https://thornode.ninerealms.com/thorchain/pools | jq '.[] | select(.asset == "BTC.BTC") | .synth_mint_paused'
 ```
 
@@ -165,7 +165,7 @@ Transactions with asset amounts equal to or below the `dust_threshold` for the c
 - User wants to deposit 10,000 sats to their DOGE Savers position: Not possible transactions below the `dust_threshold` for each chain are ignored to prevent dust attacks.
 - User wants to deposit 20,000 sats to their BTC Savers position: Not possible with memoless, the user’s deposit will be interpreted as a `withdraw:100%`. Instead the user should use a memo.
 
-*translates to: “withdraw 10,000 basis points, or 100% of address’ savings.*
+_translates to: “withdraw 10,000 basis points, or 100% of address’ savings._
 
 ### Historical Data & Performance
 
@@ -185,7 +185,7 @@ The latter can be derived from the former.
 
 `yield_percent = (1 - (depositValue / redeemableValue)) * 100`
 
-``` text
+```text
 saver’s address: bc1qcxssye4j6730h7ehgega3gyykkuwgdgmmpu62n
 myUnits => curl -SL https://thornode.ninerealms.com/thorchain/pool/BTC.BTC/savers | jq '.[] | select(.asset_address == "bc1qcxssye4j6730h7ehgega3gyykkuwgdgmmpu62n") | .units'
 saverUnits => curl -SL https://thornode.ninerealms.com/thorchain/pools | jq '.[] | select(.asset == "BTC.BTC") | .savers_units'

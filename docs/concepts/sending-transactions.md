@@ -43,7 +43,7 @@ Override randomised VOUT ordering; THORChain requires specific output ordering.
 
 {% embed url="https://gitlab.com/thorchain/ethereum/eth-router/-/blob/master/contracts/THORChain_Router.sol#L66" %}
 
-``` go
+```go
 depositWithExpiry(vault, asset, amount, memo, expiry)
 ```
 
@@ -85,105 +85,108 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
 
 1. **Generate codec files.** To build/broadcast native transactions in Javascript/Typescript, the protobuf files need to be generated into js types. The below script uses `pbjs` and `pbts` to generate the types using the relevant files from the THORNode repo. Alternatively, the .`js` and `.d.ts` files can be downloaded directly from the [XChainJS repo](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain/src/types/proto).
 
-    ```bash
-    #!/bin/bash
+   ```bash
+   #!/bin/bash
 
-    # this script checks out thornode master and generates the proto3 typescript buindings for MsgDeposit and MsgSend
+   # this script checks out thornode master and generates the proto3 typescript buindings for MsgDeposit and MsgSend
 
-    MSG_COMPILED_OUTPUTFILE=src/types/proto/MsgCompiled.js
-    MSG_COMPILED_TYPES_OUTPUTFILE=src/types/proto/MsgCompiled.d.ts
+   MSG_COMPILED_OUTPUTFILE=src/types/proto/MsgCompiled.js
+   MSG_COMPILED_TYPES_OUTPUTFILE=src/types/proto/MsgCompiled.d.ts
 
-    TMP_DIR=$(mktemp -d)
+   TMP_DIR=$(mktemp -d)
 
-    tput setaf 2; echo "Checking out https://gitlab.com/thorchain/thornode  to $TMP_DIR";tput sgr0
-    (cd $TMP_DIR && git clone https://gitlab.com/thorchain/thornode)
+   tput setaf 2; echo "Checking out https://gitlab.com/thorchain/thornode  to $TMP_DIR";tput sgr0
+   (cd $TMP_DIR && git clone https://gitlab.com/thorchain/thornode)
 
-    # Generate msgs
-    tput setaf 2; echo "Generating $MSG_COMPILED_OUTPUTFILE";tput sgr0
-    yarn run pbjs -w commonjs  -t static-module $TMP_DIR/thornode/proto/thorchain/v1/common/common.proto $TMP_DIR/thornode/proto/thorchain/v1/x/thorchain/types/msg_deposit.proto $TMP_DIR/thornode/proto/thorchain/v1/x/thorchain/types/msg_send.proto $TMP_DIR/thornode/third_party/proto/cosmos/base/v1beta1/coin.proto -o $MSG_COMPILED_OUTPUTFILE
+   # Generate msgs
+   tput setaf 2; echo "Generating $MSG_COMPILED_OUTPUTFILE";tput sgr0
+   yarn run pbjs -w commonjs  -t static-module $TMP_DIR/thornode/proto/thorchain/v1/common/common.proto $TMP_DIR/thornode/proto/thorchain/v1/x/thorchain/types/msg_deposit.proto $TMP_DIR/thornode/proto/thorchain/v1/x/thorchain/types/msg_send.proto $TMP_DIR/thornode/third_party/proto/cosmos/base/v1beta1/coin.proto -o $MSG_COMPILED_OUTPUTFILE
 
-    tput setaf 2; echo "Generating $MSG_COMPILED_TYPES_OUTPUTFILE";tput sgr0
-    yarn run pbts  $MSG_COMPILED_OUTPUTFILE -o $MSG_COMPILED_TYPES_OUTPUTFILE
+   tput setaf 2; echo "Generating $MSG_COMPILED_TYPES_OUTPUTFILE";tput sgr0
+   yarn run pbts  $MSG_COMPILED_OUTPUTFILE -o $MSG_COMPILED_TYPES_OUTPUTFILE
 
-    tput setaf 2; echo "Removing $TMP_DIR/thornode";tput sgr0
-    rm -rf $TMP_DIR
-    ```
+   tput setaf 2; echo "Removing $TMP_DIR/thornode";tput sgr0
+   rm -rf $TMP_DIR
+   ```
 
 2. **Using @cosmjs build/broadcast the TX.**
 
-    ```javascript
-    const { DirectSecp256k1HdWallet, Registry } = require("@cosmjs/proto-signing");
-    const {
-      defaultRegistryTypes: defaultStargateTypes,
-      SigningStargateClient,
-    } = require("@cosmjs/stargate");
-    const { stringToPath } = require("@cosmjs/crypto");
-    const bech32 = require("bech32-buffer");
+   ```javascript
+   const {
+     DirectSecp256k1HdWallet,
+     Registry,
+   } = require("@cosmjs/proto-signing");
+   const {
+     defaultRegistryTypes: defaultStargateTypes,
+     SigningStargateClient,
+   } = require("@cosmjs/stargate");
+   const { stringToPath } = require("@cosmjs/crypto");
+   const bech32 = require("bech32-buffer");
 
-    const { MsgDeposit } = require("./types/MsgCompiled").types;
+   const { MsgDeposit } = require("./types/MsgCompiled").types;
 
-    async function main() {
-      const myRegistry = new Registry(defaultStargateTypes);
-      myRegistry.register("/types.MsgDeposit", MsgDeposit);
+   async function main() {
+     const myRegistry = new Registry(defaultStargateTypes);
+     myRegistry.register("/types.MsgDeposit", MsgDeposit);
 
-      const signerMnemonic = "mnemonic here";
-      const signerAddr = "thor1...";
+     const signerMnemonic = "mnemonic here";
+     const signerAddr = "thor1...";
 
-      const signer = await DirectSecp256k1HdWallet.fromMnemonic(signerMnemonic, {
-        prefix: "thor", // THORChain prefix
-        hdPaths: [stringToPath("m/44'/931'/0'/0/0")], // THORChain HD Path
-      });
+     const signer = await DirectSecp256k1HdWallet.fromMnemonic(signerMnemonic, {
+       prefix: "thor", // THORChain prefix
+       hdPaths: [stringToPath("m/44'/931'/0'/0/0")], // THORChain HD Path
+     });
 
-      const client = await SigningStargateClient.connectWithSigner(
-        "https://rpc.ninerealms.com/",
-        signer,
-        { registry: myRegistry },
-      );
+     const client = await SigningStargateClient.connectWithSigner(
+       "https://rpc.ninerealms.com/",
+       signer,
+       { registry: myRegistry },
+     );
 
-      const memo = `=:BNB/BNB:${signerAddr}`; // THORChain memo
+     const memo = `=:BNB/BNB:${signerAddr}`; // THORChain memo
 
-      const msg = {
-        coins: [
-          {
-            asset: {
-              chain: "THOR",
-              symbol: "RUNE",
-              ticker: "RUNE",
-            },
-            amount: "100000000", // Value in 1e8 (100000000 = 1 RUNE)
-          },
-        ],
-        memo: memo,
-        signer: bech32.decode(signerAddr).data,
-      };
+     const msg = {
+       coins: [
+         {
+           asset: {
+             chain: "THOR",
+             symbol: "RUNE",
+             ticker: "RUNE",
+           },
+           amount: "100000000", // Value in 1e8 (100000000 = 1 RUNE)
+         },
+       ],
+       memo: memo,
+       signer: bech32.decode(signerAddr).data,
+     };
 
-      const depositMsg = {
-        typeUrl: "/types.MsgDeposit",
-        value: MsgDeposit.fromObject(msg),
-      };
+     const depositMsg = {
+       typeUrl: "/types.MsgDeposit",
+       value: MsgDeposit.fromObject(msg),
+     };
 
-      const fee = {
-        amount: [],
-        gas: "50000000", // Set arbitrarily high gas limit; this is not actually deducted from user account.
-      };
+     const fee = {
+       amount: [],
+       gas: "50000000", // Set arbitrarily high gas limit; this is not actually deducted from user account.
+     };
 
-      const response = await client.signAndBroadcast(
-        signerAddr,
-        [depositMsg],
-        fee,
-        memo,
-      );
-      console.log("response: ", response);
+     const response = await client.signAndBroadcast(
+       signerAddr,
+       [depositMsg],
+       fee,
+       memo,
+     );
+     console.log("response: ", response);
 
-      if (response.code !== 0) {
-        console.log("Error: ", response.rawLog);
-      } else {
-        console.log("Success!");
-      }
-    }
+     if (response.code !== 0) {
+       console.log("Error: ", response.rawLog);
+     } else {
+       console.log("Success!");
+     }
+   }
 
-    main();
-    ```
+   main();
+   ```
 
 ### Native Transaction Fee
 

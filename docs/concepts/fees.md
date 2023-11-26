@@ -95,7 +95,7 @@ For example, if you wanted to be paid out in USDC you would:
 
 {% code overflow="wrap" %}
 
-``` text
+```text
 ~:ac-test:ETH:0x6621d872f17109d6601c49edba526ebcfd332d5d:thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
 ```
 
@@ -114,7 +114,7 @@ Once you successfully post your MsgDeposit you can verify that your THORName is 
 
 The response should look like:
 
-``` json
+```json
 {
   "affiliate_collector_rune": "0",
   "aliases": [
