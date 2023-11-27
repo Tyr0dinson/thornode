@@ -786,7 +786,13 @@ type QueryStreamingSwap struct {
 }
 
 // NewQueryStreamingSwap create a new QueryStreamingSwap based on the given streaming swap parameter
-func NewQueryStreamingSwap(streamingSwap StreamingSwap) QueryStreamingSwap {
+func NewQueryStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) QueryStreamingSwap {
+	var sourceAsset common.Asset
+	// Leave the source_asset field empty if there is more than a single input Coin.
+	if len(msgSwap.Tx.Coins) == 1 {
+		sourceAsset = msgSwap.Tx.Coins[0].Asset
+	}
+
 	return QueryStreamingSwap{
 		TxID:              streamingSwap.TxID,
 		Interval:          streamingSwap.Interval,
@@ -794,6 +800,9 @@ func NewQueryStreamingSwap(streamingSwap StreamingSwap) QueryStreamingSwap {
 		Count:             streamingSwap.Count,
 		LastHeight:        streamingSwap.LastHeight,
 		TradeTarget:       streamingSwap.TradeTarget,
+		SourceAsset:       sourceAsset,
+		TargetAsset:       msgSwap.TargetAsset,
+		Destination:       msgSwap.Destination,
 		Deposit:           streamingSwap.Deposit,
 		In:                streamingSwap.In,
 		Out:               streamingSwap.Out,

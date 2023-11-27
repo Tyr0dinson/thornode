@@ -1158,7 +1158,22 @@ func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	for ; iter.Valid(); iter.Next() {
 		var stream StreamingSwap
 		mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &stream)
-		streams = append(streams, NewQueryStreamingSwap(stream))
+
+		var msgSwap MsgSwap
+		// Check up to the first two indices (0 through 1) for the MsgSwap; if not found, leave the fields blank.
+		for i := 0; i <= 1; i++ {
+			swapQueueItem, err := mgr.Keeper().GetSwapQueueItem(ctx, stream.TxID, i)
+			if err != nil {
+				ctx.Logger().Error("fail to get swap queue item", "error", err)
+				break
+			}
+			if swapQueueItem.IsStreaming() {
+				msgSwap = swapQueueItem
+				break
+			}
+		}
+
+		streams = append(streams, NewQueryStreamingSwap(stream, msgSwap))
 	}
 	return jsonify(ctx, streams)
 }
@@ -1173,13 +1188,27 @@ func queryStreamingSwap(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		return nil, fmt.Errorf("could not parse txid: %w", err)
 	}
 
-	swp, err := mgr.Keeper().GetStreamingSwap(ctx, txid)
+	streamingSwap, err := mgr.Keeper().GetStreamingSwap(ctx, txid)
 	if err != nil {
 		ctx.Logger().Error("fail to get streaming swap", "error", err)
 		return nil, fmt.Errorf("could not get streaming swap: %w", err)
 	}
 
-	result := NewQueryStreamingSwap(swp)
+	var msgSwap MsgSwap
+	// Check up to the first two indices (0 through 1) for the MsgSwap; if not found, leave the fields blank.
+	for i := 0; i <= 1; i++ {
+		swapQueueItem, err := mgr.Keeper().GetSwapQueueItem(ctx, txid, i)
+		if err != nil {
+			ctx.Logger().Error("fail to get swap queue item", "error", err)
+			break
+		}
+		if swapQueueItem.IsStreaming() {
+			msgSwap = swapQueueItem
+			break
+		}
+	}
+
+	result := NewQueryStreamingSwap(streamingSwap, msgSwap)
 
 	return jsonify(ctx, result)
 }
