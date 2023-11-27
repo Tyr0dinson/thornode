@@ -1165,12 +1165,18 @@ func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			swapQueueItem, err := mgr.Keeper().GetSwapQueueItem(ctx, stream.TxID, i)
 			if err != nil {
 				ctx.Logger().Error("fail to get swap queue item", "error", err)
+				// If this errors, leave the MsgSwap-derived fields blank.
 				break
 			}
-			if swapQueueItem.IsStreaming() {
-				msgSwap = swapQueueItem
-				break
+			if !swapQueueItem.IsStreaming() {
+				continue
 			}
+			// In case there are multiple streaming swaps with the same TxID, check the input amount.
+			if len(swapQueueItem.Tx.Coins) == 0 || !swapQueueItem.Tx.Coins[0].Amount.Equal(stream.Deposit) {
+				continue
+			}
+			msgSwap = swapQueueItem
+			break
 		}
 
 		streams = append(streams, NewQueryStreamingSwap(stream, msgSwap))
@@ -1200,12 +1206,18 @@ func queryStreamingSwap(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		swapQueueItem, err := mgr.Keeper().GetSwapQueueItem(ctx, txid, i)
 		if err != nil {
 			ctx.Logger().Error("fail to get swap queue item", "error", err)
+			// If this errors, leave the MsgSwap-derived fields blank.
 			break
 		}
-		if swapQueueItem.IsStreaming() {
-			msgSwap = swapQueueItem
-			break
+		if !swapQueueItem.IsStreaming() {
+			continue
 		}
+		// In case there are multiple streaming swaps with the same TxID, check the input amount.
+		if len(swapQueueItem.Tx.Coins) == 0 || !swapQueueItem.Tx.Coins[0].Amount.Equal(streamingSwap.Deposit) {
+			continue
+		}
+		msgSwap = swapQueueItem
+		break
 	}
 
 	result := NewQueryStreamingSwap(streamingSwap, msgSwap)
