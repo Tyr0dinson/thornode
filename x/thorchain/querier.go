@@ -1152,13 +1152,13 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 }
 
 func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var streams StreamingSwaps
+	var streams []QueryStreamingSwap
 	iter := mgr.Keeper().GetStreamingSwapIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var stream StreamingSwap
 		mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &stream)
-		streams = append(streams, stream)
+		streams = append(streams, NewQueryStreamingSwap(stream))
 	}
 	return jsonify(ctx, streams)
 }
@@ -1179,7 +1179,9 @@ func queryStreamingSwap(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		return nil, fmt.Errorf("could not get streaming swap: %w", err)
 	}
 
-	return jsonify(ctx, swp)
+	result := NewQueryStreamingSwap(swp)
+
+	return jsonify(ctx, result)
 }
 
 func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
