@@ -1672,6 +1672,11 @@ components:
 
     StreamingSwap:
       type: object
+      required:
+        - trade_target
+        - deposit
+        - in
+        - out
       properties:
         tx_id:
           type: string

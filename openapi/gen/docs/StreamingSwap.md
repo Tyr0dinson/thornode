@@ -9,10 +9,10 @@ Name | Type | Description | Notes
 **Quantity** | Pointer to **int32** | the total number of swaps in a streaming swaps | [optional] 
 **Count** | Pointer to **int32** | the amount of swap attempts so far | [optional] 
 **LastHeight** | Pointer to **int64** | the block height of the latest swap | [optional] 
-**TradeTarget** | Pointer to **string** | the total number of tokens the swapper wants to receive of the output asset | [optional] 
-**Deposit** | Pointer to **string** | the number of input tokens the swapper has deposited | [optional] 
-**In** | Pointer to **string** | the amount of input tokens that have been swapped so far | [optional] 
-**Out** | Pointer to **string** | the amount of output tokens that have been swapped so far | [optional] 
+**TradeTarget** | **string** | the total number of tokens the swapper wants to receive of the output asset | 
+**Deposit** | **string** | the number of input tokens the swapper has deposited | 
+**In** | **string** | the amount of input tokens that have been swapped so far | 
+**Out** | **string** | the amount of output tokens that have been swapped so far | 
 **FailedSwaps** | Pointer to **[]int32** | the list of swap indexes that failed | [optional] 
 **FailedSwapReasons** | Pointer to **[]string** | the list of reasons that sub-swaps have failed | [optional] 
 
@@ -20,7 +20,7 @@ Name | Type | Description | Notes
 
 ### NewStreamingSwap
 
-`func NewStreamingSwap() *StreamingSwap`
+`func NewStreamingSwap(tradeTarget string, deposit string, in string, out string, ) *StreamingSwap`
 
 NewStreamingSwap instantiates a new StreamingSwap object
 This constructor will assign default values to properties that have it defined,
@@ -179,11 +179,6 @@ and a boolean to check if the value has been set.
 
 SetTradeTarget sets TradeTarget field to given value.
 
-### HasTradeTarget
-
-`func (o *StreamingSwap) HasTradeTarget() bool`
-
-HasTradeTarget returns a boolean if a field has been set.
 
 ### GetDeposit
 
@@ -204,11 +199,6 @@ and a boolean to check if the value has been set.
 
 SetDeposit sets Deposit field to given value.
 
-### HasDeposit
-
-`func (o *StreamingSwap) HasDeposit() bool`
-
-HasDeposit returns a boolean if a field has been set.
 
 ### GetIn
 
@@ -229,11 +219,6 @@ and a boolean to check if the value has been set.
 
 SetIn sets In field to given value.
 
-### HasIn
-
-`func (o *StreamingSwap) HasIn() bool`
-
-HasIn returns a boolean if a field has been set.
 
 ### GetOut
 
@@ -254,11 +239,6 @@ and a boolean to check if the value has been set.
 
 SetOut sets Out field to given value.
 
-### HasOut
-
-`func (o *StreamingSwap) HasOut() bool`
-
-HasOut returns a boolean if a field has been set.
 
 ### GetFailedSwaps
 

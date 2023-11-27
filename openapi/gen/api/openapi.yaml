@@ -2527,6 +2527,11 @@ components:
           items:
             type: string
           type: array
+      required:
+      - deposit
+      - in
+      - out
+      - trade_target
       type: object
     Tx:
       example:
