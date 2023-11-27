@@ -10,6 +10,9 @@ Name | Type | Description | Notes
 **Count** | Pointer to **int32** | the amount of swap attempts so far | [optional] 
 **LastHeight** | Pointer to **int64** | the block height of the latest swap | [optional] 
 **TradeTarget** | **string** | the total number of tokens the swapper wants to receive of the output asset | 
+**SourceAsset** | Pointer to **string** | the asset to be swapped from | [optional] 
+**TargetAsset** | Pointer to **string** | the asset to be swapped to | [optional] 
+**Destination** | Pointer to **string** | the destination address to receive the swap output | [optional] 
 **Deposit** | **string** | the number of input tokens the swapper has deposited | 
 **In** | **string** | the amount of input tokens that have been swapped so far | 
 **Out** | **string** | the amount of output tokens that have been swapped so far | 
@@ -179,6 +182,81 @@ and a boolean to check if the value has been set.
 
 SetTradeTarget sets TradeTarget field to given value.
 
+
+### GetSourceAsset
+
+`func (o *StreamingSwap) GetSourceAsset() string`
+
+GetSourceAsset returns the SourceAsset field if non-nil, zero value otherwise.
+
+### GetSourceAssetOk
+
+`func (o *StreamingSwap) GetSourceAssetOk() (*string, bool)`
+
+GetSourceAssetOk returns a tuple with the SourceAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSourceAsset
+
+`func (o *StreamingSwap) SetSourceAsset(v string)`
+
+SetSourceAsset sets SourceAsset field to given value.
+
+### HasSourceAsset
+
+`func (o *StreamingSwap) HasSourceAsset() bool`
+
+HasSourceAsset returns a boolean if a field has been set.
+
+### GetTargetAsset
+
+`func (o *StreamingSwap) GetTargetAsset() string`
+
+GetTargetAsset returns the TargetAsset field if non-nil, zero value otherwise.
+
+### GetTargetAssetOk
+
+`func (o *StreamingSwap) GetTargetAssetOk() (*string, bool)`
+
+GetTargetAssetOk returns a tuple with the TargetAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetTargetAsset
+
+`func (o *StreamingSwap) SetTargetAsset(v string)`
+
+SetTargetAsset sets TargetAsset field to given value.
+
+### HasTargetAsset
+
+`func (o *StreamingSwap) HasTargetAsset() bool`
+
+HasTargetAsset returns a boolean if a field has been set.
+
+### GetDestination
+
+`func (o *StreamingSwap) GetDestination() string`
+
+GetDestination returns the Destination field if non-nil, zero value otherwise.
+
+### GetDestinationOk
+
+`func (o *StreamingSwap) GetDestinationOk() (*string, bool)`
+
+GetDestinationOk returns a tuple with the Destination field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetDestination
+
+`func (o *StreamingSwap) SetDestination(v string)`
+
+SetDestination sets Destination field to given value.
+
+### HasDestination
+
+`func (o *StreamingSwap) HasDestination() bool`
+
+HasDestination returns a boolean if a field has been set.
 
 ### GetDeposit
 

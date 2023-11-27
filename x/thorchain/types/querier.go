@@ -769,17 +769,20 @@ func NewQuerySaver(lp LiquidityProvider, pool Pool) QuerySaver {
 
 // QueryStreamingSwap holds all the information related to a streaming swap
 type QueryStreamingSwap struct {
-	TxID              common.TxID `json:"tx_id,omitempty"`
-	Interval          uint64      `json:"interval,omitempty"`
-	Quantity          uint64      `json:"quantity,omitempty"`
-	Count             uint64      `json:"count,omitempty"`
-	LastHeight        int64       `json:"last_height,omitempty"`
-	TradeTarget       cosmos.Uint `json:"trade_target"`
-	Deposit           cosmos.Uint `json:"deposit"`
-	In                cosmos.Uint `json:"in"`
-	Out               cosmos.Uint `json:"out"`
-	FailedSwaps       []uint64    `json:"failed_swaps,omitempty"`
-	FailedSwapReasons []string    `json:"failed_swap_reasons,omitempty"`
+	TxID              common.TxID    `json:"tx_id,omitempty"`
+	Interval          uint64         `json:"interval,omitempty"`
+	Quantity          uint64         `json:"quantity,omitempty"`
+	Count             uint64         `json:"count,omitempty"`
+	LastHeight        int64          `json:"last_height,omitempty"`
+	TradeTarget       cosmos.Uint    `json:"trade_target"`
+	SourceAsset       common.Asset   `json:"source_asset,omitempty"`
+	TargetAsset       common.Asset   `json:"target_asset,omitempty"`
+	Destination       common.Address `json:"destination,omitempty"`
+	Deposit           cosmos.Uint    `json:"deposit"`
+	In                cosmos.Uint    `json:"in"`
+	Out               cosmos.Uint    `json:"out"`
+	FailedSwaps       []uint64       `json:"failed_swaps,omitempty"`
+	FailedSwapReasons []string       `json:"failed_swap_reasons,omitempty"`
 }
 
 // NewQueryStreamingSwap create a new QueryStreamingSwap based on the given streaming swap parameter

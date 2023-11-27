@@ -28,6 +28,12 @@ type StreamingSwap struct {
 	LastHeight *int64 `json:"last_height,omitempty"`
 	// the total number of tokens the swapper wants to receive of the output asset
 	TradeTarget string `json:"trade_target"`
+	// the asset to be swapped from
+	SourceAsset *string `json:"source_asset,omitempty"`
+	// the asset to be swapped to
+	TargetAsset *string `json:"target_asset,omitempty"`
+	// the destination address to receive the swap output
+	Destination *string `json:"destination,omitempty"`
 	// the number of input tokens the swapper has deposited
 	Deposit string `json:"deposit"`
 	// the amount of input tokens that have been swapped so far
@@ -245,6 +251,102 @@ func (o *StreamingSwap) SetTradeTarget(v string) {
 	o.TradeTarget = v
 }
 
+// GetSourceAsset returns the SourceAsset field value if set, zero value otherwise.
+func (o *StreamingSwap) GetSourceAsset() string {
+	if o == nil || o.SourceAsset == nil {
+		var ret string
+		return ret
+	}
+	return *o.SourceAsset
+}
+
+// GetSourceAssetOk returns a tuple with the SourceAsset field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *StreamingSwap) GetSourceAssetOk() (*string, bool) {
+	if o == nil || o.SourceAsset == nil {
+		return nil, false
+	}
+	return o.SourceAsset, true
+}
+
+// HasSourceAsset returns a boolean if a field has been set.
+func (o *StreamingSwap) HasSourceAsset() bool {
+	if o != nil && o.SourceAsset != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetSourceAsset gets a reference to the given string and assigns it to the SourceAsset field.
+func (o *StreamingSwap) SetSourceAsset(v string) {
+	o.SourceAsset = &v
+}
+
+// GetTargetAsset returns the TargetAsset field value if set, zero value otherwise.
+func (o *StreamingSwap) GetTargetAsset() string {
+	if o == nil || o.TargetAsset == nil {
+		var ret string
+		return ret
+	}
+	return *o.TargetAsset
+}
+
+// GetTargetAssetOk returns a tuple with the TargetAsset field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *StreamingSwap) GetTargetAssetOk() (*string, bool) {
+	if o == nil || o.TargetAsset == nil {
+		return nil, false
+	}
+	return o.TargetAsset, true
+}
+
+// HasTargetAsset returns a boolean if a field has been set.
+func (o *StreamingSwap) HasTargetAsset() bool {
+	if o != nil && o.TargetAsset != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetTargetAsset gets a reference to the given string and assigns it to the TargetAsset field.
+func (o *StreamingSwap) SetTargetAsset(v string) {
+	o.TargetAsset = &v
+}
+
+// GetDestination returns the Destination field value if set, zero value otherwise.
+func (o *StreamingSwap) GetDestination() string {
+	if o == nil || o.Destination == nil {
+		var ret string
+		return ret
+	}
+	return *o.Destination
+}
+
+// GetDestinationOk returns a tuple with the Destination field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *StreamingSwap) GetDestinationOk() (*string, bool) {
+	if o == nil || o.Destination == nil {
+		return nil, false
+	}
+	return o.Destination, true
+}
+
+// HasDestination returns a boolean if a field has been set.
+func (o *StreamingSwap) HasDestination() bool {
+	if o != nil && o.Destination != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetDestination gets a reference to the given string and assigns it to the Destination field.
+func (o *StreamingSwap) SetDestination(v string) {
+	o.Destination = &v
+}
+
 // GetDeposit returns the Deposit field value
 func (o *StreamingSwap) GetDeposit() string {
 	if o == nil {
@@ -400,6 +502,15 @@ func (o StreamingSwap) MarshalJSON() ([]byte, error) {
 	}
 	if true {
 		toSerialize["trade_target"] = o.TradeTarget
+	}
+	if o.SourceAsset != nil {
+		toSerialize["source_asset"] = o.SourceAsset
+	}
+	if o.TargetAsset != nil {
+		toSerialize["target_asset"] = o.TargetAsset
+	}
+	if o.Destination != nil {
+		toSerialize["destination"] = o.Destination
 	}
 	if true {
 		toSerialize["deposit"] = o.Deposit
