@@ -38,6 +38,16 @@ func (k *TestObservedTxInValidateKeeper) SetNodeAccount(_ cosmos.Context, na Nod
 	return errKaboom
 }
 
+func (k *TestObservedTxInValidateKeeper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	switch status {
+	case NodeStandby:
+		return []cosmos.AccAddress{k.standbyAccount.NodeAddress}, nil
+	case NodeActive:
+		return []cosmos.AccAddress{k.activeNodeAccount.NodeAddress}, nil
+	}
+	return []cosmos.AccAddress{}, errKaboom
+}
+
 var _ = Suite(&HandlerObservedTxInSuite{})
 
 func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
@@ -126,6 +136,14 @@ func (k *TestObservedTxInHandleKeeper) SetSwapQueueItem(_ cosmos.Context, msg Ms
 
 func (k *TestObservedTxInHandleKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
 	return k.nas, nil
+}
+
+func (k *TestObservedTxInHandleKeeper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	switch status {
+	case NodeActive:
+		return k.nas.GetNodeAddresses(), nil
+	}
+	return []cosmos.AccAddress{}, errKaboom
 }
 
 func (k *TestObservedTxInHandleKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
@@ -456,6 +474,13 @@ func (h *ObservedTxInHandlerTestHelper) ListActiveValidators(ctx cosmos.Context)
 		return NodeAccounts{}, errKaboom
 	}
 	return h.Keeper.ListActiveValidators(ctx)
+}
+
+func (h *ObservedTxInHandlerTestHelper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	if h.failListActiveValidators {
+		return []cosmos.AccAddress{}, errKaboom
+	}
+	return h.Keeper.ListValidatorAddressByStatus(ctx, status)
 }
 
 func (h *ObservedTxInHandlerTestHelper) VaultExists(ctx cosmos.Context, pk common.PubKey) bool {

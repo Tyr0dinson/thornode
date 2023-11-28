@@ -468,7 +468,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
-	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	activeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +510,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 					continue
 				}
 
-				activeMembers, err := vault.GetMembers(active.GetNodeAddresses())
+				activeMembers, err := vault.GetMembers(activeAddresses)
 				if err != nil {
 					ctx.Logger().Error("fail to get active members of vault", "error", err)
 					continue
@@ -541,7 +541,7 @@ func queryNetwork(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 	vaultsMigrating := (len(vaults) != 0)
 
-	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active validators: %w", err)
 	}
@@ -712,7 +712,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond)
 
-	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
@@ -838,7 +838,7 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 // Calculates total "effective bond" - the total bond when taking into account the
 // Bond-weighted hard-cap
 func getTotalEffectiveBond(ctx cosmos.Context, mgr *Mgrs, bondHardCap cosmos.Uint) (cosmos.Uint, error) {
-	activeNodes, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get active nodes: %w", err)
 	}
@@ -864,7 +864,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
 
-	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
@@ -1502,7 +1502,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		}
 	}
 
-	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	nodeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
 	}
@@ -1522,7 +1522,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		OutboundHeight:  voter.OutboundHeight,
 		KeysignMetrics:  *keysignMetric,
 	}
-	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(nodeAccounts))
+	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(NodeAddresses(nodeAddresses)))
 	return jsonify(ctx, result)
 }
 
@@ -1839,7 +1839,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 	}
 
 	// overwrite values based on mimir v2
-	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	activeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
@@ -1863,12 +1863,12 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 		value := int64(-1)
 		switch m.Type() {
 		case mimir.EconomicMimir:
-			value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
+			value = mimirs.ValueOfEconomic(key, activeAddresses)
 			if value < 0 {
 				value, _ = mgr.Keeper().GetMimirV2(ctx, key)
 			}
 		case mimir.OperationalMimir:
-			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
+			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, activeAddresses)
 		}
 		if value >= 0 {
 			values[m.LegacyKey(m.Reference())] = value
@@ -1922,7 +1922,7 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 func queryMimirV2Values(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	values := make(map[string]int64)
 
-	active, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	activeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
@@ -1948,10 +1948,10 @@ func queryMimirV2Values(ctx cosmos.Context, path []string, req abci.RequestQuery
 		case mimir.EconomicMimir:
 			value, _ = mgr.Keeper().GetMimirV2(ctx, key)
 			if value < 0 {
-				value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
+				value = mimirs.ValueOfEconomic(key, activeAddresses)
 			}
 		case mimir.OperationalMimir:
-			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
+			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, activeAddresses)
 		}
 		if value >= 0 {
 			values[m.Name()] = value
@@ -2010,12 +2010,11 @@ func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.Reques
 }
 
 func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	activeNodes, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	activeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		ctx.Logger().Error("fail to fetch active node accounts", "error", err)
 		return nil, fmt.Errorf("fail to fetch active node accounts: %w", err)
 	}
-	active := activeNodes.GetNodeAddresses()
 
 	values := make(map[string]int64)
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
@@ -2027,7 +2026,7 @@ func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQu
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
 		k := strings.TrimPrefix(string(iter.Key()), "nodemimir//")
-		if v, ok := mimirs.HasSuperMajority(k, active); ok {
+		if v, ok := mimirs.HasSuperMajority(k, activeAddresses); ok {
 			values[k] = v
 		}
 	}
@@ -2369,7 +2368,7 @@ func eventMap(e sdk.Event) map[string]string {
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
 	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	nodeAddresses, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
@@ -2377,9 +2376,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	// set the signer
 	switch m := msg.(type) {
 	case *MsgLoanOpen:
-		m.Signer = nodeAccounts[0].NodeAddress
+		m.Signer = nodeAddresses[0]
 	case *MsgLoanRepayment:
-		m.Signer = nodeAccounts[0].NodeAddress
+		m.Signer = nodeAddresses[0]
 	}
 
 	// set random txid

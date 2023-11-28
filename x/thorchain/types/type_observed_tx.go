@@ -308,13 +308,13 @@ func (m *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) b
 
 // HasConsensus is to check whether the tx with finalise = false in this ObservedTxVoter reach consensus
 // if ObservedTxVoter HasFinalised , then this function will return true as well
-func (m *ObservedTxVoter) HasConsensus(nodeAccounts NodeAccounts) bool {
+func (m *ObservedTxVoter) HasConsensus(nodeAccounts NodeKeyCheck) bool {
 	consensusTx := m.GetTx(nodeAccounts)
 	return !consensusTx.IsEmpty()
 }
 
 // HasFinalised is to check whether the tx with finalise = true  reach super majority
-func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
+func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeKeyCheck) bool {
 	finalTx := m.GetTx(nodeAccounts)
 	if finalTx.IsEmpty() {
 		return false
@@ -323,7 +323,7 @@ func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeAccounts) bool {
 }
 
 // GetTx return the tx that has super majority
-func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
+func (m *ObservedTxVoter) GetTx(nodeAccounts NodeKeyCheck) ObservedTx {
 	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
 		return m.Tx
 	}
@@ -339,7 +339,7 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeAccounts) ObservedTx {
 	return m.Tx
 }
 
-func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) ObservedTx {
+func (m *ObservedTxVoter) getConsensusTx(accounts NodeKeyCheck, final bool) ObservedTx {
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {
@@ -359,7 +359,7 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) Obse
 				}
 			}
 		}
-		if HasSuperMajority(len(voters), len(accounts)) {
+		if HasSuperMajority(len(voters), accounts.Len()) {
 			return txFinal
 		}
 	}

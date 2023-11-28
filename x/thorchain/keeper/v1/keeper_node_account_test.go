@@ -312,13 +312,10 @@ func (s *KeeperNodeAccountSuite) TestBuildNodeStatus(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(len(nodeAddresses), Equals, 3)
 
-		// would trigger cache rebuild for status
 		validators, err := k.ListValidatorsByStatus(ctx, status)
 		c.Assert(err, IsNil)
 		for i, validator := range validators {
 			c.Assert(nodeAddresses[i].String(), Equals, validator.NodeAddress.String())
-			// check cache
-			c.Assert(k.nodeAccountStatus[status][i].NodeAddress.String(), Equals, validator.NodeAddress.String())
 		}
 	}
 }

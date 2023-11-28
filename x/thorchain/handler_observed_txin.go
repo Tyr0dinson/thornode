@@ -70,6 +70,8 @@ func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn)
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return h.handleV124(ctx, msg)
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -100,6 +102,59 @@ func (h ObservedTxInHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter
 	default:
 		return h.preflightV1(ctx, voter, nas, tx, signer)
 	}
+}
+
+func (h ObservedTxInHandler) preflightV125(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAddresses, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+	observeFlex := h.mgr.Keeper().GetConfigInt64(ctx, constants.ObservationDelayFlexibility)
+
+	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
+		telemetry.NewLabel("reason", "failed_observe_txin"),
+		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+	}))
+	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, signer)
+
+	ok := false
+	if err := h.mgr.Keeper().SetLastObserveHeight(ctx, tx.Tx.Chain, signer, tx.BlockHeight); err != nil {
+		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
+	}
+	if !voter.Add(tx, signer) {
+		return voter, ok
+	}
+	if voter.HasFinalised(nas) {
+		if voter.FinalisedHeight == 0 {
+			ok = true
+			voter.Height = ctx.BlockHeight() // Always record the consensus height of the finalised Tx
+			voter.FinalisedHeight = ctx.BlockHeight()
+			voter.Tx = voter.GetTx(nas)
+			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetConsensusSigners()...)
+		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
+			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
+			// but only when the tx signer are voting is the tx that already reached consensus
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
+		}
+	}
+	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+		if voter.Height == 0 {
+			ok = true
+			voter.Height = ctx.BlockHeight()
+			// this is the tx that has consensus
+			voter.Tx = voter.GetTx(nas)
+
+			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
+		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) && voter.Tx.Equals(tx) {
+			// event the tx had been processed , given the signer just a bit late , so still take away their slash points
+			// but only when the tx signer are voting is the tx that already reached consensus
+			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
+		}
+	}
+
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Check to see if we have enough identical observations to process the transaction
+	return voter, ok
 }
 
 func (h ObservedTxInHandler) preflightV123(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
@@ -153,6 +208,159 @@ func (h ObservedTxInHandler) preflightV123(ctx cosmos.Context, voter ObservedTxV
 
 	// Check to see if we have enough identical observations to process the transaction
 	return voter, ok
+}
+
+func (h ObservedTxInHandler) handleV125(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+	activeNodes, err := h.mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
+	activeNodeAddresses := NodeAddresses(activeNodes)
+	if err != nil {
+		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
+	}
+	handler := NewInternalHandler(h.mgr)
+	for _, tx := range msg.Txs {
+		// check we are sending to a valid vault
+		if !h.mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
+			ctx.Logger().Info("Not valid Observed Pubkey", "observed pub key", tx.ObservedPubKey)
+			continue
+		}
+
+		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID)
+		if err != nil {
+			ctx.Logger().Error("fail to get tx in voter", "error", err)
+			continue
+		}
+
+		voter, ok := h.preflightV125(ctx, voter, activeNodeAddresses, tx, msg.Signer)
+		if !ok {
+			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
+				// we've already process the transaction, but we should still
+				// update the observing addresses
+				h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, msg.GetSigners())
+			}
+			continue
+		}
+
+		// all logic after this  is after consensus
+
+		ctx.Logger().Info("handleMsgObservedTxIn request", "Tx:", tx.String())
+		if voter.Reverted {
+			ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
+			continue
+		}
+
+		var txIn ObservedTx
+		if voter.HasFinalised(activeNodeAddresses) || voter.HasConsensus(activeNodeAddresses) {
+			voter.Tx.Tx.Memo = tx.Tx.Memo
+			txIn = voter.Tx
+		}
+		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "error", err)
+			continue
+		}
+
+		if vault.IsAsgard() {
+			if !voter.UpdatedVault {
+				vault.AddFunds(tx.Tx.Coins)
+				voter.UpdatedVault = true
+			}
+		}
+		if voter.HasFinalised(activeNodeAddresses) {
+			vault.InboundTxCount++
+		}
+
+		// save the changes in Tx Voter to key value store
+		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to set vault", "error", err)
+			continue
+		}
+
+		if !vault.IsAsgard() {
+			ctx.Logger().Info("Vault is not an Asgard vault, transaction ignored.")
+			continue
+		}
+
+		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
+		if memo.IsOutbound() || memo.IsInternal() {
+			// do not process outbound handlers here, or internal handlers
+			continue
+		}
+
+		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
+
+		// add addresses to observing addresses. This is used to detect
+		// active/inactive observing node accounts
+
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
+
+		if !voter.HasFinalised(activeNodeAddresses) {
+			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
+			continue
+		}
+
+		if vault.Status == InactiveVault {
+			ctx.Logger().Error("observed tx on inactive vault", "tx", tx.String())
+			if newErr := refundTx(ctx, tx, h.mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
+				ctx.Logger().Error("fail to refund", "error", newErr)
+			}
+			continue
+		}
+
+		// construct msg from memo
+		m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
+		if txErr != nil {
+			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
+			if newErr := refundTx(ctx, tx, h.mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
+				ctx.Logger().Error("fail to refund", "error", err)
+			}
+			continue
+		}
+
+		// check if we've halted trading
+		swapMsg, isSwap := m.(*MsgSwap)
+		_, isAddLiquidity := m.(*MsgAddLiquidity)
+
+		if isSwap || isAddLiquidity {
+			if h.mgr.Keeper().IsTradingHalt(ctx, m) || h.mgr.Keeper().RagnarokInProgress(ctx) {
+				if newErr := refundTx(ctx, tx, h.mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
+					ctx.Logger().Error("fail to refund for halted trading", "error", err)
+				}
+				continue
+			}
+		}
+
+		// if its a swap, send it to our queue for processing later
+		if isSwap {
+			h.addSwap(ctx, *swapMsg)
+			continue
+		}
+
+		// if it is a loan, inject the observed TxID and ToAddress into the context
+		_, isLoanOpen := m.(*MsgLoanOpen)
+		_, isLoanRepayment := m.(*MsgLoanRepayment)
+		mCtx := ctx
+		if isLoanOpen || isLoanRepayment {
+			mCtx = ctx.WithValue(constants.CtxLoanTxID, tx.Tx.ID)
+			mCtx = mCtx.WithValue(constants.CtxLoanToAddress, tx.Tx.ToAddress)
+		}
+
+		_, err = handler(mCtx, m)
+		if err != nil {
+			if err := refundTx(ctx, tx, h.mgr, CodeTxFail, err.Error(), ""); err != nil {
+				ctx.Logger().Error("fail to refund", "error", err)
+			}
+			continue
+		}
+		// for those Memo that will not have outbound at all , set the observedTx to done
+		if !memo.GetType().HasOutbound() {
+			voter.SetDone()
+			h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		}
+	}
+	return &cosmos.Result{}, nil
 }
 
 func (h ObservedTxInHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {

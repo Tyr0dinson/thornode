@@ -63,6 +63,8 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
 		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("0.58.0")):
@@ -73,8 +75,8 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	}
 }
 
-func (h ErrataTxHandler) handleV123(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
-	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
+func (h ErrataTxHandler) handleV125(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
+	activeAddresses, err := h.mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
@@ -98,7 +100,7 @@ func (h ErrataTxHandler) handleV123(ctx cosmos.Context, msg MsgErrataTx) (*cosmo
 	}
 	h.mgr.Keeper().SetErrataTxVoter(ctx, voter)
 	// doesn't have consensus yet
-	if !voter.HasConsensus(active) {
+	if !voter.HasActiveConsensus(activeAddresses) {
 		ctx.Logger().Info("not having consensus yet, return")
 		return &cosmos.Result{}, nil
 	}

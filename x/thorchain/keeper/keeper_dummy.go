@@ -669,7 +669,7 @@ func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr 
 	return kaboom
 }
 
-func (k KVStoreDummy) ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+func (k KVStoreDummy) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
 	return nil, kaboom
 }
 

@@ -66,6 +66,10 @@ func (k *TestErrataTxKeeper) GetErrataTxVoter(_ cosmos.Context, txID common.TxID
 	return NewErrataTxVoter(txID, chain), k.err
 }
 
+func (k *TestErrataTxKeeper) ListValidatorAddressByStatus(_ cosmos.Context, _ NodeStatus) (NodeAddresses, error) {
+	return []cosmos.AccAddress{k.na.NodeAddress}, nil
+}
+
 func (s *HandlerErrataTxSuite) TestValidate(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 

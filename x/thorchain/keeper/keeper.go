@@ -148,7 +148,6 @@ type KeeperNodeAccount interface {
 	ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error)
 	ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error)
 	ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error)
-	ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error)
 	GetLowestActiveVersion(ctx cosmos.Context) semver.Version
 	GetMinJoinVersion(ctx cosmos.Context) semver.Version
 	GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error)
@@ -167,7 +166,8 @@ type KeeperNodeAccount interface {
 	SetBondProviders(ctx cosmos.Context, _ BondProviders) error
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
 	DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error
-	BuildNodeStatus(ctx cosmos.Context) error
+	ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error)
+	BuildNodeStatus(ctx cosmos.Context) error // TODO remove after hard fork
 }
 
 type KeeperObserver interface {

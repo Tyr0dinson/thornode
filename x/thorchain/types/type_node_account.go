@@ -45,8 +45,8 @@ func getNodeStatus(ps string) NodeStatus {
 	return NodeStatus_Unknown
 }
 
-// ShouldCache returns true if node status is either Active, Standby or Ready
-func (x NodeStatus) ShouldCache() bool {
+// IsCached returns true if node status is either Active, Standby or Ready
+func (x NodeStatus) IsCached() bool {
 	return 2 <= x && x <= 4
 }
 
@@ -201,6 +201,11 @@ func (m *NodeAccount) TryRemoveSignerPubKey(key common.PubKey) {
 	}
 }
 
+type NodeKeyCheck interface {
+	IsNodeKeys(addr cosmos.AccAddress) bool
+	Len() int
+}
+
 // NodeAccounts just a list of NodeAccount
 type NodeAccounts []NodeAccount
 
@@ -255,6 +260,20 @@ func (nas NodeAccounts) GetNodeAddresses() []cosmos.AccAddress {
 	}
 	return addrs
 }
+
+type NodeAddresses []cosmos.AccAddress
+
+func (nas NodeAddresses) IsNodeKeys(addr cosmos.AccAddress) bool {
+	for _, na := range nas {
+		if na.Equals(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// Len return the number of accounts in it
+func (nas NodeAddresses) Len() int { return len(nas) }
 
 func (m *BondProvider) IsEmpty() bool {
 	return m.BondAddress.Empty()

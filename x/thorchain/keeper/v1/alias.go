@@ -110,6 +110,7 @@ type (
 	BondProviders            = types.BondProviders
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
+	NodeAddresses            = types.NodeAddresses
 	NodeStatus               = types.NodeStatus
 	NodeType                 = types.NodeType
 	Network                  = types.Network

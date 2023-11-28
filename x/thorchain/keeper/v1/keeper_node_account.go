@@ -40,6 +40,14 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key string, record *NodeAcco
 
 // TotalActiveValidators count the number of active node account
 func (k KVStore) TotalActiveValidators(ctx cosmos.Context) (int, error) {
+	if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
+		nodeAddress := make([]cosmos.AccAddress, 0)
+		_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, NodeActive.String()), &nodeAddress)
+		if err != nil {
+			return 0, err
+		}
+		return len(nodeAddress), nil
+	}
 	activeNodes, err := k.ListActiveValidators(ctx)
 	return len(activeNodes), err
 }
@@ -64,18 +72,8 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	if status.ShouldCache() {
-		if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
-			if cachedNodes, found := k.nodeAccountStatus[status]; !found || len(cachedNodes) == 0 {
-				nodes, err := k.listValidatorsByStatusStore(ctx, status)
-				if err != nil {
-					return nodes, err
-				}
-				k.nodeAccountStatus[status] = nodes
-				return nodes, err
-			}
-			return k.nodeAccountStatus[status], nil
-		}
+	if status.IsCached() && k.GetVersion().GTE(semver.MustParse("1.125.0")) {
+		return k.listValidatorsByStatusStore(ctx, status)
 	}
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
@@ -109,17 +107,27 @@ func (k KVStore) listValidatorsByStatusStore(ctx cosmos.Context, status NodeStat
 	return nodes, nil
 }
 
-// ListValidatorsByStatusStore - get a list of node accounts from account status index
-func (k KVStore) ListValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
-	if k.GetVersion().GTE(semver.MustParse("1.125.0")) {
-		return k.listValidatorsByStatusStore(ctx, status)
-	}
-	return k.ListValidatorsByStatus(ctx, status)
-}
-
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
+}
+
+// ListValidatorAddressByStatus - get a list validator address by status
+func (k KVStore) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	if k.GetVersion().GTE(semver.MustParse("1.125.0")) && status.IsCached() {
+		var addrs []cosmos.AccAddress
+		_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &addrs)
+		if err != nil {
+			return nil, err
+		}
+		return addrs, nil
+	}
+
+	nodeAccounts, err := k.ListValidatorsByStatus(ctx, status)
+	if err != nil {
+		return nil, err
+	}
+	return nodeAccounts.GetNodeAddresses(), nil
 }
 
 // GetMinJoinVersion - get min version to join. Min version is the most popular version
@@ -240,7 +248,7 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 
 	k.setNodeAccount(ctx, k.GetKey(ctx, prefixNodeAccount, na.NodeAddress.String()), na)
 	if k.GetVersion().GTE(semver.MustParse("1.125.0")) && na.Type == NodeTypeValidator {
-		if na.Status.ShouldCache() {
+		if na.Status.IsCached() {
 			err := k.updateNodeStatusIndex(ctx, na)
 			if err != nil {
 				return err
@@ -260,15 +268,7 @@ func (k KVStore) updateNodeStatusIndex(ctx cosmos.Context, node NodeAccount) err
 
 	newStatus := node.Status
 	if found && NodeStatus(prevStatus) == newStatus {
-		// if cache exists, make changes
-		if _, cached := k.nodeAccountStatus[newStatus]; cached {
-			for i, nodeAcc := range k.nodeAccountStatus[newStatus] {
-				if nodeAcc.NodeAddress.Equals(node.NodeAddress) {
-					k.nodeAccountStatus[newStatus][i] = node
-					break
-				}
-			}
-		}
+		// no status change
 		return nil
 	}
 	// remove from old status index
@@ -295,13 +295,9 @@ func (k KVStore) removeFromStatusIndex(ctx cosmos.Context, status NodeStatus, no
 		return err
 	}
 	newAddrs := make([]cosmos.AccAddress, 0)
-	for i, addr := range addrs {
+	for _, addr := range addrs {
 		if !addr.Equals(node.NodeAddress) {
 			newAddrs = append(newAddrs, addr)
-		} else {
-			if _, cached := k.nodeAccountStatus[status]; cached {
-				k.nodeAccountStatus[status] = append(k.nodeAccountStatus[status][:i], k.nodeAccountStatus[status][i+1:]...)
-			}
 		}
 	}
 	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), newAddrs)
@@ -317,9 +313,6 @@ func (k KVStore) addToStatusIndex(ctx cosmos.Context, node NodeAccount) error {
 		return err
 	}
 	addrs = append(addrs, node.NodeAddress)
-	if _, cached := k.nodeAccountStatus[status]; cached {
-		k.nodeAccountStatus[status] = append(k.nodeAccountStatus[status], node)
-	}
 	k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), addrs)
 	return nil
 }
@@ -581,6 +574,7 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 // BuildNodeStatus build status index and address, for store migration
 func (k KVStore) BuildNodeStatus(ctx cosmos.Context) error {
 	statusIndex := make(map[NodeStatus][]cosmos.AccAddress)
+	var toDel [][]byte
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
@@ -589,13 +583,17 @@ func (k KVStore) BuildNodeStatus(ctx cosmos.Context) error {
 			return dbError(ctx, "Unmarshal: node account", err)
 		}
 		if na.Type == NodeTypeValidator {
-			if na.Status.ShouldCache() {
+			if na.Status.IsCached() && !na.Bond.IsZero() {
 				if _, found := statusIndex[na.Status]; !found {
 					statusIndex[na.Status] = make([]cosmos.AccAddress, 0)
 				}
 				statusIndex[na.Status] = append(statusIndex[na.Status], na.NodeAddress)
 				// set address -> status
 				k.setInt64(ctx, k.GetKey(ctx, prefixNodeAccountStatus, na.NodeAddress.String()), int64(na.Status))
+			}
+
+			if na.Bond.IsZero() {
+				toDel = append(toDel, naIterator.Key())
 			}
 		}
 	}
@@ -604,6 +602,12 @@ func (k KVStore) BuildNodeStatus(ctx cosmos.Context) error {
 	for status, nodeAddresses := range statusIndex {
 		// set status index -> addresses with status
 		k.setAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), nodeAddresses)
+	}
+
+	// delete keys
+	kvStore := ctx.KVStore(k.storeKey)
+	for _, key := range toDel {
+		kvStore.Delete(key)
 	}
 	return nil
 }

@@ -58,6 +58,7 @@ type (
 	BondProviders            = types.BondProviders
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
+	NodeAddresses            = types.NodeAddresses
 	NodeMimirs               = types.NodeMimirs
 	NodeStatus               = types.NodeStatus
 	Network                  = types.Network

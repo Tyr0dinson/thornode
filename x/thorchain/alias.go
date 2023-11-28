@@ -316,6 +316,7 @@ type (
 	Vaults                         = types.Vaults
 	NodeAccount                    = types.NodeAccount
 	NodeAccounts                   = types.NodeAccounts
+	NodeAddresses                  = types.NodeAddresses
 	NodeStatus                     = types.NodeStatus
 	BondProviders                  = types.BondProviders
 	BondProvider                   = types.BondProvider

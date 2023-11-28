@@ -258,11 +258,11 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	}
 
 	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListValidatorsByStatusStore(ctx, NodeActive)
+	nodeAccounts, err := mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
 		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("no active node accounts: %w", err)
 	}
-	msg.Signer = nodeAccounts[0].NodeAddress
+	msg.Signer = nodeAccounts[0]
 
 	// simulate the swap
 	events, err := simulateInternal(ctx, mgr, msg)

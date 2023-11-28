@@ -9,6 +9,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+	alias "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 )
 
 //go:generate stringer -type=MimirType
@@ -117,10 +118,10 @@ func (m *mimir) FetchValue(ctx cosmos.Context, keeper keeper.Keeper) (value int6
 func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value int64) {
 	var (
 		err    error
-		active types.NodeAccounts
+		activeNodeAddresses []cosmos.AccAddress
 		key    string
 	)
-	active, err = keeper.ListActiveValidators(ctx)
+	activeNodeAddresses, err = keeper.ListValidatorAddressByStatus(ctx, alias.NodeActive)
 	if err != nil {
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
@@ -134,7 +135,7 @@ func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value 
 	value = int64(-1)
 	switch m.Type() {
 	case EconomicMimir:
-		value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
+		value = mimirs.ValueOfEconomic(key, activeNodeAddresses)
 		if value < 0 {
 			// no value, fallback to last economic value (if present)
 			value, err = keeper.GetMimirV2(ctx, key)
@@ -143,7 +144,7 @@ func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value 
 			}
 		}
 	case OperationalMimir:
-		value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
+		value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote,activeNodeAddresses)
 	}
 	return
 }

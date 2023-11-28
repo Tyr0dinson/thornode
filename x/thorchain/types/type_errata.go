@@ -58,6 +58,18 @@ func (m *ErrataTxVoter) HasConsensus(nas NodeAccounts) bool {
 	return HasSuperMajority(count, len(nas))
 }
 
+func (m *ErrataTxVoter) HasActiveConsensus(nas []cosmos.AccAddress) bool {
+	var count int
+	for _, signer := range m.GetSigners() {
+		for _, na := range nas {
+			if na.Equals(signer) {
+				count++
+			}
+		}
+	}
+	return HasSuperMajority(count, len(nas))
+}
+
 // Empty check whether TxID or Chain is empty
 func (m *ErrataTxVoter) Empty() bool {
 	return m.TxID.IsEmpty() || m.Chain.IsEmpty()
