@@ -135,13 +135,27 @@ This will output a file called `tx_raw.json`. Edit this file and change the `@ty
 The `tx_raw.json` transaction should look like this:
 
 ```json
-{"body":{"messages":[{"@type":"/types.MsgSend","from_address":"thor1505gp5h48zd24uexrfgka70fg8ccedafsnj0e3",
-"to_address":"thor1gutjhrw4xlu3n3p3k3r0vexl2xknq3nv8ux9fy",
-"amount":[{"denom":"rune","amount":"100000000"}]}],"memo":"",
-"timeout_height":"0","extension_options":[],"non_critical_extension_options":[]},
-"auth_info":{"signer_infos":[],
-"fee":{"amount":[],"gas_limit":"3000000","payer":"","granter":""}},
-"signatures":[]}
+{
+  "body": {
+    "messages": [
+      {
+        "@type": "/types.MsgSend",
+        "from_address": "thor1505gp5h48zd24uexrfgka70fg8ccedafsnj0e3",
+        "to_address": "thor1gutjhrw4xlu3n3p3k3r0vexl2xknq3nv8ux9fy",
+        "amount": [{ "denom": "rune", "amount": "100000000" }]
+      }
+    ],
+    "memo": "",
+    "timeout_height": "0",
+    "extension_options": [],
+    "non_critical_extension_options": []
+  },
+  "auth_info": {
+    "signer_infos": [],
+    "fee": { "amount": [], "gas_limit": "3000000", "payer": "", "granter": "" }
+  },
+  "signatures": []
+}
 ```
 
 ### Sign Transaction
