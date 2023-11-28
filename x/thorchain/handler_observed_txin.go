@@ -212,7 +212,7 @@ func (h ObservedTxInHandler) preflightV123(ctx cosmos.Context, voter ObservedTxV
 
 func (h ObservedTxInHandler) handleV125(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodes, err := h.mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
-	activeNodeAddresses := NodeAddresses(activeNodes)
+	activeNodeAddresses := activeNodes
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}

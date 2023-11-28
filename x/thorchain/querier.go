@@ -1522,7 +1522,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		OutboundHeight:  voter.OutboundHeight,
 		KeysignMetrics:  *keysignMetric,
 	}
-	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(NodeAddresses(nodeAddresses)))
+	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(nodeAddresses))
 	return jsonify(ctx, result)
 }
 

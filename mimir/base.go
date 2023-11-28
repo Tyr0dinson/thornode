@@ -94,6 +94,7 @@ func (m *mimir) FetchValue(ctx cosmos.Context, keeper keeper.Keeper) (value int6
 	if value >= 0 {
 		return value
 	}
+
 	legacyKey := m.LegacyKey(m.Reference())
 	if version.GTE(semver.MustParse("1.125.0")) {
 		// return if legacy key does not exist (case of v2 only mimir)

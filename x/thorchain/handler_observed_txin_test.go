@@ -139,8 +139,7 @@ func (k *TestObservedTxInHandleKeeper) ListActiveValidators(_ cosmos.Context) (N
 }
 
 func (k *TestObservedTxInHandleKeeper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
-	switch status {
-	case NodeActive:
+	if status == NodeActive {
 		return k.nas.GetNodeAddresses(), nil
 	}
 	return []cosmos.AccAddress{}, errKaboom
