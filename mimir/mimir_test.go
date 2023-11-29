@@ -55,6 +55,15 @@ func TestNewPauseChain(t *testing.T) {
 		assert.Equal(t, "Halts interaction with the avax chain", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTAVAXCHAIN", strings.ToUpper(mimir.LegacyKey("avax")), "Incorrect legacy key for supported chain")
 	})
+
+	t.Run("thor chain", func(t *testing.T) {
+		mimir := mimir.NewPauseChain("thor")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for supported chain")
+		assert.Equal(t, "PAUSECHAIN.THOR", mimir.Name(), "Incorrect name for supported chain")
+		assert.Equal(t, "THOR", mimir.Reference(), "Incorrect reference for supported chain")
+		assert.Equal(t, "Halts interaction with the thor chain", mimir.Description(), "Incorrect description for supported chain")
+		assert.Equal(t, "HALTTHORCHAIN", strings.ToUpper(mimir.LegacyKey("thor")), "Incorrect legacy key for supported chain")
+	})
 	// Test for an unsupported chain
 	t.Run("unsupported chain", func(t *testing.T) {
 		mimir := mimir.NewPauseChain("unsupported")
@@ -120,6 +129,24 @@ func TestNewPauseLP(t *testing.T) {
 	// Test for an unsupported chain
 	t.Run("unsupported chain", func(t *testing.T) {
 		mimir := mimir.NewPauseLP("unsupported")
+		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
+	})
+}
+
+func TestNewPauseSigning(t *testing.T) {
+	// Test for a supported chain
+	t.Run("supported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseSigning("doge")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for supported chain")
+		assert.Equal(t, "PAUSESIGNING.DOGE", mimir.Name(), "Incorrect name for supported chain")
+		assert.Equal(t, "DOGE", mimir.Reference(), "Incorrect reference for supported chain")
+		assert.Equal(t, "Halts signing", mimir.Description(), "Incorrect description for supported chain")
+		assert.Equal(t, "HALTSIGNINGDOGE", mimir.LegacyKey("doge"), "Incorrect legacy key for supported chain")
+	})
+
+	// Test for an unsupported chain
+	t.Run("unsupported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseSigning("thor")
 		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
 	})
 }

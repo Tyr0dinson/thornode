@@ -28,12 +28,15 @@ func initializeSupportedChains() {
 		"gaia":   true,
 		"global": true,
 		"ltc":    true,
-		"thor":   true,
 	}
 }
 
 func IsSupportedChain(chain string) bool {
 	return supportedChains[strings.ToLower(chain)]
+}
+
+func IsThorChain(chain string) bool {
+	return strings.ToLower(chain) == "thor"
 }
 
 func getRef(refs []string) (reference string) {
@@ -143,7 +146,7 @@ func NewPauseLoans(refs ...string) Mimir {
 func NewPauseChain(refs ...string) Mimir {
 	id := PauseChainId
 	ref := getRef(refs)
-	if !IsSupportedChain(strings.ToLower(ref)) {
+	if !IsSupportedChain(strings.ToLower(ref)) && !IsThorChain(strings.ToLower(ref)) {
 		return nil
 	}
 	return &mimir{
@@ -236,7 +239,7 @@ func NewPauseLP(refs ...string) Mimir {
 		id:           id,
 		name:         mimirRefToStringMap[id],
 		defaultValue: constants.NewConstantValue().GetInt64Value(constants.PauseLP),
-		reference:    getRef(refs),
+		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "lp"},
 		description:  "Pauses the ability for LPs to add/remove liquidity",
@@ -248,16 +251,20 @@ func NewPauseLP(refs ...string) Mimir {
 
 func NewPauseSigning(refs ...string) Mimir {
 	id := PauseSigningId
+	ref := getRef(refs)
+	if !IsSupportedChain(strings.ToLower(ref)) {
+		return nil
+	}
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id] + getRef(refs),
-		defaultValue: 0,
-		reference:    getRef(refs),
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltSigning),
+		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
 		description:  "Halts signing",
-		legacyMimirKey: func(_ string) string {
-			return "HALTSIGNING"
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("HaltSigning%s", strings.ToUpper(ref))
 		},
 	}
 }

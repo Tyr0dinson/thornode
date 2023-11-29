@@ -118,6 +118,7 @@ func NewConstantValue() *ConstantVals {
 			HaltChurning:                        0,                  // Pause churning
 			HaltTrading:                         0,                  // Pause swaps
 			PauseLP:                             0,                  // Pause the ability for LPs to add/remove liquidity
+			HaltSigning:                         0,                  // Halts signing
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
