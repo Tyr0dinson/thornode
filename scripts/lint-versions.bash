@@ -8,6 +8,13 @@ set -euo pipefail
 VERSION=$(awk -F. '{ print $2 }' version)
 CI_MERGE_REQUEST_TITLE=${CI_MERGE_REQUEST_TITLE-}
 
+# if there the branch is mr-<x> (fork repo ci), extract title from api
+if [[ -z $CI_MERGE_REQUEST_TITLE ]] && [[ $CI_COMMIT_REF_NAME =~ ^mr-[0-9]+$ ]]; then
+  # extract merge request id from branch name
+  MR_ID="${CI_COMMIT_REF_NAME//mr-/}"
+  CI_MERGE_REQUEST_TITLE=$(curl "https://gitlab.com/api/v4/projects/$CI_PROJECT_ID/merge_requests?iids=$MR_ID" | jq -r ".[]|select(.sha==\"$CI_COMMIT_SHA\")|.title")
+fi
+
 git fetch https://gitlab.com/thorchain/thornode.git develop
 
 # skip for develop
