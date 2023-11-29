@@ -115,8 +115,9 @@ func NewConstantValue() *ConstantVals {
 			KeygenRetryInterval:                 0,                  // number of blocks to wait before retrying a keygen
 			SaversStreamingSwapsInterval:        0,                  // For Savers deposits and withdraws, the streaming swaps interval to use for the Native <> Synth swap
 			HaltChain:                           0,                  // Pauses the referenced chain
-			HaltChurning:                        0,                  // Pauses churning
-			HaltTrading:                         0,                  // Pauses swaps
+			HaltChurning:                        0,                  // Pause churning
+			HaltTrading:                         0,                  // Pause swaps
+			PauseLP:                             0,                  // Pause the ability for LPs to add/remove liquidity
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

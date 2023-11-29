@@ -137,6 +137,7 @@ const (
 	HaltChain
 	HaltChurning
 	HaltTrading
+	PauseLP
 )
 
 // ConstantValues define methods used to get constant values

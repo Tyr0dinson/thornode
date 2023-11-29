@@ -155,7 +155,7 @@ func NewPauseChain(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  fmt.Sprintf("Halts interaction with the %s chain", ref),
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("HALT%sCHAIN", strings.ToUpper(ref))
+			return fmt.Sprintf("Halt%sChain", ref)
 		},
 	}
 }
@@ -221,23 +221,27 @@ func NewPauseSwaps(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  fmt.Sprintf("Pauses swaps on %s chain", ref),
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("HALT%sTRADING", strings.ToUpper(ref))
+			return fmt.Sprintf("Halt%sTrading", ref)
 		},
 	}
 }
 
 func NewPauseLP(refs ...string) Mimir {
 	id := PauseLPId
+	ref := getRef(refs)
+	if !IsSupportedChain(strings.ToLower(ref)) {
+		return nil
+	}
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id] + getRef(refs),
-		defaultValue: 0,
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.PauseLP),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "lp"},
 		description:  "Pauses the ability for LPs to add/remove liquidity",
-		legacyMimirKey: func(_ string) string {
-			return "PauseLP"
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("PauseLP%s", strings.ToUpper(ref))
 		},
 	}
 }

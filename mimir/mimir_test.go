@@ -105,3 +105,21 @@ func TestNewPauseSwaps(t *testing.T) {
 		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
 	})
 }
+
+func TestNewPauseLP(t *testing.T) {
+	// Test for a supported chain
+	t.Run("supported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseLP("bnb")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for supported chain")
+		assert.Equal(t, "PAUSELP.BNB", mimir.Name(), "Incorrect name for supported chain")
+		assert.Equal(t, "BNB", mimir.Reference(), "Incorrect reference for supported chain")
+		assert.Equal(t, "Pauses the ability for LPs to add/remove liquidity", mimir.Description(), "Incorrect description for supported chain")
+		assert.Equal(t, "PAUSELPBNB", mimir.LegacyKey("bnb"), "Incorrect legacy key for supported chain")
+	})
+
+	// Test for an unsupported chain
+	t.Run("unsupported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseLP("unsupported")
+		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
+	})
+}
