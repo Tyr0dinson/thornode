@@ -21,17 +21,17 @@ const (
 var StringToId = map[string]Id{
 	"unknown":                    UnknownId,
 	"AffiliateFeeBasisPointsMax": AffiliateFeeBasisPointsMaxId,
-	"PauseBonding":               PauseBondId, //ref: bond, unbond
+	"PauseBonding":               PauseBondId,
 	"EnableOrderBooks":           EnableOrderBooksId,
 	"PauseStreamingSwap":         PauseStreamingSwapId,
 	"PauseLoans":                 PauseLoansId,
-	"PauseChain":                 PauseChainId,  //ref: chains
-	"PauseSynths":                PauseSynthsId, // ref: burn, mint
+	"PauseChain":                 PauseChainId,
+	"PauseSynths":                PauseSynthsId,
 	"PauseChurning":              PauseChurningId,
-	"PauseSwaps":                 PauseSwapsId,   //ref: chains
-	"PauseLP":                    PauseLPId,      //ref: chains
-	"PauseSigning":               PauseSigningId, //ref: chains
-	"Anchor":                     AnchorId,       // ref: asset pair and address attached
+	"PauseSwaps":                 PauseSwapsId,
+	"PauseLP":                    PauseLPId,
+	"PauseSigning":               PauseSigningId,
+	"Anchor":                     AnchorId,
 }
 
 var mimirRefToStringMap = map[Id]string{
