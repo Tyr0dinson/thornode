@@ -168,6 +168,10 @@ func (k *TestObservedTxOutHandleKeeper) GetObservedLink(ctx cosmos.Context, inha
 	return k.hashes
 }
 
+func (k *TestObservedTxOutHandleKeeper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	return k.nas.GetNodeAddresses(), nil
+}
+
 func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)
@@ -478,6 +482,13 @@ func (h *HandlerObservedTxOutTestHelper) SetVault(ctx cosmos.Context, vault Vaul
 		return errKaboom
 	}
 	return h.Keeper.SetVault(ctx, vault)
+}
+
+func (h *HandlerObservedTxOutTestHelper) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	if h.failListActiveValidators {
+		return NodeAddresses{}, errKaboom
+	}
+	return h.Keeper.ListValidatorAddressByStatus(ctx, status)
 }
 
 func setupAnObservedTxOut(ctx cosmos.Context, helper *HandlerObservedTxOutTestHelper, c *C) *MsgObservedTxOut {

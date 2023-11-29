@@ -87,25 +87,15 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 
 func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter, nodes interface{}, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
 	version := h.mgr.GetVersion()
-	switch nodes.(type) {
+	switch nas := nodes.(type) {
 	case NodeAddresses:
-		nads, ok := nodes.(NodeAddresses)
-		if !ok {
-			// should never happen
-			return ObservedTxVoter{}, false
-		}
 		switch {
 		case version.GTE(semver.MustParse("1.125.0")):
-			return h.preflightV125(ctx, voter, nads, tx, signer)
+			return h.preflightV125(ctx, voter, nas, tx, signer)
 		default:
 			return ObservedTxVoter{}, false
 		}
 	case NodeAccounts:
-		nas, ok := nodes.(NodeAccounts)
-		if !ok {
-			// should never happen
-			return ObservedTxVoter{}, false
-		}
 		switch {
 		case version.GTE(semver.MustParse("1.123.0")):
 			return h.preflightV123(ctx, voter, nas, tx, signer)
