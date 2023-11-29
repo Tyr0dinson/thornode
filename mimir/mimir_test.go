@@ -61,3 +61,29 @@ func TestNewPauseChain(t *testing.T) {
 		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
 	})
 }
+
+func TestNewPauseSynths(t *testing.T) {
+	// Test for "burn" reference
+	t.Run("burn reference", func(t *testing.T) {
+		mimir := mimir.NewPauseSynths("burn")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for 'burn' reference")
+		assert.Equal(t, "PAUSESYNTHS.BURN", mimir.Name(), "Incorrect name for 'burn' reference")
+		assert.Equal(t, "Pauses the burning of synths", mimir.Description(), "Incorrect description for 'burn' reference")
+		assert.Equal(t, "BURNSYNTHS", mimir.LegacyKey("burn"), "Incorrect legacy key for 'burn' reference")
+	})
+
+	// Test for "mint" reference
+	t.Run("mint reference", func(t *testing.T) {
+		mimir := mimir.NewPauseSynths("mint")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for 'mint' reference")
+		assert.Equal(t, "PAUSESYNTHS.MINT", mimir.Name(), "Incorrect name for 'mint' reference")
+		assert.Equal(t, "Pauses the minting of synths", mimir.Description(), "Incorrect description for 'mint' reference")
+		assert.Equal(t, "MINTSYNTHS", mimir.LegacyKey("mint"), "Incorrect legacy key for 'mint' reference")
+	})
+
+	// Test for an invalid reference
+	t.Run("invalid reference", func(t *testing.T) {
+		mimir := mimir.NewPauseSynths("invalid")
+		assert.Nil(t, mimir, "Expected nil Mimir for invalid reference")
+	})
+}

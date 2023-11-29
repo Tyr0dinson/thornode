@@ -162,18 +162,32 @@ func NewPauseChain(refs ...string) Mimir {
 
 func NewPauseSynths(refs ...string) Mimir {
 	id := PauseSynthsId
-	return &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
-		reference:    getRef(refs),
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "synths"},
-		description:  "Enable/Disable minting synths",
-		legacyMimirKey: func(_ string) string {
-			return "MintSynths"
-		},
+	ref := getRef(refs)
+	newMimir := &mimir{
+		id:        id,
+		name:      mimirRefToStringMap[id],
+		mimirType: OperationalMimir,
+		tags:      []string{"operational", "synths"},
 	}
+	switch ref {
+	case "burn":
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.BurnSynths)
+		newMimir.description = "Pauses the burning of synths"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "BurnSynths"
+		}
+	case "mint":
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.MintSynths)
+		newMimir.description = "Pauses the minting of synths"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "MintSynths"
+		}
+	default:
+		return nil
+	}
+
+	newMimir.reference = ref
+	return newMimir
 }
 
 func NewPauseChurning(refs ...string) Mimir {
