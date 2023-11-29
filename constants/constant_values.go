@@ -134,6 +134,7 @@ const (
 	MigrationVaultSecurityBps
 	KeygenRetryInterval
 	SaversStreamingSwapsInterval
+	HaltChain
 )
 
 // ConstantValues define methods used to get constant values

@@ -114,6 +114,7 @@ func NewConstantValue() *ConstantVals {
 			MigrationVaultSecurityBps:           0,                  // vault bond must be greater than bps of funds value in rune to receive migrations
 			KeygenRetryInterval:                 0,                  // number of blocks to wait before retrying a keygen
 			SaversStreamingSwapsInterval:        0,                  // For Savers deposits and withdraws, the streaming swaps interval to use for the Native <> Synth swap
+			HaltChain:                           0,                  // Halts the referenced chain
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

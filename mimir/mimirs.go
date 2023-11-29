@@ -1,8 +1,40 @@
 package mimir
 
 import (
+	"fmt"
+	"strings"
+	"sync"
+
 	"gitlab.com/thorchain/thornode/constants"
 )
+
+var (
+	supportedChains map[string]bool
+	once            sync.Once
+)
+
+func init() {
+	once.Do(initializeSupportedChains)
+}
+
+func initializeSupportedChains() {
+	supportedChains = map[string]bool{
+		"avax":   true,
+		"bch":    true,
+		"bnb":    true,
+		"btc":    true,
+		"doge":   true,
+		"eth":    true,
+		"gaia":   true,
+		"global": true,
+		"ltc":    true,
+		"thor":   true,
+	}
+}
+
+func IsSupportedChain(chain string) bool {
+	return supportedChains[strings.ToLower(chain)]
+}
 
 func getRef(refs []string) (reference string) {
 	for _, ref := range refs {
@@ -65,9 +97,9 @@ func NewEnableOrderBooks(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.EnableOrderBooks),
 		reference:    getRef(refs),
-		mimirType:    OperationalMimir,
+		mimirType:    EconomicMimir,
 		tags:         []string{"operational", "swaps"},
 		description:  "Enables order books instead of swap queue",
 		legacyMimirKey: func(_ string) string {
@@ -81,7 +113,7 @@ func NewPauseStreamingSwap(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.StreamingSwapPause),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "swaps"},
@@ -97,7 +129,7 @@ func NewPauseLoans(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.PauseLoans),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "lending"},
@@ -110,16 +142,20 @@ func NewPauseLoans(refs ...string) Mimir {
 
 func NewPauseChain(refs ...string) Mimir {
 	id := PauseChainId
+	ref := getRef(refs)
+	if !IsSupportedChain(strings.ToLower(ref)) {
+		return nil
+	}
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id] + getRef(refs),
-		defaultValue: 0,
-		reference:    getRef(refs),
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChain),
+		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
-		description:  "Halts the referenced chain",
-		legacyMimirKey: func(_ string) string {
-			return "Halt" + getRef(refs) + "Chain"
+		description:  fmt.Sprintf("Halts interaction with the %s chain", ref),
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("HALT%sCHAIN", strings.ToUpper(ref))
 		},
 	}
 }
