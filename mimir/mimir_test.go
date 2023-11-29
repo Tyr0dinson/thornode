@@ -87,3 +87,21 @@ func TestNewPauseSynths(t *testing.T) {
 		assert.Nil(t, mimir, "Expected nil Mimir for invalid reference")
 	})
 }
+
+func TestNewPauseSwaps(t *testing.T) {
+	// Test for a supported chain
+	t.Run("supported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseSwaps("avax")
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for supported chain")
+		assert.Equal(t, "PAUSESWAPS.AVAX", mimir.Name(), "Incorrect name for supported chain")
+		assert.Equal(t, "AVAX", mimir.Reference(), "Incorrect reference for supported chain")
+		assert.Equal(t, "Pauses swaps on avax chain", mimir.Description(), "Incorrect description for supported chain")
+		assert.Equal(t, "HALTAVAXTRADING", mimir.LegacyKey("avax"), "Incorrect legacy key for supported chain")
+	})
+
+	// Test for an unsupported chain
+	t.Run("unsupported chain", func(t *testing.T) {
+		mimir := mimir.NewPauseSwaps("unsupported")
+		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
+	})
+}

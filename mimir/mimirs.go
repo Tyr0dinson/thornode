@@ -221,7 +221,7 @@ func NewPauseSwaps(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  fmt.Sprintf("Pauses swaps on %s chain", ref),
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("HALT%TRADING", strings.ToUpper(ref))
+			return fmt.Sprintf("HALT%sTRADING", strings.ToUpper(ref))
 		},
 	}
 }
