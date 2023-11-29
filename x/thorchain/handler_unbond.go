@@ -8,7 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	"gitlab.com/thorchain/thornode/mimir"
 )
 
 // UnBondHandler a handler to process unbond request
@@ -75,7 +74,7 @@ func (h UnBondHandler) validateV124(ctx cosmos.Context, msg MsgUnBond) error {
 		return cosmos.ErrUnknownRequest("cannot unbond while node is in active or ready status")
 	}
 
-	if mimir.NewUnbondPause().IsOn(ctx, h.mgr.Keeper()) {
+	if h.mgr.Keeper().GetConfigInt64(ctx, constants.PauseUnbond) > 0 {
 		return ErrInternal(err, "unbonding has been paused")
 	}
 

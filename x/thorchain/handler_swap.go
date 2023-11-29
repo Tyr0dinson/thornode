@@ -139,7 +139,7 @@ func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if msg.IsStreaming() {
-		if mimir.NewStreamingSwapPause().IsOn(ctx, h.mgr.Keeper()) {
+		if mimir.NewPauseStreamingSwap().IsOn(ctx, h.mgr.Keeper()) {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 

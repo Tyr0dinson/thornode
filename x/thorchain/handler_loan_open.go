@@ -71,7 +71,7 @@ func (h LoanOpenHandler) validateV121(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	if mimir.NewLoansPause().IsOn(ctx, h.mgr.Keeper()) {
+	if mimir.NewPauseLoans().IsOn(ctx, h.mgr.Keeper()) {
 		return fmt.Errorf("loans are currently paused")
 	}
 
