@@ -139,6 +139,7 @@ const (
 	HaltTrading
 	PauseLP
 	HaltSigning
+	TorAnchor
 )
 
 // ConstantValues define methods used to get constant values

@@ -119,6 +119,7 @@ func NewConstantValue() *ConstantVals {
 			HaltTrading:                         0,                  // Pause swaps
 			PauseLP:                             0,                  // Pause the ability for LPs to add/remove liquidity
 			HaltSigning:                         0,                  // Halts signing
+			TorAnchor:                           1,                  // Allow listed asset to be included in the TOR Price Anchor.
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

@@ -244,7 +244,7 @@ func NewPauseLP(refs ...string) Mimir {
 		tags:         []string{"operational", "lp"},
 		description:  "Pauses the ability for LPs to add/remove liquidity",
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("PauseLP%s", strings.ToUpper(ref))
+			return fmt.Sprintf("PauseLP%s", ref)
 		},
 	}
 }
@@ -264,7 +264,7 @@ func NewPauseSigning(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  "Halts signing",
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("HaltSigning%s", strings.ToUpper(ref))
+			return fmt.Sprintf("HaltSigning%s", ref)
 		},
 	}
 }
@@ -273,14 +273,14 @@ func NewAnchor(refs ...string) Mimir {
 	id := AnchorId
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id] + getRef(refs),
-		defaultValue: 0,
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.TorAnchor),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "tor"},
-		description:  "Enables tor anchor",
-		legacyMimirKey: func(_ string) string {
-			return "TORANCHOR" + getRef(refs)
+		description:  "Allow listed asset to be included in the TOR Price Anchor.",
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("TorAnchor%s" + ref)
 		},
 	}
 }
