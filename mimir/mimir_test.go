@@ -24,7 +24,7 @@ func TestNewAffiliateFeeBasisPointsMax(t *testing.T) {
 func TestNewPauseBond(t *testing.T) {
 	// Test case for "bond" reference
 	t.Run("bond reference", func(t *testing.T) {
-		mimir := mimir.NewPauseBond("bond")
+		mimir := mimir.NewBondPause("bond")
 		assert.NotNil(t, mimir, "Mimir should not be nil")
 		assert.Equal(t, "PAUSEBONDING.BOND", mimir.Name(), "Incorrect name for bond reference")
 		assert.Equal(t, "Pauses bonding", mimir.Description(), "Incorrect description for bond reference")
@@ -32,7 +32,7 @@ func TestNewPauseBond(t *testing.T) {
 
 	// Test case for "unbond" reference
 	t.Run("unbond reference", func(t *testing.T) {
-		mimir := mimir.NewPauseBond("unbond")
+		mimir := mimir.NewBondPause("unbond")
 		assert.NotNil(t, mimir, "Mimir should not be nil")
 		assert.Equal(t, "PAUSEBONDING.UNBOND", mimir.Name(), "Incorrect name for unbond reference")
 		assert.Equal(t, "Pauses unbonding", mimir.Description(), "Incorrect description for unbond reference")
@@ -40,7 +40,7 @@ func TestNewPauseBond(t *testing.T) {
 
 	// Test case for invalid reference
 	t.Run("invalid reference", func(t *testing.T) {
-		mimir := mimir.NewPauseBond("invalid_ref")
+		mimir := mimir.NewBondPause("invalid_ref")
 		assert.Nil(t, mimir, "Mimir should be nil for invalid reference")
 	})
 }
