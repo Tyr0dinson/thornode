@@ -65,7 +65,7 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 }
 
 func NewPauseBond(refs ...string) Mimir {
-	id := PauseBondId
+	id := BondPauseId
 	ref := getRef(refs)
 
 	newMimir := &mimir{

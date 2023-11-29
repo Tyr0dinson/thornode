@@ -5,7 +5,7 @@ type Id int32
 const (
 	UnknownId Id = iota
 	AffiliateFeeBasisPointsMaxId
-	PauseBondId
+	BondPauseId
 	EnableOrderBooksId
 	PauseStreamingSwapId
 	PauseLoansId
@@ -21,7 +21,7 @@ const (
 var StringToId = map[string]Id{
 	"unknown":                    UnknownId,
 	"AffiliateFeeBasisPointsMax": AffiliateFeeBasisPointsMaxId,
-	"PauseBonding":               PauseBondId,
+	"PauseBonding":               BondPauseId,
 	"EnableOrderBooks":           EnableOrderBooksId,
 	"PauseStreamingSwap":         PauseStreamingSwapId,
 	"PauseLoans":                 PauseLoansId,
@@ -37,7 +37,7 @@ var StringToId = map[string]Id{
 var mimirRefToStringMap = map[Id]string{
 	UnknownId:                    "unknown",
 	AffiliateFeeBasisPointsMaxId: "AffiliateFeeBasisPointsMax",
-	PauseBondId:                  "PauseBonding",
+	BondPauseId:                  "PauseBonding",
 	EnableOrderBooksId:           "EnableOrderBooks",
 	PauseStreamingSwapId:         "PauseStreamingSwap",
 	PauseLoansId:                 "PauseLoans",
@@ -55,7 +55,7 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 	switch id {
 	case AffiliateFeeBasisPointsMaxId:
 		return NewAffiliateFeeBasisPointsMax(ref), true
-	case PauseBondId:
+	case BondPauseId:
 		return NewPauseBond(ref), true
 	case EnableOrderBooksId:
 		return NewEnableOrderBooks(ref), true
