@@ -1,5 +1,9 @@
 package mimir
 
+import (
+	"gitlab.com/thorchain/thornode/constants"
+)
+
 func getRef(refs []string) (reference string) {
 	for _, ref := range refs {
 		if len(ref) > 0 {
@@ -14,7 +18,7 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 10_000,
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.MaxAffiliateFeeBasisPoints),
 		mimirType:    EconomicMimir,
 		reference:    getRef(refs),
 		tags:         []string{"economic", "affiliate fee"},
@@ -25,8 +29,8 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 	}
 }
 
-func NewBondPause(refs ...string) Mimir {
-	id := BondPauseId
+func NewPauseBond(refs ...string) Mimir {
+	id := PauseBondId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -41,24 +45,8 @@ func NewBondPause(refs ...string) Mimir {
 	}
 }
 
-func NewUnbondPause(refs ...string) Mimir {
-	id := UnbondPauseId
-	return &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
-		reference:    getRef(refs),
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "unbond"},
-		description:  "Pauses unbonding",
-		legacyMimirKey: func(_ string) string {
-			return "PauseUnbond"
-		},
-	}
-}
-
-func NewOrderBooksEnable(refs ...string) Mimir {
-	id := OrderBooksEnableId
+func NewEnableOrderBooks(refs ...string) Mimir {
+	id := EnableOrderBooksId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -73,8 +61,8 @@ func NewOrderBooksEnable(refs ...string) Mimir {
 	}
 }
 
-func NewStreamingSwapPause(refs ...string) Mimir {
-	id := StreamingSwapPauseId
+func NewPauseStreamingSwap(refs ...string) Mimir {
+	id := PauseStreamingSwapId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -89,8 +77,8 @@ func NewStreamingSwapPause(refs ...string) Mimir {
 	}
 }
 
-func NewLoansPause(refs ...string) Mimir {
-	id := LoansPauseId
+func NewPauseLoans(refs ...string) Mimir {
+	id := PauseLoansId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -105,8 +93,8 @@ func NewLoansPause(refs ...string) Mimir {
 	}
 }
 
-func NewChainPause(refs ...string) Mimir {
-	id := ChainPauseId
+func NewPauseChain(refs ...string) Mimir {
+	id := PauseChainId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id] + getRef(refs),
@@ -121,8 +109,8 @@ func NewChainPause(refs ...string) Mimir {
 	}
 }
 
-func NewSynthsMint(refs ...string) Mimir {
-	id := SynthsMintId
+func NewPauseSynths(refs ...string) Mimir {
+	id := PauseSynthsId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -137,24 +125,8 @@ func NewSynthsMint(refs ...string) Mimir {
 	}
 }
 
-func NewSynthsBurn(refs ...string) Mimir {
-	id := SynthsBurnId
-	return &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
-		reference:    getRef(refs),
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "synths"},
-		description:  "Enable/Disable burning synths",
-		legacyMimirKey: func(_ string) string {
-			return "BurnSynths"
-		},
-	}
-}
-
-func NewChurnPause(refs ...string) Mimir {
-	id := ChurnPauseId
+func NewPauseChurning(refs ...string) Mimir {
+	id := PauseChurningId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
@@ -169,8 +141,8 @@ func NewChurnPause(refs ...string) Mimir {
 	}
 }
 
-func NewTradingPause(refs ...string) Mimir {
-	id := TradingPauseId
+func NewPauseSwaps(refs ...string) Mimir {
+	id := PauseSwapsId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id] + getRef(refs),
@@ -185,8 +157,8 @@ func NewTradingPause(refs ...string) Mimir {
 	}
 }
 
-func NewLPPause(refs ...string) Mimir {
-	id := LPPauseId
+func NewPauseLP(refs ...string) Mimir {
+	id := PauseLPId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id] + getRef(refs),
@@ -201,8 +173,8 @@ func NewLPPause(refs ...string) Mimir {
 	}
 }
 
-func NewChainSigningPause(refs ...string) Mimir {
-	id := ChainSigningPauseId
+func NewPauseSigning(refs ...string) Mimir {
+	id := PauseSigningId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id] + getRef(refs),
@@ -217,8 +189,8 @@ func NewChainSigningPause(refs ...string) Mimir {
 	}
 }
 
-func NewTorAnchor(refs ...string) Mimir {
-	id := TorAnchorId
+func NewAnchor(refs ...string) Mimir {
+	id := AnchorId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id] + getRef(refs),
