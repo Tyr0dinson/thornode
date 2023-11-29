@@ -195,7 +195,7 @@ func NewPauseChurning(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChurning),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "churn", "migration"},
@@ -208,16 +208,20 @@ func NewPauseChurning(refs ...string) Mimir {
 
 func NewPauseSwaps(refs ...string) Mimir {
 	id := PauseSwapsId
+	ref := getRef(refs)
+	if !IsSupportedChain(strings.ToLower(ref)) {
+		return nil
+	}
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id] + getRef(refs),
-		defaultValue: 0,
-		reference:    getRef(refs),
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltTrading),
+		reference:    ref,
 		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "swaps"},
-		description:  "Pauses all trading",
-		legacyMimirKey: func(_ string) string {
-			return "HaltTrading"
+		tags:         []string{"operational", "chain"},
+		description:  fmt.Sprintf("Pauses swaps on %s chain", ref),
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("HALT%TRADING", strings.ToUpper(ref))
 		},
 	}
 }

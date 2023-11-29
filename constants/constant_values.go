@@ -135,6 +135,8 @@ const (
 	KeygenRetryInterval
 	SaversStreamingSwapsInterval
 	HaltChain
+	HaltChurning
+	HaltTrading
 )
 
 // ConstantValues define methods used to get constant values
