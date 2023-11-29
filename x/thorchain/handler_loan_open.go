@@ -8,7 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	"gitlab.com/thorchain/thornode/mimir"
 )
 
 // LoanOpenHandler a handler to process bond
@@ -71,7 +70,8 @@ func (h LoanOpenHandler) validateV121(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	if mimir.NewPauseLoans().IsOn(ctx, h.mgr.Keeper()) {
+	pauseLoans := fetchConfigInt64(ctx, h.mgr, constants.PauseLoans)
+	if pauseLoans > 0 {
 		return fmt.Errorf("loans are currently paused")
 	}
 

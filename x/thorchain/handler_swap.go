@@ -10,7 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	"gitlab.com/thorchain/thornode/mimir"
 )
 
 // SwapHandler is the handler to process swap request
@@ -139,7 +138,8 @@ func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	if msg.IsStreaming() {
-		if mimir.NewPauseStreamingSwap().IsOn(ctx, h.mgr.Keeper()) {
+		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
+		if pausedStreaming > 0 {
 			return fmt.Errorf("streaming swaps are paused")
 		}
 

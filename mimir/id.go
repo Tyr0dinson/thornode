@@ -56,7 +56,7 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 	case AffiliateFeeBasisPointsMaxId:
 		return NewAffiliateFeeBasisPointsMax(ref), true
 	case BondPauseId:
-		return NewPauseBond(ref), true
+		return NewBondPause(ref), true
 	case EnableOrderBooksId:
 		return NewEnableOrderBooks(ref), true
 	case PauseStreamingSwapId:
