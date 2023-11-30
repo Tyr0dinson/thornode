@@ -19,15 +19,14 @@ func init() {
 
 func initializeSupportedChains() {
 	supportedChains = map[string]bool{
-		"avax":   true,
-		"bch":    true,
-		"bnb":    true,
-		"btc":    true,
-		"doge":   true,
-		"eth":    true,
-		"gaia":   true,
-		"global": true,
-		"ltc":    true,
+		"avax": true,
+		"bch":  true,
+		"bnb":  true,
+		"btc":  true,
+		"doge": true,
+		"eth":  true,
+		"gaia": true,
+		"ltc":  true,
 	}
 }
 
@@ -66,18 +65,33 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 
 func NewBondPause(refs ...string) Mimir {
 	id := BondPauseId
-	return &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		defaultValue: 0,
-		reference:    getRef(refs),
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "bond"},
-		description:  "Pauses bonding (unbonding is still allowed)",
-		legacyMimirKey: func(_ string) string {
-			return "PauseBond"
-		},
+	ref := getRef(refs)
+
+	newMimir := &mimir{
+		id:        id,
+		name:      mimirRefToStringMap[id],
+		mimirType: OperationalMimir,
+		tags:      []string{"operational", "bond"},
 	}
+	switch ref {
+	case "bond":
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseBond)
+		newMimir.description = "Pauses bonding"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "PauseBond"
+		}
+	case "unbond":
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseUnbond)
+		newMimir.description = "Pauses unbonding"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "PauseUnbond"
+		}
+	default:
+		return nil
+	}
+
+	newMimir.reference = ref
+	return newMimir
 }
 
 func NewEnableOrderBooks(refs ...string) Mimir {

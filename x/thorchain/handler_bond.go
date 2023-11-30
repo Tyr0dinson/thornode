@@ -80,7 +80,7 @@ func (h BondHandler) validateV96(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	if h.mgr.GetVersion().GTE(semver.MustParse("1.88.1")) {
-		if mimir.NewBondPause().IsOn(ctx, h.mgr.Keeper()) {
+		if mimir.NewBondPause("bond").IsOn(ctx, h.mgr.Keeper()) {
 			return ErrInternal(err, "bonding has been paused")
 		}
 	}
