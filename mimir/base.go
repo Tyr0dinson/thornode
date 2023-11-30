@@ -56,7 +56,7 @@ func (m *mimir) Description() string {
 }
 
 func (m *mimir) Name() string {
-	return strings.ToUpper(fmt.Sprintf("%s.%s", m.name, m.Reference()))
+	return strings.ToUpper(fmt.Sprintf("%s%s", m.name, m.Reference()))
 }
 
 func (m *mimir) DefaultValue() int64 {

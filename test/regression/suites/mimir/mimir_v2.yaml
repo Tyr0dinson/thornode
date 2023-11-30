@@ -99,7 +99,7 @@ asserts:
   - .[0].type == "EconomicMimir"
   - .[0].votes."500" == 4
   - .[1].id == 2
-  - .[1].name == "BONDPAUSEGLOBAL"
+  - .[1].name == "PAUSEBONDINGGLOBAL"
   - .[1].legacy_key == "PAUSEBOND"
   - .[1].vote_key == "2-GLOBAL"
   - .[1].type == "OperationalMimir"
@@ -123,7 +123,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimirV2
 asserts:
-  - .BONDPAUSEGLOBAL == 1
+  - .PAUSEBONDINGGLOBAL == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
@@ -143,7 +143,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimirV2
 asserts:
-  - has("BONDPAUSEGLOBAL") | not
+  - has("PAUSEBONDINGGLOBAL") | not
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
