@@ -47,14 +47,17 @@ func (m *ObservedNetworkFeeVoter) Sign(signer cosmos.AccAddress) bool {
 }
 
 // HasConsensus Determine if this errata has enough signers
-func (m *ObservedNetworkFeeVoter) HasConsensus(nas NodeAccounts) bool {
+func (m *ObservedNetworkFeeVoter) HasConsensus(nas NodeKeyCheck) bool {
+	if nas == nil {
+		return false
+	}
 	var count int
 	for _, signer := range m.GetSigners() {
 		if nas.IsNodeKeys(signer) {
 			count++
 		}
 	}
-	return HasSuperMajority(count, len(nas))
+	return HasSuperMajority(count, nas.Len())
 }
 
 // IsEmpty return true when chain is empty and block height is 0

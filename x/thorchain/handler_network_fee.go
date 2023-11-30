@@ -63,6 +63,8 @@ func (h NetworkFeeHandler) validateV1(ctx cosmos.Context, msg MsgNetworkFee) err
 func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
 		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("0.47.0")):
@@ -72,10 +74,10 @@ func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmo
 	}
 }
 
-func (h NetworkFeeHandler) handleV123(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
-	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
+func (h NetworkFeeHandler) handleV125(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
+	activeNodeAddresses, err := h.mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
-		err = wrapError(ctx, err, "fail to get list of active node accounts")
+		err = wrapError(ctx, err, "fail to get list of active node addresses")
 		return nil, err
 	}
 
@@ -98,7 +100,7 @@ func (h NetworkFeeHandler) handleV123(ctx cosmos.Context, msg MsgNetworkFee) (*c
 	}
 	h.mgr.Keeper().SetObservedNetworkFeeVoter(ctx, voter)
 	// doesn't have consensus yet
-	if !voter.HasConsensus(active) {
+	if !voter.HasConsensus(activeNodeAddresses) {
 		return &cosmos.Result{}, nil
 	}
 

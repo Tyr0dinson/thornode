@@ -73,6 +73,8 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	ctx.Logger().Debug("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
 		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("1.110.0")):
@@ -92,7 +94,7 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 //     if wallet has less fund than asgard vault , and the gap is more than 1% , then the chain
 //     that is insolvent will be halt
 //  3. When chain is halt , bifrost will not observe inbound , and will not sign outbound txs until the issue has been investigated , and enabled it again using mimir
-func (h SolvencyHandler) handleV123(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
+func (h SolvencyHandler) handleV125(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	voter, err := h.mgr.Keeper().GetSolvencyVoter(ctx, msg.Id, msg.Chain)
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
@@ -113,11 +115,11 @@ func (h SolvencyHandler) handleV123(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		return &cosmos.Result{}, nil
 	}
 	h.mgr.Keeper().SetSolvencyVoter(ctx, voter)
-	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
+	activeNodeAddresses, err := h.mgr.Keeper().ListValidatorAddressByStatus(ctx, NodeActive)
 	if err != nil {
-		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
+		return nil, wrapError(ctx, err, "fail to get list of active node addresses")
 	}
-	if !voter.HasConsensus(active) {
+	if !voter.HasConsensus(activeNodeAddresses) {
 		return &cosmos.Result{}, nil
 	}
 

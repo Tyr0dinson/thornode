@@ -309,12 +309,18 @@ func (m *ObservedTxVoter) Add(observedTx ObservedTx, signer cosmos.AccAddress) b
 // HasConsensus is to check whether the tx with finalise = false in this ObservedTxVoter reach consensus
 // if ObservedTxVoter HasFinalised , then this function will return true as well
 func (m *ObservedTxVoter) HasConsensus(nodeAccounts NodeKeyCheck) bool {
+	if nodeAccounts == nil {
+		return false
+	}
 	consensusTx := m.GetTx(nodeAccounts)
 	return !consensusTx.IsEmpty()
 }
 
 // HasFinalised is to check whether the tx with finalise = true  reach super majority
 func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeKeyCheck) bool {
+	if nodeAccounts == nil {
+		return false
+	}
 	finalTx := m.GetTx(nodeAccounts)
 	if finalTx.IsEmpty() {
 		return false
@@ -324,6 +330,9 @@ func (m *ObservedTxVoter) HasFinalised(nodeAccounts NodeKeyCheck) bool {
 
 // GetTx return the tx that has super majority
 func (m *ObservedTxVoter) GetTx(nodeAccounts NodeKeyCheck) ObservedTx {
+	if nodeAccounts == nil {
+		return m.Tx
+	}
 	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
 		return m.Tx
 	}
@@ -340,6 +349,9 @@ func (m *ObservedTxVoter) GetTx(nodeAccounts NodeKeyCheck) ObservedTx {
 }
 
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeKeyCheck, final bool) ObservedTx {
+	if accounts == nil {
+		return ObservedTx{}
+	}
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {

@@ -51,14 +51,17 @@ func (m *SolvencyVoter) Sign(signer cosmos.AccAddress) bool {
 }
 
 // HasConsensus determine if this errata has enough signers
-func (m *SolvencyVoter) HasConsensus(nas NodeAccounts) bool {
+func (m *SolvencyVoter) HasConsensus(nas NodeKeyCheck) bool {
+	if nas == nil {
+		return false
+	}
 	var count int
 	for _, signer := range m.GetSigners() {
 		if nas.IsNodeKeys(signer) {
 			count++
 		}
 	}
-	return HasMinority(count, len(nas))
+	return HasMinority(count, nas.Len())
 }
 
 // Empty check whether TxID or Chain is empty

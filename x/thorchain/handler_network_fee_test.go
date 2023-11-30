@@ -46,6 +46,13 @@ func (k KeeperObserveNetworkFeeTest) SaveNetworkFee(ctx cosmos.Context, chain co
 	return k.Keeper.SaveNetworkFee(ctx, chain, networkFee)
 }
 
+func (k KeeperObserveNetworkFeeTest) ListValidatorAddressByStatus(ctx cosmos.Context, status NodeStatus) (NodeAddresses, error) {
+	if k.errFailListActiveNodeAccount {
+		return NodeAddresses{}, errKaboom
+	}
+	return k.Keeper.ListValidatorAddressByStatus(ctx, status)
+}
+
 func (h *HandlerObserveNetworkFeeSuite) TestHandlerObserveNetworkFee(c *C) {
 	h.testHandlerObserveNetworkFeeWithVersion(c)
 }
