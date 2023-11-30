@@ -123,7 +123,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(name.PreferredAsset, Equals, common.ETHAsset)
 
-	// transfer thorname to new owner, should reset preferred asset/external aliases
+	// transfer thorname to new owner, should not reset aliases, but should reset preferred asset
 	addr2 := GetRandomTHORAddress()
 	acc2, _ := addr2.AccAddress()
 	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.RuneAsset(), acc2, acc)
@@ -131,7 +131,7 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
 	c.Assert(err, IsNil)
-	c.Check(len(name.GetAliases()), Equals, 0)
+	c.Check(len(name.GetAliases()), Equals, 2)
 	c.Check(name.PreferredAsset.IsEmpty(), Equals, true)
 	c.Check(name.GetOwner().Equals(acc2), Equals, true)
 
