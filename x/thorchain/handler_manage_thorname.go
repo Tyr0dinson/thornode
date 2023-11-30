@@ -11,7 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 var IsValidTHORName = regexp.MustCompile(`^[a-zA-Z0-9+_-]+$`).MatchString
@@ -195,8 +194,11 @@ func (h ManageTHORNameHandler) handleV3_1_0(ctx cosmos.Context, msg MsgManageTHO
 	// Also, if owner has changed, null out the PreferredAsset/Aliases so the new owner is forced to reset it.
 	if !msg.Owner.Empty() && !bytes.Equal(msg.Owner, tn.Owner) {
 		tn.Owner = msg.Owner
+		// Reset PreferredAsset to not allow draining an Owner's AffiliateCollector with a gifted THORName,
+		// but leave Aliases as they are so a far-future-expiry THORName could be gifted to a network module
+		// (representing an uncontrolled address)
+		// to lock in that THORName's Aliases as demonstrably unchanageable until expiry.
 		tn.PreferredAsset = common.EmptyAsset
-		tn.Aliases = []types.THORNameAlias{}
 	}
 	h.mgr.Keeper().SetTHORName(ctx, tn)
 
