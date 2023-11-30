@@ -37,12 +37,6 @@ func TestNewPauseBond(t *testing.T) {
 		assert.Equal(t, "PAUSEBONDINGUNBOND", mimir.Name(), "Incorrect name for unbond reference")
 		assert.Equal(t, "Pauses unbonding", mimir.Description(), "Incorrect description for unbond reference")
 	})
-
-	// Test case for invalid reference
-	t.Run("invalid reference", func(t *testing.T) {
-		mimir := mimir.NewBondPause("invalid_ref")
-		assert.Nil(t, mimir, "Mimir should be nil for invalid reference")
-	})
 }
 
 func TestNewPauseChain(t *testing.T) {

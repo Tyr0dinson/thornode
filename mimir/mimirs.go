@@ -73,21 +73,19 @@ func NewBondPause(refs ...string) Mimir {
 		mimirType: OperationalMimir,
 		tags:      []string{"operational", "bond"},
 	}
-	switch ref {
-	case "bond":
-		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseBond)
-		newMimir.description = "Pauses bonding"
-		newMimir.legacyMimirKey = func(_ string) string {
-			return "PauseBond"
-		}
-	case "unbond":
+
+	if ref == "unbond" {
 		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseUnbond)
 		newMimir.description = "Pauses unbonding"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "PauseUnbond"
 		}
-	default:
-		return nil
+	} else { // default ref is "bond"
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseBond)
+		newMimir.description = "Pauses bonding"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "PauseBond"
+		}
 	}
 
 	newMimir.reference = ref
