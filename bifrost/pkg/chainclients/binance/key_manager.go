@@ -4,43 +4,22 @@ package binance
 // Needed a manual way to set `privKey` which the original source doesn't give a means to do so
 
 import (
-	"encoding/hex"
-	"fmt"
-
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
-	"gitlab.com/thorchain/binance-sdk/keys"
 	"gitlab.com/thorchain/binance-sdk/types/tx"
 
 	"gitlab.com/thorchain/thornode/common"
 )
 
 type keyManager struct {
-	privKey  cryptotypes.PrivKey
-	addr     ctypes.AccAddress
-	pubkey   common.PubKey
-	mnemonic string
+	privKey cryptotypes.PrivKey
+	addr    ctypes.AccAddress
+	pubkey  common.PubKey
 }
 
 func (m *keyManager) Pubkey() common.PubKey {
 	return m.pubkey
-}
-
-func (m *keyManager) ExportAsMnemonic() (string, error) {
-	if m.mnemonic == "" {
-		return "", fmt.Errorf("This key manager is not recover from mnemonic or anto generated ")
-	}
-	return m.mnemonic, nil
-}
-
-func (m *keyManager) ExportAsPrivateKey() (string, error) {
-	return hex.EncodeToString(m.privKey.Bytes()), nil
-}
-
-func (m *keyManager) ExportAsKeyStore(password string) (*keys.EncryptedKeyJSON, error) {
-	// Do nothing
-	return nil, nil
 }
 
 func (m *keyManager) Sign(msg tx.StdSignMsg) ([]byte, error) {

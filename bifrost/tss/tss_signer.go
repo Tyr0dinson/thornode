@@ -15,8 +15,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
 	"github.com/tendermint/tendermint/crypto"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
-	"gitlab.com/thorchain/binance-sdk/keys"
 	"gitlab.com/thorchain/binance-sdk/types/tx"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 
@@ -58,30 +56,6 @@ func NewKeySign(server tssServer, bridge thorclient.ThorchainBridge) (*KeySign, 
 		taskQueue: make(chan *tssKeySignTask),
 		done:      make(chan struct{}),
 	}, nil
-}
-
-// GetPrivKey THORNode don't actually have any private key , but just return something
-func (s *KeySign) GetPrivKey() crypto.PrivKey {
-	return nil
-}
-
-func (s *KeySign) GetAddr() ctypes.AccAddress {
-	return nil
-}
-
-// ExportAsMnemonic THORNode don't need this function for TSS, just keep it to fulfill KeyManager interface
-func (s *KeySign) ExportAsMnemonic() (string, error) {
-	return "", nil
-}
-
-// ExportAsPrivateKey THORNode don't need this function for TSS, just keep it to fulfill KeyManager interface
-func (s *KeySign) ExportAsPrivateKey() (string, error) {
-	return "", nil
-}
-
-// ExportAsKeyStore THORNode don't need this function for TSS, just keep it to fulfill KeyManager interface
-func (s *KeySign) ExportAsKeyStore(password string) (*keys.EncryptedKeyJSON, error) {
-	return nil, nil
 }
 
 func (s *KeySign) makeSignature(msg tx.StdSignMsg, poolPubKey string) (sig tx.StdSignature, err error) {

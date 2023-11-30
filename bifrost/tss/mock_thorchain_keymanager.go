@@ -3,9 +3,6 @@ package tss
 import (
 	"encoding/base64"
 
-	"github.com/tendermint/tendermint/crypto"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
-	"gitlab.com/thorchain/binance-sdk/keys"
 	"gitlab.com/thorchain/binance-sdk/types/tx"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -15,26 +12,6 @@ import (
 type MockThorchainKeyManager struct{}
 
 func (k *MockThorchainKeyManager) Sign(tx.StdSignMsg) ([]byte, error) {
-	return nil, nil
-}
-
-func (k *MockThorchainKeyManager) GetPrivKey() crypto.PrivKey {
-	return nil
-}
-
-func (k *MockThorchainKeyManager) GetAddr() ctypes.AccAddress {
-	return nil
-}
-
-func (k *MockThorchainKeyManager) ExportAsMnemonic() (string, error) {
-	return "", nil
-}
-
-func (k *MockThorchainKeyManager) ExportAsPrivateKey() (string, error) {
-	return "", nil
-}
-
-func (k *MockThorchainKeyManager) ExportAsKeyStore(password string) (*keys.EncryptedKeyJSON, error) {
 	return nil, nil
 }
 

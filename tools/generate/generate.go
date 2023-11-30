@@ -11,6 +11,9 @@ import (
 	bech32 "github.com/btcsuite/btcutil/bech32"
 )
 
+// TODO: refactor to use key generation from cosmos or native
+//   crypto lib instead of using the binance-sdk fork.
+
 // main : Generate our pool address.
 func main() {
 	network := flag.Int("n", 0, "The network to use.")
