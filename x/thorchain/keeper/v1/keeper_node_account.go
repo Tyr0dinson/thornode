@@ -92,8 +92,7 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 
 func (k KVStore) listValidatorsByStatusStore(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAddress := make([]cosmos.AccAddress, 0)
-	_, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &nodeAddress)
-	if err != nil {
+	if _, err := k.getAccAddresses(ctx, k.GetKey(ctx, prefixNodeAccountIndex, status.String()), &nodeAddress); err != nil {
 		return NodeAccounts{}, err
 	}
 	nodes := make(NodeAccounts, len(nodeAddress))
