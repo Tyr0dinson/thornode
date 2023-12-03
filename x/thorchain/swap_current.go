@@ -9,7 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -54,13 +54,13 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	source := tx.Coins[0].Asset
 
 	if source.IsSyntheticAsset() {
-		burnHeight := mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths)
+		burnHeight := mimir.NewPauseSynths("burn").FetchValue(ctx, keeper)
 		if burnHeight > 0 && ctx.BlockHeight() > burnHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
 	}
 	if target.IsSyntheticAsset() {
-		mintHeight := mgr.Keeper().GetConfigInt64(ctx, constants.MintSynths)
+		mintHeight := mimir.NewPauseSynths("mint").FetchValue(ctx, keeper)
 		if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}
