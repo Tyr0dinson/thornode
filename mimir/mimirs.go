@@ -52,7 +52,7 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.MaxAffiliateFeeBasisPoints),
+		defaultValue: int64(constants.MaxBasisPts),
 		mimirType:    EconomicMimir,
 		reference:    getRef(refs),
 		tags:         []string{"economic", "affiliate fee"},
@@ -278,6 +278,38 @@ func NewAnchor(refs ...string) Mimir {
 		description:  "Allow listed asset to be included in the TOR Price Anchor.",
 		legacyMimirKey: func(ref string) string {
 			return fmt.Sprintf("TorAnchor%s" + ref)
+		},
+	}
+}
+
+func NewConfBasisPointValue(refs ...string) Mimir {
+	id := ConfMultiplierBasisPointsId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: int64(constants.MaxBasisPts),
+		reference:    getRef(refs),
+		mimirType:    EconomicMimir,
+		tags:         []string{"economic", "chain-client"},
+		description:  "adjusts confirmation multiplier for chain client",
+		legacyMimirKey: func(_ string) string {
+			return ""
+		},
+	}
+}
+
+func NewMaxConfValue(refs ...string) Mimir {
+	id := MaxConfirmationsId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChurning),
+		reference:    getRef(refs),
+		mimirType:    EconomicMimir,
+		tags:         []string{"economic", "chain-client"},
+		description:  "max confirmations for chain client",
+		legacyMimirKey: func(_ string) string {
+			return ""
 		},
 	}
 }
