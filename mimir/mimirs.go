@@ -75,13 +75,13 @@ func NewBondPause(refs ...string) Mimir {
 	}
 
 	if ref == "unbond" {
-		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseUnbond)
+		newMimir.defaultValue = int64(constants.PauseUnbond)
 		newMimir.description = "Pauses unbonding"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "PauseUnbond"
 		}
 	} else { // default ref is "bond"
-		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseBond)
+		newMimir.defaultValue = int64(constants.PauseBond)
 		newMimir.description = "Pauses bonding"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "PauseBond"
@@ -97,7 +97,7 @@ func NewEnableOrderBooks(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.EnableOrderBooks),
+		defaultValue: int64(constants.EnableOrderBooks),
 		reference:    getRef(refs),
 		mimirType:    EconomicMimir,
 		tags:         []string{"operational", "swaps"},
@@ -113,7 +113,7 @@ func NewPauseStreamingSwap(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.StreamingSwapPause),
+		defaultValue: int64(constants.StreamingSwapPause),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "swaps"},
@@ -129,7 +129,7 @@ func NewPauseLoans(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.PauseLoans),
+		defaultValue: int64(constants.PauseLoans),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "lending"},
@@ -149,7 +149,7 @@ func NewPauseChain(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChain),
+		defaultValue: int64(constants.HaltChain),
 		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
@@ -171,13 +171,13 @@ func NewPauseSynths(refs ...string) Mimir {
 	}
 	switch ref {
 	case "burn":
-		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.BurnSynths)
+		newMimir.defaultValue = int64(constants.BurnSynths)
 		newMimir.description = "Pauses the burning of synths"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "BurnSynths"
 		}
 	case "mint":
-		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.MintSynths)
+		newMimir.defaultValue = int64(constants.MintSynths)
 		newMimir.description = "Pauses the minting of synths"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "MintSynths"
@@ -195,7 +195,7 @@ func NewPauseChurning(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChurning),
+		defaultValue: int64(constants.HaltChurning),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "churn", "migration"},
@@ -215,7 +215,7 @@ func NewPauseSwaps(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltTrading),
+		defaultValue: int64(constants.HaltTrading),
 		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
@@ -235,7 +235,7 @@ func NewPauseLP(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.PauseLP),
+		defaultValue: int64(constants.PauseLP),
 		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "lp"},
@@ -255,7 +255,7 @@ func NewPauseSigning(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltSigning),
+		defaultValue: int64(constants.HaltSigning),
 		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},
@@ -271,7 +271,7 @@ func NewAnchor(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.TorAnchor),
+		defaultValue: int64(constants.TorAnchor),
 		reference:    getRef(refs),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "tor"},
@@ -303,7 +303,7 @@ func NewMaxConfValue(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.HaltChurning),
+		defaultValue: int64(constants.HaltChurning),
 		reference:    getRef(refs),
 		mimirType:    EconomicMimir,
 		tags:         []string{"economic", "chain-client"},
