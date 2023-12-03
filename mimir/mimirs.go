@@ -169,21 +169,18 @@ func NewPauseSynths(refs ...string) Mimir {
 		mimirType: OperationalMimir,
 		tags:      []string{"operational", "synths"},
 	}
-	switch ref {
-	case "burn":
+	if ref == "burn" {
 		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.BurnSynths)
 		newMimir.description = "Pauses the burning of synths"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "BurnSynths"
 		}
-	case "mint":
+	} else { // default is "mint"
 		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.MintSynths)
 		newMimir.description = "Pauses the minting of synths"
 		newMimir.legacyMimirKey = func(_ string) string {
 			return "MintSynths"
 		}
-	default:
-		return nil
 	}
 
 	newMimir.reference = ref

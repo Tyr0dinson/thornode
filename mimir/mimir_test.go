@@ -83,12 +83,6 @@ func TestNewPauseSynths(t *testing.T) {
 		assert.Equal(t, "Pauses the minting of synths", mimir.Description(), "Incorrect description for 'mint' reference")
 		assert.Equal(t, "MINTSYNTHS", mimir.LegacyKey("mint"), "Incorrect legacy key for 'mint' reference")
 	})
-
-	// Test for an invalid reference
-	t.Run("invalid reference", func(t *testing.T) {
-		mimir := mimir.NewPauseSynths("invalid")
-		assert.Nil(t, mimir, "Expected nil Mimir for invalid reference")
-	})
 }
 
 func TestNewPauseSwaps(t *testing.T) {
