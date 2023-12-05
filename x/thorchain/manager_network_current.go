@@ -1317,7 +1317,7 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 func (vm *NetworkMgrVCUR) getEffectiveSecurityBond(ctx cosmos.Context) (cosmos.Uint, error) {
 	nodeAccounts, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
-		return cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get all active accounts: %w", err)
 	}
 	return getEffectiveSecurityBond(nodeAccounts), nil
 }
