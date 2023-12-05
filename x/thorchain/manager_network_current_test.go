@@ -186,12 +186,12 @@ func (*NetworkManagerVCURTestSuite) TestGetTotalActiveBond(c *C) {
 	mgr.K = helper
 	networkMgr := newNetworkMgrVCUR(helper, mgr.TxOutStore(), mgr.EventMgr())
 	helper.failToListActiveAccounts = true
-	bond, err := networkMgr.getTotalActiveBond(ctx)
+	bond, err := networkMgr.getEffectiveSecurityBond(ctx)
 	c.Assert(err, NotNil)
 	c.Assert(bond.Equal(cosmos.ZeroUint()), Equals, true)
 	helper.failToListActiveAccounts = false
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
-	bond, err = networkMgr.getTotalActiveBond(ctx)
+	bond, err = networkMgr.getEffectiveSecurityBond(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(bond.Uint64() > 0, Equals, true)
 }
