@@ -1200,7 +1200,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	// been deducted so the balances are correct. Just operating at a deficit.
 	totalBonded, err := vm.getEffectiveSecurityBond(ctx)
 	if err != nil {
-		return fmt.Errorf("fail to get total active bond: %w", err)
+		return fmt.Errorf("fail to get effective security bond: %w", err)
 	}
 
 	emissionCurve, err := vm.k.GetMimir(ctx, constants.EmissionCurve.String())
