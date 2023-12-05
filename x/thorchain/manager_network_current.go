@@ -1198,7 +1198,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	// extremely unlikely), ignore it for now (attempt to recover in the next
 	// block). This should be OK as the asset amount in the pool has already
 	// been deducted so the balances are correct. Just operating at a deficit.
-	totalBonded, err := vm.getTotalActiveBond(ctx)
+	totalBonded, err := vm.getEffectiveSecurityBond(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get total active bond: %w", err)
 	}
@@ -1324,6 +1324,14 @@ func (vm *NetworkMgrVCUR) getTotalActiveBond(ctx cosmos.Context) (cosmos.Uint, e
 		totalBonded = totalBonded.Add(node.Bond)
 	}
 	return totalBonded, nil
+}
+
+func (vm *NetworkMgrVCUR) getEffectiveSecurityBond(ctx cosmos.Context) (cosmos.Uint, error) {
+	nodeAccounts, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+	return getEffectiveSecurityBond(nodeAccounts), nil
 }
 
 // Pays out Rewards
