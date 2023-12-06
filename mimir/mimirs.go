@@ -31,11 +31,15 @@ func initializeSupportedChains() {
 }
 
 func IsSupportedChain(chain string) bool {
-	return supportedChains[strings.ToLower(chain)]
+	return IsGlobal(chain) || supportedChains[strings.ToLower(chain)]
 }
 
 func IsThorChain(chain string) bool {
 	return strings.EqualFold(chain, "thor")
+}
+
+func IsGlobal(chain string) bool {
+	return strings.EqualFold(chain, "")
 }
 
 func getRef(refs []string) (reference string) {
