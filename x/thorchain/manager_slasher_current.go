@@ -19,15 +19,10 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// SlasherVCUR is V124 implementation of slasher
+// SlasherVCUR is VCUR implementation of slasher
 type SlasherVCUR struct {
 	keeper   keeper.Keeper
 	eventMgr EventManager
-}
-
-type nodeAddressValidatorAddressPairVCUR struct {
-	nodeAddress      cosmos.AccAddress
-	validatorAddress crypto.Address
 }
 
 // newSlasherVCUR create a new instance of Slasher
@@ -75,14 +70,14 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, req abci.RequestBeginBlock,
 		ctx.Logger().Error("fail to list active validators", "error", err)
 		return
 	}
-	var validatorAddresses []nodeAddressValidatorAddressPairVCUR
+	var validatorAddresses []nodeAddressValidatorAddressPair
 	for _, na := range nas {
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to derive validator address", "error", err)
 			continue
 		}
-		var pair nodeAddressValidatorAddressPairVCUR
+		var pair nodeAddressValidatorAddressPair
 		pair.nodeAddress = na.NodeAddress
 		pair.validatorAddress = pk.Address()
 		validatorAddresses = append(validatorAddresses, pair)
@@ -106,7 +101,7 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, req abci.RequestBeginBlock,
 // HandleDoubleSign - slashes a validator for signing two blocks at the same
 // block height
 // https://blog.cosmos.network/consensus-compare-casper-vs-tendermint-6df154ad56ae
-func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, infractionHeight int64, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPairVCUR) error {
+func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, infractionHeight int64, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	// check if we're recent enough to slash for this behavior
 	maxAge := constAccessor.GetInt64Value(constants.DoubleSignMaxAge)
 	if (ctx.BlockHeight() - infractionHeight) > maxAge {
@@ -161,7 +156,7 @@ func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 }
 
 // HandleMissingSign - slashes a validator for not signing a block
-func (s *SlasherVCUR) HandleMissingSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPairVCUR) error {
+func (s *SlasherVCUR) HandleMissingSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	missBlockSignSlashPoints := s.keeper.GetConfigInt64(ctx, constants.MissBlockSignSlashPoints)
 
 	for _, pair := range validatorAddresses {
@@ -361,11 +356,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
-			nas, err := s.keeper.ListActiveValidators(ctx)
-			if err != nil {
-				ctx.Logger().Error("fail to get all active validators", "error", err)
-			}
-			if s.needsNewVault(ctx, mgr, len(nas), signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
+			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -678,7 +669,7 @@ func (s *SlasherVCUR) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
-func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, nas int, signingTransPeriod, startHeight int64, inhash common.TxID, pk common.PubKey) bool {
+func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, inhash common.TxID, pk common.PubKey) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, inhash)
 	if len(outhashes) == 0 {
 		return true
@@ -692,21 +683,40 @@ func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, nas int, si
 		}
 		// in the event there are multiple outbounds for a given inhash, we
 		// focus on the matching pubkey
-		signers := make([]string, 0)
+		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
 			if tx1.ObservedPubKey.Equals(pk) {
 				for _, tx := range voter.Txs {
 					if !tx.Tx.ID.Equals(hash) {
 						continue
 					}
-					if len(signers) < len(tx.Signers) {
-						signers = tx.Signers
+					for _, signer := range tx.Signers {
+						// Uniquely record each signer for this outbound hash.
+						signers[signer] = true
 					}
 				}
 			}
 		}
 		if len(signers) > 0 {
-			if nas > 0 && HasMinority(len(signers), nas) {
+			var count int // count the number of signers from the assigned vault
+			for _, member := range vault.Membership {
+				pk, err := common.NewPubKey(member)
+				if err != nil {
+					continue
+				}
+				addr, err := pk.GetThorAddress()
+				if err != nil {
+					continue
+				}
+				if _, ok := signers[addr.String()]; ok {
+					count++
+				}
+			}
+			// if a super majority of vault members have observed the outbound,
+			// then we should not reschedule. If a vault says it sent it, it
+			// sent it and shouldn't get another vault to send it (potentially
+			// a second time)
+			if count > 0 && HasSuperMajority(count, len(vault.Membership)) {
 				return false
 			}
 			maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
