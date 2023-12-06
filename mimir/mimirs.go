@@ -35,7 +35,7 @@ func IsSupportedChain(chain string) bool {
 }
 
 func IsThorChain(chain string) bool {
-	return strings.ToLower(chain) == "thor"
+	return strings.EqualFold(chain, "thor")
 }
 
 func getRef(refs []string) (reference string) {
