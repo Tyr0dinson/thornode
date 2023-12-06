@@ -100,7 +100,7 @@ asserts:
   - .|[.[]][0].type == "EconomicMimir"
   - .|[.[]][0].votes."500" == 4
   - .|[.[]][1].id == 2
-  - .|[.[]][1].name == "BONDPAUSEGLOBAL"
+  - .|[.[]][1].name == "PAUSEBONDINGGLOBAL"
   - .|[.[]][1].legacy_key == "PAUSEBOND"
   - .|[.[]][1].vote_key == "2-GLOBAL"
   - .|[.[]][1].type == "OperationalMimir"
