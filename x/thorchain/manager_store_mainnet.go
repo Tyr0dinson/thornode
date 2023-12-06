@@ -968,14 +968,6 @@ func migrateStoreV124(ctx cosmos.Context, mgr *Mgrs) {
 	}
 }
 
-func migrateStoreV125(ctx cosmos.Context, mgr *Mgrs) {
-	err := mgr.Keeper().BuildNodeStatus(ctx)
-	if err != nil {
-		ctx.Logger().Error("failed to build node status index", "error", err)
-		return
-	}
-}
-
 // Bond refunds for AVAX double spend slash. See PR for details on determining amounts.
 func migrateStoreV125(ctx cosmos.Context, mgr *Mgrs) {
 	defer func() {
@@ -1143,5 +1135,11 @@ func migrateStoreV125(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("fail to save node account", "error", err)
 			return
 		}
+	}
+
+	err := mgr.Keeper().BuildNodeStatus(ctx)
+	if err != nil {
+		ctx.Logger().Error("failed to build node status index", "error", err)
+		return
 	}
 }

@@ -8,8 +8,8 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	"gitlab.com/thorchain/thornode/x/thorchain/types"
 	alias "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 //go:generate stringer -type=MimirType
@@ -118,9 +118,9 @@ func (m *mimir) FetchValue(ctx cosmos.Context, keeper keeper.Keeper) (value int6
 
 func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value int64) {
 	var (
-		err    error
+		err                 error
 		activeNodeAddresses []cosmos.AccAddress
-		key    string
+		key                 string
 	)
 	activeNodeAddresses, err = keeper.ListValidatorAddressByStatus(ctx, alias.NodeActive)
 	if err != nil {
@@ -145,7 +145,7 @@ func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value 
 			}
 		}
 	case OperationalMimir:
-		value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote,activeNodeAddresses)
+		value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, activeNodeAddresses)
 	}
 	return
 }
