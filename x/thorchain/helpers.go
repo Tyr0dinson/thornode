@@ -629,6 +629,8 @@ func getSynthSupplyRemainingV102(ctx cosmos.Context, mgr Manager, asset common.A
 func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.125.0")):
+		return isSynthMintPausedV125(ctx, mgr, targetAsset, outputAmt)
 	case version.GTE(semver.MustParse("1.116.0")):
 		return isSynthMintPausedV116(ctx, mgr, targetAsset, outputAmt)
 	case version.GTE(semver.MustParse("1.103.0")):
@@ -642,7 +644,7 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 	}
 }
 
-func isSynthMintPausedV116(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
+func isSynthMintPausedV125(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	mintHeight := mimir.NewPauseSynths("mint").FetchValue(ctx, mgr.Keeper())
 	if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 		return fmt.Errorf("minting synthetics has been disabled")
