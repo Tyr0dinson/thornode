@@ -315,7 +315,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 
 	// Taproot mainnet (bech32m)
 	addr, err = NewAddress("bc1pfy63nact82mfmts5jv87p2uayxqs29gf8070td7kzhwzx6zc9ruq9u7xy7")
-	c.Check(err, NotNil)
+	c.Check(err, IsNil)
 	c.Check(addr.IsChain(BTCChain), Equals, true)
 	c.Check(addr.IsChain(LTCChain), Equals, false)
 	c.Check(addr.IsChain(ETHChain), Equals, false)
