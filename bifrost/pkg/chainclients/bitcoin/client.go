@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -847,6 +848,11 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) 
 
 // extractTxs extracts txs from a block to type TxIn
 func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn, error) {
+	ver, err := c.bridge.GetThorchainVersion()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to GetThorchainVersion from bridge")
+		return types.TxIn{}, err
+	}
 	txIn := types.TxIn{
 		Chain:   c.GetChain(),
 		MemPool: false,
@@ -880,6 +886,12 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 			}
 			continue
 		}
+
+		// TODO: remove after adoption of v1.125.0
+		if ver.LT(semver.MustParse("1.125.0")) && strings.HasPrefix(txInItem.Sender, "bc1p") {
+			continue
+		}
+
 		txItems = append(txItems, txInItem)
 	}
 	txIn.TxArray = txItems

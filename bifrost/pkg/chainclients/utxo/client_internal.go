@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcutil"
 	bchtxscript "gitlab.com/thorchain/bifrost/bchd-txscript"
@@ -616,6 +617,11 @@ func (c *Client) stripBCHAddress(addr string) string {
 }
 
 func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn, error) {
+	ver, err := c.bridge.GetThorchainVersion()
+	if err != nil {
+		c.log.Err(err).Msg("fail to GetThorchainVersion from bridge")
+		return types.TxIn{}, err
+	}
 	txIn := types.TxIn{
 		Chain:   c.GetChain(),
 		MemPool: false,
@@ -649,6 +655,12 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 			}
 			continue
 		}
+
+		// TODO: remove after adoption of v1.125.0
+		if ver.LT(semver.MustParse("1.125.0")) && strings.HasPrefix(txInItem.Sender, "bc1p") {
+			continue
+		}
+
 		txItems = append(txItems, txInItem)
 	}
 	txIn.TxArray = txItems
