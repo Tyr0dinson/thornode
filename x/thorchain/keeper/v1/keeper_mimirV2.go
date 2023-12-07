@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
 )
 
 // SetMimir save a mimir value to key value store
@@ -57,45 +56,4 @@ func (k KVStore) SetNodeMimirV2(ctx cosmos.Context, key string, value int64, acc
 // GetNodeMimirIterator iterate node mimirs
 func (k KVStore) GetNodeMimirIteratorV2(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNodeMimirV2)
-}
-
-func (k KVStore) FetchValue(ctx cosmos.Context, key string, mimirType string) (value int64) {
-	var (
-		err    error
-		active NodeAccounts
-	)
-	active, err = k.ListActiveValidators(ctx)
-	if err != nil {
-		ctx.Logger().Error("failed to get active validator set", "error", err)
-	}
-
-	var mimirs NodeMimirs
-	mimirs, err = k.GetNodeMimirsV2(ctx, key)
-	if err != nil {
-		ctx.Logger().Error("failed to get node mimir v2", "error", err)
-	}
-	value = int64(-1)
-	if !strings.EqualFold(mimirType, "economic") || !strings.EqualFold(mimirType, "operational") {
-		ctx.Logger().Error("failed to get supported type for mimir v2", "error", err)
-	}
-	mimirV2type := strings.ToLower(mimirType)
-	switch mimirV2type {
-	case "economic":
-		value = mimirs.ValueOfEconomic(key, active.GetNodeAddresses())
-		if value < 0 {
-			// no value, fallback to last economic value (if present)
-			value, err = k.GetMimirV2(ctx, key)
-			if err != nil {
-				ctx.Logger().Error("failed to get mimir v2", "error", err)
-			}
-		}
-	case "operational":
-		value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
-	}
-	return
-}
-
-func (k KVStore) IsOn(ctx cosmos.Context, key string, mimirType string) bool {
-	value := k.FetchValue(ctx, key, mimirType)
-	return value > 0
 }
