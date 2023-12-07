@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -56,8 +57,8 @@ func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 		return nil
 	}
 
-	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
-	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
+	halt := mimir.NewPauseChurning().FetchValue(ctx, vm.k)
+	if halt > 0 && halt <= ctx.BlockHeight() {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
 		return nil
 	}
