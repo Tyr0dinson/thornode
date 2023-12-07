@@ -530,6 +530,10 @@ func (k KVStoreDummy) GetNodeMimirIteratorV2(ctx cosmos.Context) cosmos.Iterator
 
 func (k KVStoreDummy) SetMimirV2(ctx cosmos.Context, key string, value int64)   {}
 func (k KVStoreDummy) GetMimirV2(ctx cosmos.Context, key string) (int64, error) { return -1, kaboom }
+func (k KVStoreDummy) FetchValue(ctx cosmos.Context, key string, mimirType string) (value int64) {
+	return -1
+}
+func (k KVStoreDummy) IsOn(ctx cosmos.Context, key string, mimirType string) bool { return false }
 
 func (k KVStoreDummy) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
 	return NetworkFee{}, kaboom

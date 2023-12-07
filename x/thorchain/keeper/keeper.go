@@ -340,6 +340,8 @@ type KeeperMimir interface {
 	GetNodeMimirIteratorV2(ctx cosmos.Context) cosmos.Iterator
 	SetMimirV2(ctx cosmos.Context, key string, value int64)
 	GetMimirV2(ctx cosmos.Context, key string) (int64, error)
+	FetchValue(ctx cosmos.Context, key string, mimirType string) (value int64)
+	IsOn(ctx cosmos.Context, key string, mimirType string) bool
 }
 
 type KeeperNetworkFee interface {
