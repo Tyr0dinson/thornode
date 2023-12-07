@@ -188,6 +188,10 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 			} else {
 				httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 			}
+		} else if req.RequestURI == "/thorchain/version" {
+			// TODO: remove after adoption of 1.125.0, along with changes to BTC client for taproot support
+			_, err := rw.Write([]byte(`{"current": "999.999.999"}`))
+			c.Assert(err, IsNil)
 		}
 	}))
 	var err error

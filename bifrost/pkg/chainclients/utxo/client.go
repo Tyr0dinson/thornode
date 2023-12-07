@@ -414,9 +414,15 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 			}
 		}()
 	}
+	// TODO: remove after adoption of v1.125.0
+	ver, err := c.bridge.GetThorchainVersion()
+	if err != nil {
+		c.log.Err(err).Msg("fail to GetThorchainVersion from bridge")
+		return txIn, err
+	}
 
 	var txInBlock types.TxIn
-	txInBlock, err = c.extractTxs(block)
+	txInBlock, err = c.extractTxs(block, ver)
 	if err != nil {
 		return types.TxIn{}, fmt.Errorf("fail to extract txIn from block: %w", err)
 	}

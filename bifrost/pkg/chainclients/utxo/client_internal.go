@@ -90,6 +90,14 @@ func (c *Client) processReorg(block *btcjson.GetBlockVerboseTxResult) ([]types.T
 	if err != nil {
 		c.log.Err(err).Msgf("fail to reprocess all txs")
 	}
+
+	// TODO: remove after adoption of v1.125.0
+	ver, err := c.bridge.GetThorchainVersion()
+	if err != nil {
+		c.log.Err(err).Msg("fail to GetThorchainVersion from bridge")
+		return nil, err
+	}
+
 	var txIns []types.TxIn
 	for _, height := range blockHeights {
 		c.log.Info().Int64("height", height).Msg("rescanning block")
@@ -100,7 +108,7 @@ func (c *Client) processReorg(block *btcjson.GetBlockVerboseTxResult) ([]types.T
 			continue
 		}
 		var txIn types.TxIn
-		txIn, err = c.extractTxs(b)
+		txIn, err = c.extractTxs(b, ver)
 		if err != nil {
 			c.log.Err(err).Msgf("fail to extract txIn from block")
 			continue
@@ -616,12 +624,7 @@ func (c *Client) stripBCHAddress(addr string) string {
 	return split[0]
 }
 
-func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn, error) {
-	ver, err := c.bridge.GetThorchainVersion()
-	if err != nil {
-		c.log.Err(err).Msg("fail to GetThorchainVersion from bridge")
-		return types.TxIn{}, err
-	}
+func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult, version semver.Version) (types.TxIn, error) {
 	txIn := types.TxIn{
 		Chain:   c.GetChain(),
 		MemPool: false,
@@ -657,7 +660,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 
 		// TODO: remove after adoption of v1.125.0
-		if ver.LT(semver.MustParse("1.125.0")) && strings.HasPrefix(txInItem.Sender, "bc1p") {
+		if version.LT(semver.MustParse("1.125.0")) && strings.HasPrefix(txInItem.Sender, "bc1p") {
 			continue
 		}
 
