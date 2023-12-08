@@ -11,10 +11,8 @@ import (
 
 func TestNewAffiliateFeeBasisPointsMax(t *testing.T) {
 	expectedDefaultValue := constants.NewConstantValue().GetInt64Value(constants.MaxAffiliateFeeBasisPoints)
-
 	// Call the function without any reference strings
 	m := mimir.NewAffiliateFeeBasisPointsMax()
-
 	// Assert that the defaultValue is as expected
 	if m.DefaultValue() != expectedDefaultValue {
 		t.Errorf("Expected default value %d, got %d", expectedDefaultValue, m.DefaultValue())
@@ -29,7 +27,6 @@ func TestNewPauseBond(t *testing.T) {
 		assert.Equal(t, "PAUSEBONDINGBOND", mimir.Name(), "Incorrect name for bond reference")
 		assert.Equal(t, "Pauses bonding", mimir.Description(), "Incorrect description for bond reference")
 	})
-
 	// Test case for "unbond" reference
 	t.Run("unbond reference", func(t *testing.T) {
 		mimir := mimir.NewBondPause("unbond")
@@ -49,7 +46,6 @@ func TestNewPauseChain(t *testing.T) {
 		assert.Equal(t, "Halts interaction with the avax chain", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTAVAXCHAIN", strings.ToUpper(mimir.LegacyKey("avax")), "Incorrect legacy key for supported chain")
 	})
-
 	t.Run("thor chain", func(t *testing.T) {
 		mimir := mimir.NewPauseChain("thor")
 		assert.NotNil(t, mimir, "Expected non-nil Mimir for supported chain")
@@ -58,7 +54,6 @@ func TestNewPauseChain(t *testing.T) {
 		assert.Equal(t, "Halts interaction with the thor chain", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTTHORCHAIN", strings.ToUpper(mimir.LegacyKey("thor")), "Incorrect legacy key for supported chain")
 	})
-
 }
 
 func TestNewPauseSynths(t *testing.T) {
@@ -70,7 +65,6 @@ func TestNewPauseSynths(t *testing.T) {
 		assert.Equal(t, "Pauses the burning of synths", mimir.Description(), "Incorrect description for 'burn' reference")
 		assert.Equal(t, "BURNSYNTHS", mimir.LegacyKey("burn"), "Incorrect legacy key for 'burn' reference")
 	})
-
 	// Test for "mint" reference
 	t.Run("mint reference", func(t *testing.T) {
 		mimir := mimir.NewPauseSynths("mint")
@@ -91,7 +85,6 @@ func TestNewPauseSwaps(t *testing.T) {
 		assert.Equal(t, "Pauses swaps on avax chain", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTAVAXTRADING", mimir.LegacyKey("avax"), "Incorrect legacy key for supported chain")
 	})
-
 }
 
 func TestNewPauseLP(t *testing.T) {
@@ -116,5 +109,4 @@ func TestNewPauseSigning(t *testing.T) {
 		assert.Equal(t, "Halts signing", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTSIGNINGDOGE", mimir.LegacyKey("doge"), "Incorrect legacy key for supported chain")
 	})
-
 }
