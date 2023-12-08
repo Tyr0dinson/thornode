@@ -25,14 +25,14 @@ func TestNewPauseBond(t *testing.T) {
 		mimir := mimir.NewBondPause("bond")
 		assert.NotNil(t, mimir, "Mimir should not be nil")
 		assert.Equal(t, "PAUSEBONDINGBOND", mimir.Name(), "Incorrect name for bond reference")
-		assert.Equal(t, "Pauses bonding", mimir.Description(), "Incorrect description for bond reference")
+		assert.Equal(t, "Pauses bond", mimir.Description(), "Incorrect description for bond reference")
 	})
 	// Test case for "unbond" reference
 	t.Run("unbond reference", func(t *testing.T) {
 		mimir := mimir.NewBondPause("unbond")
 		assert.NotNil(t, mimir, "Mimir should not be nil")
 		assert.Equal(t, "PAUSEBONDINGUNBOND", mimir.Name(), "Incorrect name for unbond reference")
-		assert.Equal(t, "Pauses unbonding", mimir.Description(), "Incorrect description for unbond reference")
+		assert.Equal(t, "Pauses unbond", mimir.Description(), "Incorrect description for unbond reference")
 	})
 }
 
@@ -62,7 +62,7 @@ func TestNewPauseSynths(t *testing.T) {
 		mimir := mimir.NewPauseSynths("burn")
 		assert.NotNil(t, mimir, "Expected non-nil Mimir for 'burn' reference")
 		assert.Equal(t, "PAUSESYNTHSBURN", mimir.Name(), "Incorrect name for 'burn' reference")
-		assert.Equal(t, "Pauses the burning of synths", mimir.Description(), "Incorrect description for 'burn' reference")
+		assert.Equal(t, "Pauses the burn of synths", mimir.Description(), "Incorrect description for 'burn' reference")
 		assert.Equal(t, "BURNSYNTHS", mimir.LegacyKey("burn"), "Incorrect legacy key for 'burn' reference")
 	})
 	// Test for "mint" reference
@@ -70,7 +70,7 @@ func TestNewPauseSynths(t *testing.T) {
 		mimir := mimir.NewPauseSynths("mint")
 		assert.NotNil(t, mimir, "Expected non-nil Mimir for 'mint' reference")
 		assert.Equal(t, "PAUSESYNTHSMINT", mimir.Name(), "Incorrect name for 'mint' reference")
-		assert.Equal(t, "Pauses the minting of synths", mimir.Description(), "Incorrect description for 'mint' reference")
+		assert.Equal(t, "Pauses the mint of synths", mimir.Description(), "Incorrect description for 'mint' reference")
 		assert.Equal(t, "MINTSYNTHS", mimir.LegacyKey("mint"), "Incorrect legacy key for 'mint' reference")
 	})
 }
