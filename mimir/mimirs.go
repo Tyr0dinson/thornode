@@ -34,26 +34,29 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 func NewBondPause(refs ...string) Mimir {
 	id := BondPauseId
 	ref := getRef(refs)
-	var refConst constants.ConstantName
+
+	newMimir := &mimir{
+		id:        id,
+		name:      mimirRefToStringMap[id],
+		mimirType: OperationalMimir,
+		tags:      []string{"operational", "bond"},
+	}
 
 	if ref == "unbond" {
-		refConst = constants.PauseUnbond
-	} else {
-		ref = "bond"
-		refConst = constants.PauseBond
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseUnbond)
+		newMimir.description = "Pauses unbonding"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "PauseUnbond"
+		}
+	} else { // default ref is "bond"
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.PauseBond)
+		newMimir.description = "Pauses bonding"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "PauseBond"
+		}
 	}
-	newMimir := &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		reference:    ref,
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "bond"},
-		defaultValue: constants.NewConstantValue().GetInt64Value(refConst),
-		description:  fmt.Sprintf("Pauses %s", ref),
-		legacyMimirKey: func(_ string) string {
-			return refConst.String()
-		},
-	}
+
+	newMimir.reference = ref
 	return newMimir
 }
 
@@ -125,25 +128,27 @@ func NewPauseChain(refs ...string) Mimir {
 func NewPauseSynths(refs ...string) Mimir {
 	id := PauseSynthsId
 	ref := getRef(refs)
-	var refConst constants.ConstantName
-	if ref == "burn" {
-		refConst = constants.BurnSynths
-	} else {
-		ref = "mint"
-		refConst = constants.MintSynths
-	}
 	newMimir := &mimir{
-		id:           id,
-		name:         mimirRefToStringMap[id],
-		reference:    ref,
-		mimirType:    OperationalMimir,
-		tags:         []string{"operational", "synths"},
-		defaultValue: constants.NewConstantValue().GetInt64Value(refConst),
-		description:  fmt.Sprintf("Pauses the %s of synths", ref),
-		legacyMimirKey: func(_ string) string {
-			return refConst.String()
-		},
+		id:        id,
+		name:      mimirRefToStringMap[id],
+		mimirType: OperationalMimir,
+		tags:      []string{"operational", "synths"},
 	}
+	if ref == "burn" {
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.BurnSynths)
+		newMimir.description = "Pauses the burning of synths"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "BurnSynths"
+		}
+	} else { // default is "mint"
+		newMimir.defaultValue = constants.NewConstantValue().GetInt64Value(constants.MintSynths)
+		newMimir.description = "Pauses the minting of synths"
+		newMimir.legacyMimirKey = func(_ string) string {
+			return "MintSynths"
+		}
+	}
+
+	newMimir.reference = ref
 	return newMimir
 }
 
