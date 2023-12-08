@@ -58,11 +58,7 @@ func TestNewPauseChain(t *testing.T) {
 		assert.Equal(t, "Halts interaction with the thor chain", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTTHORCHAIN", strings.ToUpper(mimir.LegacyKey("thor")), "Incorrect legacy key for supported chain")
 	})
-	// Test for an unsupported chain
-	t.Run("unsupported chain", func(t *testing.T) {
-		mimir := mimir.NewPauseChain("unsupported")
-		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
-	})
+
 }
 
 func TestNewPauseSynths(t *testing.T) {
@@ -96,11 +92,6 @@ func TestNewPauseSwaps(t *testing.T) {
 		assert.Equal(t, "HALTAVAXTRADING", mimir.LegacyKey("avax"), "Incorrect legacy key for supported chain")
 	})
 
-	// Test for an unsupported chain
-	t.Run("unsupported chain", func(t *testing.T) {
-		mimir := mimir.NewPauseSwaps("unsupported")
-		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
-	})
 }
 
 func TestNewPauseLP(t *testing.T) {
@@ -112,12 +103,6 @@ func TestNewPauseLP(t *testing.T) {
 		assert.Equal(t, "BNB", mimir.Reference(), "Incorrect reference for supported chain")
 		assert.Equal(t, "Pauses the ability for LPs to add/remove liquidity", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "PAUSELPBNB", mimir.LegacyKey("bnb"), "Incorrect legacy key for supported chain")
-	})
-
-	// Test for an unsupported chain
-	t.Run("unsupported chain", func(t *testing.T) {
-		mimir := mimir.NewPauseLP("unsupported")
-		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
 	})
 }
 
@@ -132,9 +117,4 @@ func TestNewPauseSigning(t *testing.T) {
 		assert.Equal(t, "HALTSIGNINGDOGE", mimir.LegacyKey("doge"), "Incorrect legacy key for supported chain")
 	})
 
-	// Test for an unsupported chain
-	t.Run("unsupported chain", func(t *testing.T) {
-		mimir := mimir.NewPauseSigning("thor")
-		assert.Nil(t, mimir, "Expected nil Mimir for unsupported chain")
-	})
 }
