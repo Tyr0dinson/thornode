@@ -1297,7 +1297,7 @@ func IsTradingHalt(ctx cosmos.Context, keeper keeper.Keeper, msg cosmos.Msg) boo
 }
 
 func IsGlobalTradingHalted(ctx cosmos.Context, keeper keeper.Keeper) bool {
-	haltTrading := mimir.NewPauseSwaps().FetchValue(ctx, keeper)
+	haltTrading := mimir.NewPauseSwaps("").FetchValue(ctx, keeper)
 	if (haltTrading > 0 && haltTrading < ctx.BlockHeight()) || keeper.RagnarokInProgress(ctx) {
 		return true
 	}
@@ -1315,7 +1315,7 @@ func IsChainTradingHalted(ctx cosmos.Context, keeper keeper.Keeper, chain common
 }
 
 func IsChainHalted(ctx cosmos.Context, keeper keeper.Keeper, chain common.Chain) bool {
-	haltChain := mimir.NewPauseSwaps().FetchValue(ctx, keeper)
+	haltChain := mimir.NewPauseSwaps("").FetchValue(ctx, keeper)
 	if haltChain > 0 && haltChain < ctx.BlockHeight() {
 		ctx.Logger().Info("global is halt")
 		return true
@@ -1344,7 +1344,7 @@ func IsChainHalted(ctx cosmos.Context, keeper keeper.Keeper, chain common.Chain)
 
 func IsLPPaused(ctx cosmos.Context, keeper keeper.Keeper, chain common.Chain) bool {
 	// check if global LP is paused
-	pauseLPGlobal := mimir.NewPauseLP().FetchValue(ctx, keeper)
+	pauseLPGlobal := mimir.NewPauseLP("").FetchValue(ctx, keeper)
 	// k.GetMimir(ctx, "PauseLP")
 	if pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
 		return true

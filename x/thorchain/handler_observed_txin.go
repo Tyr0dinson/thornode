@@ -268,7 +268,7 @@ func (h ObservedTxInHandler) handleV124(ctx cosmos.Context, msg MsgObservedTxIn)
 		_, isAddLiquidity := m.(*MsgAddLiquidity)
 
 		if isSwap || isAddLiquidity {
-			if h.mgr.Keeper().IsTradingHalt(ctx, m) || h.mgr.Keeper().RagnarokInProgress(ctx) {
+			if IsTradingHalt(ctx, h.mgr.Keeper(), m) || h.mgr.Keeper().RagnarokInProgress(ctx) {
 				if newErr := refundTx(ctx, tx, h.mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
 					ctx.Logger().Error("fail to refund for halted trading", "error", err)
 				}

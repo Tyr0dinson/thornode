@@ -172,7 +172,7 @@ func (h DepositHandler) handleV119(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 	_, isSwap := m.(*MsgSwap)
 	_, isAddLiquidity := m.(*MsgAddLiquidity)
 	if isSwap || isAddLiquidity {
-		if h.mgr.Keeper().IsTradingHalt(ctx, m) || h.mgr.Keeper().RagnarokInProgress(ctx) {
+		if IsTradingHalt(ctx, h.mgr.Keeper(), m) || h.mgr.Keeper().RagnarokInProgress(ctx) {
 			if txIn.Tx.Coins.IsEmpty() {
 				return &cosmos.Result{}, nil
 			}

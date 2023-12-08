@@ -94,7 +94,7 @@ func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
 	}
 
 	target := msg.TargetAsset
-	if h.mgr.Keeper().IsTradingHalt(ctx, &msg) {
+	if IsTradingHalt(ctx, h.mgr.Keeper(), &msg) {
 		return errors.New("trading is halted, can't process swap")
 	}
 
