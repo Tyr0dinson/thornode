@@ -230,7 +230,8 @@ func NewAnchor(refs ...string) Mimir {
 		tags:         []string{"operational", "tor"},
 		description:  "Allow listed asset to be included in the TOR Price Anchor.",
 		legacyMimirKey: func(ref string) string {
-			return fmt.Sprintf("TorAnchor%s" + ref)
+			torAnchorLegacy := constants.TorAnchor.String() + "-" + ref
+			return torAnchorLegacy
 		},
 	}
 }

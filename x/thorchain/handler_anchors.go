@@ -1,4 +1,4 @@
-package keeperv1
+package thorchain
 
 import (
 	"fmt"
@@ -7,12 +7,13 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {
+func GetAnchors(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) []common.Asset {
 	if asset.GetChain().IsTHORChain() {
 		assets := make([]common.Asset, 0)
-		pools, err := k.GetPools(ctx)
+		pools, err := keeper.GetPools(ctx)
 		if err != nil {
 			ctx.Logger().Error("unable to fetch pools for anchor", "error", err)
 			return assets
@@ -20,8 +21,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 		for _, pool := range pools {
 			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
 			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
-			var val int64
-			val, err = k.GetMimir(ctx, mimirKey)
+			val, err := keeper.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)
 				continue
@@ -35,43 +35,29 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 	return []common.Asset{asset.GetLayer1Asset()}
 }
 
-// RunePerDollar gets in 1e8 terms the amount of Rune that is equal to 1 USD (in other words, 1 USD's price in Rune)
-func (k KVStore) RunePerDollar(ctx cosmos.Context) cosmos.Uint {
-	// get the usd price of a rune, this is being returned in 1e8 number
-	runePriceInUSD := k.DollarsPerRune(ctx)
-
-	// in order to calculate the runes per USD, it is needed to address 1e8 conversion
-	return common.GetUncappedShare(
-		// one single tor
-		cosmos.NewUint(common.One),
-		// one rune has total assets of USD equal to runePriceInUSD
-		runePriceInUSD, cosmos.NewUint(common.One),
-	)
-}
-
 // DollarsPerRune gets in 1e8 terms the amount of USD that is equal to 1 RUNE (in other words, 1 RUNE's price in USD)
-func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
+func DollarsPerRune(ctx cosmos.Context, keeper keeper.Keeper) cosmos.Uint {
 	// check for mimir override
-	dollarsPerRune, err := k.GetMimir(ctx, "DollarsPerRune")
+	dollarsPerRune, err := keeper.GetMimir(ctx, "DollarsPerRune")
 	if err == nil && dollarsPerRune > 0 {
 		return cosmos.NewUint(uint64(dollarsPerRune))
 	}
 
-	usdAssets := k.GetAnchors(ctx, common.TOR)
+	usdAssets := GetAnchors(ctx, keeper, common.TOR)
 
 	// anchorMedian returns a 1e8*constants.DollarMulti number,
 	// so divide by constants.DollarMulti in order to return a 1e8 number
 	// (consistent with a DollarsPerRune Mimir key being 1e8).
-	return k.AnchorMedian(ctx, usdAssets).QuoUint64(constants.DollarMulti)
+	return AnchorMedian(ctx, keeper, usdAssets).QuoUint64(constants.DollarMulti)
 }
 
-func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
+func AnchorMedian(ctx cosmos.Context, keeper keeper.Keeper, assets []common.Asset) cosmos.Uint {
 	p := make([]cosmos.Uint, 0)
 	for _, asset := range assets {
-		if k.IsGlobalTradingHalted(ctx) || k.IsChainTradingHalted(ctx, asset.Chain) {
+		if keeper.IsGlobalTradingHalted(ctx) || keeper.IsChainTradingHalted(ctx, asset.Chain) {
 			continue
 		}
-		pool, err := k.GetPool(ctx, asset)
+		pool, err := keeper.GetPool(ctx, asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
 			continue

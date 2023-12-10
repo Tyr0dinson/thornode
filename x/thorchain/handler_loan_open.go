@@ -261,7 +261,7 @@ func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error
 		return err
 	}
 
-	price := h.mgr.Keeper().DollarsPerRune(ctx)
+	price := DollarsPerRune(ctx, h.mgr.Keeper())
 	if price.IsZero() {
 		return fmt.Errorf("TOR price cannot be zero")
 	}

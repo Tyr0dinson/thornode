@@ -118,7 +118,7 @@ func (vm *NetworkMgrVCUR) suspendVirtualPool(ctx cosmos.Context, mgr Manager, de
 }
 
 func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
-	anchors := mgr.Keeper().GetAnchors(ctx, asset)
+	anchors := GetAnchors(ctx, mgr.Keeper(), asset)
 
 	maxAnchorBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 

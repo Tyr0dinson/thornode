@@ -136,7 +136,7 @@ func (h AddLiquidityHandler) validateV119(ctx cosmos.Context, msg MsgAddLiquidit
 	if msg.Asset.IsVaultAsset() {
 		// Check if the asset is in the anchor pools
 		isAnchorAsset := false
-		for _, asset := range h.mgr.Keeper().GetAnchors(ctx, common.TOR) {
+		for _, asset := range GetAnchors(ctx, h.mgr.Keeper(), common.TOR) {
 			if msg.Asset.GetLayer1Asset().Equals(asset) {
 				isAnchorAsset = true
 				break

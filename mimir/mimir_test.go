@@ -1,6 +1,7 @@
 package mimir_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -108,5 +109,24 @@ func TestNewPauseSigning(t *testing.T) {
 		assert.Equal(t, "DOGE", mimir.Reference(), "Incorrect reference for supported chain")
 		assert.Equal(t, "Halts signing", mimir.Description(), "Incorrect description for supported chain")
 		assert.Equal(t, "HALTSIGNINGDOGE", mimir.LegacyKey("doge"), "Incorrect legacy key for supported chain")
+	})
+}
+
+// TestNewAnchor tests the NewAnchor function for creating a Mimir object.
+func TestNewAnchor(t *testing.T) {
+	// Test with a specific input reference
+	t.Run("specific reference", func(t *testing.T) {
+		// Example input reference
+		inputRef := "AnchorBNB-BUSD-BD1"
+
+		// Calling the NewAnchor function
+		mimir := mimir.NewAnchor(inputRef)
+
+		// Assertions to validate the behavior of NewAnchor function
+		assert.NotNil(t, mimir, "Expected non-nil Mimir for given reference")
+		assert.Contains(t, mimir.Name(), "ANCHOR", "Name should contain 'Anchor'")
+		assert.Equal(t, strings.ToUpper(inputRef), mimir.Reference(), "Incorrect reference for given input")
+		assert.Equal(t, "Allow listed asset to be included in the TOR Price Anchor.", mimir.Description(), "Incorrect description")
+		assert.Equal(t, fmt.Sprintf("TORANCHOR-%s", strings.ToUpper(inputRef)), mimir.LegacyKey(inputRef), "Incorrect legacy key for given input")
 	})
 }
