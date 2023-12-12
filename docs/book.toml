@@ -1,0 +1,19 @@
+[book]
+title = "THORChain Dev Docs"
+language = "en"
+src = ""
+
+[preprocessor.katex]
+after = ["links"]
+inline-delimiter = { left = "$$$", right = "$$$" }
+
+[preprocessor.admonish]
+command = "mdbook-admonish"
+assets_version = "3.0.1"    # do not edit: managed by `mdbook-admonish install`
+
+[preprocessor.catppuccin]
+assets_version = "2.1.0" # DO NOT EDIT: Managed by `mdbook-catppuccin install`
+
+[output.html]
+default-theme = "latte"
+additional-css = ["./theme/catppuccin.css", "./theme/mdbook-admonish.css"]
