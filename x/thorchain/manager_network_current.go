@@ -1289,22 +1289,36 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 }
 
 func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Pools, cosmos.Uint, error) {
-	// First get active pools and total provided liquidity Rune
-	totalProvidedLiquidity := cosmos.ZeroUint()
-	var pools Pools
-	iterator := vm.k.GetPoolIterator(ctx)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var pool Pool
-		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
-			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to unmarhsl pool: %w", err)
-		}
-		if pool.Asset.IsNative() {
+	var (
+		pool                   Pool
+		pools                  Pools
+		found                  bool
+		totalProvidedLiquidity = cosmos.ZeroUint()
+	)
+	vaults, err := vm.k.GetAsgardVaults(ctx)
+	if err != nil {
+		return nil, cosmos.ZeroUint(), err
+	}
+
+	poolCache := make(map[string]Pool)
+	for _, vault := range vaults {
+		if !(vault.IsActive() || vault.IsRetiring()) {
 			continue
 		}
-		if !pool.BalanceRune.IsZero() {
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.BalanceRune)
-			pools = append(pools, pool)
+		for _, coin := range vault.Coins {
+			if coin.Asset.IsNative() || coin.Amount.IsZero() {
+				continue
+			}
+			asset := coin.Asset.String()
+			if pool, found = poolCache[asset]; !found {
+				pool, err = vm.k.GetPool(ctx, coin.Asset)
+				if err != nil {
+					return nil, cosmos.ZeroUint(), err
+				}
+				poolCache[asset] = pool
+				pools = append(pools, pool)
+			}
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(coin.Amount))
 		}
 	}
 	return pools, totalProvidedLiquidity, nil
