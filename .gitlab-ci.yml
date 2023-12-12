@@ -18,6 +18,7 @@ variables:
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 stages:
+  - pages
   - fork
   - reset
   - generate
@@ -137,18 +138,7 @@ build-thornode:
     - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
 
 pages:
-  rules:
-    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != "thorchain/thornode"
-      when: never
-    - if: $CI_COMMIT_BRANCH == "develop"
-      when: always
-    - if: $CI_COMMIT_BRANCH == "testnet"
-      when: always
-    - if: $CI_COMMIT_BRANCH == "stagenet"
-      when: always
-    - if: $CI_COMMIT_BRANCH == "mainnet"
-      when: always
-  stage: build
+  stage: pages
   image: rust:1.74.1
   artifacts:
     paths:
