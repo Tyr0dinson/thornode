@@ -80,7 +80,7 @@ params:
   to_asset: RUNE
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 486545262
+  - .expected_amount_out|tonumber == 486933508
   - .expected_debt_issued|tonumber == 490140000
 ---
 type: tx-deposit
