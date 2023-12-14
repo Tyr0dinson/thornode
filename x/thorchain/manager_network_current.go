@@ -1299,7 +1299,6 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 	if err != nil {
 		return nil, cosmos.ZeroUint(), err
 	}
-
 	poolCache := make(map[string]Pool)
 	for _, vault := range vaults {
 		if !(vault.IsActive() || vault.IsRetiring()) {
@@ -1318,8 +1317,7 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 				poolCache[asset] = pool
 				pools = append(pools, pool)
 			}
-			amount := pool.AssetValueInRune(cosmos.RoundToDecimal(coin.Amount, pool.Decimals))
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(amount)
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(cosmos.RoundToDecimal(coin.Amount, pool.Decimals)))
 		}
 	}
 	return pools, totalProvidedLiquidity, nil
