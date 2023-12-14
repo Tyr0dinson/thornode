@@ -34,7 +34,6 @@
 
 ## Concepts
 
-* [Supported Address Formats](concepts/supported-address-formats.md)
 * [Connecting to THORChain](concepts/connecting-to-thorchain.md)
 * [Querying THORChain](concepts/querying-thorchain.md)
 * [Transaction Memos](concepts/memos.md)

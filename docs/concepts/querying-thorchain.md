@@ -4,17 +4,40 @@ description: How to Query THORChain
 
 # Querying THORChain
 
+## Supported Address Formats
+
+Below are the list of supported Address Formats. Not using this risks loss of funds.
+
+| Chain           | Supported Address Format                                      | Notes                                                                                   |
+|-----------------|---------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| BTC             | P2WSH /w Bech32 (preferred), P2WPKH /w Bech32, P2PKH, P2SH  | Do not send to/from with P2TR. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats |
+| ETH             | EIP-55                                                        | Do not send to or from contract addresses.                                              |
+| BNB             | Bech32                                                        |                                                                                         |
+| BSC             | EIP-55                                                        | Do not send to or from contract addresses.                                              |
+| AVAX            | EIP-55                                                        | Do not send to or from contract addresses.                                              |
+| DOGE            | Bech32                                                        |                                                                                         |
+| LTC             | Bech32                                                        |                                                                                         |
+| BCH             | Bech32                                                        |                                                                                         |
+| GAIA (cosmoshub)| Bech32                                                        |                                                                                         |
+
+All inbound_address support this format.
+
+``` admonish danger
+
+  THORChain does NOT currently support BTC Taproot. User funds will be lost if sent to or from a taproot address!
+```
+
 ## Getting the Asgard Vault
 
-Vaults are fetched from the `/inbound_addresses` :
+Vaults are fetched from the `/inbound_addresses` endpoint:
 
 [https://thornode.ninerealms.com/thorchain/inbound_addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses)
 
-You need to select the address of the Chain the inbound transaction will go to.&#x20;
+You need to select the address of the Chain the inbound transaction will go to.
 
 The address will be the current active Asgard Address that accepts inbounds. Do not cache these address as they change regularly. Do not delay inbound transactions (e.g. do not use future timeLocks).
 
-Example Output, each connected chain will be displayed.&#x20;
+Example Output, each connected chain will be displayed.
 
 ```json
 [
@@ -37,7 +60,7 @@ Example Output, each connected chain will be displayed.&#x20;
 ```
 
 {% hint style="danger" %}
-Never cache vault addresses, they churn regularly.&#x20;
+Never cache vault addresses, they churn regularly.
 {% endhint %}
 
 {% hint style="danger" %}
@@ -49,12 +72,12 @@ Check for the `halted` parameter and never send funds if it is set to true
 {% endhint %}
 
 {% hint style="warning" %}
-If a chain has a `router` on the inbound address endpoint, then everything must be deposited via the router. The router is a contract that the user first approves, and the deposit call transfers the asset into the network and emits an event to THORChain.&#x20;
+If a chain has a `router` on the inbound address endpoint, then everything must be deposited via the router. The router is a contract that the user first approves, and the deposit call transfers the asset into the network and emits an event to THORChain.
 
 \
-This is done because "tokens" on protocols don't support memos on-chain, thus need to be wrapped by a router which can force a memo.&#x20;
+This is done because "tokens" on protocols don't support memos on-chain, thus need to be wrapped by a router which can force a memo.
 
-Note: you can transfer the base asset, eg ETH, directly to the address and skip the router, but it is recommended to deposit everything via the router.&#x20;
+Note: you can transfer the base asset, eg ETH, directly to the address and skip the router, but it is recommended to deposit everything via the router.
 
 ```json
 {
@@ -74,7 +97,7 @@ If you connect to a public Midgard, you must be conscious of the fact that you c
 {% endhint %}
 
 - `Chain`: Chain Name
-- `Address`: Asgard Vault inbound address for that chain.,&#x20;
+- `Address`: Asgard Vault inbound address for that chain.,
 - `Halted`: Boolean, if the chain is halted. This should be monitored.
 - `gas_rate`: rate to be used, e.g. in Stats or GWei. See Fees.
 
@@ -115,13 +138,13 @@ Make sure to manually add Native $RUNE as a swappable asset.
 
 ### Decimals and Base Units
 
-All values on THORChain (thornode and Midgard) are given in 1e8 eg, 100000000 base units (like Bitcoin), and unless postpended by "USD", they are in units of RUNE. Even 1e18 assets, such as ETH.ETH, are shortened to 1e8. 1e6 Assets like ETH.USDC, are padded to 1e8. THORNode will tell you the decimals for each asset, giving you the opportunity to convert back to native units in your interface.&#x20;
+All values on THORChain (thornode and Midgard) are given in 1e8 eg, 100000000 base units (like Bitcoin), and unless postpended by "USD", they are in units of RUNE. Even 1e18 assets, such as ETH.ETH, are shortened to 1e8. 1e6 Assets like ETH.USDC, are padded to 1e8. THORNode will tell you the decimals for each asset, giving you the opportunity to convert back to native units in your interface.
 
-See code examples using the THORChain xchain package here [https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain)&#x20;
+See code examples using the THORChain xchain package here [https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain](https://github.com/xchainjs/xchainjs-lib/tree/master/packages/xchain-thorchain)
 
 ### Finding Chain Status
 
-There are two ways to see if a Chain is halted.&#x20;
+There are two ways to see if a Chain is halted.
 
 1. Looking at the `/inbound_addresses` [endpoint](https://thornode.ninerealms.com/thorchain/inbound_addresses) and inspecting the halted flag.
 2. Looking at Mimir and inspecting the HALT\[Chain]TRADING setting. See [network-halts.md](network-halts.md "mention") for more details.

@@ -42,6 +42,10 @@ THORChain offers a Savings product, which earns yield from Swap fees. Deposit La
 [quickstart-guide.md](saving-guide/quickstart-guide.md)
 {% endcontent-ref %}
 
+### [Native Lending Guide](lending/quick-start-guide.md)
+
+THORChain's Lending allows users to leverage their crypto as collateral, depositing Layer1 Assets and obtaining a debt in any supported THORChain asset. No interest, time constraints, liquidations, or KYC required.
+
 ### Aggregators
 
 Aggregators can deploy contracts that use custom `swapIn` and `swapOut` cross-chain aggregation to perform swaps before and after THORChain.
