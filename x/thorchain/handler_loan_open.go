@@ -514,7 +514,7 @@ func (h LoanOpenHandler) GetLoanCollateralRemainingForPool(ctx cosmos.Context, p
 	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
 	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
 
-	loanCollateralRemainingForPool := totalCollateral.Sub(totalAvailableAssetForPool)
+	loanCollateralRemainingForPool := common.SafeSub(totalAvailableAssetForPool, totalCollateral)
 
 	return loanCollateralRemainingForPool, nil
 }
