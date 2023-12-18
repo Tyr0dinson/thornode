@@ -37,6 +37,8 @@ func (m *StreamingSwap) Valid() error {
 
 func (m *StreamingSwap) NextSize(version semver.Version) (cosmos.Uint, cosmos.Uint) {
 	switch {
+	case version.GTE(semver.MustParse("1.126.0")):
+		return m.NextSizeV126()
 	case version.GTE(semver.MustParse("1.121.0")):
 		return m.NextSizeV121()
 	case version.GTE(semver.MustParse("1.116.0")):
@@ -46,7 +48,7 @@ func (m *StreamingSwap) NextSize(version semver.Version) (cosmos.Uint, cosmos.Ui
 	}
 }
 
-func (m *StreamingSwap) NextSizeV121() (cosmos.Uint, cosmos.Uint) {
+func (m *StreamingSwap) NextSizeV126() (cosmos.Uint, cosmos.Uint) {
 	swapSize := m.DefaultSwapSize()
 
 	// sanity check, ensure we never exceed the deposit amount
