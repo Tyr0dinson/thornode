@@ -1348,9 +1348,17 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		synthMintPausedErr := isSynthMintPaused(ctx, mgr, pool.Asset, cosmos.ZeroUint())
 		synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, pool.Asset)
 
+		// loan
+		handler := NewLoanOpenHandler(mgr)
+
 		totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 		if err != nil {
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
+		}
+
+		loanCollateralRemaining, err := handler.GetLoanCollateralRemainingForPool(ctx, pool)
+		if err != nil {
+			return nil, fmt.Errorf("fail to fetch remaining loan collateral: %w", err)
 		}
 
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
@@ -1367,9 +1375,9 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.LoanCollateral = totalCollateral.String()
+		p.LoanCollateralRemaining = loanCollateralRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 
-		handler := NewLoanOpenHandler(mgr)
 		cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 		p.LoanCR = cr.String()
 
