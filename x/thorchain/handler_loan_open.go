@@ -252,6 +252,14 @@ func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("fail to send collateral funds: %w", err)
 	}
 
+	// affiliate fee swap
+
+	// enclose in helper func
+	// update msg.CollateralAmount to subtract collateralAffCoin.Amount
+	// collateralAffCoin := common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), GetSafeShare(msg.CollateralAmount)...)
+
+	// queue the aff swap index 2
+
 	// get configs
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
 
