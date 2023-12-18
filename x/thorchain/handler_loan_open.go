@@ -397,41 +397,6 @@ func (h LoanOpenHandler) getPoolCR(ctx cosmos.Context, pool Pool, collateralAmou
 	return cr, nil
 }
 
-func (h LoanOpenHandler) GetLoanCollateralRemainingForPool(ctx cosmos.Context, pool Pool) (cosmos.Uint, error) {
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
-
-	currentRuneSupply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
-	maxRuneSupply := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
-	if maxRuneSupply <= 0 {
-		return cosmos.ZeroUint(), fmt.Errorf("no max supply set")
-	}
-	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
-	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
-	if totalAvailableRuneForProtocol.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("no availability (0), lending unavailable")
-	}
-
-	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
-	if err != nil {
-		return cosmos.ZeroUint(), err
-	}
-
-	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
-	if err != nil {
-		return cosmos.ZeroUint(), err
-	}
-	if totalRune.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("no liquidity, lending unavailable")
-	}
-
-	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
-	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
-
-	loanCollateralRemainingForPool := totalCollateral.Sub(totalAvailableAssetForPool)
-
-	return loanCollateralRemainingForPool, nil
-}
-
 func (h LoanOpenHandler) calcCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uint {
 	// (maxCR - minCR) / (b / a) + minCR
 	// NOTE: a should include the collateral currently being deposited
@@ -523,4 +488,33 @@ func (h LoanOpenHandler) getTotalLiquidityRUNELoanPoolsV108(ctx cosmos.Context) 
 		total = total.Add(p.BalanceRune)
 	}
 	return total, nil
+}
+
+func (h LoanOpenHandler) GetLoanCollateralRemainingForPool(ctx cosmos.Context, pool Pool) (cosmos.Uint, error) {
+	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
+
+	currentRuneSupply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxRuneSupply := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
+	if maxRuneSupply <= 0 {
+		return cosmos.ZeroUint(), fmt.Errorf("no max supply set")
+	}
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
+
+	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
+	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
+	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
+	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
+
+	loanCollateralRemainingForPool := totalCollateral.Sub(totalAvailableAssetForPool)
+
+	return loanCollateralRemainingForPool, nil
 }
