@@ -356,7 +356,11 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
-			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
+			nas, err := s.keeper.ListActiveValidators(ctx)
+			if err != nil {
+				ctx.Logger().Error("fail to get all active validators", "error", err)
+			}
+			if s.needsNewVault(ctx, mgr, len(nas), signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -669,7 +673,7 @@ func (s *SlasherVCUR) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
-func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, inhash common.TxID, pk common.PubKey) bool {
+func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, nas int, signingTransPeriod, startHeight int64, inhash common.TxID, pk common.PubKey) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, inhash)
 	if len(outhashes) == 0 {
 		return true
@@ -683,40 +687,21 @@ func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 		}
 		// in the event there are multiple outbounds for a given inhash, we
 		// focus on the matching pubkey
-		signers := make(map[string]bool)
+		signers := make([]string, 0)
 		for _, tx1 := range voter.Txs {
 			if tx1.ObservedPubKey.Equals(pk) {
 				for _, tx := range voter.Txs {
 					if !tx.Tx.ID.Equals(hash) {
 						continue
 					}
-					for _, signer := range tx.Signers {
-						// Uniquely record each signer for this outbound hash.
-						signers[signer] = true
+					if len(signers) < len(tx.Signers) {
+						signers = tx.Signers
 					}
 				}
 			}
 		}
 		if len(signers) > 0 {
-			var count int // count the number of signers from the assigned vault
-			for _, member := range vault.Membership {
-				pk, err := common.NewPubKey(member)
-				if err != nil {
-					continue
-				}
-				addr, err := pk.GetThorAddress()
-				if err != nil {
-					continue
-				}
-				if _, ok := signers[addr.String()]; ok {
-					count++
-				}
-			}
-			// if a super majority of vault members have observed the outbound,
-			// then we should not reschedule. If a vault says it sent it, it
-			// sent it and shouldn't get another vault to send it (potentially
-			// a second time)
-			if count > 0 && HasSuperMajority(count, len(vault.Membership)) {
+			if nas > 0 && HasMinority(len(signers), nas) {
 				return false
 			}
 			maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
