@@ -254,6 +254,11 @@ func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error
 
 	// affiliate fee swap
 
+	if msg.AffiliateBasisPoints.GT(zero) && !msg.AffiliateBasisPoints.LTE(cosmos.NewUint(1000)) {
+		affiliateFee := common.GetSafeShare(msg.CollateralAmount, cosmos.NewUint(10000), msg.AffiliateBasisPoints)
+		ctx.Logger().Info("affiliate fee", "fee", affiliateFee, "bps", msg.AffiliateBasisPoints)
+	}
+
 	// enclose in helper func
 	// update msg.CollateralAmount to subtract collateralAffCoin.Amount
 	// collateralAffCoin := common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), GetSafeShare(msg.CollateralAmount)...)
