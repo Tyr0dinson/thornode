@@ -187,7 +187,7 @@ asserts:
   - .[0]|.debt_issued == "970320000"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "989774" # should now be fully repaid
-  - .[0]|.debt_repaid == "975565979" # over repaid
+  - .[0]|.debt_repaid == "975565977" # over repaid
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -222,7 +222,7 @@ asserts:
   - .[0]|.collateral_deposited == "989774"
   - .[0]|.debt_issued == "970320000"
   - .[0]|.collateral_withdrawn == "989774"
-  - .[0]|.debt_repaid == "975565979"
+  - .[0]|.debt_repaid == "975565977"
   - .[0]|.owner == "{{ addr_btc_fox }}"
 ---
 type: create-blocks

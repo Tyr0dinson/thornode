@@ -1218,10 +1218,11 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	// are to be passed on as bond rewards, so pool reward transfers should be processed before the bond reward transfer.
 
 	var evtPools []PoolAmt
-
 	if !totalPoolRewards.IsZero() { // If Pool Rewards to hand out
-		var rewardAmts []cosmos.Uint
-		var rewardPools []Pool
+		var (
+			rewardAmts  []cosmos.Uint
+			rewardPools []Pool
+		)
 		// Pool Rewards are based on Fee Share
 		for _, pool := range pools {
 			if !pool.IsAvailable() {
@@ -1232,7 +1233,6 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 				amt = common.GetSafeShare(pool.BalanceRune, totalProvidedLiquidity, totalPoolRewards)
 				fees = cosmos.ZeroUint()
 			} else {
-				var err error
 				fees, err = vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
 				if err != nil {
 					ctx.Logger().Error("fail to get fees", "error", err)
@@ -1240,7 +1240,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
-			if err := vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
+			if err = vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
 			}
 			// when pool reward is zero, don't emit it
@@ -1250,7 +1250,6 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 			rewardAmts = append(rewardAmts, amt)
 			evtPools = append(evtPools, PoolAmt{Asset: pool.Asset, Amount: int64(amt.Uint64())})
 			rewardPools = append(rewardPools, pool)
-
 		}
 		// Pay out
 		if err := vm.payPoolRewards(ctx, rewardAmts, rewardPools); err != nil {

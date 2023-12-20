@@ -163,7 +163,7 @@
               "denom": "btc/btc"
             },
             {
-              "amount": "500016209805",
+              "amount": "500016125188",
               "denom": "rune"
             }
           ]
@@ -199,7 +199,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000009316573",
+              "amount": "5000009401190",
               "denom": "rune"
             }
           ]
@@ -387,7 +387,7 @@
       "network": {
         "LPIncomeSplit": "9000",
         "NodeIncomeSplit": "1000",
-        "bond_reward_rune": "9316573",
+        "bond_reward_rune": "9401190",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
         "total_bond_units": "23"
@@ -427,7 +427,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "110000000",
-          "balance_rune": "100013812565",
+          "balance_rune": "100013727948",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

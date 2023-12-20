@@ -130,7 +130,7 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_fox }}
     coins:
-      - amount: "43749725"
+      - amount: "43749068"
         asset: "ETH.ETH"
         decimals: 8
     gas:
