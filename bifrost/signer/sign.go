@@ -556,7 +556,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningGlobalMimir > 0 {
 		s.logger.Info().Msg("signing has been halted globally")
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("signing has been halted globally")
 	}
 	mimirKey = fmt.Sprintf("HALTSIGNING%s", tx.Chain)
 	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
@@ -566,7 +566,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningMimir > 0 {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("signing for %s is halted", tx.Chain)
 	}
 	mimirKey = fmt.Sprintf("SOLVENCYHALT%sCHAIN", tx.Chain)
 	solvencyHaltMimir, err := s.thorchainBridge.GetMimir(mimirKey)
@@ -576,7 +576,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if solvencyHaltMimir > 0 {
 		s.logger.Info().Msgf("signing for %s is solvency halted", tx.Chain)
-		return nil, nil, nil
+		// Return error on Mimir signing halt so that this chain's processTransactions queue does not continue to later items
+		// (potentially trying to sign them first)
+		// and so that (for example) momentary automatic solvency halts do not delay all TxOutItems until vault reassignment.
+		return nil, nil, fmt.Errorf("signing for %s is solvency halted", tx.Chain)
 	}
 	if !s.shouldSign(tx) {
 		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
