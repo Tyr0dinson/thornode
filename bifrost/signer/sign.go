@@ -556,7 +556,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningGlobalMimir > 0 {
 		s.logger.Info().Msg("signing has been halted globally")
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("signing has been halted globally")
 	}
 	mimirKey = fmt.Sprintf("HALTSIGNING%s", tx.Chain)
 	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
@@ -566,8 +566,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningMimir > 0 {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("signing for %s is halted", tx.Chain)
 	}
+
 	if !s.shouldSign(tx) {
 		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
 		return nil, nil, nil
