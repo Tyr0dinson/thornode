@@ -568,6 +568,16 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
 		return nil, nil, nil
 	}
+	mimirKey = fmt.Sprintf("SOLVENCYHALT%sCHAIN", tx.Chain)
+	solvencyHaltMimir, err := s.thorchainBridge.GetMimir(mimirKey)
+	if err != nil {
+		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
+		return nil, nil, err
+	}
+	if solvencyHaltMimir > 0 {
+		s.logger.Info().Msgf("signing for %s is solvency halted", tx.Chain)
+		return nil, nil, nil
+	}
 	if !s.shouldSign(tx) {
 		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
 		return nil, nil, nil
