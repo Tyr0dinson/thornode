@@ -68,7 +68,7 @@ func (b fakeBridge) GetConstants() (map[string]int64, error) {
 }
 
 func (b fakeBridge) GetMimir(key string) (int64, error) {
-	if strings.HasPrefix(key, "HALT") {
+	if strings.Contains(key, "HALT") {
 		return 0, nil
 	}
 	panic("not implemented")
