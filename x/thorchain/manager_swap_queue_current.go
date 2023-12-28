@@ -142,7 +142,12 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				targetAsset := pick.msg.TargetAsset
 				maxSwapQuantity, err := getMaxSwapQuantity(ctx, mgr, sourceAsset, targetAsset, swp)
 				if err != nil {
-					return err
+					ctx.Logger().Error("fail to get max swap quantity", "error", err)
+					// This could be due to (for instance) StreamingSwapMinBPFee zero,
+					// in which case do a single swap rather than continue
+					// (cycle endlessly) or return an error
+					// (blocks other queued swaps, and still cycles endlessly).
+					maxSwapQuantity = 1
 				}
 				if swp.Quantity == 0 || swp.Quantity > maxSwapQuantity {
 					swp.Quantity = maxSwapQuantity
