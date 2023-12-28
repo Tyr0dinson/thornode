@@ -36,6 +36,8 @@ type StreamingSwap struct {
 	Destination *string `json:"destination,omitempty"`
 	// the number of input tokens the swapper has deposited
 	Deposit string `json:"deposit"`
+	// the number of input tokens that have failed swaps so far
+	Refund string `json:"refund"`
 	// the amount of input tokens that have been swapped so far
 	In string `json:"in"`
 	// the amount of output tokens that have been swapped so far
@@ -50,10 +52,11 @@ type StreamingSwap struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStreamingSwap(tradeTarget string, deposit string, in string, out string) *StreamingSwap {
+func NewStreamingSwap(tradeTarget string, deposit string, refund string, in string, out string) *StreamingSwap {
 	this := StreamingSwap{}
 	this.TradeTarget = tradeTarget
 	this.Deposit = deposit
+	this.Refund = refund
 	this.In = in
 	this.Out = out
 	return &this
@@ -371,6 +374,30 @@ func (o *StreamingSwap) SetDeposit(v string) {
 	o.Deposit = v
 }
 
+// GetRefund returns the Refund field value
+func (o *StreamingSwap) GetRefund() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.Refund
+}
+
+// GetRefundOk returns a tuple with the Refund field value
+// and a boolean to check if the value has been set.
+func (o *StreamingSwap) GetRefundOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Refund, true
+}
+
+// SetRefund sets field value
+func (o *StreamingSwap) SetRefund(v string) {
+	o.Refund = v
+}
+
 // GetIn returns the In field value
 func (o *StreamingSwap) GetIn() string {
 	if o == nil {
@@ -514,6 +541,9 @@ func (o StreamingSwap) MarshalJSON() ([]byte, error) {
 	}
 	if true {
 		toSerialize["deposit"] = o.Deposit
+	}
+	if true {
+		toSerialize["refund"] = o.Refund
 	}
 	if true {
 		toSerialize["in"] = o.In

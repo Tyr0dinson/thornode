@@ -2499,7 +2499,7 @@ components:
         - 5
         - 5
         quantity: 6
-        in: "100"
+        in: "50"
         trade_target: "100"
         count: 1
         destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -2508,11 +2508,12 @@ components:
         - failed_swap_reasons
         tx_id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         last_height: 5
-        out: "100"
+        out: "50"
         target_asset: ETH.ETH
         deposit: "100"
         interval: 0
         source_asset: BTC.BTC
+        refund: "10"
       properties:
         tx_id:
           description: the hash of a transaction
@@ -2555,13 +2556,17 @@ components:
           description: the number of input tokens the swapper has deposited
           example: "100"
           type: string
+        refund:
+          description: the number of input tokens that have failed swaps so far
+          example: "10"
+          type: string
         in:
           description: the amount of input tokens that have been swapped so far
-          example: "100"
+          example: "50"
           type: string
         out:
           description: the amount of output tokens that have been swapped so far
-          example: "100"
+          example: "50"
           type: string
         failed_swaps:
           description: the list of swap indexes that failed
@@ -2578,6 +2583,7 @@ components:
       - deposit
       - in
       - out
+      - refund
       - trade_target
       type: object
     Tx:

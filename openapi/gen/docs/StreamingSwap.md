@@ -14,6 +14,7 @@ Name | Type | Description | Notes
 **TargetAsset** | Pointer to **string** | the asset to be swapped to | [optional] 
 **Destination** | Pointer to **string** | the destination address to receive the swap output | [optional] 
 **Deposit** | **string** | the number of input tokens the swapper has deposited | 
+**Refund** | **string** | the number of input tokens that have failed swaps so far | 
 **In** | **string** | the amount of input tokens that have been swapped so far | 
 **Out** | **string** | the amount of output tokens that have been swapped so far | 
 **FailedSwaps** | Pointer to **[]int32** | the list of swap indexes that failed | [optional] 
@@ -23,7 +24,7 @@ Name | Type | Description | Notes
 
 ### NewStreamingSwap
 
-`func NewStreamingSwap(tradeTarget string, deposit string, in string, out string, ) *StreamingSwap`
+`func NewStreamingSwap(tradeTarget string, deposit string, refund string, in string, out string, ) *StreamingSwap`
 
 NewStreamingSwap instantiates a new StreamingSwap object
 This constructor will assign default values to properties that have it defined,
@@ -276,6 +277,26 @@ and a boolean to check if the value has been set.
 `func (o *StreamingSwap) SetDeposit(v string)`
 
 SetDeposit sets Deposit field to given value.
+
+
+### GetRefund
+
+`func (o *StreamingSwap) GetRefund() string`
+
+GetRefund returns the Refund field if non-nil, zero value otherwise.
+
+### GetRefundOk
+
+`func (o *StreamingSwap) GetRefundOk() (*string, bool)`
+
+GetRefundOk returns a tuple with the Refund field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetRefund
+
+`func (o *StreamingSwap) SetRefund(v string)`
+
+SetRefund sets Refund field to given value.
 
 
 ### GetIn
