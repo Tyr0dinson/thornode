@@ -184,6 +184,12 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			}
 			swp.Count += 1
 			if handleErr != nil {
+				// The Refund field may be nil (nullable and historically non-existent).
+				if swp.Refund == nil {
+					zeroAmt := cosmos.ZeroUint()
+					swp.Refund = &zeroAmt
+				}
+				// TODO: How to get from the swap handler the accurate amount to add to Refund?
 				swp.FailedSwaps = append(swp.FailedSwaps, swp.Count)
 				swp.FailedSwapReasons = append(swp.FailedSwapReasons, handleErr.Error())
 			}

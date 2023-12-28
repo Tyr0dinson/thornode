@@ -18,4 +18,5 @@ message StreamingSwap {
   string out = 9 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
   repeated uint64 failed_swaps = 10;
   repeated string failed_swap_reasons = 11;
+  string refund = 12 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = true];
 }

@@ -780,6 +780,7 @@ type QueryStreamingSwap struct {
 	TargetAsset       common.Asset   `json:"target_asset,omitempty"`
 	Destination       common.Address `json:"destination,omitempty"`
 	Deposit           cosmos.Uint    `json:"deposit"`
+	Refund            cosmos.Uint    `json:"refund"`
 	In                cosmos.Uint    `json:"in"`
 	Out               cosmos.Uint    `json:"out"`
 	FailedSwaps       []uint64       `json:"failed_swaps,omitempty"`
@@ -794,6 +795,12 @@ func NewQueryStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) QuerySt
 		sourceAsset = msgSwap.Tx.Coins[0].Asset
 	}
 
+	// The Refund field may be nil (nullable and historically non-existent).
+	refund := cosmos.ZeroUint()
+	if streamingSwap.Refund != nil {
+		refund = *streamingSwap.Refund
+	}
+
 	return QueryStreamingSwap{
 		TxID:              streamingSwap.TxID,
 		Interval:          streamingSwap.Interval,
@@ -805,6 +812,7 @@ func NewQueryStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) QuerySt
 		TargetAsset:       msgSwap.TargetAsset,
 		Destination:       msgSwap.Destination,
 		Deposit:           streamingSwap.Deposit,
+		Refund:            refund,
 		In:                streamingSwap.In,
 		Out:               streamingSwap.Out,
 		FailedSwaps:       streamingSwap.FailedSwaps,

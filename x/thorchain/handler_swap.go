@@ -322,31 +322,6 @@ func (h SwapHandler) handleV121(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 				return nil, err
 			}
 		}
-
-		// for first swap only, override interval and quantity (if needed)
-		if swp.Count == 0 {
-			// ensure interval is never larger than max length, override if so
-			maxLength := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapMaxLength)
-			if uint64(maxLength) < swp.Interval {
-				swp.Interval = uint64(maxLength)
-			}
-
-			sourceAsset := msg.Tx.Coins[0].Asset
-			targetAsset := msg.TargetAsset
-			maxSwapQuantity, err := getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp)
-			if err != nil {
-				return nil, err
-			}
-			if swp.Quantity == 0 || swp.Quantity > maxSwapQuantity {
-				swp.Quantity = maxSwapQuantity
-			}
-		}
-		h.mgr.Keeper().SetStreamingSwap(ctx, swp)
-		// hijack the inbound amount
-		// NOTE: its okay if the amount is zero. The swap will fail as it
-		// should, which will cause the swap queue manager later to send out
-		// the In/Out amounts accordingly
-		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(h.mgr.GetVersion())
 	}
 
 	emit, _, swapErr := swapper.Swap(

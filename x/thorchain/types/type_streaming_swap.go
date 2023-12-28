@@ -51,17 +51,23 @@ func (m *StreamingSwap) NextSize(version semver.Version) (cosmos.Uint, cosmos.Ui
 func (m *StreamingSwap) NextSizeV126() (cosmos.Uint, cosmos.Uint) {
 	swapSize := m.DefaultSwapSize()
 
+	// The Refund field may be nil (nullable and historically non-existent).
+	refund := cosmos.ZeroUint()
+	if m.Refund != nil {
+		refund = *m.Refund
+	}
+	remainingIn := common.SafeSub(m.Deposit, m.In.Add(refund))
+
 	// sanity check, ensure we never exceed the deposit amount
 	// Also, if this is the last swap, just do the remainder
-	if m.Deposit.LT(m.In.Add(swapSize)) || m.IsLastSwap() {
-		// use remainder of `m.Depost - m.In` instead
-		swapSize = common.SafeSub(m.Deposit, m.In)
+	if swapSize.GT(remainingIn) || m.IsLastSwap() {
+		swapSize = remainingIn
 	}
 
 	// calculate trade target for this sub-swap
-	remainingIn := common.SafeSub(m.Deposit, m.In)       // remaining inbound
-	remainingOut := common.SafeSub(m.TradeTarget, m.Out) // remaining outbound
-	target := common.GetSafeShare(swapSize, remainingIn, remainingOut)
+	inGap := common.SafeSub(m.Deposit, m.In)       // current-to-maximum In gap
+	outGap := common.SafeSub(m.TradeTarget, m.Out) // current-to-target Out gap
+	target := common.GetSafeShare(swapSize, inGap, outGap)
 
 	return swapSize, target
 }

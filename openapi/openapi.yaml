@@ -1694,6 +1694,7 @@ components:
       required:
         - trade_target
         - deposit
+        - refund
         - in
         - out
       properties:
@@ -1737,13 +1738,17 @@ components:
           type: string
           example: "100"
           description: the number of input tokens the swapper has deposited
+        refund:
+          type: string
+          example: "10"
+          description: the number of input tokens that have failed swaps so far
         in:
           type: string
-          example: "100"
+          example: "50"
           description: the amount of input tokens that have been swapped so far
         out:
           type: string
-          example: "100"
+          example: "50"
           description: the amount of output tokens that have been swapped so far
         failed_swaps:
           type: array
