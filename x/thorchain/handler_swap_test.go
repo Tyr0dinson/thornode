@@ -390,7 +390,7 @@ func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 		signerBNBAddr,
 		signerBNBAddr,
 		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2_123400000)),
+			common.NewCoin(common.RuneAsset(), cosmos.NewUint(21_23400000)),
 		},
 		BNBGasFeeSingleton,
 		fmt.Sprintf("=:BNB.BNB:%s", signerBNBAddr),
@@ -399,6 +399,9 @@ func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 	swp := msg.GetStreamingSwap()
 	swp.Deposit = tx.Coins[0].Amount
 	mgr.Keeper().SetStreamingSwap(ctx, swp)
+	msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(mgr.GetVersion()) // Normally done in the swap queue manager
+	c.Check(msg.Tx.Coins[0].Amount.String(), Equals, "707800000")
+	c.Check(msg.TradeTarget.String(), Equals, "0")
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 
@@ -414,6 +417,8 @@ func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 	c.Check(swp.Out.String(), Equals, "617319586")
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(mgr.GetVersion())
+	c.Check(msg.Tx.Coins[0].Amount.String(), Equals, "707800000")
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
@@ -422,6 +427,8 @@ func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 	c.Check(swp.Out.String(), Equals, "1163002364")
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(mgr.GetVersion())
+	c.Check(msg.Tx.Coins[0].Amount.String(), Equals, "707800000")
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
@@ -430,6 +437,8 @@ func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 	c.Check(swp.Out.String(), Equals, "1648810932")
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(mgr.GetVersion())
+	c.Check(msg.Tx.Coins[0].Amount.String(), Equals, "0")
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, NotNil)
 	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
