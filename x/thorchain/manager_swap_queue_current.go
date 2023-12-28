@@ -120,6 +120,41 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		// value. This is used later to refund the correct amount
 		swp := pick.msg.GetStreamingSwap()
 
+		if pick.msg.IsStreaming() {
+			if mgr.Keeper().StreamingSwapExists(ctx, pick.msg.Tx.ID) {
+				swp, err = mgr.Keeper().GetStreamingSwap(ctx, pick.msg.Tx.ID)
+				if err != nil {
+					ctx.Logger().Error("fail to fetch streaming swap", "error", err)
+					return err
+				}
+			}
+
+			// for first swap only, override interval and quantity (if needed)
+			if swp.Count == 0 {
+				// ensure interval is never larger than max length, override if so
+				maxLength := fetchConfigInt64(ctx, mgr, constants.StreamingSwapMaxLength)
+				if uint64(maxLength) < swp.Interval {
+					swp.Interval = uint64(maxLength)
+				}
+
+				sourceAsset := pick.msg.Tx.Coins[0].Asset
+				targetAsset := pick.msg.TargetAsset
+				maxSwapQuantity, err := getMaxSwapQuantity(ctx, mgr, sourceAsset, targetAsset, swp)
+				if err != nil {
+					return err
+				}
+				if swp.Quantity == 0 || swp.Quantity > maxSwapQuantity {
+					swp.Quantity = maxSwapQuantity
+				}
+			}
+			mgr.Keeper().SetStreamingSwap(ctx, swp)
+			// hijack the inbound amount
+			// NOTE: its okay if the amount is zero. The swap will fail as it
+			// should, which will cause the swap queue manager later to send out
+			// the In/Out amounts accordingly
+			pick.msg.Tx.Coins[0].Amount, pick.msg.TradeTarget = swp.NextSize(mgr.GetVersion())
+		}
+
 		triggerRefund := false
 		_, handleErr := handler(ctx, &pick.msg)
 		if handleErr != nil {
