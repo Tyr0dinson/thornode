@@ -562,8 +562,10 @@ func GetPoolManager(version semver.Version) (PoolManager, error) {
 // GetSwapQueue retrieve a SwapQueue that is compatible with the given version
 func GetSwapQueue(version semver.Version, keeper keeper.Keeper) (SwapQueue, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.124.0")):
+	case version.GTE(semver.MustParse("1.126.0")):
 		return newSwapQueueVCUR(keeper), nil
+	case version.GTE(semver.MustParse("1.124.0")):
+		return newSwapQueueV124(keeper), nil
 	case version.GTE(semver.MustParse("1.123.0")):
 		return newSwapQueueV123(keeper), nil
 	case version.GTE(semver.MustParse("1.121.0")):
