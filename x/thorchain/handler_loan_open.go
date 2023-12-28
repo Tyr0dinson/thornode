@@ -499,8 +499,8 @@ func (h LoanOpenHandler) GetLoanCollateralRemainingForPool(ctx cosmos.Context, p
 		return cosmos.ZeroUint(), fmt.Errorf("no max supply set")
 	}
 	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
-	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt) // calculate how much of that rune is available for loans
-
+	// calculate total rune available for loans
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(constants.MaxBasisPts), runeBurnt)
 	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
