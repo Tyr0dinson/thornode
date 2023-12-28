@@ -65,9 +65,12 @@ func (m *StreamingSwap) NextSizeV126() (cosmos.Uint, cosmos.Uint) {
 	}
 
 	// calculate trade target for this sub-swap
-	inGap := common.SafeSub(m.Deposit, m.In)       // current-to-maximum In gap
-	outGap := common.SafeSub(m.TradeTarget, m.Out) // current-to-target Out gap
-	target := common.GetSafeShare(swapSize, inGap, outGap)
+	target := cosmos.ZeroUint()
+	if m.TradeTarget.GT(m.Out) {
+		inGap := common.SafeSub(m.Deposit, m.In)       // current-to-maximum In gap
+		outGap := common.SafeSub(m.TradeTarget, m.Out) // current-to-target Out gap
+		target = common.GetSafeShare(swapSize, inGap, outGap)
+	}
 
 	return swapSize, target
 }
