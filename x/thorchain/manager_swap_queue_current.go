@@ -120,6 +120,7 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		// value. This is used later to refund the correct amount
 		swp := pick.msg.GetStreamingSwap()
 
+		swapSize := cosmos.ZeroUint() // Only used if IsStreaming
 		if pick.msg.IsStreaming() {
 			if mgr.Keeper().StreamingSwapExists(ctx, pick.msg.Tx.ID) {
 				swp, err = mgr.Keeper().GetStreamingSwap(ctx, pick.msg.Tx.ID)
@@ -153,6 +154,9 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			// should, which will cause the swap queue manager later to send out
 			// the In/Out amounts accordingly
 			pick.msg.Tx.Coins[0].Amount, pick.msg.TradeTarget = swp.NextSize(mgr.GetVersion())
+			swapSize = pick.msg.Tx.Coins[0].Amount
+			// Use swapSize later to increment the Refund field if the swap fails
+			// (even if Coins[0].Amount is different by then).
 		}
 
 		triggerRefund := false
@@ -224,7 +228,8 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					zeroAmt := cosmos.ZeroUint()
 					swp.Refund = &zeroAmt
 				}
-				// TODO: How to get from the swap handler the accurate amount to add to Refund?
+				refund := swp.Refund.Add(swapSize)
+				swp.Refund = &refund
 				swp.FailedSwaps = append(swp.FailedSwaps, swp.Count)
 				swp.FailedSwapReasons = append(swp.FailedSwapReasons, handleErr.Error())
 			}
