@@ -1281,15 +1281,14 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	synthMintPausedErr := isSynthMintPaused(ctx, mgr, saversAsset, cosmos.ZeroUint())
 	synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, saversAsset)
 
-	// loan
-	handler := NewLoanOpenHandler(mgr)
-
 	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 	if err != nil {
 		return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 	}
 
-	loanCollateralRemaining, err := handler.GetLoanCollateralRemainingForPool(ctx, pool)
+	loanHandler := NewLoanOpenHandler(mgr)
+	cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
+	loanCollateralRemaining, err := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 	if err != nil {
 		return nil, fmt.Errorf("fail to fetch remaining loan collateral: %w", err)
 	}
@@ -1310,8 +1309,6 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	p.LoanCollateral = totalCollateral.String()
 	p.LoanCollateralRemaining = loanCollateralRemaining.String()
 	p.DerivedDepthBps = dbps.String()
-
-	cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 	p.LoanCR = cr.String()
 
 	return jsonify(ctx, p)
@@ -1356,15 +1353,14 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		synthMintPausedErr := isSynthMintPaused(ctx, mgr, pool.Asset, cosmos.ZeroUint())
 		synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, pool.Asset)
 
-		// loan
-		handler := NewLoanOpenHandler(mgr)
-
 		totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 		if err != nil {
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 		}
 
-		loanCollateralRemaining, err := handler.GetLoanCollateralRemainingForPool(ctx, pool)
+		loanHandler := NewLoanOpenHandler(mgr)
+		cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
+		loanCollateralRemaining, err := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 		if err != nil {
 			return nil, fmt.Errorf("fail to fetch remaining loan collateral: %w", err)
 		}
@@ -1385,8 +1381,6 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		p.LoanCollateral = totalCollateral.String()
 		p.LoanCollateralRemaining = loanCollateralRemaining.String()
 		p.DerivedDepthBps = dbps.String()
-
-		cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 		p.LoanCR = cr.String()
 
 		pools = append(pools, p)
