@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // -------------------
-// Aggregator Version: 1.0
+// Aggregator Version: 2.0
 // -------------------
-pragma solidity 0.8.13;
+pragma solidity 0.8.20;
 
 // ERC20 Interface
 interface iERC20 {
@@ -66,10 +66,39 @@ contract THORChain_Aggregator {
 
     //############################## OUT ##############################
 
-    function swapOut(address token, address to, uint256 amountOutMin) public payable nonReentrant {
+    function swapOut(address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, uint256[] memory flags) public payable nonReentrant {
         address[] memory path = new address[](2);
-        path[0] = WETH; path[1] = token;
-        swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, to, type(uint).max);
+
+        if(fromAsset == address(0)) {
+            // received ETH, swap to toToken or do as you please
+            path[0] = WETH; path[1] = toAsset;
+
+            if(flags.length == 0) {
+                // no flags, process without wasting gas
+                swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, recipient, type(uint).max);
+                return;
+            }
+
+            // do something with your flags, in this case, nothing
+            swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, recipient, type(uint).max);
+            return;
+        } else {
+            // received an ERC20, swap to ETH or do as you please
+            path[0] = fromAsset; path[1] = WETH;
+            safeApprove(fromAsset, address(swapRouter), 0); // best practice
+            safeApprove(fromAsset, address(swapRouter), fromAmount);
+
+            if(flags.length == 0) {
+                // no flags, process without wasting gas
+                swapRouter.swapExactTokensForETH(fromAmount, amountOutMin, path, address(this), type(uint).max);
+                return;
+            }
+
+            // do something with your flags, in this case, nothing
+            swapRouter.swapExactTokensForETH(fromAmount, amountOutMin, path, address(this), type(uint).max);
+            return;
+        }
+        
     }
 
     //############################## HELPERS ##############################

@@ -9,27 +9,28 @@ task("accounts", "Prints the list of accounts", async () => {
   }
 });
 
+
 module.exports = {
   solidity: {
     compilers: [
       {
-        version: "0.4.17",
+        version: "0.4.17"
       },
       {
-        version: "0.7.6",
+        version: "0.7.6"
       },
       {
-        version: "0.8.13",
+        version: "0.8.20",
         settings: {
           optimizer: {
             enabled: true,
             runs: 2000,
-            details: {
-              yul: true,
-            },
-          },
-        },
-      },
-    ],
-  },
-};
+            "details": {
+              "yul": true
+            }
+          }
+        }
+      }
+    ]
+  }
+}
