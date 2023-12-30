@@ -15,6 +15,7 @@ This mirrors how vaults behave on other chains.
 ### Bifrost - Observer
 
 ### ETH & ERC-20 Deposits
+
 Users query THORChain for the correct asgard, then call deposit with a memo:
 
 - ETH/ERC20: `await VAULT.depositWithExpiry(vault, asset, amount, memo, expiration)`
@@ -35,7 +36,7 @@ Asgard/Ygg vaults should compose the transactions:
 
 ### Funding Ygg (only ERC20)
 
-Ygg can be funded by transfering an allowance to spend:
+Ygg can be funded by transferring an allowance to spend:
 `await VAULT.TransferAllowance(vault, asset, amount, memo)`
 
 Ygg can return assets by batch transferring back:
@@ -48,14 +49,15 @@ Asgard can transfer allowance to spend across 5 iterations:
 
 ## Contract Design
 
-**Public Getters**
+### Public Getters
+
 Tracks vault allowances
 
 ```solidity
 mapping(address => mapping(address => uint)) public vaultAllowance;
 ```
 
-**Events**
+### Events
 
 ```solidity
 event Deposit(address indexed to, address indexed asset, uint amount, string memo);
