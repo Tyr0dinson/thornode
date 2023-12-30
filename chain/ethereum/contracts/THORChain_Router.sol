@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // -------------------
-// Router Version: 4.1
+// Router Version: 5.0
 // -------------------
-pragma solidity 0.8.13;
+pragma solidity 0.8.20;
 
 // ERC20 Interface
 interface iERC20 {
@@ -41,7 +41,7 @@ contract THORChain_Router {
     event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
 
     // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
-    event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address to, uint256 amountOutMin, string memo);
+    event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, uint256[] flags);
 
     // Changes the spend allowance between vaults
     event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
@@ -104,7 +104,7 @@ contract THORChain_Router {
 
     // Any vault calls to transfer any asset to any recipient.
     // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
-    function transferOut(address payable to, address asset, uint amount, string memory memo) public payable nonReentrant {
+    function transferOut(address payable to, address asset, uint amount, string calldata memo) external payable nonReentrant {
         uint safeAmount;
         if(asset == address(0)){
             safeAmount = msg.value;
@@ -121,21 +121,48 @@ contract THORChain_Router {
         emit TransferOut(msg.sender, to, asset, safeAmount, memo);
     }
 
-    // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,address,uint256)"
+    // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,uint256[])"
     // Example Memo: "~1b3:ETH.0xFinalToken:0xTo:"
     // Target is fuzzy-matched to the last three digits of whitelisted aggregators
-    // FinalToken, To, amountOutMin come from originating memo
+    // toAsset, recipient, amountOutMin come from originating memo
     // Memo passed in here is the "OUT:HASH" type
-    function transferOutAndCall(address payable target, address finalToken, address to, uint256 amountOutMin, string memory memo) public payable nonReentrant {
-        uint256 _safeAmount = msg.value;
-        (bool erc20Success, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,address,uint256)", finalToken, to, amountOutMin));
-        if (!erc20Success) {
-            bool ethSuccess = payable(to).send(_safeAmount); // If can't swap, just send the recipient the ETH
-            if (!ethSuccess) {
-                payable(address(msg.sender)).transfer(_safeAmount); // For failure, bounce back to Yggdrasil & continue.
+    // RouterV5: transferOutAndCall can be used with ERC20 tokens as well as Ether
+    // RouterV5: flags field can be passed from the originating memo like this thorchainMemo|flag1:flag2:flag3
+    // RouterV5: Bifrost parses the flags and passes them here as an array of uint256
+    function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, uint256[] calldata flags) external payable nonReentrant {
+        uint256 _safeAmount;
+
+        if(fromAsset == address(0)) {
+            _safeAmount = msg.value;
+            // call swapOut with ether
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, fromAmount, toAsset, recipient, amountOutMin, flags));
+            if(!swapOutSuccess) {
+                bool sendSuccess = payable(recipient).send(_safeAmount); // If can't swap, just send the recipient the ETH
+                if (!sendSuccess) {
+                    payable(address(msg.sender)).transfer(_safeAmount); // For failure, bounce back to Yggdrasil & continue.
+                }
+            }
+        } else {
+            _safeAmount = fromAmount;
+            _vaultAllowance[msg.sender][fromAsset] -= _safeAmount; // Reduce allowance
+            safeApprove(fromAsset, target, 0); // best practice
+            safeApprove(fromAsset, target, _safeAmount); // Approve target to spend asset
+
+            // call swapOut with erc20
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, flags));
+            
+            if(!swapOutSuccess) {
+                // call transfer with erc20
+                (bool transferSuccess, bytes memory data) = fromAsset.call(abi.encodeWithSignature("transfer(address,uint256)" , recipient, _safeAmount));
+                safeApprove(fromAsset, target, 0); // reset approval in all cases
+
+                require(transferSuccess && (data.length == 0 || abi.decode(data, (bool))));
+            } else {
+                safeApprove(fromAsset, target, 0); // reset approval on successful swapOut
             }
         }
-        emit TransferOutAndCall(msg.sender, target, _safeAmount, finalToken, to, amountOutMin, memo);
+        
+        emit TransferOutAndCall(msg.sender, target, _safeAmount, toAsset, recipient, amountOutMin, memo, flags);
     }
 
 
@@ -183,5 +210,10 @@ contract THORChain_Router {
         (bool success,) = _asset.call(abi.encodeWithSignature("approve(address,uint256)", _router, _amount)); // Approve to transfer
         require(success);
         iROUTER(_router).depositWithExpiry(_vault, _asset, _amount, _memo, type(uint).max); // Transfer by depositing
+    }
+
+    function safeApprove(address _asset, address _address, uint _amount) internal {
+        (bool success,) = _asset.call(abi.encodeWithSignature("approve(address,uint256)", _address, _amount)); // Approve to transfer
+        require(success);
     }
 }
