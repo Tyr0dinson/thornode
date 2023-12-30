@@ -14,7 +14,7 @@ This mirrors how vaults behave on other chains.
 
 ### Bifrost - Observer
 
-**ETH & ERC-20 Deposits**
+### ETH & ERC-20 Deposits
 Users query THORChain for the correct asgard, then call deposit with a memo:
 
 - ETH/ERC20: `await VAULT.depositWithExpiry(vault, asset, amount, memo, expiration)`
@@ -38,7 +38,7 @@ Asgard/Ygg vaults should compose the transactions:
 Ygg can be funded by transfering an allowance to spend:
 `await VAULT.TransferAllowance(vault, asset, amount, memo)`
 
-Ygg can return assets by batch transfering back:
+Ygg can return assets by batch transferring back:
 `await VAULT.batchTransferAllowance(asgard[], assets[], amounts[], memos[])`
 
 ### Churning (only ERC20)

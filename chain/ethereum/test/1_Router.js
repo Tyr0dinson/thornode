@@ -606,7 +606,7 @@ describe("Router contract", function () {
   });
 
   describe("Evil callbacks", function () {
-    it("should not give more allowance than tokens transfered", async function () {
+    it("should not give more allowance than tokens transferred", async function () {
       let startAllowance = getBN(
         await ROUTER1.vaultAllowance(USER1, EVILTOKEN.address),
       );
