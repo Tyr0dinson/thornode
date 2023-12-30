@@ -57,6 +57,36 @@ Tracks vault allowances
 mapping(address => mapping(address => uint)) public vaultAllowance;
 ```
 
+### Outbound Batching
+
+Some structures are used to faciliate batch outbound processing:
+
+TransferDetails
+
+```solidity
+struct TransferDetails {
+    address payable to;    // Address of the recipient
+    address asset;         // Address of the asset (token) to transfer
+    uint256 amount;        // Amount of the asset to transfer
+    string memo;           // Memo for the transfer
+}
+```
+
+TransferAndCallDetails
+
+```solidity
+struct TransferAndCallDetails {
+    address payable target;       // Target contract address for the call
+    address fromAsset;            // Address of the asset (token) being transferred from
+    uint256 fromAmount;           // Amount of the asset to transfer from
+    address toAsset;              // Address of the asset (token) being transferred to
+    address recipient;            // Final recipient address
+    uint256 amountOutMin;         // Minimum amount out in the swap
+    string memo;                  // Memo for the operation
+    uint256[] flags;              // Additional flags or parameters
+}
+```
+
 ### Events
 
 ```solidity
