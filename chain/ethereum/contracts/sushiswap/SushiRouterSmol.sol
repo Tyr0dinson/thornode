@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.13;
+pragma solidity 0.8.20;
 
 interface IWETH {
     function deposit() external payable;
@@ -7,7 +7,7 @@ interface IWETH {
     function withdraw(uint) external;
 }
 
-pragma solidity 0.8.13;
+pragma solidity 0.8.20;
 
 // helper methods for interacting with ERC20 tokens and sending ETH that do not consistently return true/false
 library TransferHelper {
@@ -35,7 +35,7 @@ library TransferHelper {
     }
 }
 
-pragma solidity 0.8.13;
+pragma solidity 0.8.20;
 
 // lightweight copy of router
 contract SushiRouterSmol {
