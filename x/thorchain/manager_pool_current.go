@@ -296,6 +296,7 @@ func (pm *PoolMgrVCUR) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) 
 		return
 	}
 
+	skipChain := make(map[string]bool)
 	var pools Pools
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	defer iterator.Close()
@@ -316,7 +317,13 @@ func (pm *PoolMgrVCUR) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) 
 		if pool.PendingInboundRune.IsZero() && pool.PendingInboundAsset.IsZero() {
 			continue
 		}
-		if mgr.Keeper().IsChainHalted(ctx, pool.Asset.GetChain()) || mgr.Keeper().IsLPPaused(ctx, pool.Asset.GetChain()) {
+		chain := pool.Asset.GetChain()
+		skip, ok := skipChain[chain.String()]
+		if !ok {
+			skip = mgr.Keeper().IsChainHalted(ctx, chain) || mgr.Keeper().IsLPPaused(ctx, chain)
+			skipChain[chain.String()] = skip
+		}
+		if skip {
 			continue
 		}
 		pools = append(pools, pool)

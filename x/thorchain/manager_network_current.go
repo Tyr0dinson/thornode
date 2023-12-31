@@ -122,14 +122,25 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 	maxAnchorBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 
 	// sum anchor pool rune depths
+	skipChain := make(map[string]bool)
 	totalRuneDepth := cosmos.ZeroUint()
 	availableAnchors := make([]common.Asset, 0)
 	slippageCollector := make([]cosmos.Uint, 0)
 	for _, anchorAsset := range anchors {
 		// skip assets where trading isn't occurring (hence price is likely not correct)
-		if mgr.Keeper().IsGlobalTradingHalted(ctx) || mgr.Keeper().IsChainTradingHalted(ctx, anchorAsset.Chain) {
+		if mgr.Keeper().IsGlobalTradingHalted(ctx) {
+			break
+		}
+		chain := anchorAsset.Chain
+		skip, ok := skipChain[chain.String()]
+		if !ok {
+			skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
+			skipChain[chain.String()] = skip
+		}
+		if skip {
 			continue
 		}
+
 		if !mgr.Keeper().PoolExist(ctx, anchorAsset) {
 			continue
 		}
@@ -801,6 +812,7 @@ func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
 
 // generated a filtered list of pools that the POL is active with
 func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []int64) {
+	skipChain := make(map[string]bool)
 	var pools Pools
 	mimirVals := make([]int64, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
@@ -825,7 +837,16 @@ func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools,
 			continue
 		}
 
-		if mgr.Keeper().IsChainTradingHalted(ctx, pool.Asset.GetChain()) || mgr.Keeper().IsGlobalTradingHalted(ctx) {
+		if mgr.Keeper().IsGlobalTradingHalted(ctx) {
+			break
+		}
+		chain := pool.Asset.GetChain()
+		skip, ok := skipChain[chain.String()]
+		if !ok {
+			skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
+			skipChain[chain.String()] = skip
+		}
+		if skip {
 			continue
 		}
 

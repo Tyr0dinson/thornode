@@ -81,9 +81,19 @@ func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.
 }
 
 func (k KVStore) AnchorMedianV127(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
+	skipChain := make(map[string]bool)
 	p := make([]cosmos.Uint, 0)
 	for _, asset := range assets {
-		if k.IsGlobalTradingHalted(ctx) || k.IsChainTradingHalted(ctx, asset.Chain) {
+		if k.IsGlobalTradingHalted(ctx) {
+			break
+		}
+		chain := asset.Chain
+		skip, ok := skipChain[chain.String()]
+		if !ok {
+			skip = k.IsChainTradingHalted(ctx, chain)
+			skipChain[chain.String()] = skip
+		}
+		if skip {
 			continue
 		}
 		pool, err := k.GetPool(ctx, asset)
