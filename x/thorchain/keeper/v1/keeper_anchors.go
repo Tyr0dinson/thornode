@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -66,6 +68,19 @@ func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
 }
 
 func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
+	version, hasVersion := k.GetVersionWithCtx(ctx)
+	if !hasVersion {
+		return k.AnchorMedianV1(ctx, assets)
+	}
+	switch {
+	case version.GTE(semver.MustParse("1.127.0")):
+		return k.AnchorMedianV127(ctx, assets)
+	default:
+		return k.AnchorMedianV1(ctx, assets)
+	}
+}
+
+func (k KVStore) AnchorMedianV127(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
 	p := make([]cosmos.Uint, 0)
 	for _, asset := range assets {
 		if k.IsGlobalTradingHalted(ctx) || k.IsChainTradingHalted(ctx, asset.Chain) {
