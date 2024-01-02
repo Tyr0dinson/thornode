@@ -1224,11 +1224,12 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 			rewardPools []Pool
 		)
 		// Pool Rewards are based on Fee Share
-		for _, pool := range pools {
+		for idx, pool := range pools {
 			if !pool.IsAvailable() {
 				continue
 			}
 			var amt, fees cosmos.Uint
+			remainingRewards := totalPoolRewards
 			if totalLiquidityFees.IsZero() {
 				amt = common.GetSafeShare(pool.BalanceRune, totalProvidedLiquidity, totalPoolRewards)
 				fees = cosmos.ZeroUint()
@@ -1239,6 +1240,11 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 					continue
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
+			}
+			remainingRewards = remainingRewards.Sub(amt)
+			if idx == len(pools)-1 && !remainingRewards.IsZero() {
+				// remaining pool reward dust to last pool
+				amt = amt.Add(remainingRewards)
 			}
 			if err = vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
@@ -1316,7 +1322,7 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 				poolCache[asset] = pool
 				pools = append(pools, pool)
 			}
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(cosmos.RoundToDecimal(coin.Amount, pool.Decimals)))
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(coin.Amount))
 		}
 	}
 	return pools, totalProvidedLiquidity, nil
