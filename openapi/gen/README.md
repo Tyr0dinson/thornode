@@ -80,8 +80,8 @@ Class | Method | HTTP request | Description
 *BlockApi* | [**Block**](docs/BlockApi.md#block) | **Get** /thorchain/block | 
 *BorrowersApi* | [**Borrower**](docs/BorrowersApi.md#borrower) | **Get** /thorchain/pool/{asset}/borrower/{address} | 
 *BorrowersApi* | [**Borrowers**](docs/BorrowersApi.md#borrowers) | **Get** /thorchain/pool/{asset}/borrowers | 
-*CloutApi* | [**SwapperClout**](docs/CloutApi.md#swapperclout) | **Get** /thorchain/clout/swap/{address} | 
 *ChurnApi* | [**Churn**](docs/ChurnApi.md#churn) | **Get** /thorchain/churn | 
+*CloutApi* | [**SwapperClout**](docs/CloutApi.md#swapperclout) | **Get** /thorchain/clout/swap/{address} | 
 *HealthApi* | [**Ping**](docs/HealthApi.md#ping) | **Get** /thorchain/ping | 
 *InvariantsApi* | [**Invariant**](docs/InvariantsApi.md#invariant) | **Get** /thorchain/invariant/{invariant} | 
 *InvariantsApi* | [**Invariants**](docs/InvariantsApi.md#invariants) | **Get** /thorchain/invariants | 
