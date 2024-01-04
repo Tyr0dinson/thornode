@@ -1,6 +1,7 @@
 package mimir
 
 import (
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -114,7 +115,7 @@ func NewMinBond(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
-		defaultValue: 1e8,
+		defaultValue: common.One,
 		mimirType:    EconomicMimir,
 		reference:    getRef(refs),
 		tags:         []string{"economic", "min bond"},
