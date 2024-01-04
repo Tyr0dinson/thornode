@@ -336,7 +336,7 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na3), IsNil)
-	c.Assert(k.RemoveLowBondValidatorAccounts(ctx), IsNil)
+	c.Assert(k.RemoveLowBondValidatorAccounts(ctx, cosmos.NewUint(common.One)), IsNil)
 
 	// 1st and 3rd na should be skipped
 	na1Store, err := k.GetNodeAccount(ctx, na1.NodeAddress)

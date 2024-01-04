@@ -15,6 +15,7 @@ const (
 	MaxConfirmationsId          // https://gitlab.com/thorchain/thornode/-/issues/1761
 	CloutSwapperLimitId
 	CloutSwapperResetId
+	MinBondId
 )
 
 var StringToId = map[string]Id{
@@ -25,6 +26,7 @@ var StringToId = map[string]Id{
 	"MaxConfirmations":           MaxConfirmationsId,
 	"CloutSwapperLimit":          CloutSwapperLimitId,
 	"CloutSwapperReset":          CloutSwapperResetId,
+	"MinBondId":                  MinBondId,
 }
 
 var mimirRefToStringMap = map[Id]string{
@@ -35,6 +37,7 @@ var mimirRefToStringMap = map[Id]string{
 	MaxConfirmationsId:           "MaxConfirmations",
 	CloutSwapperLimitId:          "CloutSwapperLimit",
 	CloutSwapperResetId:          "CloutSwapperReset",
+	MinBondId:                    "MinBond",
 }
 
 // GetMimir fetches a mimir by id number

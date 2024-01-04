@@ -108,3 +108,19 @@ func NewSwapperCloutReset(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewMinBond(refs ...string) Mimir {
+	id := MinBondId
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 1e8,
+		mimirType:    EconomicMimir,
+		reference:    getRef(refs),
+		tags:         []string{"economic", "min bond"},
+		description:  "min bond for node account",
+		legacyMimirKey: func(_ string) string {
+			return ""
+		},
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -323,7 +324,8 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 	}
 
 	// remove low bond node accounts
-	if err := vm.k.RemoveLowBondValidatorAccounts(ctx); err != nil {
+	minBond := cosmos.NewUint(uint64(mimir.NewMinBond().FetchValue(ctx, mgr.Keeper())))
+	if err := vm.k.RemoveLowBondValidatorAccounts(ctx, minBond); err != nil {
 		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
 	}
 

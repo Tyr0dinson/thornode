@@ -84,7 +84,11 @@ func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) 
 	return k.ListValidatorsByStatus(ctx, NodeActive)
 }
 
-func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
+func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context, minBond cosmos.Uint) error {
+	// disabled
+	if minBond.IsZero() {
+		return nil
+	}
 	lowBondValidators := make([][]byte, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
@@ -96,7 +100,7 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 		if na.Type == NodeTypeVault || na.Status == NodeActive {
 			continue
 		}
-		if na.Type == NodeTypeValidator && na.Bond.LTE(cosmos.NewUint(common.One)) {
+		if na.Type == NodeTypeValidator && na.Bond.LTE(minBond) {
 			lowBondValidators = append(lowBondValidators, naIterator.Key())
 			if na.Bond.IsZero() {
 				continue

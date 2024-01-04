@@ -675,7 +675,7 @@ func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (
 	return SwapperClout{}, kaboom
 }
 
-func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
+func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context, minBond cosmos.Uint) error {
 	return kaboom
 }
 
