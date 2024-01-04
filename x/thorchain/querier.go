@@ -424,8 +424,8 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	respVaults := make([]QueryYggdrasilVaults, len(vaults))
-	for i, vault := range vaults {
+	respVaults := make([]QueryYggdrasilVaults, 0)
+	for _, vault := range vaults {
 		totalValue := cosmos.ZeroUint()
 
 		// find the bond of this node account
@@ -449,7 +449,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 		}
 
-		respVaults[i] = QueryYggdrasilVaults{
+		singleResp := QueryYggdrasilVaults{
 			BlockHeight:           vault.BlockHeight,
 			PubKey:                vault.PubKey,
 			Coins:                 vault.Coins,
@@ -466,6 +466,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			TotalValue:            totalValue,
 			Addresses:             getVaultChainAddress(ctx, vault),
 		}
+		respVaults = append(respVaults, singleResp)
 	}
 
 	return jsonify(ctx, respVaults)
@@ -871,8 +872,8 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
-	result := make([]QueryNodeAccount, len(nodeAccounts))
-	for i, na := range nodeAccounts {
+	result := make([]QueryNodeAccount, 0)
+	for _, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
 			continue
@@ -883,23 +884,23 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			return nil, fmt.Errorf("fail to get node slash points: %w", err)
 		}
 
-		result[i] = NewQueryNodeAccount(na)
-		result[i].PeerID = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
-		result[i].SlashPoints = slashPts
+		singleResp := NewQueryNodeAccount(na)
+		singleResp.PeerID = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
+		singleResp.SlashPoints = slashPts
 		if na.Status == NodeActive {
 			reward, err := getNodeCurrentRewards(ctx, mgr, na, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get current node rewards: %w", err)
 			}
 
-			result[i].CurrentAward = reward
+			singleResp.CurrentAward = reward
 		}
 
 		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node jail: %w", err)
 		}
-		result[i].Jail = Jail{
+		singleResp.Jail = Jail{
 			// Since redundant, leave out the node address
 			ReleaseHeight: jail.ReleaseHeight,
 			Reason:        jail.Reason,
@@ -911,7 +912,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 		// analyze-ignore(map-iteration)
 		for c, h := range chainHeights {
-			result[i].ObserveChains = append(result[i].ObserveChains, types.QueryChainHeight{
+			singleResp.ObserveChains = append(singleResp.ObserveChains, types.QueryChainHeight{
 				Chain:  c,
 				Height: h,
 			})
@@ -921,19 +922,20 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		if err != nil {
 			ctx.Logger().Error("fail to get node preflight result", "error", err)
 		} else {
-			result[i].PreflightStatus = preflightCheckResult
+			singleResp.PreflightStatus = preflightCheckResult
 		}
 
-		bp, err := mgr.Keeper().GetBondProviders(ctx, result[i].NodeAddress)
+		bp, err := mgr.Keeper().GetBondProviders(ctx, singleResp.NodeAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
 		bp.Adjust(version, na.Bond)
-		result[i].BondProviders = BondProviders{
+		singleResp.BondProviders = BondProviders{
 			// Since redundant, leave out the node address
 			NodeOperatorFee: bp.NodeOperatorFee,
 			Providers:       bp.Providers,
 		}
+		result = append(result, singleResp)
 	}
 
 	return jsonify(ctx, result)
@@ -962,8 +964,8 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		loans = append(loans, loan)
 	}
 
-	borrowers := make([]openapi.Borrower, len(loans))
-	for i, loan := range loans {
+	borrowers := make([]openapi.Borrower, 0)
+	for _, loan := range loans {
 		borrower := openapi.NewBorrower(
 			loan.Owner.String(),
 			loan.Asset.String(),
@@ -976,7 +978,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 			loan.LastOpenHeight,
 			loan.LastRepayHeight,
 		)
-		borrowers[i] = *borrower
+		borrowers = append(borrowers, *borrower)
 	}
 
 	return jsonify(ctx, borrowers)
