@@ -324,7 +324,7 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 	}
 
 	// remove low bond node accounts
-	minBond := cosmos.NewUint(uint64(mimir.NewMinBond().FetchValue(ctx, mgr.Keeper())))
+	minBond := cosmos.NewUint(uint64(mimir.NewBondMin().FetchValue(ctx, mgr.Keeper())))
 	if err := vm.k.RemoveLowBondValidatorAccounts(ctx, minBond); err != nil {
 		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
 	}

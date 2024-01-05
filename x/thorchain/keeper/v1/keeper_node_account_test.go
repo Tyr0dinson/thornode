@@ -336,15 +336,16 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
 	c.Assert(k.SetNodeAccount(ctx, na3), IsNil)
-	c.Assert(k.RemoveLowBondValidatorAccounts(ctx, cosmos.NewUint(common.One)), IsNil)
 
-	// 1st and 3rd na should be skipped
-	na1Store, err := k.GetNodeAccount(ctx, na1.NodeAddress)
-	c.Assert(err, IsNil)
-	c.Check(na1Store.IsEmpty(), Equals, false)
-	c.Check(na1Store.String(), Equals, na1.String())
-
+	// disabled
+	c.Assert(k.RemoveLowBondValidatorAccounts(ctx, cosmos.ZeroUint()), IsNil)
 	na2Store, err := k.GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na2Store.IsEmpty(), Equals, false)
+
+	// enabled
+	c.Assert(k.RemoveLowBondValidatorAccounts(ctx, cosmos.NewUint(common.One)), IsNil)
+	na2Store, err = k.GetNodeAccount(ctx, na2.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Check(na2Store.IsEmpty(), Equals, true)
 
@@ -357,6 +358,12 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts(c *C) {
 		bal := k.GetBalance(ctx, bps.BondAddress)
 		c.Check(bal[0].Amount.Int64(), Equals, int64(bond.Uint64()))
 	}
+
+	// 1st and 3rd na should be skipped
+	na1Store, err := k.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na1Store.IsEmpty(), Equals, false)
+	c.Check(na1Store.String(), Equals, na1.String())
 
 	na3Store, err := k.GetNodeAccount(ctx, na3.NodeAddress)
 	c.Assert(err, IsNil)

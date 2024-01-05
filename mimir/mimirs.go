@@ -110,8 +110,8 @@ func NewSwapperCloutReset(refs ...string) Mimir {
 	}
 }
 
-func NewMinBond(refs ...string) Mimir {
-	id := MinBondId
+func NewBondMin(refs ...string) Mimir {
+	id := BondMinId
 	return &mimir{
 		id:           id,
 		name:         mimirRefToStringMap[id],
