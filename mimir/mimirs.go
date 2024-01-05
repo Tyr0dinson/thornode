@@ -1,6 +1,8 @@
 package mimir
 
 import (
+	"fmt"
+
 	"gitlab.com/thorchain/thornode/constants"
 )
 
@@ -136,6 +138,47 @@ func NewTradeAccountsEnabled(refs ...string) Mimir {
 		description: "Enable or disable trade accounts",
 		legacyMimirKey: func(_ string) string {
 			return "TradeAccountsEnabled"
+		},
+	}
+}
+
+func NewPauseSynths(refs ...string) Mimir {
+	id := PauseSynths
+	ref := getRef(refs)
+	var refConst constants.ConstantName
+	switch ref {
+	case constants.MintSynths.String():
+		refConst = constants.MintSynths
+	case constants.BurnSynths.String():
+		refConst = constants.BurnSynths
+	}
+	return &mimir{
+		id:           id,
+		name:         id.String(),
+		reference:    ref,
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "synths"},
+		defaultValue: constants.NewConstantValue().GetInt64Value(refConst),
+		description:  fmt.Sprintf("Pauses the %s of synths", ref),
+		legacyMimirKey: func(_ string) string {
+			return ref
+		},
+	}
+}
+
+func NewPauseSwaps(refs ...string) Mimir {
+	id := PauseSwaps
+	ref := getRef(refs)
+	return &mimir{
+		id:           id,
+		name:         id.String(),
+		defaultValue: constants.NewConstantValue().GetInt64Value(constants.NodePauseChainBlocks),
+		reference:    ref,
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "chain"},
+		description:  fmt.Sprintf("Halts interaction with the %s chain", ref),
+		legacyMimirKey: func(ref string) string {
+			return fmt.Sprintf("Halt%sTrading", ref)
 		},
 	}
 }

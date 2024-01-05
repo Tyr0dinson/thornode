@@ -142,6 +142,12 @@ const (
 	SynthSlipMinBps         // SwapSlipBasisPointsMinId mimirv2 ref
 	TradeAccountsSlipMinBps // SwapSlipBasisPointsMinId mimirv2 ref
 	TradeAccountsEnabled
+	HaltChain
+	HaltChurning
+	HaltTrading
+	PauseLP
+	HaltSigning
+	TorAnchor
 )
 
 // ConstantValues define methods used to get constant values

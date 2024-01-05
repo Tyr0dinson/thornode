@@ -18,6 +18,8 @@ const (
 	CloutSwapperReset
 	SwapSlipBasisPointsMin
 	TradeAccountEnabled
+	PauseSynths
+	PauseSwaps
 )
 
 // GetMimir fetches a mimir by id number
@@ -39,6 +41,10 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewSwapSlipBasisPointsMin(ref), true
 	case TradeAccountEnabled:
 		return NewTradeAccountsEnabled(ref), true
+	case PauseSwaps:
+		return NewPauseSwaps(ref), true
+	case PauseSynths:
+		return NewPauseSynths(ref), true
 	default:
 		return nil, false
 	}
