@@ -675,9 +675,7 @@ func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (
 	return SwapperClout{}, kaboom
 }
 
-func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context, minBond cosmos.Uint) error {
-	return kaboom
-}
+func (k KVStoreDummy) RemoveBondProviders(ctx cosmos.Context, addr cosmos.AccAddress) {}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

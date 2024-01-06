@@ -873,3 +873,81 @@ func (vts *ValidatorMgrVCURTestSuite) TestActiveNodeRequestToLeaveShouldBeStandb
 	c.Assert(err, IsNil)
 	c.Assert(naAfter.RequestedToLeave, Equals, false)
 }
+
+func (s *ValidatorMgrVCURTestSuite) TestRemoveLowBondValidatorAccounts(c *C) {
+	var err error
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+	networkMgr := newValidatorMgrVCUR(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.Bond = cosmos.ZeroUint()
+
+	na2 := GetRandomValidatorNode(NodeStandby)
+	na2.Bond = cosmos.NewUint(common.One)
+	na2Coin := common.NewCoin(common.RuneAsset(), na2.Bond)
+
+	// sending tokens to bond
+	c.Assert(mgr.K.MintToModule(ctx, ModuleName, na2Coin), IsNil)
+	c.Assert(mgr.K.SendFromModuleToModule(ctx, ModuleName, BondName, common.NewCoins(na2Coin)), IsNil)
+
+	// adding bond providers
+	bAddress, err := na2.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	bond := cosmos.NewUint(common.One / 2)
+	na2BondProviders := BondProviders{
+		NodeAddress:     na2.NodeAddress,
+		NodeOperatorFee: cosmos.ZeroUint(),
+		Providers: []BondProvider{
+			{
+				BondAddress: bAddress,
+				Bond:        bond,
+			},
+			{
+				BondAddress: GetRandomBech32Addr(),
+				Bond:        bond,
+			},
+		},
+	}
+	c.Assert(mgr.K.SetBondProviders(ctx, na2BondProviders), IsNil)
+
+	na3 := GetRandomVaultNode(NodeStandby)
+	na3.Bond = cosmos.NewUint(10 * common.One)
+
+	c.Assert(mgr.K.SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.K.SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.K.SetNodeAccount(ctx, na3), IsNil)
+
+	// disabled
+	c.Assert(networkMgr.removeLowBondValidatorAccounts(ctx, cosmos.ZeroUint()), IsNil)
+	na2Store, err := mgr.K.GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na2Store.IsEmpty(), Equals, false)
+
+	// enabled
+	c.Assert(networkMgr.removeLowBondValidatorAccounts(ctx, cosmos.NewUint(common.One)), IsNil)
+	na2Store, err = mgr.K.GetNodeAccount(ctx, na2.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na2Store.IsEmpty(), Equals, true)
+
+	// check bond providers
+	baStore, err := mgr.K.GetBondProviders(ctx, bAddress)
+	c.Assert(err, IsNil)
+	c.Check(len(baStore.Providers), Equals, 0)
+	// check bal
+	for _, bps := range na2BondProviders.Providers {
+		bal := mgr.K.GetBalance(ctx, bps.BondAddress)
+		c.Check(bal[0].Amount.Int64(), Equals, int64(bond.Uint64()))
+	}
+
+	// 1st and 3rd na should be skipped
+	na1Store, err := mgr.K.GetNodeAccount(ctx, na1.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na1Store.IsEmpty(), Equals, false)
+	c.Check(na1Store.String(), Equals, na1.String())
+
+	na3Store, err := mgr.K.GetNodeAccount(ctx, na3.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na3Store.IsEmpty(), Equals, false)
+	c.Check(na3Store.String(), Equals, na3.String())
+}

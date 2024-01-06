@@ -325,7 +325,7 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 
 	// remove low bond node accounts
 	minBond := cosmos.NewUint(uint64(mimir.NewBondMin().FetchValue(ctx, mgr.Keeper())))
-	if err := vm.k.RemoveLowBondValidatorAccounts(ctx, minBond); err != nil {
+	if err := vm.removeLowBondValidatorAccounts(ctx, minBond); err != nil {
 		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
 	}
 
@@ -1516,4 +1516,71 @@ func (vm *ValidatorMgrVCUR) nextVaultNodeAccounts(ctx cosmos.Context, targetCoun
 	}
 
 	return active, rotation, nil
+}
+
+func (vm *ValidatorMgrVCUR) removeLowBondValidatorAccounts(ctx cosmos.Context, minBond cosmos.Uint) error {
+	// disabled
+	if minBond.IsZero() {
+		return nil
+	}
+	lowBondValidators := make([][]byte, 0)
+	naIterator := vm.k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		var na NodeAccount
+		if err := vm.k.Cdc().Unmarshal(naIterator.Value(), &na); err != nil {
+			return fmt.Errorf("unmarshal: node account %w", err)
+		}
+		if na.Type == NodeTypeVault || na.Status == NodeActive {
+			continue
+		}
+		if na.Type == NodeTypeValidator && na.Bond.LTE(minBond) {
+			lowBondValidators = append(lowBondValidators, naIterator.Key())
+			if na.Bond.IsZero() {
+				continue
+			}
+			bps, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
+			if err != nil {
+				return err
+			}
+			to, err := na.BondAddress.AccAddress()
+			if err != nil {
+				return fmt.Errorf("fail to parse bond address(%s)", na.BondAddress)
+			}
+
+			// No bond providers
+			if len(bps.Providers) == 0 {
+				coin := common.NewCoin(common.RuneAsset(), na.Bond)
+				if err = vm.k.SendFromModuleToAccount(ctx, BondName, to, common.NewCoins(coin)); err != nil {
+					ctx.Logger().Error("failed to return bond pool coins", "error", err)
+				}
+				continue
+			}
+
+			bps.Adjust(vm.k.GetVersion(), na.Bond)
+			totalSent := cosmos.ZeroUint()
+			for _, provider := range bps.Providers {
+				if provider.Bond.IsZero() || provider.BondAddress.Empty() {
+					continue
+				}
+
+				coin := common.NewCoin(common.RuneAsset(), provider.Bond)
+				if err = vm.k.SendFromModuleToAccount(ctx, BondName, provider.BondAddress, common.NewCoins(coin)); err != nil {
+					ctx.Logger().Error("failed to return bond pool coins", "error", err)
+					continue
+				}
+				totalSent = totalSent.Add(provider.Bond)
+			}
+			// sanity check
+			if totalSent.GT(na.Bond) {
+				return fmt.Errorf("total bond returned greater than node bond")
+			}
+
+			vm.k.RemoveBondProviders(ctx, na.NodeAddress)
+		}
+	}
+	for _, naKey := range lowBondValidators {
+		vm.k.DeleteKey(ctx, string(naKey))
+	}
+	return nil
 }
