@@ -298,10 +298,10 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 
 	// convert to openapi types
 	aliases := make([]openapi.ThornameAlias, len(name.Aliases)) // Set-capacity since it will be entirely filled (no skipping conditional).
-	for i, alias := range name.Aliases {
+	for i := range name.Aliases {
 		aliases[i] = openapi.ThornameAlias{
-			Chain:   wrapString(alias.Chain.String()),
-			Address: wrapString(alias.Address.String()),
+			Chain:   wrapString(name.Aliases[i].Chain.String()),
+			Address: wrapString(name.Aliases[i].Address.String()),
 		}
 	}
 
@@ -359,30 +359,30 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 
 	var vaultsWithFunds []types.QueryVaultResp
-	for _, vault := range vaults {
-		if vault.Status == InactiveVault {
+	for i := range vaults {
+		if vaults[i].Status == InactiveVault {
 			continue
 		}
-		if !vault.IsAsgard() {
+		if !vaults[i].IsAsgard() {
 			continue
 		}
 		// Being in a RetiringVault blocks a node from unbonding, so display them even if having no funds.
-		if vault.HasFunds() || vault.Status == ActiveVault || vault.Status == RetiringVault {
+		if vaults[i].HasFunds() || vaults[i].Status == ActiveVault || vaults[i].Status == RetiringVault {
 			vaultsWithFunds = append(vaultsWithFunds, types.QueryVaultResp{
-				BlockHeight:           vault.BlockHeight,
-				PubKey:                vault.PubKey,
-				Coins:                 vault.Coins,
-				Type:                  vault.Type,
-				Status:                vault.Status,
-				StatusSince:           vault.StatusSince,
-				Membership:            vault.Membership,
-				Chains:                vault.Chains,
-				InboundTxCount:        vault.InboundTxCount,
-				OutboundTxCount:       vault.OutboundTxCount,
-				PendingTxBlockHeights: vault.PendingTxBlockHeights,
-				Routers:               vault.Routers,
-				Frozen:                vault.Frozen,
-				Addresses:             getVaultChainAddress(ctx, vault),
+				BlockHeight:           vaults[i].BlockHeight,
+				PubKey:                vaults[i].PubKey,
+				Coins:                 vaults[i].Coins,
+				Type:                  vaults[i].Type,
+				Status:                vaults[i].Status,
+				StatusSince:           vaults[i].StatusSince,
+				Membership:            vaults[i].Membership,
+				Chains:                vaults[i].Chains,
+				InboundTxCount:        vaults[i].InboundTxCount,
+				OutboundTxCount:       vaults[i].OutboundTxCount,
+				PendingTxBlockHeights: vaults[i].PendingTxBlockHeights,
+				Routers:               vaults[i].Routers,
+				Frozen:                vaults[i].Frozen,
+				Addresses:             getVaultChainAddress(ctx, vaults[i]),
 			})
 		}
 	}
@@ -393,15 +393,16 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 	var result []QueryChainAddress
 	allChains := append(vault.GetChains(), common.THORChain)
-	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+	allChainsDistinct := allChains.Distinct()
+	for i := range allChainsDistinct {
+		addr, err := vault.PubKey.GetAddress(allChainsDistinct[i])
 		if err != nil {
-			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
+			ctx.Logger().Error("fail to get address for %s:%w", allChainsDistinct[i].String(), err)
 			continue
 		}
 		result = append(result,
 			QueryChainAddress{
-				Chain:   c,
+				Chain:   allChainsDistinct[i],
 				Address: addr,
 			})
 	}
@@ -425,46 +426,46 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 
 	respVaults := []QueryYggdrasilVaults{}
-	for _, vault := range vaults {
+	for i := range vaults {
 		totalValue := cosmos.ZeroUint()
 
 		// find the bond of this node account
-		na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
+		na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vaults[i].PubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get node account by pubkey", "error", err)
 			continue
 		}
 
 		// calculate the total value of this yggdrasil vault
-		for _, coin := range vault.Coins {
-			if coin.Asset.IsRune() {
-				totalValue = totalValue.Add(coin.Amount)
+		for j := range vaults[i].Coins {
+			if vaults[i].Coins[j].Asset.IsRune() {
+				totalValue = totalValue.Add(vaults[i].Coins[j].Amount)
 			} else {
-				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
+				pool, err := mgr.Keeper().GetPool(ctx, vaults[i].Coins[j].Asset)
 				if err != nil {
 					ctx.Logger().Error("fail to get pool", "error", err)
 					continue
 				}
-				totalValue = totalValue.Add(pool.AssetValueInRune(coin.Amount))
+				totalValue = totalValue.Add(pool.AssetValueInRune(vaults[i].Coins[j].Amount))
 			}
 		}
 
 		singleResp := QueryYggdrasilVaults{
-			BlockHeight:           vault.BlockHeight,
-			PubKey:                vault.PubKey,
-			Coins:                 vault.Coins,
-			Type:                  vault.Type,
-			StatusSince:           vault.StatusSince,
-			Membership:            vault.Membership,
-			Chains:                vault.Chains,
-			InboundTxCount:        vault.InboundTxCount,
-			OutboundTxCount:       vault.OutboundTxCount,
-			PendingTxBlockHeights: vault.PendingTxBlockHeights,
-			Routers:               vault.Routers,
+			BlockHeight:           vaults[i].BlockHeight,
+			PubKey:                vaults[i].PubKey,
+			Coins:                 vaults[i].Coins,
+			Type:                  vaults[i].Type,
+			StatusSince:           vaults[i].StatusSince,
+			Membership:            vaults[i].Membership,
+			Chains:                vaults[i].Chains,
+			InboundTxCount:        vaults[i].InboundTxCount,
+			OutboundTxCount:       vaults[i].OutboundTxCount,
+			PendingTxBlockHeights: vaults[i].PendingTxBlockHeights,
+			Routers:               vaults[i].Routers,
 			Status:                na.Status,
 			Bond:                  na.Bond,
 			TotalValue:            totalValue,
-			Addresses:             getVaultChainAddress(ctx, vault),
+			Addresses:             getVaultChainAddress(ctx, vaults[i]),
 		}
 		respVaults = append(respVaults, singleResp)
 	}
@@ -636,23 +637,23 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
 
-	for _, chain := range chains {
+	for i := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
-		if chain == common.THORChain {
+		if chains[i] == common.THORChain {
 			continue
 		}
 
-		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
-		isChainLpPaused := mgr.Keeper().IsLPPaused(ctx, chain)
+		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chains[i])
+		isChainLpPaused := mgr.Keeper().IsLPPaused(ctx, chains[i])
 
-		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		vaultAddress, err := vault.PubKey.GetAddress(chains[i])
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
-		cc := vault.GetContract(chain)
-		gasRate := mgr.GasMgr().GetGasRate(ctx, chain)
-		networkFeeInfo, err := mgr.GasMgr().GetNetworkFee(ctx, chain)
+		cc := vault.GetContract(chains[i])
+		gasRate := mgr.GasMgr().GetGasRate(ctx, chains[i])
+		networkFeeInfo, err := mgr.GasMgr().GetNetworkFee(ctx, chains[i])
 		if err != nil {
 			ctx.Logger().Error("fail to get network fee info", "error", err)
 			return nil, fmt.Errorf("fail to get network fee info: %w", err)
@@ -660,17 +661,17 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 
 		// because THORNode is using 1e8, while GWei in ETH is in 1e9, thus the minimum THORNode can represent is 10Gwei
 		// here convert the gas rate to Gwei , so api user don't need to convert it , make it easier for people to understand
-		if chain.IsEVM() {
+		if chains[i].IsEVM() {
 			gasRate = gasRate.MulUint64(10)
 		}
 
 		// Retrieve the value the network charges for outbound fees for this chain
 		// Note: If calculating the outbound fee of a non-gas asset outbound, the returned value must be converted to RUNE,
 		// then to the non-gas asset using the pool depths. That will be the value deducted from the non-gas asset outbound amount
-		outboundFee := mgr.GasMgr().GetFee(ctx, chain, chain.GetGasAsset())
+		outboundFee := mgr.GasMgr().GetFee(ctx, chains[i], chains[i].GetGasAsset())
 
 		addr := openapi.InboundAddress{
-			Chain:                wrapString(chain.String()),
+			Chain:                wrapString(chains[i].String()),
 			PubKey:               wrapString(vault.PubKey.String()),
 			Address:              wrapString(vaultAddress.String()),
 			Router:               wrapString(cc.Router.String()),
@@ -679,10 +680,10 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			ChainTradingPaused:   &isChainTradingPaused,
 			ChainLpActionsPaused: &isChainLpPaused,
 			GasRate:              wrapString(gasRate.String()),
-			GasRateUnits:         wrapString(chain.GetGasUnits()),
+			GasRateUnits:         wrapString(chains[i].GetGasUnits()),
 			OutboundTxSize:       wrapString(cosmos.NewUint(networkFeeInfo.TransactionSize).String()),
 			OutboundFee:          wrapString(outboundFee.String()),
-			DustThreshold:        wrapString(chain.DustThreshold().String()),
+			DustThreshold:        wrapString(chains[i].DustThreshold().String()),
 		}
 
 		resp = append(resp, addr)
@@ -876,22 +877,22 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
 	result := []QueryNodeAccount{}
-	for _, na := range nodeAccounts {
-		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
+	for i := range nodeAccounts {
+		if nodeAccounts[i].RequestedToLeave && nodeAccounts[i].Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
 			continue
 		}
 
-		slashPts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+		slashPts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, nodeAccounts[i].NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node slash points: %w", err)
 		}
 
-		singleResp := NewQueryNodeAccount(na)
-		singleResp.PeerID = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
+		singleResp := NewQueryNodeAccount(nodeAccounts[i])
+		singleResp.PeerID = getPeerIDFromPubKey(nodeAccounts[i].PubKeySet.Secp256k1)
 		singleResp.SlashPoints = slashPts
-		if na.Status == NodeActive {
-			reward, err := getNodeCurrentRewards(ctx, mgr, na, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
+		if nodeAccounts[i].Status == NodeActive {
+			reward, err := getNodeCurrentRewards(ctx, mgr, nodeAccounts[i], lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get current node rewards: %w", err)
 			}
@@ -899,7 +900,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			singleResp.CurrentAward = reward
 		}
 
-		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
+		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, nodeAccounts[i].NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node jail: %w", err)
 		}
@@ -908,7 +909,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			ReleaseHeight: jail.ReleaseHeight,
 			Reason:        jail.Reason,
 		}
-		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
+		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, nodeAccounts[i].NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 		}
@@ -924,7 +925,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			idx++
 		}
 
-		preflightCheckResult, err := getNodePreflightResult(ctx, mgr, na)
+		preflightCheckResult, err := getNodePreflightResult(ctx, mgr, nodeAccounts[i])
 		if err != nil {
 			ctx.Logger().Error("fail to get node preflight result", "error", err)
 		} else {
@@ -935,7 +936,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
-		bp.Adjust(version, na.Bond)
+		bp.Adjust(version, nodeAccounts[i].Bond)
 		singleResp.BondProviders = BondProviders{
 			// Since redundant, leave out the node address
 			NodeOperatorFee: bp.NodeOperatorFee,
@@ -1700,9 +1701,9 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 		}
 		// only return those keygen contains the request pub key
 		newKeygenBlock := NewKeygenBlock(keygenBlock.Height)
-		for _, keygen := range keygenBlock.Keygens {
-			if keygen.GetMembers().Contains(pk) {
-				newKeygenBlock.Keygens = append(newKeygenBlock.Keygens, keygen)
+		for i := range keygenBlock.Keygens {
+			if keygenBlock.Keygens[i].GetMembers().Contains(pk) {
+				newKeygenBlock.Keygens = append(newKeygenBlock.Keygens, keygenBlock.Keygens[i])
 			}
 		}
 		keygenBlock = newKeygenBlock
@@ -1752,13 +1753,13 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 		newTxs := &TxOut{
 			Height: txs.Height,
 		}
-		for _, tx := range txs.TxArray {
-			if pk.Equals(tx.VaultPubKey) {
+		for i := range txs.TxArray {
+			if pk.Equals(txs.TxArray[i].VaultPubKey) {
 				zero := cosmos.ZeroUint()
-				if tx.CloutSpent == nil {
-					tx.CloutSpent = &zero
+				if txs.TxArray[i].CloutSpent == nil {
+					txs.TxArray[i].CloutSpent = &zero
 				}
-				newTxs.TxArray = append(newTxs.TxArray, tx)
+				newTxs.TxArray = append(newTxs.TxArray, txs.TxArray[i])
 			}
 		}
 		txs = newTxs
@@ -1819,9 +1820,9 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
-		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
+		for i := range txs.TxArray {
+			if txs.TxArray[i].OutHash.IsEmpty() {
+				memo, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txs.TxArray[i].Memo)
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
@@ -1874,17 +1875,17 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 		if err != nil {
 			return nil, fmt.Errorf("fail to get active asgard: %w", err)
 		}
-		for _, vault := range asgards {
-			chains = vault.GetChains().Distinct()
+		for i := range asgards {
+			chains = asgards[i].GetChains().Distinct()
 			break
 		}
 	}
 	var result []QueryResLastBlockHeights
-	for _, c := range chains {
-		if c == common.THORChain {
+	for i := range chains {
+		if chains[i] == common.THORChain {
 			continue
 		}
-		chainHeight, err := mgr.Keeper().GetLastChainHeight(ctx, c)
+		chainHeight, err := mgr.Keeper().GetLastChainHeight(ctx, chains[i])
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last chain height: %w", err)
 		}
@@ -1894,7 +1895,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			return nil, fmt.Errorf("fail to get last sign height: %w", err)
 		}
 		result = append(result, QueryResLastBlockHeights{
-			Chain:            c,
+			Chain:            chains[i],
 			LastChainHeight:  chainHeight,
 			LastSignedHeight: signed,
 			Thorchain:        ctx.BlockHeight(),
@@ -2034,8 +2035,9 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
 
-		for _, m := range nm.GetMimirs() {
-			parts := strings.Split(m.Key, "-")
+		gottenMimirs := nm.GetMimirs()
+		for i := range gottenMimirs {
+			parts := strings.Split(gottenMimirs[i].Key, "-")
 			id, err := strconv.Atoi(parts[0])
 			if err != nil {
 				continue
@@ -2047,8 +2049,8 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 				continue
 			}
 
-			if _, exists := mimirsMap[m.Key]; !exists {
-				mimirsMap[m.Key] = types.QueryMimirV2IDs{
+			if _, exists := mimirsMap[gottenMimirs[i].Key]; !exists {
+				mimirsMap[gottenMimirs[i].Key] = types.QueryMimirV2IDs{
 					ID:        id,
 					Name:      mv2.Name(),
 					Type:      mv2.Type().String(),
@@ -2057,7 +2059,7 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 					Votes:     map[int64]int64{},
 				}
 			}
-			mimirsMap[m.Key].Votes[m.Value] += 1
+			mimirsMap[gottenMimirs[i].Key].Votes[gottenMimirs[i].Value] += 1
 		}
 	}
 	// jsonify's json.Marshal sorts the map keys alphabetically.
@@ -2243,8 +2245,8 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			// rest will be empty as well
 			break
 		}
-		for _, toi := range txOut.TxArray {
-			result = append(result, NewQueryTxOutItem(toi, height))
+		for i := range txOut.TxArray {
+			result = append(result, NewQueryTxOutItem(txOut.TxArray[i], height))
 		}
 	}
 
@@ -2273,9 +2275,9 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
-		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				result = append(result, NewQueryTxOutItem(tx, height))
+		for i := range txs.TxArray {
+			if txs.TxArray[i].OutHash.IsEmpty() {
+				result = append(result, NewQueryTxOutItem(txs.TxArray[i], height))
 			}
 		}
 	}
@@ -2325,14 +2327,14 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return nil, fmt.Errorf("fail to get active asgards:%w", err)
 	}
 	pubKeys := make(common.PubKeys, len(vaults)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
-	for i, v := range vaults {
-		pubKeys[i] = v.PubKey
+	for i := range vaults {
+		pubKeys[i] = vaults[i].PubKey
 	}
 	var keygenMetrics []*types.TssKeygenMetric
-	for _, pkey := range pubKeys {
-		m, err := mgr.Keeper().GetTssKeygenMetric(ctx, pkey)
+	for i := range pubKeys {
+		m, err := mgr.Keeper().GetTssKeygenMetric(ctx, pubKeys[i])
 		if err != nil {
-			return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pkey, err)
+			return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pubKeys[i], err)
 		}
 		if len(m.NodeTssTimes) == 0 {
 			continue
@@ -2357,8 +2359,8 @@ func queryInvariants(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	result := openapi.InvariantsResponse{}
 	routes := mgr.Keeper().InvariantRoutes()
 	result.Invariants = make([]string, len(routes)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
-	for i, route := range routes {
-		result.Invariants[i] = route.Route
+	for i := range routes {
+		result.Invariants[i] = routes[i].Route
 	}
 	return jsonify(ctx, result)
 }
@@ -2367,11 +2369,12 @@ func queryInvariant(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error
 	if len(path) < 1 {
 		return nil, fmt.Errorf("invalid path: %v", path)
 	}
-	for _, route := range mgr.Keeper().InvariantRoutes() {
-		if strings.EqualFold(route.Route, path[0]) {
-			msg, broken := route.Invariant(ctx)
+	routes := mgr.Keeper().InvariantRoutes()
+	for i := range routes {
+		if strings.EqualFold(routes[i].Route, path[0]) {
+			msg, broken := routes[i].Invariant(ctx)
 			result := openapi.InvariantResponse{
-				Invariant: route.Route,
+				Invariant: routes[i].Route,
 				Broken:    broken,
 				Msg:       msg,
 			}
@@ -2436,18 +2439,18 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 
 	// parse the events
-	for i, event := range results.BeginBlockEvents {
-		res.BeginBlockEvents[i] = eventMap(sdk.Event(event))
+	for i := range results.BeginBlockEvents {
+		res.BeginBlockEvents[i] = eventMap(sdk.Event(results.BeginBlockEvents[i]))
 	}
-	for i, event := range results.EndBlockEvents {
-		res.EndBlockEvents[i] = eventMap(sdk.Event(event))
+	for i := range results.EndBlockEvents {
+		res.EndBlockEvents[i] = eventMap(sdk.Event(results.EndBlockEvents[i]))
 	}
 
-	for i, tx := range block.Block.Txs {
-		res.Txs[i].Hash = strings.ToUpper(hex.EncodeToString(tx.Hash()))
+	for i := range block.Block.Txs {
+		res.Txs[i].Hash = strings.ToUpper(hex.EncodeToString(block.Block.Txs[i].Hash()))
 
 		// decode the protobuf and encode to json
-		dtx, err := authtx.DefaultTxDecoder(mgr.cdc.(*codec.ProtoCodec))(tx)
+		dtx, err := authtx.DefaultTxDecoder(mgr.cdc.(*codec.ProtoCodec))(block.Block.Txs[i])
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode tx: %w", err)
 		}
@@ -2465,8 +2468,8 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		res.Txs[i].Result.GasWanted = wrapString(strconv.FormatInt(results.TxsResults[i].GasWanted, 10))
 		res.Txs[i].Result.GasUsed = wrapString(strconv.FormatInt(results.TxsResults[i].GasUsed, 10))
 		res.Txs[i].Result.Events = make([]map[string]string, len(results.TxsResults[i].Events)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
-		for j, event := range results.TxsResults[i].Events {
-			res.Txs[i].Result.Events[j] = eventMap(sdk.Event(event))
+		for j := range results.TxsResults[i].Events {
+			res.Txs[i].Result.Events[j] = eventMap(sdk.Event(results.TxsResults[i].Events[j]))
 		}
 	}
 
@@ -2515,8 +2518,8 @@ func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, e
 func eventMap(e sdk.Event) map[string]string {
 	m := map[string]string{}
 	m["type"] = e.Type
-	for _, a := range e.Attributes {
-		m[string(a.Key)] = string(a.Value)
+	for i := range e.Attributes {
+		m[string(e.Attributes[i].Key)] = string(e.Attributes[i].Value)
 	}
 	return m
 }
@@ -2581,8 +2584,8 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 			return nil, fmt.Errorf("failed to simulate end block: %w", err)
 		}
 
-		for _, pool := range pools {
-			_ = mgr.Keeper().SetPool(ctx, pool)
+		for i := range pools {
+			_ = mgr.Keeper().SetPool(ctx, pools[i])
 		}
 
 		count += 1
