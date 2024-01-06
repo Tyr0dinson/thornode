@@ -410,7 +410,7 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 
 // TODO remove on hard fork
 func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	vaults := make(Vaults, 0)
+	vaults := Vaults{}
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -424,7 +424,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	respVaults := make([]QueryYggdrasilVaults, 0)
+	respVaults := []QueryYggdrasilVaults{}
 	for _, vault := range vaults {
 		totalValue := cosmos.ZeroUint()
 
@@ -474,9 +474,9 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	var resp QueryVaultsPubKeys
-	resp.Asgard = make([]QueryVaultPubKeyContract, 0)
-	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0) // TODO remove on hard fork
-	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
+	resp.Asgard = []QueryVaultPubKeyContract{}
+	resp.Yggdrasil = []QueryVaultPubKeyContract{} // TODO remove on hard fork
+	resp.Inactive = []QueryVaultPubKeyContract{}
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
 	active, err := mgr.Keeper().ListActiveValidators(ctx)
@@ -875,7 +875,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
-	result := make([]QueryNodeAccount, 0)
+	result := []QueryNodeAccount{}
 	for _, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
@@ -958,7 +958,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
 	}
 
-	borrowers := make([]openapi.Borrower, 0)
+	borrowers := []openapi.Borrower{}
 	iterator := mgr.Keeper().GetLoanIterator(ctx, asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -1299,7 +1299,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	pools := make([]QueryPool, 0)
+	pools := []QueryPool{}
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -1406,7 +1406,7 @@ func queryDerivedPool(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	pools := make([]QueryDerivedPool, 0)
+	pools := []QueryDerivedPool{}
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -1951,7 +1951,7 @@ func queryMimirWithKey(ctx cosmos.Context, path []string, req abci.RequestQuery,
 }
 
 func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64)
+	values := map[string]int64{}
 
 	// collect keys
 	iter := mgr.Keeper().GetMimirIterator(ctx)
@@ -2024,7 +2024,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	mimirsMap := make(map[string]types.QueryMimirV2IDs)
+	mimirsMap := map[string]types.QueryMimirV2IDs{}
 	iter := mgr.Keeper().GetNodeMimirIteratorV2(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2054,7 +2054,7 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 					Type:      mv2.Type().String(),
 					VoteKey:   fmt.Sprintf("%d-%s", id, ref),
 					LegacyKey: mv2.LegacyKey(ref),
-					Votes:     make(map[int64]int64),
+					Votes:     map[int64]int64{},
 				}
 			}
 			mimirsMap[m.Key].Votes[m.Value] += 1
@@ -2065,7 +2065,7 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 }
 
 func queryMimirV2Values(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64)
+	values := map[string]int64{}
 
 	active, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -2123,7 +2123,7 @@ func queryMimirV2NodesAll(ctx cosmos.Context, path []string, req abci.RequestQue
 }
 
 func queryMimirAdminValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	values := make(map[string]int64)
+	values := map[string]int64{}
 	iter := mgr.Keeper().GetMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2162,7 +2162,7 @@ func queryMimirNodesValues(ctx cosmos.Context, path []string, req abci.RequestQu
 	}
 	active := activeNodes.GetNodeAddresses()
 
-	values := make(map[string]int64)
+	values := map[string]int64{}
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2187,7 +2187,7 @@ func queryMimirNodeValues(ctx cosmos.Context, path []string, req abci.RequestQue
 		return nil, fmt.Errorf("fail to parse thor address: %w", err)
 	}
 
-	values := make(map[string]int64)
+	values := map[string]int64{}
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2226,7 +2226,7 @@ func queryBan(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgr
 }
 
 func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	result := make([]QueryTxOutItem, 0)
+	result := []QueryTxOutItem{}
 	constAccessor := mgr.GetConstants()
 	maxTxOutOffset, err := mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
 	if maxTxOutOffset < 0 || err != nil {
@@ -2266,7 +2266,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		lastOutboundHeight += rescheduleCoalesceBlocks - (lastOutboundHeight % rescheduleCoalesceBlocks)
 	}
 
-	result := make([]QueryTxOutItem, 0)
+	result := []QueryTxOutItem{}
 	for height := startHeight; height <= lastOutboundHeight; height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
@@ -2301,7 +2301,7 @@ func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	if len(path) == 0 {
-		return jsonify(ctx, make([]*types.TssKeygenMetric, 0))
+		return jsonify(ctx, []*types.TssKeygenMetric{})
 	}
 
 	pkey, err := common.NewPubKey(path[0])
