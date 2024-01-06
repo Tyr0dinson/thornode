@@ -2300,22 +2300,21 @@ func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	var pubKeys common.PubKeys
-	if len(path) > 0 {
-		pkey, err := common.NewPubKey(path[0])
-		if err != nil {
-			return nil, fmt.Errorf("fail to parse pubkey(%s) err:%w", path[0], err)
-		}
-		pubKeys = append(pubKeys, pkey)
+	if len(path) == 0 {
+		return jsonify(ctx, make([]*types.TssKeygenMetric, 0))
 	}
-	result := make([]*types.TssKeygenMetric, len(pubKeys)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
-	for i, pkey := range pubKeys {
-		m, err := mgr.Keeper().GetTssKeygenMetric(ctx, pkey)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pkey, err)
-		}
-		result[i] = m
+
+	pkey, err := common.NewPubKey(path[0])
+	if err != nil {
+		return nil, fmt.Errorf("fail to parse pubkey(%s) err:%w", path[0], err)
 	}
+
+	m, err := mgr.Keeper().GetTssKeygenMetric(ctx, pkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pkey, err)
+	}
+	result := []*types.TssKeygenMetric{m}
+
 	return jsonify(ctx, result)
 }
 
