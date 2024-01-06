@@ -2020,7 +2020,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	mimirsMap := make(map[string]types.QueryMimirV2IDs, 0)
+	mimirsMap := make(map[string]types.QueryMimirV2IDs)
 	iter := mgr.Keeper().GetNodeMimirIteratorV2(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
