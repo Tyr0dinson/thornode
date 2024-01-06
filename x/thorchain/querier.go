@@ -958,7 +958,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return nil, fmt.Errorf("fail to parse asset: %w", err)
 	}
 
-	var loans Loans
+	borrowers := make([]openapi.Borrower, 0)
 	iterator := mgr.Keeper().GetLoanIterator(ctx, asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -967,11 +967,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		if loan.CollateralDeposited.Equal(loan.CollateralWithdrawn) && loan.DebtIssued.Equal(loan.DebtRepaid) {
 			continue
 		}
-		loans = append(loans, loan)
-	}
 
-	borrowers := make([]openapi.Borrower, len(loans)) // Set-capacity since it will be entirely filled (no skipping conditional).
-	for i, loan := range loans {
 		borrower := openapi.NewBorrower(
 			loan.Owner.String(),
 			loan.Asset.String(),
@@ -984,7 +980,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 			loan.LastOpenHeight,
 			loan.LastRepayHeight,
 		)
-		borrowers[i] = *borrower
+		borrowers = append(borrowers, *borrower)
 	}
 
 	return jsonify(ctx, borrowers)
