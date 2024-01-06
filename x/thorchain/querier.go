@@ -297,12 +297,12 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	}
 
 	// convert to openapi types
-	aliases := []openapi.ThornameAlias{}
-	for _, alias := range name.Aliases {
-		aliases = append(aliases, openapi.ThornameAlias{
+	aliases := make([]openapi.ThornameAlias, len(name.Aliases)) // Set-capacity since it will be entirely filled (no skipping conditional).
+	for i, alias := range name.Aliases {
+		aliases[i] = openapi.ThornameAlias{
 			Chain:   wrapString(alias.Chain.String()),
 			Address: wrapString(alias.Address.String()),
-		})
+		}
 	}
 
 	resp := openapi.Thorname{
@@ -783,12 +783,15 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 	}
 
+	result.ObserveChains = make([]types.QueryChainHeight, len(chainHeights)) // Set-capacity since it will be entirely filled (no skipping conditional).
+	idx := 0
 	// analyze-ignore(map-iteration)
 	for c, h := range chainHeights {
-		result.ObserveChains = append(result.ObserveChains, types.QueryChainHeight{
+		result.ObserveChains[idx] = types.QueryChainHeight{
 			Chain:  c,
 			Height: h,
-		})
+		}
+		idx++
 	}
 
 	preflightCheckResult, err := getNodePreflightResult(ctx, mgr, nodeAcc)
@@ -910,12 +913,15 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 		}
 
+		singleResp.ObserveChains = make([]types.QueryChainHeight, len(chainHeights)) // Set-capacity since it will be entirely filled (no skipping conditional).
+		idx := 0
 		// analyze-ignore(map-iteration)
 		for c, h := range chainHeights {
-			singleResp.ObserveChains = append(singleResp.ObserveChains, types.QueryChainHeight{
+			singleResp.ObserveChains[idx] = types.QueryChainHeight{
 				Chain:  c,
 				Height: h,
-			})
+			}
+			idx++
 		}
 
 		preflightCheckResult, err := getNodePreflightResult(ctx, mgr, na)
@@ -964,8 +970,8 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		loans = append(loans, loan)
 	}
 
-	borrowers := make([]openapi.Borrower, 0)
-	for _, loan := range loans {
+	borrowers := make([]openapi.Borrower, len(loans)) // Set-capacity since it will be entirely filled (no skipping conditional).
+	for i, loan := range loans {
 		borrower := openapi.NewBorrower(
 			loan.Owner.String(),
 			loan.Asset.String(),
@@ -978,7 +984,7 @@ func queryBorrowers(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 			loan.LastOpenHeight,
 			loan.LastRepayHeight,
 		)
-		borrowers = append(borrowers, *borrower)
+		borrowers[i] = *borrower
 	}
 
 	return jsonify(ctx, borrowers)
@@ -2306,26 +2312,26 @@ func queryTssKeygenMetric(ctx cosmos.Context, path []string, req abci.RequestQue
 		}
 		pubKeys = append(pubKeys, pkey)
 	}
-	var result []*types.TssKeygenMetric
-	for _, pkey := range pubKeys {
+	result := make([]*types.TssKeygenMetric, len(pubKeys)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+	for i, pkey := range pubKeys {
 		m, err := mgr.Keeper().GetTssKeygenMetric(ctx, pkey)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pkey, err)
 		}
-		result = append(result, m)
+		result[i] = m
 	}
 	return jsonify(ctx, result)
 }
 
 func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	var pubKeys common.PubKeys
 	// get all active asgard
 	vaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active asgards:%w", err)
 	}
-	for _, v := range vaults {
-		pubKeys = append(pubKeys, v.PubKey)
+	pubKeys := make(common.PubKeys, len(vaults)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+	for i, v := range vaults {
+		pubKeys[i] = v.PubKey
 	}
 	var keygenMetrics []*types.TssKeygenMetric
 	for _, pkey := range pubKeys {
@@ -2354,8 +2360,10 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 func queryInvariants(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	result := openapi.InvariantsResponse{}
-	for _, route := range mgr.Keeper().InvariantRoutes() {
-		result.Invariants = append(result.Invariants, route.Route)
+	routes := mgr.Keeper().InvariantRoutes()
+	result.Invariants = make([]string, len(routes)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+	for i, route := range routes {
+		result.Invariants[i] = route.Route
 	}
 	return jsonify(ctx, result)
 }
@@ -2426,18 +2434,18 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				EvidenceHash:       block.Block.Header.EvidenceHash.String(),
 				ProposerAddress:    block.Block.Header.ProposerAddress.String(),
 			},
-			BeginBlockEvents: []map[string]string{},
-			EndBlockEvents:   []map[string]string{},
+			BeginBlockEvents: make([]map[string]string, len(results.BeginBlockEvents)), // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+			EndBlockEvents:   make([]map[string]string, len(results.EndBlockEvents)),   // Keep as set-capacity since it will be entirely filled (no skipping conditional).
 		},
-		Txs: make([]types.QueryBlockTx, len(block.Block.Txs)),
+		Txs: make([]types.QueryBlockTx, len(block.Block.Txs)), // Keep as set-capacity since it will be entirely filled (no skipping conditional).
 	}
 
 	// parse the events
-	for _, event := range results.BeginBlockEvents {
-		res.BeginBlockEvents = append(res.BeginBlockEvents, eventMap(sdk.Event(event)))
+	for i, event := range results.BeginBlockEvents {
+		res.BeginBlockEvents[i] = eventMap(sdk.Event(event))
 	}
-	for _, event := range results.EndBlockEvents {
-		res.EndBlockEvents = append(res.EndBlockEvents, eventMap(sdk.Event(event)))
+	for i, event := range results.EndBlockEvents {
+		res.EndBlockEvents[i] = eventMap(sdk.Event(event))
 	}
 
 	for i, tx := range block.Block.Txs {
@@ -2461,9 +2469,9 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		res.Txs[i].Result.Info = wrapString(results.TxsResults[i].Info)
 		res.Txs[i].Result.GasWanted = wrapString(strconv.FormatInt(results.TxsResults[i].GasWanted, 10))
 		res.Txs[i].Result.GasUsed = wrapString(strconv.FormatInt(results.TxsResults[i].GasUsed, 10))
-		res.Txs[i].Result.Events = []map[string]string{}
-		for _, event := range results.TxsResults[i].Events {
-			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, eventMap(sdk.Event(event)))
+		res.Txs[i].Result.Events = make([]map[string]string, len(results.TxsResults[i].Events)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+		for j, event := range results.TxsResults[i].Events {
+			res.Txs[i].Result.Events[j] = eventMap(sdk.Event(event))
 		}
 	}
 
