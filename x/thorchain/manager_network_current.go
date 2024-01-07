@@ -829,26 +829,32 @@ func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools,
 			continue
 		}
 
+		// Get the override Mimir values.
 		// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
 		key := "POL-" + pool.Asset.MimirString()
-		val, err := mgr.Keeper().GetMimir(ctx, key)
+		mimirVal, err := mgr.Keeper().GetMimir(ctx, key)
 		if err != nil {
 			ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			continue
 		}
-
-		// -1 is unset default behaviour; 0 is off (paused); 1 is on; 2 (elsewhere) is forced withdraw.
-		switch val {
-		case -1:
-			continue // unset default behaviour:  pause POL movements
+		switch mimirVal {
 		case 0:
-			continue // off behaviour:  pause POL movements
-		case 1:
-			// on behaviour:  POL is enabled
+			// manual pause, don't deposit or withdraw
+			// (don't return the pool)
+			continue
+		case 1, 2:
+			// 1 is manual on, 2 is manual withdraw;
+			// either way return the pool
+		default:
+			// Unset (-1) or otherwise, default behaviour:
+			// only return the pool if a Saver asset (gas asset or TorAnchor)
+			if !mgr.Keeper().IsSaverL1Asset(ctx, pool.Asset) {
+				continue
+			}
 		}
 
 		pools = append(pools, pool)
-		mimirVals = append(mimirVals, val)
+		mimirVals = append(mimirVals, mimirVal)
 	}
 
 	return pools, mimirVals
