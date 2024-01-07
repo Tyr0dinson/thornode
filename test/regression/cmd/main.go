@@ -64,6 +64,8 @@ func main() {
 	mu := sync.Mutex{}
 	succeeded := []string{}
 	failed := []string{}
+	completed := 0
+	total := len(files)
 
 	// get parallelism from environment variable if DEBUG is not set
 	parallelism := 1
@@ -78,7 +80,7 @@ func main() {
 	}
 	log.Info().
 		Int("parallelism", parallelism).
-		Int("count", len(files)).
+		Int("count", total).
 		Msg("running tests")
 
 	// use a channel to abort early if there is a failure in a merge request run
@@ -123,6 +125,8 @@ func main() {
 				if parallelism > 1 {
 					fmt.Println(buf.String())
 				}
+				completed++
+				log.Info().Msg(fmt.Sprintf("%d/%d regression tests completed.", completed, total))
 				mu.Unlock()
 			}()
 
