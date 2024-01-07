@@ -768,7 +768,8 @@ func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		val := mimirVals[idx]
 
 		// if pool isn't available or mimir has it configured, force withdraw from the pool
-		if val == 2 || pool.Status != PoolAvailable {
+		forceWithdraw := val == 2 || pool.Status != PoolAvailable
+		if forceWithdraw {
 			targetSynthPerPoolDepth = cosmos.NewUint(10_000)
 		}
 
@@ -777,7 +778,7 @@ func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		synthPerPoolDepth := common.GetUncappedShare(pool.SynthUnits, pool.GetPoolUnits(), cosmos.NewUint(10_000))
 
 		// detect if we need to deposit rune
-		if common.SafeSub(synthPerPoolDepth, buffer).GT(targetSynthPerPoolDepth) {
+		if !forceWithdraw && common.SafeSub(synthPerPoolDepth, buffer).GT(targetSynthPerPoolDepth) {
 			if maxDeposit <= pol.CurrentDeposit().Int64() {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
@@ -789,7 +790,7 @@ func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		}
 
 		// detect if we need to withdraw rune
-		if synthPerPoolDepth.Add(buffer).LT(targetSynthPerPoolDepth) {
+		if forceWithdraw || synthPerPoolDepth.Add(buffer).LT(targetSynthPerPoolDepth) {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth, mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
@@ -871,7 +872,7 @@ func (vm *NetworkMgrVCUR) addPOLLiquidity(
 	handler := NewInternalHandler(mgr)
 
 	// NOTE: move is in hundredths of a basis point
-	move := synthPerPoolDepth.Sub(targetSynthPerPoolDepth).MulUint64(100)
+	move := common.SafeSub(synthPerPoolDepth, targetSynthPerPoolDepth).MulUint64(100)
 	if move.GT(maxMovement) {
 		move = maxMovement
 	}
@@ -923,7 +924,7 @@ func (vm *NetworkMgrVCUR) removePOLLiquidity(
 	}
 
 	// NOTE: move is in hundredths of a basis point
-	move := targetSynthPerPoolDepth.Sub(synthPerPoolDepth).MulUint64(100)
+	move := common.SafeSub(targetSynthPerPoolDepth, synthPerPoolDepth).MulUint64(100)
 	if move.GT(maxMovement) {
 		move = maxMovement
 	}
