@@ -205,13 +205,11 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		if vault.IsAsgard() {
-			if !voter.UpdatedVault {
+		if voter.HasFinalised(activeNodeAccounts) {
+			if vault.IsAsgard() && !voter.UpdatedVault {
 				vault.AddFunds(tx.Tx.Coins)
 				voter.UpdatedVault = true
 			}
-		}
-		if voter.HasFinalised(activeNodeAccounts) {
 			vault.InboundTxCount++
 		}
 
