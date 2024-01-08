@@ -655,14 +655,35 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 
-	var resp struct {
-		Current []struct {
+	c.Assert(string(result) == "[]", Equals, true)
+	// There are no Vault chains and the THOR chain is skipped, so it's an empty slice.
+
+	var resp []struct {
+		Current struct {
 			Chain   common.Chain   `json:"chain"`
 			PubKey  common.PubKey  `json:"pub_key"`
 			Address common.Address `json:"address"`
 			Halted  bool           `json:"halted"`
 		} `json:"current"`
 	}
+	c.Assert(json.Unmarshal(result, &resp), IsNil)
+
+	c.Assert(na.SignerMembership, HasLen, 0)
+	vault := GetRandomVault()
+	na.TryAddSignerPubKey(vault.PubKey)
+	c.Assert(na.SignerMembership, HasLen, 1)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
+
+	result, err = s.querier(s.ctx, []string{
+		query.QueryInboundAddresses.Key,
+		na.NodeAddress.String(),
+	}, abci.RequestQuery{})
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
+
+	c.Assert(string(result) == "[]", Equals, false)
+	// The result is no longer an empty slice.
 	c.Assert(json.Unmarshal(result, &resp), IsNil)
 }
 
