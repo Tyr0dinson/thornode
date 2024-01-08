@@ -1220,8 +1220,9 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	var evtPools []PoolAmt
 	if !totalPoolRewards.IsZero() { // If Pool Rewards to hand out
 		var (
-			rewardAmts  []cosmos.Uint
-			rewardPools []Pool
+			rewardAmts       []cosmos.Uint
+			rewardPools      []Pool
+			remainingRewards = cosmos.NewUint(totalPoolRewards.Uint64())
 		)
 		// Pool Rewards are based on Fee Share
 		for idx, pool := range pools {
@@ -1229,7 +1230,6 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 				continue
 			}
 			var amt, fees cosmos.Uint
-			remainingRewards := totalPoolRewards
 			if totalLiquidityFees.IsZero() {
 				amt = common.GetSafeShare(pool.BalanceRune, totalProvidedLiquidity, totalPoolRewards)
 				fees = cosmos.ZeroUint()
@@ -1241,10 +1241,18 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
-			remainingRewards = remainingRewards.Sub(amt)
-			if idx == len(pools)-1 && !remainingRewards.IsZero() {
-				// remaining pool reward dust to last pool
-				amt = amt.Add(remainingRewards)
+			if amt.GT(remainingRewards) {
+				amt = remainingRewards
+				remainingRewards = cosmos.ZeroUint()
+			} else {
+				remainingRewards = remainingRewards.Sub(amt)
+			}
+			// send remaining rewards to last pool
+			if idx == len(pools)-1 {
+				if !remainingRewards.IsZero() {
+					amt = amt.Add(remainingRewards)
+					remainingRewards = cosmos.ZeroUint()
+				}
 			}
 			if err = vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
@@ -1322,7 +1330,7 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 				poolCache[asset] = pool
 				pools = append(pools, pool)
 			}
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(coin.Amount))
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(cosmos.RoundToDecimal(coin.Amount, pool.Decimals)))
 		}
 	}
 	return pools, totalProvidedLiquidity, nil
