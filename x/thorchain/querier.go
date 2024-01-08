@@ -358,7 +358,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
 
-	var vaultsWithFunds []types.QueryVaultResp
+	vaultsWithFunds := []types.QueryVaultResp{}
 	for i := range vaults {
 		if vaults[i].Status == InactiveVault {
 			continue
@@ -391,7 +391,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
-	var result []QueryChainAddress
+	result := []QueryChainAddress{}
 	allChains := append(vault.GetChains(), common.THORChain)
 	allChainsDistinct := allChains.Distinct()
 	for i := range allChainsDistinct {
@@ -474,7 +474,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var resp QueryVaultsPubKeys
+	resp := QueryVaultsPubKeys{}
 	resp.Asgard = []QueryVaultPubKeyContract{}
 	resp.Yggdrasil = []QueryVaultPubKeyContract{} // TODO remove on hard fork
 	resp.Inactive = []QueryVaultPubKeyContract{}
@@ -619,7 +619,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		return nil, fmt.Errorf("fail to get active vaults: %w", err)
 	}
 
-	var resp []openapi.InboundAddress
+	resp := []openapi.InboundAddress{}
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	if mgr.Keeper() == nil {
@@ -1060,8 +1060,8 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		return nil, fmt.Errorf("fail to get pool: %w", err)
 	}
 
-	var lps LiquidityProviders
-	var savers []QuerySaver
+	lps := LiquidityProviders{}
+	savers := []QuerySaver{}
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -1138,7 +1138,7 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 }
 
 func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var streams []QueryStreamingSwap
+	streams := []QueryStreamingSwap{}
 	iter := mgr.Keeper().GetStreamingSwapIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -1880,7 +1880,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			break
 		}
 	}
-	var result []QueryResLastBlockHeights
+	result := []QueryResLastBlockHeights{}
 	for i := range chains {
 		if chains[i] == common.THORChain {
 			continue
@@ -2286,7 +2286,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	result := make([]MsgSwap, 0)
+	result := []MsgSwap{}
 
 	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
