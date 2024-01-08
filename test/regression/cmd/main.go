@@ -123,11 +123,12 @@ func main() {
 
 				// write buffer to outputs
 				mu.Lock()
+				completed++
+				localLog := consoleLogger(out)
+				localLog.Info().Msg(fmt.Sprintf("%d/%d regression tests completed.", completed, total))
 				if parallelism > 1 {
 					fmt.Print(buf.String())
 				}
-				completed++
-				log.Info().Msg(fmt.Sprintf("%d/%d regression tests completed.", completed, total))
 				fmt.Println() // Blank line separating regression tests.
 				mu.Unlock()
 			}()
