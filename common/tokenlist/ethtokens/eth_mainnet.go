@@ -1,5 +1,5 @@
-//go:build !testnet && !mocknet
-// +build !testnet,!mocknet
+//go:build !stagenet && !mocknet
+// +build !stagenet,!mocknet
 
 package ethtokens
 
@@ -8,16 +8,7 @@ import (
 )
 
 //go:embed eth_mainnet_latest.json
-var ETHTokenListRawV125 []byte
-
-//go:embed eth_mainnet_V124.json
-var ETHTokenListRawV124 []byte
-
-//go:embed eth_mainnet_V120.json
-var ETHTokenListRawV120 []byte
-
-//go:embed eth_mainnet_V117.json
-var ETHTokenListRawV117 []byte
+var ETHTokenListRawV126 []byte
 
 //go:embed eth_mainnet_V114.json
 var ETHTokenListRawV114 []byte

@@ -363,7 +363,7 @@ func (c *EVMClient) GetBalances(addr string, height *big.Int) (common.Coins, err
 		}
 		asset := c.cfg.ChainID.GetGasAsset()
 		if !strings.EqualFold(token.Address, evm.NativeTokenAddr) {
-			asset, err = common.NewAsset(fmt.Sprintf("EVM.%s-%s", token.Symbol, token.Address))
+			asset, err = common.NewAsset(fmt.Sprintf("%s.%s-%s", c.GetChain(), token.Symbol, token.Address))
 			if err != nil {
 				return nil, err
 			}
@@ -608,13 +608,28 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		if err = json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to unmarshal checkpoint: %w", err)
 		}
+		c.logger.Warn().Stringer("in_hash", tx.InHash).Uint64("nonce", nonce).Msg("using checkpoint nonce")
 	} else {
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to get %s address for pub key(%s): %w", c.GetChain().String(), tx.VaultPubKey, err)
 		}
 		nonce, err = c.evmScanner.GetNonce(fromAddr.String())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) nonce : %w", fromAddr, err)
+			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) nonce: %w", fromAddr, err)
+		}
+
+		// abort signing if the pending nonce is too far in the future
+		var finalizedNonce uint64
+		finalizedNonce, err = c.evmScanner.GetNonceFinalized(fromAddr.String())
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) finalized nonce: %w", fromAddr, err)
+		}
+		if nonce-finalizedNonce > c.cfg.MaxPendingNonces {
+			c.logger.Warn().
+				Uint64("nonce", nonce).
+				Uint64("finalizedNonce", finalizedNonce).
+				Msg("pending nonce too far in future")
+			return nil, nil, nil, fmt.Errorf("pending nonce too far in future")
 		}
 	}
 
@@ -726,7 +741,7 @@ func (c *EVMClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (strin
 		c.logger.Err(err).Msg("fail to get current THORChain block height")
 		// at this point , the tx already broadcast successfully , don't return an error
 		// otherwise will cause the same tx to retry
-	} else if err = c.AddSignedTxItem(txID, blockHeight, txOutItem.VaultPubKey.String()); err != nil {
+	} else if err = c.AddSignedTxItem(txID, blockHeight, txOutItem.VaultPubKey.String(), &txOutItem); err != nil {
 		c.logger.Err(err).Str("hash", txID).Msg("fail to add signed tx item")
 	}
 

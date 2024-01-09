@@ -199,7 +199,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	ns := strconv.Itoa(time.Now().Nanosecond())
 	types2.SetupConfigForTest()
 	ctypes.Network = ctypes.TestNetwork
-	c.Assert(os.Setenv("NET", "testnet"), IsNil)
+	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	s.thordir = filepath.Join(os.TempDir(), ns, ".thorcli")
 	cfg := config.BifrostClientConfiguration{
@@ -228,7 +228,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 	txOut := getTxOutFromJSONInput(`{ "height": 0, "tx_array": [ { "vault_pub_key":"", "to_address": "tbnb186nvjtqk4kkea3f8a30xh4vqtkrlu2rm9xgly3", "memo": "migrate", "coin":  { "asset": "BNB", "amount": "194765912" }  } ]}`, c)
 	txOut.TxArray[0].VaultPubKey = pk
-	out := txOut.TxArray[0].TxOutItem()
+	out := txOut.TxArray[0].TxOutItem(txOut.Height)
 
 	s.NewMockBinanceInstance(c, "")
 
@@ -345,6 +345,23 @@ func (s *ObserverSuite) TestFilterMemoFlag(c *C) {
 			BlockHeight: 1024,
 			Tx:          "tx1",
 			Memo:        "swap:BNB.RUNE-67C:tbnb1yeuljgpkg2c2qvx3nlmgv7gvnyss6ye2u8rasf",
+			Sender:      thorchain.GetRandomBNBAddress().String(),
+			To:          thorchain.GetRandomBNBAddress().String(),
+			Coins: common.Coins{
+				common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
+			},
+			Gas:                 nil,
+			ObservedVaultPubKey: thorchain.GetRandomPubKey(),
+		},
+	})
+	c.Assert(result, HasLen, 0)
+
+	// memo parsing fails on thorname affiliate but dest is bnb addr
+	result = obs.filterBinanceMemoFlag(common.BTCChain, []types.TxInItem{
+		{
+			BlockHeight: 1024,
+			Tx:          "tx1",
+			Memo:        "swap:BNB.RUNE-67C:tbnb1yeuljgpkg2c2qvx3nlmgv7gvnyss6ye2u8rasf:all-good:10",
 			Sender:      thorchain.GetRandomBNBAddress().String(),
 			To:          thorchain.GetRandomBNBAddress().String(),
 			Coins: common.Coins{

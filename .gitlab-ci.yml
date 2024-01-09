@@ -87,8 +87,6 @@ lint:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != "thorchain/thornode"
       when: never
-    - if: $CI_COMMIT_BRANCH == "testnet"
-      when: never
     - if: $CI_COMMIT_BRANCH == "stagenet"
       when: never
     - if: $CI_COMMIT_BRANCH == "mainnet"
@@ -106,8 +104,6 @@ build-thornode:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != "thorchain/thornode"
       when: never
     - if: $CI_COMMIT_BRANCH == "develop"
-      when: always
-    - if: $CI_COMMIT_BRANCH == "testnet"
       when: always
     - if: $CI_COMMIT_BRANCH == "stagenet"
       when: always
@@ -134,6 +130,43 @@ build-thornode:
     # also push mocknet from develop
     - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
     - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
+
+chain-avalanche:
+  only:
+    changes:
+      - chain/avalanche/
+  stage: test
+  image: node:16
+  script:
+    - cd chain/avalanche/
+    - yarn install --non-interactive
+    - yarn hardhat compile
+    - yarn hardhat test
+
+chain-ethereum:
+  only:
+    changes:
+      - chain/ethereum/
+  stage: test
+  image: node:16
+  script:
+    - cd chain/ethereum/
+    - yarn install --non-interactive
+    - yarn hardhat test
+
+pages:
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != "thorchain/thornode"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: always
+  stage: build
+  image: rust:1.74.1
+  artifacts:
+    paths:
+      - public
+  script:
+    - make docs-generate
 
 build-smoke:
   rules:

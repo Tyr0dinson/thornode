@@ -16,7 +16,7 @@ endif
 # compiler flags
 COMMIT:=$(shell git log -1 --format='%H')
 VERSION:=$(shell cat version)
-TAG?=testnet
+TAG?=mocknet
 ldflags = -X gitlab.com/thorchain/thornode/constants.Version=$(VERSION) \
 		  -X gitlab.com/thorchain/thornode/constants.GitCommit=$(COMMIT) \
 		  -X github.com/cosmos/cosmos-sdk/version.Name=THORChain \
@@ -103,6 +103,22 @@ openapi:
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 
+# ------------------------------ Docs ------------------------------
+
+docs-init:
+	@cargo install mdbook --version 0.4.36
+	@cargo install mdbook-admonish --version 1.14.0
+	@cargo install mdbook-catppuccin --version 2.1.0
+	@cargo install mdbook-katex --version 0.5.9
+	@cd docs && mdbook-catppuccin install
+	@cd docs && mdbook-admonish install --css-dir theme
+
+docs-generate: docs-init
+	@cd docs && mdbook build -d ../public
+
+docs-dev: docs-init
+	@cd docs && mdbook serve -d ../public --open
+
 # ------------------------------ Build ------------------------------
 
 build:
@@ -165,7 +181,7 @@ test: test-network-specific
 test-network-specific:
 	@CGO_ENABLED=0 go test -tags stagenet ./common
 	@CGO_ENABLED=0 go test -tags mainnet ./common ${BIFROST_UTXO_CLIENT_PKGS}
-	@CGO_ENABLED=0 go test -tags testnet ./common ${BIFROST_UTXO_CLIENT_PKGS}
+	@CGO_ENABLED=0 go test -tags mocknet ./common ${BIFROST_UTXO_CLIENT_PKGS}
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${TEST_DIR}
@@ -211,10 +227,6 @@ test-sync-mainnet:
 test-sync-stagenet:
 	@BUILDTAG=stagenet BRANCH=stagenet $(MAKE) docker-gitlab-build
 	@docker run --rm -e CHAIN_ID=thorchain-stagenet-v2 -e NET=stagenet registry.gitlab.com/thorchain/thornode:stagenet
-
-test-sync-testnet:
-	@BUILDTAG=testnet BRANCH=testnet $(MAKE) docker-gitlab-build
-	@docker run --rm -e CHAIN_ID=thorchain-testnet-v2 -e NET=testnet registry.gitlab.com/thorchain/thornode:testnet
 
 # ------------------------------ Docker Build ------------------------------
 

@@ -322,6 +322,11 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 		return nil
 	}
 
+	// remove low bond node accounts
+	if err := vm.k.RemoveLowBondValidatorAccounts(ctx); err != nil {
+		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
+	}
+
 	// payout all active node accounts their rewards
 	// This including nodes churning out, and takes place before changing the activity status below.
 	if err := vm.distributeBondReward(ctx, mgr); err != nil {
@@ -1376,7 +1381,7 @@ func (vm *ValidatorMgrVCUR) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 		return NodeWhiteListed, fmt.Errorf("node account has not registered their pubkey set")
 	}
 
-	// check if node account is whitelisted. This is used for testnet/stagenet environments
+	// check if node account is whitelisted. This is used for mocknet/stagenet environments
 	if len(VALIDATORS) > 0 {
 		found := false
 		for _, val := range VALIDATORS {

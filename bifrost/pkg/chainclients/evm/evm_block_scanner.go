@@ -210,9 +210,14 @@ func (e *EVMScanner) GetHeight() (int64, error) {
 	return height, nil
 }
 
-// GetNonce returns the nonce for the given address.
+// GetNonce returns the nonce (including pending) for the given address.
 func (e *EVMScanner) GetNonce(addr string) (uint64, error) {
 	return e.ethRpc.GetNonce(addr)
+}
+
+// GetNonceFinalized returns the nonce for the given address.
+func (e *EVMScanner) GetNonceFinalized(addr string) (uint64, error) {
+	return e.ethRpc.GetNonceFinalized(addr)
 }
 
 // FetchMemPool returns all transactions in the mempool.
@@ -311,6 +316,12 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 		if tx == nil {
 			continue
 		}
+
+		// best effort remove the tx from the signed txs (ok if it does not exist)
+		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
+			e.logger.Err(err).Str("tx hash", tx.Hash().String()).Msg("failed to remove signed tx item")
+		}
+
 		txByHash[tx.Hash().String()] = *tx
 	}
 
@@ -647,8 +658,19 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
 	if txInItem.Coins.IsEmpty() {
-		e.logger.Debug().Msg("there is no coin in this tx, ignore")
-		return nil, nil
+		if txInItem.Sender == txInItem.To {
+			// When the Sender and To is the same then there's no balance chance whatever the Coins,
+			// and for Tx-received Valid() a non-zero Amount is needed to observe
+			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
+			observableAmount := e.cfg.ChainID.DustThreshold().Add(cosmos.OneUint()) // Adding 1 for if DustThreshold is 0.
+			txInItem.Coins = common.NewCoins(common.NewCoin(txInItem.Gas[0].Asset, observableAmount))
+
+			// remove the outbound from signer cache so it can be re-attempted
+			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+		} else {
+			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
+			return nil, nil
+		}
 	}
 
 	return txInItem, nil
