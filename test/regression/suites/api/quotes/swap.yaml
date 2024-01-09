@@ -438,8 +438,8 @@ params:
   affiliate_bps: 500
   destination: {{ addr_thor_fox }}
 asserts:
-  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252249:xx:500"
-  - .expected_amount_out|tonumber == 912114304
+  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252247:xx:500"
+  - .expected_amount_out|tonumber == 912114303
   - .fees.affiliate == "49020599"
   - .fees.liquidity == "8598104"
   - .fees.outbound == "2000000"
@@ -488,7 +488,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1170766
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2501421369910
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2501421369909
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}

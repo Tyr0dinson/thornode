@@ -364,12 +364,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "2256274937"
+  - .affiliate_collector_rune == "2256275157"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "2256274937"
+  - .coins[]|select(.denom == "rune")|.amount == "2256275157"
 ---
 ########################################################################################
 # Swap RUNE -> BTC w/ affiliate "test", which should trigger preferred asset swap
@@ -387,12 +387,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "4756274937"
+  - .affiliate_collector_rune == "4756275157"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "4756274937"
+  - .coins[]|select(.denom == "rune")|.amount == "4756275157"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

@@ -176,9 +176,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
 asserts:
   - .address == "{{ addr_eth_fox }}"
-  - .score|tonumber == 382045604
+  - .score|tonumber == 382045603
   - .reclaimed|tonumber == 207489196
-  - .spent|tonumber == 589534800
+  - .spent|tonumber == 589534799
   - .last_spent_height == 6
   - .last_reclaim_height == 4
 ---
@@ -209,9 +209,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
 asserts:
   - .address == "{{ addr_btc_fox }}"
-  - .score|tonumber == 530399781
+  - .score|tonumber == 530399665
   - .reclaimed|tonumber == 589534794
-  - .spent|tonumber == 1119934575
+  - .spent|tonumber == 1119934459
   - .last_spent_height == 17
   - .last_reclaim_height == 4
 ---
@@ -219,9 +219,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
 asserts:
   - .address == "{{ addr_eth_fox }}"
-  - .score|tonumber == 530399786
-  - .reclaimed|tonumber == 589534800
-  - .spent|tonumber == 1119934586
+  - .score|tonumber == 530399669
+  - .reclaimed|tonumber == 589534799
+  - .spent|tonumber == 1119934468
   - .last_spent_height == 17
   - .last_reclaim_height == 4
 ---
@@ -257,7 +257,7 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_fox }}
     coins:
-      - amount: "28944259"
+      - amount: "28944205"
         asset: "ETH.ETH"
         decimals: 8
     gas:
