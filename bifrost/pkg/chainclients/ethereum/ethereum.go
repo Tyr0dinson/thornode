@@ -40,6 +40,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
+	aggregators "gitlab.com/thorchain/thornode/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 )
 
@@ -514,6 +515,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedETHValue, MaxContractGas, gasRate, data)
 	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	fallbackNativeGasTransferGasUnits := estimatedGas
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas
 		// the returned error is `execution reverted`
@@ -530,14 +532,21 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	totalGas := big.NewInt(int64(estimatedGas) * gasRate.Int64())
 	if ethValue.Uint64() > 0 {
+		dexAggCallWillFail := false
 		if tx.Aggregator != "" {
-			// At this point, if this is is to an aggregator (which should be white-listed), allow the maximum gas.
-			if estimatedGas > maxGasLimit {
-				// the estimated gas unit is more than the maximum , so bring down the gas rate
-				maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
-				gasRate = big.NewInt(1).Div(maxGasWei, big.NewInt(int64(estimatedGas)))
+			gasLimitForAggregator, err := aggregators.FetchDexAggregatorGasLimit(common.LatestVersion, c.cfg.ChainID, tx.Aggregator)
+			if err != nil {
+				c.logger.Err(err).Msgf("fail to get gas limit for aggregator: %s", tx.Aggregator)
+				dexAggCallWillFail = true
+			}
+
+			// At this point, if this is is to an aggregator (which should be white-listed), allow the maximum gas for this contract.
+			if estimatedGas > gasLimitForAggregator {
+				// the transaction will fail, abort dex aggregation call
+				// and send native gas asset to the final destination (not the dex aggregation contract)
+				dexAggCallWillFail = true
 			} else {
-				estimatedGas = maxGasLimit // pay the maximum
+				estimatedGas = gasLimitForAggregator // allow the contract defined gas limit
 			}
 		} else {
 			// when the estimated gas is larger than the MaxGas that is allowed to be used
@@ -552,10 +561,22 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 				c.logger.Info().Msgf("transaction with memo %s can spend up to %d gas unit, gasRate:%s", tx.Memo, estimatedGas, gasRate)
 			}
 		}
-		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
+
+		if dexAggCallWillFail {
+			// the transaction will fail, abort dex aggregation call and just send native gas asset to the intended recipient
+			// get new data payload for native gas transfer
+			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("fail to create data after cancelling dex aggregation(transferOut): %w", err)
+			}
+
+			createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(tx.ToAddress.String()), ethValue, fallbackNativeGasTransferGasUnits, gasRate, data)
+		} else {
+			createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
+		}
 	} else {
 		if estimatedGas > maxGasLimit {
-			// the estimated gas unit is more than the maximum , so bring down the gas rate
+			// the estimated gas unit is more than the maximum, so bring down the gas rate
 			maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
 			gasRate = big.NewInt(1).Div(maxGasWei, big.NewInt(int64(estimatedGas)))
 		}
