@@ -45,8 +45,8 @@ import (
 )
 
 const (
-	maxGasLimit          = 800000
-	ethBlockRewardAndFee = 3 * 1e18
+	maxGasLimitForTokenTransfer = 80000
+	ethBlockRewardAndFee        = 3 * 1e18
 )
 
 // Client is a structure to sign and broadcast tx to Ethereum chain used by signer mostly
@@ -575,9 +575,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 			createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
 		}
 	} else {
-		if estimatedGas > maxGasLimit {
+		if estimatedGas > maxGasLimitForTokenTransfer {
 			// the estimated gas unit is more than the maximum, so bring down the gas rate
-			maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimit), gasRate)
+			maxGasWei := big.NewInt(1).Mul(big.NewInt(maxGasLimitForTokenTransfer), gasRate)
 			gasRate = big.NewInt(1).Div(maxGasWei, big.NewInt(int64(estimatedGas)))
 		}
 		createdTx = etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data)
