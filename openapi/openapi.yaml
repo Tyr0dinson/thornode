@@ -419,6 +419,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/NetworkResponse"
 
+  # ------------------------------ status ------------------------------
+
+  /thorchain/status:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns network, chain, and pool status.
+      operationId: status
+      tags:
+        - Status
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
   # ------------------------------ POL ------------------------------
 
   /thorchain/pol:
@@ -2758,6 +2776,33 @@ components:
           type: string
           example: "10"
           description: the tor price in rune
+
+    StatusResponse:
+      type: object
+      required:
+        - global
+        - chain
+        - pool
+      properties:
+        global:
+          type: object
+          required:
+            - swapping
+            - lp_actions
+            - lending
+          properties:
+            swapping:
+              type: boolean
+              example: true
+              description: returns true if global trading is enabled
+            lp_actions:
+              type: boolean
+              example: true
+              description: returns true if global liquidity provider actions are enabled
+            lending:
+              type: boolean
+              example: true
+              description: returns true if lending is enabled 
 
     POLResponse:
       type: object

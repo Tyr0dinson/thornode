@@ -16,6 +16,7 @@ api_pools.go
 api_queue.go
 api_quote.go
 api_savers.go
+api_status.go
 api_streaming_swap.go
 api_thornames.go
 api_transactions.go
@@ -86,6 +87,9 @@ docs/QuoteSaverWithdrawResponse.md
 docs/QuoteSwapResponse.md
 docs/Saver.md
 docs/SaversApi.md
+docs/StatusApi.md
+docs/StatusResponse.md
+docs/StatusResponseGlobal.md
 docs/StreamingSwap.md
 docs/StreamingSwapApi.md
 docs/SwapperCloutResponse.md
@@ -171,6 +175,8 @@ model_quote_saver_deposit_response.go
 model_quote_saver_withdraw_response.go
 model_quote_swap_response.go
 model_saver.go
+model_status_response.go
+model_status_response_global.go
 model_streaming_swap.go
 model_swapper_clout_response.go
 model_thorname.go
