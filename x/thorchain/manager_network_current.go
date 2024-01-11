@@ -126,46 +126,45 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 	totalRuneDepth := cosmos.ZeroUint()
 	availableAnchors := make([]common.Asset, 0)
 	slippageCollector := make([]cosmos.Uint, 0)
-	for _, anchorAsset := range anchors {
-		// skip assets where trading isn't occurring (hence price is likely not correct)
-		if mgr.Keeper().IsGlobalTradingHalted(ctx) {
-			break
-		}
-		chain := anchorAsset.Chain
-		skip, ok := skipChain[chain.String()]
-		if !ok {
-			skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
-			skipChain[chain.String()] = skip
-		}
-		if skip {
-			continue
-		}
+	if !mgr.Keeper().IsGlobalTradingHalted(ctx) {
+		for _, anchorAsset := range anchors {
+			// skip assets where trading isn't occurring (hence price is likely not correct)
+			chain := anchorAsset.Chain
+			skip, ok := skipChain[chain.String()]
+			if !ok {
+				skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
+				skipChain[chain.String()] = skip
+			}
+			if skip {
+				continue
+			}
 
-		if !mgr.Keeper().PoolExist(ctx, anchorAsset) {
-			continue
-		}
-		p, err := mgr.Keeper().GetPool(ctx, anchorAsset)
-		if err != nil {
-			ctx.Logger().Error("failed to get anchor pool", "asset", anchorAsset, "error", err)
-			continue
-		}
-		// skip assets that aren't available (hence price isn't likely to be correct)
-		if p.Status != PoolAvailable {
-			continue
-		}
-		if p.BalanceRune.IsZero() || p.BalanceAsset.IsZero() {
-			continue
-		}
+			if !mgr.Keeper().PoolExist(ctx, anchorAsset) {
+				continue
+			}
+			p, err := mgr.Keeper().GetPool(ctx, anchorAsset)
+			if err != nil {
+				ctx.Logger().Error("failed to get anchor pool", "asset", anchorAsset, "error", err)
+				continue
+			}
+			// skip assets that aren't available (hence price isn't likely to be correct)
+			if p.Status != PoolAvailable {
+				continue
+			}
+			if p.BalanceRune.IsZero() || p.BalanceAsset.IsZero() {
+				continue
+			}
 
-		slip, err := mgr.Keeper().RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
-		if err != nil {
-			ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
-			continue
-		}
+			slip, err := mgr.Keeper().RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
+			if err != nil {
+				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
+				continue
+			}
 
-		totalRuneDepth = totalRuneDepth.Add(p.BalanceRune)
-		availableAnchors = append(availableAnchors, anchorAsset)
-		slippageCollector = append(slippageCollector, cosmos.NewUint(slip.Uint64()))
+			totalRuneDepth = totalRuneDepth.Add(p.BalanceRune)
+			availableAnchors = append(availableAnchors, anchorAsset)
+			slippageCollector = append(slippageCollector, cosmos.NewUint(slip.Uint64()))
+		}
 	}
 
 	slippage := common.GetMedianUint(slippageCollector)
@@ -817,59 +816,58 @@ func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools,
 	mimirVals := make([]int64, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var pool Pool
-		err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool)
-		if err != nil {
-			ctx.Logger().Error("fail to unmarshal pool", "pool", pool.Asset.String(), "error", err)
-			continue
-		}
+	if !mgr.Keeper().IsGlobalTradingHalted(ctx) {
+		for ; iterator.Valid(); iterator.Next() {
+			var pool Pool
+			err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool)
+			if err != nil {
+				ctx.Logger().Error("fail to unmarshal pool", "pool", pool.Asset.String(), "error", err)
+				continue
+			}
 
-		if pool.Asset.IsSyntheticAsset() {
-			continue
-		}
+			if pool.Asset.IsSyntheticAsset() {
+				continue
+			}
 
-		if pool.BalanceRune.IsZero() {
-			continue
-		}
+			if pool.BalanceRune.IsZero() {
+				continue
+			}
 
-		if pool.Status == PoolSuspended {
-			continue
-		}
+			if pool.Status == PoolSuspended {
+				continue
+			}
 
-		if mgr.Keeper().IsGlobalTradingHalted(ctx) {
-			break
-		}
-		chain := pool.Asset.GetChain()
-		skip, ok := skipChain[chain.String()]
-		if !ok {
-			skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
-			skipChain[chain.String()] = skip
-		}
-		if skip {
-			continue
-		}
+			chain := pool.Asset.GetChain()
+			skip, ok := skipChain[chain.String()]
+			if !ok {
+				skip = mgr.Keeper().IsChainTradingHalted(ctx, chain)
+				skipChain[chain.String()] = skip
+			}
+			if skip {
+				continue
+			}
 
-		// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
-		key := "POL-" + pool.Asset.MimirString()
-		val, err := mgr.Keeper().GetMimir(ctx, key)
-		if err != nil {
-			ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
-			continue
-		}
+			// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
+			key := "POL-" + pool.Asset.MimirString()
+			val, err := mgr.Keeper().GetMimir(ctx, key)
+			if err != nil {
+				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
+				continue
+			}
 
-		// -1 is unset default behaviour; 0 is off (paused); 1 is on; 2 (elsewhere) is forced withdraw.
-		switch val {
-		case -1:
-			continue // unset default behaviour:  pause POL movements
-		case 0:
-			continue // off behaviour:  pause POL movements
-		case 1:
-			// on behaviour:  POL is enabled
-		}
+			// -1 is unset default behaviour; 0 is off (paused); 1 is on; 2 (elsewhere) is forced withdraw.
+			switch val {
+			case -1:
+				continue // unset default behaviour:  pause POL movements
+			case 0:
+				continue // off behaviour:  pause POL movements
+			case 1:
+				// on behaviour:  POL is enabled
+			}
 
-		pools = append(pools, pool)
-		mimirVals = append(mimirVals, val)
+			pools = append(pools, pool)
+			mimirVals = append(mimirVals, val)
+		}
 	}
 
 	return pools, mimirVals

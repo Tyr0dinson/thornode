@@ -83,32 +83,31 @@ func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.
 func (k KVStore) AnchorMedianV127(ctx cosmos.Context, assets []common.Asset) cosmos.Uint {
 	skipChain := make(map[string]bool)
 	p := make([]cosmos.Uint, 0)
-	for _, asset := range assets {
-		if k.IsGlobalTradingHalted(ctx) {
-			break
-		}
-		chain := asset.Chain
-		skip, ok := skipChain[chain.String()]
-		if !ok {
-			skip = k.IsChainTradingHalted(ctx, chain)
-			skipChain[chain.String()] = skip
-		}
-		if skip {
-			continue
-		}
-		pool, err := k.GetPool(ctx, asset)
-		if err != nil {
-			ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
-			continue
-		}
-		if !pool.IsAvailable() {
-			continue
-		}
-		// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
-		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+	if !k.IsGlobalTradingHalted(ctx) {
+		for _, asset := range assets {
+			chain := asset.Chain
+			skip, ok := skipChain[chain.String()]
+			if !ok {
+				skip = k.IsChainTradingHalted(ctx, chain)
+				skipChain[chain.String()] = skip
+			}
+			if skip {
+				continue
+			}
+			pool, err := k.GetPool(ctx, asset)
+			if err != nil {
+				ctx.Logger().Error("fail to get usd pool", "asset", asset.String(), "error", err)
+				continue
+			}
+			if !pool.IsAvailable() {
+				continue
+			}
+			// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
+			value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
 
-		if !value.IsZero() {
-			p = append(p, value)
+			if !value.IsZero() {
+				p = append(p, value)
+			}
 		}
 	}
 	return common.GetMedianUint(p)
