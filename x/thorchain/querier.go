@@ -120,6 +120,8 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryInboundAddresses(ctx, path[1:], req, mgr)
 		case q.QueryNetwork.Key:
 			return queryNetwork(ctx, mgr)
+		case q.QueryStatus.Key:
+			return queryStatus(ctx, mgr)
 		case q.QueryPOL.Key:
 			return queryPOL(ctx, mgr)
 		case q.QueryBalanceModule.Key:
@@ -608,6 +610,19 @@ func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 
 	return jsonify(ctx, result)
+}
+
+func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
+
+	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
+
+	status := openapi.StatusResponse{
+		Global: openapi.StatusResponseGlobal{
+			Swapping: !isGlobalTradingPaused,
+		},
+	}
+
+	return jsonify(ctx, status)
 }
 
 func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {

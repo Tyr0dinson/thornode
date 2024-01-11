@@ -119,6 +119,7 @@ Class | Method | HTTP request | Description
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
 *SaversApi* | [**Saver**](docs/SaversApi.md#saver) | **Get** /thorchain/pool/{asset}/saver/{address} | 
 *SaversApi* | [**Savers**](docs/SaversApi.md#savers) | **Get** /thorchain/pool/{asset}/savers | 
+*StatusApi* | [**Status**](docs/StatusApi.md#status) | **Get** /thorchain/status | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
 *TSSApi* | [**Keysign**](docs/TSSApi.md#keysign) | **Get** /thorchain/keysign/{height} | 
@@ -192,6 +193,8 @@ Class | Method | HTTP request | Description
  - [QuoteSaverWithdrawResponse](docs/QuoteSaverWithdrawResponse.md)
  - [QuoteSwapResponse](docs/QuoteSwapResponse.md)
  - [Saver](docs/Saver.md)
+ - [StatusResponse](docs/StatusResponse.md)
+ - [StatusResponseGlobal](docs/StatusResponseGlobal.md)
  - [StreamingSwap](docs/StreamingSwap.md)
  - [SwapperCloutResponse](docs/SwapperCloutResponse.md)
  - [Thorname](docs/Thorname.md)

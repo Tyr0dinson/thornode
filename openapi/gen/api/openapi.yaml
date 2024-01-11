@@ -693,6 +693,30 @@ paths:
           description: OK
       tags:
       - Network
+  /thorchain/status:
+    get:
+      description: "Returns network, chain, and pool status."
+      operationId: status
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+          description: OK
+      tags:
+      - Status
   /thorchain/pol:
     get:
       description: Returns protocol owned liquidity overview statistics.
@@ -4352,6 +4376,20 @@ components:
       - total_reserve
       - vaults_migrating
       type: object
+    StatusResponse:
+      example:
+        global:
+          swapping: true
+          lending: true
+          lp_actions: true
+      properties:
+        global:
+          $ref: '#/components/schemas/StatusResponse_global'
+      required:
+      - chain
+      - global
+      - pool
+      type: object
     POLResponse:
       example:
         current_deposit: "21999180112172346"
@@ -6002,6 +6040,29 @@ components:
       - coin
       - refund
       - to_address
+      type: object
+    StatusResponse_global:
+      example:
+        swapping: true
+        lending: true
+        lp_actions: true
+      properties:
+        swapping:
+          description: returns true if global trading is enabled
+          example: true
+          type: boolean
+        lp_actions:
+          description: returns true if global liquidity provider actions are enabled
+          example: true
+          type: boolean
+        lending:
+          description: returns true if lending is enabled
+          example: true
+          type: boolean
+      required:
+      - lending
+      - lp_actions
+      - swapping
       type: object
     KeysignInfo:
       example:
