@@ -176,8 +176,8 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		voter, ok := h.preflight(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		voter, isConsensus := h.preflight(ctx, voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -186,7 +186,7 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		// all logic after this  is after consensus
+		// all logic after this is upon consensus
 
 		ctx.Logger().Info("handleMsgObservedTxIn request", "Tx:", tx.String())
 		if voter.Reverted {
@@ -194,18 +194,15 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		var txIn ObservedTx
-		hasFinalised := voter.HasFinalised(activeNodeAccounts)
-		if hasFinalised || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
 			continue
 		}
 
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+
+		hasFinalised := voter.HasFinalised(activeNodeAccounts)
 		if hasFinalised {
 			if vault.IsAsgard() && !voter.UpdatedVault {
 				vault.AddFunds(tx.Tx.Coins)
@@ -239,7 +236,7 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 		// add addresses to observing addresses. This is used to detect
 		// active/inactive observing node accounts
 
-		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
+		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
 
 		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
@@ -255,7 +252,7 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 		}
 
 		// construct msg from memo
-		m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
+		m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), voter.Tx, msg.Signer)
 		if txErr != nil {
 			ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 			if newErr := refundTx(ctx, tx, h.mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
