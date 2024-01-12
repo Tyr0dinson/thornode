@@ -4,15 +4,15 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**Swapping** | **bool** | returns true if global trading is enabled | 
-**LpActions** | **bool** | returns true if global liquidity provider actions are enabled | 
-**Lending** | **bool** | returns true if lending is enabled | 
+**Swapping** | [**Availability**](Availability.md) |  | 
+**LpActions** | [**Availability**](Availability.md) |  | 
+**Lending** | [**Availability**](Availability.md) |  | 
 
 ## Methods
 
 ### NewStatusResponseGlobal
 
-`func NewStatusResponseGlobal(swapping bool, lpActions bool, lending bool, ) *StatusResponseGlobal`
+`func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, ) *StatusResponseGlobal`
 
 NewStatusResponseGlobal instantiates a new StatusResponseGlobal object
 This constructor will assign default values to properties that have it defined,
@@ -29,60 +29,60 @@ but it doesn't guarantee that properties required by API are set
 
 ### GetSwapping
 
-`func (o *StatusResponseGlobal) GetSwapping() bool`
+`func (o *StatusResponseGlobal) GetSwapping() Availability`
 
 GetSwapping returns the Swapping field if non-nil, zero value otherwise.
 
 ### GetSwappingOk
 
-`func (o *StatusResponseGlobal) GetSwappingOk() (*bool, bool)`
+`func (o *StatusResponseGlobal) GetSwappingOk() (*Availability, bool)`
 
 GetSwappingOk returns a tuple with the Swapping field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetSwapping
 
-`func (o *StatusResponseGlobal) SetSwapping(v bool)`
+`func (o *StatusResponseGlobal) SetSwapping(v Availability)`
 
 SetSwapping sets Swapping field to given value.
 
 
 ### GetLpActions
 
-`func (o *StatusResponseGlobal) GetLpActions() bool`
+`func (o *StatusResponseGlobal) GetLpActions() Availability`
 
 GetLpActions returns the LpActions field if non-nil, zero value otherwise.
 
 ### GetLpActionsOk
 
-`func (o *StatusResponseGlobal) GetLpActionsOk() (*bool, bool)`
+`func (o *StatusResponseGlobal) GetLpActionsOk() (*Availability, bool)`
 
 GetLpActionsOk returns a tuple with the LpActions field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetLpActions
 
-`func (o *StatusResponseGlobal) SetLpActions(v bool)`
+`func (o *StatusResponseGlobal) SetLpActions(v Availability)`
 
 SetLpActions sets LpActions field to given value.
 
 
 ### GetLending
 
-`func (o *StatusResponseGlobal) GetLending() bool`
+`func (o *StatusResponseGlobal) GetLending() Availability`
 
 GetLending returns the Lending field if non-nil, zero value otherwise.
 
 ### GetLendingOk
 
-`func (o *StatusResponseGlobal) GetLendingOk() (*bool, bool)`
+`func (o *StatusResponseGlobal) GetLendingOk() (*Availability, bool)`
 
 GetLendingOk returns a tuple with the Lending field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetLending
 
-`func (o *StatusResponseGlobal) SetLending(v bool)`
+`func (o *StatusResponseGlobal) SetLending(v Availability)`
 
 SetLending sets Lending field to given value.
 

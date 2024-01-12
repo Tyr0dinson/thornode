@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 1.127.0
 Contact: devs@thorchain.org
 */
 
@@ -17,19 +16,16 @@ import (
 
 // StatusResponseGlobal struct for StatusResponseGlobal
 type StatusResponseGlobal struct {
-	// returns true if global trading is enabled
-	Swapping bool `json:"swapping"`
-	// returns true if global liquidity provider actions are enabled
-	LpActions bool `json:"lp_actions"`
-	// returns true if lending is enabled
-	Lending bool `json:"lending"`
+	Swapping Availability `json:"swapping"`
+	LpActions Availability `json:"lp_actions"`
+	Lending Availability `json:"lending"`
 }
 
 // NewStatusResponseGlobal instantiates a new StatusResponseGlobal object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStatusResponseGlobal(swapping bool, lpActions bool, lending bool) *StatusResponseGlobal {
+func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability) *StatusResponseGlobal {
 	this := StatusResponseGlobal{}
 	this.Swapping = swapping
 	this.LpActions = lpActions
@@ -46,9 +42,9 @@ func NewStatusResponseGlobalWithDefaults() *StatusResponseGlobal {
 }
 
 // GetSwapping returns the Swapping field value
-func (o *StatusResponseGlobal) GetSwapping() bool {
+func (o *StatusResponseGlobal) GetSwapping() Availability {
 	if o == nil {
-		var ret bool
+		var ret Availability
 		return ret
 	}
 
@@ -57,7 +53,7 @@ func (o *StatusResponseGlobal) GetSwapping() bool {
 
 // GetSwappingOk returns a tuple with the Swapping field value
 // and a boolean to check if the value has been set.
-func (o *StatusResponseGlobal) GetSwappingOk() (*bool, bool) {
+func (o *StatusResponseGlobal) GetSwappingOk() (*Availability, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -65,14 +61,14 @@ func (o *StatusResponseGlobal) GetSwappingOk() (*bool, bool) {
 }
 
 // SetSwapping sets field value
-func (o *StatusResponseGlobal) SetSwapping(v bool) {
+func (o *StatusResponseGlobal) SetSwapping(v Availability) {
 	o.Swapping = v
 }
 
 // GetLpActions returns the LpActions field value
-func (o *StatusResponseGlobal) GetLpActions() bool {
+func (o *StatusResponseGlobal) GetLpActions() Availability {
 	if o == nil {
-		var ret bool
+		var ret Availability
 		return ret
 	}
 
@@ -81,7 +77,7 @@ func (o *StatusResponseGlobal) GetLpActions() bool {
 
 // GetLpActionsOk returns a tuple with the LpActions field value
 // and a boolean to check if the value has been set.
-func (o *StatusResponseGlobal) GetLpActionsOk() (*bool, bool) {
+func (o *StatusResponseGlobal) GetLpActionsOk() (*Availability, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -89,14 +85,14 @@ func (o *StatusResponseGlobal) GetLpActionsOk() (*bool, bool) {
 }
 
 // SetLpActions sets field value
-func (o *StatusResponseGlobal) SetLpActions(v bool) {
+func (o *StatusResponseGlobal) SetLpActions(v Availability) {
 	o.LpActions = v
 }
 
 // GetLending returns the Lending field value
-func (o *StatusResponseGlobal) GetLending() bool {
+func (o *StatusResponseGlobal) GetLending() Availability {
 	if o == nil {
-		var ret bool
+		var ret Availability
 		return ret
 	}
 
@@ -105,7 +101,7 @@ func (o *StatusResponseGlobal) GetLending() bool {
 
 // GetLendingOk returns a tuple with the Lending field value
 // and a boolean to check if the value has been set.
-func (o *StatusResponseGlobal) GetLendingOk() (*bool, bool) {
+func (o *StatusResponseGlobal) GetLendingOk() (*Availability, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -113,7 +109,7 @@ func (o *StatusResponseGlobal) GetLendingOk() (*bool, bool) {
 }
 
 // SetLending sets field value
-func (o *StatusResponseGlobal) SetLending(v bool) {
+func (o *StatusResponseGlobal) SetLending(v Availability) {
 	o.Lending = v
 }
 

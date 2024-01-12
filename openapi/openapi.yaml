@@ -2349,6 +2349,18 @@ components:
             codespace:
               type: string
               example: "ibc"
+  
+    Availability:
+      type: object
+      properties:
+        is_available:
+          type: boolean
+          example: true
+          description: returns true if this operation is available
+        reason:
+          type: string
+          example: Global trading paused
+          description: the reason why this operation is unavailable
 
     # ------------------------------ responses ------------------------------
 
@@ -2792,17 +2804,11 @@ components:
             - lending
           properties:
             swapping:
-              type: boolean
-              example: true
-              description: returns true if global trading is enabled
+              $ref: "#/components/schemas/Availability"
             lp_actions:
-              type: boolean
-              example: true
-              description: returns true if global liquidity provider actions are enabled
+              $ref: "#/components/schemas/Availability"
             lending:
-              type: boolean
-              example: true
-              description: returns true if lending is enabled 
+              $ref: "#/components/schemas/Availability" 
 
     POLResponse:
       type: object

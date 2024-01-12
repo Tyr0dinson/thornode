@@ -140,6 +140,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [Availability](docs/Availability.md)
  - [BanResponse](docs/BanResponse.md)
  - [BaseQuoteResponse](docs/BaseQuoteResponse.md)
  - [BlockResponse](docs/BlockResponse.md)

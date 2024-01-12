@@ -24,6 +24,7 @@ api_tss.go
 api_vaults.go
 client.go
 configuration.go
+docs/Availability.md
 docs/BanResponse.md
 docs/BaseQuoteResponse.md
 docs/BlockApi.md
@@ -126,6 +127,7 @@ docs/VersionResponse.md
 git_push.sh
 go.mod
 go.sum
+model_availability.go
 model_ban_response.go
 model_base_quote_response.go
 model_block_response.go

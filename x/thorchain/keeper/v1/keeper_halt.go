@@ -71,7 +71,7 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 	return false
 }
 
-func (k KVStore) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool {
+func (k KVStore) IsChainLPPaused(ctx cosmos.Context, chain common.Chain) bool {
 	// check if global LP is paused
 	pauseLPGlobal, err := k.GetMimir(ctx, "PauseLP")
 	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
@@ -81,6 +81,24 @@ func (k KVStore) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool {
 	pauseLP, err := k.GetMimir(ctx, fmt.Sprintf("PauseLP%s", chain))
 	if err == nil && pauseLP > 0 && pauseLP < ctx.BlockHeight() {
 		ctx.Logger().Info("chain has paused LP actions", "chain", chain)
+		return true
+	}
+	return false
+}
+
+func (k KVStore) IsGlobalLendingPaused(ctx cosmos.Context) bool {
+	// check if global lending is paused
+	pauseLoansGlobal, err := k.GetMimir(ctx, "PauseLoans")
+	if err == nil && pauseLoansGlobal > 0 && pauseLoansGlobal < ctx.BlockHeight() {
+		return true
+	}
+	return false
+}
+
+func (k KVStore) IsGlobalLPPaused(ctx cosmos.Context) bool {
+	// check if global lp actions are paused
+	pauseLPGlobal, err := k.GetMimir(ctx, "PauseLP")
+	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
 		return true
 	}
 	return false
