@@ -195,7 +195,8 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 		}
 
 		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
+		hasFinalised := voter.HasFinalised(activeNodeAccounts)
+		if hasFinalised || voter.HasConsensus(activeNodeAccounts) {
 			voter.Tx.Tx.Memo = tx.Tx.Memo
 			txIn = voter.Tx
 		}
@@ -205,7 +206,7 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			if vault.IsAsgard() && !voter.UpdatedVault {
 				vault.AddFunds(tx.Tx.Coins)
 				voter.UpdatedVault = true
@@ -240,7 +241,7 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
