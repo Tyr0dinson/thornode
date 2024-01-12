@@ -1,0 +1,56 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# global status
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/status
+asserts:
+  - .global.swapping.is_available == true
+  - .global.lending.is_available == true
+  - .global.lp_actions.is_available == true
+---
+type: tx-mimir
+key: HaltTrading
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: PauseLoans
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: PauseLP
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/status
+asserts:
+  - .global.swapping.is_available == false
+  - .global.swapping.reason == "Global trading is paused"
+  - .global.lending.is_available == false
+  - .global.lending.reason == "Global lending is paused"
+  - .global.lp_actions.is_available == false
+  - .global.lp_actions.reason == "Global LP actions are paused"
+---

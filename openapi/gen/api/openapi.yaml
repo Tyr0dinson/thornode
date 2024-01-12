@@ -3449,6 +3449,20 @@ components:
       - result
       - tx
       type: object
+    Availability:
+      example:
+        reason: Global trading paused
+        is_available: true
+      properties:
+        is_available:
+          description: returns true if this operation is available
+          example: true
+          type: boolean
+        reason:
+          description: the reason why this operation is unavailable
+          example: Global trading paused
+          type: string
+      type: object
     PoolResponse:
       $ref: '#/components/schemas/Pool'
     PoolsResponse:
@@ -4379,9 +4393,15 @@ components:
     StatusResponse:
       example:
         global:
-          swapping: true
-          lending: true
-          lp_actions: true
+          swapping:
+            reason: Global trading paused
+            is_available: true
+          lending:
+            reason: Global trading paused
+            is_available: true
+          lp_actions:
+            reason: Global trading paused
+            is_available: true
       properties:
         global:
           $ref: '#/components/schemas/StatusResponse_global'
@@ -6043,22 +6063,22 @@ components:
       type: object
     StatusResponse_global:
       example:
-        swapping: true
-        lending: true
-        lp_actions: true
+        swapping:
+          reason: Global trading paused
+          is_available: true
+        lending:
+          reason: Global trading paused
+          is_available: true
+        lp_actions:
+          reason: Global trading paused
+          is_available: true
       properties:
         swapping:
-          description: returns true if global trading is enabled
-          example: true
-          type: boolean
+          $ref: '#/components/schemas/Availability'
         lp_actions:
-          description: returns true if global liquidity provider actions are enabled
-          example: true
-          type: boolean
+          $ref: '#/components/schemas/Availability'
         lending:
-          description: returns true if lending is enabled
-          example: true
-          type: boolean
+          $ref: '#/components/schemas/Availability'
       required:
       - lending
       - lp_actions

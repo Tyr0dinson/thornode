@@ -85,7 +85,7 @@ func (h WithdrawLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgWithdr
 		return fmt.Errorf("cannot specify a withdrawal asset while the pool is not available")
 	}
 
-	if h.mgr.Keeper().IsChainHalted(ctx, msg.Asset.Chain) || h.mgr.Keeper().IsLPPaused(ctx, msg.Asset.Chain) {
+	if h.mgr.Keeper().IsChainHalted(ctx, msg.Asset.Chain) || h.mgr.Keeper().IsChainLPPaused(ctx, msg.Asset.Chain) {
 		return fmt.Errorf("unable to withdraw liquidity while chain is halted or paused LP actions")
 	}
 

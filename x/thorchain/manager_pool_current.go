@@ -316,7 +316,7 @@ func (pm *PoolMgrVCUR) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) 
 		if pool.PendingInboundRune.IsZero() && pool.PendingInboundAsset.IsZero() {
 			continue
 		}
-		if mgr.Keeper().IsChainHalted(ctx, pool.Asset.GetChain()) || mgr.Keeper().IsLPPaused(ctx, pool.Asset.GetChain()) {
+		if mgr.Keeper().IsChainHalted(ctx, pool.Asset.GetChain()) || mgr.Keeper().IsChainLPPaused(ctx, pool.Asset.GetChain()) {
 			continue
 		}
 		pools = append(pools, pool)

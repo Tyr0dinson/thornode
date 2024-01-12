@@ -613,12 +613,37 @@ func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
+	globalTradingReason := ""
+	if isGlobalTradingPaused {
+		globalTradingReason = "Global trading is paused"
+	}
+	isGlobalLendingPaused := mgr.Keeper().IsGlobalLendingPaused(ctx)
+	globalLendingReason := ""
+	if isGlobalLendingPaused {
+		globalLendingReason = "Global lending is paused"
+	}
+
+	isGlobalLpPaused := mgr.Keeper().IsGlobalLPPaused(ctx)
+	globalLpReason := ""
+	if isGlobalLpPaused {
+		globalLpReason = "Global LP actions are paused"
+	}
 
 	status := openapi.StatusResponse{
 		Global: openapi.StatusResponseGlobal{
-			Swapping: !isGlobalTradingPaused,
+			Swapping: openapi.Availability{
+				IsAvailable: wrapBool(!isGlobalTradingPaused),
+				Reason:      wrapString(globalTradingReason),
+			},
+			Lending: openapi.Availability{
+				IsAvailable: wrapBool(!isGlobalLendingPaused),
+				Reason:      wrapString(globalLendingReason),
+			},
+			LpActions: openapi.Availability{
+				IsAvailable: wrapBool(!isGlobalLpPaused),
+				Reason:      wrapString(globalLpReason),
+			},
 		},
 	}
 
@@ -657,7 +682,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		}
 
 		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
-		isChainLpPaused := mgr.Keeper().IsLPPaused(ctx, chain)
+		isChainLpPaused := mgr.Keeper().IsChainLPPaused(ctx, chain)
 
 		vaultAddress, err := vault.PubKey.GetAddress(chain)
 		if err != nil {
@@ -2499,6 +2524,10 @@ func wrapInt64(d int64) *int64 {
 		return nil
 	}
 	return &d
+}
+
+func wrapBool(b bool) *bool {
+	return &b
 }
 
 // TODO: Migrate callers to use simulate instead.
