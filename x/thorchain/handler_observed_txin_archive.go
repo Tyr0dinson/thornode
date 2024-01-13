@@ -31,8 +31,8 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflightV1(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -49,11 +49,9 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -66,7 +64,7 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 
@@ -113,7 +111,7 @@ func (h ObservedTxInHandler) handleV113(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -199,8 +197,8 @@ func (h ObservedTxInHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflightV1(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -217,11 +215,9 @@ func (h ObservedTxInHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -234,7 +230,7 @@ func (h ObservedTxInHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxIn)
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 
@@ -281,7 +277,7 @@ func (h ObservedTxInHandler) handleV112(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -366,8 +362,8 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflightV1(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -384,11 +380,9 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -406,7 +400,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
@@ -452,7 +446,7 @@ func (h ObservedTxInHandler) handleV89(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -520,8 +514,8 @@ func (h ObservedTxInHandler) handleV78(ctx cosmos.Context, msg MsgObservedTxIn) 
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflightV1(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -538,11 +532,9 @@ func (h ObservedTxInHandler) handleV78(ctx cosmos.Context, msg MsgObservedTxIn) 
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -560,7 +552,7 @@ func (h ObservedTxInHandler) handleV78(ctx cosmos.Context, msg MsgObservedTxIn) 
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
@@ -602,7 +594,7 @@ func (h ObservedTxInHandler) handleV78(ctx cosmos.Context, msg MsgObservedTxIn) 
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -728,8 +720,8 @@ func (h ObservedTxInHandler) handleV107(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		voter, ok := h.preflightV1(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflightV1(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -746,11 +738,9 @@ func (h ObservedTxInHandler) handleV107(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -768,7 +758,7 @@ func (h ObservedTxInHandler) handleV107(ctx cosmos.Context, msg MsgObservedTxIn)
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
@@ -814,7 +804,7 @@ func (h ObservedTxInHandler) handleV107(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
@@ -871,7 +861,7 @@ func (h ObservedTxInHandler) handleV107(ctx cosmos.Context, msg MsgObservedTxIn)
 	return &cosmos.Result{}, nil
 }
 
-func (h ObservedTxInHandler) preflightV119(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+func (h ObservedTxInHandler) preflightV119(ctx cosmos.Context, voter *ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (bool, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 
@@ -881,19 +871,22 @@ func (h ObservedTxInHandler) preflightV119(ctx cosmos.Context, voter ObservedTxV
 	}))
 	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, signer)
 
-	ok := false
+	isConsensus := false
 	if err := h.mgr.Keeper().SetLastObserveHeight(ctx, tx.Tx.Chain, signer, tx.BlockHeight); err != nil {
 		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
 	}
 	if !voter.Add(tx, signer) {
-		return voter, ok
+		return false, false
 	}
-	if voter.HasFinalised(nas) {
+	consensusTx := voter.GetTx(nas)
+	hasConsensus := !consensusTx.IsEmpty()
+	hasFinalised := hasConsensus && consensusTx.IsFinal()
+	if hasFinalised {
 		if voter.FinalisedHeight == 0 {
-			ok = true
+			isConsensus = true
 			voter.Height = ctx.BlockHeight() // Always record the consensus height of the finalised Tx
 			voter.FinalisedHeight = ctx.BlockHeight()
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetConsensusSigners()...)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
@@ -902,12 +895,12 @@ func (h ObservedTxInHandler) preflightV119(ctx cosmos.Context, voter ObservedTxV
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !isConsensus && hasConsensus && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
-			ok = true
+			isConsensus = true
 			voter.Height = ctx.BlockHeight()
 			// this is the tx that has consensus
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
@@ -918,13 +911,13 @@ func (h ObservedTxInHandler) preflightV119(ctx cosmos.Context, voter ObservedTxV
 		}
 	}
 
-	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, *voter)
 
 	// Check to see if we have enough identical observations to process the transaction
-	return voter, ok
+	return isConsensus, hasFinalised
 }
 
-func (h ObservedTxInHandler) preflightV116(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+func (h ObservedTxInHandler) preflightV116(ctx cosmos.Context, voter *ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (bool, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 
@@ -934,18 +927,21 @@ func (h ObservedTxInHandler) preflightV116(ctx cosmos.Context, voter ObservedTxV
 	}))
 	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, signer)
 
-	ok := false
+	isConsensus := false
 	if err := h.mgr.Keeper().SetLastObserveHeight(ctx, tx.Tx.Chain, signer, tx.BlockHeight); err != nil {
 		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
 	}
 	if !voter.Add(tx, signer) {
-		return voter, ok
+		return false, false
 	}
-	if voter.HasFinalised(nas) {
+	consensusTx := voter.GetTx(nas)
+	hasConsensus := !consensusTx.IsEmpty()
+	hasFinalised := hasConsensus && consensusTx.IsFinal()
+	if hasFinalised {
 		if voter.FinalisedHeight == 0 {
-			ok = true
+			isConsensus = true
 			voter.FinalisedHeight = ctx.BlockHeight()
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetConsensusSigners()...)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
@@ -954,12 +950,12 @@ func (h ObservedTxInHandler) preflightV116(ctx cosmos.Context, voter ObservedTxV
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !isConsensus && hasConsensus && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
-			ok = true
+			isConsensus = true
 			voter.Height = ctx.BlockHeight()
 			// this is the tx that has consensus
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
@@ -970,13 +966,13 @@ func (h ObservedTxInHandler) preflightV116(ctx cosmos.Context, voter ObservedTxV
 		}
 	}
 
-	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, *voter)
 
 	// Check to see if we have enough identical observations to process the transaction
-	return voter, ok
+	return isConsensus, hasFinalised
 }
 
-func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
+func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter *ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (bool, bool) {
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	observeFlex := h.mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 
@@ -986,18 +982,21 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 	}))
 	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, signer)
 
-	ok := false
+	isConsensus := false
 	if err := h.mgr.Keeper().SetLastObserveHeight(ctx, tx.Tx.Chain, signer, tx.BlockHeight); err != nil {
 		ctx.Logger().Error("fail to save last observe height", "error", err, "signer", signer, "chain", tx.Tx.Chain)
 	}
 	if !voter.Add(tx, signer) {
-		return voter, ok
+		return false, false
 	}
-	if voter.HasFinalised(nas) {
+	consensusTx := voter.GetTx(nas)
+	hasConsensus := !consensusTx.IsEmpty()
+	hasFinalised := hasConsensus && consensusTx.IsFinal()
+	if hasFinalised {
 		if voter.FinalisedHeight == 0 {
-			ok = true
+			isConsensus = true
 			voter.FinalisedHeight = ctx.BlockHeight()
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
@@ -1006,12 +1005,12 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !isConsensus && hasConsensus && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
-			ok = true
+			isConsensus = true
 			voter.Height = ctx.BlockHeight()
 			// this is the tx that has consensus
-			voter.Tx = voter.GetTx(nas)
+			voter.Tx = consensusTx
 
 			// tx has consensus now, so decrease the slashing points for all the signers whom had voted for it
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.Tx.GetSigners()...)
@@ -1022,10 +1021,10 @@ func (h ObservedTxInHandler) preflightV1(ctx cosmos.Context, voter ObservedTxVot
 		}
 	}
 
-	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	h.mgr.Keeper().SetObservedTxInVoter(ctx, *voter)
 
 	// Check to see if we have enough identical observations to process the transaction
-	return voter, ok
+	return isConsensus, hasFinalised
 }
 
 func (h ObservedTxInHandler) handleV116(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
@@ -1047,8 +1046,8 @@ func (h ObservedTxInHandler) handleV116(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		voter, ok := h.preflight(ctx, voter, activeNodeAccounts, tx, msg.Signer)
-		if !ok {
+		isConsensus, hasFinalised := h.preflight(ctx, &voter, activeNodeAccounts, tx, msg.Signer)
+		if !isConsensus {
 			if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 				// we've already process the transaction, but we should still
 				// update the observing addresses
@@ -1065,11 +1064,9 @@ func (h ObservedTxInHandler) handleV116(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		var txIn ObservedTx
-		if voter.HasFinalised(activeNodeAccounts) || voter.HasConsensus(activeNodeAccounts) {
-			voter.Tx.Tx.Memo = tx.Tx.Memo
-			txIn = voter.Tx
-		}
+		voter.Tx.Tx.Memo = tx.Tx.Memo
+		txIn := voter.Tx
+
 		vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -1082,7 +1079,7 @@ func (h ObservedTxInHandler) handleV116(ctx cosmos.Context, msg MsgObservedTxIn)
 				voter.UpdatedVault = true
 			}
 		}
-		if voter.HasFinalised(activeNodeAccounts) {
+		if hasFinalised {
 			vault.InboundTxCount++
 		}
 
@@ -1129,7 +1126,7 @@ func (h ObservedTxInHandler) handleV116(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		h.mgr.ObMgr().AppendObserver(tx.Tx.Chain, txIn.GetSigners())
 
-		if !voter.HasFinalised(activeNodeAccounts) {
+		if !hasFinalised {
 			ctx.Logger().Info("Tx has not been finalised yet , waiting for confirmation counting", "hash", voter.TxID)
 			continue
 		}
