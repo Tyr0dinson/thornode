@@ -361,6 +361,11 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
 				}
+				// Deduct the asset's pending outbound funds to represent only the available funds.
+				pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, tx.Coin.Asset)
+				for i := range active {
+					active[i].DeductVaultPendingOutbounds(pendingOutbounds)
+				}
 				available := active.Has(tx.Coin).SortBy(tx.Coin.Asset)
 				if len(available) == 0 {
 					// we need to give it somewhere to send from, even if that
