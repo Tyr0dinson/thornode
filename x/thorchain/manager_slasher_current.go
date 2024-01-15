@@ -357,35 +357,6 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 
 			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
-				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
-				if err != nil {
-					return fmt.Errorf("fail to get active asgard vaults: %w", err)
-				}
-				available := active.Has(tx.Coin).SortBy(tx.Coin.Asset)
-				if len(available) == 0 {
-					// we need to give it somewhere to send from, even if that
-					// asgard doesn't have enough funds. This is because if we
-					// don't the transaction will just be dropped on the floor,
-					// which is bad. Instead it may try to send from an asgard that
-					// doesn't have enough funds, fail, and then get rescheduled
-					// again later. Maybe by then the network will have enough
-					// funds to satisfy.
-					// TODO add split logic to send it out from multiple asgards in
-					// this edge case.
-					ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
-					if len(active) > 0 {
-						vault = active[0]
-					}
-				} else {
-					rep := int(tx.InHash.Int64() + ctx.BlockHeight()/signingTransPeriod)
-					if vault.PubKey.Equals(available[rep%len(available)].PubKey) {
-						// looks like the new vault is going to be the same as the
-						// old vault, increment rep to ensure a differ asgard is
-						// chosen (if there is more than one option)
-						rep++
-					}
-					vault = available[rep%len(available)]
-				}
 				if !memo.IsType(TxRagnarok) {
 					// update original tx action in observed tx
 					// check observedTx has done status. Skip if it does already.
@@ -400,7 +371,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// update the actions in the voter with the new vault pubkey
 					for i, action := range voter.Actions {
 						if action.Equals(tx) {
-							voter.Actions[i].VaultPubKey = vault.PubKey
+							voter.Actions[i].VaultPubKey = common.EmptyPubKey
 
 							if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" || tx.AggregatorTargetLimit != nil {
 								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", tx.InHash)
@@ -421,26 +392,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 				}
 				// Save the tx to as a new tx, select Asgard to send it this time.
-				tx.VaultPubKey = vault.PubKey
-
-				// update max gas
-				maxGas, err := mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
-				if err != nil {
-					ctx.Logger().Error("fail to get max gas", "error", err)
-				} else {
-					tx.MaxGas = common.Gas{maxGas}
-					// Update MaxGas in ObservedTxVoter action as well
-					if err := updateTxOutGas(ctx, s.keeper, tx, common.Gas{maxGas}); err != nil {
-						ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
-					}
-				}
-				// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
-				// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
-				gasRate := int64(mgr.GasMgr().GetGasRate(ctx, tx.Chain).Uint64())
-				if err := updateTxOutGasRate(ctx, s.keeper, tx, gasRate); err != nil {
-					ctx.Logger().Error("Failed to update GasRate of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
-				}
-				tx.GasRate = gasRate
+				tx.VaultPubKey = common.EmptyPubKey
 			}
 
 			// if a pool with the asset name doesn't exist, skip rescheduling

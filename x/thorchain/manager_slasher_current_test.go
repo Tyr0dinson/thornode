@@ -149,7 +149,7 @@ func (s *SlashingVCURSuite) TestNodeSignSlashErrors(c *C) {
 			condition: func(keeper *TestSlashingLackKeeper) {
 				keeper.failGetAsgardByStatus = true
 			},
-			shouldError: true,
+			shouldError: false,
 		},
 		{
 			name: "fail to get observed tx voter should return an error",
@@ -275,11 +275,11 @@ func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
 	outItems, err := txOutStore.GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(outItems, HasLen, 1)
-	c.Assert(outItems[0].VaultPubKey.Equals(keeper.vaults[0].PubKey), Equals, true)
+	c.Assert(outItems[0].VaultPubKey.IsEmpty(), Equals, true)
 	c.Assert(outItems[0].Memo, Equals, "")
 	c.Assert(keeper.voter.Actions, HasLen, 1)
 	// ensure we've updated our action item
-	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(outItems[0].VaultPubKey), Equals, true)
+	c.Assert(keeper.voter.Actions[0].VaultPubKey.IsEmpty(), Equals, true)
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
