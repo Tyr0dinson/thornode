@@ -357,6 +357,11 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 
 			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
+				maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
+				if err != nil {
+					ctx.Logger().Error("fail to get max gas", "error", err)
+				}
+
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -366,7 +371,20 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				for i := range active {
 					active[i].DeductVaultPendingOutbounds(pendingOutbounds)
 				}
-				available := active.Has(tx.Coin).SortBy(tx.Coin.Asset)
+
+				available := active
+				mainCoin := tx.Coin
+				if tx.Coin.Asset.Equals(maxGasCoin.Asset) {
+					// If the main coin and the gas coin are the same asset,
+					// ensure the assigned vault has enough available for both.
+					mainCoin.Amount = mainCoin.Amount.Add(maxGasCoin.Amount)
+				} else {
+					// If the gas coin isn't the main asset,
+					// directly ensure the assigned vault has enough available for it.
+					available = available.Has(maxGasCoin)
+				}
+				available = available.Has(mainCoin)
+
 				if len(available) == 0 {
 					// we need to give it somewhere to send from, even if that
 					// asgard doesn't have enough funds. This is because if we
@@ -429,13 +447,10 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				tx.VaultPubKey = vault.PubKey
 
 				// update max gas
-				maxGas, err := mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
-				if err != nil {
-					ctx.Logger().Error("fail to get max gas", "error", err)
-				} else {
-					tx.MaxGas = common.Gas{maxGas}
+				if !maxGasCoin.IsEmpty() {
+					tx.MaxGas = common.Gas{maxGasCoin}
 					// Update MaxGas in ObservedTxVoter action as well
-					if err := updateTxOutGas(ctx, s.keeper, tx, common.Gas{maxGas}); err != nil {
+					if err := updateTxOutGas(ctx, s.keeper, tx, common.Gas{maxGasCoin}); err != nil {
 						ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 					}
 				}
