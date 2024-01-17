@@ -209,9 +209,7 @@ func (s *Signer) processTransactions() {
 		go func(items []TxOutStoreItem) {
 			chain := items[0].TxOutItem.Chain // all items in a batch should be the same chain
 
-			defer func() {
-				wg.Done()
-			}()
+			defer wg.Done()
 
 			// precondition: all transactions should be for the same chain
 			for _, item := range items {
