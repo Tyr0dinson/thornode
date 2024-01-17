@@ -106,12 +106,6 @@ type KVStore struct {
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) keeper.Keeper {
-	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version)
-}
-
-// NewKVStore creates new instances of the thorchain Keeper
 func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
