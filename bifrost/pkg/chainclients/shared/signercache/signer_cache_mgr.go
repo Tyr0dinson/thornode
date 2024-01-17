@@ -38,6 +38,13 @@ func NewSignerCacheManager(db *leveldb.DB) (*CacheManager, error) {
 
 // SetSigned mark a tx out item has been signed
 func (cm *CacheManager) SetSigned(txOutItemHash, vaultKey, transactionHash string) error {
+	// The CacheManager consistently uses THORChain-format TxIDs as when OnObservedTxIn observations are reported to THORNode,
+	// but EVM/ETH chains specifically may also call SetSigned with a 0x-prefix hash when broadcasting,
+	// so check for and prune if present.
+	if len(transactionHash) > 2 && transactionHash[:2] == "0x" {
+		transactionHash = transactionHash[2:]
+	}
+
 	if err := cm.storageAccessor.SetSigned(txOutItemHash); err != nil {
 		cm.logger.Err(err).
 			Str("txout_hash", txOutItemHash).
@@ -66,6 +73,19 @@ func (cm *CacheManager) GetLatestRecordedTx(vaultKey string) (string, error) {
 // transaction hash should be for the broadcast transaction - it is internally mapped to
 // the cache key for the TxOutItem.
 func (cm *CacheManager) RemoveSigned(transactionHash string) {
+	// The CacheManager consistently uses THORChain-format TxIDs as when OnObservedTxIn observations are reported to THORNode,
+	// but EVM/ETH chains specifically may also call RemoveSigned with a 0x-prefix hash upon failed-tx or unstuck-tx block scanning,
+	// so check for and prune if present.
+	if len(transactionHash) > 2 && transactionHash[:2] == "0x" {
+		// TODO: Remove this unpruned RemoveSigned call after enough time has passed (for instance on hard fork)
+		// that residual 0x-prefix hashes set by modified SetSigned are no longer a concern.
+		if err := cm.storageAccessor.RemoveSigned(transactionHash); err != nil {
+			cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
+		}
+
+		transactionHash = transactionHash[2:]
+	}
+
 	if err := cm.storageAccessor.RemoveSigned(transactionHash); err != nil {
 		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
 	}
