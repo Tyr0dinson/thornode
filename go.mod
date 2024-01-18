@@ -286,6 +286,5 @@ replace (
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
 	github.com/cosmos/ledger-cosmos-go => github.com/thorchain/ledger-thorchain-go v0.12.1
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
-	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1
 	github.com/zondax/ledger-go => github.com/binance-chain/ledger-go v0.9.1
 )
