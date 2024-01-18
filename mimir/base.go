@@ -31,6 +31,7 @@ type Mimir interface {
 	FetchValue(_ cosmos.Context, _ keeper.Keeper) int64
 	IsOn(_ cosmos.Context, _ keeper.Keeper) bool
 	IsOff(_ cosmos.Context, _ keeper.Keeper) bool
+	Key() string
 }
 
 type mimir struct {
@@ -75,15 +76,28 @@ func (m *mimir) Reference() string {
 	return strings.ToUpper(m.reference)
 }
 
-func (m *mimir) key() string {
+func (m *mimir) Key() string {
 	return fmt.Sprintf("%d-%s", m.id, strings.ToUpper(m.Reference()))
 }
 
 func (m *mimir) FetchValue(ctx cosmos.Context, keeper keeper.Keeper) (value int64) {
-	var err error
-	version := keeper.GetVersion()
-	// fetch mimir v2
+	var (
+		err     error
+		version = keeper.GetVersion()
+	)
+
 	value = int64(-1)
+	// check if id supports current version for v2 , required for sync
+	if !useMimirV2(version, m.id) {
+		legacyKey := m.LegacyKey(m.Reference())
+		value, err = keeper.GetMimir(ctx, legacyKey)
+		if err != nil {
+			return -1
+		}
+		return value
+	}
+
+	// fetch mimir v2
 	switch {
 	case version.GTE(semver.MustParse("1.125.0")):
 		value = m.fetchValueV125(ctx, keeper)
@@ -125,7 +139,7 @@ func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value 
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
 
-	key = m.key()
+	key = m.Key()
 	var mimirs types.NodeMimirs
 	mimirs, err = keeper.GetNodeMimirsV2(ctx, key)
 	if err != nil {
@@ -156,4 +170,16 @@ func (m *mimir) IsOn(ctx cosmos.Context, keeper keeper.Keeper) bool {
 func (m *mimir) IsOff(ctx cosmos.Context, keeper keeper.Keeper) bool {
 	value := m.FetchValue(ctx, keeper)
 	return value <= 0
+}
+
+// useMimirV2 versions the use of mimirv1 vs v2, required for sync
+func useMimirV2(version semver.Version, id Id) bool {
+	switch {
+	case id >= UnknownId && id <= CloutSwapperResetId:
+		return version.GTE(semver.MustParse("1.124.0"))
+	case id >= PauseSynthsId && id <= PauseChainId:
+		return version.GTE(semver.MustParse("1.127.0"))
+	default:
+		return false
+	}
 }

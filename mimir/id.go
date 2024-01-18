@@ -20,6 +20,7 @@ const (
 	TradeAccountEnabled
 	PauseSynths
 	PauseSwaps
+	PauseChain
 )
 
 // GetMimir fetches a mimir by id number
@@ -45,6 +46,8 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewPauseSwaps(ref), true
 	case PauseSynths:
 		return NewPauseSynths(ref), true
+	case PauseChain:
+		return NewPauseChain(ref), true
 	default:
 		return nil, false
 	}

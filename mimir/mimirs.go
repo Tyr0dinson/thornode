@@ -2,6 +2,7 @@ package mimir
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/constants"
 )
@@ -179,6 +180,27 @@ func NewPauseSwaps(refs ...string) Mimir {
 		description:  fmt.Sprintf("Halts interaction with the %s chain", ref),
 		legacyMimirKey: func(ref string) string {
 			return fmt.Sprintf("Halt%sTrading", ref)
+		},
+	}
+}
+
+func NewPauseChainId(refs ...string) Mimir {
+	id := PauseChainId
+	ref := getRef(refs)
+	return &mimir{
+		id:           id,
+		name:         mimirRefToStringMap[id],
+		defaultValue: 0,
+		reference:    ref,
+		mimirType:    OperationalMimir,
+		tags:         []string{"operational", "chain"},
+		description:  fmt.Sprintf("Halts %s chain", ref),
+		legacyMimirKey: func(ref string) string {
+			// to support querier
+			if len(ref) == 0 || strings.ToUpper(ref) == "GLOBAL" {
+				return "HaltChainGlobal"
+			}
+			return fmt.Sprintf("Halt%sChain", ref)
 		},
 	}
 }

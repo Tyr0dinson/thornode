@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 )
 
 // BlockScannerFetcher define the methods a block scanner need to implement
@@ -167,7 +168,7 @@ func (b *BlockScanner) isChainPaused() bool {
 		b.logger.Error().Err(err).Msgf("fail to get mimir %s", fmt.Sprintf("SolvencyHalt%sChain", b.cfg.ChainID))
 	}
 	// Check if all chains halted globally
-	globalHaltHeight, err := b.thorchainBridge.GetMimir("HaltChainGlobal")
+	globalHaltHeight, err := b.thorchainBridge.GetMimir(mimir.NewPauseChainId().Key())
 	if err != nil {
 		b.logger.Error().Err(err).Msg("fail to get mimir setting HaltChainGlobal")
 	}
