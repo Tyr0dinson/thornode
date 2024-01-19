@@ -215,7 +215,7 @@ func requeueDanglingActionsV124(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 
 		var indices []int
 		for i := range voter.Actions {
-			if isActionsItemDangling(voter, i) {
+			if isActionsItemDangling(&voter, i) {
 				indices = append(indices, i)
 			}
 		}
@@ -299,7 +299,7 @@ func requeueDanglingActionsV123(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 
 		var indices []int
 		for i := range voter.Actions {
-			if isActionsItemDangling(voter, i) {
+			if isActionsItemDangling(&voter, i) {
 				indices = append(indices, i)
 			}
 		}
@@ -379,7 +379,7 @@ func requeueDanglingActionsV108(ctx cosmos.Context, mgr *Mgrs, txIDs []common.Tx
 
 		var indices []int
 		for i := range voter.Actions {
-			if isActionsItemDangling(voter, i) {
+			if isActionsItemDangling(&voter, i) {
 				indices = append(indices, i)
 			}
 		}
