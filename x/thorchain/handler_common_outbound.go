@@ -98,13 +98,15 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	// been sent out by signer , LackSigning will create a new TxOutItem
 	// and mark the previous TxOutItem as complete.
 	//
-	// Check the blocks to the current height starting from inbound consensus height
+	// Check the blocks backwards
+	// (assuming that most signed outbounds will have been scheduled more rather than less recently)
+	// to the current height starting from inbound consensus height
 	// or one signingTransPeriod ago, whichever is later.
-	height := ctx.BlockHeight() - signingTransPeriod
-	if voter.Height > height {
-		height = voter.Height
+	earliestHeight := ctx.BlockHeight() - signingTransPeriod
+	if voter.Height > earliestHeight {
+		earliestHeight = voter.Height
 	}
-	for ; height <= ctx.BlockHeight(); height++ {
+	for height := ctx.BlockHeight(); height >= earliestHeight; height-- {
 		// update txOut record with our TxID that sent funds out of the pool
 		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
@@ -229,7 +231,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 			}
 		}
 		// If the TxOutItem matching the observed outbound has been found,
-		// do not check later blocks.
+		// do not check other blocks.
 		if !shouldSlash {
 			break
 		}
