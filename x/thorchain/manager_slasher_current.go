@@ -381,7 +381,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				} else {
 					// If the gas coin isn't the main asset,
 					// directly ensure the assigned vault has enough available for it.
-					available = available.Has(maxGasCoin)
+					available = active.Has(maxGasCoin)
 				}
 				available = available.Has(mainCoin)
 
@@ -397,7 +397,8 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// this edge case.
 					ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
 					if len(active) > 0 {
-						vault = active[0]
+						// Fall back on the vault with the most available funds.
+						vault = active.SortBy(tx.Coin.Asset)[0]
 					}
 				} else {
 					rep := int(tx.InHash.Int64() + ctx.BlockHeight()/signingTransPeriod)
