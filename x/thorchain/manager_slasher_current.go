@@ -357,11 +357,6 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 
 			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
-				maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
-				if err != nil {
-					ctx.Logger().Error("fail to get max gas", "error", err)
-				}
-
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -374,7 +369,11 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 				available := active
 				mainCoin := tx.Coin
-				if tx.Coin.Asset.Equals(maxGasCoin.Asset) {
+				maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
+				if err != nil {
+					ctx.Logger().Error("fail to get max gas", "error", err)
+				}
+				if mainCoin.Asset.Equals(maxGasCoin.Asset) {
 					// If the main coin and the gas coin are the same asset,
 					// ensure the assigned vault has enough available for both.
 					mainCoin.Amount = mainCoin.Amount.Add(maxGasCoin.Amount)
@@ -398,7 +397,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
 					if len(active) > 0 {
 						// Fall back on the vault with the most available funds.
-						vault = active.SortBy(tx.Coin.Asset)[0]
+						vault = active.SortBy(mainCoin.Asset)[0]
 					}
 				} else {
 					rep := int(tx.InHash.Int64() + ctx.BlockHeight()/signingTransPeriod)
