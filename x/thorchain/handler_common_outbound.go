@@ -117,7 +117,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 
 		// Save TxOut back with the TxID only when the TxOut on the block height is
 		// not empty
-		for i, txOutItem := range txOut.TxArray {
+		for i := range txOut.TxArray {
 			// withdraw , refund etc, one inbound tx might result two outbound
 			// txes, THORNode have to correlate outbound tx back to the
 			// inbound, and also txitem , thus THORNode could record both
@@ -125,7 +125,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
 
-			if h.isLegitimate(ctx, &tx, &txOutItem, inTxID) {
+			if h.isLegitimate(ctx, &tx, &txOut.TxArray[i], inTxID) {
 				txOut.TxArray[i].OutHash = tx.Tx.ID
 				outTxn = txOut.TxArray[i]
 				shouldSlash = false
