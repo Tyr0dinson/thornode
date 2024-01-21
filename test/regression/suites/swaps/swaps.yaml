@@ -89,6 +89,17 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
 ---
+# Check that endpoint checks work.
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 2 }}
+asserts:
+  - .txs|length > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ native_txid -1 }}
+asserts:
+  - .out_txs|length > 0
+---
 ########################################################################################
 # double swap
 ########################################################################################
