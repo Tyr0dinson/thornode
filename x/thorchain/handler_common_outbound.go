@@ -79,6 +79,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	if err != nil {
 		return nil, ErrInternal(err, "fail to get observed tx voter")
 	}
+	unaddedVoter := voter // Record the voter before AddOutTx appends OutTxs for a later dangling check.
 	if voter.AddOutTx(h.mgr.GetVersion(), tx.Tx) {
 		if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventOutbound(inTxID, tx.Tx)); err != nil {
 			return nil, ErrInternal(err, "fail to emit outbound event")
@@ -143,6 +144,56 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 		}
 	}
 
+	// If a TxOutItem satisfying the outbound hasn't been found in the outbound queue,
+	// fall back on checking the ObservedTxInVoter for dangling Actions items which do.
+	// (An already-signed outbound not observed until after attempts to sign had been stopped.)
+	//
+	// TODO: Remove this shouldSlash conditional to always save the OutHash in the Actions item too,
+	// to be able to switch over to only checking isLegitimate without the before-and-after dangling status?
+	// (This would prevent an illegitimate outbound from blocking a later outbound's legitimacy,
+	//  and always saving the OutHash in the Actions item would stop a TxOutItem recognised from the outbound queue
+	//  from being able to still satisfy an outbound from the Actions items (since not having an OutHash).)
+	if shouldSlash {
+		for i := range unaddedVoter.Actions {
+			// Unlike the outbound queue, the Actions items are not updated with an OutHash,
+			// so to avoid multiple-spends
+			// further have as a requirement of legitimacy that 'the Actions item was dangling and becomes non-dangling through this outbound'.
+			// Note that even if there is a legitimate outbound, if there were an earlier illegitimate outbound that makes the Actions item non-dangling,
+			// the legitimate outbound will not be recognised as legitimate.
+			if !isActionsItemDangling(&unaddedVoter, i) {
+				continue
+			}
+
+			// Though the Actions items are expected to be the same, sanity check to avoid any panic.
+			if i >= len(voter.Actions) {
+				ctx.Logger().Error("voter actions items which should be identical after outtx adding have different lengths", "txid", inTxID)
+				break
+			}
+			// If the Actions item is still dangling after AddOutTx, it should not be treated as satisfying the outbound.
+			// Even if the outbound were somehow legitimate, the Actions item being dangling afterwards as well could allow multiple-spends,
+			// such as if the outbound queue TxOutItem satisfied a legitimate outbound and yet the Actions item somehow remained dangling.
+			if isActionsItemDangling(&voter, i) {
+				continue
+			}
+
+			// Last sanity check that the dangling Actions item which becomes non-dangling is indeed the same item,
+			// not somehow-different items with the same slice index.
+			if !unaddedVoter.Actions[i].Equals(voter.Actions[i]) {
+				ctx.Logger().Error("voter actions items which should be identical after outtx adding are not equal", "txid", inTxID)
+				break
+			}
+
+			if h.isLegitimate(ctx, &tx, &voter.Actions[i], inTxID) {
+				voter.Actions[i].OutHash = tx.Tx.ID
+				outTxn = voter.Actions[i]
+				shouldSlash = false
+				h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+				break
+			}
+		}
+	}
+
+	// TODO: In the txout manager append a new Actions item only after its outbound queue TxOutItem has already been loaded with CloutSpent?
 	// reclaim clout spent
 	spent := outTxn.CloutSpent
 	if spent != nil && !spent.IsZero() {
