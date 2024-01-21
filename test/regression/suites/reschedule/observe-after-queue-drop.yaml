@@ -1,0 +1,121 @@
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "3"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.SigningTransactionPeriod == 3
+---
+########################################################################################
+# swap to btc
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "${IN_TXID={{ native_txid 1 }}}"
+  - .[0]|.height == 2
+  - .[0]|.coin.amount == "${OUT_AMOUNT=8250389}"
+  - .[0]|.max_gas[0].amount == "${OUTGAS_AMOUNT=10500}"
+---
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 1 # So that the item will be dropped from the outbound queue after one signing period.
+signer: {{ addr_thor_dog }}
+---
+########################################################################################
+# outbound should be gone from queue after signing period
+########################################################################################
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.height == 2
+  # The item hasn't been dropped yet, but hasn't been rescheduled either.
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+  # Now the item has been dropped.
+---
+# TODO: Do the below if regression tests become able to check native txid endpoints (Issue #1845)
+# type: check
+# endpoint: http://localhost:1317/thorchain/tx/details/${IN_TXID}
+# asserts:
+#   - .out_txs|length == 0
+# ---
+# Observe the (as though already signed) txout.
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "${OUTGAS_AMOUNT}"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid 1 }}" # TODO: If possible in future, change this to "OUT:${IN_TXID}".
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# TODO: Do the below if regression tests become able to check native txid endpoints (Issue #1845)
+# type: check
+# endpoint: http://localhost:1317/thorchain/tx/details/${IN_TXID}
+# asserts:
+#   - .out_txs|length == 1
+#   # Added to the voter.
+# ---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .| [..|select(.type? == "outbound")] | length == 1
+  - .| [..|select(.type? == "security")] | length == 1
+  - .| [..|select(.type? == "slash")] | length == 1
+  - .| [..|select(.key? == "HALTBTCCHAIN")] | length == 1
+  # The observed txout for the queue-dropped TxOutItem is deemed illegitimate,
+  # and the bond is slashed.
+  #
+  # The regression test checks pass, but since the vault has been decremented once (from the txout)
+  # and the pool has been decremented twice (from the swap and slashed txout).
+  # the vault is oversolvent and the export invariant is broken.
+  # (Note that the bond slash has reimbursed the pool in RUNE rather than Layer 1 Asset.)
