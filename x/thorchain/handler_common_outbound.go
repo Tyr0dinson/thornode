@@ -91,6 +91,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	}
 
 	shouldSlash := true
+	var outTxn TxOutItem
 	signingTransPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	// every Signing Transaction Period , THORNode will check whether a
 	// TxOutItem had been sent by signer or not
@@ -189,41 +190,10 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 					continue
 				}
 				txOut.TxArray[i].OutHash = tx.Tx.ID
+				outTxn = txOut.TxArray[i]
 				shouldSlash = false
 				if err := h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 					ctx.Logger().Error("fail to save tx out", "error", err)
-				}
-
-				// reclaim clout spent
-				outTxn := txOut.TxArray[i]
-				spent := outTxn.CloutSpent
-				if spent != nil && !spent.IsZero() {
-					cloutOut, err := h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
-					if err != nil {
-						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
-					}
-					voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
-					if err != nil {
-						ctx.Logger().Error("fail to get txin for clout calculation", "error", err)
-					}
-					cloutIn, err := h.mgr.Keeper().GetSwapperClout(ctx, voter.Tx.Tx.FromAddress)
-					if err != nil {
-						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
-					}
-
-					clout1, clout2 := calcReclaim(cloutIn.Claimable(), cloutOut.Claimable(), *spent)
-
-					cloutIn.Reclaim(clout1)
-					cloutIn.LastReclaimHeight = ctx.BlockHeight()
-					if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutIn); err != nil {
-						ctx.Logger().Error("fail to save swapper clout in", "error", err)
-					}
-
-					cloutOut.Reclaim(clout2)
-					cloutOut.LastReclaimHeight = ctx.BlockHeight()
-					if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutOut); err != nil {
-						ctx.Logger().Error("fail to save swapper clout out", "error", err)
-					}
 				}
 
 				break
@@ -234,6 +204,37 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 		// do not check other blocks.
 		if !shouldSlash {
 			break
+		}
+	}
+
+	// reclaim clout spent
+	spent := outTxn.CloutSpent
+	if spent != nil && !spent.IsZero() {
+		cloutOut, err := h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
+		if err != nil {
+			ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
+		}
+		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
+		if err != nil {
+			ctx.Logger().Error("fail to get txin for clout calculation", "error", err)
+		}
+		cloutIn, err := h.mgr.Keeper().GetSwapperClout(ctx, voter.Tx.Tx.FromAddress)
+		if err != nil {
+			ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
+		}
+
+		clout1, clout2 := calcReclaim(cloutIn.Claimable(), cloutOut.Claimable(), *spent)
+
+		cloutIn.Reclaim(clout1)
+		cloutIn.LastReclaimHeight = ctx.BlockHeight()
+		if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutIn); err != nil {
+			ctx.Logger().Error("fail to save swapper clout in", "error", err)
+		}
+
+		cloutOut.Reclaim(clout2)
+		cloutOut.LastReclaimHeight = ctx.BlockHeight()
+		if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutOut); err != nil {
+			ctx.Logger().Error("fail to save swapper clout out", "error", err)
 		}
 	}
 
