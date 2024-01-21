@@ -1,0 +1,12 @@
+version: v1beta1
+breaking:
+  use:
+    - FILE
+build:
+  roots:
+    - proto/
+    - third_party/proto/
+lint:
+  use:
+    - DEFAULT
+  allow_comment_ignores: true
