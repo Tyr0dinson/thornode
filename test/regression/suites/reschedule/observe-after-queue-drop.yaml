@@ -68,6 +68,9 @@ asserts:
   - .|length == 0
   # Now the item has been dropped.
 ---
+########################################################################################
+# later-observed outbound after queue dropping shouldn't cause a slash
+########################################################################################
 # TODO: Do the below if regression tests become able to check native txid endpoints (Issue #1845)
 # type: check
 # endpoint: http://localhost:1317/thorchain/tx/details/${IN_TXID}
@@ -109,13 +112,41 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .| [..|select(.type? == "outbound")] | length == 1
+  - .| [..|select(.type? == "security")] | length == 0
+  - .| [..|select(.type? == "slash")] | length == 0
+  - .| [..|select(.key? == "HALTBTCCHAIN")] | length == 0
+  # The observed txout for the queue-dropped TxOutItem is deemed legitimate.
+---
+########################################################################################
+# a later identical multiple-spend should still be slashed
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}' # A distinct transaction, not duplicate observation.
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "${OUT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "${OUTGAS_AMOUNT}"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ native_txid 1 }}" # TODO: If possible in future, change this to "OUT:${IN_TXID}".
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .| [..|select(.type? == "outbound")] | length == 1
   - .| [..|select(.type? == "security")] | length == 1
   - .| [..|select(.type? == "slash")] | length == 1
   - .| [..|select(.key? == "HALTBTCCHAIN")] | length == 1
-  # The observed txout for the queue-dropped TxOutItem is deemed illegitimate,
-  # and the bond is slashed.
-  #
-  # The regression test checks pass, but since the vault has been decremented once (from the txout)
-  # and the pool has been decremented twice (from the swap and slashed txout).
-  # the vault is oversolvent and the export invariant is broken.
-  # (Note that the bond slash has reimbursed the pool in RUNE rather than Layer 1 Asset.)
