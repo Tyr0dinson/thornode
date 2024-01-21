@@ -148,12 +148,12 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	// fall back on checking the ObservedTxInVoter for dangling Actions items which do.
 	// (An already-signed outbound not observed until after attempts to sign had been stopped.)
 	//
-	// TODO: Remove this shouldSlash conditional to always save the OutHash in the Actions item too,
+	// TODO: Remove this shouldSlash condition to always save the OutHash in the Actions item too,
 	// to be able to switch over to only checking isLegitimate without the before-and-after dangling status?
 	// (This would prevent an illegitimate outbound from blocking a later outbound's legitimacy,
 	//  and always saving the OutHash in the Actions item would stop a TxOutItem recognised from the outbound queue
 	//  from being able to still satisfy an outbound from the Actions items (since not having an OutHash).)
-	if shouldSlash {
+	if shouldSlash && len(unaddedVoter.OutTxs) != len(voter.OutTxs) {
 		for i := range unaddedVoter.Actions {
 			// Unlike the outbound queue, the Actions items are not updated with an OutHash,
 			// so to avoid multiple-spends
