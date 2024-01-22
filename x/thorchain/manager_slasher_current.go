@@ -330,12 +330,21 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 			var voter ObservedTxVoter
+			actionsIndex := -1
 			if !memo.IsType(TxRagnarok) {
 				voter, err = s.keeper.GetObservedTxInVoter(ctx, tx.InHash)
 				if err != nil {
 					ctx.Logger().Error("fail to get observed tx voter", "error", err)
 					resultErr = fmt.Errorf("failed to get observed tx voter: %w", err)
 					continue
+				}
+
+				// Find the Actions index for any Actions item modifications.
+				for i := range voter.Actions {
+					if voter.Actions[i].Equals(tx) {
+						actionsIndex = i
+						break
+					}
 				}
 			}
 
@@ -354,6 +363,26 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			if vault.Status == InactiveVault {
 				ctx.Logger().Info("cannot reassign tx from inactive vault", "hash", tx.InHash)
 				continue
+			}
+
+			// Whether or not the assigned vault is changed,
+			// clear any aggregator information on reschedule,
+			// so the same vault doesn't repeatedly try and fail a SwapOut (costing gas).
+			// CacheHash should recognise the ToAddress and gas asset Coins of the TxOutItem
+			// whether or not the Aggregator information is set,
+			// so the vault will still not try to sign the no-Aggregator TxOutItem
+			// until the failed transaction is observed.
+			if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" || tx.AggregatorTargetLimit != nil {
+				ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", tx.InHash)
+				tx.AggregatorTargetAsset = ""
+				tx.AggregatorTargetLimit = nil
+				tx.Aggregator = ""
+				if actionsIndex >= 0 {
+					voter.Actions[actionsIndex].Aggregator = ""
+					voter.Actions[actionsIndex].AggregatorTargetAsset = ""
+					voter.Actions[actionsIndex].AggregatorTargetLimit = nil
+					s.keeper.SetObservedTxInVoter(ctx, voter)
+				}
 			}
 
 			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, tx.InHash, tx.VaultPubKey) {
@@ -386,7 +415,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 					vault = available[rep%len(available)]
 				}
-				if !memo.IsType(TxRagnarok) {
+				if actionsIndex >= 0 {
 					// update original tx action in observed tx
 					// check observedTx has done status. Skip if it does already.
 					voterTx := voter.GetTx(NodeAccounts{})
@@ -398,27 +427,8 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 
 					// update the actions in the voter with the new vault pubkey
-					for i, action := range voter.Actions {
-						if action.Equals(tx) {
-							voter.Actions[i].VaultPubKey = vault.PubKey
-
-							if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" || tx.AggregatorTargetLimit != nil {
-								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", tx.InHash)
-
-								// Here, simultaneously clear the Aggregator information for a reassigned TxOutItem and its Actions item
-								// so that a SwapOut will send the THORChain output asset instead of cycling and swallowingif
-								// (and maybe failing with slashes) if something goes wrong.
-								tx.Aggregator = ""
-								tx.AggregatorTargetAsset = ""
-								tx.AggregatorTargetLimit = nil
-								voter.Actions[i].Aggregator = ""
-								voter.Actions[i].AggregatorTargetAsset = ""
-								voter.Actions[i].AggregatorTargetLimit = nil
-							}
-						}
-					}
+					voter.Actions[actionsIndex].VaultPubKey = vault.PubKey
 					s.keeper.SetObservedTxInVoter(ctx, voter)
-
 				}
 				// Save the tx to as a new tx, select Asgard to send it this time.
 				tx.VaultPubKey = vault.PubKey
