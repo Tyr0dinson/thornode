@@ -93,9 +93,8 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	haltMimirKey := fmt.Sprintf("Halt%sChain", chain)
-	haltChain, err = k.GetMimir(ctx, haltMimirKey)
-	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
+	haltChain = mimir.NewPauseChainId(chain.String()).FetchValue(ctx, k)
+	if haltChain > 0 && haltChain < ctx.BlockHeight() {
 		ctx.Logger().Info("chain is halt via admin or double-spend check", "chain", chain)
 		return true
 	}

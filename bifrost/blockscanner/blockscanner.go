@@ -158,9 +158,10 @@ func (b *BlockScanner) isChainPaused() bool {
 	var haltHeight, solvencyHaltHeight, nodeHaltHeight, thorHeight int64
 
 	// Check if chain has been halted via mimir
-	haltHeight, err := b.thorchainBridge.GetMimir(fmt.Sprintf("Halt%sChain", b.cfg.ChainID))
+	mimirKey := mimir.NewPauseChainId(b.cfg.ChainID.String()).Key()
+	haltHeight, err := b.thorchainBridge.GetMimir(mimirKey)
 	if err != nil {
-		b.logger.Error().Err(err).Msgf("fail to get mimir setting %s", fmt.Sprintf("Halt%sChain", b.cfg.ChainID))
+		b.logger.Error().Err(err).Msgf("fail to get mimir setting %s", mimirKey)
 	}
 	// Check if chain has been halted by auto solvency checks
 	solvencyHaltHeight, err = b.thorchainBridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", b.cfg.ChainID))

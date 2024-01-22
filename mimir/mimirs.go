@@ -184,12 +184,12 @@ func NewPauseSwaps(refs ...string) Mimir {
 	}
 }
 
-func NewPauseChainId(refs ...string) Mimir {
-	id := PauseChainId
+func NewPauseChain(refs ...string) Mimir {
+	id := PauseChain
 	ref := getRef(refs)
 	return &mimir{
 		id:           id,
-		name:         mimirRefToStringMap[id],
+		name:         id.String(),
 		defaultValue: 0,
 		reference:    ref,
 		mimirType:    OperationalMimir,
