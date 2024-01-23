@@ -61,13 +61,13 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	source := tx.Coins[0].Asset
 
 	if source.IsSyntheticAsset() {
-		burnHeight := mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths)
+		burnHeight := mimir.NewPauseSwaps(constants.BurnSynths.String()).FetchValue(ctx, keeper)
 		if burnHeight > 0 && ctx.BlockHeight() > burnHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
 	}
 	if target.IsSyntheticAsset() {
-		mintHeight := mgr.Keeper().GetConfigInt64(ctx, constants.MintSynths)
+		mintHeight := mimir.NewPauseSwaps(constants.MintSynths.String()).FetchValue(ctx, keeper)
 		if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("minting synthetics has been disabled")
 		}

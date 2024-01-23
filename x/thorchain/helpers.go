@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -658,7 +659,12 @@ func isSynthMintPausedV128(ctx cosmos.Context, mgr Manager, targetAsset common.A
 		return fmt.Errorf("pool is in ragnarok")
 	}
 
-	return isSynthMintPausedV116(ctx, mgr, targetAsset, outputAmt)
+	mintHeight := mimir.NewPauseSynths(constants.MintSynths.String()).FetchValue(ctx, mgr.Keeper())
+	if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
+		return fmt.Errorf("minting synthetics has been disabled")
+	}
+
+	return isSynthMintPausedV102(ctx, mgr, targetAsset, outputAmt)
 }
 
 func isSynthMintPausedV116(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
