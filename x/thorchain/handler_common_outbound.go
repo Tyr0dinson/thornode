@@ -92,7 +92,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 	}
 
 	shouldSlash := true
-	var outTxn TxOutItem
+	var toi TxOutItem
 	signingTransPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	// every Signing Transaction Period , THORNode will check whether a
 	// TxOutItem had been sent by signer or not
@@ -128,7 +128,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 
 			if h.isLegitimate(ctx, &tx, &txOut.TxArray[i], inTxID) {
 				txOut.TxArray[i].OutHash = tx.Tx.ID
-				outTxn = txOut.TxArray[i]
+				toi = txOut.TxArray[i]
 				shouldSlash = false
 				if err := h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 					ctx.Logger().Error("fail to save tx out", "error", err)
@@ -185,7 +185,7 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 
 			if h.isLegitimate(ctx, &tx, &voter.Actions[i], inTxID) {
 				voter.Actions[i].OutHash = tx.Tx.ID
-				outTxn = voter.Actions[i]
+				toi = voter.Actions[i]
 				shouldSlash = false
 				h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 				break
@@ -195,13 +195,13 @@ func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, i
 
 	// TODO: In the txout manager append a new Actions item only after its outbound queue TxOutItem has already been loaded with CloutSpent?
 	// reclaim clout spent
-	spent := outTxn.CloutSpent
+	spent := toi.CloutSpent
 	if spent != nil && !spent.IsZero() {
-		cloutOut, err := h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
+		cloutOut, err := h.mgr.Keeper().GetSwapperClout(ctx, toi.ToAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
 		}
-		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
+		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
 		if err != nil {
 			ctx.Logger().Error("fail to get txin for clout calculation", "error", err)
 		}
