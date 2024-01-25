@@ -79,8 +79,7 @@ params:
   tolerance_bps: 8000
   destination: {{ addr_thor_fox }} # THOR address since a synth
 asserts:
-  - .error == "generated memo too long for source chain"
-  # Unable to shorten when the to asset is synth rather than Layer 1.
+  - .memo == "=:ETH/USDX-3999:{{ addr_thor_fox }}:2000000000"
 ---
 # Check ability to parse and further shorten a shortened to_asset.
 type: check
