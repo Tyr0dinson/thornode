@@ -103,5 +103,4 @@ params:
   tolerance_bps: 8000
   destination: {{ addr_eth_fox }}
 asserts:
-  - .error == "pool does not exist"
-  # Unable to parse a short code asset parameter.
+  - .memo == "=:ETH.USDX-3999:{{ addr_eth_fox }}:2000000000"
