@@ -1488,22 +1488,18 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 		return cosmos.ZeroUint()
 	}
 
-	maxBps := cosmos.NewUint(constants.MaxBasisPts)
+	// calculate the base pool share rewards
+	basePoolShare := common.GetSafeShare(common.SafeSub(securityBond, totalLiquidity), securityBond, totalRewards)
 
-	// calculate the base pool share rewards in basis points
-	poolShareBps := common.SafeSub(securityBond, totalLiquidity).Mul(maxBps).Quo(securityBond)
-
-	// nodes receive remaining bps
-	nodeShareBps := common.SafeSub(maxBps, poolShareBps)
+	// base node share is the remaining
+	baseNodeShare := common.SafeSub(totalRewards, basePoolShare)
 
 	// compensate for share of node rewards not received by the security bond
-	adjustmentBps := poolShareBps.Add(nodeShareBps.Mul(effectiveBond).Quo(securityBond))
+	adjustmentNodeShare := common.GetUncappedShare(effectiveBond, securityBond, baseNodeShare)
+	adjustmentRewards := basePoolShare.Add(adjustmentNodeShare)
 
-	// reduce the pool share according to the adjustment basis points
-	poolShareBps = poolShareBps.Mul(maxBps).Quo(adjustmentBps)
-
-	// calculate the pool share of the total rewards
-	return common.GetSafeShare(poolShareBps, maxBps, totalRewards)
+	// reduce the pool share according to the adjustment rewards
+	return common.GetSafeShare(basePoolShare, adjustmentRewards, totalRewards)
 }
 
 // deductPoolRewardDeficit - When swap fees accrued by the pools surpass what
