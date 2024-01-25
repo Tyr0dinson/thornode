@@ -1488,11 +1488,11 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 		return cosmos.ZeroUint()
 	}
 
-	// calculate the base pool share rewards
-	basePoolShare := common.GetSafeShare(common.SafeSub(securityBond, totalLiquidity), securityBond, totalRewards)
+	// calculate the base node share rewards
+	baseNodeShare := common.GetSafeShare(totalLiquidity, securityBond, totalRewards)
 
-	// base node share is the remaining
-	baseNodeShare := common.SafeSub(totalRewards, basePoolShare)
+	// base pool share is the remaining
+	basePoolShare := common.SafeSub(totalRewards, baseNodeShare)
 
 	// compensate for share of node rewards not received by the security bond
 	adjustmentNodeShare := common.GetUncappedShare(effectiveBond, securityBond, baseNodeShare)
