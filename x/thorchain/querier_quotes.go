@@ -493,12 +493,12 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// parse assets
-	fromAsset, err := common.NewAsset(params[fromAssetParam][0])
+	fromAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad from asset: %w", err))
 	}
 	fromAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), fromAsset)
-	toAsset, err := common.NewAsset(params[toAssetParam][0])
+	toAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad to asset: %w", err))
 	}
@@ -855,7 +855,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[assetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[assetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
@@ -966,7 +966,7 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[assetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[assetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
@@ -1106,7 +1106,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[fromAssetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
@@ -1139,7 +1139,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse target asset
-	targetAsset, err := common.NewAsset(params[toAssetParam][0])
+	targetAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad target asset: %w", err))
 	}
@@ -1680,7 +1680,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[fromAssetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
@@ -1702,7 +1702,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// parse loan asset
-	loanAsset, err := common.NewAsset(params[toAssetParam][0])
+	loanAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad loan asset: %w", err))
 	}
