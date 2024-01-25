@@ -1330,7 +1330,7 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 				poolCache[asset] = pool
 				pools = append(pools, pool)
 			}
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(cosmos.RoundToDecimal(coin.Amount, pool.Decimals)))
+			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.AssetValueInRune(coin.Amount))
 		}
 	}
 	return pools, totalProvidedLiquidity, nil
