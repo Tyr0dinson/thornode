@@ -497,10 +497,12 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad from asset: %w", err))
 	}
+	fromAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), fromAsset)
 	toAsset, err := common.NewAsset(params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad to asset: %w", err))
 	}
+	toAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), toAsset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -857,6 +859,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -967,6 +970,7 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 	asset = asset.GetSyntheticAsset() // always use the vault asset
 
 	// parse address
@@ -1106,6 +1110,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -1138,6 +1143,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad target asset: %w", err))
 	}
+	targetAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), targetAsset)
 
 	// parse destination address or generate a random one
 	sendMemo := true
@@ -1678,6 +1684,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse repayment bps
 	repayBps, err := cosmos.ParseUint(params[repayBpsParam][0])
@@ -1699,6 +1706,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad loan asset: %w", err))
 	}
+	loanAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), loanAsset)
 
 	// parse loan owner
 	loanOwner, err := common.NewAddress(params[loanOwnerParam][0])
