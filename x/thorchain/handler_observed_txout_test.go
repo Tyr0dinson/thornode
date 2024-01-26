@@ -221,8 +221,6 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
 	validatorMgr := newValidatorMgrVCUR(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
-	constAccessor := mgr.GetConstants()
-	mgr.gasMgr = newGasMgrV94(constAccessor, keeper)
 
 	handler := NewObservedTxOutHandler(mgr)
 	msg := NewMsgObservedTxOut(txs, keeper.nas[0].NodeAddress)
@@ -320,8 +318,6 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
 	validatorMgr := newValidatorMgrVCUR(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
-	constAccessor := mgr.GetConstants()
-	mgr.gasMgr = newGasMgrV94(constAccessor, keeper)
 
 	handler := NewObservedTxOutHandler(mgr)
 	msg := NewMsgObservedTxOut(txs, keeper.nas[0].NodeAddress)
@@ -406,8 +402,6 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
 	mgr.slasher = newSlasherVCUR(keeper, NewDummyEventMgr())
-	constAccessor := mgr.GetConstants()
-	mgr.gasMgr = newGasMgrV94(constAccessor, keeper)
 
 	handler := NewObservedTxOutHandler(mgr)
 	msg := NewMsgObservedTxOut(txs, keeper.nas[0].NodeAddress)
