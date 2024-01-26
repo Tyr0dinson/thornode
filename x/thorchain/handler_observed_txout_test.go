@@ -218,7 +218,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherV92(keeper, eventMgr)
+	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
 	validatorMgr := newValidatorMgrV95(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
 	constAccessor := mgr.GetConstants()
@@ -317,7 +317,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherV92(keeper, eventMgr)
+	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
 	validatorMgr := newValidatorMgrV95(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
 	constAccessor := mgr.GetConstants()
@@ -405,7 +405,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherV92(keeper, NewDummyEventMgr())
+	mgr.slasher = newSlasherVCUR(keeper, NewDummyEventMgr())
 	constAccessor := mgr.GetConstants()
 	mgr.gasMgr = newGasMgrV94(constAccessor, keeper)
 
