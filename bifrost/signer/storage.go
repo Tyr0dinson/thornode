@@ -40,7 +40,9 @@ type TxOutStoreItem struct {
 	Round7Retry  bool
 	Checkpoint   []byte
 	SignedTx     []byte
-	RetrievalKey string // To ensure consistent KV overwrite/deletion after iterator retrieval
+	RetrievalKey string `json:"-"`
+	// RetrievalKey is to ensure consistent KV overwrite/deletion after iterator retrieval;
+	// the json "-" tag is to not store it in the KVStore.
 }
 
 func NewTxOutStoreItem(height int64, item types.TxOutItem, idx int64) TxOutStoreItem {
@@ -112,9 +114,6 @@ func NewSignerStore(levelDbFolder string, opts config.LevelDBOptions, passphrase
 
 func (s *SignerStore) Set(item TxOutStoreItem) error {
 	key := item.Key()
-	// The RetrievalKey field is specifically used to reflect the key of a retrieved key-value pair, so clear it when setting.
-	item.RetrievalKey = ""
-
 	buf, err := json.Marshal(item)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to marshal to txout store item")
@@ -131,9 +130,6 @@ func (s *SignerStore) Batch(items []TxOutStoreItem) error {
 	batch := new(leveldb.Batch)
 	for _, item := range items {
 		key := item.Key()
-		// The RetrievalKey field is specifically used to reflect the key of a retrieved key-value pair, so clear it when setting.
-		item.RetrievalKey = ""
-
 		buf, err := json.Marshal(item)
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to marshal to txout store item")
