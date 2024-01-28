@@ -219,7 +219,6 @@ func (h MimirHandler) handleV133(ctx cosmos.Context, msg MsgMimir) error {
 		if msg.Value != effectiveValue {
 			return nil
 		}
-
 		// Reaching this point indicates a new mimir value is to be set.
 		h.mgr.Keeper().SetMimir(ctx, msg.Key, effectiveValue)
 		mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10))
