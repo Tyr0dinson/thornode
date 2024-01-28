@@ -62,7 +62,7 @@ func (m NodeMimirs) countActive(key string, active []cosmos.AccAddress, maj func
 		}
 
 		for _, acc := range active {
-			// skip if not an active signer
+			// skip if not the mimir's signer
 			if !acc.Equals(mimir.Signer) {
 				continue
 			}
@@ -72,6 +72,7 @@ func (m NodeMimirs) countActive(key string, active []cosmos.AccAddress, maj func
 				counter[mimir.Value] = 0
 			}
 			counter[mimir.Value]++
+			break // Having confirmed the mimir's signer is active, go to the next mimir.
 		}
 	}
 

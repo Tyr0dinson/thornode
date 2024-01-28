@@ -184,8 +184,6 @@ func (h MimirHandler) handleV133(ctx cosmos.Context, msg MsgMimir) error {
 			return nil
 		}
 
-		// Get the current Active Node supermajority Mimir key value if it exists.
-		// This code needs to be duplicated, since run either for Admin or only after SetNodeMimir.
 		nodeMimirs, err := h.mgr.Keeper().GetNodeMimirs(ctx, msg.Key)
 		if err != nil {
 			ctx.Logger().Error("fail to get node mimirs", "error", err)
@@ -196,21 +194,34 @@ func (h MimirHandler) handleV133(ctx cosmos.Context, msg MsgMimir) error {
 			ctx.Logger().Error("fail to list active validators", "error", err)
 			return err
 		}
-		currentSuperMajorityValue, currentlyHasSuperMajority := nodeMimirs.HasSuperMajority(msg.Key, activeNodes.GetNodeAddresses())
-		// if the given key doesn't have super majority , then it shall return
-		if !currentlyHasSuperMajority {
+
+		var effectiveValue int64 = -1
+		if h.mgr.Keeper().IsOperationalMimir(msg.Key) {
+			// A value of -1 indicates either a tie or that no values satisfy the required minimum votes.
+			effectiveValue = nodeMimirs.ValueOfOperational(msg.Key, 3, activeNodes.GetNodeAddresses())
+		} else {
+			// Economic Mimir, so require supermajority to set.
+			var currentlyHasSuperMajority bool
+			effectiveValue, currentlyHasSuperMajority = nodeMimirs.HasSuperMajority(msg.Key, activeNodes.GetNodeAddresses())
+			if !currentlyHasSuperMajority {
+				effectiveValue = -1
+			}
+		}
+		// If the effective value is negative (used to signal no effective value), change nothing.
+		if effectiveValue < 0 {
 			return nil
 		}
-		// Given that there is an active Node super majority,
-		// a Node must only change the Mimir key value when changing it to the super majority value.
-		if currentlyHasSuperMajority && (currentMimirValue == currentSuperMajorityValue) {
+		// If the current Mimir value is already the effective value, change nothing.
+		if currentMimirValue == effectiveValue {
 			return nil
 		}
-		// after this point , means node mimir reach consensus for the first time
-		// set admin mimir to lock in the value
-		// setting Mimir key value, and emitting a SetMimir event.
-		// if admin override node mimir voted value , and node vote again , it will then reset the admin mimir
-		h.mgr.Keeper().SetMimir(ctx, msg.Key, currentSuperMajorityValue)
+		// If the MsgMimir value doesn't match the effective value, change nothing.
+		if msg.Value != effectiveValue {
+			return nil
+		}
+
+		// Reaching this point indicates a new mimir value is to be set.
+		h.mgr.Keeper().SetMimir(ctx, msg.Key, effectiveValue)
 		mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10))
 		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
 			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
