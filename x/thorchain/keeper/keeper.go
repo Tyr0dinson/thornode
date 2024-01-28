@@ -355,6 +355,8 @@ type KeeperMimir interface {
 	SetMimir(_ cosmos.Context, key string, value int64)
 	GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error)
 	SetNodeMimir(_ cosmos.Context, key string, value int64, acc cosmos.AccAddress) error
+	DeleteNodeMimirs(ctx cosmos.Context, key string)
+	PurgeOperationalNodeMimirs(ctx cosmos.Context)
 	GetMimirIterator(ctx cosmos.Context) cosmos.Iterator
 	GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteMimir(_ cosmos.Context, key string) error

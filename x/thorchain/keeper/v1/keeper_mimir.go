@@ -96,6 +96,22 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 	return err
 }
 
+// DeleteNodeMimirs deletss all node mimir votes for a given key
+func (k KVStore) DeleteNodeMimirs(ctx cosmos.Context, key string) {
+	k.del(ctx, k.GetKey(ctx, prefixNodeMimir, key))
+}
+
+func (k KVStore) PurgeOperationalNodeMimirs(ctx cosmos.Context) {
+	iterNode := k.GetNodeMimirIterator(ctx)
+	defer iterNode.Close()
+	for ; iterNode.Valid(); iterNode.Next() {
+		key := strings.TrimPrefix(string(iterNode.Key()), string(prefixNodeMimir)+"/")
+		if k.IsOperationalMimir(key) {
+			k.DeleteNodeMimirs(ctx, key)
+		}
+	}
+}
+
 // GetMimirIterator iterate gas units
 func (k KVStore) GetMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixMimir)

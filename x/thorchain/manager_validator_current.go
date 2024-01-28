@@ -420,6 +420,10 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 	// Now that the node statuses have been updated, update the stored MinJoinVersion.
 	vm.k.SetMinJoinLast(ctx)
 
+	// On each churn, purge Operational Mimir node votes
+	// (without changing the set Mimir values themselves).
+	vm.k.PurgeOperationalNodeMimirs(ctx)
+
 	return validators
 }
 
