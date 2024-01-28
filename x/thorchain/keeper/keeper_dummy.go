@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -548,6 +549,11 @@ func (k KVStoreDummy) GetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddres
 	return int64(-1)
 }
 func (k KVStoreDummy) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {}
+func (k KVStoreDummy) IsOperationalMimir(key string) bool {
+	key = strings.ToUpper(key)
+	// Simplified representation.
+	return strings.Contains(key, "HALT") || strings.Contains(key, "PAUSE")
+}
 
 func (k KVStoreDummy) GetNodeMimirsV2(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	return NodeMimirs{}, kaboom
