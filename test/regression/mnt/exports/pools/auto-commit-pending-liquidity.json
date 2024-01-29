@@ -324,6 +324,10 @@
       "loans": [],
       "mimirs": [
         {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        },
+        {
           "key": "PENDINGLIQUIDITYAGELIMIT",
           "value": "2"
         }

@@ -323,6 +323,10 @@
         {
           "key": "DERIVEDDEPTHBASISPTS",
           "value": "10000"
+        },
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
         }
       ],
       "network": {

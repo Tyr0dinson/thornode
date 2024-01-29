@@ -373,6 +373,10 @@
           "value": "1"
         },
         {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        },
+        {
           "key": "RAGNAROK-BTC-BTC",
           "value": "1"
         },

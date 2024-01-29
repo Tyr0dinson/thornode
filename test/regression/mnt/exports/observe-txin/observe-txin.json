@@ -334,7 +334,12 @@
         }
       ],
       "loans": [],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        }
+      ],
       "network": {
         "LPIncomeSplit": "9800",
         "NodeIncomeSplit": "200",

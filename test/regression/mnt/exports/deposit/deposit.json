@@ -299,7 +299,12 @@
       "last_chain_heights": [],
       "liquidity_providers": null,
       "loans": [],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        }
+      ],
       "network": {
         "bond_reward_rune": "0",
         "burned_bep2_rune": "0",

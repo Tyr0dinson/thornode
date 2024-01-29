@@ -445,6 +445,10 @@
           "value": "1"
         },
         {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        },
+        {
           "key": "PREFERREDASSETOUTBOUNDFEEMULTIPLIER",
           "value": "10"
         }

@@ -324,6 +324,10 @@
       "loans": [],
       "mimirs": [
         {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        },
+        {
           "key": "RESCHEDULECOALESCEBLOCKS",
           "value": "5"
         }

@@ -365,6 +365,10 @@
           "value": "50310000000000"
         },
         {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        },
+        {
           "key": "TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999",
           "value": "1"
         }

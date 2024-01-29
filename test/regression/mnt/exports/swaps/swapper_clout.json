@@ -344,6 +344,10 @@
         {
           "key": "CLOUTRESET",
           "value": "10"
+        },
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
         }
       ],
       "network": {

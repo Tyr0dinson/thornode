@@ -488,6 +488,10 @@
         {
           "key": "MAXANCHORBLOCKS",
           "value": "2"
+        },
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
         }
       ],
       "network": {

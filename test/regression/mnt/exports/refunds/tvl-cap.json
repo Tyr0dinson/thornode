@@ -324,7 +324,12 @@
         }
       ],
       "loans": [],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
+        }
+      ],
       "network": {
         "NodeIncomeSplit": "10000",
         "bond_reward_rune": "1132040",

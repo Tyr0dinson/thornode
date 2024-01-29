@@ -302,6 +302,10 @@
         {
           "key": "NODEPAUSECHAINGLOBAL",
           "value": "722"
+        },
+        {
+          "key": "OPERATIONALVOTESMIN",
+          "value": "1"
         }
       ],
       "network": {
