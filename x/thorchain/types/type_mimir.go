@@ -145,7 +145,7 @@ func (m NodeMimirs) ValueOfEconomic(key string, active []cosmos.AccAddress) int6
 }
 
 // ValueOfOperational - fetches the value of a given mimir based most votes (above min vote)
-func (m NodeMimirs) ValueOfOperational(key string, minVotes int, active []cosmos.AccAddress) int64 {
+func (m NodeMimirs) ValueOfOperational(key string, minVotes int64, active []cosmos.AccAddress) int64 {
 	voteCount := make(map[int64]int)
 	hasVoted := make(map[string]bool)
 
@@ -181,7 +181,7 @@ func (m NodeMimirs) ValueOfOperational(key string, minVotes int, active []cosmos
 		}
 	}
 
-	if tie || maxVotes < minVotes {
+	if tie || int64(maxVotes) < minVotes {
 		return -1
 	}
 
