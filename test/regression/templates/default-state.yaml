@@ -100,6 +100,9 @@ genesis:
         send_enabled: false
     thorchain:
       store_version: "{{ store_version }}"  # avoid store migrations
+      mimirs:
+        - key: "OPERATIONALVOTESMIN",
+          value: "1" # Single 'dog' vote sufficient to set Operational Mimirs in regression tests
       node_accounts:
         - active_block_height: "0"
           bond: "5000000000000"

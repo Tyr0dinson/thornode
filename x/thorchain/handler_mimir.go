@@ -198,7 +198,8 @@ func (h MimirHandler) handleV133(ctx cosmos.Context, msg MsgMimir) error {
 		var effectiveValue int64
 		if h.mgr.Keeper().IsOperationalMimir(msg.Key) {
 			// A value of -1 indicates either a tie or that no values satisfy the required minimum votes.
-			effectiveValue = nodeMimirs.ValueOfOperational(msg.Key, 3, activeNodes.GetNodeAddresses())
+			operationalVotesMin := h.mgr.Keeper().GetConfigInt64(ctx, constants.OperationalVotesMin)
+			effectiveValue = nodeMimirs.ValueOfOperational(msg.Key, operationalVotesMin, activeNodes.GetNodeAddresses())
 		} else {
 			// Economic Mimir, so require supermajority to set.
 			var currentlyHasSuperMajority bool
