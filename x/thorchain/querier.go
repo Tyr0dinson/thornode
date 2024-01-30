@@ -297,12 +297,12 @@ func queryTHORName(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	}
 
 	// convert to openapi types
-	aliases := make([]openapi.ThornameAlias, len(name.Aliases)) // Set-capacity since it will be entirely filled (no skipping conditional).
+	aliases := make([]openapi.ThornameAlias, 0, len(name.Aliases))
 	for i := range name.Aliases {
-		aliases[i] = openapi.ThornameAlias{
+		aliases = append(aliases, openapi.ThornameAlias{
 			Chain:   wrapString(name.Aliases[i].Chain.String()),
 			Address: wrapString(name.Aliases[i].Address.String()),
-		}
+		})
 	}
 
 	resp := openapi.Thorname{
@@ -358,7 +358,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
 
-	vaultsWithFunds := []types.QueryVaultResp{}
+	vaultsWithFunds := make([]types.QueryVaultResp, 0, len(vaults))
 	for i := range vaults {
 		if vaults[i].Status == InactiveVault {
 			continue
@@ -391,9 +391,9 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
-	result := []QueryChainAddress{}
 	allChains := append(vault.GetChains(), common.THORChain)
 	allChainsDistinct := allChains.Distinct()
+	result := make([]QueryChainAddress, 0, len(allChainsDistinct))
 	for i := range allChainsDistinct {
 		addr, err := vault.PubKey.GetAddress(allChainsDistinct[i])
 		if err != nil {
@@ -619,7 +619,6 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		return nil, fmt.Errorf("fail to get active vaults: %w", err)
 	}
 
-	resp := []openapi.InboundAddress{}
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	if mgr.Keeper() == nil {
@@ -637,6 +636,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
 
+	resp := make([]openapi.InboundAddress, 0, len(chains))
 	for i := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chains[i] == common.THORChain {
@@ -784,14 +784,14 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 	}
 
-	result.ObserveChains = make([]types.QueryChainHeight, len(chainHeights)) // Set-capacity since it will be entirely filled (no skipping conditional).
+	result.ObserveChains = make([]types.QueryChainHeight, 0, len(chainHeights))
 	idx := 0
 	// analyze-ignore(map-iteration)
 	for c, h := range chainHeights {
-		result.ObserveChains[idx] = types.QueryChainHeight{
+		result.ObserveChains = append(result.ObserveChains, types.QueryChainHeight{
 			Chain:  c,
 			Height: h,
-		}
+		})
 		idx++
 	}
 
@@ -876,7 +876,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
-	result := []QueryNodeAccount{}
+	result := make([]QueryNodeAccount, 0, len(nodeAccounts))
 	for i := range nodeAccounts {
 		if nodeAccounts[i].RequestedToLeave && nodeAccounts[i].Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
@@ -1880,7 +1880,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			break
 		}
 	}
-	result := []QueryResLastBlockHeights{}
+	result := make([]QueryResLastBlockHeights, 0, len(chains))
 	for i := range chains {
 		if chains[i] == common.THORChain {
 			continue
@@ -2358,9 +2358,9 @@ func queryTssMetric(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 func queryInvariants(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	result := openapi.InvariantsResponse{}
 	routes := mgr.Keeper().InvariantRoutes()
-	result.Invariants = make([]string, len(routes)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+	result.Invariants = make([]string, 0, len(routes))
 	for i := range routes {
-		result.Invariants[i] = routes[i].Route
+		result.Invariants = append(result.Invariants, routes[i].Route)
 	}
 	return jsonify(ctx, result)
 }
@@ -2432,18 +2432,18 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				EvidenceHash:       block.Block.Header.EvidenceHash.String(),
 				ProposerAddress:    block.Block.Header.ProposerAddress.String(),
 			},
-			BeginBlockEvents: make([]map[string]string, len(results.BeginBlockEvents)), // Keep as set-capacity since it will be entirely filled (no skipping conditional).
-			EndBlockEvents:   make([]map[string]string, len(results.EndBlockEvents)),   // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+			BeginBlockEvents: make([]map[string]string, 0, len(results.BeginBlockEvents)),
+			EndBlockEvents:   make([]map[string]string, 0, len(results.EndBlockEvents)),
 		},
 		Txs: make([]types.QueryBlockTx, len(block.Block.Txs)), // Keep as set-capacity since it will be entirely filled (no skipping conditional).
 	}
 
 	// parse the events
 	for i := range results.BeginBlockEvents {
-		res.BeginBlockEvents[i] = eventMap(sdk.Event(results.BeginBlockEvents[i]))
+		res.BeginBlockEvents = append(res.BeginBlockEvents, eventMap(sdk.Event(results.BeginBlockEvents[i])))
 	}
 	for i := range results.EndBlockEvents {
-		res.EndBlockEvents[i] = eventMap(sdk.Event(results.EndBlockEvents[i]))
+		res.EndBlockEvents = append(res.EndBlockEvents, eventMap(sdk.Event(results.EndBlockEvents[i])))
 	}
 
 	for i := range block.Block.Txs {
@@ -2467,9 +2467,9 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		res.Txs[i].Result.Info = wrapString(results.TxsResults[i].Info)
 		res.Txs[i].Result.GasWanted = wrapString(strconv.FormatInt(results.TxsResults[i].GasWanted, 10))
 		res.Txs[i].Result.GasUsed = wrapString(strconv.FormatInt(results.TxsResults[i].GasUsed, 10))
-		res.Txs[i].Result.Events = make([]map[string]string, len(results.TxsResults[i].Events)) // Keep as set-capacity since it will be entirely filled (no skipping conditional).
+		res.Txs[i].Result.Events = make([]map[string]string, 0, len(results.TxsResults[i].Events))
 		for j := range results.TxsResults[i].Events {
-			res.Txs[i].Result.Events[j] = eventMap(sdk.Event(results.TxsResults[i].Events[j]))
+			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, eventMap(sdk.Event(results.TxsResults[i].Events[j])))
 		}
 	}
 
