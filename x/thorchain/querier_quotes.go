@@ -104,8 +104,9 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 	return common.NoAddress, fmt.Errorf("no thorname alias for chain %s", chain)
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount sdk.Uint) (affiliate common.Address, memo string, bps, newAmount sdk.Uint, err error) {
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount sdk.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdk.Uint, err error) {
 	// parse affiliate
+	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
 	if len(params[affiliateParam]) > 0 {
 		affiliate, err = quoteParseAddress(ctx, mgr, params[affiliateParam][0], common.THORChain)
@@ -134,15 +135,18 @@ func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amou
 
 	// compute the new swap amount if an affiliate fee will be taken first
 	if affiliate != common.NoAddress && !bps.IsZero() {
-		// affiliate fee modifies amount at observation before the swap
-		amount = common.GetSafeShare(
-			cosmos.NewUint(10000).Sub(bps),
+		// calculate the affiliate amount
+		affAmt = common.GetSafeShare(
+			bps,
 			cosmos.NewUint(10000),
 			amount,
 		)
+
+		// affiliate fee modifies amount at observation before the swap
+		amount = amount.Sub(affAmt)
 	}
 
-	return affiliate, memo, bps, amount, nil
+	return affiliate, memo, bps, amount, affAmt, nil
 }
 
 func hasSuffixMatch(suffix string, values []string) bool {
@@ -254,7 +258,7 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 
 	// if the generated memo is too long for the source chain send error
 	maxMemoLength := msg.Tx.Coins[0].Asset.Chain.MaxMemoLength()
-	if !msg.Tx.Coins[0].Asset.Synth && maxMemoLength > 0 && len(msg.Tx.Memo) > maxMemoLength {
+	if !msg.Tx.Coins[0].Asset.Synth && len(msg.Tx.Memo) > maxMemoLength {
 		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("generated memo too long for source chain")
 	}
 
@@ -547,9 +551,58 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, swapAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, swapAmount, affAmt, err := quoteHandleAffiliate(ctx, mgr, params, amount)
 	if err != nil {
 		return quoteErrorResponse(err)
+	}
+
+	// simulate/validate the affiliate swap
+	if affAmt.GT(sdk.ZeroUint()) {
+		if fromAsset.IsNativeRune() {
+			fee := mgr.Keeper().GetNativeTxFee(ctx)
+			if affAmt.LTE(fee) {
+				return quoteErrorResponse(fmt.Errorf("affiliate amount must be greater than native fee %s", fee))
+			}
+		} else {
+			// validate affiliate address
+			affiliateSwapMsg := &types.MsgSwap{
+				Tx: common.Tx{
+					ID:          common.BlankTxID,
+					Chain:       fromAsset.Chain,
+					FromAddress: common.NoopAddress,
+					ToAddress:   common.NoopAddress,
+					Coins: []common.Coin{
+						{
+							Asset:  fromAsset,
+							Amount: affAmt,
+						},
+					},
+					Gas: []common.Coin{{
+						Asset:  common.RuneAsset(),
+						Amount: sdk.NewUint(1),
+					}},
+					Memo: "",
+				},
+				TargetAsset:          common.RuneAsset(),
+				TradeTarget:          cosmos.ZeroUint(),
+				Destination:          affiliate,
+				AffiliateAddress:     common.NoAddress,
+				AffiliateBasisPoints: cosmos.ZeroUint(),
+			}
+
+			nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("no active node accounts: %w", err)
+			}
+			affiliateSwapMsg.Signer = nodeAccounts[0].NodeAddress
+
+			// simulate the swap
+			_, err = simulateInternal(ctx, mgr, affiliateSwapMsg)
+
+			if err != nil {
+				return quoteErrorResponse(fmt.Errorf("affiliate swap failed: %w", err))
+			}
+		}
 	}
 
 	// parse destination address or generate a random one
@@ -620,7 +673,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 	// if from asset chain has memo length restrictions use a prefix
 	memoString := memo.String()
-	if !fromAsset.Synth && fromAsset.Chain.MaxMemoLength() > 0 && len(memoString) > fromAsset.Chain.MaxMemoLength() {
+	if !fromAsset.Synth && len(memoString) > fromAsset.Chain.MaxMemoLength() {
 		if len(memo.ShortString()) < len(memoString) { // use short codes if available
 			memoString = memo.ShortString()
 		} else { // otherwise attempt to shorten
@@ -811,7 +864,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, depositAmount, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, depositAmount, _, err := quoteHandleAffiliate(ctx, mgr, params, amount)
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
@@ -1069,7 +1122,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, _, err := quoteHandleAffiliate(ctx, mgr, params, amount)
+	affiliate, affiliateMemo, affiliateBps, _, _, err := quoteHandleAffiliate(ctx, mgr, params, amount)
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
@@ -1304,7 +1357,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 
 		// if from asset chain has memo length restrictions use a prefix
 		memoString := memo.String()
-		if asset.Chain.MaxMemoLength() > 0 && len(memoString) > asset.Chain.MaxMemoLength() {
+		if len(memoString) > asset.Chain.MaxMemoLength() {
 			if len(memo.ShortString()) < len(memoString) { // use short codes if available
 				memoString = memo.ShortString()
 			} else { // otherwise attempt to shorten

@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 1.126.0
+  version: 1.127.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -2010,6 +2010,10 @@ components:
           type: integer
           format: int64
           example: 1234
+        clout_spent:
+          type: string
+          description: clout spent in RUNE for the outbound
+          example: "1234"
 
     TssMetric:
       type: object
