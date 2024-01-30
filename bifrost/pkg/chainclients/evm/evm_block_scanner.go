@@ -679,10 +679,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 // isToValidContractAddress this method make sure the transaction to address is to
 // THORChain router or a whitelist address
 func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
-	if addr == nil {
-		return false
-	}
-	return true
+	return addr != nil
 }
 
 // getTxInFromSmartContract returns txInItem
