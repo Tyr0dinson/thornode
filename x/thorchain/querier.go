@@ -612,6 +612,17 @@ func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	return jsonify(ctx, result)
 }
 
+func getStatusFlagsFromMimirValue(ctx cosmos.Context, mgr Manager, prefix, asset string) (bool, error) {
+	key := prefix + "-" + asset
+	val, err := mgr.Keeper().GetMimir(ctx, key)
+	if err != nil {
+		return false, fmt.Errorf("Fail to fetch key %s: %w", key, err)
+	}
+
+	return val > 0, nil
+}
+
+// TODO: Update tests to get a complete coverage
 func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
 	globalTradingReason := ""
@@ -662,43 +673,130 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			continue
 		}
 
+		// Check Trading status
 		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
+		isChainTradingPuasedReason := ""
+		if isGlobalTradingPaused {
+			isChainTradingPaused = isGlobalTradingPaused
+			isChainTradingPuasedReason = "Global Trading pause"
+		}
+		if isChainTradingPaused {
+			isChainTradingPuasedReason = "Chain Trading pause"
+		}
+		// (TODO) 3. Node request pause
+
+		// Check LP status
 		isChainLpPaused := mgr.Keeper().IsChainLPPaused(ctx, chain)
+		isChainLpPausedReason := ""
+		if isGlobalLpPaused {
+			isChainTradingPaused = isGlobalLpPaused
+			isChainLpPausedReason = "Global LP pause"
+		}
+		if isChainLpPaused {
+			isChainLpPausedReason = "Chain LP pause"
+		}
+		// (TODO) 3. Node request pause
+		// (TODO) 4. TVL at cap
+
+		// Check Savers Availability
+		isChainSaversPaused := false
+		isChainSaversPausedReason := ""
+		if isChainSaversPaused {
+			isChainSaversPausedReason = "Chain LP pause"
+		}
+		// (TODO) 1. Global pause
+		// (TODO) 2. Chain halted
+		// (TODO) 3. Node request pause
+		// (TODO) 4. TVL at cap
+
+		// Check Syncs Availability
+		isChainSyncPaused := false
+		isChainSyncPausedReason := ""
+		if isChainSyncPaused {
+			isChainSaversPausedReason = "Chain Sync pause"
+		}
+		// (TODO) 1. Global pause
+		// (TODO) 2. Chain halted
+		// (TODO) 3. Node request pause
+		// (TODO) 4. TVL at cap
+
+		// Check Lending Availability
+		isChainLendingPaused := false
+		isChainLendingPausedReason := ""
+		if isChainLendingPaused {
+			isChainSaversPausedReason = "Chain Lending pause"
+		}
+		// (TODO) 1. Global pause
+		// (TODO) 2. Chain halted
+		// (TODO) 3. Node request pause
+		// (TODO) 4. Lending at cap
 
 		chainMap[chain.String()] = openapi.ChainStatus{
 			TradingAvailable: openapi.Availability{
 				IsAvailable: wrapBool(!isChainTradingPaused),
-				Reason:      wrapString(""),
+				Reason:      wrapString(isChainTradingPuasedReason),
 			},
 			LpAvailable: openapi.Availability{
 				IsAvailable: wrapBool(!isChainLpPaused),
-				Reason:      wrapString(""),
+				Reason:      wrapString(isChainLpPausedReason),
 			},
 			SaversAvailable: openapi.Availability{
-				IsAvailable: wrapBool(false),
-				Reason:      wrapString(""),
+				IsAvailable: wrapBool(!isChainSaversPaused),
+				Reason:      wrapString(isChainSaversPausedReason),
 			},
 			SynthsAvailable: openapi.Availability{
-				IsAvailable: wrapBool(false),
-				Reason:      wrapString(""),
+				IsAvailable: wrapBool(!isChainSyncPaused),
+				Reason:      wrapString(isChainSyncPausedReason),
 			},
 			LendingAvailable: openapi.Availability{
-				IsAvailable: wrapBool(false),
-				Reason:      wrapString(""),
+				IsAvailable: wrapBool(!isChainLendingPaused),
+				Reason:      wrapString(isChainLendingPausedReason),
 			},
 		}
 	}
 
 	for _, poolData := range pools {
+		synthMintPausedErr := isSynthMintPaused(ctx, mgr, poolData.Asset, cosmos.ZeroUint())
+
+		// Check Lending Enable
+		isLendingEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "LENDING", poolData.Asset.GetDerivedAsset().MimirString())
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("Fail to fetch LENDING key: %w", err))
+		}
+
+		// Check POL Enable
+		isPOLEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "POL", poolData.Asset.GetDerivedAsset().MimirString())
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("Fail to fetch POL key: %w", err))
+		}
+
+		// Check TOR Enable
+		isTORAnchorEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "TORANCHOR", poolData.Asset.GetDerivedAsset().MimirString())
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("Fail to fetch TORANCHOR key: %w", err))
+		}
+
+		fmt.Println(*chainMap[string(poolData.Asset.Chain)].SynthsAvailable.IsAvailable)
+
+		// Check Sync Available
+		isPoolSyncPaused := synthMintPausedErr != nil
+		isPoolSyncPausedReason := ""
+		if !*chainMap[string(poolData.Asset.Chain)].SynthsAvailable.IsAvailable {
+			isPoolSyncPausedReason = *chainMap[string(poolData.Asset.Chain)].SynthsAvailable.Reason
+		}
+		if isPoolSyncPaused {
+			isPoolSyncPausedReason = "Pool lending pause"
+		}
+
 		poolMap[poolData.Asset.String()] = openapi.PoolStatus{
-			Status:            "",
+			Status:            poolData.Status.String(),
 			Saver:             false,
-			TORAnchor:         false,
-			LendingCollateral: false,
-			POL:               false,
+			TORAnchor:         isTORAnchorEnable,
+			LendingCollateral: isLendingEnable,
+			POL:               isPOLEnable,
 			SynthsAvailable: openapi.Availability{
-				IsAvailable: wrapBool(false),
-				Reason:      wrapString(""),
+				IsAvailable: wrapBool(!isPoolSyncPaused),
+				Reason:      wrapString(isPoolSyncPausedReason),
 			},
 		}
 	}

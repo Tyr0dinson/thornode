@@ -1776,7 +1776,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	key := "LENDING-" + loanAsset.GetDerivedAsset().MimirString()
 	val, err := mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
-		return quoteErrorResponse(fmt.Errorf("ail to fetch LENDING key: %w", err))
+		return quoteErrorResponse(fmt.Errorf("Fail to fetch LENDING key: %w", err))
 	}
 	if val <= 0 {
 		return quoteErrorResponse(fmt.Errorf("Lending is not available for this collateral asset"))
