@@ -642,18 +642,10 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 
 // isToValidContractAddress this method make sure the transaction to address is to THORChain router or a whitelist address
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
-	// get the smart contract used by thornode
-	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain)
-	if includeWhiteList {
-		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
+	if addr == nil {
+		return false
 	}
-	// combine the whitelist smart contract address
-	for _, item := range contractAddresses {
-		if strings.EqualFold(item.String(), addr.String()) {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func (e *ETHScanner) getTokenMeta(token string) (types.TokenMeta, error) {
