@@ -667,6 +667,9 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	chainMap := make(map[string]openapi.ChainStatus)
 	poolMap := make(map[string]openapi.PoolStatus)
 
+	haltChain, err := mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	isHaltChainByNode := err == nil && haltChain > ctx.BlockHeight()
+
 	for _, chain := range chains {
 
 		if chain == common.THORChain {
@@ -680,17 +683,22 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			isChainTradingPaused = isGlobalTradingPaused
 			isChainTradingPuasedReason = "Global Trading pause"
 		}
+		if isHaltChainByNode {
+			isChainTradingPuasedReason = "Node requested network to pause"
+		}
 		if isChainTradingPaused {
 			isChainTradingPuasedReason = "Chain Trading pause"
 		}
-		// (TODO) 3. Node request pause
 
 		// Check LP status
 		isChainLpPaused := mgr.Keeper().IsChainLPPaused(ctx, chain)
 		isChainLpPausedReason := ""
 		if isGlobalLpPaused {
-			isChainTradingPaused = isGlobalLpPaused
+			isChainLpPaused = isGlobalLpPaused
 			isChainLpPausedReason = "Global LP pause"
+		}
+		if isHaltChainByNode {
+			isChainTradingPuasedReason = "Node requested network to pause"
 		}
 		if isChainLpPaused {
 			isChainLpPausedReason = "Chain LP pause"
@@ -701,33 +709,39 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		// Check Savers Availability
 		isChainSaversPaused := false
 		isChainSaversPausedReason := ""
+		if isHaltChainByNode {
+			isChainTradingPuasedReason = "Node requested network to pause"
+		}
 		if isChainSaversPaused {
-			isChainSaversPausedReason = "Chain LP pause"
+			isChainSaversPausedReason = "Chain savers pause"
 		}
 		// (TODO) 1. Global pause
 		// (TODO) 2. Chain halted
-		// (TODO) 3. Node request pause
 		// (TODO) 4. TVL at cap
 
 		// Check Syncs Availability
 		isChainSyncPaused := false
 		isChainSyncPausedReason := ""
+		if isHaltChainByNode {
+			isChainTradingPuasedReason = "Node requested network to pause"
+		}
 		if isChainSyncPaused {
-			isChainSaversPausedReason = "Chain Sync pause"
+			isChainSyncPausedReason = "Chain Sync pause"
 		}
 		// (TODO) 1. Global pause
-		// (TODO) 2. Chain halted
 		// (TODO) 3. Node request pause
 		// (TODO) 4. TVL at cap
 
 		// Check Lending Availability
 		isChainLendingPaused := false
 		isChainLendingPausedReason := ""
+		if isHaltChainByNode {
+			isChainTradingPuasedReason = "Node requested network to pause"
+		}
 		if isChainLendingPaused {
-			isChainSaversPausedReason = "Chain Lending pause"
+			isChainLendingPausedReason = "Chain Lending pause"
 		}
 		// (TODO) 1. Global pause
-		// (TODO) 2. Chain halted
 		// (TODO) 3. Node request pause
 		// (TODO) 4. Lending at cap
 
