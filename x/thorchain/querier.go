@@ -630,6 +630,79 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		globalLpReason = "Global LP actions are paused"
 	}
 
+	// Get all chains
+	active, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active vaults", "error", err)
+		return nil, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	constAccessor := mgr.GetConstants()
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	if mgr.Keeper() == nil {
+		ctx.Logger().Error("keeper is nil, can't fulfill query")
+		return nil, errors.New("keeper is nil, can't fulfill query")
+	}
+	vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
+	chains := vault.GetChains()
+	if len(chains) == 0 {
+		chains = common.Chains{common.RuneAsset().Chain}
+	}
+
+	pools, err := mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pools: %w", err)
+	}
+
+	chainMap := make(map[string]openapi.ChainStatus)
+	poolMap := make(map[string]openapi.PoolStatus)
+
+	for _, chain := range chains {
+
+		if chain == common.THORChain {
+			continue
+		}
+
+		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
+		isChainLpPaused := mgr.Keeper().IsChainLPPaused(ctx, chain)
+
+		chainMap[chain.String()] = openapi.ChainStatus{
+			TradingAvailable: openapi.Availability{
+				IsAvailable: wrapBool(!isChainTradingPaused),
+				Reason:      wrapString(""),
+			},
+			LpAvailable: openapi.Availability{
+				IsAvailable: wrapBool(!isChainLpPaused),
+				Reason:      wrapString(""),
+			},
+			SaversAvailable: openapi.Availability{
+				IsAvailable: wrapBool(false),
+				Reason:      wrapString(""),
+			},
+			SynthsAvailable: openapi.Availability{
+				IsAvailable: wrapBool(false),
+				Reason:      wrapString(""),
+			},
+			LendingAvailable: openapi.Availability{
+				IsAvailable: wrapBool(false),
+				Reason:      wrapString(""),
+			},
+		}
+	}
+
+	for _, poolData := range pools {
+		poolMap[poolData.Asset.String()] = openapi.PoolStatus{
+			Status:            "",
+			Saver:             false,
+			TORAnchor:         false,
+			LendingCollateral: false,
+			POL:               false,
+			SynthsAvailable: openapi.Availability{
+				IsAvailable: wrapBool(false),
+				Reason:      wrapString(""),
+			},
+		}
+	}
+
 	status := openapi.StatusResponse{
 		Global: openapi.StatusResponseGlobal{
 			Swapping: openapi.Availability{
@@ -645,6 +718,8 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				Reason:      wrapString(globalLpReason),
 			},
 		},
+		Chain: chainMap,
+		Pool:  poolMap,
 	}
 
 	return jsonify(ctx, status)

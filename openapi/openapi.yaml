@@ -2443,6 +2443,49 @@ components:
           example: Global trading paused
           description: the reason why this operation is unavailable
 
+    PoolStatus:
+      type: object
+      required:
+        - status
+        - saver
+        - TOR_Anchor
+        - lending_collateral
+        - POL
+        - synths_available
+      properties:
+        status:   
+          type: "string"
+        saver: 
+          type: boolean
+        TOR_Anchor: 
+          type: boolean
+        lending_collateral: 
+          type: boolean
+        POL: 
+          type: boolean
+        synths_available:
+          $ref: "#/components/schemas/Availability"
+
+    ChainStatus:
+      type: object
+      required:
+        - trading_available
+        - lp_available
+        - savers_available
+        - synths_available
+        - lending_available
+      properties:
+        trading_available:
+          $ref: "#/components/schemas/Availability"
+        lp_available:
+          $ref: "#/components/schemas/Availability"
+        savers_available:
+          $ref: "#/components/schemas/Availability" 
+        synths_available:
+          $ref: "#/components/schemas/Availability" 
+        lending_available:
+          $ref: "#/components/schemas/Availability" 
+
     # ------------------------------ responses ------------------------------
 
     PoolResponse:
@@ -2890,6 +2933,14 @@ components:
               $ref: "#/components/schemas/Availability"
             lending:
               $ref: "#/components/schemas/Availability" 
+        chain:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ChainStatus'
+        pool:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PoolStatus"
 
     POLResponse:
       type: object
