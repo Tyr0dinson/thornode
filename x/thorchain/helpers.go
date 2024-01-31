@@ -80,12 +80,11 @@ func refundTxV128(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 			ModuleName:  sourceModuleName,
 		}
 
-		var success bool
 		if IsModuleAddress(mgr.Keeper(), toAddr) {
 			err = fmt.Errorf("cannot refund to a network module (%s)", toAddr)
 		} else {
 			// If no error, attempt the txout.
-			success, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+			_, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 			if err != nil {
 				ctx.Logger().Error("fail to prepare outbound tx", "error", err)
 			}
@@ -94,12 +93,10 @@ func refundTxV128(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 		if err != nil {
 			// concatenate the refund failure to refundReason
 			refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
-
 			unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund")
+			continue
 		}
-		if success {
-			refundCoins = append(refundCoins, toi.Coin)
-		}
+		refundCoins = append(refundCoins, toi.Coin)
 	}
 
 	// For refund events, emit the event after the txout attempt in order to include the 'fail to refund' reason if unsuccessful.
