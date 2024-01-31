@@ -245,3 +245,81 @@ asserts:
   - .|[.end_block_events[]|select(.type=="donate")]|length == 1
   - .end_block_events[]|select(.type=="donate")|.memo == "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
   - .end_block_events[]|select(.type=="donate")|.coin == "10100 BTC.BTC" # Since added to the pool, the vault-pool invariant isn't broken
+---
+########################################################################################
+# now test refund behaviour with non-zero LoanStreamingSwapsInterval
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: LoanStreamingSwapsInterval
+value: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# borrowed amount too small for outbound fee
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 6 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10100" # Lower than outbound fee or max_gas, though still over dust threshold
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "LOAN+:ETH.ETH:{{ addr_eth_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 2
+skip_invariants: true
+# TODO: After broken invariant fixed, remove the skip_invariants and the below invariant check.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == true
+  - .msg[0] | contains("oversolvent")
+  - .msg[0] | contains("tor")
+  # TOR should not be left stuck in the Pool Module, but is.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|..|select(.type? == "refund") | .coin | contains("THOR.TOR")
+  - .|..|select(.type? == "refund") | .reason | contains("fail to refund") | not
+  # The refund event should be a 'fail to refund' that burns TOR, but it isn't.
+---
+########################################################################################
+# cat uses rune to repay fox's small collateral
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "9800000"
+    asset: "rune"
+memo: "LOAN-:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 2
+skip_invariants: true
+# TODO: After broken invariant fixed, remove the skip_invariants.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|..|select(.type? == "refund") | .coin | contains("THOR.BTC")
+  - .|..|select(.type? == "refund") | .reason | contains("fail to refund")
+  - .|..|select(.type? == "refund") | .from == "{{ addr_btc_fox }}"
+  # It is appropriate that there was a fail to refund,
+  # but the 'from' of this cat-origin transaction should be a network module, not fox.
