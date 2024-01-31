@@ -2218,3 +2218,12 @@ func addGasFeesV1(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	}
 	return nil
 }
+
+func IsModuleAccAddressV121(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
+	return accAddr.Equals(keeper.GetModuleAccAddress(AsgardName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(BondName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(ReserveName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(LendingName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
+}
