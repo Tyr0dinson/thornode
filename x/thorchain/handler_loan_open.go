@@ -174,6 +174,8 @@ func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 func (h LoanOpenHandler) openLoan(ctx cosmos.Context, msg MsgLoanOpen) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return h.openLoanV128(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.openLoanV121(ctx, msg)
 	case version.GTE(semver.MustParse("1.113.0")):
@@ -217,7 +219,7 @@ func (h LoanOpenHandler) handleV113(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) openLoanV128(ctx cosmos.Context, msg MsgLoanOpen) error {
 	var err error
 	zero := cosmos.ZeroUint()
 
