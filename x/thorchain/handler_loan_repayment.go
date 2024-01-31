@@ -246,8 +246,16 @@ func (h LoanRepaymentHandler) repayV128(ctx cosmos.Context, msg MsgLoanRepayment
 	}
 
 	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
-	// As this is to be a swap from derived asset which has been sent to AsgardName, the ToAddress should be AsgardName's address.
-	tx := common.NewTx(txID, msg.Owner, common.NoopAddress, coins, common.Gas{fakeGas}, "noop")
+	// LendingName's Address takes the role of an address that might add a swap by transferring Coins in a MsgDeposit,
+	// its FromAddress indicating that the coins should be cleaned up rather than left stuck in a network module.
+	// The ToAddress would normally be AsgardName's Address to which the Coins were sent,
+	// but here the ToAddress is NoopAddress to signal protocol-origin.
+	lendingAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
+	if err != nil {
+		ctx.Logger().Error("fail to get lending module address", "error", err)
+		return err
+	}
+	tx := common.NewTx(txID, lendingAddr, common.NoopAddress, coins, common.Gas{fakeGas}, "noop")
 	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, msg.MinOut, common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, 0, uint64(ssInterval), msg.Signer)
 	if ssInterval == 0 {
 		handler := NewSwapHandler(h.mgr)

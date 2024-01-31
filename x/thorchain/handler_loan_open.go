@@ -329,8 +329,16 @@ func (h LoanOpenHandler) openLoanV128(ctx cosmos.Context, msg MsgLoanOpen) error
 			ssInterval = 0
 		}
 
-		// As this is to be a swap from TOR which has been sent to AsgardName, the ToAddress should be AsgardName's address.
-		tx := common.NewTx(txID, common.NoopAddress, common.NoopAddress, common.NewCoins(torCoin), nil, "noop")
+		// LendingName's Address takes the role of an address that might add a swap by transferring Coins in a MsgDeposit,
+		// its FromAddress indicating that the coins should be cleaned up rather than left stuck in a network module.
+		// The ToAddress would normally be AsgardName's Address to which the Coins were sent,
+		// but here the ToAddress is NoopAddress to signal protocol-origin.
+		lendingAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
+		if err != nil {
+			ctx.Logger().Error("fail to get lending module address", "error", err)
+			return err
+		}
+		tx := common.NewTx(txID, lendingAddr, common.NoopAddress, common.NewCoins(torCoin), nil, "noop")
 		// we do NOT pass affiliate info here as it was already taken out on the swap of the collateral to derived asset
 		swapMsg := NewMsgSwap(tx, msg.TargetAsset, msg.TargetAddress, msg.MinOut, common.NoAddress, zero, msg.Aggregator, msg.AggregatorTargetAddress, &msg.AggregatorTargetLimit, 0, 0, uint64(ssInterval), msg.Signer)
 		if ssInterval == 0 {
