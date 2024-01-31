@@ -125,6 +125,8 @@ func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) e
 func (h LoanRepaymentHandler) repay(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return h.repayV128(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.repayV121(ctx, msg)
 	case version.GTE(semver.MustParse("1.113.0")):
@@ -170,7 +172,7 @@ func (h LoanRepaymentHandler) handleV113(ctx cosmos.Context, msg MsgLoanRepaymen
 	}
 }
 
-func (h LoanRepaymentHandler) repayV121(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) repayV128(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	loan, err := h.mgr.Keeper().GetLoan(ctx, msg.CollateralAsset, msg.Owner)
 	if err != nil {

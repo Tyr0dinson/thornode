@@ -572,6 +572,108 @@ func (h LoanRepaymentHandler) handleV107(ctx cosmos.Context, msg MsgLoanRepaymen
 	}
 }
 
+func (h LoanRepaymentHandler) repayV121(ctx cosmos.Context, msg MsgLoanRepayment) error {
+	// collect data
+	loan, err := h.mgr.Keeper().GetLoan(ctx, msg.CollateralAsset, msg.Owner)
+	if err != nil {
+		ctx.Logger().Error("fail to get loan", "error", err)
+		return err
+	}
+	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, msg.CollateralAsset)
+	if err != nil {
+		return err
+	}
+
+	// update Loan record
+	loan.DebtRepaid = loan.DebtRepaid.Add(msg.Coin.Amount)
+	loan.LastRepayHeight = ctx.BlockHeight()
+
+	// burn TOR coins
+	if err := h.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, common.NewCoins(msg.Coin)); err != nil {
+		ctx.Logger().Error("fail to move coins during loan repayment", "error", err)
+		return err
+	} else {
+		err := h.mgr.Keeper().BurnFromModule(ctx, ModuleName, msg.Coin)
+		if err != nil {
+			ctx.Logger().Error("fail to burn coins during loan repayment", "error", err)
+			return err
+		}
+		burnEvt := NewEventMintBurn(BurnSupplyType, msg.Coin.Asset.Native(), msg.Coin.Amount, "loan_repayment")
+		if err := h.mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
+			ctx.Logger().Error("fail to emit burn event", "error", err)
+		}
+	}
+
+	// loan must be fully repaid to return collateral
+	if !loan.Debt().IsZero() {
+		h.mgr.Keeper().SetLoan(ctx, loan)
+
+		// emit events and metrics
+		evt := NewEventLoanRepayment(cosmos.ZeroUint(), msg.Coin.Amount, msg.CollateralAsset, msg.Owner, msg.TxID)
+		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); nil != err {
+			ctx.Logger().Error("fail to emit repayment open event", "error", err)
+		}
+
+		return nil
+	}
+
+	redeem := loan.Collateral()
+	// only return collateral when collateral is non-zero
+	if redeem.IsZero() {
+		return nil
+	}
+
+	loan.CollateralWithdrawn = loan.CollateralWithdrawn.Add(redeem)
+
+	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
+	if !ok {
+		return fmt.Errorf("fail to get txid")
+	}
+
+	coins := common.NewCoins(common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), redeem))
+
+	// transfer derived asset from the lending to asgard before swap to L1 collateral
+	err = h.mgr.Keeper().SendFromModuleToModule(ctx, LendingName, AsgardName, coins)
+	if err != nil {
+		ctx.Logger().Error("fail to send from lending to asgard", "error", err)
+		return err
+	}
+
+	// Get streaming swaps interval to use for loan swap
+	ssInterval := h.mgr.Keeper().GetConfigInt64(ctx, constants.LoanStreamingSwapsInterval)
+	if ssInterval <= 0 || !msg.MinOut.IsZero() {
+		ssInterval = 0
+	}
+
+	fakeGas := common.NewCoin(msg.Coin.Asset, cosmos.OneUint())
+	// As this is to be a swap from derived asset which has been sent to AsgardName, the ToAddress should be AsgardName's address.
+	tx := common.NewTx(txID, msg.Owner, common.NoopAddress, coins, common.Gas{fakeGas}, "noop")
+	swapMsg := NewMsgSwap(tx, msg.CollateralAsset, msg.Owner, msg.MinOut, common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, 0, uint64(ssInterval), msg.Signer)
+	if ssInterval == 0 {
+		handler := NewSwapHandler(h.mgr)
+		if _, err := handler.Run(ctx, swapMsg); err != nil {
+			ctx.Logger().Error("fail to make second swap when closing a loan", "error", err)
+			return err
+		}
+	} else {
+		if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 1); err != nil {
+			ctx.Logger().Error("fail to add swap to queue", "error", err)
+			return err
+		}
+	}
+
+	// update kvstore
+	h.mgr.Keeper().SetLoan(ctx, loan)
+	h.mgr.Keeper().SetTotalCollateral(ctx, msg.CollateralAsset, common.SafeSub(totalCollateral, redeem))
+
+	// emit events and metrics
+	evt := NewEventLoanRepayment(redeem, msg.Coin.Amount, msg.CollateralAsset, msg.Owner, msg.TxID)
+	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); nil != err {
+		ctx.Logger().Error("fail to emit loan repayment event", "error", err)
+	}
+	return nil
+}
+
 func (h LoanRepaymentHandler) repayV107(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	lendAddr, err := h.mgr.Keeper().GetModuleAddress(LendingName)
