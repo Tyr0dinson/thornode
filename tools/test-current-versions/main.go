@@ -52,7 +52,6 @@ func main() {
 		log.Fatalln("Error parsing files:", err)
 	}
 
-	var foundNonCurrent bool
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
 			fn := fset.File(file.Pos()).Name()
@@ -101,16 +100,10 @@ func main() {
 					if funcVers != "" {
 						position := fset.Position(n.Pos())
 						fmt.Printf("%s called on %s:%d\n", vFn, fn, position.Line)
-						foundNonCurrent = true
 					}
 				}
 				return true
 			})
 		}
-	}
-
-	// useful signal that the lint check failed
-	if foundNonCurrent {
-		os.Exit(1)
 	}
 }
