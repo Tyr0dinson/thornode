@@ -282,23 +282,12 @@ txs:
 ---
 type: create-blocks
 count: 2
-skip_invariants: true
-# TODO: After broken invariant fixed, remove the skip_invariants and the below invariant check.
----
-type: check
-endpoint: http://localhost:1317/thorchain/invariant/asgard
-asserts:
-  - .broken == true
-  - .msg[0] | contains("oversolvent")
-  - .msg[0] | contains("tor")
-  # TOR should not be left stuck in the Pool Module, but is.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|..|select(.type? == "refund") | .coin | contains("THOR.TOR")
-  - .|..|select(.type? == "refund") | .reason | contains("fail to refund") | not
-  # The refund event should be a 'fail to refund' that burns TOR, but it isn't.
+  - .|..|select(.type? == "refund") | .reason | contains("fail to refund")
 ---
 ########################################################################################
 # cat uses rune to repay fox's small collateral
@@ -312,14 +301,10 @@ memo: "LOAN-:BTC.BTC:{{ addr_btc_fox }}"
 ---
 type: create-blocks
 count: 2
-skip_invariants: true
-# TODO: After broken invariant fixed, remove the skip_invariants.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|..|select(.type? == "refund") | .coin | contains("THOR.BTC")
   - .|..|select(.type? == "refund") | .reason | contains("fail to refund")
-  - .|..|select(.type? == "refund") | .from == "{{ addr_btc_fox }}"
-  # It is appropriate that there was a fail to refund,
-  # but the 'from' of this cat-origin transaction should be a network module, not fox.
+  - .|..|select(.type? == "refund") | .from == "{{ addr_module_lending }}"
