@@ -54,50 +54,52 @@ func refundTxV128(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 		}
 
 		// Only attempt an outbound if a fee can be taken from the coin.
-		if coin.Asset.IsNativeRune() || !pool.BalanceRune.IsZero() {
-			toAddr := tx.Tx.FromAddress
-			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
-			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
-				// If the memo specifies a refund address, send the refund to that address. If
-				// refund memo can't be parsed or is invalid for the refund chain, it will
-				// default back to the sender address
-				if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
-					toAddr = memo.GetRefundAddress()
-				}
-			}
+		// Zombie coins are just dropped.
+		if !coin.Asset.IsNativeRune() && pool.BalanceRune.IsZero() {
+			continue
+		}
 
-			toi := TxOutItem{
-				Chain:       coin.Asset.GetChain(),
-				InHash:      tx.Tx.ID,
-				ToAddress:   toAddr,
-				VaultPubKey: tx.ObservedPubKey,
-				Coin:        coin,
-				Memo:        NewRefundMemo(tx.Tx.ID).String(),
-				ModuleName:  sourceModuleName,
-			}
-
-			var success bool
-			if IsModuleAddress(mgr.Keeper(), toAddr) {
-				err = fmt.Errorf("cannot refund to a network module (%s)", toAddr)
-			} else {
-				// If no error, attempt the txout.
-				success, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
-				if err != nil {
-					ctx.Logger().Error("fail to prepare outbound tx", "error", err)
-				}
-			}
-
-			if err != nil {
-				// concatenate the refund failure to refundReason
-				refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
-
-				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund")
-			}
-			if success {
-				refundCoins = append(refundCoins, toi.Coin)
+		toAddr := tx.Tx.FromAddress
+		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
+		if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
+			// If the memo specifies a refund address, send the refund to that address. If
+			// refund memo can't be parsed or is invalid for the refund chain, it will
+			// default back to the sender address
+			if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
+				toAddr = memo.GetRefundAddress()
 			}
 		}
-		// Zombie coins are just dropped.
+
+		toi := TxOutItem{
+			Chain:       coin.Asset.GetChain(),
+			InHash:      tx.Tx.ID,
+			ToAddress:   toAddr,
+			VaultPubKey: tx.ObservedPubKey,
+			Coin:        coin,
+			Memo:        NewRefundMemo(tx.Tx.ID).String(),
+			ModuleName:  sourceModuleName,
+		}
+
+		var success bool
+		if IsModuleAddress(mgr.Keeper(), toAddr) {
+			err = fmt.Errorf("cannot refund to a network module (%s)", toAddr)
+		} else {
+			// If no error, attempt the txout.
+			success, err = mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
+			if err != nil {
+				ctx.Logger().Error("fail to prepare outbound tx", "error", err)
+			}
+		}
+
+		if err != nil {
+			// concatenate the refund failure to refundReason
+			refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
+
+			unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund")
+		}
+		if success {
+			refundCoins = append(refundCoins, toi.Coin)
+		}
 	}
 
 	// For refund events, emit the event after the txout attempt in order to include the 'fail to refund' reason if unsuccessful.
