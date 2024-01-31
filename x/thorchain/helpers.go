@@ -1260,23 +1260,54 @@ func triggerPreferredAssetSwapV121(ctx cosmos.Context, mgr Manager, affiliateAdd
 	return nil
 }
 
-func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
-	version := keeper.GetVersion()
+func GetModuleList(version semver.Version) []string {
 	switch {
 	case version.GTE(semver.MustParse("1.128.0")):
-		return IsModuleAccAddressV128(keeper, accAddr)
+		return getModuleListV128()
+	default:
+		return []string{}
+	}
+}
+
+func getModuleListV128() []string {
+	return []string{
+		ModuleName,
+		ReserveName,
+		BondName,
+		AsgardName,
+		AffiliateCollectorName,
+		LendingName,
+	}
+}
+
+func IsModuleAddress(keeper keeper.Keeper, addr common.Address) bool {
+	for _, module := range GetModuleList(keeper.GetVersion()) {
+		moduleAddr, err := keeper.GetModuleAddress(module)
+		if err != nil {
+			// Can (treat as) never be equal any underivable address.
+			continue
+		}
+		if addr.Equals(moduleAddr) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
+	version := keeper.GetVersion()
+	// TODO: Remove switch on hard fork.
+	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		for _, module := range GetModuleList(keeper.GetVersion()) {
+			if accAddr.Equals(keeper.GetModuleAccAddress(module)) {
+				return true
+			}
+		}
+		return false
 	case version.GTE(semver.MustParse("1.121.0")):
 		return IsModuleAccAddressV121(keeper, accAddr)
 	default:
 		return false
 	}
-}
-
-func IsModuleAccAddressV128(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
-	return accAddr.Equals(keeper.GetModuleAccAddress(AsgardName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(BondName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(ReserveName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(LendingName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
 }
