@@ -22,6 +22,8 @@ import (
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return refundTxV128(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return refundTxV124(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.117.0")):
@@ -37,7 +39,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 	}
 }
 
-func refundTxV124(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
+func refundTxV128(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
