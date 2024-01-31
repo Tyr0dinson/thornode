@@ -148,6 +148,7 @@ lint-ci:
 	@go run tools/analyze/main.go ./common/... ./constants/... ./x/... ./mimir/...
 	@go run tools/lint-whitelist-tokens/main.go
 	@./scripts/lint-versions.bash
+	@./scripts/lint-test-current-managers.bash
 	@./scripts/lint-mimir-ids.bash
 ifdef CI_MERGE_REQUEST_ID
 	# only check changes on merge requests
