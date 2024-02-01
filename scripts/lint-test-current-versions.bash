@@ -5,7 +5,6 @@ set -euo pipefail
 # This script checks to ensure only current managers are used in unversioned/current tests
 echo -n "Checking unversioned tests for versioned managers... "
 
-VERSION=$(awk -F. '{ print $2 }' version)
 CI_MERGE_REQUEST_TITLE=${CI_MERGE_REQUEST_TITLE-}
 
 # skip for develop

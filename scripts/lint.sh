@@ -25,3 +25,13 @@ go mod verify
 ./scripts/lint-managers.bash
 
 ./scripts/lint-erc20s.bash
+
+./scripts/lint-test-current-versions.bash
+
+go run tools/analyze/main.go ./common/... ./constants/... ./x/... ./mimir/...
+
+go run tools/lint-whitelist-tokens/main.go
+
+./scripts/lint-versions.bash
+
+./scripts/lint-mimir-ids.bash
