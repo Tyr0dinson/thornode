@@ -568,6 +568,8 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	if scheduledMaxFee.Cmp(estimatedFee) < 0 {
 		c.logger.Warn().
 			Stringer("in_hash", txOutItem.InHash).
+			Stringer("rate", gasRate).
+			Uint64("estimated_gas", estimatedGas).
 			Str("estimated_fee", estimatedFee.String()).
 			Str("scheduled_max_fee", scheduledMaxFee.String()).
 			Msg("max gas exceeded, aborting to let thornode reschedule")
@@ -639,7 +641,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to fetch account(%s) finalized nonce: %w", fromAddr, err)
 		}
-		if nonce-finalizedNonce > c.cfg.MaxPendingNonces {
+		if (nonce - finalizedNonce) > c.cfg.MaxPendingNonces {
 			c.logger.Warn().
 				Uint64("nonce", nonce).
 				Uint64("finalizedNonce", finalizedNonce).
