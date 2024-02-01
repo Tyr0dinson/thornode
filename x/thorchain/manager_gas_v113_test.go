@@ -3,6 +3,8 @@ package thorchain
 import (
 	. "gopkg.in/check.v1"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -42,7 +44,8 @@ func (GasManagerTestSuiteV113) TestGasManagerV113(c *C) {
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(38500)),
 	}, true)
 	c.Assert(gasMgr.GetGas(), HasLen, 3)
-	eventMgr := newEventMgrV113()
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
 	gasMgr.EndBlock(ctx, k, eventMgr)
 }
 
@@ -127,7 +130,8 @@ func (GasManagerTestSuiteV113) TestDifferentValidations(c *C) {
 	gasMgr := newGasMgrV113(constAccessor, k)
 	gasMgr.BeginBlock(mgr)
 	helper := newGasManagerTestHelper(k)
-	eventMgr := newEventMgrV113()
+	eventMgr, err := GetEventManager(semver.MustParse("1.113.0"))
+	c.Assert(err, IsNil)
 	gasMgr.EndBlock(ctx, helper, eventMgr)
 
 	helper.failGetNetwork = true
