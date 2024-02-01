@@ -601,7 +601,6 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 			// simulate the swap
 			_, err = simulateInternal(ctx, mgr, affiliateSwapMsg)
-
 			if err != nil {
 				return quoteErrorResponse(fmt.Errorf("affiliate swap failed: %w", err))
 			}
