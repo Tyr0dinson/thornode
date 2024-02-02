@@ -436,42 +436,72 @@ func (c *Client) getBlockWithoutVerbose(height int64) (*btcjson.GetBlockVerboseT
 		batches = append(batches, batch)
 	}
 
-	// process batch requests one at a time to avoid overloading the node
-	retries := 0
-	for i := 0; i < len(batches); i++ {
-		var results []*btcjson.TxRawResult
-		var errs []error
-		results, errs, err = c.rpc.BatchGetRawTransactionVerbose(batches[i])
+	sem := make(chan struct{}, c.cfg.UTXO.ConcurrentTransactionBatches)
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	wg.Add(len(batches))
+	var returnErr error
 
-		// if there was no rpc error, check for any tx errors
-		txErrCount := 0
-		if err == nil {
-			for _, txErr := range errs {
-				if txErr != nil {
-					err = txErr
+	for i := range batches {
+		sem <- struct{}{}
+
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			var results []*btcjson.TxRawResult
+			var errs []error
+			var rpcErr error
+
+			// retry up to 3 times
+			for j := 0; j < 3; j++ {
+				// abort if returnErr is set
+				mu.Lock()
+				if returnErr != nil {
+					mu.Unlock()
+					c.log.Error().Msgf("aborting batch %d due to other failed batch for block", i)
+					return
 				}
-				txErrCount++
+				mu.Unlock()
+
+				results, errs, rpcErr = c.rpc.BatchGetRawTransactionVerbose(batches[i])
+				txErrCount := 0
+				if rpcErr == nil {
+					for _, txErr := range errs {
+						if txErr != nil {
+							rpcErr = txErr
+						}
+						txErrCount++
+					}
+				}
+
+				if rpcErr == nil {
+					mu.Lock()
+					for _, tx := range results {
+						blockResult.Tx = append(blockResult.Tx, *tx)
+					}
+					mu.Unlock()
+					return
+				}
+
+				if j < 2 {
+					c.log.Err(rpcErr).Int("txErrCount", txErrCount).Msgf("retrying block txs batch %d", i)
+				}
 			}
-		}
 
-		// retry the batch a few times on any errors to avoid wasted work
-		// TODO: implement partial retry
-		if err != nil {
-			if retries >= 3 {
-				return &btcjson.GetBlockVerboseTxResult{}, err
+			// if we get here, we failed all retries
+			mu.Lock()
+			if returnErr == nil {
+				returnErr = rpcErr
 			}
+			mu.Unlock()
 
-			c.log.Err(err).Int("txErrCount", txErrCount).Msgf("retrying block txs batch %d", i)
-			time.Sleep(time.Second)
-			retries++
-			i-- // retry the same batch
-			continue
-		}
+		}(i)
+	}
+	wg.Wait()
 
-		// add transactions to block result
-		for _, tx := range results {
-			blockResult.Tx = append(blockResult.Tx, *tx)
-		}
+	if returnErr != nil {
+		return &btcjson.GetBlockVerboseTxResult{}, returnErr
 	}
 
 	return &blockResult, nil

@@ -626,6 +626,12 @@ type BifrostChainConfiguration struct {
 		// TODO: Remove after full adoption on all UTXO chains.
 		ClientV2 bool `mapstructure:"client_v2"`
 
+		// ConcurrentTransactionBatches is the number of concurrent transaction batches
+		// used to fetch block verbose transactions. This is currently unique to Dogecoin,
+		// which requires us to fan out for the verbose raw transactions in a block, due to
+		// a lack of verbosity level 2 support in getblock.
+		ConcurrentTransactionBatches int `mapstructure:"concurrent_transaction_batches"`
+
 		// NOTE: The following fields must be consistent across all validators. Otherwise,
 		// nodes can fail to sign outbounds from asgard since they may build different
 		// transactions. They may also be slashed for reporting different fee and solvency.
