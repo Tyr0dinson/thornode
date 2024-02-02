@@ -347,7 +347,7 @@ func (tos *TxOutStorageVCUR) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager,
 	return tos.addToBlockOut(ctx, mgr, toi, height)
 }
 
-func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAsset cosmos.Uint, maxGasAsset common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
+func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
 	var outputs []TxOutItem
 
 	// When there is more than one vault, sort the vaults by
@@ -381,7 +381,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 				if err != nil {
 					ctx.Logger().Error("failed to convert chains", "error", err)
 				}
-				if chains.Has(maxGasAsset.Asset.GetChain()) {
+				if chains.Has(maxGasCoin.Asset.GetChain()) {
 					continue
 				}
 			}
@@ -415,19 +415,19 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 
 		vaultCoinAmount := vault.GetCoin(toi.Coin.Asset).Amount
 		// if the asset in the vault is not enough to pay for the fee , then skip it
-		if vaultCoinAmount.LTE(transactionFeeAsset) {
+		if vaultCoinAmount.LTE(transactionFeeAmount) {
 			continue
 		}
 		// if the vault doesn't have gas asset in it , or it doesn't have enough to pay for gas
 		gasAsset := vault.GetCoin(toi.Chain.GetGasAsset())
-		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasAsset.Amount) {
+		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasCoin.Amount) {
 			continue
 		}
 
 		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
 		// so reduce the available vaultCoinAmount by that MaxGas Amount.
-		if toi.Coin.Asset.Equals(maxGasAsset.Asset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasAsset.Amount)
+		if toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasCoin.Amount)
 			if vaultCoinAmount.IsZero() {
 				continue
 			}
@@ -511,14 +511,15 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	}
 
 	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	transactionFee, err := tos.gasManager.GetAssetOutboundFee(ctx, toi.Coin.Asset, false)
+	transactionFeeAmount, err := tos.gasManager.GetAssetOutboundFee(ctx, toi.Coin.Asset, false)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
 	}
-	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
+	maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 	if err != nil {
-		ctx.Logger().Error("fail to get max gas asset", "error", err)
+		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas coin: %w", err)
 	}
+	gasRate := int64(tos.gasManager.GetGasRate(ctx, toi.Chain).Uint64())
 	if toi.Chain.IsTHORChain() {
 		outputs = append(outputs, toi)
 	} else {
@@ -564,7 +565,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// iterate over discovered vaults and find vaults to send funds from
 
 			// All else being equal, choose active Asgards over retiring Asgards.
-			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFee, maxGasAsset, toi, append(activeAsgards, retiringAsgards...))
+			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, append(activeAsgards, retiringAsgards...))
 
 			// Check we found enough funds to satisfy the request, error if we didn't
 			if !remaining.IsZero() {
@@ -579,10 +580,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
 		if outputs[i].MaxGas.IsEmpty() {
-			maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, outputs[i].Chain)
-			if err != nil {
-				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas coin: %w", err)
-			}
 			outputs[i].MaxGas = common.Gas{
 				maxGasCoin,
 			}
@@ -591,10 +588,10 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				return nil, cosmos.ZeroUint(), fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
 
-			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
+			outputs[i].GasRate = gasRate
 		}
 
-		runeFee := transactionFee // Fee is the prescribed fee
+		runeFee := transactionFeeAmount // Fee is the prescribed fee
 
 		// get the lending address to avoid deducting the outbound fee
 		lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
@@ -606,7 +603,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
 		if err == nil && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) && !toi.ToAddress.Equals(lendAddr) {
 			if outputs[i].Coin.IsRune() {
-				if outputs[i].Coin.Amount.LTE(transactionFee) {
+				if outputs[i].Coin.Amount.LTE(transactionFeeAmount) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
 				finalRuneFee = finalRuneFee.Add(runeFee)
@@ -625,7 +622,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 
 				// if pool units is zero, no asset fee is taken
 				if !pool.GetPoolUnits().IsZero() {
-					assetFee := transactionFee
+					assetFee := transactionFeeAmount
 					if outputs[i].Coin.Amount.LTE(assetFee) {
 						assetFee = outputs[i].Coin.Amount // Fee is the full amount
 					}
@@ -658,7 +655,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 						ctx.Logger().
 							With("inbound", toi.InHash).
 							With("amount", outputs[i].Coin.Amount).
-							With("fee", transactionFee).
+							With("fee", transactionFeeAmount).
 							Error("dropping gas asset output below dust threshold")
 						continue
 					}
