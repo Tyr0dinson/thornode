@@ -572,6 +572,11 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		}
 	}
 
+	// get the lending address to avoid deducting the outbound fee
+	lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
+	if err != nil {
+		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
+	}
 	var finalOutput []TxOutItem
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
@@ -589,12 +594,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		}
 
 		runeFee := transactionFeeAmount // Fee is the prescribed fee
-
-		// get the lending address to avoid deducting the outbound fee
-		lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
-		if err != nil {
-			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
-		}
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
