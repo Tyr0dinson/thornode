@@ -509,7 +509,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool for txout manager: %w", err)
 	}
 
-	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	transactionFeeAmount, err := tos.gasManager.GetAssetOutboundFee(ctx, toi.Coin.Asset, false)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
@@ -529,6 +528,8 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// List all pending outbounds for the asset, this will be used
 			// to deduct balances of vaults that have outstanding txs assigned
 			pendingOutbounds := tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
+
+			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
 			// ///////////// COLLECT ACTIVE ASGARD VAULTS ///////////////////
 			activeAsgards, err := tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
