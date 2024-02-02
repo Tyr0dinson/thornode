@@ -242,15 +242,15 @@ func (gm *GasMgrVCUR) getRuneInAssetValue(ctx cosmos.Context, transactionFee cos
 // (If done completely, perhaps mark GetMaxGas/GetGasRate to be removed on hard fork.)
 //
 // GetGasDetails calculates a consistent MaxGas Coin and GasRate for the network's TransactionSize.
-func (gm *GasMgrVCUR) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, cosmos.Uint, error) {
+func (gm *GasMgrVCUR) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error) {
 	networkFee, err := gm.GetNetworkFee(ctx, chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get network fee", "error", err, "chain", chain)
-		return common.NoCoin, cosmos.ZeroUint(), fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
+		return common.NoCoin, 0, fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
 	}
 	if err := networkFee.Valid(); err != nil {
 		ctx.Logger().Error("network fee is invalid", "error", err, "chain", chain)
-		return common.NoCoin, cosmos.ZeroUint(), fmt.Errorf("network fee for chain(%s) is invalid: %w", chain, err)
+		return common.NoCoin, 0, fmt.Errorf("network fee for chain(%s) is invalid: %w", chain, err)
 	}
 
 	gasRate := cosmos.NewUint(networkFee.TransactionFeeRate)
@@ -275,13 +275,13 @@ func (gm *GasMgrVCUR) GetGasDetails(ctx cosmos.Context, chain common.Chain) (com
 		maxGasCoin.Amount = cosmos.ZeroUint()
 	}
 
-	return maxGasCoin, gasRate, nil
+	return maxGasCoin, int64(gasRate.Uint64()), nil
 }
 
 // GetGasRate return the gas rate
 func (gm *GasMgrVCUR) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	_, gasRate, _ := gm.GetGasDetails(ctx, chain)
-	return gasRate
+	return cosmos.NewUint(uint64(gasRate))
 }
 
 func (gm *GasMgrVCUR) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error) {

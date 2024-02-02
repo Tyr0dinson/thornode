@@ -75,7 +75,7 @@ type GasManager interface {
 	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)
 	GetGas() common.Gas
 	GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error)
-	GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, cosmos.Uint, error)
+	GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error)
 	GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error)
 	GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint
 	GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error)

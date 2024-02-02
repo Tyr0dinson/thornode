@@ -66,9 +66,7 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		gasRate, okGasRate := gasRateCache[tx.Chain]
 		// update cache if needed
 		if !okMaxGas || !okGasRate {
-			var gasRateUint cosmos.Uint
-			maxGasCoin, gasRateUint, _ = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
-			gasRate = int64(gasRateUint.Uint64())
+			maxGasCoin, gasRate, _ = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
 			maxGasCache[tx.Chain] = maxGasCoin
 			gasRateCache[tx.Chain] = gasRate
 		}
@@ -516,11 +514,10 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
 	}
-	maxGasCoin, gasRateUint, err := tos.gasManager.GetGasDetails(ctx, toi.Chain)
+	maxGasCoin, gasRate, err := tos.gasManager.GetGasDetails(ctx, toi.Chain)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas details: %w", err)
 	}
-	gasRate := int64(gasRateUint.Uint64())
 	if toi.Chain.IsTHORChain() {
 		outputs = append(outputs, toi)
 	} else {

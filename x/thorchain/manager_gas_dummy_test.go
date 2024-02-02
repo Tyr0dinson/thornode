@@ -32,13 +32,13 @@ func (m *DummyGasManager) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSu
 	return cosmos.ZeroUint()
 }
 
-func (m *DummyGasManager) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, cosmos.Uint, error) {
+func (m *DummyGasManager) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error) {
 	if chain.Equals(common.BTCChain) {
-		return common.NewCoin(common.BTCAsset, cosmos.NewUint(1000)), cosmos.OneUint(), nil
+		return common.NewCoin(common.BTCAsset, cosmos.NewUint(1000)), 1, nil
 	} else if chain.Equals(common.ETHChain) {
-		return common.NewCoin(common.ETHAsset, cosmos.NewUint(37500)), cosmos.OneUint(), nil
+		return common.NewCoin(common.ETHAsset, cosmos.NewUint(37500)), 1, nil
 	}
-	return common.NoCoin, cosmos.OneUint(), errKaboom
+	return common.NoCoin, 1, errKaboom
 }
 
 func (m *DummyGasManager) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error) {
@@ -48,7 +48,7 @@ func (m *DummyGasManager) GetMaxGas(ctx cosmos.Context, chain common.Chain) (com
 
 func (m *DummyGasManager) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
 	_, gasRate, _ := m.GetGasDetails(ctx, chain)
-	return gasRate
+	return cosmos.NewUint(uint64(gasRate))
 }
 
 func (m *DummyGasManager) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error) {
