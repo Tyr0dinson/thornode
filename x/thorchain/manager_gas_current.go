@@ -269,12 +269,6 @@ func (gm *GasMgrVCUR) GetGasDetails(ctx cosmos.Context, chain common.Chain) (com
 	maxGasCoin := common.NewCoin(chain.GetGasAsset(), gasRate.MulUint64(networkFee.TransactionSize))
 	maxGasCoin.Decimals = chainGasAssetPrecision
 
-	// TODO: Remove this to report THOR MaxGas (exact transaction fee) honestly instead of obscuring it,
-	// relevant for instance if using dynamic EnableUSDFees.
-	if chain.IsTHORChain() {
-		maxGasCoin.Amount = cosmos.ZeroUint()
-	}
-
 	return maxGasCoin, int64(gasRate.Uint64()), nil
 }
 
