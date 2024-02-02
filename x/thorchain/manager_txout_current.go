@@ -504,7 +504,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	}
 
 	// ensure amount is rounded to appropriate decimals
-	toiPool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
+	pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool for txout manager: %w", err)
 	}
@@ -573,7 +573,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	}
 
 	var finalOutput []TxOutItem
-	var pool Pool
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
@@ -609,15 +608,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
 				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 			} else {
-				if pool.IsEmpty() {
-					var err error
-					pool, err = tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset()) // Get pool
-					if err != nil {
-						// the error is already logged within kvstore
-						return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool: %w", err)
-					}
-				}
-
 				// if pool units is zero, no asset fee is taken
 				if !pool.GetPoolUnits().IsZero() {
 					assetFee := transactionFeeAmount
@@ -728,7 +718,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		// and leaves unburnt synths in the Pool Module
 		if !outputs[i].Coin.Asset.IsSyntheticAsset() {
 			// sanity check: ensure outbound amount respect asset decimals
-			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, toiPool.Decimals)
+			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, pool.Decimals)
 		}
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {
