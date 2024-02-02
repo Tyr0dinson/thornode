@@ -155,24 +155,14 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .| [..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund") | .reason | contains("inactive vault")
-  # This is as it should be.
-  - .| [..|select(.type? == "fee")] | length == 1
-  - .|..|select(.type? == "fee") | .tx_id == "${INBOUND_TXID}"
-  - .|..|select(.type? == "fee") | .coins == "${FEE_ASSET_AMOUNT=14000} BTC.BTC"
-  - .|..|select(.type? == "fee") | (.pool_deduct|tonumber) > 0
-  # TODO: InactiveVault inbounds and refunds should not cause a fee event,
-  # nor for a pool_deduct amount to be sent out from a pool.
+  - .| [..|select(.type? == "fee")] | length == 0
 ---
 # Check whether pool balance_asset is unchanged and balance_rune is no lower.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
-  - .balance_asset > ${ACTIVE_VAULT_AMOUNT}
-  - .balance_asset | tonumber == ${ACTIVE_VAULT_AMOUNT} + ${FEE_ASSET_AMOUNT}
-  # TODO: Pool balance_asset has increased (and shouldn't) despite the inbound being to an InactiveVault.
-  - .balance_rune | tonumber < ${START_BALANCE_RUNE}
-  # TODO: InactiveVault inbounds do not increase pool-associated vault balances and do not contribute swap fees,
-  # so neither the inbound nor its refund should cause balance_rune to drop.
+  - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
+  - .balance_rune | tonumber > ${START_BALANCE_RUNE} # Higher from block rewards
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -181,12 +171,9 @@ asserts:
   - .[0].memo | contains("REFUND:")
   - .[0].max_gas | length == 1
   - .[0] | .coin.asset == .max_gas[0].asset
-  - .[0] | (.coin.amount|tonumber) + (.max_gas[0].amount|tonumber) < ${INBOUND_AMOUNT}
-  - .[0] | (.coin.amount|tonumber) + (.max_gas[0].amount|tonumber) + ${FEE_ASSET_AMOUNT} == ${INBOUND_AMOUNT}
-  #  TODO: The InactiveVault gas asset refund TxOutItem's amount plus max_gas should always sum to the full amount of the inbound, but is lower.
-  ###
+  - .[0] | (.coin.amount|tonumber) + (.max_gas[0].amount|tonumber) == ${INBOUND_AMOUNT}
   # Prepare the observed txout amount:
-  - . | ${INBOUND_AMOUNT} - ${FEE_ASSET_AMOUNT} - ${GAS_COST} == ${OUT_AMOUNT=79000}
+  - . | ${INBOUND_AMOUNT} - ${GAS_COST} == ${OUT_AMOUNT=93000}
 ---
 ########################################################################################
 type: tx-observed-out
@@ -227,23 +214,17 @@ asserts:
   - .[0].coins|length == 1
   - .[0].coins[0].amount == "${ACTIVE_VAULT_AMOUNT}"
 ---
-# Check changed InactiveVault state.
+# Check emptied InactiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
 asserts:
   - .status == "InactiveVault"
   - .coins | length == 1
-  - .coins[0].amount | tonumber > 0
-  - .coins[0].amount == "${FEE_ASSET_AMOUNT}"
-  # TODO: After a UTXO refund the InactiveVault balance should be 0, but is non-zero.
+  - .coins[0].amount == "0"
 ---
 # Check the pool balances.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
-  - .balance_asset > ${ACTIVE_VAULT_AMOUNT}
-  - .balance_asset | tonumber == ${ACTIVE_VAULT_AMOUNT} + ${FEE_ASSET_AMOUNT}
-  # TODO: The pool balance_asset remains higher than the non-InctiveVault asset amount, yet shouldn't.
-  - .balance_rune | tonumber < ${START_BALANCE_RUNE}
-  # TODO: As before, this should not have occurred in the first place.
-  # TODO: All operations succeed, but regression test fails with "BTC.BTC pool has 14000 more than its vaults".
+  - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
+  - .balance_rune | tonumber > ${START_BALANCE_RUNE}
