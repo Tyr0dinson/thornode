@@ -62,20 +62,21 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 		// update max gas, take the larger of the current gas, or the last gas used
 
+		maxGasCoin, okMaxGas := maxGasCache[tx.Chain]
+		gasRate, okGasRate := gasRateCache[tx.Chain]
 		// update cache if needed
-		if _, ok := maxGasCache[tx.Chain]; !ok {
-			maxGasCache[tx.Chain], _ = mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
-		}
-		if _, ok := gasRateCache[tx.Chain]; !ok {
-			gasRateCache[tx.Chain] = int64(mgr.GasMgr().GetGasRate(ctx, tx.Chain).Uint64())
+		if !okMaxGas || !okGasRate {
+			var gasRateUint cosmos.Uint
+			maxGasCoin, gasRateUint, _ = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
+			gasRate = int64(gasRateUint.Uint64())
+			maxGasCache[tx.Chain] = maxGasCoin
+			gasRateCache[tx.Chain] = gasRate
 		}
 
-		maxGas := maxGasCache[tx.Chain]
-		gasRate := gasRateCache[tx.Chain]
-		if len(tx.MaxGas) == 0 || (!maxGas.IsEmpty() && !maxGas.Amount.Equal(tx.MaxGas[0].Amount)) {
-			txOut.TxArray[i].MaxGas = common.Gas{maxGas}
+		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
+			txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
 			// Update MaxGas in ObservedTxVoter action as well
-			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGas})
+			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin})
 			if err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			}
@@ -515,11 +516,11 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
 	}
-	maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
+	maxGasCoin, gasRateUint, err := tos.gasManager.GetGasDetails(ctx, toi.Chain)
 	if err != nil {
-		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas coin: %w", err)
+		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas details: %w", err)
 	}
-	gasRate := int64(tos.gasManager.GetGasRate(ctx, toi.Chain).Uint64())
+	gasRate := int64(gasRateUint.Uint64())
 	if toi.Chain.IsTHORChain() {
 		outputs = append(outputs, toi)
 	} else {
