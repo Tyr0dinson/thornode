@@ -539,7 +539,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1936078",
+          "gas_used": "1944078",
           "events": [
             {
               "amount": "2000000rune",
@@ -625,12 +625,12 @@
             },
             {
               "chain": "BTC",
-              "coin_amount": "49975500",
+              "coin_amount": "49976000",
               "coin_asset": "BTC.BTC",
               "coin_decimals": "0",
               "gas_rate": "10",
               "in_hash": "8981FAD7CB0C61699317FBB811E6D4D027F9AD0FA6B738E095CB87A81A6798F1",
-              "max_gas_amount_0": "10500",
+              "max_gas_amount_0": "10000",
               "max_gas_asset_0": "BTC.BTC",
               "max_gas_decimals_0": "8",
               "memo": "OUT:8981FAD7CB0C61699317FBB811E6D4D027F9AD0FA6B738E095CB87A81A6798F1",
