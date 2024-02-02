@@ -676,21 +676,26 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			}
 		}
 
-		vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
-		if err != nil && !outputs[i].Chain.IsTHORChain() {
-			// For THORChain outputs (since having an empty VaultPubKey)
-			// GetVault is expected to fail, so do not log the error.
-			ctx.Logger().Error("fail to get vault", "error", err)
+		// THORChain txouts by nature allow fee deduction, but non-THORChain gas asset outbounds
+		// may require a gas cost deduction (for instance InactiveVault refunds).
+		if !outputs[i].Chain.IsTHORChain() && outputs[i].Coin.Asset.IsGasAsset() {
+			vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
+			if err != nil {
+				// An error is assumed for an empty VaultPubKey (THORChain outbound),
+				// but here avoided by the earlier conditional.
+				ctx.Logger().Error("fail to get vault", "error", err)
+			}
+			// Assume by default MaxGas must be deducted to cover the gas cost,
+			// unless GetVault confirms the vault to be not an InactiveVault.
+			// If GetVault has errored, vault.Status will be InactiveVault (0) by default.
+			// InactiveVault is the default VaultStatus (0),
+			// so change behaviour when not InactiveVault rather than when InactiveVault.
+			if memo.IsType(TxRagnarok) || vault.Status == InactiveVault {
+				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
+				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
+			}
 		}
-		// when it is ragnarok , the network doesn't charge fee , however if the output asset is gas asset,
-		// then the amount of max gas need to be taken away from the customer , otherwise the vault will be insolvent and doesn't
-		// have enough to fulfill outbound
-		// Also the MaxGas has not put back to pool ,so there is no need to subside pool when ragnarok is in progress
-		// OR, if the vault is inactive, subtract maxgas from amount so we have gas to spend to refund the txn
-		if (memo.IsType(TxRagnarok) || vault.Status == InactiveVault) && outputs[i].Coin.Asset.IsGasAsset() {
-			gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
-			outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
-		}
+
 		if outputs[i].Coin.IsEmpty() {
 			ctx.Logger().Info("tx out item has zero coin", "tx_out", outputs[i].String())
 
