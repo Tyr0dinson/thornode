@@ -517,6 +517,8 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas details: %w", err)
 	}
+
+	// Here is the VaultPubKey selection, if not a THORChain-native outbound.
 	if toi.Chain.IsTHORChain() {
 		outputs = append(outputs, toi)
 	} else {
@@ -578,6 +580,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
 	}
+	// Here is the deduction from each output of either the MaxGas cost or the full outbound fee, but not both.
 	var finalOutput []TxOutItem
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
@@ -594,9 +597,40 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			outputs[i].GasRate = gasRate
 		}
 
-		// Deduct OutboundTransactionFee from TOI and add to Reserve
+		// If the memo is unparsable, or Ragnarok, don't deduct an outbound fee.
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
-		if err == nil && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) && !toi.ToAddress.Equals(lendAddr) {
+		feeDeduction := (err == nil && !memo.IsType(TxRagnarok))
+
+		// THORChain txouts by nature allow fee deduction, but InactiveVault outbounds
+		// require either no deduction or gas cost deduction instead.
+		if !outputs[i].Chain.IsTHORChain() {
+			vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
+			if err != nil {
+				// An error is assumed for an empty VaultPubKey (THORChain outbound),
+				// but here avoided by the earlier conditional.
+				ctx.Logger().Error("fail to get vault", "error", err)
+			}
+
+			// Whether the vault is truly an InactiveVault or the GetVault could not succeed
+			// (InactiveVault is the default VaultStatus, 0),
+			// do not try to deduct an outbound fee and instead only try to deduct gas asset MaxGas.
+			if vault.Status == InactiveVault {
+				feeDeduction = false
+			}
+
+			// Keep gas cost (instead of outbound fee) deduction within the not-THORChain conditional
+			// to never deduct for THORChain-outbound Ragnarok memos,
+			// as these are set by the withdraw handler for BlankTxID actions like POL withdrawals.
+			if !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
+				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
+				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
+			}
+		}
+
+		// Deduct OutboundTransactionFee from TOI and add to Reserve.
+		// Migrate transaction coins remain in their pools and their gas costs are covered by the Reserve.
+		if feeDeduction && !memo.IsType(TxMigrate) && !toi.ToAddress.Equals(lendAddr) {
+			if outputs[i].Coin.Asset.IsRune() {
 				runeFee := transactionFeeAmount // Fee is the prescribed RUNE fee
 				if runeFee.GT(outputs[i].Coin.Amount) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
@@ -658,26 +692,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
 					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 				}
-			}
-		}
-
-		// THORChain txouts by nature allow fee deduction, but non-THORChain gas asset outbounds
-		// may require a gas cost deduction (for instance InactiveVault refunds).
-		if !outputs[i].Chain.IsTHORChain() && outputs[i].Coin.Asset.IsGasAsset() {
-			vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
-			if err != nil {
-				// An error is assumed for an empty VaultPubKey (THORChain outbound),
-				// but here avoided by the earlier conditional.
-				ctx.Logger().Error("fail to get vault", "error", err)
-			}
-			// Assume by default MaxGas must be deducted to cover the gas cost,
-			// unless GetVault confirms the vault to be not an InactiveVault.
-			// If GetVault has errored, vault.Status will be InactiveVault (0) by default.
-			// InactiveVault is the default VaultStatus (0),
-			// so change behaviour when not InactiveVault rather than when InactiveVault.
-			if memo.IsType(TxRagnarok) || vault.Status == InactiveVault {
-				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
-				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
 			}
 		}
 
