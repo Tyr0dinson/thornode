@@ -90,20 +90,23 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 	cloutValue := cosmos.ZeroUint()
 	poolCache := map[common.Asset]Pool{} // Cache the pools to avoid duplicated GetPool calls
 	for _, item := range txout.TxArray {
-		if item.Coin.Asset.IsRune() {
-			runeValue = runeValue.Add(item.Coin.Amount)
-		} else {
-			pool, ok := poolCache[item.Coin.Asset]
-			if !ok {
-				pool, err = k.GetPool(ctx, item.Coin.Asset)
-				if err != nil {
-					_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", item.Coin.Asset), err)
-					continue
+		for _, coin := range append(common.Coins{item.Coin}, item.MaxGas...) {
+			if coin.Asset.IsRune() {
+				runeValue = runeValue.Add(coin.Amount)
+			} else {
+				pool, ok := poolCache[coin.Asset]
+				if !ok {
+					pool, err = k.GetPool(ctx, coin.Asset)
+					if err != nil {
+						_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", coin.Asset), err)
+						continue
+					}
+					poolCache[coin.Asset] = pool
 				}
-				poolCache[item.Coin.Asset] = pool
+				runeValue = runeValue.Add(pool.AssetValueInRune(coin.Amount))
 			}
-			runeValue = runeValue.Add(pool.AssetValueInRune(item.Coin.Amount))
 		}
+
 		if item.CloutSpent != nil {
 			cloutValue = cloutValue.Add(*item.CloutSpent)
 		}
