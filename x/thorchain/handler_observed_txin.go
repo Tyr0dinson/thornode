@@ -210,6 +210,9 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 			}
 			vault.InboundTxCount++
 		}
+		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+			ctx.Logger().Error("fail to set last chain height", "error", err)
+		}
 
 		// save the changes in Tx Voter to key value store
 		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
@@ -227,10 +230,6 @@ func (h ObservedTxInHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxIn)
 		if memo.IsOutbound() || memo.IsInternal() {
 			// do not process outbound handlers here, or internal handlers
 			continue
-		}
-
-		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
-			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}
 
 		// add addresses to observing addresses. This is used to detect
