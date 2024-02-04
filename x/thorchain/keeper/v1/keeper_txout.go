@@ -93,18 +93,19 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 		for _, coin := range append(common.Coins{item.Coin}, item.MaxGas...) {
 			if coin.Asset.IsRune() {
 				runeValue = runeValue.Add(coin.Amount)
-			} else {
-				pool, ok := poolCache[coin.Asset]
-				if !ok {
-					pool, err = k.GetPool(ctx, coin.Asset)
-					if err != nil {
-						_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", coin.Asset), err)
-						continue
-					}
-					poolCache[coin.Asset] = pool
-				}
-				runeValue = runeValue.Add(pool.AssetValueInRune(coin.Amount))
+				continue
 			}
+
+			pool, ok := poolCache[coin.Asset]
+			if !ok {
+				pool, err = k.GetPool(ctx, coin.Asset)
+				if err != nil {
+					_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", coin.Asset), err)
+					continue
+				}
+				poolCache[coin.Asset] = pool
+			}
+			runeValue = runeValue.Add(pool.AssetValueInRune(coin.Amount))
 		}
 
 		if item.CloutSpent != nil {
