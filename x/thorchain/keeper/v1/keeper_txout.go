@@ -6,6 +6,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -87,15 +88,19 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 
 	runeValue := cosmos.ZeroUint()
 	cloutValue := cosmos.ZeroUint()
+	poolCache := map[common.Asset]Pool{} // Cache the pools to avoid duplicated GetPool calls
 	for _, item := range txout.TxArray {
 		if item.Coin.Asset.IsRune() {
 			runeValue = runeValue.Add(item.Coin.Amount)
 		} else {
-			var pool Pool
-			pool, err = k.GetPool(ctx, item.Coin.Asset)
-			if err != nil {
-				_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", item.Coin.Asset), err)
-				continue
+			pool, ok := poolCache[item.Coin.Asset]
+			if !ok {
+				pool, err = k.GetPool(ctx, item.Coin.Asset)
+				if err != nil {
+					_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", item.Coin.Asset), err)
+					continue
+				}
+				poolCache[item.Coin.Asset] = pool
 			}
 			runeValue = runeValue.Add(pool.AssetValueInRune(item.Coin.Amount))
 		}
