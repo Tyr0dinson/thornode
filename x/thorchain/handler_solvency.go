@@ -140,6 +140,8 @@ func (h SolvencyHandler) handleV128(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return &cosmos.Result{}, fmt.Errorf("fail to get vault: %w", err)
 	}
+
+	// Do checks for whether to act on this consensus or not.
 	const StopSolvencyCheckKey = `StopSolvencyCheck`
 	stopSolvencyCheck, err := h.mgr.Keeper().GetMimir(ctx, StopSolvencyCheckKey)
 	if err != nil {
@@ -163,12 +165,23 @@ func (h SolvencyHandler) handleV128(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)
 	}
-
 	// If the chain was halted this block, leave it halted without overriding.
 	// (For instance if halted because of a different vault which is insolvent.)
 	// Also don't unhalt if the chain was manually halted for a future height
 	// or indefinitely ('1').
 	if haltChain >= ctx.BlockHeight() || haltChain == 1 {
+		return &cosmos.Result{}, nil
+	}
+	// If the solvency message is from a height which does not reflect inbounds
+	// reflected in the supermajority-observation vault balances,
+	// do not act on it.
+	lastChainHeight, err := h.mgr.Keeper().GetLastChainHeight(ctx, voter.Chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get last chain height", "chain", voter.Chain, "error", err)
+	}
+	// According to the validate msg.Id check, the Height is consistent for all the voter's messages.
+	if msg.Height < lastChainHeight {
+		ctx.Logger().Info("solvency message consensus for height before last chain height inbound supermajority observation", "chain", voter.Chain, "vault pubkey", voter.PubKey, "last chain height", lastChainHeight, "solvency message height", msg.Height)
 		return &cosmos.Result{}, nil
 	}
 
