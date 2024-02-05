@@ -617,6 +617,7 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
+	// (FetchTxs passes currentScanningHeight, while SolvencyCheckRunner passes chainHeight)
 	if !b.IsBlockScannerHealthy() && bnbBlockHeight == b.bnbScanner.currentScanningHeight {
 		return nil
 	}

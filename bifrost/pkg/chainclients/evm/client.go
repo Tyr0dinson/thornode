@@ -846,6 +846,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
+	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && height == c.evmScanner.currentBlockHeight {
 		return nil
 	}

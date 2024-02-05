@@ -563,6 +563,12 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 		return nil
 	}
 
+	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
+	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
+	if !c.IsBlockScannerHealthy() && blockHeight == c.blockScanner.PreviousHeight()+1 {
+		return nil
+	}
+
 	// fetch all asgard vaults
 	asgardVaults, err := c.thorchainBridge.GetAsgards()
 	if err != nil {

@@ -963,6 +963,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	}
 
 	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
+	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && ethBlockHeight == c.ethScanner.currentBlockHeight {
 		return nil
 	}
