@@ -632,9 +632,9 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 	// or else all if the chain is halted and all are solvent
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	for _, asgard := range asgardVaults {
+	for i := range asgardVaults {
 		var acct common.Account
-		acct, err = b.GetAccount(asgard.PubKey, nil)
+		acct, err = b.GetAccount(asgardVaults[i].PubKey, nil)
 		if err != nil {
 			b.logger.Err(err).Msgf("fail to get account balance")
 			continue
@@ -643,11 +643,11 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 		msg := stypes.Solvency{
 			Height: bnbBlockHeight,
 			Chain:  common.BNBChain,
-			PubKey: asgard.PubKey,
+			PubKey: asgardVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
+		if runners.IsVaultSolvent(acct, asgardVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}

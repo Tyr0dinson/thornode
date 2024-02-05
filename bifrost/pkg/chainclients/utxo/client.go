@@ -704,9 +704,9 @@ func (c *Client) ReportSolvency(height int64) error {
 	// or else all if the chain is halted and all are solvent
 	msgs := make([]types.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
-	for _, asgard := range asgardVaults {
+	for i := range asgardVaults {
 		var acct common.Account
-		acct, err = c.GetAccount(asgard.PubKey, nil)
+		acct, err = c.GetAccount(asgardVaults[i].PubKey, nil)
 		if err != nil {
 			c.log.Err(err).Msgf("fail to get account balance")
 			continue
@@ -715,11 +715,11 @@ func (c *Client) ReportSolvency(height int64) error {
 		msg := types.Solvency{
 			Height: height,
 			Chain:  c.cfg.ChainID,
-			PubKey: asgard.PubKey,
+			PubKey: asgardVaults[i].PubKey,
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
+		if runners.IsVaultSolvent(acct, asgardVaults[i], currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
