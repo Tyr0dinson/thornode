@@ -857,6 +857,8 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 
 	currentGasFee := cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.evmScanner.lastReportedGasPrice)
 
+	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
+	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
 		var acct common.Account
 		acct, err = c.GetAccount(asgard.PubKey, new(big.Int).SetInt64(height))
@@ -865,24 +867,41 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 			continue
 		}
 
-		// skip reporting solvency if the account is solvent and block scanner is healthy
-		solvent := runners.IsVaultSolvent(acct, asgard, currentGasFee)
-		if solvent && c.IsBlockScannerHealthy() {
-			continue
-		}
-		c.logger.Info().
-			Stringer("asgard", asgard.PubKey).
-			Interface("coins", acct.Coins).
-			Bool("solvent", solvent).
-			Msg("reporting solvency")
-
-		select {
-		case c.globalSolvencyQueue <- stypes.Solvency{
+		msg := stypes.Solvency{
 			Height: height,
 			Chain:  c.cfg.ChainID,
 			PubKey: asgard.PubKey,
 			Coins:  acct.Coins,
-		}:
+		}
+
+		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
+			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
+			continue
+		}
+		msgs = append(msgs, msg) // Insolvent-vault message
+	}
+
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
+	// report that all the vaults are solvent.
+	// If there are any insolvent vaults, report only them.
+	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
+	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
+	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
+	solvent := false
+	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+		msgs = solventMsgs
+		solvent = true
+	}
+
+	for i := range msgs {
+		c.logger.Info().
+			Stringer("asgard", msgs[i].PubKey).
+			Interface("coins", msgs[i].Coins).
+			Bool("solvent", solvent).
+			Msg("reporting solvency")
+
+		select {
+		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):
 			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
 		}

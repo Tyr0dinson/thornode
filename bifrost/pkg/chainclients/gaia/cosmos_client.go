@@ -566,6 +566,8 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	if err != nil {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
+	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
+	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
 		var acct common.Account
 		acct, err = c.GetAccount(asgard.PubKey, new(big.Int).SetInt64(blockHeight))
@@ -573,16 +575,34 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
 		}
-		if runners.IsVaultSolvent(acct, asgard, c.cosmosScanner.lastFee) && c.IsBlockScannerHealthy() {
-			continue
-		}
-		select {
-		case c.globalSolvencyQueue <- stypes.Solvency{
+
+		msg := stypes.Solvency{
 			Height: blockHeight,
 			Chain:  c.cfg.ChainID,
 			PubKey: asgard.PubKey,
 			Coins:  acct.Coins,
-		}:
+		}
+
+		if runners.IsVaultSolvent(acct, asgard, c.cosmosScanner.lastFee) {
+			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
+			continue
+		}
+		msgs = append(msgs, msg) // Insolvent-vault message
+	}
+
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
+	// report that all the vaults are solvent.
+	// If there are any insolvent vaults, report only them.
+	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
+	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
+	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
+	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+		msgs = solventMsgs
+	}
+
+	for i := range msgs {
+		select {
+		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):
 			c.logger.Info().Msgf("fail to send solvency info to THORChain, timeout")
 		}

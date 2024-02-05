@@ -698,7 +698,10 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
-	// report solvency for each asgard vault
+	// report insolvent asgard vaults,
+	// or else all if the chain is halted and all are solvent
+	msgs := make([]types.Solvency, 0, len(asgardVaults))
+	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
 		var acct common.Account
 		acct, err = c.GetAccount(asgard.PubKey, nil)
@@ -707,20 +710,35 @@ func (c *Client) ReportSolvency(height int64) error {
 			continue
 		}
 
-		// skip reporting if the vault is solvent (within 10x gas fee)
-		gasFee := cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
-		if c.IsBlockScannerHealthy() && runners.IsVaultSolvent(acct, asgard, gasFee) {
-			continue
-		}
-
-		// send solvency to thorchain via global queue consumed by the observer
-		select {
-		case c.globalSolvencyQueue <- types.Solvency{
+		msg := types.Solvency{
 			Height: height,
 			Chain:  c.cfg.ChainID,
 			PubKey: asgard.PubKey,
 			Coins:  acct.Coins,
-		}:
+		}
+
+		gasFee := cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
+		if runners.IsVaultSolvent(acct, asgard, gasFee) {
+			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
+			continue
+		}
+		msgs = append(msgs, msg) // Insolvent-vault message
+	}
+
+	// Only if the block scanner is unhealthy (e.g. solvency-halted) and all vaults are solvent,
+	// report that all the vaults are solvent.
+	// If there are any insolvent vaults, report only them.
+	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
+	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
+	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
+	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+		msgs = solventMsgs
+	}
+
+	for i := range msgs {
+		// send solvency to thorchain via global queue consumed by the observer
+		select {
+		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):
 			c.log.Warn().Msgf("timeout sending solvency to thorchain")
 		}
