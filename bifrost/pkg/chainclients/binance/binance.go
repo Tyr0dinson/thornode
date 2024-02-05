@@ -615,7 +615,8 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 	if !b.ShouldReportSolvency(bnbBlockHeight) {
 		return nil
 	}
-	// blockchain scanner is catching up , no solvency check messages
+
+	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
 	if !b.IsBlockScannerHealthy() && bnbBlockHeight == b.bnbScanner.currentScanningHeight {
 		return nil
 	}

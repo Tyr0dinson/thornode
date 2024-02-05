@@ -961,8 +961,8 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	if !c.ShouldReportSolvency(ethBlockHeight) {
 		return nil
 	}
-	// when block scanner is not healthy , falling behind , we don't report solvency , unless the request is coming from
-	// auto-unhalt solvency runner
+
+	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
 	if !c.IsBlockScannerHealthy() && ethBlockHeight == c.ethScanner.currentBlockHeight {
 		return nil
 	}

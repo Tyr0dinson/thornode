@@ -477,6 +477,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		if err != nil {
 			c.log.Err(err).Msg("fail to send network fee")
 		}
+		// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
 		if c.IsBlockScannerHealthy() {
 			if err = c.ReportSolvency(height); err != nil {
 				c.log.Err(err).Msg("fail to report solvency info")

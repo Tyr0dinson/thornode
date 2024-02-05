@@ -845,7 +845,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 		return nil
 	}
 
-	// skip reporting solvency if the block scanner is unhealthy and we are synced
+	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
 	if !c.IsBlockScannerHealthy() && height == c.evmScanner.currentBlockHeight {
 		return nil
 	}
