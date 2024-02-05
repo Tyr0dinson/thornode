@@ -569,6 +569,8 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
+	currentGasFee := c.cosmosScanner.lastFee
+
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
@@ -588,7 +590,7 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(acct, asgard, c.cosmosScanner.lastFee) {
+		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}

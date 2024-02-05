@@ -626,6 +626,8 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
+	currentGasFee := cosmos.NewUint(3 * b.bnbScanner.singleFee)
+
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
@@ -645,7 +647,7 @@ func (b *Binance) ReportSolvency(bnbBlockHeight int64) error {
 			Coins:  acct.Coins,
 		}
 
-		if runners.IsVaultSolvent(acct, asgard, cosmos.NewUint(3*b.bnbScanner.singleFee)) {
+		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}

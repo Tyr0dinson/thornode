@@ -698,6 +698,8 @@ func (c *Client) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards: %w", err)
 	}
 
+	currentGasFee := cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
+
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	msgs := make([]types.Solvency, 0, len(asgardVaults))
@@ -717,8 +719,7 @@ func (c *Client) ReportSolvency(height int64) error {
 			Coins:  acct.Coins,
 		}
 
-		gasFee := cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
-		if runners.IsVaultSolvent(acct, asgard, gasFee) {
+		if runners.IsVaultSolvent(acct, asgard, currentGasFee) {
 			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 			continue
 		}
