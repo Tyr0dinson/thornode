@@ -2401,10 +2401,10 @@ gitlab.com/thorchain/binance-sdk v1.2.3 h1:KuSDgn3Gu+G3unPHfGZ/vmAQ02C4n7Pl7+SHY
 gitlab.com/thorchain/binance-sdk v1.2.3/go.mod h1:8CJt5e5C3HUHRFtoEVeizyzWX5TEVLfBjw8A89z2vOw=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3 h1:pnAKxDd1rGocZS7lOErGxMpROINtK/HPiBBR24L5WvA=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3/go.mod h1:1zH1LiTMqQmAqPp5vah+AuDs7E++LmqUOn+p1nZOgys=
-gitlab.com/thorchain/tss/go-tss v1.6.4 h1:UQ7Hgthutdi3ZyHLKG1RECdZFfOJzayKd9/RjAbqM8I=
-gitlab.com/thorchain/tss/go-tss v1.6.4/go.mod h1:xkkkoRV/z4Mt5uQ34aMzCFdFS4Noy9UddiCT71KvJgY=
-gitlab.com/thorchain/tss/tss-lib v0.1.5 h1:L9MD+E3B4lJmadso69lTIP6s2Iks24fS7Ancs62LTZo=
-gitlab.com/thorchain/tss/tss-lib v0.1.5/go.mod h1:pEM3W/1inIzmdQn9IY9pA0MkG1bTGKhsSivxizeyyt4=
+gitlab.com/thorchain/tss/go-tss v1.6.5 h1:aw+Us8Ti082s8iRdwZV98bnwB3WtLBZ6Kw41Ul3bpdQ=
+gitlab.com/thorchain/tss/go-tss v1.6.5/go.mod h1:8iWs6mbWaIOH2TzRuoYxLNfloJpA7/u2ug0rplzpEXE=
+gitlab.com/thorchain/tss/tss-lib v0.2.0 h1:xMZdCe9b/nQ+KvTg3QOc8hzGyeLrd+agVQ4AXMGHfvY=
+gitlab.com/thorchain/tss/tss-lib v0.2.0/go.mod h1:O9vom2mu4IGAx3+6G3+NJdYRTyWK9Q2zRe3YXhnGqVs=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
 go.etcd.io/bbolt v1.3.5/go.mod h1:G5EMThwa9y8QZGBClrRx5EY+Yw9kAhnjy3bSjsnlVTQ=

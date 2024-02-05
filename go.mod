@@ -5,7 +5,6 @@ go 1.20
 require (
 	github.com/99designs/keyring v1.1.6
 	github.com/armon/go-metrics v0.3.10
-	github.com/binance-chain/tss-lib v1.3.2
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/btcsuite/btcd v0.22.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // TODO: On hard fork for Taproot support change to github.com/btcsuite/btcutil v1.0.3-0.20211129182920-9c4bbabe7acd
@@ -48,7 +47,7 @@ require (
 	gitlab.com/thorchain/bifrost/ltcd-txscript v0.0.0-20221030141522-6ec18ecc4447
 	gitlab.com/thorchain/bifrost/txscript v0.0.0-20221115150551-993a3adacf25
 	gitlab.com/thorchain/binance-sdk v1.2.3
-	gitlab.com/thorchain/tss/go-tss v1.6.4
+	gitlab.com/thorchain/tss/go-tss v1.6.5
 	go.uber.org/atomic v1.9.0
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.3.0
@@ -272,6 +271,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 	github.com/zondax/ledger-go v0.14.3 // indirect
+	gitlab.com/thorchain/tss/tss-lib v0.2.0 // indirect
 	golang.org/x/exp v0.0.0-20230206171751-46f607a40771 // indirect
 	golang.org/x/mod v0.11.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
@@ -281,7 +281,6 @@ require (
 
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
-	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
 	github.com/cosmos/ledger-cosmos-go => gitlab.com/thorchain/ledger-thorchain-go v1.0.3
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1
