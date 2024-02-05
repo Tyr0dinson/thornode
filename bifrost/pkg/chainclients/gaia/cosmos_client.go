@@ -562,10 +562,15 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	if !c.ShouldReportSolvency(blockHeight) {
 		return nil
 	}
+
+	// fetch all asgard vaults
 	asgardVaults, err := c.thorchainBridge.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
+
+	// report insolvent asgard vaults,
+	// or else all if the chain is halted and all are solvent
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
@@ -596,11 +601,20 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
+	solvent := false
 	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
 		msgs = solventMsgs
+		solvent = true
 	}
 
 	for i := range msgs {
+		c.logger.Info().
+			Stringer("asgard", msgs[i].PubKey).
+			Interface("coins", msgs[i].Coins).
+			Bool("solvent", solvent).
+			Msg("reporting solvency")
+
+		// send solvency to thorchain via global queue consumed by the observer
 		select {
 		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):

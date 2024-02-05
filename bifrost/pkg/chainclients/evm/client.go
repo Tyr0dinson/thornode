@@ -850,6 +850,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 		return nil
 	}
 
+	// fetch all asgard vaults
 	asgardVaults, err := c.bridge.GetAsgards()
 	if err != nil {
 		return fmt.Errorf("fail to get asgards, err: %w", err)
@@ -857,6 +858,8 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 
 	currentGasFee := cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.evmScanner.lastReportedGasPrice)
 
+	// report insolvent asgard vaults,
+	// or else all if the chain is halted and all are solvent
 	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	for _, asgard := range asgardVaults {
@@ -900,6 +903,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 			Bool("solvent", solvent).
 			Msg("reporting solvency")
 
+		// send solvency to thorchain via global queue consumed by the observer
 		select {
 		case c.globalSolvencyQueue <- msgs[i]:
 		case <-time.After(constants.ThorchainBlockTime):

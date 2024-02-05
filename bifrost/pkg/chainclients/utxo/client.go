@@ -731,11 +731,19 @@ func (c *Client) ReportSolvency(height int64) error {
 	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
 	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
 	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
+	solvent := false
 	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
 		msgs = solventMsgs
+		solvent = true
 	}
 
 	for i := range msgs {
+		c.log.Info().
+			Stringer("asgard", msgs[i].PubKey).
+			Interface("coins", msgs[i].Coins).
+			Bool("solvent", solvent).
+			Msg("reporting solvency")
+
 		// send solvency to thorchain via global queue consumed by the observer
 		select {
 		case c.globalSolvencyQueue <- msgs[i]:
