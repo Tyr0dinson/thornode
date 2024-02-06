@@ -2926,12 +2926,18 @@ components:
             - swapping
             - lp_actions
             - lending
+            - savers
+            - synths
           properties:
             swapping:
               $ref: "#/components/schemas/Availability"
             lp_actions:
               $ref: "#/components/schemas/Availability"
             lending:
+              $ref: "#/components/schemas/Availability" 
+            savers:
+              $ref: "#/components/schemas/Availability" 
+            synths:
               $ref: "#/components/schemas/Availability" 
         chain:
           type: object

@@ -1097,6 +1097,16 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	}
 }
 
+func atLendingCapGlobal(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+	// TODO: Implement
+	return false
+}
+
+func atLendingCapPool(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+	// TODO: Implement
+	return false
+}
+
 func atTVLCapV118(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {

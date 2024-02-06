@@ -48,9 +48,11 @@ type: check
 endpoint: http://localhost:1317/thorchain/status
 asserts:
   - .global.swapping.is_available == false
-  - .global.swapping.reason == "Global trading is paused"
+  - .global.swapping.reason == "Global trading halted"
   - .global.lending.is_available == false
   - .global.lending.reason == "Global lending is paused"
   - .global.lp_actions.is_available == false
   - .global.lp_actions.reason == "Global LP actions are paused"
+  - .global.savers.is_available == true
+  - .global.synths.is_available == true
 ---

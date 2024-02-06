@@ -612,34 +612,13 @@ func queryPOL(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	return jsonify(ctx, result)
 }
 
-func getStatusFlagsFromMimirValue(ctx cosmos.Context, mgr Manager, prefix, asset string) (bool, error) {
-	key := prefix + "-" + asset
-	val, err := mgr.Keeper().GetMimir(ctx, key)
-	if err != nil {
-		return false, fmt.Errorf("Fail to fetch key %s: %w", key, err)
-	}
-
-	return val > 0, nil
-}
-
-// TODO: Update tests to get a complete coverage
 func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
-	globalTradingReason := ""
-	if isGlobalTradingPaused {
-		globalTradingReason = "Global trading is paused"
-	}
-	isGlobalLendingPaused := mgr.Keeper().IsGlobalLendingPaused(ctx)
-	globalLendingReason := ""
-	if isGlobalLendingPaused {
-		globalLendingReason = "Global lending is paused"
-	}
 
-	isGlobalLpPaused := mgr.Keeper().IsGlobalLPPaused(ctx)
-	globalLpReason := ""
-	if isGlobalLpPaused {
-		globalLpReason = "Global LP actions are paused"
-	}
+	isGlobalTradingAvailable, globalTradingUnavailableReason := getStatus(GlobalScope, Trading, mgr, ctx, "", nil)
+	isGlobalLendingAvailable, globalLendingUnavailableReason := getStatus(GlobalScope, Lending, mgr, ctx, "", nil)
+	isGlobalLPAvailable, globalLPUnavailableReason := getStatus(GlobalScope, LP, mgr, ctx, "", nil)
+	isGlobalSaversAvailable, globalSaversUnavailableReason := getStatus(GlobalScope, Savers, mgr, ctx, "", nil)
+	isGlobalSynthsAvailable, globalSynthsUnavailableReason := getStatus(GlobalScope, Synths, mgr, ctx, "", nil)
 
 	// Get all chains
 	active, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -667,8 +646,7 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	chainMap := make(map[string]openapi.ChainStatus)
 	poolMap := make(map[string]openapi.PoolStatus)
 
-	haltChain, err := mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
-	isHaltChainByNode := err == nil && haltChain > ctx.BlockHeight()
+	// isAtLendingCapPool := atLendingCapPool(ctx, nil, mgr)
 
 	for _, chain := range chains {
 
@@ -677,140 +655,69 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 
 		// Check Trading status
-		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
-		isChainTradingPuasedReason := ""
-		if isGlobalTradingPaused {
-			isChainTradingPaused = isGlobalTradingPaused
-			isChainTradingPuasedReason = "Global Trading pause"
-		}
-		if isHaltChainByNode {
-			isChainTradingPuasedReason = "Node requested network to pause"
-		}
-		if isChainTradingPaused {
-			isChainTradingPuasedReason = "Chain Trading pause"
-		}
+		isChainTradingAvailable, chainTradingUnavailableReason := getStatus(ChainScope, Trading, mgr, ctx, chain, nil)
 
 		// Check LP status
-		isChainLpPaused := mgr.Keeper().IsChainLPPaused(ctx, chain)
-		isChainLpPausedReason := ""
-		if isGlobalLpPaused {
-			isChainLpPaused = isGlobalLpPaused
-			isChainLpPausedReason = "Global LP pause"
-		}
-		if isHaltChainByNode {
-			isChainTradingPuasedReason = "Node requested network to pause"
-		}
-		if isChainLpPaused {
-			isChainLpPausedReason = "Chain LP pause"
-		}
-		// (TODO) 3. Node request pause
-		// (TODO) 4. TVL at cap
+		isChainLpAvailable, chainLpUnavailableReason := getStatus(ChainScope, LP, mgr, ctx, chain, nil)
 
 		// Check Savers Availability
-		isChainSaversPaused := false
-		isChainSaversPausedReason := ""
-		if isHaltChainByNode {
-			isChainTradingPuasedReason = "Node requested network to pause"
-		}
-		if isChainSaversPaused {
-			isChainSaversPausedReason = "Chain savers pause"
-		}
-		// (TODO) 1. Global pause
-		// (TODO) 2. Chain halted
-		// (TODO) 4. TVL at cap
+		isChainSaversAvailable, chainSaversUnavailableReason := getStatus(ChainScope, Savers, mgr, ctx, chain, nil)
 
-		// Check Syncs Availability
-		isChainSyncPaused := false
-		isChainSyncPausedReason := ""
-		if isHaltChainByNode {
-			isChainTradingPuasedReason = "Node requested network to pause"
-		}
-		if isChainSyncPaused {
-			isChainSyncPausedReason = "Chain Sync pause"
-		}
-		// (TODO) 1. Global pause
-		// (TODO) 3. Node request pause
-		// (TODO) 4. TVL at cap
+		// Check Synths Availability
+		isChainSynthsAvailable, chainSynthsUnavailableReason := getStatus(ChainScope, Synths, mgr, ctx, chain, nil)
 
 		// Check Lending Availability
-		isChainLendingPaused := false
-		isChainLendingPausedReason := ""
-		if isHaltChainByNode {
-			isChainTradingPuasedReason = "Node requested network to pause"
-		}
-		if isChainLendingPaused {
-			isChainLendingPausedReason = "Chain Lending pause"
-		}
-		// (TODO) 1. Global pause
-		// (TODO) 3. Node request pause
-		// (TODO) 4. Lending at cap
+		isChainLendingAvailable, chainLendingUnavailableReason := getStatus(ChainScope, Lending, mgr, ctx, chain, nil)
 
 		chainMap[chain.String()] = openapi.ChainStatus{
 			TradingAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isChainTradingPaused),
-				Reason:      wrapString(isChainTradingPuasedReason),
+				IsAvailable: wrapBool(isChainTradingAvailable),
+				Reason:      wrapString(chainTradingUnavailableReason),
 			},
 			LpAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isChainLpPaused),
-				Reason:      wrapString(isChainLpPausedReason),
+				IsAvailable: wrapBool(isChainLpAvailable),
+				Reason:      wrapString(chainLpUnavailableReason),
 			},
 			SaversAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isChainSaversPaused),
-				Reason:      wrapString(isChainSaversPausedReason),
+				IsAvailable: wrapBool(isChainSaversAvailable),
+				Reason:      wrapString(chainSaversUnavailableReason),
 			},
 			SynthsAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isChainSyncPaused),
-				Reason:      wrapString(isChainSyncPausedReason),
+				IsAvailable: wrapBool(isChainSynthsAvailable),
+				Reason:      wrapString(chainSynthsUnavailableReason),
 			},
 			LendingAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isChainLendingPaused),
-				Reason:      wrapString(isChainLendingPausedReason),
+				IsAvailable: wrapBool(isChainLendingAvailable),
+				Reason:      wrapString(chainLendingUnavailableReason),
 			},
 		}
 	}
 
 	for _, poolData := range pools {
-		synthMintPausedErr := isSynthMintPaused(ctx, mgr, poolData.Asset, cosmos.ZeroUint())
-
 		// Check Lending Enable
-		isLendingEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "LENDING", poolData.Asset.GetDerivedAsset().MimirString())
-		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("Fail to fetch LENDING key: %w", err))
-		}
+		isLendingEnable, _ := getStatus(PoolScope, Lending, mgr, ctx, poolData.Asset.Chain, &poolData)
 
 		// Check POL Enable
-		isPOLEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "POL", poolData.Asset.GetDerivedAsset().MimirString())
-		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("Fail to fetch POL key: %w", err))
-		}
+		isPOLEnable, _ := getStatus(PoolScope, POL, mgr, ctx, poolData.Asset.Chain, &poolData)
 
 		// Check TOR Enable
-		isTORAnchorEnable, err := getStatusFlagsFromMimirValue(ctx, mgr, "TORANCHOR", poolData.Asset.GetDerivedAsset().MimirString())
-		if err != nil {
-			return quoteErrorResponse(fmt.Errorf("Fail to fetch TORANCHOR key: %w", err))
-		}
+		isTORAnchorEnable, _ := getStatus(PoolScope, TORAnchor, mgr, ctx, poolData.Asset.Chain, &poolData)
 
-		fmt.Println(*chainMap[string(poolData.Asset.Chain)].SynthsAvailable.IsAvailable)
+		// Check Synths Available
+		isSynthAnchorAvailable, poolSynthsUnavailableReason := getStatus(PoolScope, Synths, mgr, ctx, poolData.Asset.Chain, &poolData)
 
-		// Check Sync Available
-		isPoolSyncPaused := synthMintPausedErr != nil
-		isPoolSyncPausedReason := ""
-		if !*chainMap[string(poolData.Asset.Chain)].SynthsAvailable.IsAvailable {
-			isPoolSyncPausedReason = *chainMap[string(poolData.Asset.Chain)].SynthsAvailable.Reason
-		}
-		if isPoolSyncPaused {
-			isPoolSyncPausedReason = "Pool lending pause"
-		}
+		// Check Savers Availability
+		isPoolSaversAvailable, _ := getStatus(PoolScope, Savers, mgr, ctx, poolData.Asset.Chain, &poolData)
 
 		poolMap[poolData.Asset.String()] = openapi.PoolStatus{
 			Status:            poolData.Status.String(),
-			Saver:             false,
+			Saver:             isPoolSaversAvailable,
 			TORAnchor:         isTORAnchorEnable,
 			LendingCollateral: isLendingEnable,
 			POL:               isPOLEnable,
 			SynthsAvailable: openapi.Availability{
-				IsAvailable: wrapBool(!isPoolSyncPaused),
-				Reason:      wrapString(isPoolSyncPausedReason),
+				IsAvailable: wrapBool(isSynthAnchorAvailable),
+				Reason:      wrapString(poolSynthsUnavailableReason),
 			},
 		}
 	}
@@ -818,16 +725,24 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	status := openapi.StatusResponse{
 		Global: openapi.StatusResponseGlobal{
 			Swapping: openapi.Availability{
-				IsAvailable: wrapBool(!isGlobalTradingPaused),
-				Reason:      wrapString(globalTradingReason),
+				IsAvailable: wrapBool(isGlobalTradingAvailable),
+				Reason:      wrapString(globalTradingUnavailableReason),
 			},
 			Lending: openapi.Availability{
-				IsAvailable: wrapBool(!isGlobalLendingPaused),
-				Reason:      wrapString(globalLendingReason),
+				IsAvailable: wrapBool(isGlobalLendingAvailable),
+				Reason:      wrapString(globalLendingUnavailableReason),
 			},
 			LpActions: openapi.Availability{
-				IsAvailable: wrapBool(!isGlobalLpPaused),
-				Reason:      wrapString(globalLpReason),
+				IsAvailable: wrapBool(isGlobalLPAvailable),
+				Reason:      wrapString(globalLPUnavailableReason),
+			},
+			Savers: openapi.Availability{
+				IsAvailable: wrapBool(isGlobalSaversAvailable),
+				Reason:      wrapString(globalSaversUnavailableReason),
+			},
+			Synths: openapi.Availability{
+				IsAvailable: wrapBool(isGlobalSynthsAvailable),
+				Reason:      wrapString(globalSynthsUnavailableReason),
 			},
 		},
 		Chain: chainMap,
