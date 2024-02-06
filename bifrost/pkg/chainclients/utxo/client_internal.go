@@ -375,17 +375,21 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error) {
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
-		return c.getBlockWithoutVerbose(height)
-	case common.BCHChain, common.LTCChain, common.BTCChain:
-		hash, err := c.rpc.GetBlockHash(height)
-		if err != nil {
-			return &btcjson.GetBlockVerboseTxResult{}, err
+		if !c.cfg.UTXO.GetBlockVerboseTxsAvailable {
+			return c.getBlockWithoutVerbose(height)
 		}
-		return c.rpc.GetBlockVerboseTxs(hash)
+	case common.BCHChain, common.LTCChain, common.BTCChain:
+		// common case is handled below
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 		return nil, nil
 	}
+
+	hash, err := c.rpc.GetBlockHash(height)
+	if err != nil {
+		return &btcjson.GetBlockVerboseTxResult{}, err
+	}
+	return c.rpc.GetBlockVerboseTxs(hash)
 }
 
 // getBlockWithoutVerbose will get the block without verbose transaction details, and
