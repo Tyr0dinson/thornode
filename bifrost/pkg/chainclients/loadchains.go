@@ -8,7 +8,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/binance"
-	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/ethereum"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/gaia"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/types"
@@ -41,9 +40,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		switch chain.ChainID {
 		case common.BNBChain:
 			return binance.NewBinance(thorKeys, chain, server, thorchainBridge, m)
-		case common.ETHChain:
-			return ethereum.NewClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
-		case common.AVAXChain, common.BSCChain:
+		case common.ETHChain, common.AVAXChain, common.BSCChain:
 			return evm.NewEVMClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.GAIAChain:
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
