@@ -290,7 +290,8 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	e.updateGasPrice(txsGas)
 
 	// collect all relevant transactions from the block
-	txInBlock, err := e.getTxIn(block)
+	// note: all connected chains now support eth_getBlockReceipts
+	txInBlock, err := e.getTxInOptimized("eth_getBlockReceipts", block)
 	if err != nil {
 		return txIn, err
 	}
@@ -385,23 +386,6 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 }
 
 func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
-	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
-	// within a block, register it here.
-	// switch e.cfg.ChainID {
-	// case common.BSCChain:
-	// return e.getTxInOptimized("eth_getTransactionReceiptsByBlockNumber", block)
-	// TODO: add ETH chain after giving BSC some time to bake on mainnet
-	// case common.ETHChain:
-	// 	return e.getTxInOptimized("eth_getBlockReceipts", block)
-	// TODO: add AVAX chain when supported
-	// case common.AVAXChain:
-	// 	return e.getTxIn("TBD", block)
-	// }
-
-	if e.cfg.ChainID.IsBSCChain() {
-		return e.getTxInOptimized("eth_getTransactionReceiptsByBlockNumber", block)
-	}
-
 	txInbound := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		Filtered: false,
