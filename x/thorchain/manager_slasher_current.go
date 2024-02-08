@@ -356,7 +356,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
-			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi.InHash, toi.VaultPubKey) {
+			if s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -696,8 +696,8 @@ func (s *SlasherVCUR) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
-func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, inhash common.TxID, pk common.PubKey) bool {
-	outhashes := mgr.Keeper().GetObservedLink(ctx, inhash)
+func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
+	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
 	if len(outhashes) == 0 {
 		return true
 	}
@@ -712,7 +712,7 @@ func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 		// focus on the matching pubkey
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
-			if tx1.ObservedPubKey.Equals(pk) {
+			if tx1.ObservedPubKey.Equals(toi.VaultPubKey) {
 				for _, tx := range voter.Txs {
 					if !tx.Tx.ID.Equals(hash) {
 						continue
