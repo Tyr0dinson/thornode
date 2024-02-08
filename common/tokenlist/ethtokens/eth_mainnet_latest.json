@@ -8048,14 +8048,6 @@
       "logoURI": "https://etherscan.io/token/images/rollbitcoin_32.png"
     },
     {
-      "address": "0x582d872A1B094FC48F5DE31D3B73F2D9bE47def1",
-      "chainId": 1,
-      "name": "Wrapped TON Coin",
-      "symbol": "TONCOIN",
-      "decimals": 9,
-      "logoURI": "https://etherscan.io/token/images/rollbitcoin_32.png"
-    },
-    {
       "address": "0x815C23eCA83261b6Ec689b60Cc4a58b54BC24D8D",
       "chainId": 1,
       "name": "vTHOR",
