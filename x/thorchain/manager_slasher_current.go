@@ -708,19 +708,23 @@ func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
 			continue
 		}
-		// in the event there are multiple outbounds for a given inhash, we
-		// focus on the matching pubkey
+		// in the event there are multiple observed txouts for a given inhash, we
+		// focus on the matching pubkey and asset
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
-			if tx1.ObservedPubKey.Equals(toi.VaultPubKey) {
-				for _, tx := range voter.Txs {
-					if !tx.Tx.ID.Equals(hash) {
-						continue
-					}
-					for _, signer := range tx.Signers {
-						// Uniquely record each signer for this outbound hash.
-						signers[signer] = true
-					}
+			if !tx1.ObservedPubKey.Equals(toi.VaultPubKey) ||
+				len(tx1.Tx.Coins) != 1 ||
+				!tx1.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) {
+				continue
+			}
+
+			for _, tx := range voter.Txs {
+				if !tx.Tx.ID.Equals(hash) {
+					continue
+				}
+				for _, signer := range tx.Signers {
+					// Uniquely record each signer for this outbound hash.
+					signers[signer] = true
 				}
 			}
 		}
