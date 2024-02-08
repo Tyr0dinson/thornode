@@ -435,7 +435,7 @@ func (s TxOutStoreVCURSuite) TestCalcTxOutHeight(c *C) {
 	c.Check(millionGasValue.String(), Equals, "484273392786", Commentf("%s", millionGasValue.String()))
 	targetBlock, _, err = txout.CalcTxOutHeight(ctx, keeper.GetVersion(), millionGasTOI)
 	c.Assert(err, IsNil)
-	c.Check(targetBlock, Equals, int64(31)) // This would have the same short delay as with normal gas, despite its higher value.
+	c.Check(targetBlock, Equals, int64(738)) // This would have the maximum delay in contrast to with normal gas, due to its higher value.
 
 	thousandSizeTOI := toi
 	thousandSizeTOI.Coin.Amount = toi.Coin.Amount.MulUint64(1000)
