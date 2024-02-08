@@ -85,12 +85,16 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 	if err != nil {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
+	runeValue, cloutValue := k.GetTOIsValue(ctx, txout.TxArray...)
+	return runeValue, cloutValue, nil
+}
 
+func (k KVStore) GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uint, cosmos.Uint) {
 	runeValue := cosmos.ZeroUint()
 	cloutValue := cosmos.ZeroUint()
 	poolCache := map[common.Asset]Pool{} // Cache the pools to avoid duplicated GetPool calls
-	for _, item := range txout.TxArray {
-		for _, coin := range append(common.Coins{item.Coin}, item.MaxGas...) {
+	for i := range tois {
+		for _, coin := range append(common.Coins{tois[i].Coin}, tois[i].MaxGas...) {
 			if coin.Asset.IsRune() {
 				runeValue = runeValue.Add(coin.Amount)
 				continue
@@ -98,7 +102,8 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 
 			pool, ok := poolCache[coin.Asset]
 			if !ok {
-				pool, err = k.GetPool(ctx, coin.Asset)
+				var err error
+				pool, err = k.GetPool(ctx, coin.Asset.GetLayer1Asset())
 				if err != nil {
 					_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", coin.Asset), err)
 					continue
@@ -108,10 +113,10 @@ func (k KVStore) GetTxOutValueV128(ctx cosmos.Context, height int64) (cosmos.Uin
 			runeValue = runeValue.Add(pool.AssetValueInRune(coin.Amount))
 		}
 
-		if item.CloutSpent != nil {
-			cloutValue = cloutValue.Add(*item.CloutSpent)
+		if tois[i].CloutSpent != nil {
+			cloutValue = cloutValue.Add(*tois[i].CloutSpent)
 		}
 	}
 
-	return runeValue, cloutValue, nil
+	return runeValue, cloutValue
 }
