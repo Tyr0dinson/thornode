@@ -424,6 +424,24 @@ func (s TxOutStoreVCURSuite) TestCalcTxOutHeight(c *C) {
 	// which reduces the 25_00000000 TxOutDelayRate to 15_00000000.
 	// value / TxOutDelayRate is then 129 / 15 ~= 8, added to the starting height of 18 to get 26.
 
+	normalGasTOI := toi
+	normalGasTOI.MaxGas = common.Gas{toi.Coin}
+	normalGasTOI.MaxGas[0].Amount = cosmos.NewUint(7500)
+	normalGasValue := pool.AssetValueInRune(normalGasTOI.MaxGas[0].Amount)
+	c.Check(normalGasValue.String(), Equals, "484273", Commentf("%s", normalGasValue.String()))
+	targetBlock, _, err = txout.CalcTxOutHeight(ctx, keeper.GetVersion(), normalGasTOI)
+	c.Assert(err, IsNil)
+	c.Check(targetBlock, Equals, int64(31))
+
+	millionGasTOI := normalGasTOI
+	millionGasTOI.MaxGas = common.Gas{normalGasTOI.MaxGas[0]}
+	millionGasTOI.MaxGas[0].Amount = millionGasTOI.MaxGas[0].Amount.MulUint64(1e6)
+	millionGasValue := pool.AssetValueInRune(millionGasTOI.MaxGas[0].Amount)
+	c.Check(millionGasValue.String(), Equals, "484273392786", Commentf("%s", millionGasValue.String()))
+	targetBlock, _, err = txout.CalcTxOutHeight(ctx, keeper.GetVersion(), millionGasTOI)
+	c.Assert(err, IsNil)
+	c.Check(targetBlock, Equals, int64(31)) // This would have the same short delay as with normal gas, despite its higher value.
+
 	thousandSizeTOI := toi
 	thousandSizeTOI.Coin.Amount = toi.Coin.Amount.MulUint64(1000)
 	thousandSizeTOIValue := pool.AssetValueInRune(thousandSizeTOI.Coin.Amount)
