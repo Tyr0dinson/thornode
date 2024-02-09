@@ -17,9 +17,7 @@ type ERC20Token struct {
 
 type EVMTokenList struct {
 	Name      string       `json:"name"`
-	LogoURI   string       `json:"logoURI"`
 	Tokens    []ERC20Token `json:"tokens"`
-	Keywords  []string     `json:"keywords"`
 	Timestamp time.Time    `json:"timestamp"`
 }
 

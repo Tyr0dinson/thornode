@@ -6,24 +6,20 @@
     "minor": 0,
     "patch": 0
   },
-  "logoURI": "",
-  "keywords": [],
   "tokens": [
     {
       "name": "",
       "symbol": "TKN",
       "address": "0x52C84043CD9c865236f11d9Fc9F56aa003c1f922",
       "chainId": 56,
-      "decimals": 18,
-      "logoURI": ""
+      "decimals": 18
     },
     {
       "name": "",
       "symbol": "USDC",
       "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
       "chainId": 56,
-      "decimals": 18,
-      "logoURI": ""
+      "decimals": 18
     }
   ]
 }

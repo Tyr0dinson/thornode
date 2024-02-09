@@ -33,3 +33,11 @@ go run tools/lint-whitelist-tokens/main.go
 ./scripts/lint-versions.bash
 
 ./scripts/lint-mimir-ids.bash
+
+# Check token lists for extraneous information.
+find common/tokenlist/ -name "*.json" |
+  while read -r F; do
+    if jq --exit-status '.. | .tags?, .keywords?, .logoURI?' <"$F" >/dev/null; then
+      die "token list has extra fields: $F - fix with 'make format'"
+    fi
+  done

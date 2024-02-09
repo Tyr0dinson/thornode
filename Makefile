@@ -136,8 +136,8 @@ gitlab-trigger-ci:
 
 # ------------------------------ Housekeeping ------------------------------
 
-format:
-	@git ls-files '*.go' | grep -v -e '^docs/' | xargs gofumpt -w
+format: ## Run formatters
+	@./scripts/format.sh
 
 lint:
 	@./scripts/lint.sh
