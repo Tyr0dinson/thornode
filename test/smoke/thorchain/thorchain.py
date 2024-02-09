@@ -311,13 +311,6 @@ class ThorchainState:
             if not tx.gas:
                 continue
             gases = tx.gas
-            if (
-                tx.gas[0].asset.is_btc()
-                or tx.gas[0].asset.is_bch()
-                or tx.gas[0].asset.is_ltc()
-                or tx.gas[0].asset.is_doge()
-            ):
-                gases = tx.max_gas
 
             for gas in gases:
                 if tx.coins[0].asset not in gas_coins:
@@ -516,11 +509,8 @@ class ThorchainState:
                             tx.max_gas = [
                                 Coin(coin.asset, int(self.network_fees["BTC"] * 3 / 2))
                             ]
-                            btc_max_gas = self.get_max_gas("BTC")
-                            gap = tx.max_gas[0].amount - btc_max_gas.amount
-                            if gap > 0:
-                                coin.amount += gap
-                            else:
+                            tx.gas = [self.get_max_gas("BTC")]
+                            if tx.gas[0].amount > tx.max_gas[0].amount:
                                 tx.gas = tx.max_gas
 
                         if (
@@ -531,11 +521,8 @@ class ThorchainState:
                             tx.max_gas = [
                                 Coin(coin.asset, int(self.network_fees["BCH"] * 3 / 2))
                             ]
-                            bch_max_gas = self.get_max_gas("BCH")
-                            gap = tx.max_gas[0].amount - bch_max_gas.amount
-                            if gap > 0:
-                                coin.amount += gap
-                            else:
+                            tx.gas = [self.get_max_gas("BCH")]
+                            if tx.gas[0].amount > tx.max_gas[0].amount:
                                 tx.gas = tx.max_gas
 
                         if (
@@ -546,11 +533,8 @@ class ThorchainState:
                             tx.max_gas = [
                                 Coin(coin.asset, int(self.network_fees["LTC"] * 3 / 2))
                             ]
-                            ltc_max_gas = self.get_max_gas("LTC")
-                            gap = tx.max_gas[0].amount - ltc_max_gas.amount
-                            if gap > 0:
-                                coin.amount += gap
-                            else:
+                            tx.gas = [self.get_max_gas("LTC")]
+                            if tx.gas[0].amount > tx.max_gas[0].amount:
                                 tx.gas = tx.max_gas
 
                         if (
@@ -561,11 +545,8 @@ class ThorchainState:
                             tx.max_gas = [
                                 Coin(coin.asset, int(self.network_fees["DOGE"] * 3 / 2))
                             ]
-                            doge_max_gas = self.get_max_gas("DOGE")
-                            gap = tx.max_gas[0].amount - doge_max_gas.amount
-                            if gap > 0:
-                                coin.amount += gap
-                            else:
+                            tx.gas = [self.get_max_gas("DOGE")]
+                            if tx.gas[0].amount > tx.max_gas[0].amount:
                                 tx.gas = tx.max_gas
 
                         if (
