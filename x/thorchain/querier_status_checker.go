@@ -44,8 +44,10 @@ var rules = []Rule{
 	{Scope: GlobalScope, Features: []Feature{LP}, isDisabledChecker: ruleIsGlobalLpPaused, Reason: "Global LP actions are paused"},
 	{Scope: GlobalScope, Features: []Feature{Trading}, isDisabledChecker: ruleIsGlobalTradingHalted, Reason: "Global trading halted"},
 	{Scope: GlobalScope, Features: []Feature{Synths}, isDisabledChecker: ruleIsGlobalSynthsPaused, Reason: "Global synths paused"},
+	{Scope: ChainScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsChainHalted, Reason: "Chain halted"},
 	{Scope: ChainScope, Features: []Feature{Trading}, isDisabledChecker: ruleIsChainTradingHalted, Reason: "Chain trading halted"},
-	{Scope: ChainScope, Features: []Feature{Trading}, isDisabledChecker: ruleIsChainTradingHaltedBySolvencyChecker, Reason: "Chain trading halted by solvency checker"},
+	{Scope: ChainScope, Features: []Feature{LP}, isDisabledChecker: ruleIsChainLPaused, Reason: "Chain LP paused"},
+	{Scope: ChainScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsChainTradingHaltedBySolvencyChecker, Reason: "Chain halted by solvency checker"},
 	{Scope: PoolScope, Features: []Feature{Lending}, isDisabledChecker: ruleIsLendingDisabeldByPool, Reason: "Lending disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{POL}, isDisabledChecker: ruleIsPOLDisabeldByPool, Reason: "POL disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{TORAnchor}, isDisabledChecker: ruleIsTORAnchorDisabeldByPool, Reason: "TORAnchor disable by pool with mimir"},
@@ -68,9 +70,11 @@ func ruleIsGlobalLpPaused(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, poo
 }
 
 func ruleIsGlobalSynthsPaused(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
-	burnSynths, errGettingBurn := mgr.Keeper().GetMimir(ctx, "BurnSynths")                                    // TODO: 1 means enable or disable ?
-	mintSynths, errGettingMint := mgr.Keeper().GetMimir(ctx, "MintSynths")                                    // TODO: 1 means enable or disable ?
-	isChainSynthsPaused := errGettingBurn == nil && burnSynths > 0 && errGettingMint == nil && mintSynths > 0 // For synths, there is a BurnSynths and MintSynths mimir which controls if swapping to/from synths are enabled
+	burnSynths, errGettingBurn := mgr.Keeper().GetMimir(ctx, "BurnSynths")
+	mintSynths, errGettingMint := mgr.Keeper().GetMimir(ctx, "MintSynths")
+	isBurnDisabled := burnSynths > 0 && ctx.BlockHeight() > burnSynths && errGettingBurn == nil
+	isMintDisabled := mintSynths > 0 && ctx.BlockHeight() > mintSynths && errGettingMint == nil
+	isChainSynthsPaused := isBurnDisabled || isMintDisabled
 	return isChainSynthsPaused
 }
 
@@ -100,10 +104,28 @@ func ruleIsGlobalChainHaltedByNode(mgr *Mgrs, ctx cosmos.Context, chain common.C
 	return false
 }
 
+func ruleIsChainHalted(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
+	mimirKey := fmt.Sprintf("Halt%sChain", chain)
+	haltChain, err := mgr.Keeper().GetMimir(ctx, mimirKey)
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
+		return true
+	}
+	return false
+}
+
 func ruleIsChainTradingHalted(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
 	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
 	haltChainTrading, err := mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
+		return true
+	}
+	return false
+}
+
+func ruleIsChainLPaused(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
+	mimirKey := fmt.Sprintf("PauseLP%s", chain)
+	haltChain, err := mgr.Keeper().GetMimir(ctx, mimirKey)
+	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		return true
 	}
 	return false
