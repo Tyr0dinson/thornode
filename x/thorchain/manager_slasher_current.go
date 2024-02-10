@@ -708,6 +708,12 @@ func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
 			continue
 		}
+		if voter.FinalisedHeight > 0 {
+			// Finalised observed txouts should have nothing to do with unfulfilled TxOutItems.
+			// This finalised txout might for instance be from an output
+			// that was split into multiple outbounds from initially-different vaults.
+			continue
+		}
 		// in the event there are multiple observed txouts for a given inhash, we
 		// focus on the matching pubkey and asset
 		signers := make(map[string]bool)
