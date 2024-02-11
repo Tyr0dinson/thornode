@@ -43,7 +43,7 @@ func (gm *GasMgrVCUR) BeginBlock(_ Manager) { // TODO: Remove Manager argument o
 }
 
 // AddGasAsset to the EventGas
-func (gm *GasMgrVCUR) AddGasAsset(gas common.Gas, increaseTxCount bool) {
+func (gm *GasMgrVCUR) AddGasAsset(_ common.Asset, gas common.Gas, increaseTxCount bool) {
 	gm.gas = gm.gas.Adds_deprecated(gas)
 	if !increaseTxCount {
 		return
