@@ -58,7 +58,7 @@ func (s *GasSuite) TestCombineGas(c *C) {
 		{Asset: BNBAsset, Amount: cosmos.NewUint(14 * One)},
 		{Asset: BTCAsset, Amount: cosmos.NewUint(20 * One)},
 	}
-	gas := gas1.Adds_deprecated(gas2)
+	gas := gas1.Add(gas2...)
 
 	// Confirm the slice lengths.
 	c.Assert(gas1, HasLen, 1)
@@ -72,20 +72,18 @@ func (s *GasSuite) TestCombineGas(c *C) {
 	c.Check(gas[1].Amount.Equal(cosmos.NewUint(20*One)), Equals, true)
 
 	// Check whether there is any influence on the Amounts of gas1 or gas2 by the combining.
-	c.Check(gas1[0].Amount.Equal(cosmos.NewUint(11*One)), Equals, false, Commentf("%d", gas1[0].Amount.Uint64()))
-	// gas1 should be unchanged by the combination, but it has been altered.
-	c.Check(gas1[0].Amount.Equal(cosmos.NewUint(25*One)), Equals, true, Commentf("%d", gas1[0].Amount.Uint64()))
-
+	c.Check(gas1[0].Amount.Equal(cosmos.NewUint(11*One)), Equals, true, Commentf("%d", gas1[0].Amount.Uint64()))
 	c.Check(gas2[0].Amount.Equal(cosmos.NewUint(14*One)), Equals, true, Commentf("%d", gas2[0].Amount.Uint64()))
 	c.Check(gas2[1].Amount.Equal(cosmos.NewUint(20*One)), Equals, true, Commentf("%d", gas2[1].Amount.Uint64()))
-	// gas2 is unchanged by the combination, as it should be.
+	// gas1 and gas2 are unchanged by the combination, as they should be.
 
 	// Check whether changes to gas can affect gas1 or gas2.
 	gas[0].Amount = gas[0].Amount.MulUint64(2)
 	gas[1].Amount = gas[1].Amount.MulUint64(2)
-	c.Check(gas1[0].Amount.Equal(cosmos.NewUint(25*One)), Equals, true, Commentf("%d", gas1[0].Amount.Uint64()))
+	c.Check(gas1[0].Amount.Equal(cosmos.NewUint(11*One)), Equals, true, Commentf("%d", gas1[0].Amount.Uint64()))
 	c.Check(gas2[0].Amount.Equal(cosmos.NewUint(14*One)), Equals, true, Commentf("%d", gas2[0].Amount.Uint64()))
 	c.Check(gas2[1].Amount.Equal(cosmos.NewUint(20*One)), Equals, true, Commentf("%d", gas2[1].Amount.Uint64()))
+	// gas1 and gas2 are unaffected, as they should be.
 
 	// Check whether changes to gas1 or gas2 can affect gas.
 	c.Check(gas[0].Amount.Equal(cosmos.NewUint(50*One)), Equals, true, Commentf("%d", gas[0].Amount.Uint64()))
@@ -95,6 +93,7 @@ func (s *GasSuite) TestCombineGas(c *C) {
 	gas2[1].Amount = gas2[1].Amount.MulUint64(2)
 	c.Check(gas[0].Amount.Equal(cosmos.NewUint(50*One)), Equals, true, Commentf("%d", gas[0].Amount.Uint64()))
 	c.Check(gas[1].Amount.Equal(cosmos.NewUint(40*One)), Equals, true, Commentf("%d", gas[0].Amount.Uint64()))
+	// gas is unaffected, as it should be.
 }
 
 func (s *GasSuite) TestCalcGasPrice(c *C) {
