@@ -294,7 +294,7 @@ func (gm *GasMgrVCUR) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventMa
 	gm.reset() // do not remove, will cause consensus failures
 }
 
-// ProcessGas to subsidise the pool with RUNE for the gas they have spent
+// ProcessGas to subsidise the gas asset pools with RUNE for the gas they have spent
 func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	if keeper.RagnarokInProgress(ctx) {
 		// ragnarok is in progress , stop
@@ -307,54 +307,79 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 		return
 	}
 
-	gas := gm.GetGas()
-	for i := range gas {
-		// if the coin is empty, don't need to do anything
-		if gas[i].IsEmpty() {
-			continue
-		}
-
-		pool, err := keeper.GetPool(ctx, gas[i].Asset)
-		if err != nil {
-			ctx.Logger().Error("fail to get pool", "pool", gas[i].Asset, "error", err)
-			continue
-		}
-		if err := pool.Valid(); err != nil {
-			ctx.Logger().Error("invalid pool", "pool", gas[i].Asset, "error", err)
-			continue
-		}
-		runeGas := pool.AssetValueInRune(gas[i].Amount) // Convert to Rune (gas will never be RUNE)
-		if runeGas.IsZero() {
-			continue
-		}
-		// If Rune owed now exceeds the Total Reserve, return it all
-		if runeGas.LT(keeper.GetRuneBalanceOfModule(ctx, ReserveName)) {
-			coin := common.NewCoin(common.RuneNative, runeGas)
-			if err := keeper.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
-				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gas[i].Asset, "error", err)
+	reserveRune := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
+	poolCache := map[common.Asset]Pool{}
+	for i := range gm.outAssetGas {
+		for j := range gm.outAssetGas[i].gas {
+			// if the coin is empty, don't need to do anything
+			if gm.outAssetGas[i].gas[j].IsEmpty() {
 				continue
 			}
-			pool.BalanceRune = pool.BalanceRune.Add(runeGas) // Add to the pool
-			network.OutboundGasSpentRune += runeGas.Uint64() // Add $RUNE spent on gas by the reserve
-		} else {
-			// since we don't have enough in the reserve to cover the gas used,
-			// no rune is added to the pool, sorry LPs!
-			runeGas = cosmos.ZeroUint()
-		}
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gas[i].Amount)
 
-		if err := keeper.SetPool(ctx, pool); err != nil {
-			ctx.Logger().Error("fail to set pool", "pool", gas[i].Asset, "error", err)
+			pool, ok := poolCache[gm.outAssetGas[i].gas[j].Asset]
+			if !ok {
+				pool, err = keeper.GetPool(ctx, gm.outAssetGas[i].gas[j].Asset)
+				if err != nil {
+					ctx.Logger().Error("fail to get pool", "pool", gm.outAssetGas[i].gas[j].Asset, "error", err)
+					continue
+				}
+				if err = pool.Valid(); err != nil {
+					// Cache the invalid pool, logging only when added to the cache.
+					ctx.Logger().Error("invalid pool", "pool", gm.outAssetGas[i].gas[j].Asset, "error", err)
+				}
+				poolCache[gm.outAssetGas[i].gas[j].Asset] = pool
+			}
+			if err := pool.Valid(); err != nil {
+				continue
+			}
+
+			// TODO:  Use RuneReimbursementForAssetWithdrawal and, within this range, do cached pool updates before a single later SetPool?
+			// Currently this uses a constant AssetValueInRune ratio without ensuring a constant depths-product,
+			// as a result of which asset-associated reimbursement order does not matter.
+			runeGas := pool.AssetValueInRune(gm.outAssetGas[i].gas[j].Amount) // Convert to Rune (gas will never be RUNE)
+			if runeGas.IsZero() {
+				continue
+			}
+			// Keep track of whether the Reserve RUNE will be enough for all reimbursements.
+			reserveRune = common.SafeSub(reserveRune, runeGas)
+			if reserveRune.IsZero() {
+				// since we don't have enough in the reserve to cover the gas used,
+				// no further rune is added to gas pools, sorry LPs!
+				runeGas = cosmos.ZeroUint()
+			}
+
+			network.OutboundGasSpentRune += runeGas.Uint64() // Add RUNE spent on gas by the reserve
+
+			gasPool := GasPool{
+				Asset:    gm.outAssetGas[i].gas[j].Asset,
+				AssetAmt: gm.outAssetGas[i].gas[j].Amount,
+				RuneAmt:  runeGas,
+				Count:    gm.gasCount[gm.outAssetGas[i].gas[j].Asset],
+			}
+			gm.gasEvent.UpsertGasPool(gasPool)
+		}
+	}
+
+	// Carry out the actual reimbursement and Set the pools.
+	for i := range gm.gasEvent.Pools {
+		pool, ok := poolCache[gm.gasEvent.Pools[i].Asset]
+		if !ok {
+			// This should never happen.
+			ctx.Logger().Error("pool asset in gas event for which no cached pool", "asset", gm.gasEvent.Pools[i].Asset)
 			continue
 		}
-
-		gasPool := GasPool{
-			Asset:    gas[i].Asset,
-			AssetAmt: gas[i].Amount,
-			RuneAmt:  runeGas,
-			Count:    gm.gasCount[gas[i].Asset],
+		if !gm.gasEvent.Pools[i].RuneAmt.IsZero() {
+			coin := common.NewCoin(common.RuneNative, gm.gasEvent.Pools[i].RuneAmt)
+			if err := keeper.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
+				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gm.gasEvent.Pools[i].Asset, "error", err)
+			} else {
+				pool.BalanceRune = pool.BalanceRune.Add(gm.gasEvent.Pools[i].RuneAmt)
+			}
 		}
-		gm.gasEvent.UpsertGasPool(gasPool)
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gm.gasEvent.Pools[i].AssetAmt)
+		if err := keeper.SetPool(ctx, pool); err != nil {
+			ctx.Logger().Error("fail to set pool", "pool", pool.Asset, "error", err)
+		}
 	}
 
 	if err := keeper.SetNetwork(ctx, network); err != nil {
