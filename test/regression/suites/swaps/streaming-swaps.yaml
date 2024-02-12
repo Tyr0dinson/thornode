@@ -10,6 +10,13 @@ endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - .|length == 2
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .gas_withheld_rune == "0"
+  - .gas_spent_rune == "0"
+  - .outbound_fee_multiplier == "20000"
+---
 ########################################################################################
 # streaming swap to ETH.ETH (100% conversion)
 ########################################################################################
@@ -554,3 +561,10 @@ type: check
 endpoint: http://localhost:1317/thorchain/invariant/streaming_swaps
 asserts:
   - .broken == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .gas_withheld_rune == "801715333"
+  - .gas_spent_rune == "600461507"
+  - .outbound_fee_multiplier == "19999"
