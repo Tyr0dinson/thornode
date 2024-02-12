@@ -677,6 +677,22 @@ func (k KVStoreDummy) GetNativeTxFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
+func (k KVStoreDummy) AddToOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset, withheld cosmos.Uint) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) AddToOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset, reimbursed cosmos.Uint) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
 func (k KVStoreDummy) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
