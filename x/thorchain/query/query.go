@@ -94,6 +94,7 @@ var (
 	QueryTssKeygenMetrics    = Query{Key: "tss_keygen_metric", EndpointTemplate: "/%s/metric/keygen/{%s}"}
 	QueryTssMetrics          = Query{Key: "tss_metric", EndpointTemplate: "/%s/metrics"}
 	QueryTHORName            = Query{Key: "thorname", EndpointTemplate: "/%s/thorname/{%s}"}
+	QueryQuotePair           = Query{Key: "quotepair", EndpointTemplate: "/%s/quote/pair"}
 	QueryQuoteSwap           = Query{Key: "quoteswap", EndpointTemplate: "/%s/quote/swap"}
 	QueryQuoteSaverDeposit   = Query{Key: "quotesaverdeposit", EndpointTemplate: "/%s/quote/saver/deposit"}
 	QueryQuoteSaverWithdraw  = Query{Key: "quotesaverwithdraw", EndpointTemplate: "/%s/quote/saver/withdraw"}
@@ -179,4 +180,5 @@ var Queries = []Query{
 	QueryInvariant,
 	QueryBlock,
 	QueryExport,
+	QueryQuotePair,
 }

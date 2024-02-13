@@ -454,7 +454,36 @@ func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, 
 
 // calculateMinSwapAmount returns the recommended minimum swap amount The recommended
 // min swap amount is: - MAX(
-//
+func calculateExchangeRate(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset) (sdk.Uint, error) {
+	// get the fromPool for the from asset
+	fromPool, err := mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+	if err != nil {
+		return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+	}
+
+	// ensure pool exists
+	if fromPool.IsEmpty() {
+		return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+	}
+
+	// get the toPool for the to asset
+	toPool, err := mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
+	if err != nil {
+		return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+	}
+
+	// ensure pool exists
+	if toPool.IsEmpty() {
+		return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+	}
+
+	// calculate the exchange rate
+	return fromPool.AssetValueInRune(sdk.OneUint()).Mul(toPool.RuneValueInAsset(sdk.OneUint())), nil
+}
+
+// calculateMinSwapAmount returns the recommended minimum swap amount
+// The recommended min swap amount is:
+// - MAX(
 //	  outbound_fee(src_chain) * 4,
 //	  outbound_fee(dest_chain) * 4,
 //	  (native_tx_fee_rune * 2) * 10,000 / affiliateBps
@@ -516,6 +545,50 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 	}
 
 	return minSwapAmount, nil
+}
+
+func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// extract parameters
+	params, err := quoteParseParams(req.Data)
+	if err != nil {
+		return quoteErrorResponse(err)
+	}
+
+	// validate required parameters
+	for _, p := range []string{fromAssetParam, toAssetParam} {
+		if len(params[p]) == 0 {
+			return quoteErrorResponse(fmt.Errorf("missing required parameter %s", p))
+		}
+	}
+
+	// parse assets
+	fromAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("bad from asset: %w", err))
+	}
+	fromAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), fromAsset)
+	toAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("bad to asset: %w", err))
+	}
+	toAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), toAsset)
+
+	// parse affiliate bps
+	affiliateBps := sdk.NewUint(0)
+	if len(params[affiliateBpsParam]) > 0 {
+		affiliateBps, err = sdk.ParseUint(params[affiliateBpsParam][0])
+		if err != nil {
+			err = fmt.Errorf("bad affiliate fee: %w", err)
+			return quoteErrorResponse(err)
+		}
+	}
+
+	if affiliateBps.GT(sdk.NewUint(10000)) {
+		err = fmt.Errorf("affiliate fee must be less than 10000 bps")
+		return quoteErrorResponse(err)
+	}
+
+	minAmount, err := calculateMinSwapAmount(ctx, mgr, fromAsset, toAsset)
 }
 
 func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
