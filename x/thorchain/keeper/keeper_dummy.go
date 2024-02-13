@@ -689,8 +689,16 @@ func (k KVStoreDummy) GetOutboundFeeWithheldRune(ctx cosmos.Context, outAsset co
 	return cosmos.ZeroUint(), kaboom
 }
 
+func (k KVStoreDummy) GetOutboundFeeWithheldRuneIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
 func (k KVStoreDummy) GetOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetOutboundGasReimbursedRuneIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
 }
 
 func (k KVStoreDummy) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {

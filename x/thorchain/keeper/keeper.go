@@ -213,7 +213,9 @@ type KeeperOutboundFees interface {
 	AddToOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset, withheld cosmos.Uint) error
 	AddToOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset, reimbursed cosmos.Uint) error
 	GetOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error)
+	GetOutboundFeeWithheldRuneIterator(ctx cosmos.Context) cosmos.Iterator
 	GetOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error)
+	GetOutboundGasReimbursedRuneIterator(ctx cosmos.Context) cosmos.Iterator
 	GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint
 }
 
