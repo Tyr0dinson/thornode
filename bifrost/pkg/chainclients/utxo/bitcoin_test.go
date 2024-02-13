@@ -15,7 +15,6 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -99,8 +98,8 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 	s.cfg.UTXO.MaxMempoolBatches = 10
 	s.cfg.UTXO.EstimatedAverageTxSize = 1000
 	s.cfg.UTXO.MaxReorgRescanBlocks = 1
+	s.cfg.UTXO.GetBlockVerboseTxsAvailable = true
 	ns := strconv.Itoa(time.Now().Nanosecond())
-	ctypes.Network = ctypes.TestNetwork
 
 	thordir := filepath.Join(os.TempDir(), ns, ".thorcli")
 	cfg := config.BifrostClientConfiguration{
@@ -197,6 +196,7 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
 	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
+	s.client.disableVinZeroBatch = true
 	c.Assert(err, IsNil)
 	c.Assert(s.client, NotNil)
 }
@@ -248,12 +248,12 @@ func (s *BitcoinSuite) TestGetSender(c *C) {
 			},
 		},
 	}
-	sender, err := s.client.getSender(&tx)
+	sender, err := s.client.getSender(&tx, nil)
 	c.Assert(err, IsNil)
 	c.Assert(sender, Equals, "n3jYBjCzgGNydQwf83Hz6GBzGBhMkKfgL1")
 
 	tx.Vin[0].Vout = 1
-	sender, err = s.client.getSender(&tx)
+	sender, err = s.client.getSender(&tx, nil)
 	c.Assert(err, IsNil)
 	c.Assert(sender, Equals, "tb1qdxxlx4r4jk63cve3rjpj428m26xcukjn5yegff")
 }

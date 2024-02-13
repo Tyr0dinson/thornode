@@ -1,7 +1,3 @@
----
-description: How to Query THORChain
----
-
 # Querying THORChain
 
 ## Supported Address Formats
@@ -55,21 +51,20 @@ Example Output, each connected chain will be displayed.
       ...
 ]
 ```
+```admonish danger
+Never cache vault addresses, they churn regularly
+```
 
-{% hint style="danger" %}
-Never cache vault addresses, they churn regularly.
-{% endhint %}
-
-{% hint style="danger" %}
+```admonish danger
 Inbound transactions should not be delayed for any reason else there is risk funds will be sent to an unreachable address. Use standard transactions, check the `inbound address` before sending and use the recommended [`gas rate`](querying-thorchain.md#getting-the-asgard-vault) to ensure transactions are confirmed in the next block to the latest `Inbound_Address`.
-{% endhint %}
+```
 
-{% hint style="danger" %}
+```admonish danger
 Check for the `halted` parameter and never send funds if it is set to true
-{% endhint %}
+```
 
-{% hint style="warning" %}
-If a chain has a `router` on the inbound address endpoint, then everything must be deposited via the router. The router is a contract that the user first approves, and the deposit call transfers the asset into the network and emits an event to THORChain.
+````admonish warning
+If a chain has a `router` on the inbound address endpoint, then everything must be deposited via the router. The router is a contract that the user first approves, and the deposit call transfers the asset into the network and emits an event to THORChain.&#x20;
 
 \
 This is done because "tokens" on protocols don't support memos on-chain, thus need to be wrapped by a router which can force a memo.
@@ -87,11 +82,11 @@ Note: you can transfer the base asset, eg ETH, directly to the address and skip 
 }
 ```
 
-{% endhint %}
+````
 
-{% hint style="warning" %}
+```admonish warning
 If you connect to a public Midgard, you must be conscious of the fact that you can be phished and could send money to the WRONG vault. You should do safety checks, i.e. comparing with other nodes, or even inspecting the vault itself for the presence of funds. You should also consider running your own '[fullnode](https://docs.thorchain.org/thornodes/overview)' instance to query for trusted data.
-{% endhint %}
+```
 
 - `Chain`: Chain Name
 - `Address`: Asgard Vault inbound address for that chain.,
@@ -119,19 +114,19 @@ Use the `/pools` [endpoint](https://midgard.thorchain.info/v2/pools) of Midgard 
 }
 ```
 
-{% hint style="info" %}
+```admonish info
 Only pools with `"status": "available"` are available to trade
-{% endhint %}
+```
 
-{% hint style="info" %}
+```admonish info
 Make sure to manually add Native $RUNE as a swappable asset.
-{% endhint %}
+```
 
-{% hint style="info" %}
+```admonish info
 `"assetPrice" tells you the asset's price in RUNE (RUNE Depth/AssetDepth ). In the above example`
 
 `1 BNB.BTCB-1DE = 11,205 RUNE`
-{% endhint %}
+```
 
 ### Decimals and Base Units
 

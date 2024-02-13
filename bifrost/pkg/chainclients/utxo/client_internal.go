@@ -373,19 +373,16 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 }
 
 func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error) {
-	switch c.cfg.ChainID {
-	case common.DOGEChain:
+	// only relevant for DOGE before version 1.14.7
+	if !c.cfg.UTXO.GetBlockVerboseTxsAvailable {
 		return c.getBlockWithoutVerbose(height)
-	case common.BCHChain, common.LTCChain, common.BTCChain:
-		hash, err := c.rpc.GetBlockHash(height)
-		if err != nil {
-			return &btcjson.GetBlockVerboseTxResult{}, err
-		}
-		return c.rpc.GetBlockVerboseTxs(hash)
-	default:
-		c.log.Fatal().Msg("unsupported chain")
-		return nil, nil
 	}
+
+	hash, err := c.rpc.GetBlockHash(height)
+	if err != nil {
+		return &btcjson.GetBlockVerboseTxResult{}, err
+	}
+	return c.rpc.GetBlockVerboseTxs(hash)
 }
 
 // getBlockWithoutVerbose will get the block without verbose transaction details, and
@@ -552,7 +549,7 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	return false
 }
 
-func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) (types.TxInItem, error) {
+func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) (types.TxInItem, error) {
 	if c.ignoreTx(tx, height) {
 		c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
 		return types.TxInItem{}, nil
@@ -561,7 +558,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool) 
 	if c.isRBFEnabled(tx) && isMemPool {
 		return types.TxInItem{}, nil
 	}
-	sender, err := c.getSender(tx)
+	sender, err := c.getSender(tx, vinZeroTxs)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to get sender from tx: %w", err)
 	}
@@ -631,16 +628,122 @@ func (c *Client) stripBCHAddress(addr string) string {
 	return split[0]
 }
 
+func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[string]*btcjson.TxRawResult, error) {
+	vinZeroTxs := make(map[string]*btcjson.TxRawResult)
+	start := time.Now()
+
+	dustThreshold := c.cfg.ChainID.DustThreshold().Uint64()
+
+	// create our batches
+	batches := [][]string{}
+	batch := []string{}
+	var count, ignoreCount, failMemoSkipCount, skipDustCount int // just for debug logs
+	for i := range block.Tx {
+		if c.ignoreTx(&block.Tx[i], block.Height) {
+			ignoreCount++
+			continue
+		}
+
+		// skip if sum of vout value is under thorchain dust threshold
+		voutSats, err := sumVoutSats(&block.Tx[i])
+		if err != nil {
+			c.log.Error().Err(err).Str("txid", block.Tx[i].Txid).Msg("fail to sum vout sats")
+		} else if voutSats < dustThreshold {
+			skipDustCount++
+			continue
+		}
+
+		memo, err := c.getMemo(&block.Tx[i])
+		if err != nil || len(memo) > constants.MaxMemoSize {
+			failMemoSkipCount++
+			continue
+		}
+
+		count++
+		batch = append(batch, block.Tx[i].Vin[0].Txid)
+		if len(batch) >= c.cfg.UTXO.TransactionBatchSize {
+			batches = append(batches, batch)
+			batch = []string{}
+		}
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+
+	c.log.Debug().
+		Int64("height", block.Height).
+		Int("ignoreCount", ignoreCount).
+		Int("failMemoSkipCount", failMemoSkipCount).
+		Int("skipDustCount", skipDustCount).
+		Int("count", count).
+		Int("batchSize", c.cfg.UTXO.TransactionBatchSize).
+		Int("batchCount", len(batches)).
+		Msg("getVinZeroTxs")
+
+	// get the vin zero txs one batch at a time
+	retries := 0
+	for i := 0; i < len(batches); i++ {
+		results, errs, err := c.rpc.BatchGetRawTransactionVerbose(batches[i])
+
+		// if there was no rpc error, check for any tx errors
+		txErrCount := 0
+		if err == nil {
+			for _, txErr := range errs {
+				if txErr != nil {
+					err = txErr
+				}
+				txErrCount++
+			}
+		}
+
+		// retry the batch a few times on any errors to avoid wasted work
+		if err != nil {
+			if retries >= 3 {
+				return nil, err
+			}
+
+			c.log.Err(err).Int("txErrCount", txErrCount).Msgf("retrying block txs batch %d", i)
+			time.Sleep(time.Second)
+			retries++
+			i-- // retry the same batch
+			continue
+		}
+
+		// add transactions to block result
+		for _, tx := range results {
+			vinZeroTxs[tx.Txid] = tx
+		}
+	}
+
+	c.log.Debug().
+		Int64("height", block.Height).
+		Dur("duration", time.Since(start)).
+		Msg("getVinZeroTxs complete")
+
+	return vinZeroTxs, nil
+}
+
 func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn, error) {
 	txIn := types.TxIn{
 		Chain:   c.GetChain(),
 		MemPool: false,
 	}
+
+	var vinZeroTxs map[string]*btcjson.TxRawResult
+	var err error
+	if !c.disableVinZeroBatch {
+		vinZeroTxs, err = c.getVinZeroTxs(block)
+		if err != nil {
+			c.log.Error().Err(err).Msg("fail to get txid to vin zero tx, getTxIn will fan out")
+		}
+	}
+
 	var txItems []types.TxInItem
 	for idx, tx := range block.Tx {
 		// mempool transaction get committed to block , thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
-		txInItem, err := c.getTxIn(&block.Tx[idx], block.Height, false)
+		var txInItem types.TxInItem
+		txInItem, err = c.getTxIn(&block.Tx[idx], block.Height, false, vinZeroTxs)
 		if err != nil {
 			c.log.Debug().Err(err).Msg("fail to get TxInItem")
 			continue
@@ -654,7 +757,8 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		if txInItem.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
 			continue
 		}
-		exist, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
+		var exist bool
+		exist, err = c.temporalStorage.TrackObservedTx(txInItem.Tx)
 		if err != nil {
 			c.log.Err(err).Msgf("fail to determinate whether hash(%s) had been observed before", txInItem.Tx)
 		}
@@ -747,15 +851,30 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 }
 
 // getSender returns sender address for a btc tx, using vin:0
-func (c *Client) getSender(tx *btcjson.TxRawResult) (string, error) {
+func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjson.TxRawResult) (string, error) {
 	if len(tx.Vin) == 0 {
 		return "", fmt.Errorf("no vin available in tx")
 	}
-	vinTx, err := c.rpc.GetRawTransactionVerbose(tx.Vin[0].Txid)
-	if err != nil {
-		return "", fmt.Errorf("fail to query raw tx")
+
+	var vout btcjson.Vout
+	if vinZeroTxs != nil {
+		vinTx, ok := vinZeroTxs[tx.Vin[0].Txid]
+		if !ok {
+			// if vouts are below dust this is expected, so skip log noise
+			value, err := sumVoutSats(tx)
+			if err != nil || value >= c.cfg.ChainID.DustThreshold().Uint64() {
+				c.log.Debug().Str("txid", tx.Txid).Msg("vin zero tx not found")
+			}
+			return "", fmt.Errorf("missing vin zero tx")
+		}
+		vout = vinTx.Vout[tx.Vin[0].Vout]
+	} else {
+		vinTx, err := c.rpc.GetRawTransactionVerbose(tx.Vin[0].Txid)
+		if err != nil {
+			return "", fmt.Errorf("fail to query raw tx")
+		}
+		vout = vinTx.Vout[tx.Vin[0].Vout]
 	}
-	vout := vinTx.Vout[tx.Vin[0].Vout]
 
 	addresses := c.getAddressesFromScriptPubKey(vout.ScriptPubKey)
 	if len(addresses) == 0 {

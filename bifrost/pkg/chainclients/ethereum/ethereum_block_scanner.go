@@ -44,7 +44,6 @@ type SolvencyReporter func(int64) error
 
 const (
 	BlockCacheSize  = 6000
-	MaxContractGas  = 80000
 	ethToken        = "0x0000000000000000000000000000000000000000"
 	symbolMethod    = "symbol"
 	decimalMethod   = "decimals"
@@ -117,7 +116,7 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 	if err != nil {
 		return nil, err
 	}
-	vaultABI, erc20ABI, err := getContractABI()
+	vaultABI, erc20ABI, err := evm.GetContractABI(routerContractABI, erc20ContractABI)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create contract abi: %w", err)
 	}
@@ -219,7 +218,7 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 
 	// post to thorchain if there is a fee and it has changed
 	if gasPrice.Cmp(big.NewInt(0)) != 0 && tcGasPrice != e.lastReportedGasPrice {
-		if _, err = e.bridge.PostNetworkFee(height, common.ETHChain, MaxContractGas, tcGasPrice); err != nil {
+		if _, err = e.bridge.PostNetworkFee(height, common.ETHChain, e.cfg.MaxGasLimit, tcGasPrice); err != nil {
 			e.logger.Err(err).Msg("fail to post ETH chain single transfer fee to THORNode")
 		} else {
 			e.lastReportedGasPrice = tcGasPrice
@@ -506,8 +505,9 @@ func (e *ETHScanner) reprocessTxs() ([]int64, error) {
 		block, err = e.getHeader(blockMeta.Height)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to get block verbose tx result: %d", blockMeta.Height)
+			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
+			continue
 		}
-
 		if !strings.EqualFold(blockMeta.BlockHash, block.Hash().Hex()) {
 			// if the block hash is different as previously recorded , then the block should be rescanned
 			rescanBlockHeights = append(rescanBlockHeights, blockMeta.Height)
@@ -819,8 +819,19 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	}
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas())
 	if txInItem.Coins.IsEmpty() {
-		e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
-		return nil, nil
+		if txInItem.Sender == txInItem.To {
+			// When the Sender and To is the same then there's no balance chance whatever the Coins,
+			// and for Tx-received Valid() a non-zero Amount is needed to observe
+			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
+			observableAmount := common.ETHChain.DustThreshold().Add(cosmos.OneUint()) // Adding 1 for if DustThreshold is 0.
+			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount))
+
+			// remove the outbound from signer cache so it can be re-attempted
+			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+		} else {
+			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
+			return nil, nil
+		}
 	}
 	return txInItem, nil
 }

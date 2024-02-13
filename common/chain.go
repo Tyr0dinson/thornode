@@ -9,8 +9,8 @@ import (
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/hashicorp/go-multierror"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	btypes "gitlab.com/thorchain/binance-sdk/common/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 const (
@@ -216,14 +216,14 @@ func (c Chain) GetGasAssetDecimal() int64 {
 }
 
 // IsValidAddress make sure the address is correct for the chain
-// And this also make sure testnet doesn't use mainnet address vice versa
+// And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {
 	network := CurrentChainNetwork
 	prefix := c.AddressPrefix(network)
 	return strings.HasPrefix(addr.String(), prefix)
 }
 
-// AddressPrefix return the address prefix used by the given network (testnet/mainnet)
+// AddressPrefix return the address prefix used by the given network (mocknet/mainnet)
 func (c Chain) AddressPrefix(cn ChainNetwork) string {
 	if c.IsEVM() {
 		return "0x"
@@ -232,13 +232,13 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 	case MockNet:
 		switch c {
 		case BNBChain:
-			return btypes.TestNetwork.Bech32Prefixes()
+			return "tbnb"
 		case TERRAChain:
 			return "terra"
 		case GAIAChain:
 			return "cosmos"
 		case THORChain:
-			// TODO update this to use testnet address prefix
+			// TODO update this to use mocknet address prefix
 			return types.GetConfig().GetBech32AccountAddrPrefix()
 		case BTCChain:
 			return chaincfg.RegressionNetParams.Bech32HRPSegwit
@@ -247,28 +247,10 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
 		}
-	case TestNet:
-		switch c {
-		case BNBChain:
-			return btypes.TestNetwork.Bech32Prefixes()
-		case TERRAChain:
-			return "terra"
-		case GAIAChain:
-			return "cosmos"
-		case THORChain:
-			// TODO update this to use testnet address prefix
-			return types.GetConfig().GetBech32AccountAddrPrefix()
-		case BTCChain:
-			return chaincfg.TestNet3Params.Bech32HRPSegwit
-		case LTCChain:
-			return ltcchaincfg.TestNet4Params.Bech32HRPSegwit
-		case DOGEChain:
-			return dogchaincfg.TestNet3Params.Bech32HRPSegwit
-		}
 	case MainNet, StageNet:
 		switch c {
 		case BNBChain:
-			return btypes.ProdNetwork.Bech32Prefixes()
+			return "bnb"
 		case TERRAChain:
 			return "terra"
 		case GAIAChain:
@@ -305,13 +287,15 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	}
 }
 
-// MaxMemoLength returns the max memo length for each chain. Returns 0 if no max is configured.
+// MaxMemoLength returns the max memo length for each chain.
 func (c Chain) MaxMemoLength() int {
 	switch c {
 	case BTCChain, LTCChain, BCHChain, DOGEChain:
 		return 80
 	default:
-		return 0
+		// Default to the max memo size that we will process, regardless
+		// of any higher memo size capable on other chains.
+		return constants.MaxMemoSize
 	}
 }
 

@@ -1,5 +1,5 @@
-//go:build !testnet && !mocknet && !stagenet
-// +build !testnet,!mocknet,!stagenet
+//go:build !mocknet && !stagenet
+// +build !mocknet,!stagenet
 
 package aggregators
 
@@ -11,6 +11,10 @@ import (
 
 func DexAggregators(version semver.Version) []Aggregator {
 	switch {
+	case version.GTE(semver.MustParse("1.127.0")):
+		return DexAggregatorsV127()
+	case version.GTE(semver.MustParse("1.126.0")):
+		return DexAggregatorsV126()
 	case version.GTE(semver.MustParse("1.124.0")):
 		return DexAggregatorsV124()
 	case version.GTE(semver.MustParse("1.120.0")):

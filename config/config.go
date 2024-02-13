@@ -600,6 +600,25 @@ type BifrostChainConfiguration struct {
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
+	// FixedOutboundGasRate will force signed transactions to use the specific rate in the
+	// outbound instead of adjusting based on current chain gas price. This is currently
+	// only used in mocknet to for smoke tests.
+	FixedOutboundGasRate bool `mapstructure:"fixed_outbound_gas_rate"`
+
+	// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
+	// not the gas asset. This compensates for variance in gas units when contracts for
+	// pool assets use more than the configured MaxGasLimit gas units in transferOut.
+	TokenMaxGasMultiplier int64 `mapstructure:"token_max_gas_multiplier"`
+
+	// AggregatorMaxGasMultiplier is a multiplier applied to max gas for outbounds which
+	// swap out via an aggregator contract. This compensates for variance in gas units when
+	// aggregator swaps outs use more than the configured MaxGasLimit gas units.
+	AggregatorMaxGasMultiplier int64 `mapstructure:"aggregator_max_gas_multiplier"`
+
+	// MaxPendingNonces is the maximum number of pending nonces to allow before aborting
+	// new signing attempts.
+	MaxPendingNonces uint64 `mapstructure:"max_pending_nonces"`
+
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {
 		// BlockCacheCount is the number of blocks to cache in storage.
@@ -618,9 +637,11 @@ type BifrostChainConfiguration struct {
 		// a single scanning pass.
 		MaxMempoolBatches int `mapstructure:"max_mempool_batches"`
 
-		// ClientV2 flags on the usage of the replacement generic utxo client.
-		// TODO: Remove after full adoption on all UTXO chains.
-		ClientV2 bool `mapstructure:"client_v2"`
+		// GetBlockVerboseTxsAvailable is a flag to indicate if the chain supports the
+		// getblock RPC with verbosity level 2. This is used to determine if we can fetch
+		// the full transaction details from the block of must fan out. The current mainnet
+		// Dogecoin daemon does not support this RPC call (dev branch for 1.14.7 does).
+		GetBlockVerboseTxsAvailable bool `mapstructure:"get_block_verbose_txs_available"`
 
 		// NOTE: The following fields must be consistent across all validators. Otherwise,
 		// nodes can fail to sign outbounds from asgard since they may build different
@@ -673,6 +694,9 @@ type BifrostBlockScannerConfiguration struct {
 	DBPath                     string        `mapstructure:"db_path"`
 	ChainID                    common.Chain  `mapstructure:"chain_id"`
 
+	// ScanBlocks indicates whether mempool transactions should be scanned.
+	ScanMemPool bool `mapstructure:"scan_mempool"`
+
 	// The following configuration values apply only to a subset of chains.
 
 	// CosmosGRPCHost is the <host>:<port> of the gRPC endpoint of the Cosmos SDK chain.
@@ -697,11 +721,10 @@ type BifrostBlockScannerConfiguration struct {
 	// submit network fee and solvency observations.
 	ObservationFlexibilityBlocks int64 `mapstructure:"observation_flexibility_blocks"`
 
-	// MaxGasFee is the maximum gas fee (in base asset) that will be used for a transaction.
-	MaxGasFee int64 `mapstructure:"max_gas_fee"`
-
-	// MaxContractGas is the maximum gas allowed for a contract transaction.
-	MaxContractGas int64 `mapstructure:"max_contract_gas"`
+	// MaxGasLimit is the maximum gas allowed for non-aggregator outbounds. This is used
+	// as the limit in the estimate gas call, and the estimate gas (lower) is used in the
+	// final outbound.
+	MaxGasLimit uint64 `mapstructure:"max_gas_limit"`
 
 	// WhitelistTokens is the set of whitelisted token addresses. Inbounds for all other
 	// tokens are ignored.

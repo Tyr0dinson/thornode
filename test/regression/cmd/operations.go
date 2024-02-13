@@ -27,6 +27,25 @@ import (
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// Template
+////////////////////////////////////////////////////////////////////////////////////////
+
+// opFuncMap returns a routine-scoped function map used to render template expressions
+// passed through from the outer rendering - variables dependent on execution state.
+func opFuncMap(routine int) template.FuncMap {
+	return template.FuncMap{
+		"native_txid": func(i int) string {
+			nativeTxIDsMu.Lock()
+			defer nativeTxIDsMu.Unlock()
+			if i < 0 {
+				i += len(nativeTxIDs[routine]) + 1
+			}
+			return nativeTxIDs[routine][i-1]
+		},
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
 // Operation
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -91,6 +110,8 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxTssPool{}
 	case "tx-version":
 		op = &OpTxVersion{}
+	case "fail-export-invariants":
+		op = &OpFailExportInvariants{}
 	default:
 		log.Fatal().Str("type", t).Msg("unknown operation type")
 	}
@@ -237,6 +258,14 @@ func (op *OpCheck) Execute(out io.Writer, routine int, _ *os.Process, logs chan 
 		return fmt.Errorf("check")
 	}
 
+	tmpl := template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(op.Endpoint))
+	expr := bytes.NewBuffer(nil)
+	err := tmpl.Execute(expr, nil)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to render assert expression")
+	}
+	op.Endpoint = expr.String()
+
 	// build request
 	req, err := http.NewRequest("GET", op.Endpoint, nil)
 	if err != nil {
@@ -301,19 +330,8 @@ func (op *OpCheck) Execute(out io.Writer, routine int, _ *os.Process, logs chan 
 	// pipe response to jq for assertions
 	for _, a := range op.Asserts {
 		// render the assert expression (used for native_txid)
-		funcMap := template.FuncMap{
-			"native_txid": func(i int) string {
-				// allow reverse indexing
-				nativeTxIDsMu.Lock()
-				defer nativeTxIDsMu.Unlock()
-				if i < 0 {
-					i += len(nativeTxIDs[routine]) + 1
-				}
-				return nativeTxIDs[routine][i-1]
-			},
-		}
-		tmpl := template.Must(template.Must(templates.Clone()).Funcs(funcMap).Parse(a))
-		expr := bytes.NewBuffer(nil)
+		tmpl = template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(a))
+		expr = bytes.NewBuffer(nil)
 		err = tmpl.Execute(expr, nil)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to render assert expression")
@@ -565,20 +583,9 @@ type OpTxObservedOut struct {
 
 func (op *OpTxObservedOut) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
 	// render the memos (used for native_txid)
-	funcMap := template.FuncMap{
-		"native_txid": func(i int) string {
-			// allow reverse indexing
-			nativeTxIDsMu.Lock()
-			defer nativeTxIDsMu.Unlock()
-			if i < 0 {
-				i += len(nativeTxIDs[routine]) + 1
-			}
-			return nativeTxIDs[routine][i-1]
-		},
-	}
 	for i := range op.Txs {
 		tx := &op.Txs[i]
-		tmpl := template.Must(template.Must(templates.Clone()).Funcs(funcMap).Parse(tx.Tx.Memo))
+		tmpl := template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(tx.Tx.Memo))
 		memo := bytes.NewBuffer(nil)
 		err := tmpl.Execute(memo, nil)
 		if err != nil {
@@ -732,6 +739,16 @@ type OpTxVersion struct {
 
 func (op *OpTxVersion) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgSetVersion, op.Signer, op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpFailExportInvariants ------------------------------
+
+type OpFailExportInvariants struct {
+	OpBase `yaml:",inline"`
+}
+
+func (op *OpFailExportInvariants) Execute(out io.Writer, routine int, _ *os.Process, logs chan string) error {
+	return fmt.Errorf("fail-export-invariants should only be the last operation")
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

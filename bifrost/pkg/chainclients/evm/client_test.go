@@ -61,7 +61,7 @@ func (s *EVMSuite) SetUpTest(c *C) {
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 	types2.SetupConfigForTest()
-	c.Assert(os.Setenv("NET", "testnet"), IsNil)
+	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.RequestURI {
@@ -364,7 +364,7 @@ func (s *EVMSuite) TestClient(c *C) {
 	txOut.TxArray[0].VaultPubKey = a2.kw.GetPubKey()
 	c.Logf(txOut.TxArray[0].VaultPubKey.String())
 	c.Logf(a2.kw.GetPubKey().String())
-	out := txOut.TxArray[0].TxOutItem()
+	out := txOut.TxArray[0].TxOutItem(txOut.Height)
 	out.Chain = common.AVAXChain
 	out.Memo = "OUT:B6BD1A69831B9CCC0A1E9939E9AFBFCA144C427B3F61E176EBDCB14E57981C1B"
 	r, _, obs, err := a2.SignTx(out, 1)
@@ -415,7 +415,10 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			RPCHost:            "http://" + s.server.Listener.Addr().String(),
 			StartBlockHeight:   1, // avoids querying thorchain for block height
 			HTTPRequestTimeout: time.Second,
+			MaxGasLimit:        80000,
 		},
+		AggregatorMaxGasMultiplier: 10,
+		TokenMaxGasMultiplier:      3,
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
@@ -495,7 +498,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(common.AVAXAsset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -519,7 +522,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(asset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -540,7 +543,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(common.AVAXAsset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -561,7 +564,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(asset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -582,7 +585,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(common.AVAXAsset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "MIGRATE:1024",
@@ -603,7 +606,7 @@ func (s *EVMSuite) TestSignEVMTx(c *C) {
 			common.NewCoin(asset, cosmos.NewUint(1e18)),
 		},
 		MaxGas: common.Gas{
-			common.NewCoin(common.AVAXAsset, cosmos.NewUint(MaxContractGas)),
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*4)),
 		},
 		GasRate: 1,
 		Memo:    "MIGRATE:1024",

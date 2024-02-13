@@ -1286,6 +1286,14 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 	}
 
+	loanHandler := NewLoanOpenHandler(mgr)
+	// getPoolCR and GetLoanCollateralRemainingForPool
+	// are expected to error for block heights earlier than 12241034
+	// from negative MaxRuneSupply, so dropping the errors for both
+	// and instead displaying both as zero when unretrievable.
+	cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
+	loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
+
 	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
 	dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
@@ -1300,10 +1308,8 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.LoanCollateral = totalCollateral.String()
+	p.LoanCollateralRemaining = loanCollateralRemaining.String()
 	p.DerivedDepthBps = dbps.String()
-
-	handler := NewLoanOpenHandler(mgr)
-	cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 	p.LoanCR = cr.String()
 
 	return jsonify(ctx, p)
@@ -1353,6 +1359,14 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			return nil, fmt.Errorf("fail to fetch total loan collateral: %w", err)
 		}
 
+		loanHandler := NewLoanOpenHandler(mgr)
+		// getPoolCR and GetLoanCollateralRemainingForPool
+		// are expected to error for block heights earlier than 12241034
+		// from negative MaxRuneSupply, so dropping the errors for both
+		// and instead displaying both as zero when unretrievable.
+		cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
+		loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
+
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
 		dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
@@ -1367,10 +1381,8 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.LoanCollateral = totalCollateral.String()
+		p.LoanCollateralRemaining = loanCollateralRemaining.String()
 		p.DerivedDepthBps = dbps.String()
-
-		handler := NewLoanOpenHandler(mgr)
-		cr, _ := handler.getPoolCR(ctx, pool, cosmos.OneUint())
 		p.LoanCR = cr.String()
 
 		pools = append(pools, p)
@@ -2136,12 +2148,20 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	rescheduleCoalesceBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
 	if startHeight < 1 {
 		startHeight = 1
 	}
+
+	// outbounds can be scheduled up to reschedule coalesce blocks in the future
+	lastOutboundHeight := ctx.BlockHeight()
+	if rescheduleCoalesceBlocks > 1 {
+		lastOutboundHeight += rescheduleCoalesceBlocks - (lastOutboundHeight % rescheduleCoalesceBlocks)
+	}
+
 	result := make([]QueryTxOutItem, 0)
-	for height := startHeight; height <= ctx.BlockHeight(); height++ {
+	for height := startHeight; height <= lastOutboundHeight; height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out array from key value store", "error", err)
@@ -2158,7 +2178,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var result []MsgSwap
+	result := make([]MsgSwap, 0)
 
 	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()

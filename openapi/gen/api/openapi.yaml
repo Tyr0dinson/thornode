@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 1.125.1
+  version: 1.128.0
 servers:
 - url: /
 paths:
@@ -1472,6 +1472,15 @@ paths:
           example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
           type: string
         style: form
+      - description: "the refund address, refunds will be sent here if the swap fails"
+        explode: true
+        in: query
+        name: refund_address
+        required: false
+        schema:
+          example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
+          type: string
+        style: form
       - description: the interval in which streaming swaps are swapped
         explode: true
         in: query
@@ -1952,6 +1961,7 @@ components:
         derived_depth_bps: "123456"
         balance_asset: "3197744873"
         synth_supply: "0"
+        loan_collateral_remaining: "123456"
         synth_mint_paused: true
         pending_inbound_rune: "464993836"
         decimals: 6
@@ -2027,6 +2037,10 @@ components:
           description: the amount of collateral collects for loans
           example: "123456"
           type: string
+        loan_collateral_remaining:
+          description: the amount of remaining collateral collects for loans
+          example: "123456"
+          type: string
         loan_cr:
           description: the current loan collateralization ratio
           example: "123456"
@@ -2043,6 +2057,7 @@ components:
       - balance_rune
       - derived_depth_bps
       - loan_collateral
+      - loan_collateral_remaining
       - loan_cr
       - pending_inbound_asset
       - pending_inbound_rune
@@ -2922,6 +2937,7 @@ components:
         - amount: "100000"
           decimals: 6
           asset: BTC.BTC
+        clout_spent: "1234"
         coin:
           amount: "100000"
           decimals: 6
@@ -2959,6 +2975,10 @@ components:
           example: 1234
           format: int64
           type: integer
+        clout_spent:
+          description: clout spent in RUNE for the outbound
+          example: "1234"
+          type: string
       required:
       - chain
       - coin
@@ -3478,6 +3498,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6
@@ -3497,6 +3518,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6
@@ -3713,6 +3735,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6
@@ -3732,6 +3755,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6
@@ -4393,6 +4417,7 @@ components:
             - amount: "100000"
               decimals: 6
               asset: BTC.BTC
+            clout_spent: "1234"
             coin:
               amount: "100000"
               decimals: 6
@@ -4412,6 +4437,7 @@ components:
             - amount: "100000"
               decimals: 6
               asset: BTC.BTC
+            clout_spent: "1234"
             coin:
               amount: "100000"
               decimals: 6
@@ -5813,6 +5839,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6
@@ -5832,6 +5859,7 @@ components:
           - amount: "100000"
             decimals: 6
             asset: BTC.BTC
+          clout_spent: "1234"
           coin:
             amount: "100000"
             decimals: 6

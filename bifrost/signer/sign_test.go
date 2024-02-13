@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/blang/semver"
@@ -20,7 +19,6 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/tendermint/crypto"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 	tssMessages "gitlab.com/thorchain/tss/go-tss/messages"
@@ -71,7 +69,21 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if strings.HasPrefix(key, "HALT") {
 		return 0, nil
 	}
+	if key == constants.SignerConcurrency.String() {
+		return 3, nil
+	}
 	panic("not implemented")
+}
+
+func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
+	pk, err := common.NewPubKey(pubkey)
+	if err != nil {
+		return types2.Vault{}, err
+	}
+	return types2.Vault{
+		PubKey: pk,
+		Status: types2.VaultStatus_ActiveVault,
+	}, nil
 }
 
 // -------------------------------- tss ---------------------------------
@@ -275,8 +287,6 @@ func (b *MockChainClient) GetConfirmationCount(txIn types.TxIn) int64 {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func TestPackage(t *testing.T) { TestingT(t) }
-
 var m *metrics.Metrics
 
 func GetMetricForTest(c *C) *metrics.Metrics {
@@ -312,8 +322,7 @@ func (s *SignSuite) SetUpSuite(c *C) {
 	c.Assert(s.m, NotNil)
 	ns := strconv.Itoa(time.Now().Nanosecond())
 	types2.SetupConfigForTest()
-	ctypes.Network = ctypes.TestNetwork
-	c.Assert(os.Setenv("NET", "testnet"), IsNil)
+	c.Assert(os.Setenv("NET", "mocknet"), IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)
@@ -465,7 +474,7 @@ func (s *SignSuite) TestProcess(c *C) {
 }
 
 func (s *SignSuite) TestBroadcastRetry(c *C) {
-	vaultPubkey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
 	c.Assert(err, IsNil)
 
 	// start a mock keysign
@@ -499,7 +508,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 			Chain:       common.BNBChain,
 			ToAddress:   "tbnb1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
 			Memo:        msg,
-			VaultPubKey: vaultPubkey,
+			VaultPubKey: vaultPubKey,
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
 			},
@@ -509,6 +518,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 
 	// first attempt should fail broadcast and set signed tx
 	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 1)
 	c.Assert(cc.broadcastCount, Equals, 1)
@@ -520,6 +530,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 
 	// second attempt should not sign and still fail broadcast
 	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 1)
 	c.Assert(cc.broadcastCount, Equals, 2)
@@ -531,6 +542,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 
 	// third attempt should not sign and succeed broadcast
 	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 1)
 	c.Assert(cc.broadcastCount, Equals, 3)
@@ -545,7 +557,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 }
 
 func (s *SignSuite) TestRound7Retry(c *C) {
-	vaultPubkey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
 	c.Assert(err, IsNil)
 
 	// start a mock keysign, succeeds on 5th try
@@ -579,7 +591,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Chain:       common.BNBChain,
 			ToAddress:   "tbnb1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
 			Memo:        msg,
-			VaultPubKey: vaultPubkey,
+			VaultPubKey: vaultPubKey,
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
 			},
@@ -591,7 +603,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Chain:       common.BNBChain,
 			ToAddress:   "tbnb145wcuncewfkuc4v6an0r9laswejygcul43c3wu",
 			Memo:        msg,
-			VaultPubKey: vaultPubkey,
+			VaultPubKey: vaultPubKey,
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
 			},
@@ -603,7 +615,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Chain:       common.BNBChain,
 			ToAddress:   "tbnb1yxfyeda8pnlxlmx0z3cwx74w9xevspwdpzdxpj",
 			Memo:        msg,
-			VaultPubKey: vaultPubkey,
+			VaultPubKey: vaultPubKey,
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.BNBAsset, cosmos.NewUint(1000000)),
 			},
@@ -638,7 +650,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 		TxOutItem: types.TxOutItem{
 			Chain:       common.BTCChain,
 			ToAddress:   "tbtc1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
-			VaultPubKey: vaultPubkey,
+			VaultPubKey: vaultPubKey,
 			Memo:        msg2,
 			Coins: common.Coins{
 				common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000)),
@@ -650,6 +662,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 
 	// first round only btc tx should go through
 	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 1)
 	c.Assert(cc.broadcastCount, Equals, 0)
 	c.Assert(tssServer.counter, Equals, 1)
@@ -669,6 +682,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	cc.assertCheckpoint = true // the following signs should pass checkpoint
 	for i := 0; i < 3; i++ {
 		sign.processTransactions()
+		sign.pipeline.Wait()
 	}
 
 	// first bnb tx should have been retried 3 times, no broadcast yet
@@ -678,6 +692,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 
 	// this round should sign and broadcast the round 7 retry
 	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 5)
 	c.Assert(cc.broadcastCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 5)
@@ -686,9 +701,21 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(tois[0].Round7Retry, Equals, false)
 	c.Assert(tois[1].Round7Retry, Equals, false)
 
-	// this round should sign and broadcast the remaining
+	// the next 2 rounds should sign and broadcast the remaining
+
 	cc.assertCheckpoint = false // the following signs should not pass checkpoint
+
+	// only processes 1 per vault/chain in the pipeline
 	sign.processTransactions()
+	sign.pipeline.Wait()
+	c.Assert(cc.signCount, Equals, 6)
+	c.Assert(cc.broadcastCount, Equals, 2)
+	c.Assert(tssServer.counter, Equals, 6)
+	c.Assert(len(sign.storage.List()), Equals, 1)
+
+	// last one
+	sign.processTransactions()
+	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 7)
 	c.Assert(cc.broadcastCount, Equals, 3)
 	c.Assert(tssServer.counter, Equals, 7)
@@ -697,6 +724,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// nothing more should have happened on btc
 	for i := 0; i < 3; i++ {
 		sign.processTransactions()
+		sign.pipeline.Wait()
 	}
 	c.Assert(cc.signCount, Equals, 7)
 	c.Assert(cc.broadcastCount, Equals, 3)

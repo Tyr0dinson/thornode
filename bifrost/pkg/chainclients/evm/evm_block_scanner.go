@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ethclient "github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -209,9 +210,14 @@ func (e *EVMScanner) GetHeight() (int64, error) {
 	return height, nil
 }
 
-// GetNonce returns the nonce for the given address.
+// GetNonce returns the nonce (including pending) for the given address.
 func (e *EVMScanner) GetNonce(addr string) (uint64, error) {
 	return e.ethRpc.GetNonce(addr)
+}
+
+// GetNonceFinalized returns the nonce for the given address.
+func (e *EVMScanner) GetNonceFinalized(addr string) (uint64, error) {
+	return e.ethRpc.GetNonceFinalized(addr)
 }
 
 // FetchMemPool returns all transactions in the mempool.
@@ -294,7 +300,108 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
+func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stypes.TxIn, error) {
+	// Use custom method name as it varies between implementation
+	// It should be akin to: "fetch all transaction receipts within a block", e.g. getBlockReceipts
+	// This has shown to be more efficient than getTransactionReceipt in a batch call
+	txInbound := stypes.TxIn{
+		Chain:    e.cfg.ChainID,
+		Filtered: false,
+		MemPool:  false,
+	}
+
+	// tx lookup for compatibility with shared evm functions
+	txByHash := make(map[string]etypes.Transaction)
+	for _, tx := range block.Transactions() {
+		if tx == nil {
+			continue
+		}
+
+		// best effort remove the tx from the signed txs (ok if it does not exist)
+		if err := e.blockMetaAccessor.RemoveSignedTxItem(tx.Hash().String()); err != nil {
+			e.logger.Err(err).Str("tx hash", tx.Hash().String()).Msg("failed to remove signed tx item")
+		}
+
+		txByHash[tx.Hash().String()] = *tx
+	}
+
+	var receipts []*etypes.Receipt
+	blockNumStr := hexutil.EncodeBig(block.Number())
+	err := e.ethClient.Client().Call(
+		&receipts,
+		method,
+		blockNumStr,
+	)
+	if err != nil {
+		e.logger.Error().Err(err).Msg("failed to fetch block receipts")
+		return stypes.TxIn{}, err
+	}
+
+	for _, receipt := range receipts {
+		txForReceipt, ok := txByHash[receipt.TxHash.String()]
+		if !ok {
+			e.logger.Warn().
+				Str("txHash", receipt.TxHash.String()).
+				Uint64("blockNumber", block.NumberU64()).
+				Msg("receipt tx not in block.Transactions or nil, ignoring...")
+			continue
+		}
+
+		// tx without to address is not valid
+		if txForReceipt.To() == nil {
+			continue
+		}
+
+		// extract the txInItem
+		var txInItem *stypes.TxInItem
+		txInItem, err = e.receiptToTxInItem(&txForReceipt, receipt)
+		if err != nil {
+			e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
+			continue
+		}
+
+		// skip invalid items
+		if txInItem == nil {
+			continue
+		}
+		if len(txInItem.To) == 0 {
+			continue
+		}
+		if len([]byte(txInItem.Memo)) > constants.MaxMemoSize {
+			continue
+		}
+
+		// add the txInItem to the txInbound
+		txInItem.BlockHeight = block.Number().Int64()
+		txInbound.TxArray = append(txInbound.TxArray, *txInItem)
+	}
+
+	if len(txInbound.TxArray) == 0 {
+		e.logger.Debug().Uint64("block", block.NumberU64()).Msg("no tx need to be processed in this block")
+		return stypes.TxIn{}, nil
+	}
+	txInbound.Count = strconv.Itoa(len(txInbound.TxArray))
+	return txInbound, nil
+}
+
 func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
+	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
+	// within a block, register it here.
+	// switch e.cfg.ChainID {
+	// case common.BSCChain:
+	// return e.getTxInOptimized("eth_getTransactionReceiptsByBlockNumber", block)
+	// TODO: add ETH chain after giving BSC some time to bake on mainnet
+	// case common.ETHChain:
+	// 	return e.getTxInOptimized("eth_getBlockReceipts", block)
+	// TODO: add AVAX chain when supported
+	// case common.AVAXChain:
+	// 	return e.getTxIn("TBD", block)
+	// }
+
+	if e.cfg.ChainID.IsBSCChain() {
+		return e.getTxInOptimized("eth_getTransactionReceiptsByBlockNumber", block)
+	}
+
 	txInbound := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		Filtered: false,
@@ -339,7 +446,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 		// send the batch rpc request
 		err := e.ethClient.Client().BatchCall(rpcBatch)
 		if err != nil {
-			log.Error().Int("size", len(batch)).Err(err).Msg("failed to batch fetch transaction receipts")
+			e.logger.Error().Int("size", len(batch)).Err(err).Msg("failed to batch fetch transaction receipts")
 			return stypes.TxIn{}, err
 		}
 
@@ -347,7 +454,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 		for i, elem := range rpcBatch {
 			if elem.Error != nil {
 				if !errors.Is(err, ethereum.NotFound) {
-					log.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
+					e.logger.Error().Err(elem.Error).Msg("failed to fetch transaction receipt")
 				}
 				continue
 			}
@@ -355,7 +462,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 			// get the receipt
 			receipt, ok := elem.Result.(*etypes.Receipt)
 			if !ok {
-				log.Error().Msg("failed to cast to transaction receipt")
+				e.logger.Error().Msg("failed to cast to transaction receipt")
 				continue
 			}
 
@@ -363,7 +470,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 			var txInItem *stypes.TxInItem
 			txInItem, err = e.receiptToTxInItem(batch[i], receipt)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to convert receipt to txInItem")
+				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				continue
 			}
 
@@ -394,12 +501,12 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 
 // TODO: This is only used by unit tests now, but covers receiptToTxInItem internally -
 // refactor so this logic is only in test code.
-func (a *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
 
-	receipt, err := a.ethRpc.GetReceipt(tx.Hash().Hex())
+	receipt, err := e.ethRpc.GetReceipt(tx.Hash().Hex())
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			return nil, nil
@@ -407,27 +514,27 @@ func (a *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, erro
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
 
-	return a.receiptToTxInItem(tx, receipt)
+	return e.receiptToTxInItem(tx, receipt)
 }
 
-func (a *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
+func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
 	if receipt.Status != 1 {
-		a.logger.Debug().Stringer("txid", tx.Hash()).Uint64("status", receipt.Status).Msg("tx failed")
+		e.logger.Debug().Stringer("txid", tx.Hash()).Uint64("status", receipt.Status).Msg("tx failed")
 
 		// remove failed transactions from signer cache so they are retried
-		if a.signerCacheManager != nil {
-			a.signerCacheManager.RemoveSigned(tx.Hash().String())
+		if e.signerCacheManager != nil {
+			e.signerCacheManager.RemoveSigned(tx.Hash().String())
 		}
 
-		return a.getTxInFromFailedTransaction(tx, receipt), nil
+		return e.getTxInFromFailedTransaction(tx, receipt), nil
 	}
 
-	if a.isToValidContractAddress(tx.To(), true) {
-		return a.getTxInFromSmartContract(tx, receipt)
+	if e.isToValidContractAddress(tx.To(), true) {
+		return e.getTxInFromSmartContract(tx, receipt)
 	}
 
-	a.logger.Debug().Stringer("txid", tx.Hash()).Stringer("to", tx.To()).Msg("not a valid contract")
-	return a.getTxInFromTransaction(tx)
+	e.logger.Debug().Stringer("txid", tx.Hash()).Stringer("to", tx.To()).Msg("not a valid contract")
+	return e.getTxInFromTransaction(tx)
 }
 
 // --------------------------------- gas ---------------------------------
@@ -508,7 +615,7 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100))
 
 	// post to thorchain
-	if _, err := e.bridge.PostNetworkFee(height, e.cfg.ChainID, MaxContractGas, tcGasPrice.Uint64()); err != nil {
+	if _, err := e.bridge.PostNetworkFee(height, e.cfg.ChainID, e.cfg.MaxGasLimit, tcGasPrice.Uint64()); err != nil {
 		e.logger.Err(err).Msg("failed to post EVM chain single transfer fee to THORNode")
 	} else {
 		e.lastReportedGasPrice = gasPrice.Uint64()
@@ -551,8 +658,19 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
 	if txInItem.Coins.IsEmpty() {
-		e.logger.Debug().Msg("there is no coin in this tx, ignore")
-		return nil, nil
+		if txInItem.Sender == txInItem.To {
+			// When the Sender and To is the same then there's no balance chance whatever the Coins,
+			// and for Tx-received Valid() a non-zero Amount is needed to observe
+			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
+			observableAmount := e.cfg.ChainID.DustThreshold().Add(cosmos.OneUint()) // Adding 1 for if DustThreshold is 0.
+			txInItem.Coins = common.NewCoins(common.NewCoin(txInItem.Gas[0].Asset, observableAmount))
+
+			// remove the outbound from signer cache so it can be re-attempted
+			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+		} else {
+			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
+			return nil, nil
+		}
 	}
 
 	return txInItem, nil
@@ -561,6 +679,9 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 // isToValidContractAddress this method make sure the transaction to address is to
 // THORChain router or a whitelist address
 func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
+	if addr == nil {
+		return false
+	}
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID)
 	if includeWhiteList {

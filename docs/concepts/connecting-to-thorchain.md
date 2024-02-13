@@ -1,7 +1,3 @@
----
-description: How to connect to Midgard, THORNode and the base Tendermint layer.
----
-
 # Connecting to THORChain
 
 The Network Information comes from four sources:
@@ -11,9 +7,9 @@ The Network Information comes from four sources:
 3. **Cosmos RPC**: Used to query for generic CosmosSDK information.
 4. **Tendermint RPC**: Used to query for consensus-related information.
 
-{% hint style="info" %}
+```admonish info
 The below endpoints are run by specific organisations for public use. There is a cost to running these services. If you want to run your own full node, please see [https://docs.thorchain.org/thornodes/overview.](https://docs.thorchain.org/thornodes/overview)
-{% endhint %}
+```
 
 ## Midgard
 
@@ -28,11 +24,6 @@ Midgard returns time-series information regarding the THORChain network, such as
 **Stagenet:**
 
 - [https://stagenet-midgard.ninerealms.com/v2/doc](https://stagenet-midgard.ninerealms.com/v2/doc)
-
-### Testnet
-
-- [https://testnet.midgard.thorchain.info/v2/doc](https://testnet.midgard.thorchain.info/v2/doc)
-- Example URL: [https://midgard.thorswap.net/v2/debug/block/6000000](https://midgard.thorswap.net/v2/debug/block/6000000)
 
 ## THORNode
 
@@ -49,10 +40,6 @@ THORNode returns application-specific information regarding the THORChain state 
 **Stagenet:**
 
 - [https://stagenet-thornode.ninerealms.com/thorchain/doc](https://stagenet-thornode.ninerealms.com/thorchain/doc)
-
-**Testnet:**
-
-- [https://testnet.thornode.thorchain.info/thorchain/doc](https://testnet.thornode.thorchain.info/thorchain/doc)
 
 ## Cosmos RPC
 
@@ -71,7 +58,6 @@ The Tendermint RPC allows Tendermint consensus information to be returned.
 
 - MAINNET Port: `27147`
 - STAGENET Port: `26657`
-- TESTNET Port: `26657`
 
 **Endpoints guide.**
 
@@ -100,8 +86,6 @@ P2P is the network layer between nodes, useful for network debugging.
 MAINNET Port: `27146`
 
 STAGENET Port: `26656`
-
-TESTNET Port: `26656`
 
 P2P Guide\
 [https://docs.tendermint.com/master/spec/p2p/](https://docs.tendermint.com/master/spec/p2p/)

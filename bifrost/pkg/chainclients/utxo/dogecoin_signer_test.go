@@ -15,13 +15,13 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcutil"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -68,7 +68,6 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 	}
 	ns := strconv.Itoa(time.Now().Nanosecond())
 	types2.SetupConfigForTest()
-	ctypes.Network = ctypes.TestNetwork
 
 	thordir := filepath.Join(os.TempDir(), ns, ".thorcli")
 	cfg := config.BifrostClientConfiguration{
@@ -391,4 +390,20 @@ func (s *DogecoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	buf, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
 	c.Assert(buf, IsNil)
+}
+
+func (s *DogecoinSignerSuite) TestFloatToInt(c *C) {
+	f1 := float64(23815757.93555267)
+	f2 := float64(11420.2327)
+	expectedInt64 := int64(2382717816825267)
+
+	// adding floats cause precision errors, actual is > expected
+	actual1, _ := btcutil.NewAmount(f1 + f2)
+	c.Assert(int64(actual1), Equals, expectedInt64+1)
+
+	// converting each summand to int eliminates the precision errors
+	i1, _ := btcutil.NewAmount(f1)
+	i2, _ := btcutil.NewAmount(f2)
+	actual2 := int64(i1) + int64(i2)
+	c.Assert(actual2, Equals, expectedInt64)
 }

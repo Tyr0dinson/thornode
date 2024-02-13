@@ -50,6 +50,7 @@ type Signer struct {
 	localPubKey           common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
+	pipeline              *pipeline
 }
 
 // NewSigner create a new instance of signer
@@ -81,7 +82,7 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 			break
 		}
 		time.Sleep(constants.ThorchainBlockTime)
-		fmt.Println("Waiting for node account to be registered...")
+		log.Info().Msg("Waiting for node account to be registered...")
 	}
 	for _, item := range na.GetSignerMembership() {
 		pubkeyMgr.AddPubKey(item, true)
@@ -202,6 +203,57 @@ func runWithContext(ctx context.Context, fn func() ([]byte, *types.TxInItem, err
 }
 
 func (s *Signer) processTransactions() {
+	signerConcurrency, err := s.thorchainBridge.GetMimir(constants.SignerConcurrency.String())
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get signer concurrency mimir")
+		return
+	}
+
+	// TODO: this forces new behavior in mocknet, remove after v1 logic is deprecated
+	if signerConcurrency <= 0 {
+		signerConcurrencyEnv := os.Getenv("BIFROST_SIGNER_CONCURRENCY")
+		if signerConcurrencyEnv != "" {
+			signerConcurrency, err = strconv.ParseInt(signerConcurrencyEnv, 10, 64)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("fail to parse BIFROST_SIGNER_CONCURRENCY")
+				return
+			}
+		}
+	}
+
+	// if unset use v1 logic
+	if signerConcurrency <= 0 {
+
+		// if previously set, wait for any running signings
+		if s.pipeline != nil {
+			s.pipeline.Wait()
+			s.pipeline = nil
+		}
+
+		s.processTransactionsV1()
+		return
+	}
+
+	// if previously set to different concurrency, drain existing signings
+	if s.pipeline != nil && s.pipeline.concurrency != signerConcurrency {
+		s.pipeline.Wait()
+		s.pipeline = nil
+	}
+
+	// if not set, or set to different concurrency, create new pipeline
+	if s.pipeline == nil {
+		s.pipeline, err = newPipeline(signerConcurrency)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("fail to create new pipeline")
+			return
+		}
+	}
+
+	// process transactions
+	s.pipeline.SpawnSignings(s, s.thorchainBridge)
+}
+
+func (s *Signer) processTransactionsV1() {
 	wg := &sync.WaitGroup{}
 	for _, items := range s.storage.OrderedLists() {
 		wg.Add(1)
@@ -209,24 +261,7 @@ func (s *Signer) processTransactions() {
 		go func(items []TxOutStoreItem) {
 			chain := items[0].TxOutItem.Chain // all items in a batch should be the same chain
 
-			// make all observations for the batch before returning
-			observations := []types.TxInItem{}
-			defer func() {
-				if len(observations) > 0 {
-					s.observer.ObserveSigned(types.TxIn{
-						Count:                strconv.Itoa(len(observations)),
-						Chain:                chain,
-						TxArray:              observations,
-						MemPool:              true,
-						Filtered:             true,
-						SentUnFinalised:      false,
-						Finalised:            false,
-						ConfirmationRequired: 0,
-					}, chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
-				}
-
-				wg.Done()
-			}()
+			defer wg.Done()
 
 			// precondition: all transactions should be for the same chain
 			for _, item := range items {
@@ -260,7 +295,13 @@ func (s *Signer) processTransactions() {
 						continue
 					}
 
-					s.logger.Info().Int("num", i).Int64("height", item.Height).Int("status", int(item.Status)).Interface("tx", item.TxOutItem).Msgf("Signing transaction")
+					s.logger.Info().
+						Int("num", i).
+						Int64("height", item.Height).
+						Int("status", int(item.Status)).
+						Interface("tx", item.TxOutItem).
+						Msg("Signing transaction")
+
 					// a single keysign should not take longer than 5 minutes , regardless TSS or local
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 					checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
@@ -273,8 +314,8 @@ func (s *Signer) processTransactions() {
 							s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
 							item.Round7Retry = true
 							item.Checkpoint = checkpoint
-							if setErr := s.storage.Set(item); err != nil {
-								s.logger.Error().Err(setErr).Msg("fail to update tx out store item with round 7 retry")
+							if storeErr := s.storage.Set(item); storeErr != nil {
+								s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with round 7 retry")
 							}
 						}
 
@@ -293,9 +334,19 @@ func (s *Signer) processTransactions() {
 					}
 					cancel()
 
-					// if enabled and the observation is non-nil, add to this batch's observations
+					// if enabled and the observation is non-nil, instant-observe without waiting for end of batch's range
+					// (aim to instant-observe SetSigned prior to any failed transaction RemoveSigned)
 					if s.cfg.AutoObserve && obs != nil {
-						observations = append(observations, *obs)
+						s.observer.ObserveSigned(types.TxIn{
+							Count:                "1",
+							Chain:                chain,
+							TxArray:              []types.TxInItem{*obs},
+							MemPool:              true,
+							Filtered:             true,
+							SentUnFinalised:      false,
+							Finalised:            false,
+							ConfirmationRequired: 0,
+						}, chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 					}
 
 					// We have a successful broadcast! Remove the item from our store
@@ -326,7 +377,7 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 			items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
 
 			for i, tx := range txOut.TxArray {
-				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(), int64(i)))
+				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i)))
 			}
 			if err := s.storage.Batch(items); err != nil {
 				s.logger.Error().Err(err).Msg("fail to save tx out items to storage")
@@ -353,7 +404,7 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 	}
 }
 
-func (s *Signer) scheduleRetry(keygenBlock ttypes.KeygenBlock) bool {
+func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock) bool {
 	churnRetryInterval, err := s.thorchainBridge.GetMimir(constants.ChurnRetryInterval.String())
 	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to get churn retry mimir")
@@ -445,7 +496,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 
 		// re-enqueue the keygen block to retry if we failed to generate a key
 		if pubKey.Secp256k1.IsEmpty() {
-			if s.scheduleRetry(keygenBlock) {
+			if s.scheduleKeygenRetry(keygenBlock) {
 				return
 			}
 			s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries")
@@ -607,7 +658,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		return nil, nil, err
 	}
 	for _, txArray := range txOut.TxArray {
-		if txArray.TxOutItem().Equals(tx) && !txArray.OutHash.IsEmpty() {
+		if txArray.TxOutItem(item.TxOutItem.Height).Equals(tx) && !txArray.OutHash.IsEmpty() {
 			// already been signed, we can skip it
 			s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
 			return nil, nil, nil
@@ -644,7 +695,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
-		if storeErr := s.storage.Set(item); err != nil {
+		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
 		}
 
@@ -674,4 +725,80 @@ func (s *Signer) Stop() error {
 	}
 	s.blockScanner.Stop()
 	return s.storage.Close()
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// pipelineSigner Interface
+////////////////////////////////////////////////////////////////////////////////////////
+
+func (s *Signer) isStopped() bool {
+	select {
+	case <-s.stopChan:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Signer) storageList() []TxOutStoreItem {
+	return s.storage.List()
+}
+
+func (s *Signer) processTransaction(item TxOutStoreItem) {
+	s.logger.Info().
+		Int64("height", item.Height).
+		Int("status", int(item.Status)).
+		Interface("tx", item.TxOutItem).
+		Msg("Signing transaction")
+
+	// a single keysign should not take longer than 5 minutes , regardless TSS or local
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
+		return s.signAndBroadcast(item)
+	})
+	if err != nil {
+		// mark the txout on round 7 failure to block other txs for the chain / pubkey
+		ksErr := tss.KeysignError{}
+		if errors.As(err, &ksErr) && ksErr.IsRound7() {
+			s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
+			item.Round7Retry = true
+			item.Checkpoint = checkpoint
+			if storeErr := s.storage.Set(item); storeErr != nil {
+				s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with round 7 retry")
+			}
+		}
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
+		}
+		s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
+		cancel()
+		return
+		// The 'item' for loop should not be items[0],
+		// because problems which return 'nil, nil' should be skipped over instead of blocking others.
+		// When signAndBroadcast returns an error (such as from a keysign timeout),
+		// a 'return' and not a 'continue' should be used so that nodes can all restart the list,
+		// for when the keysign failure was from a loss of list synchrony.
+		// Otherwise, out-of-sync lists would cycle one timeout at a time, maybe never resynchronising.
+	}
+	cancel()
+
+	// if enabled and the observation is non-nil, instant observe the outbound
+	if s.cfg.AutoObserve && obs != nil {
+		s.observer.ObserveSigned(types.TxIn{
+			Count:                "1",
+			Chain:                item.TxOutItem.Chain,
+			TxArray:              []types.TxInItem{*obs},
+			MemPool:              true,
+			Filtered:             true,
+			SentUnFinalised:      false,
+			Finalised:            false,
+			ConfirmationRequired: 0,
+		}, item.TxOutItem.Chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
+	}
+
+	// We have a successful broadcast! Remove the item from our store
+	if err = s.storage.Remove(item); err != nil {
+		s.logger.Error().Err(err).Msg("fail to update tx out store item")
+	}
 }

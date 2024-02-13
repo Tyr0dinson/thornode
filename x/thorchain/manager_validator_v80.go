@@ -963,7 +963,7 @@ func (vm *validatorMgrV80) RequestYggReturn(ctx cosmos.Context, node NodeAccount
 
 			// yggdrasil- will not set coin field here, when signer see a TxOutItem that has memo "yggdrasil-" it will query the chain
 			// and find out all the remaining assets , and fill in the field
-			if err := vm.txOutStore.UnSafeAddTxOutItem(ctx, mgr, txOutItem); err != nil {
+			if err := vm.txOutStore.UnSafeAddTxOutItem(ctx, mgr, txOutItem, ctx.BlockHeight()); err != nil {
 				return err
 			}
 		}
@@ -1327,7 +1327,7 @@ func (vm *validatorMgrV80) NodeAccountPreflightCheck(ctx cosmos.Context, na Node
 		return NodeWhiteListed, fmt.Errorf("node account has registered their pubkey set")
 	}
 
-	// check if node account is whitelisted. This is used for testnet/stagenet environments
+	// check if node account is whitelisted. This is used for mocknet/stagenet environments
 	if len(VALIDATORS) > 0 {
 		found := false
 		for _, val := range VALIDATORS {

@@ -401,7 +401,10 @@ func (k KVStoreDummy) GetLeastSecure(_ cosmos.Context, _ Vaults, _ int64) Vault 
 func (k KVStoreDummy) GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault       { return Vault{} }
 func (k KVStoreDummy) GetMostSecureStrict(_ cosmos.Context, _ Vaults, _ int64) Vault { return Vault{} }
 func (k KVStoreDummy) SortBySecurity(_ cosmos.Context, _ Vaults, _ int64) Vaults     { return nil }
-func (k KVStoreDummy) DeleteVault(_ cosmos.Context, _ common.PubKey) error           { return kaboom }
+func (k KVStoreDummy) GetPendingOutbounds(_ cosmos.Context, _ common.Asset) []TxOutItem {
+	return nil
+}
+func (k KVStoreDummy) DeleteVault(_ cosmos.Context, _ common.PubKey) error { return kaboom }
 
 func (k KVStoreDummy) HasValidVaultPools(_ cosmos.Context) (bool, error)         { return false, kaboom }
 func (k KVStoreDummy) AddPoolFeeToReserve(_ cosmos.Context, _ cosmos.Uint) error { return kaboom }
@@ -673,6 +676,10 @@ func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterato
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
 func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error) {
 	return SwapperClout{}, kaboom
+}
+
+func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
+	return kaboom
 }
 
 // a mock cosmos.Iterator implementation for testing purposes

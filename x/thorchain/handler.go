@@ -22,7 +22,7 @@ type MsgHandler interface {
 // NewExternalHandler returns a handler for "thorchain" type messages.
 func NewExternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (_ *cosmos.Result, err error) {
-		// recover
+		// TODO: remove the outer if-check on hard fork, always add deferred recover
 		if mgr.GetVersion().GTE(semver.MustParse("1.106.0")) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -69,10 +69,10 @@ func getHandlerMapping(mgr Manager) map[string]MsgHandler {
 }
 
 func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
-	// New arch handlers
 	m := make(map[string]MsgHandler)
 
-	// consensus handlers
+	// Consensus handlers - can only be sent by addresses in
+	//   the active validator set.
 	m[MsgTssPool{}.Type()] = NewTssHandler(mgr)
 	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(mgr)
 	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(mgr)
@@ -112,6 +112,7 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", legacyMsg.Type())
 			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
+		// TODO: remove if-check on hardfork. Always use CacheContext.
 		if version.GTE(semver.MustParse("1.88.1")) {
 			// CacheContext() returns a context which caches all changes and only forwards
 			// to the underlying context when commit() is called. Call commit() only when
@@ -362,6 +363,8 @@ func processOneTxInV124(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) common.Asset {
 	version := keeper.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.126.0")):
+		return fuzzyAssetMatchV126(ctx, keeper, asset)
 	case version.GTE(semver.MustParse("1.103.0")):
 		return fuzzyAssetMatchV103(ctx, keeper, asset)
 	case version.GTE(semver.MustParse("1.83.0")):
@@ -371,7 +374,7 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 	}
 }
 
-func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
+func fuzzyAssetMatchV126(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {
 	asset := origAsset.GetLayer1Asset()
 	// if it's already an exact match with successfully-added liquidity, return it immediately
 	pool, err := keeper.GetPool(ctx, asset)
@@ -383,8 +386,15 @@ func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset com
 		return origAsset
 	}
 
-	matches := make(Pools, 0)
-
+	parts := strings.Split(asset.Symbol.String(), "-")
+	hasNoSymbol := len(parts) < 2 || len(parts[1]) == 0
+	var symbol string
+	if !hasNoSymbol {
+		symbol = strings.ToLower(parts[1])
+	}
+	winner := NewPool()
+	// if no asset found, return original asset
+	winner.Asset = origAsset
 	iterator := keeper.GetPoolIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -403,42 +413,31 @@ func fuzzyAssetMatchV103(ctx cosmos.Context, keeper keeper.Keeper, origAsset com
 			continue
 		}
 
-		// check symbol
-		parts := strings.Split(asset.Symbol.String(), "-")
 		// check if no symbol given (ie "USDT" or "USDT-")
-		if len(parts) < 2 || strings.EqualFold(parts[1], "") {
-			matches = append(matches, pool)
+		if hasNoSymbol {
+			// Use LTE rather than LT so this function can only return origAsset or a match
+			if winner.BalanceRune.LTE(pool.BalanceRune) {
+				winner = pool
+			}
 			continue
 		}
 
-		if strings.HasSuffix(strings.ToLower(pool.Asset.Symbol.String()), strings.ToLower(parts[1])) {
-			matches = append(matches, pool)
+		if strings.HasSuffix(strings.ToLower(pool.Asset.Symbol.String()), symbol) {
+			// Use LTE rather than LT so this function can only return origAsset or a match
+			if winner.BalanceRune.LTE(pool.BalanceRune) {
+				winner = pool
+			}
 			continue
 		}
 	}
-
-	// if we found no matches, return the argument given
-	if len(matches) == 0 {
-		return origAsset
-	}
-
-	// find the deepest pool
-	winner := NewPool()
-	for _, pool := range matches {
-		// Use LTE rather than LT so this function can only return origAsset or a match,
-		// never NewPool()'s empty Asset.
-		if winner.BalanceRune.LTE(pool.BalanceRune) {
-			winner = pool
-		}
-	}
-
 	winner.Asset.Synth = origAsset.Synth
-
 	return winner.Asset
 }
 
 func externalAssetMatch(version semver.Version, chain common.Chain, hint string) string {
 	switch {
+	case version.GTE(semver.MustParse("1.126.0")):
+		return externalAssetMatchV126(version, chain, hint)
 	case version.GTE(semver.MustParse("1.95.0")):
 		return externalAssetMatchV95(version, chain, hint)
 	case version.GTE(semver.MustParse("1.93.0")):
@@ -448,59 +447,27 @@ func externalAssetMatch(version semver.Version, chain common.Chain, hint string)
 	}
 }
 
-func externalAssetMatchV95(version semver.Version, chain common.Chain, hint string) string {
+func externalAssetMatchV126(version semver.Version, chain common.Chain, hint string) string {
 	if len(hint) == 0 {
 		return hint
 	}
 	if chain.IsEVM() {
 		// find all potential matches
-		matches := []string{}
+		firstMatch := ""
+		addrHint := strings.ToLower(hint)
 		for _, token := range tokenlist.GetEVMTokenList(chain, version).Tokens {
-			if strings.HasSuffix(strings.ToLower(token.Address), strings.ToLower(hint)) {
-				matches = append(matches, token.Address)
-				if len(matches) > 1 {
-					break
+			if strings.HasSuffix(strings.ToLower(token.Address), addrHint) {
+				// store first found address
+				if firstMatch == "" {
+					firstMatch = token.Address
+				} else {
+					return hint
 				}
 			}
 		}
-		// if we only have one match, lets go with it, otherwise leave the
-		// user's input alone. It may still work, if it doesn't, should get the
-		// gas asset instead of the erc20 desired.
-		if len(matches) == 1 {
-			return matches[0]
+		if firstMatch != "" {
+			return firstMatch
 		}
-
-		return hint
 	}
 	return hint
-}
-
-func externalAssetMatchV93(version semver.Version, chain common.Chain, hint string) string {
-	if len(hint) == 0 {
-		return hint
-	}
-	switch chain {
-	case common.ETHChain:
-		// find all potential matches
-		matches := []string{}
-		for _, token := range tokenlist.GetETHTokenList(version).Tokens {
-			if strings.HasSuffix(strings.ToLower(token.Address), strings.ToLower(hint)) {
-				matches = append(matches, token.Address)
-				if len(matches) > 1 {
-					break
-				}
-			}
-		}
-
-		// if we only have one match, lets go with it, otherwise leave the
-		// user's input alone. It may still work, if it doesn't, should get the
-		// gas asset instead of the erc20 desired.
-		if len(matches) == 1 {
-			return matches[0]
-		}
-
-		return hint
-	default:
-		return hint
-	}
 }

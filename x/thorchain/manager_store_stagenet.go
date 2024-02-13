@@ -133,12 +133,12 @@ func migrateStoreV114(ctx cosmos.Context, mgr *Mgrs) {
 		InHash:      common.TxID(""),
 	}
 
-	err = mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, bscMigrate)
+	err = mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, bscMigrate, ctx.BlockHeight())
 	if err != nil {
 		ctx.Logger().Error("fail to requeue BSC migrate tx", "error", err)
 		return
 	}
-	err = mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, dogeMigrate)
+	err = mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, dogeMigrate, ctx.BlockHeight())
 	if err != nil {
 		ctx.Logger().Error("fail to requeue DOGE migrate tx", "error", err)
 		return
@@ -213,3 +213,5 @@ func migrateStoreV123(ctx cosmos.Context, mgr *Mgrs) {}
 func migrateStoreV124(ctx cosmos.Context, mgr *Mgrs) {}
 
 func migrateStoreV125(ctx cosmos.Context, mgr *Mgrs) {}
+
+func migrateStoreV126(ctx cosmos.Context, mgr *Mgrs) {}

@@ -91,6 +91,9 @@ type Client struct {
 	lastFeeRate             uint64
 	feeRateCache            []uint64
 	lastSolvencyCheckHeight int64
+
+	// ---------- testing ----------
+	disableVinZeroBatch bool
 }
 
 // NewClient generates a new Client
@@ -397,6 +400,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		Chain:   c.cfg.ChainID,
 		TxArray: nil,
 	}
+
 	block, err := c.getBlock(height)
 	if err != nil {
 		if rpcErr, ok := err.(*btcjson.RPCError); ok && rpcErr.Code == btcjson.ErrRPCInvalidParameter {
@@ -409,6 +413,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	if block.Hash == "" && block.PreviousHash == "" {
 		return txIn, fmt.Errorf("fail to get block: %w", err)
 	}
+
 	c.currentBlockHeight.Store(height)
 	reScannedTxs, err := c.processReorg(block)
 	if err != nil {
@@ -570,7 +575,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 
 			// filter transactions
 			var txInItem types.TxInItem
-			txInItem, err = c.getTxIn(result, height, true)
+			txInItem, err = c.getTxIn(result, height, true, nil)
 			if err != nil {
 				c.log.Debug().Err(err).Msg("fail to get TxInItem")
 				continue
