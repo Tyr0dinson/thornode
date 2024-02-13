@@ -35,7 +35,7 @@ The following functions can be put into a memo:
 7. [**WITHDRAW** **Liquidity**](memos.md#withdraw-liquidity)
 8. [**BOND**, **UNBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
 9. [**DONATE** & **RESERVE**](memos.md#donate-and-reserve)
-10. MIGRATE
+10. [**MIGRATE**](memos.md#mirgrate)
 11. [**NOOP**](memos.md#noop)
 
 ### Swap
@@ -121,7 +121,7 @@ Depositing savers can work without a memo; however, memos are recommended to be 
 **Examples:**
 
 - `-:BTC/BTC:10000` Withdraw 100% from BTC Savers
-- `w:ETH/ETH:5000` Withdraw 50% from ETH Savers
+- `wd:ETH/ETH:5000` Withdraw 50% from ETH Savers
 
 ### **Open Loan**
 

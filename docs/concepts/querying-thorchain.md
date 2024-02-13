@@ -33,24 +33,22 @@ The address will be the current active Asgard Address that accepts inbounds. Do 
 Example Output, each connected chain will be displayed.
 
 ```json
-[
-  {
-      "address": "bc1q2taly7tynxvmmw5n2048wv56cyhmnc6lvx7737",
-      "chain": "BTC",
-      "chain_lp_actions_paused": false,
-      "chain_trading_paused": false,
-      "dust_threshold": "10000",
-      "gas_rate": "19",
-      "gas_rate_units": "satsperbyte",
-      "global_trading_paused": false,
-      "halted": false,
-      "outbound_fee": "39000",
-      "outbound_tx_size": "1000",
-      "pub_key": "thorpub1addwnpepq22rph4ed3nkp6lp060nmuqy3p0axadaklnvcs4qfrgyq6zl0rrux9jxkxj"
-    },
-      ...
-]
-```
+
+{
+    "address": "bc1q2taly7tynxvmmw5n2048wv56cyhmnc6lvx7737",
+    "chain": "BTC",
+    "chain_lp_actions_paused": false,
+    "chain_trading_paused": false,
+    "dust_threshold": "10000",
+    "gas_rate": "19",
+    "gas_rate_units": "satsperbyte",
+    "global_trading_paused": false,
+    "halted": false,
+    "outbound_fee": "39000",
+    "outbound_tx_size": "1000",
+    "pub_key": "thorpub1addwnpepq22rph4ed3nkp6lp060nmuqy3p0axadaklnvcs4qfrgyq6zl0rrux9jxkxj"
+  }
+
 ```admonish danger
 Never cache vault addresses, they churn regularly
 ```

@@ -61,4 +61,4 @@ For **SwapOut** THORChain will execute a `MsgExecuteContract` which then sends t
 
 If you would like to deploy your own aggregator with your own custom logic, deploy it with the principles above, then submit a PR for it to get whitelisted on THORChain.
 
-Example: https://gitlab.com/thorchain/thornode/-/merge_requests/2132
+Example: [https://gitlab.com/thorchain/thornode/-/merge_requests/2132](https://gitlab.com/thorchain/thornode/-/merge_requests/2132)

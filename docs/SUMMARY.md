@@ -32,7 +32,7 @@
     - [Coding Guide](examples/typescript-web/coding-guide.md)
 
 - [Concepts](concepts/connecting-to-thorchain.md)
-
+  
   - [Connecting to THORChain](concepts/connecting-to-thorchain.md)
   - [Querying THORChain](concepts/querying-thorchain.md)
   - [Transaction Memos](concepts/memos.md)
