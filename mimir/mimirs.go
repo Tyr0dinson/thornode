@@ -179,6 +179,9 @@ func NewPauseSwaps(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  fmt.Sprintf("Halts interaction with the %s chain", ref),
 		legacyMimirKey: func(ref string) string {
+			if isRefGlobal(ref) {
+				return "HaltTrading"
+			}
 			return fmt.Sprintf("Halt%sTrading", ref)
 		},
 	}
@@ -197,10 +200,14 @@ func NewPauseChain(refs ...string) Mimir {
 		description:  fmt.Sprintf("Halts %s chain", ref),
 		legacyMimirKey: func(ref string) string {
 			// to support querier
-			if len(ref) == 0 || strings.ToUpper(ref) == "GLOBAL" {
+			if isRefGlobal(ref) {
 				return "HaltChainGlobal"
 			}
 			return fmt.Sprintf("Halt%sChain", ref)
 		},
 	}
+}
+
+func isRefGlobal(ref string) bool {
+	return len(ref) == 0 || strings.EqualFold(ref, "GLOBAL")
 }
