@@ -90,11 +90,14 @@ func (m *mimir) FetchValue(ctx cosmos.Context, keeper keeper.Keeper) (value int6
 	// check if id supports current version for v2 , required for sync
 	if !useMimirV2(version, m.id) {
 		legacyKey := m.LegacyKey(m.Reference())
-		value, err = keeper.GetMimir(ctx, legacyKey)
-		if err != nil {
-			return -1
+		// if no legacy key then use v2
+		if len(legacyKey) != 0 {
+			value, err = keeper.GetMimir(ctx, legacyKey)
+			if err != nil {
+				return -1
+			}
+			return value
 		}
-		return value
 	}
 
 	// fetch mimir v2
@@ -177,8 +180,8 @@ func useMimirV2(version semver.Version, id Id) bool {
 	switch {
 	case id >= UnknownId && id <= CloutSwapperResetId:
 		return version.GTE(semver.MustParse("1.124.0"))
-	case id >= PauseSynthsId && id <= PauseChainId:
-		return version.GTE(semver.MustParse("1.127.0"))
+	case id >= SwapSlipBasisPointsMinId && id <= PauseChainId:
+		return version.GTE(semver.MustParse("1.128.0"))
 	default:
 		return false
 	}
