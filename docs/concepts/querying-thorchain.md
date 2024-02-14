@@ -4,17 +4,17 @@
 
 Below are the list of supported Address Formats. Not using this risks loss of funds.
 
-| Chain           | Supported Address Format                                      | Notes                                                                                   |
-|-----------------|---------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| BTC             | P2WSH /w Bech32 (preferred), P2WPKH /w Bech32, P2PKH, P2SH  | Do not send to/from with P2TR. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats |
-| ETH             | EIP-55                                                        | Do not send to or from contract addresses.                                              |
-| BNB             | Bech32                                                        |                                                                                         |
-| BSC             | EIP-55                                                        | Do not send to or from contract addresses.                                              |
-| AVAX            | EIP-55                                                        | Do not send to or from contract addresses.                                              |
-| DOGE            | Bech32                                                        |                                                                                         |
-| LTC             | Bech32                                                        |                                                                                         |
-| BCH             | Bech32                                                        |                                                                                         |
-| GAIA (cosmoshub)| Bech32                                                        |                                                                                         |
+| Chain            | Supported Address Format                                   | Notes                                                                                                                          |
+| ---------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| BTC              | P2WSH /w Bech32 (preferred), P2WPKH /w Bech32, P2PKH, P2SH | Do not send to/from with P2TR. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats |
+| ETH              | EIP-55                                                     | Do not send to or from contract addresses.                                                                                     |
+| BNB              | Bech32                                                     |                                                                                                                                |
+| BSC              | EIP-55                                                     | Do not send to or from contract addresses.                                                                                     |
+| AVAX             | EIP-55                                                     | Do not send to or from contract addresses.                                                                                     |
+| DOGE             | Bech32                                                     |                                                                                                                                |
+| LTC              | Bech32                                                     |                                                                                                                                |
+| BCH              | Bech32                                                     |                                                                                                                                |
+| GAIA (cosmoshub) | Bech32                                                     |                                                                                                                                |
 
 All inbound_address support this format.
 
@@ -32,7 +32,7 @@ The address will be the current active Asgard Address that accepts inbounds. Do 
 
 Example Output, each connected chain will be displayed.
 
-```json
+````json
 
 {
     "address": "bc1q2taly7tynxvmmw5n2048wv56cyhmnc6lvx7737",
@@ -51,7 +51,7 @@ Example Output, each connected chain will be displayed.
 
 ```admonish danger
 Never cache vault addresses, they churn regularly
-```
+````
 
 ```admonish danger
 Inbound transactions should not be delayed for any reason else there is risk funds will be sent to an unreachable address. Use standard transactions, check the `inbound address` before sending and use the recommended [`gas rate`](querying-thorchain.md#getting-the-asgard-vault) to ensure transactions are confirmed in the next block to the latest `Inbound_Address`.
