@@ -1292,7 +1292,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	// from negative MaxRuneSupply, so dropping the errors for both
 	// and instead displaying both as zero when unretrievable.
 	cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
-	loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
+	// loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
 	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
@@ -1308,7 +1308,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	p.SynthMintPaused = (synthMintPausedErr != nil)
 	p.SynthSupplyRemaining = synthSupplyRemaining.String()
 	p.LoanCollateral = totalCollateral.String()
-	p.LoanCollateralRemaining = loanCollateralRemaining.String()
+	// p.LoanCollateralRemaining = loanCollateralRemaining.String()
 	p.DerivedDepthBps = dbps.String()
 	p.LoanCR = cr.String()
 
@@ -1365,7 +1365,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		// from negative MaxRuneSupply, so dropping the errors for both
 		// and instead displaying both as zero when unretrievable.
 		cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
-		loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
+		// loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
@@ -1381,7 +1381,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		p.SynthMintPaused = (synthMintPausedErr != nil)
 		p.SynthSupplyRemaining = synthSupplyRemaining.String()
 		p.LoanCollateral = totalCollateral.String()
-		p.LoanCollateralRemaining = loanCollateralRemaining.String()
+		// p.LoanCollateralRemaining = loanCollateralRemaining.String()
 		p.DerivedDepthBps = dbps.String()
 		p.LoanCR = cr.String()
 

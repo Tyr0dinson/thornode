@@ -252,18 +252,28 @@ func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error
 		return fmt.Errorf("fail to send collateral funds: %w", err)
 	}
 
+	maxAffPoints := fetchConfigInt64(ctx, h.mgr, constants.MaxAffiliateBasisPoints)
+
 	// affiliate fee swap
+	if msg.AffiliateBasisPoints.GT(cosmos.ZeroUint()) && msg.AffiliateBasisPoints.LTE(cosmos.NewUint(uint64(maxAffPoints))) && !msg.AffiliateAddress.IsEmpty() {
+		affAmt := common.GetSafeShare(
+			msg.AffiliateBasisPoints,
+			cosmos.NewUint(10000),
+			msg.CollateralAmount,
+		)
 
-	if msg.AffiliateBasisPoints.GT(zero) && !msg.AffiliateBasisPoints.LTE(cosmos.NewUint(1000)) {
-		affiliateFee := common.GetSafeShare(msg.CollateralAmount, cosmos.NewUint(10000), msg.AffiliateBasisPoints)
-		ctx.Logger().Info("affiliate fee", "fee", affiliateFee, "bps", msg.AffiliateBasisPoints)
+		// Check that affiliate swap to RUNE would succeed
+		affCoin := common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), affAmt)
+		fakeTx := common.NewTx(common.BlankTxID, common.NoopAddress, common.NoopAddress, common.NewCoins(affCoin), common.Gas{}, "noop")
+		affiliateSwap := NewMsgSwap(fakeTx, common.RuneAsset(), msg.AffiliateAddress, zero, common.NoAddress, zero, "", "", nil, 0, 0, 0, msg.Signer)
+		if willSwapSucceed(ctx, h.mgr, *affiliateSwap) {
+			// Queue the swap
+			if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *affiliateSwap, 2); err != nil {
+				return fmt.Errorf("fail to add affiliate swap to queue: %w", err)
+			}
+			collateral.Amount = common.SafeSub(collateral.Amount, affAmt)
+		}
 	}
-
-	// enclose in helper func
-	// update msg.CollateralAmount to subtract collateralAffCoin.Amount
-	// collateralAffCoin := common.NewCoin(msg.CollateralAsset.GetDerivedAsset(), GetSafeShare(msg.CollateralAmount)...)
-
-	// queue the aff swap index 2
 
 	// get configs
 	enableDerived := fetchConfigInt64(ctx, h.mgr, constants.EnableDerivedAssets)
@@ -351,6 +361,9 @@ func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error
 				return err
 			}
 		} else {
+
+			// TODO: maybe aff fee here from debt
+
 			if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 1); err != nil {
 				ctx.Logger().Error("fail to add swap to queue", "error", err)
 				return err
@@ -501,33 +514,4 @@ func (h LoanOpenHandler) getTotalLiquidityRUNELoanPoolsV108(ctx cosmos.Context) 
 		total = total.Add(p.BalanceRune)
 	}
 	return total, nil
-}
-
-func (h LoanOpenHandler) GetLoanCollateralRemainingForPool(ctx cosmos.Context, pool Pool) (cosmos.Uint, error) {
-	lever := fetchConfigInt64(ctx, h.mgr, constants.LendingLever)
-
-	currentRuneSupply := h.mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
-	maxRuneSupply := fetchConfigInt64(ctx, h.mgr, constants.MaxRuneSupply)
-	if maxRuneSupply <= 0 {
-		return cosmos.ZeroUint(), fmt.Errorf("no max supply set")
-	}
-	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
-	// calculate total rune available for loans
-	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(constants.MaxBasisPts), runeBurnt)
-	totalCollateral, err := h.mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
-	if err != nil {
-		return cosmos.ZeroUint(), err
-	}
-
-	totalRune, err := h.getTotalLiquidityRUNELoanPools(ctx)
-	if err != nil {
-		return cosmos.ZeroUint(), err
-	}
-
-	totalAvailableRuneForPool := common.GetSafeShare(pool.BalanceRune, totalRune, totalAvailableRuneForProtocol)
-	totalAvailableAssetForPool := pool.RuneValueInAsset(totalAvailableRuneForPool)
-
-	loanCollateralRemainingForPool := common.SafeSub(totalAvailableAssetForPool, totalCollateral)
-
-	return loanCollateralRemainingForPool, nil
 }

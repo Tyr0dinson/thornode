@@ -784,3 +784,54 @@ func (HandlerSuite) TestIsSignedByActiveNodeAccounts(c *C) {
 	c.Check(r, Equals, true,
 		Commentf("asgard module address should return true"))
 }
+
+func (HandlerSuite) TestWillSwapSucceed(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Set up some pools
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.Decimals = 8
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	pool2 := NewPool()
+	pool2.Asset = common.ETHAsset
+	pool2.Status = PoolAvailable
+	pool2.BalanceRune = cosmos.NewUint(100_000 * common.One)
+	pool2.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool2.Decimals = 8
+	c.Assert(mgr.Keeper().SetPool(ctx, pool2), IsNil)
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+		common.Gas{
+			{Asset: common.BTCAsset, Amount: cosmos.NewUint(37500)},
+		},
+		"",
+	)
+
+	// no limit, should succeed
+	msg := NewMsgSwap(tx, common.ETHAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	c.Assert(willSwapSucceed(ctx, mgr, *msg), Equals, true)
+
+	// no limit, but small swap, should fail
+	tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))}
+	msg = NewMsgSwap(tx, common.ETHAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	c.Assert(willSwapSucceed(ctx, mgr, *msg), Equals, false)
+
+	// limit too high, should fail
+	tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))}
+	msg = NewMsgSwap(tx, common.ETHAsset, GetRandomBTCAddress(), cosmos.NewUint(100*common.One), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	c.Assert(willSwapSucceed(ctx, mgr, *msg), Equals, false)
+
+	// limit not too high, should succeed
+	tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))}
+	msg = NewMsgSwap(tx, common.ETHAsset, GetRandomBTCAddress(), cosmos.NewUint(1*common.One), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	c.Assert(willSwapSucceed(ctx, mgr, *msg), Equals, true)
+}

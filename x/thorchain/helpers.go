@@ -1276,3 +1276,48 @@ func IsModuleAccAddressV121(keeper keeper.Keeper, accAddr cosmos.AccAddress) boo
 		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
 }
+
+// willSwapSucceed returns true if the swap will succeed, false otherwise
+func willSwapSucceed(ctx cosmos.Context, mgr Manager, msg MsgSwap) bool {
+	swapper, err := GetSwapper(mgr.GetVersion())
+	if err != nil {
+		ctx.Logger().Error("fail to load swapper", "error", err)
+		swapper = newSwapperV92()
+	}
+
+	source := msg.Tx.Coins[0]
+	target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
+
+	var emit cosmos.Uint
+	switch {
+	case !source.Asset.IsNativeRune() && !target.Asset.IsNativeRune():
+		sourcePool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
+		if err != nil {
+			return false
+		}
+		targetPool, err := mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
+		if err != nil {
+			return false
+		}
+		emit = swapper.CalcAssetEmission(sourcePool.BalanceAsset, source.Amount, sourcePool.BalanceRune)
+		emit = swapper.CalcAssetEmission(targetPool.BalanceRune, emit, targetPool.BalanceAsset)
+	case source.Asset.IsNativeRune():
+		pool, err := mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
+		if err != nil {
+			return false
+		}
+		emit = swapper.CalcAssetEmission(pool.BalanceRune, source.Amount, pool.BalanceAsset)
+	case target.Asset.IsNativeRune():
+		pool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
+		if err != nil {
+			return false
+		}
+		emit = swapper.CalcAssetEmission(pool.BalanceAsset, source.Amount, pool.BalanceRune)
+	}
+
+	ctx.Logger().Info("swap emission", "emit", emit.String())
+
+	// Check that the swap will emit more than the limit amount + outbound fee
+	transactionFeeAsset := mgr.GasMgr().GetFee(ctx, msg.TargetAsset.GetChain(), msg.TargetAsset)
+	return emit.GT(target.Amount.Add(transactionFeeAsset))
+}

@@ -138,6 +138,7 @@ const (
 	SaversStreamingSwapsInterval
 	RescheduleCoalesceBlocks
 	SignerConcurrency
+	MaxAffiliateBasisPoints
 )
 
 // ConstantValues define methods used to get constant values
