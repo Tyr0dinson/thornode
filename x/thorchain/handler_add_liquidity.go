@@ -138,6 +138,13 @@ func (h AddLiquidityHandler) validateV3_2_0(ctx cosmos.Context, msg MsgAddLiquid
 		if !msg.RuneAmount.IsZero() {
 			return fmt.Errorf("cannot deposit rune into a vault")
 		}
+
+		// If AffiliateBasisPoints is non-zero, AffiliateAddress must before the synth's Layer 1 chain.
+		// (If not, then refund the inbound Layer 1 Asset immediately
+		//  rather than waiting until streaming-swapped to unrefundable synth.)
+		if !msg.AffiliateBasisPoints.IsZero() && !msg.AffiliateAddress.IsChain(layer1Chain) {
+			return fmt.Errorf("add liquidity for pool (%s) not allowed because affiliate basis points (%s) are non-zero and affiliate address (%s) is not of chain (%s)", msg.Asset, msg.AffiliateBasisPoints, msg.AffiliateAddress, layer1Chain)
+		}
 	}
 
 	if !msg.RuneAddress.IsEmpty() && !msg.RuneAddress.IsChain(common.THORChain) {
