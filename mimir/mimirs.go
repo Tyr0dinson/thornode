@@ -199,7 +199,6 @@ func NewPauseChain(refs ...string) Mimir {
 		tags:         []string{"operational", "chain"},
 		description:  fmt.Sprintf("Halts %s chain", ref),
 		legacyMimirKey: func(ref string) string {
-			// to support querier
 			if isRefGlobal(ref) {
 				return "HaltChainGlobal"
 			}
