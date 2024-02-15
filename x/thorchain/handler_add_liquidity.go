@@ -89,7 +89,8 @@ func (h AddLiquidityHandler) validateV3_2_0(ctx cosmos.Context, msg MsgAddLiquid
 	}
 
 	// Note that GetChain() without GetLayer1Asset() would indicate THORChain for synthetic assets.
-	gasAsset := msg.Asset.GetLayer1Asset().GetChain().GetGasAsset()
+	layer1Chain := msg.Asset.GetLayer1Asset().GetChain()
+	gasAsset := layer1Chain.GetGasAsset()
 	// Even if a destination gas asset pool is empty, the first add liquidity has to be symmetrical,
 	// and so there is no need to check at this stage for whether the addition is of RUNE or Asset or with needsSwap.
 	if !msg.Asset.Equals(gasAsset) {
@@ -130,7 +131,7 @@ func (h AddLiquidityHandler) validateV3_2_0(ctx cosmos.Context, msg MsgAddLiquid
 			return fmt.Errorf("asset must be a gas asset or TOR anchor pool")
 		}
 		// Ensure that the message is being sent from an address on a chain that matches the L1 asset chain
-		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
+		if !msg.AssetAddress.IsChain(layer1Chain) {
 			return fmt.Errorf("asset address must be layer1 chain")
 		}
 		// Savers vaults are not currently enabled for RUNE
@@ -148,8 +149,8 @@ func (h AddLiquidityHandler) validateV3_2_0(ctx cosmos.Context, msg MsgAddLiquid
 		// If the needsSwap check disallows a cross-chain AssetAddress,
 		// a position with pending RUNE cannot be completed with Asset,
 		// so fail validation here if the AssetAddress chain is different from the Asset's.
-		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
-			return errAddLiquidityMismatchAddr
+		if !msg.AssetAddress.IsChain(layer1Chain) {
+			return fmt.Errorf("add liquidity for pool (%s) not allowed because address (%s) is not of chain (%s)", msg.Asset, msg.AssetAddress, layer1Chain)
 		}
 
 		polAddress, err := h.mgr.Keeper().GetModuleAddress(ReserveName)
@@ -546,8 +547,17 @@ func (h AddLiquidityHandler) addLiquidityV3_2_0(ctx cosmos.Context,
 	}
 
 	if asset.IsSyntheticAsset() {
-		if su.AssetAddress.IsEmpty() || !su.AssetAddress.IsChain(asset.GetLayer1Asset().GetChain()) {
-			return errAddLiquidityMismatchAddr
+		layer1Chain := asset.GetLayer1Asset().GetChain()
+		if su.AssetAddress.IsEmpty() {
+			// runeAddr rather than su.RuneAddress is checked and logged here because Savers su.RuneAddress is always set to common.NoAddress above.
+			if runeAddr.IsEmpty() {
+				return fmt.Errorf("savers add liquidity for pool (%s) not allowed because no address of chain (%s) was provided", asset, layer1Chain)
+			} else {
+				return fmt.Errorf("savers add liquidity for pool (%s) not allowed because provided rune address (%s) is not of chain (%s)", asset, runeAddr, layer1Chain)
+			}
+		}
+		if !su.AssetAddress.IsChain(layer1Chain) {
+			return fmt.Errorf("savers add liquidity for pool (%s) not allowed because asset address (%s) is not of chain (%s)", asset, su.AssetAddress, layer1Chain)
 		}
 	} else if !assetAddr.IsEmpty() && !su.AssetAddress.Equals(assetAddr) {
 		// mismatch of asset addresses from what is known to the address
