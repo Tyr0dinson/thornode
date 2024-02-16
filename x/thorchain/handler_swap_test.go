@@ -559,11 +559,14 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	c.Assert(err, IsNil)
 	mgr.TxOutStore().ClearOutboundItems(ctx)
 	_, err = handler.Run(ctx, msgSwapFromTxIn1)
-	c.Assert(err, Equals, errSwapFailNotEnoughFee)
+	c.Assert(err, IsNil)
+	// This would actually error with ErrNotEnoughToPayFee from the txout manager,
+	// but here mgr.txOutStore is a TxOutStoreDummy and without vaults set the happy path would also fail;
+	// this test only checks the behaviour of the swap handler, not what happens after a TxOutItem is sent to the txout manager.
 
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(items, HasLen, 0)
+	c.Assert(items, HasLen, 1)
 }
 
 func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
