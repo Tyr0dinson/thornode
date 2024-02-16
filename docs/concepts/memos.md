@@ -35,7 +35,7 @@ The following functions can be put into a memo:
 7. [**WITHDRAW** **Liquidity**](memos.md#withdraw-liquidity)
 8. [**BOND**, **UNBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
 9. [**DONATE** & **RESERVE**](memos.md#donate-and-reserve)
-10. [**MIGRATE**](memos.md#mirgrate)
+10. [**MIGRATE**](memos.md#migrate)
 11. [**NOOP**](memos.md#noop)
 
 ### Swap
@@ -265,7 +265,7 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 - `UNBOND:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6:750000000000`
 - `LEAVE:thor1hlhdm0ngr2j4lt8tt8wuvqxz6aus58j57nxnps`
 
-### MIRGRATE
+### MIGRATE
 
 Internal memo type used to mark migration transactions between a retiring vault and a new Asgard vault during churn. Special THORChain triggered outbound tx without a related inbound tx.
 
