@@ -56,7 +56,6 @@ BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD)
 # ------------------------------ Generate ------------------------------
 
 generate: go-generate openapi protob-docker
-	@git ls-files openapi/gen | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
 
 go-generate:
 	@go install golang.org/x/tools/cmd/stringer@v0.15.0
@@ -97,6 +96,7 @@ openapi:
 		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
+	@git ls-files openapi/gen | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
 
 # ------------------------------ Docs ------------------------------
 
