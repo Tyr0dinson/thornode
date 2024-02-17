@@ -97,6 +97,7 @@ openapi:
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@git ls-files openapi/gen | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
+	@git ls-files openapi/gen | xargs sed -i 's/MarshalJSON(/MarshalJSON_deprecated(/'
 
 # ------------------------------ Docs ------------------------------
 
