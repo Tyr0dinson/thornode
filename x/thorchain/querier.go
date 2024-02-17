@@ -627,6 +627,24 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
 
+	// The current gas manager may be from a different version, so prepare a gas manager for the queried version for GetFee.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	gasMgr, err := GetGasManager(version, mgr.Keeper())
+	if err != nil {
+		// If any error, fall back on the currently-loaded gas manager.
+		ctx.Logger().Error("fail to get gas manager", "version", version, "error", err)
+		gasMgr = mgr.GasMgr()
+	} else {
+		// A non-nil mgr field (from gas manager BeginBlock) can be necessary;
+		// gas manager BeginBlock calls reset() and loads a GasManager's mgr field, which cannot be done directly.
+		gasMgr.BeginBlock(mgr)
+	}
+
 	for _, chain := range chains {
 		// tx send to thorchain doesn't need an address , thus here skip it
 		if chain == common.THORChain {
@@ -642,8 +660,8 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
 		cc := vault.GetContract(chain)
-		gasRate := mgr.GasMgr().GetGasRate(ctx, chain)
-		networkFeeInfo, err := mgr.GasMgr().GetNetworkFee(ctx, chain)
+		gasRate := gasMgr.GetGasRate(ctx, chain)
+		networkFeeInfo, err := gasMgr.GetNetworkFee(ctx, chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get network fee info", "error", err)
 			return nil, fmt.Errorf("fail to get network fee info: %w", err)
@@ -658,7 +676,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		// Retrieve the value the network charges for outbound fees for this chain
 		// Note: If calculating the outbound fee of a non-gas asset outbound, the returned value must be converted to RUNE,
 		// then to the non-gas asset using the pool depths. That will be the value deducted from the non-gas asset outbound amount
-		outboundFee := mgr.GasMgr().GetFee(ctx, chain, chain.GetGasAsset())
+		outboundFee := gasMgr.GetFee(ctx, chain, chain.GetGasAsset())
 
 		addr := openapi.InboundAddress{
 			Chain:                wrapString(chain.String()),
@@ -796,9 +814,23 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
+	// The current network manager may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	validatorMgr, err := GetValidatorManager(version, mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	if err != nil {
+		// If any error, fall back on the currently-loaded validator manager.
+		ctx.Logger().Error("fail to get validator manager", "version", version, "error", err)
+		validatorMgr = mgr.ValidatorMgr()
+	}
+
 	constAccessor := mgr.GetConstants()
 	preflightResult := QueryNodeAccountPreflightCheck{}
-	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
 	preflightResult.Status = status
 	if err != nil {
 		preflightResult.Description = err.Error()
@@ -1294,7 +1326,21 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
 	loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
-	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
+	// The current network manager may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	networkMgr, err := GetNetworkManager(version, mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	if err != nil {
+		// If any error, fall back on the currently-loaded network manager.
+		ctx.Logger().Error("fail to get network manager", "version", version, "error", err)
+		networkMgr = mgr.NetworkMgr()
+	}
+
+	runeDepth, _, _ := networkMgr.CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
 	dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 	if dpool.Status != PoolAvailable {
@@ -1316,6 +1362,20 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 }
 
 func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// The current network manager may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	networkMgr, err := GetNetworkManager(version, mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	if err != nil {
+		// If any error, fall back on the currently-loaded network manager.
+		ctx.Logger().Error("fail to get network manager", "version", version, "error", err)
+		networkMgr = mgr.NetworkMgr()
+	}
+
 	pools := make([]QueryPool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1367,7 +1427,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
 		loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
-		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
+		runeDepth, _, _ := networkMgr.CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
 		dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 		if dpool.Status != PoolAvailable {
@@ -1409,7 +1469,21 @@ func queryDerivedPool(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 		return nil, fmt.Errorf("pool: %s doesn't exist", path[0])
 	}
 
-	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
+	// The current network manager may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	networkMgr, err := GetNetworkManager(version, mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	if err != nil {
+		// If any error, fall back on the currently-loaded network manager.
+		ctx.Logger().Error("fail to get network manager", "version", version, "error", err)
+		networkMgr = mgr.NetworkMgr()
+	}
+
+	runeDepth, _, _ := networkMgr.CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
 	dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 	if dpool.Status != PoolAvailable {
@@ -1423,6 +1497,20 @@ func queryDerivedPool(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	// The current network manager may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	networkMgr, err := GetNetworkManager(version, mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	if err != nil {
+		// If any error, fall back on the currently-loaded network manager.
+		ctx.Logger().Error("fail to get network manager", "version", version, "error", err)
+		networkMgr = mgr.NetworkMgr()
+	}
+
 	pools := make([]QueryDerivedPool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1435,7 +1523,7 @@ func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]
 			continue
 		}
 
-		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
+		runeDepth, _, _ := networkMgr.CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
 		dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 		if dpool.Status != PoolAvailable {
@@ -2466,10 +2554,24 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		return nil, fmt.Errorf("failed to simulate handler: %w", err)
 	}
 
+	// The current swap queue may be from a different version, so prepare one for the queried version.
+	// Use GetVersionWithCtx to get the KVStore version rather than the Keeper GetVersion which matches the Manager GetVersion.
+	version, ok := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !ok {
+		// If no GetVersionWithCtx version available, fall back on the currently-loaded version.
+		version = mgr.GetVersion()
+	}
+	swapQ, err := GetSwapQueue(version, mgr.Keeper())
+	if err != nil {
+		// If any error, fall back on the currently-loaded swap queue.
+		ctx.Logger().Error("fail to get swap queue", "version", version, "error", err)
+		swapQ = mgr.SwapQ()
+	}
+
 	// simulate end block, loop it until the swap queue is empty
 	var count int64
 	for count < 1000 {
-		err = mgr.SwapQ().EndBlock(ctx.WithBlockHeight(ctx.BlockHeight()+count), mgr)
+		err = swapQ.EndBlock(ctx.WithBlockHeight(ctx.BlockHeight()+count), mgr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to simulate end block: %w", err)
 		}
