@@ -1,0 +1,52 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# atTLVcap
+########################################################################################  
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins: 
+  - amount: "4800000000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+  type: create-blocks
+  count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins: 
+  - amount: "2400000000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+  type: create-blocks
+  count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins: 
+  - amount: "2400000000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+  type: create-blocks
+  count: 1
+---
+  type: check
+  endpoint: http://localhost:1317/thorchain/status
+  asserts:
+    - .global.lp_actions.is_available == false
+    - .global.synths.is_available == false
+    - .global.lending.is_available == false
+    - .global.savers.is_available == false
+    - .global.lp_actions.reason == "At TLV Caps"
+    - .global.synths.reason == "At TLV Caps"
+    - .global.lending.reason == "At TLV Caps"
+    - .global.savers.reason == "At TLV Caps"
+---

@@ -646,8 +646,6 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	chainMap := make(map[string]openapi.ChainStatus)
 	poolMap := make(map[string]openapi.PoolStatus)
 
-	// isAtLendingCapPool := atLendingCapPool(ctx, nil, mgr)
-
 	for _, chain := range chains {
 
 		if chain == common.THORChain {

@@ -1,0 +1,45 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# At synths cap
+########################################################################################  
+---
+type: tx-mimir
+key: LENDING-THOR-BTC
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+  type: create-blocks
+  count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/status
+asserts:
+  - .global.lending.is_available == true
+  - .chain.BTC.lending_available.is_available == true
+  - .pool."BTC.BTC".lending_collateral == true
+---
+  type: tx-mimir
+  key: LENDINGLEVER
+  value: 0
+  signer: {{ addr_thor_dog }}
+  sequence: 1
+---
+  type: create-blocks
+  count: 1
+---
+  type: check
+  endpoint: http://localhost:1317/thorchain/status
+  asserts:
+    - .global.lending.is_available == false
+    - .global.lending.reason == "At Lending Caps"
+    - .chain.BTC.lending_available.is_available == false
+    - .chain.BTC.lending_available.reason == "At Lending Caps"
+    - .pool."BTC.BTC".lending_collateral == false
+---

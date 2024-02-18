@@ -1,0 +1,38 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# At synths cap
+########################################################################################  
+type: check
+endpoint: http://localhost:1317/thorchain/status
+asserts:
+  - .pool."BTC.BTC".synths_available.is_available == true
+  - .pool."ETH.ETH".synths_available.is_available == true
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins: 
+  - amount: "120000000000"
+    asset: "rune"
+memo: "=:BTC/BTC:{{ addr_thor_dog }}:0/1/20"
+---
+  type: create-blocks
+  count: 20
+---
+  type: check
+  endpoint: http://localhost:1317/thorchain/status
+  asserts:
+    - .pool."BTC.BTC".synths_available.is_available == false
+    - .pool."BTC.BTC".synths_available.reason == "At Synths cap by pool"
+    - .pool."ETH.ETH".synths_available.is_available == true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/status
+asserts:
+  - "false"
+---

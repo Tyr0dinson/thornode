@@ -51,7 +51,7 @@ var rules = []Rule{
 	{Scope: PoolScope, Features: []Feature{Lending}, isDisabledChecker: ruleIsLendingDisabeldByPool, Reason: "Lending disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{POL}, isDisabledChecker: ruleIsPOLDisabeldByPool, Reason: "POL disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{TORAnchor}, isDisabledChecker: ruleIsTORAnchorDisabeldByPool, Reason: "TORAnchor disable by pool with mimir"},
-	{Scope: PoolScope, Features: []Feature{Synths}, isDisabledChecker: ruleIsSynthsDisabeldByPool, Reason: "Synths paused by pool"},
+	{Scope: PoolScope, Features: []Feature{Synths}, isDisabledChecker: ruleIsSynthsDisabeldByPool, Reason: "At Synths cap by pool"},
 }
 
 func ruleIsGlobalTradingHalted(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
@@ -84,8 +84,8 @@ func ruleIsAtTLVCaps(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *ty
 }
 
 func ruleIsAtLendingCaps(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
-	isAtTLVCap := atLendingCapGlobal(ctx, nil, mgr)
-	return isAtTLVCap
+	isAtLendingCapGlobal := atLendingCapGlobal(ctx, nil, mgr)
+	return isAtLendingCapGlobal
 }
 
 func ruleIsGlobalChainHalted(mgr *Mgrs, ctx cosmos.Context, chain common.Chain, pool *types.Pool) bool {
@@ -144,7 +144,7 @@ func getStatusFlagsFromMimirValue(ctx cosmos.Context, mgr Manager, prefix, asset
 	key := prefix + "-" + asset
 	val, err := mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
-		return false, fmt.Errorf("Fail to fetch key %s: %w", key, err)
+		return false, fmt.Errorf("fail to fetch key %s: %w", key, err)
 	}
 
 	return val > 0, nil

@@ -1098,12 +1098,20 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 }
 
 func atLendingCapGlobal(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
-	// TODO: Implement
-	return false
-}
+	lever := fetchConfigInt64(ctx, mgr, constants.LendingLever)
 
-func atLendingCapPool(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
-	// TODO: Implement
+	currentRuneSupply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	maxRuneSupply := fetchConfigInt64(ctx, mgr, constants.MaxRuneSupply)
+	if maxRuneSupply <= 0 {
+		ctx.Logger().Error("no max supply set")
+		return true
+	}
+	runeBurnt := common.SafeSub(cosmos.NewUint(uint64(maxRuneSupply)), currentRuneSupply)
+	totalAvailableRuneForProtocol := common.GetSafeShare(cosmos.NewUint(uint64(lever)), cosmos.NewUint(10_000), runeBurnt)
+	if totalAvailableRuneForProtocol.IsZero() {
+		ctx.Logger().Error("no availability (0), lending unavailable")
+		return true
+	}
 	return false
 }
 
