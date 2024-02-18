@@ -269,7 +269,7 @@ func (h ObservedTxOutHandler) handleV128(ctx cosmos.Context, msg MsgObservedTxOu
 		if !vault.HasFunds() && vault.Status == RetiringVault {
 			// we have successfully removed all funds from a retiring vault,
 			// mark it as inactive
-			vault.Status = InactiveVault
+			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
 		}
 		// if the vault is frozen, then unfreeze it. Since we saw that a
 		// transaction was signed
