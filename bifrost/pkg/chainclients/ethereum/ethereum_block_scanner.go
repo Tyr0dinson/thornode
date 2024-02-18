@@ -826,6 +826,12 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 			observableAmount := common.ETHChain.DustThreshold().Add(cosmos.OneUint()) // Adding 1 for if DustThreshold is 0.
 			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount))
 
+			if txInItem.Memo == "" {
+				// Having identified this as an unstuck transaction,
+				// record it in the memo to not be interpreted as a memoless Savers withdraw.
+				txInItem.Memo = "THOR-UNSTUCK"
+			}
+
 			// remove the outbound from signer cache so it can be re-attempted
 			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
 		} else {
