@@ -478,6 +478,8 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			for _, coin := range append(common.Coins{toi.Coin}, toi.MaxGas...) {
 				availableCoins = availableCoins.SafeSub(coin)
 			}
+			// Having deducted from the Coins, ensure the map reflects the new amounts.
+			vaultsAvailableCoins[toi.VaultPubKey] = availableCoins
 		}
 	}
 
