@@ -86,16 +86,12 @@ func (g Gas) IsEmpty() bool {
 
 // Coins Add for Gas.
 func (gas Gas) Add(addCoins ...Coin) Gas {
-	coins := Coins(gas)
-	newCoins := coins.Add(addCoins...)
-	return Gas(newCoins)
+	return Gas(Coins(gas).Add(addCoins...))
 }
 
 // Coins SafeSub for Gas.
 func (gas Gas) SafeSub(subCoins ...Coin) Gas {
-	coins := Coins(gas)
-	newCoins := coins.SafeSub(subCoins...)
-	return Gas(newCoins)
+	return Gas(Coins(gas).SafeSub(subCoins...))
 }
 
 // Add combines two gas objects into one, adding amounts where needed
