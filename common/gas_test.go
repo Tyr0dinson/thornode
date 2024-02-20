@@ -59,7 +59,7 @@ func (s *GasSuite) TestCombineGas(c *C) {
 		{Asset: BTCAsset, Amount: cosmos.NewUint(20 * One)},
 	}
 
-	gas := gas1.Add(gas2)
+	gas := gas1.Adds_deprecated(gas2)
 	c.Assert(gas, HasLen, 2)
 	c.Check(gas[0].Asset.Equals(BNBAsset), Equals, true)
 	c.Check(gas[0].Amount.Equal(cosmos.NewUint(25*One)), Equals, true, Commentf("%d", gas[0].Amount.Uint64()))

@@ -87,7 +87,7 @@ func (g Gas) IsEmpty() bool {
 // Add combines two gas objects into one, adding amounts where needed
 // or appending new coins.
 // **WARNING**: dangerous, returns self-reference and also self-modifies
-func (g Gas) Add(g2 Gas) Gas {
+func (g Gas) Adds_deprecated(g2 Gas) Gas {
 	var newGasCoins Gas
 	for _, gc2 := range g2 {
 		matched := false
