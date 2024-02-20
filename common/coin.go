@@ -234,7 +234,12 @@ func (cs Coins) Distinct() Coins {
 	return newCoins
 }
 
-func (cs Coins) Add(coin Coin) Coins {
+// This overwrites cs by changing its slice-referenced values
+// (when and only when there is a shared Asset),
+// so it is recommended to use destination := NewCoins(source...) first.
+// NOTE: **DEPRECATED** - do not use.
+// TODO: remove usage of this on hard fork.
+func (cs Coins) Add_deprecated(coin Coin) Coins {
 	for i, c := range cs {
 		if c.Asset.Equals(coin.Asset) {
 			cs[i].Amount = cs[i].Amount.Add(coin.Amount)
@@ -244,7 +249,11 @@ func (cs Coins) Add(coin Coin) Coins {
 	return append(cs, coin)
 }
 
-func (cs Coins) SafeSub(coin Coin) Coins {
+// This overwrites cs by changing its slice-referenced values,
+// so it is recommended to use destination := NewCoins(source...) first.
+// NOTE: **DEPRECATED** - do not use.
+// TODO: remove usage of this on hard fork.
+func (cs Coins) SafeSub_deprecated(coin Coin) Coins {
 	for i, c := range cs {
 		if c.Asset.Equals(coin.Asset) {
 			cs[i].Amount = SafeSub(cs[i].Amount, coin.Amount)
@@ -255,13 +264,12 @@ func (cs Coins) SafeSub(coin Coin) Coins {
 }
 
 // This overwrites cs by changing its slice-referenced values,
-// so it is recommended to use destination := make(Coins, len(source))
-// and copy(destination, source) first.
+// so it is recommended to use destination := NewCoins(source...) first.
 // NOTE: **DEPRECATED** - do not use.
 // TODO: remove usage of this on hard fork.
 func (cs Coins) Adds_deprecated(coins Coins) Coins {
 	for _, c := range coins {
-		cs = cs.Add(c)
+		cs = cs.Add_deprecated(c)
 	}
 	return cs
 }
