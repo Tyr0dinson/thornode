@@ -3463,6 +3463,72 @@ components:
           example: Global trading paused
           type: string
       type: object
+    PoolStatus:
+      example:
+        synths_available:
+          reason: Global trading paused
+          is_available: true
+        TOR_Anchor: true
+        saver: true
+        lending_collateral: true
+        POL: true
+        status: status
+      properties:
+        status:
+          type: string
+        saver:
+          type: boolean
+        TOR_Anchor:
+          type: boolean
+        lending_collateral:
+          type: boolean
+        POL:
+          type: boolean
+        synths_available:
+          $ref: '#/components/schemas/Availability'
+      required:
+      - POL
+      - TOR_Anchor
+      - lending_collateral
+      - saver
+      - status
+      - synths_available
+      type: object
+    ChainStatus:
+      example:
+        synths_available:
+          reason: Global trading paused
+          is_available: true
+        lending_available:
+          reason: Global trading paused
+          is_available: true
+        trading_available:
+          reason: Global trading paused
+          is_available: true
+        savers_available:
+          reason: Global trading paused
+          is_available: true
+        lp_available:
+          reason: Global trading paused
+          is_available: true
+      properties:
+        trading_available:
+          $ref: '#/components/schemas/Availability'
+        lp_available:
+          $ref: '#/components/schemas/Availability'
+        savers_available:
+          $ref: '#/components/schemas/Availability'
+        synths_available:
+          $ref: '#/components/schemas/Availability'
+        lending_available:
+          $ref: '#/components/schemas/Availability'
+      required:
+      - lending_available
+      - lp_available
+      - savers_available
+      - synths_available
+      - trading_available
+      type: object
     PoolResponse:
       $ref: '#/components/schemas/Pool'
     PoolsResponse:
@@ -4392,11 +4458,44 @@ components:
       type: object
     StatusResponse:
       example:
+        chain:
+          key:
+            synths_available:
+              reason: Global trading paused
+              is_available: true
+            lending_available:
+              reason: Global trading paused
+              is_available: true
+            trading_available:
+              reason: Global trading paused
+              is_available: true
+            savers_available:
+              reason: Global trading paused
+              is_available: true
+            lp_available:
+              reason: Global trading paused
+              is_available: true
+        pool:
+          key:
+            synths_available:
+              reason: Global trading paused
+              is_available: true
+            TOR_Anchor: true
+            saver: true
+            lending_collateral: true
+            POL: true
+            status: status
         global:
           swapping:
             reason: Global trading paused
             is_available: true
           lending:
+            reason: Global trading paused
+            is_available: true
+          savers:
+            reason: Global trading paused
+            is_available: true
+          synths:
             reason: Global trading paused
             is_available: true
           lp_actions:
@@ -4405,6 +4504,14 @@ components:
       properties:
         global:
           $ref: '#/components/schemas/StatusResponse_global'
+        chain:
+          additionalProperties:
+            $ref: '#/components/schemas/ChainStatus'
+          type: object
+        pool:
+          additionalProperties:
+            $ref: '#/components/schemas/PoolStatus'
+          type: object
       required:
       - chain
       - global
@@ -6069,6 +6176,12 @@ components:
         lending:
           reason: Global trading paused
           is_available: true
+        savers:
+          reason: Global trading paused
+          is_available: true
+        synths:
+          reason: Global trading paused
+          is_available: true
         lp_actions:
           reason: Global trading paused
           is_available: true
@@ -6079,10 +6192,16 @@ components:
           $ref: '#/components/schemas/Availability'
         lending:
           $ref: '#/components/schemas/Availability'
+        savers:
+          $ref: '#/components/schemas/Availability'
+        synths:
+          $ref: '#/components/schemas/Availability'
       required:
       - lending
       - lp_actions
+      - savers
       - swapping
+      - synths
       type: object
     KeysignInfo:
       example:

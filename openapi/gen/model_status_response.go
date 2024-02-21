@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 1.128.0
 Contact: devs@thorchain.org
 */
 
@@ -17,15 +18,19 @@ import (
 // StatusResponse struct for StatusResponse
 type StatusResponse struct {
 	Global StatusResponseGlobal `json:"global"`
+	Chain map[string]ChainStatus `json:"chain"`
+	Pool map[string]PoolStatus `json:"pool"`
 }
 
 // NewStatusResponse instantiates a new StatusResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStatusResponse(global StatusResponseGlobal) *StatusResponse {
+func NewStatusResponse(global StatusResponseGlobal, chain map[string]ChainStatus, pool map[string]PoolStatus) *StatusResponse {
 	this := StatusResponse{}
 	this.Global = global
+	this.Chain = chain
+	this.Pool = pool
 	return &this
 }
 
@@ -61,10 +66,64 @@ func (o *StatusResponse) SetGlobal(v StatusResponseGlobal) {
 	o.Global = v
 }
 
+// GetChain returns the Chain field value
+func (o *StatusResponse) GetChain() map[string]ChainStatus {
+	if o == nil {
+		var ret map[string]ChainStatus
+		return ret
+	}
+
+	return o.Chain
+}
+
+// GetChainOk returns a tuple with the Chain field value
+// and a boolean to check if the value has been set.
+func (o *StatusResponse) GetChainOk() (*map[string]ChainStatus, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Chain, true
+}
+
+// SetChain sets field value
+func (o *StatusResponse) SetChain(v map[string]ChainStatus) {
+	o.Chain = v
+}
+
+// GetPool returns the Pool field value
+func (o *StatusResponse) GetPool() map[string]PoolStatus {
+	if o == nil {
+		var ret map[string]PoolStatus
+		return ret
+	}
+
+	return o.Pool
+}
+
+// GetPoolOk returns a tuple with the Pool field value
+// and a boolean to check if the value has been set.
+func (o *StatusResponse) GetPoolOk() (*map[string]PoolStatus, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Pool, true
+}
+
+// SetPool sets field value
+func (o *StatusResponse) SetPool(v map[string]PoolStatus) {
+	o.Pool = v
+}
+
 func (o StatusResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["global"] = o.Global
+	}
+	if true {
+		toSerialize["chain"] = o.Chain
+	}
+	if true {
+		toSerialize["pool"] = o.Pool
 	}
 	return json.Marshal(toSerialize)
 }

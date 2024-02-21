@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 1.128.0
 Contact: devs@thorchain.org
 */
 
@@ -41,6 +42,7 @@ var (
 	xmlCheck  = regexp.MustCompile(`(?i:(?:application|text)/xml)`)
 )
 
+// APIClient manages communication with the Thornode API API v1.128.0
 // In most cases there should be only one, shared, APIClient.
 type APIClient struct {
 	cfg    *Configuration

@@ -42,6 +42,7 @@ docs/BlockTxResult.md
 docs/Borrower.md
 docs/BorrowersApi.md
 docs/ChainHeight.md
+docs/ChainStatus.md
 docs/CloutApi.md
 docs/Coin.md
 docs/ConstantsResponse.md
@@ -80,6 +81,7 @@ docs/POLApi.md
 docs/POLResponse.md
 docs/Ping.md
 docs/Pool.md
+docs/PoolStatus.md
 docs/PoolsApi.md
 docs/QueueApi.md
 docs/QueueResponse.md
@@ -149,6 +151,7 @@ model_block_tx.go
 model_block_tx_result.go
 model_borrower.go
 model_chain_height.go
+model_chain_status.go
 model_coin.go
 model_constants_response.go
 model_derived_pool.go
@@ -179,6 +182,7 @@ model_observed_tx.go
 model_ping.go
 model_pol_response.go
 model_pool.go
+model_pool_status.go
 model_queue_response.go
 model_quote_fees.go
 model_quote_loan_close_response.go

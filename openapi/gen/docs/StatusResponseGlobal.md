@@ -7,12 +7,14 @@ Name | Type | Description | Notes
 **Swapping** | [**Availability**](Availability.md) |  | 
 **LpActions** | [**Availability**](Availability.md) |  | 
 **Lending** | [**Availability**](Availability.md) |  | 
+**Savers** | [**Availability**](Availability.md) |  | 
+**Synths** | [**Availability**](Availability.md) |  | 
 
 ## Methods
 
 ### NewStatusResponseGlobal
 
-`func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, ) *StatusResponseGlobal`
+`func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, savers Availability, synths Availability, ) *StatusResponseGlobal`
 
 NewStatusResponseGlobal instantiates a new StatusResponseGlobal object
 This constructor will assign default values to properties that have it defined,
@@ -85,6 +87,46 @@ and a boolean to check if the value has been set.
 `func (o *StatusResponseGlobal) SetLending(v Availability)`
 
 SetLending sets Lending field to given value.
+
+
+### GetSavers
+
+`func (o *StatusResponseGlobal) GetSavers() Availability`
+
+GetSavers returns the Savers field if non-nil, zero value otherwise.
+
+### GetSaversOk
+
+`func (o *StatusResponseGlobal) GetSaversOk() (*Availability, bool)`
+
+GetSaversOk returns a tuple with the Savers field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSavers
+
+`func (o *StatusResponseGlobal) SetSavers(v Availability)`
+
+SetSavers sets Savers field to given value.
+
+
+### GetSynths
+
+`func (o *StatusResponseGlobal) GetSynths() Availability`
+
+GetSynths returns the Synths field if non-nil, zero value otherwise.
+
+### GetSynthsOk
+
+`func (o *StatusResponseGlobal) GetSynthsOk() (*Availability, bool)`
+
+GetSynthsOk returns a tuple with the Synths field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSynths
+
+`func (o *StatusResponseGlobal) SetSynths(v Availability)`
+
+SetSynths sets Synths field to given value.
 
 
 

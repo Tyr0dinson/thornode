@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 1.128.0
 Contact: devs@thorchain.org
 */
 
@@ -19,17 +20,21 @@ type StatusResponseGlobal struct {
 	Swapping Availability `json:"swapping"`
 	LpActions Availability `json:"lp_actions"`
 	Lending Availability `json:"lending"`
+	Savers Availability `json:"savers"`
+	Synths Availability `json:"synths"`
 }
 
 // NewStatusResponseGlobal instantiates a new StatusResponseGlobal object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability) *StatusResponseGlobal {
+func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, savers Availability, synths Availability) *StatusResponseGlobal {
 	this := StatusResponseGlobal{}
 	this.Swapping = swapping
 	this.LpActions = lpActions
 	this.Lending = lending
+	this.Savers = savers
+	this.Synths = synths
 	return &this
 }
 
@@ -113,6 +118,54 @@ func (o *StatusResponseGlobal) SetLending(v Availability) {
 	o.Lending = v
 }
 
+// GetSavers returns the Savers field value
+func (o *StatusResponseGlobal) GetSavers() Availability {
+	if o == nil {
+		var ret Availability
+		return ret
+	}
+
+	return o.Savers
+}
+
+// GetSaversOk returns a tuple with the Savers field value
+// and a boolean to check if the value has been set.
+func (o *StatusResponseGlobal) GetSaversOk() (*Availability, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Savers, true
+}
+
+// SetSavers sets field value
+func (o *StatusResponseGlobal) SetSavers(v Availability) {
+	o.Savers = v
+}
+
+// GetSynths returns the Synths field value
+func (o *StatusResponseGlobal) GetSynths() Availability {
+	if o == nil {
+		var ret Availability
+		return ret
+	}
+
+	return o.Synths
+}
+
+// GetSynthsOk returns a tuple with the Synths field value
+// and a boolean to check if the value has been set.
+func (o *StatusResponseGlobal) GetSynthsOk() (*Availability, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Synths, true
+}
+
+// SetSynths sets field value
+func (o *StatusResponseGlobal) SetSynths(v Availability) {
+	o.Synths = v
+}
+
 func (o StatusResponseGlobal) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -123,6 +176,12 @@ func (o StatusResponseGlobal) MarshalJSON() ([]byte, error) {
 	}
 	if true {
 		toSerialize["lending"] = o.Lending
+	}
+	if true {
+		toSerialize["savers"] = o.Savers
+	}
+	if true {
+		toSerialize["synths"] = o.Synths
 	}
 	return json.Marshal(toSerialize)
 }
