@@ -81,7 +81,7 @@ func (k KVStore) IsChainTradingHalted(ctx cosmos.Context, chain common.Chain) bo
 }
 
 func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
-	haltChain := mimir.NewPauseChainId().FetchValue(ctx, k)
+	haltChain := mimir.NewPauseChain().FetchValue(ctx, k)
 	if haltChain > 0 && haltChain < ctx.BlockHeight() {
 		ctx.Logger().Info("global is halt")
 		return true
@@ -93,7 +93,7 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	haltChain = mimir.NewPauseChainId(chain.String()).FetchValue(ctx, k)
+	haltChain = mimir.NewPauseChain(chain.String()).FetchValue(ctx, k)
 	if haltChain > 0 && haltChain < ctx.BlockHeight() {
 		ctx.Logger().Info("chain is halt via admin or double-spend check", "chain", chain)
 		return true

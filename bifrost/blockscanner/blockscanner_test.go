@@ -240,10 +240,10 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 
 func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap := map[string]int{
-		mimir.NewPauseChainId(common.BNBChain.String()).Key(): 0,
-		"SolvencyHaltBNBChain":                                0,
-		mimir.NewPauseChainId().Key():                         0,
-		"NodePauseChainGlobal":                                0,
+		mimir.NewPauseChain(common.BNBChain.String()).Key(): 0,
+		"SolvencyHaltBNBChain":                              0,
+		mimir.NewPauseChain().Key():                         0,
+		"NodePauseChainGlobal":                              0,
 	}
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
@@ -301,12 +301,12 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	c.Assert(isHalted, Equals, false)
 
 	// Setting Halt<chain>Chain should pause
-	mimirMap[mimir.NewPauseChainId(common.BNBChain.String()).Key()] = 2
+	mimirMap[mimir.NewPauseChain(common.BNBChain.String()).Key()] = 2
 	// Wait for one block's time so as to replace the cache with an updated query.
 	time.Sleep(constants.ThorchainBlockTime)
 	isHalted = cbs.isChainPaused()
 	c.Assert(isHalted, Equals, true)
-	mimirMap[mimir.NewPauseChainId(common.BNBChain.String()).Key()] = 0
+	mimirMap[mimir.NewPauseChain(common.BNBChain.String()).Key()] = 0
 
 	// Setting SolvencyHalt<chain>Chain should pause
 	mimirMap["SolvencyHaltBNBChain"] = 2
@@ -317,12 +317,12 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap["SolvencyHaltBNBChain"] = 0
 
 	// Setting HaltChainGlobal should pause
-	mimirMap[mimir.NewPauseChainId().Key()] = 2
+	mimirMap[mimir.NewPauseChain().Key()] = 2
 	// Wait for one block's time so as to replace the cache with an updated query.
 	time.Sleep(constants.ThorchainBlockTime)
 	isHalted = cbs.isChainPaused()
 	c.Assert(isHalted, Equals, true)
-	mimirMap[mimir.NewPauseChainId().Key()] = 0
+	mimirMap[mimir.NewPauseChain().Key()] = 0
 
 	// Setting NodePauseChainGlobal should pause
 	mimirMap["NodePauseChainGlobal"] = 4 // node pause only halts for an hour, so pause height needs to be larger than thor height

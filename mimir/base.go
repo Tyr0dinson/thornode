@@ -178,9 +178,9 @@ func (m *mimir) IsOff(ctx cosmos.Context, keeper keeper.Keeper) bool {
 // useMimirV2 versions the use of mimirv1 vs v2, required for sync
 func useMimirV2(version semver.Version, id Id) bool {
 	switch {
-	case id >= UnknownId && id <= CloutSwapperResetId:
+	case id >= Unknown && id <= CloutSwapperReset:
 		return version.GTE(semver.MustParse("1.124.0"))
-	case id >= SwapSlipBasisPointsMinId && id <= PauseChainId:
+	case id >= SwapSlipBasisPointsMin && id <= PauseChain:
 		return version.GTE(semver.MustParse("1.128.0"))
 	default:
 		return false

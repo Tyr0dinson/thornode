@@ -173,7 +173,7 @@ func NewPauseSwaps(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         id.String(),
-		defaultValue: constants.NewConstantValue().GetInt64Value(constants.NodePauseChainBlocks),
+		defaultValue: 0,
 		reference:    ref,
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "chain"},

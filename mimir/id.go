@@ -42,10 +42,10 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 		return NewSwapSlipBasisPointsMin(ref), true
 	case TradeAccountEnabled:
 		return NewTradeAccountsEnabled(ref), true
-	case PauseSwaps:
-		return NewPauseSwaps(ref), true
 	case PauseSynths:
 		return NewPauseSynths(ref), true
+	case PauseSwaps:
+		return NewPauseSwaps(ref), true
 	case PauseChain:
 		return NewPauseChain(ref), true
 	default:
