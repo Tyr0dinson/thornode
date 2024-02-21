@@ -18,7 +18,8 @@ import (
 // ChainStatus struct for ChainStatus
 type ChainStatus struct {
 	TradingAvailable Availability `json:"trading_available"`
-	LpAvailable Availability `json:"lp_available"`
+	LpWithdrawAvailable Availability `json:"lp_withdraw_available"`
+	LpAddAvailable Availability `json:"lp_add_available"`
 	SaversAvailable Availability `json:"savers_available"`
 	SynthsAvailable Availability `json:"synths_available"`
 	LendingAvailable Availability `json:"lending_available"`
@@ -28,10 +29,11 @@ type ChainStatus struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewChainStatus(tradingAvailable Availability, lpAvailable Availability, saversAvailable Availability, synthsAvailable Availability, lendingAvailable Availability) *ChainStatus {
+func NewChainStatus(tradingAvailable Availability, lpWithdrawAvailable Availability, lpAddAvailable Availability, saversAvailable Availability, synthsAvailable Availability, lendingAvailable Availability) *ChainStatus {
 	this := ChainStatus{}
 	this.TradingAvailable = tradingAvailable
-	this.LpAvailable = lpAvailable
+	this.LpWithdrawAvailable = lpWithdrawAvailable
+	this.LpAddAvailable = lpAddAvailable
 	this.SaversAvailable = saversAvailable
 	this.SynthsAvailable = synthsAvailable
 	this.LendingAvailable = lendingAvailable
@@ -70,28 +72,52 @@ func (o *ChainStatus) SetTradingAvailable(v Availability) {
 	o.TradingAvailable = v
 }
 
-// GetLpAvailable returns the LpAvailable field value
-func (o *ChainStatus) GetLpAvailable() Availability {
+// GetLpWithdrawAvailable returns the LpWithdrawAvailable field value
+func (o *ChainStatus) GetLpWithdrawAvailable() Availability {
 	if o == nil {
 		var ret Availability
 		return ret
 	}
 
-	return o.LpAvailable
+	return o.LpWithdrawAvailable
 }
 
-// GetLpAvailableOk returns a tuple with the LpAvailable field value
+// GetLpWithdrawAvailableOk returns a tuple with the LpWithdrawAvailable field value
 // and a boolean to check if the value has been set.
-func (o *ChainStatus) GetLpAvailableOk() (*Availability, bool) {
+func (o *ChainStatus) GetLpWithdrawAvailableOk() (*Availability, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.LpAvailable, true
+	return &o.LpWithdrawAvailable, true
 }
 
-// SetLpAvailable sets field value
-func (o *ChainStatus) SetLpAvailable(v Availability) {
-	o.LpAvailable = v
+// SetLpWithdrawAvailable sets field value
+func (o *ChainStatus) SetLpWithdrawAvailable(v Availability) {
+	o.LpWithdrawAvailable = v
+}
+
+// GetLpAddAvailable returns the LpAddAvailable field value
+func (o *ChainStatus) GetLpAddAvailable() Availability {
+	if o == nil {
+		var ret Availability
+		return ret
+	}
+
+	return o.LpAddAvailable
+}
+
+// GetLpAddAvailableOk returns a tuple with the LpAddAvailable field value
+// and a boolean to check if the value has been set.
+func (o *ChainStatus) GetLpAddAvailableOk() (*Availability, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.LpAddAvailable, true
+}
+
+// SetLpAddAvailable sets field value
+func (o *ChainStatus) SetLpAddAvailable(v Availability) {
+	o.LpAddAvailable = v
 }
 
 // GetSaversAvailable returns the SaversAvailable field value
@@ -172,7 +198,10 @@ func (o ChainStatus) MarshalJSON() ([]byte, error) {
 		toSerialize["trading_available"] = o.TradingAvailable
 	}
 	if true {
-		toSerialize["lp_available"] = o.LpAvailable
+		toSerialize["lp_withdraw_available"] = o.LpWithdrawAvailable
+	}
+	if true {
+		toSerialize["lp_add_available"] = o.LpAddAvailable
 	}
 	if true {
 		toSerialize["savers_available"] = o.SaversAvailable

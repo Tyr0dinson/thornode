@@ -5,7 +5,8 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Swapping** | [**Availability**](Availability.md) |  | 
-**LpActions** | [**Availability**](Availability.md) |  | 
+**LpWithdrawAvailable** | [**Availability**](Availability.md) |  | 
+**LpAddAvailable** | [**Availability**](Availability.md) |  | 
 **Lending** | [**Availability**](Availability.md) |  | 
 **Savers** | [**Availability**](Availability.md) |  | 
 **Synths** | [**Availability**](Availability.md) |  | 
@@ -14,7 +15,7 @@ Name | Type | Description | Notes
 
 ### NewStatusResponseGlobal
 
-`func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, savers Availability, synths Availability, ) *StatusResponseGlobal`
+`func NewStatusResponseGlobal(swapping Availability, lpWithdrawAvailable Availability, lpAddAvailable Availability, lending Availability, savers Availability, synths Availability, ) *StatusResponseGlobal`
 
 NewStatusResponseGlobal instantiates a new StatusResponseGlobal object
 This constructor will assign default values to properties that have it defined,
@@ -49,24 +50,44 @@ and a boolean to check if the value has been set.
 SetSwapping sets Swapping field to given value.
 
 
-### GetLpActions
+### GetLpWithdrawAvailable
 
-`func (o *StatusResponseGlobal) GetLpActions() Availability`
+`func (o *StatusResponseGlobal) GetLpWithdrawAvailable() Availability`
 
-GetLpActions returns the LpActions field if non-nil, zero value otherwise.
+GetLpWithdrawAvailable returns the LpWithdrawAvailable field if non-nil, zero value otherwise.
 
-### GetLpActionsOk
+### GetLpWithdrawAvailableOk
 
-`func (o *StatusResponseGlobal) GetLpActionsOk() (*Availability, bool)`
+`func (o *StatusResponseGlobal) GetLpWithdrawAvailableOk() (*Availability, bool)`
 
-GetLpActionsOk returns a tuple with the LpActions field if it's non-nil, zero value otherwise
+GetLpWithdrawAvailableOk returns a tuple with the LpWithdrawAvailable field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetLpActions
+### SetLpWithdrawAvailable
 
-`func (o *StatusResponseGlobal) SetLpActions(v Availability)`
+`func (o *StatusResponseGlobal) SetLpWithdrawAvailable(v Availability)`
 
-SetLpActions sets LpActions field to given value.
+SetLpWithdrawAvailable sets LpWithdrawAvailable field to given value.
+
+
+### GetLpAddAvailable
+
+`func (o *StatusResponseGlobal) GetLpAddAvailable() Availability`
+
+GetLpAddAvailable returns the LpAddAvailable field if non-nil, zero value otherwise.
+
+### GetLpAddAvailableOk
+
+`func (o *StatusResponseGlobal) GetLpAddAvailableOk() (*Availability, bool)`
+
+GetLpAddAvailableOk returns a tuple with the LpAddAvailable field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpAddAvailable
+
+`func (o *StatusResponseGlobal) SetLpAddAvailable(v Availability)`
+
+SetLpAddAvailable sets LpAddAvailable field to given value.
 
 
 ### GetLending

@@ -2470,14 +2470,17 @@ components:
       type: object
       required:
         - trading_available
-        - lp_available
+        - lp_withdraw_available
+        - lp_add_available
         - savers_available
         - synths_available
         - lending_available
       properties:
         trading_available:
           $ref: "#/components/schemas/Availability"
-        lp_available:
+        lp_withdraw_available:
+          $ref: "#/components/schemas/Availability"
+        lp_add_available:
           $ref: "#/components/schemas/Availability"
         savers_available:
           $ref: "#/components/schemas/Availability" 
@@ -2924,14 +2927,17 @@ components:
           type: object
           required:
             - swapping
-            - lp_actions
+            - lp_withdraw_available
+            - lp_add_available
             - lending
             - savers
             - synths
           properties:
             swapping:
               $ref: "#/components/schemas/Availability"
-            lp_actions:
+            lp_withdraw_available:
+              $ref: "#/components/schemas/Availability"
+            lp_add_available:
               $ref: "#/components/schemas/Availability"
             lending:
               $ref: "#/components/schemas/Availability" 

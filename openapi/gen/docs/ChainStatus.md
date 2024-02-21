@@ -5,7 +5,8 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **TradingAvailable** | [**Availability**](Availability.md) |  | 
-**LpAvailable** | [**Availability**](Availability.md) |  | 
+**LpWithdrawAvailable** | [**Availability**](Availability.md) |  | 
+**LpAddAvailable** | [**Availability**](Availability.md) |  | 
 **SaversAvailable** | [**Availability**](Availability.md) |  | 
 **SynthsAvailable** | [**Availability**](Availability.md) |  | 
 **LendingAvailable** | [**Availability**](Availability.md) |  | 
@@ -14,7 +15,7 @@ Name | Type | Description | Notes
 
 ### NewChainStatus
 
-`func NewChainStatus(tradingAvailable Availability, lpAvailable Availability, saversAvailable Availability, synthsAvailable Availability, lendingAvailable Availability, ) *ChainStatus`
+`func NewChainStatus(tradingAvailable Availability, lpWithdrawAvailable Availability, lpAddAvailable Availability, saversAvailable Availability, synthsAvailable Availability, lendingAvailable Availability, ) *ChainStatus`
 
 NewChainStatus instantiates a new ChainStatus object
 This constructor will assign default values to properties that have it defined,
@@ -49,24 +50,44 @@ and a boolean to check if the value has been set.
 SetTradingAvailable sets TradingAvailable field to given value.
 
 
-### GetLpAvailable
+### GetLpWithdrawAvailable
 
-`func (o *ChainStatus) GetLpAvailable() Availability`
+`func (o *ChainStatus) GetLpWithdrawAvailable() Availability`
 
-GetLpAvailable returns the LpAvailable field if non-nil, zero value otherwise.
+GetLpWithdrawAvailable returns the LpWithdrawAvailable field if non-nil, zero value otherwise.
 
-### GetLpAvailableOk
+### GetLpWithdrawAvailableOk
 
-`func (o *ChainStatus) GetLpAvailableOk() (*Availability, bool)`
+`func (o *ChainStatus) GetLpWithdrawAvailableOk() (*Availability, bool)`
 
-GetLpAvailableOk returns a tuple with the LpAvailable field if it's non-nil, zero value otherwise
+GetLpWithdrawAvailableOk returns a tuple with the LpWithdrawAvailable field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetLpAvailable
+### SetLpWithdrawAvailable
 
-`func (o *ChainStatus) SetLpAvailable(v Availability)`
+`func (o *ChainStatus) SetLpWithdrawAvailable(v Availability)`
 
-SetLpAvailable sets LpAvailable field to given value.
+SetLpWithdrawAvailable sets LpWithdrawAvailable field to given value.
+
+
+### GetLpAddAvailable
+
+`func (o *ChainStatus) GetLpAddAvailable() Availability`
+
+GetLpAddAvailable returns the LpAddAvailable field if non-nil, zero value otherwise.
+
+### GetLpAddAvailableOk
+
+`func (o *ChainStatus) GetLpAddAvailableOk() (*Availability, bool)`
+
+GetLpAddAvailableOk returns a tuple with the LpAddAvailable field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetLpAddAvailable
+
+`func (o *ChainStatus) SetLpAddAvailable(v Availability)`
+
+SetLpAddAvailable sets LpAddAvailable field to given value.
 
 
 ### GetSaversAvailable

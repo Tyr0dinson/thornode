@@ -3505,16 +3505,21 @@ components:
         trading_available:
           reason: Global trading paused
           is_available: true
+        lp_add_available:
+          reason: Global trading paused
+          is_available: true
         savers_available:
           reason: Global trading paused
           is_available: true
-        lp_available:
+        lp_withdraw_available:
           reason: Global trading paused
           is_available: true
       properties:
         trading_available:
           $ref: '#/components/schemas/Availability'
-        lp_available:
+        lp_withdraw_available:
+          $ref: '#/components/schemas/Availability'
+        lp_add_available:
           $ref: '#/components/schemas/Availability'
         savers_available:
           $ref: '#/components/schemas/Availability'
@@ -3524,7 +3529,8 @@ components:
           $ref: '#/components/schemas/Availability'
       required:
       - lending_available
-      - lp_available
+      - lp_add_available
+      - lp_withdraw_available
       - savers_available
       - synths_available
       - trading_available
@@ -4469,10 +4475,13 @@ components:
             trading_available:
               reason: Global trading paused
               is_available: true
+            lp_add_available:
+              reason: Global trading paused
+              is_available: true
             savers_available:
               reason: Global trading paused
               is_available: true
-            lp_available:
+            lp_withdraw_available:
               reason: Global trading paused
               is_available: true
         pool:
@@ -4495,10 +4504,13 @@ components:
           savers:
             reason: Global trading paused
             is_available: true
-          synths:
+          lp_add_available:
             reason: Global trading paused
             is_available: true
-          lp_actions:
+          lp_withdraw_available:
+            reason: Global trading paused
+            is_available: true
+          synths:
             reason: Global trading paused
             is_available: true
       properties:
@@ -6179,16 +6191,21 @@ components:
         savers:
           reason: Global trading paused
           is_available: true
-        synths:
+        lp_add_available:
           reason: Global trading paused
           is_available: true
-        lp_actions:
+        lp_withdraw_available:
+          reason: Global trading paused
+          is_available: true
+        synths:
           reason: Global trading paused
           is_available: true
       properties:
         swapping:
           $ref: '#/components/schemas/Availability'
-        lp_actions:
+        lp_withdraw_available:
+          $ref: '#/components/schemas/Availability'
+        lp_add_available:
           $ref: '#/components/schemas/Availability'
         lending:
           $ref: '#/components/schemas/Availability'
@@ -6198,7 +6215,8 @@ components:
           $ref: '#/components/schemas/Availability'
       required:
       - lending
-      - lp_actions
+      - lp_add_available
+      - lp_withdraw_available
       - savers
       - swapping
       - synths

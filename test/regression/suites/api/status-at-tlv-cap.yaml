@@ -41,11 +41,12 @@ memo: "+:BTC.BTC"
   type: check
   endpoint: http://localhost:1317/thorchain/status
   asserts:
-    - .global.lp_actions.is_available == false
+    - .global.lp_withdraw_available.is_available == true
+    - .global.lp_add_available.is_available == false
     - .global.synths.is_available == false
     - .global.lending.is_available == false
     - .global.savers.is_available == false
-    - .global.lp_actions.reason == "At TLV Caps"
+    - .global.lp_add_available.reason == "At TLV Caps"
     - .global.synths.reason == "At TLV Caps"
     - .global.lending.reason == "At TLV Caps"
     - .global.savers.reason == "At TLV Caps"

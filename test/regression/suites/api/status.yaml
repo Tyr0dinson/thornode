@@ -26,11 +26,13 @@ endpoint: http://localhost:1317/thorchain/status
 asserts:
   - .global.swapping.is_available == true
   - .global.lending.is_available == true
-  - .global.lp_actions.is_available == true
+  - .global.lp_withdraw_available.is_available == true
+  - .global.lp_add_available.is_available == true
   - .global.savers.is_available == true
   - .global.synths.is_available == true
   - .chain.BTC.lending_available.is_available == true
-  - .chain.BTC.lp_available.is_available == true
+  - .chain.BTC.lp_withdraw_available.is_available == true
+  - .chain.BTC.lp_add_available.is_available == true
   - .chain.BTC.savers_available.is_available == true
   - .chain.BTC.synths_available.is_available == true
   - .chain.BTC.trading_available.is_available == true
@@ -75,17 +77,19 @@ asserts:
   - .global.swapping.reason == "Global trading halted"
   - .global.lending.is_available == false
   - .global.lending.reason == "Global lending is paused"
-  - .global.lp_actions.is_available == false
-  - .global.lp_actions.reason == "Global LP actions are paused"
+  - .global.lp_withdraw_available.is_available == false
+  - .global.lp_add_available.reason == "Global LP actions are paused"
   - .global.synths.is_available == false
   - .global.synths.reason == "Global synths paused"
   - .global.savers.is_available == true
   - .chain.BTC.lending_available.is_available == false
-  - .chain.BTC.lp_available.is_available == false
+  - .chain.BTC.lp_withdraw_available.is_available == false
+  - .chain.BTC.lp_add_available.is_available == false
   - .chain.BTC.synths_available.is_available == false
   - .chain.BTC.trading_available.is_available == false
   - .chain.BTC.lending_available.reason == "Global lending is paused"
-  - .chain.BTC.lp_available.reason == "Global LP actions are paused"
+  - .chain.BTC.lp_withdraw_available.reason == "Global LP actions are paused"
+  - .chain.BTC.lp_add_available.reason == "Global LP actions are paused"
   - .chain.BTC.synths_available.reason == "Global synths paused"
   - .chain.BTC.trading_available.reason == "Global trading halted"
   - .pool."BTC.BTC".lending_collateral == false
@@ -130,11 +134,13 @@ endpoint: http://localhost:1317/thorchain/status
 asserts:
   - .global.swapping.is_available == true
   - .global.lending.is_available == true
-  - .global.lp_actions.is_available == true
+  - .global.lp_withdraw_available.is_available == true
+  - .global.lp_add_available.is_available == true
   - .global.savers.is_available == true
   - .global.synths.is_available == true
   - .chain.ETH.lending_available.is_available == true
-  - .chain.ETH.lp_available.is_available == true
+  - .chain.ETH.lp_withdraw_available.is_available == true
+  - .chain.ETH.lp_add_available.is_available == true
   - .chain.ETH.savers_available.is_available == true
   - .chain.ETH.synths_available.is_available == true
   - .chain.ETH.trading_available.is_available == true
@@ -156,19 +162,23 @@ asserts:
   - .global.swapping.reason == "Global chain is halted by node"
   - .global.lending.is_available == false
   - .global.lending.reason == "Global chain is halted by node"
-  - .global.lp_actions.is_available == false
-  - .global.lp_actions.reason == "Global chain is halted by node"
+  - .global.lp_withdraw_available.is_available == false
+  - .global.lp_withdraw_available.reason == "Global chain is halted by node"
+  - .global.lp_add_available.is_available == false
+  - .global.lp_add_available.reason == "Global chain is halted by node"
   - .global.synths.is_available == false
   - .global.synths.reason == "Global chain is halted by node"
   - .global.savers.is_available == false
   - .global.savers.reason == "Global chain is halted by node"
   - .chain.ETH.lending_available.is_available == false
-  - .chain.ETH.lp_available.is_available == false
+  - .chain.ETH.lp_withdraw_available.is_available == false
+  - .chain.ETH.lp_add_available.is_available == false
   - .chain.ETH.synths_available.is_available == false
   - .chain.ETH.trading_available.is_available == false
   - .chain.ETH.savers_available.is_available == false
   - .chain.ETH.lending_available.reason == "Global chain is halted by node"
-  - .chain.ETH.lp_available.reason == "Global chain is halted by node"
+  - .chain.ETH.lp_withdraw_available.reason == "Global chain is halted by node"
+  - .chain.ETH.lp_add_available.reason == "Global chain is halted by node"
   - .chain.ETH.synths_available.reason == "Global chain is halted by node"
   - .chain.ETH.trading_available.reason == "Global chain is halted by node"
   - .chain.ETH.savers_available.reason == "Global chain is halted by node"
@@ -192,11 +202,13 @@ endpoint: http://localhost:1317/thorchain/status
 asserts:
   - .global.swapping.is_available == true
   - .global.lending.is_available == true
-  - .global.lp_actions.is_available == true
+  - .global.lp_withdraw_available.is_available == true
+  - .global.lp_add_available.is_available == true
   - .global.savers.is_available == true
   - .global.synths.is_available == true
   - .chain.ETH.lending_available.is_available == true
-  - .chain.ETH.lp_available.is_available == true
+  - .chain.ETH.lp_withdraw_available.is_available == true
+  - .chain.ETH.lp_add_available.is_available == true
   - .chain.ETH.savers_available.is_available == true
   - .chain.ETH.synths_available.is_available == true
   - .chain.ETH.trading_available.is_available == true
@@ -216,19 +228,21 @@ asserts:
   - .global.swapping.reason == "Global chain is halted"
   - .global.lending.is_available == false
   - .global.lending.reason == "Global chain is halted"
-  - .global.lp_actions.is_available == false
-  - .global.lp_actions.reason == "Global chain is halted"
+  - .global.lp_withdraw_available.is_available == false
+  - .global.lp_add_available.reason == "Global chain is halted"
   - .global.synths.is_available == false
   - .global.synths.reason == "Global chain is halted"
   - .global.savers.is_available == false
   - .global.savers.reason == "Global chain is halted"
   - .chain.ETH.lending_available.is_available == false
-  - .chain.ETH.lp_available.is_available == false
+  - .chain.ETH.lp_withdraw_available.is_available == false
+  - .chain.ETH.lp_add_available.is_available == false
   - .chain.ETH.synths_available.is_available == false
   - .chain.ETH.trading_available.is_available == false
   - .chain.ETH.savers_available.is_available == false
   - .chain.ETH.lending_available.reason == "Global chain is halted"
-  - .chain.ETH.lp_available.reason == "Global chain is halted"
+  - .chain.ETH.lp_withdraw_available.reason == "Global chain is halted"
+  - .chain.ETH.lp_add_available.reason == "Global chain is halted"
   - .chain.ETH.synths_available.reason == "Global chain is halted"
   - .chain.ETH.trading_available.reason == "Global chain is halted"
   - .chain.ETH.savers_available.reason == "Global chain is halted"
@@ -248,12 +262,14 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == true
+    - .chain.BTC.lp_withdraw_available.is_available == true
+    - .chain.BTC.lp_add_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -273,17 +289,20 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == false
-    - .chain.BTC.lp_available.is_available == false
+    - .chain.BTC.lp_add_available.is_available == false
+    - .chain.BTC.lp_withdraw_available.is_available == false
     - .chain.BTC.synths_available.is_available == false
     - .chain.BTC.trading_available.is_available == false
     - .chain.BTC.savers_available.is_available == false
     - .chain.BTC.lending_available.reason == "Chain halted"
-    - .chain.BTC.lp_available.reason == "Chain halted"
+    - .chain.BTC.lp_add_available.reason == "Chain halted"
+    - .chain.BTC.lp_withdraw_available.reason == "Chain halted"
     - .chain.BTC.synths_available.reason == "Chain halted"
     - .chain.BTC.trading_available.reason == "Chain halted"
     - .chain.BTC.savers_available.reason == "Chain halted"
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -307,12 +326,14 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == true
+    - .chain.BTC.lp_withdraw_available.is_available == true
+    - .chain.BTC.lp_add_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -329,13 +350,15 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == false
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.trading_available.reason == "Chain trading halted"
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == true
+    - .chain.BTC.lp_withdraw_available.is_available == true
+    - .chain.BTC.lp_add_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
@@ -355,12 +378,14 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == true
+    - .chain.BTC.lp_withdraw_available.is_available == true
+    - .chain.BTC.lp_add_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -377,13 +402,16 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == false
+    - .chain.BTC.lp_withdraw_available.is_available == false
+    - .chain.BTC.lp_add_available.is_available == false
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
-    - .chain.BTC.lp_available.reason == "Chain LP paused"
+    - .chain.BTC.lp_withdraw_available.reason == "Chain LP paused"
+    - .chain.BTC.lp_add_available.reason == "Chain LP paused"
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -403,12 +431,14 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == true
-    - .chain.BTC.lp_available.is_available == true
+    - .chain.BTC.lp_withdraw_available.is_available == true
+    - .chain.BTC.lp_add_available.is_available == true
     - .chain.BTC.savers_available.is_available == true
     - .chain.BTC.synths_available.is_available == true
     - .chain.BTC.trading_available.is_available == true
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true
@@ -425,17 +455,20 @@ asserts:
   endpoint: http://localhost:1317/thorchain/status
   asserts:
     - .chain.BTC.lending_available.is_available == false
-    - .chain.BTC.lp_available.is_available == false
+    - .chain.BTC.lp_withdraw_available.is_available == false
+    - .chain.BTC.lp_add_available.is_available == false
     - .chain.BTC.synths_available.is_available == false
     - .chain.BTC.trading_available.is_available == false
     - .chain.BTC.savers_available.is_available == false
     - .chain.BTC.lending_available.reason == "Chain halted by solvency checker"
-    - .chain.BTC.lp_available.reason == "Chain halted by solvency checker"
+    - .chain.BTC.lp_withdraw_available.reason == "Chain halted by solvency checker"
+    - .chain.BTC.lp_add_available.reason == "Chain halted by solvency checker"
     - .chain.BTC.synths_available.reason == "Chain halted by solvency checker"
     - .chain.BTC.trading_available.reason == "Chain halted by solvency checker"
     - .chain.BTC.savers_available.reason == "Chain halted by solvency checker"
     - .chain.ETH.lending_available.is_available == true
-    - .chain.ETH.lp_available.is_available == true
+    - .chain.ETH.lp_withdraw_available.is_available == true
+    - .chain.ETH.lp_add_available.is_available == true
     - .chain.ETH.savers_available.is_available == true
     - .chain.ETH.synths_available.is_available == true
     - .chain.ETH.trading_available.is_available == true

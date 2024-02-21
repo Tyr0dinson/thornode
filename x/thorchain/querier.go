@@ -616,7 +616,8 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 	isGlobalTradingAvailable, globalTradingUnavailableReason := getStatus(GlobalScope, Trading, mgr, ctx, "", nil)
 	isGlobalLendingAvailable, globalLendingUnavailableReason := getStatus(GlobalScope, Lending, mgr, ctx, "", nil)
-	isGlobalLPAvailable, globalLPUnavailableReason := getStatus(GlobalScope, LP, mgr, ctx, "", nil)
+	isGlobalLPAddAvailable, globalLPAddUnavailableReason := getStatus(GlobalScope, LPAdd, mgr, ctx, "", nil)
+	isGlobalLPWithdrawAvailable, globalLPWithdrawUnavailableReason := getStatus(GlobalScope, LPWithdraw, mgr, ctx, "", nil)
 	isGlobalSaversAvailable, globalSaversUnavailableReason := getStatus(GlobalScope, Savers, mgr, ctx, "", nil)
 	isGlobalSynthsAvailable, globalSynthsUnavailableReason := getStatus(GlobalScope, Synths, mgr, ctx, "", nil)
 
@@ -656,7 +657,8 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		isChainTradingAvailable, chainTradingUnavailableReason := getStatus(ChainScope, Trading, mgr, ctx, chain, nil)
 
 		// Check LP status
-		isChainLpAvailable, chainLpUnavailableReason := getStatus(ChainScope, LP, mgr, ctx, chain, nil)
+		isChainLpAddAvailable, chainLpAddUnavailableReason := getStatus(ChainScope, LPAdd, mgr, ctx, chain, nil)
+		isChainLpWithdrawAvailable, chainLpWithdrawUnavailableReason := getStatus(ChainScope, LPWithdraw, mgr, ctx, chain, nil)
 
 		// Check Savers Availability
 		isChainSaversAvailable, chainSaversUnavailableReason := getStatus(ChainScope, Savers, mgr, ctx, chain, nil)
@@ -672,9 +674,13 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				IsAvailable: wrapBool(isChainTradingAvailable),
 				Reason:      wrapString(chainTradingUnavailableReason),
 			},
-			LpAvailable: openapi.Availability{
-				IsAvailable: wrapBool(isChainLpAvailable),
-				Reason:      wrapString(chainLpUnavailableReason),
+			LpAddAvailable: openapi.Availability{
+				IsAvailable: wrapBool(isChainLpAddAvailable),
+				Reason:      wrapString(chainLpAddUnavailableReason),
+			},
+			LpWithdrawAvailable: openapi.Availability{
+				IsAvailable: wrapBool(isChainLpWithdrawAvailable),
+				Reason:      wrapString(chainLpWithdrawUnavailableReason),
 			},
 			SaversAvailable: openapi.Availability{
 				IsAvailable: wrapBool(isChainSaversAvailable),
@@ -730,9 +736,13 @@ func queryStatus(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				IsAvailable: wrapBool(isGlobalLendingAvailable),
 				Reason:      wrapString(globalLendingUnavailableReason),
 			},
-			LpActions: openapi.Availability{
-				IsAvailable: wrapBool(isGlobalLPAvailable),
-				Reason:      wrapString(globalLPUnavailableReason),
+			LpAddAvailable: openapi.Availability{
+				IsAvailable: wrapBool(isGlobalLPAddAvailable),
+				Reason:      wrapString(globalLPAddUnavailableReason),
+			},
+			LpWithdrawAvailable: openapi.Availability{
+				IsAvailable: wrapBool(isGlobalLPWithdrawAvailable),
+				Reason:      wrapString(globalLPWithdrawUnavailableReason),
 			},
 			Savers: openapi.Availability{
 				IsAvailable: wrapBool(isGlobalSaversAvailable),

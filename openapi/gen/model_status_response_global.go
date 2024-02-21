@@ -18,7 +18,8 @@ import (
 // StatusResponseGlobal struct for StatusResponseGlobal
 type StatusResponseGlobal struct {
 	Swapping Availability `json:"swapping"`
-	LpActions Availability `json:"lp_actions"`
+	LpWithdrawAvailable Availability `json:"lp_withdraw_available"`
+	LpAddAvailable Availability `json:"lp_add_available"`
 	Lending Availability `json:"lending"`
 	Savers Availability `json:"savers"`
 	Synths Availability `json:"synths"`
@@ -28,10 +29,11 @@ type StatusResponseGlobal struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStatusResponseGlobal(swapping Availability, lpActions Availability, lending Availability, savers Availability, synths Availability) *StatusResponseGlobal {
+func NewStatusResponseGlobal(swapping Availability, lpWithdrawAvailable Availability, lpAddAvailable Availability, lending Availability, savers Availability, synths Availability) *StatusResponseGlobal {
 	this := StatusResponseGlobal{}
 	this.Swapping = swapping
-	this.LpActions = lpActions
+	this.LpWithdrawAvailable = lpWithdrawAvailable
+	this.LpAddAvailable = lpAddAvailable
 	this.Lending = lending
 	this.Savers = savers
 	this.Synths = synths
@@ -70,28 +72,52 @@ func (o *StatusResponseGlobal) SetSwapping(v Availability) {
 	o.Swapping = v
 }
 
-// GetLpActions returns the LpActions field value
-func (o *StatusResponseGlobal) GetLpActions() Availability {
+// GetLpWithdrawAvailable returns the LpWithdrawAvailable field value
+func (o *StatusResponseGlobal) GetLpWithdrawAvailable() Availability {
 	if o == nil {
 		var ret Availability
 		return ret
 	}
 
-	return o.LpActions
+	return o.LpWithdrawAvailable
 }
 
-// GetLpActionsOk returns a tuple with the LpActions field value
+// GetLpWithdrawAvailableOk returns a tuple with the LpWithdrawAvailable field value
 // and a boolean to check if the value has been set.
-func (o *StatusResponseGlobal) GetLpActionsOk() (*Availability, bool) {
+func (o *StatusResponseGlobal) GetLpWithdrawAvailableOk() (*Availability, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.LpActions, true
+	return &o.LpWithdrawAvailable, true
 }
 
-// SetLpActions sets field value
-func (o *StatusResponseGlobal) SetLpActions(v Availability) {
-	o.LpActions = v
+// SetLpWithdrawAvailable sets field value
+func (o *StatusResponseGlobal) SetLpWithdrawAvailable(v Availability) {
+	o.LpWithdrawAvailable = v
+}
+
+// GetLpAddAvailable returns the LpAddAvailable field value
+func (o *StatusResponseGlobal) GetLpAddAvailable() Availability {
+	if o == nil {
+		var ret Availability
+		return ret
+	}
+
+	return o.LpAddAvailable
+}
+
+// GetLpAddAvailableOk returns a tuple with the LpAddAvailable field value
+// and a boolean to check if the value has been set.
+func (o *StatusResponseGlobal) GetLpAddAvailableOk() (*Availability, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.LpAddAvailable, true
+}
+
+// SetLpAddAvailable sets field value
+func (o *StatusResponseGlobal) SetLpAddAvailable(v Availability) {
+	o.LpAddAvailable = v
 }
 
 // GetLending returns the Lending field value
@@ -172,7 +198,10 @@ func (o StatusResponseGlobal) MarshalJSON() ([]byte, error) {
 		toSerialize["swapping"] = o.Swapping
 	}
 	if true {
-		toSerialize["lp_actions"] = o.LpActions
+		toSerialize["lp_withdraw_available"] = o.LpWithdrawAvailable
+	}
+	if true {
+		toSerialize["lp_add_available"] = o.LpAddAvailable
 	}
 	if true {
 		toSerialize["lending"] = o.Lending

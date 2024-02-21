@@ -21,7 +21,8 @@ const (
 const (
 	Trading Feature = iota + 1
 	Lending
-	LP
+	LPAdd
+	LPWithdraw
 	Synths
 	Savers
 	POL
@@ -36,18 +37,18 @@ type Rule struct {
 }
 
 var rules = []Rule{
-	{Scope: GlobalScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsGlobalChainHalted, Reason: "Global chain is halted"},
-	{Scope: GlobalScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsGlobalChainHaltedByNode, Reason: "Global chain is halted by node"},
-	{Scope: GlobalScope, Features: []Feature{Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsAtTLVCaps, Reason: "At TLV Caps"},
+	{Scope: GlobalScope, Features: []Feature{Trading, Lending, LPAdd, LPWithdraw, Synths, Savers}, isDisabledChecker: ruleIsGlobalChainHalted, Reason: "Global chain is halted"},
+	{Scope: GlobalScope, Features: []Feature{Trading, Lending, LPAdd, LPWithdraw, Synths, Savers}, isDisabledChecker: ruleIsGlobalChainHaltedByNode, Reason: "Global chain is halted by node"},
+	{Scope: GlobalScope, Features: []Feature{Lending, LPAdd, Synths, Savers}, isDisabledChecker: ruleIsAtTLVCaps, Reason: "At TLV Caps"},
 	{Scope: GlobalScope, Features: []Feature{Lending}, isDisabledChecker: ruleIsGlobalLendingPaused, Reason: "Global lending is paused"},
 	{Scope: GlobalScope, Features: []Feature{Lending}, isDisabledChecker: ruleIsAtLendingCaps, Reason: "At Lending Caps"},
-	{Scope: GlobalScope, Features: []Feature{LP}, isDisabledChecker: ruleIsGlobalLpPaused, Reason: "Global LP actions are paused"},
+	{Scope: GlobalScope, Features: []Feature{LPAdd, LPWithdraw}, isDisabledChecker: ruleIsGlobalLpPaused, Reason: "Global LP actions are paused"},
 	{Scope: GlobalScope, Features: []Feature{Trading}, isDisabledChecker: ruleIsGlobalTradingHalted, Reason: "Global trading halted"},
 	{Scope: GlobalScope, Features: []Feature{Synths}, isDisabledChecker: ruleIsGlobalSynthsPaused, Reason: "Global synths paused"},
-	{Scope: ChainScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsChainHalted, Reason: "Chain halted"},
+	{Scope: ChainScope, Features: []Feature{Trading, Lending, LPAdd, LPWithdraw, Synths, Savers}, isDisabledChecker: ruleIsChainHalted, Reason: "Chain halted"},
 	{Scope: ChainScope, Features: []Feature{Trading}, isDisabledChecker: ruleIsChainTradingHalted, Reason: "Chain trading halted"},
-	{Scope: ChainScope, Features: []Feature{LP}, isDisabledChecker: ruleIsChainLPaused, Reason: "Chain LP paused"},
-	{Scope: ChainScope, Features: []Feature{Trading, Lending, LP, Synths, Savers}, isDisabledChecker: ruleIsChainTradingHaltedBySolvencyChecker, Reason: "Chain halted by solvency checker"},
+	{Scope: ChainScope, Features: []Feature{LPAdd, LPWithdraw}, isDisabledChecker: ruleIsChainLPaused, Reason: "Chain LP paused"},
+	{Scope: ChainScope, Features: []Feature{Trading, Lending, LPAdd, LPWithdraw, Synths, Savers}, isDisabledChecker: ruleIsChainTradingHaltedBySolvencyChecker, Reason: "Chain halted by solvency checker"},
 	{Scope: PoolScope, Features: []Feature{Lending}, isDisabledChecker: ruleIsLendingDisabeldByPool, Reason: "Lending disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{POL}, isDisabledChecker: ruleIsPOLDisabeldByPool, Reason: "POL disable by pool with mimir"},
 	{Scope: PoolScope, Features: []Feature{TORAnchor}, isDisabledChecker: ruleIsTORAnchorDisabeldByPool, Reason: "TORAnchor disable by pool with mimir"},
