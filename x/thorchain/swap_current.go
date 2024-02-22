@@ -189,7 +189,10 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 	synthVirtualDepthMult int64,
 ) (amt cosmos.Uint, evt *EventSwap, swapErr error) {
 	source := tx.Coins[0].Asset
-	amount := tx.Coins[0].Amount
+	amount, err := s.adjustSourceAmount(ctx, mgr, tx.Coins[0])
+	if err != nil {
+		return cosmos.ZeroUint(), evt, err
+	}
 
 	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination, "fee", transactionFee)
 
@@ -516,4 +519,27 @@ func (s *SwapperVCUR) MinSlipBps(
 		return cosmos.ZeroUint()
 	}
 	return cosmos.SafeUintFromInt64(minFeeMimir.FetchValue(ctx, k))
+}
+
+func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin common.Coin) (cosmos.Uint, error) {
+	source := coin.Asset
+	sourceAmt := coin.Amount
+	if !source.IsSyntheticAsset() {
+		return sourceAmt, nil
+	}
+	if mimir.NewSynthBackStop().IsOn(ctx, mgr.Keeper()) {
+		synthCap := mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
+		synthSupply := mgr.Keeper().GetTotalSupply(ctx, source.GetSyntheticAsset())
+		pool, err := mgr.Keeper().GetPool(ctx, source.GetLayer1Asset())
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+		maxSynth := common.GetUncappedShare(pool.BalanceAsset.MulUint64(2), cosmos.NewUint(MaxWithdrawBasisPoints), cosmos.NewUint(uint64(synthCap)))
+		if synthSupply.LTE(maxSynth) {
+			return sourceAmt, nil
+		}
+		// if synth supply exceeds max synth
+		sourceAmt = common.GetUncappedShare(sourceAmt, synthSupply, maxSynth)
+	}
+	return sourceAmt, nil
 }
