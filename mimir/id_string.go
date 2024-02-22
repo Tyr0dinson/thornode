@@ -17,6 +17,7 @@ func _() {
 	_ = x[CloutSwapperReset-6]
 	_ = x[SwapSlipBasisPointsMin-7]
 	_ = x[TradeAccountEnabled-8]
+	_ = x[SynthBackStop-8]
 }
 
 const _Id_name = "UnknownAffiliateFeeBasisPointsMaxBondPauseConfMultiplierBasisPointsMaxConfirmationsCloutSwapperLimitCloutSwapperResetSwapSlipBasisPointsMinTradeAccountEnabled"

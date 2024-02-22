@@ -8,6 +8,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 )
 
 type SwapVCURSuite struct{}
@@ -596,4 +598,59 @@ func (s *SwapVCURSuite) TestSwap_GetSwapCalc(c *C) {
 		c.Check(liquidityFee.Uint64(), Equals, item.expectedFee.Uint64(),
 			Commentf("Actual: %s Exp: %s", liquidityFee.String(), item.expectedFee.String()))
 	}
+}
+
+func (s *SwapVCURSuite) TestSynthSwap_SynthBurnAdjustment(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	pool := NewPool()
+	pool.Asset = common.BNBAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	initialBalanceRune := pool.BalanceRune
+	initialBalanceAsset := pool.BalanceAsset
+	pool.LPUnits = pool.BalanceRune
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	asgardVault := GetRandomVault()
+	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
+
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		c.Assert(mgr.Keeper().SetNodeMimirV2(ctx, mimir.NewSynthBackStop().Key(), 1, na.NodeAddress), IsNil)
+	}
+	c.Check(mimir.NewSynthBackStop().IsOn(ctx, mgr.Keeper()), Equals, true)
+	synthPoolDepth := int64(10)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSynthPerPoolDepth.String(), synthPoolDepth)
+
+	// swap synth --> rune
+	swapAmt := cosmos.NewUint(1 * common.One)
+	addr := GetRandomTHORAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		addr,
+		addr,
+		common.NewCoins(common.NewCoin(common.BNBAsset.GetSyntheticAsset(), swapAmt)),
+		BNBGasFeeSingleton,
+		"",
+	)
+	tx.Chain = common.BNBChain
+
+	// synths are expected to be on the asgard module
+	mintErr := mgr.Keeper().MintToModule(ctx, ModuleName, tx.Coins[0])
+	c.Assert(mintErr, IsNil)
+	sendErr := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx.Coins)
+	c.Assert(sendErr, IsNil)
+
+	amount, _, err := newSwapperVCUR().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, cosmos.NewUint(1000_000), 20_000, mgr)
+	c.Assert(err, IsNil)
+	swapAmt = cosmos.NewUint(uint64(synthPoolDepth)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
+
+	// For synths, the pool depths are double (synth virtual depth mult)
+	TWO := cosmos.NewUint(2)
+	numerator := swapAmt.Mul(TWO).Mul(initialBalanceRune).Mul(TWO).Mul(initialBalanceAsset)
+	denom := swapAmt.Add(TWO.Mul(initialBalanceAsset))
+	denom = denom.Mul(denom)
+	swapResult := cosmos.NewUint(uint64(QuoUint(numerator, denom).TruncateInt64()))
+	c.Check(swapResult.String(), Equals, amount.String())
 }

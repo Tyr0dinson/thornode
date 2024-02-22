@@ -139,3 +139,19 @@ func NewTradeAccountsEnabled(refs ...string) Mimir {
 		},
 	}
 }
+
+func NewSynthBackStop(refs ...string) Mimir {
+	id := SynthBackStop
+	return &mimir{
+		id:           id,
+		name:         id.String(),
+		defaultValue: 0,
+		mimirType:    OperationalMimir,
+		reference:    getRef(refs),
+		tags:         []string{"operational", "synth backstop"},
+		description:  "synth backstop on swap",
+		legacyMimirKey: func(_ string) string {
+			return ""
+		},
+	}
+}

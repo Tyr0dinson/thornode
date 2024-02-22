@@ -31,6 +31,7 @@ type Mimir interface {
 	FetchValue(_ cosmos.Context, _ keeper.Keeper) int64
 	IsOn(_ cosmos.Context, _ keeper.Keeper) bool
 	IsOff(_ cosmos.Context, _ keeper.Keeper) bool
+	Key() string
 }
 
 type mimir struct {
@@ -75,7 +76,7 @@ func (m *mimir) Reference() string {
 	return strings.ToUpper(m.reference)
 }
 
-func (m *mimir) key() string {
+func (m *mimir) Key() string {
 	return fmt.Sprintf("%d-%s", m.id, strings.ToUpper(m.Reference()))
 }
 
@@ -125,7 +126,7 @@ func (m *mimir) fetchValueV125(ctx cosmos.Context, keeper keeper.Keeper) (value 
 		ctx.Logger().Error("failed to get active validator set", "error", err)
 	}
 
-	key = m.key()
+	key = m.Key()
 	var mimirs types.NodeMimirs
 	mimirs, err = keeper.GetNodeMimirsV2(ctx, key)
 	if err != nil {
