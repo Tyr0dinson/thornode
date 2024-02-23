@@ -147,10 +147,9 @@ func NewPauseSynths(refs ...string) Mimir {
 	id := PauseSynths
 	ref := getRef(refs)
 	var refConst constants.ConstantName
-	switch ref {
-	case constants.MintSynths.String():
+	if strings.EqualFold(ref, constants.MintSynths.String()) {
 		refConst = constants.MintSynths
-	case constants.BurnSynths.String():
+	} else {
 		refConst = constants.BurnSynths
 	}
 	return &mimir{
@@ -162,7 +161,7 @@ func NewPauseSynths(refs ...string) Mimir {
 		defaultValue: constants.NewConstantValue().GetInt64Value(refConst),
 		description:  fmt.Sprintf("Pauses the %s of synths", ref),
 		legacyMimirKey: func(_ string) string {
-			return ref
+			return refConst.String()
 		},
 	}
 }
