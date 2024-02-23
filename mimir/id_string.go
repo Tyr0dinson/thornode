@@ -17,12 +17,12 @@ func _() {
 	_ = x[CloutSwapperReset-6]
 	_ = x[SwapSlipBasisPointsMin-7]
 	_ = x[TradeAccountEnabled-8]
-	_ = x[SynthBackStop-8]
+	_ = x[SynthBackStop-9]
 }
 
-const _Id_name = "UnknownAffiliateFeeBasisPointsMaxBondPauseConfMultiplierBasisPointsMaxConfirmationsCloutSwapperLimitCloutSwapperResetSwapSlipBasisPointsMinTradeAccountEnabled"
+const _Id_name = "UnknownAffiliateFeeBasisPointsMaxBondPauseConfMultiplierBasisPointsMaxConfirmationsCloutSwapperLimitCloutSwapperResetSwapSlipBasisPointsMinTradeAccountEnabledSynthBackStop"
 
-var _Id_index = [...]uint8{0, 7, 33, 42, 67, 83, 100, 117, 139, 158}
+var _Id_index = [...]uint8{0, 7, 33, 42, 67, 83, 100, 117, 139, 158, 171}
 
 func (i Id) String() string {
 	if i < 0 || i >= Id(len(_Id_index)-1) {
