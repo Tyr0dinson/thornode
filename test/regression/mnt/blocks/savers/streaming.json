@@ -8676,67 +8676,6 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "coins": "14000 BTC.BTC",
-        "mode": "EndBlock",
-        "pool_deduct": "12387873",
-        "tx_id": "0000000000000000000000000000000000000000000000000000000000000008",
-        "type": "fee"
-      },
-      {
-        "amount": "12387873rune",
-        "mode": "EndBlock",
-        "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-        "type": "coin_spent"
-      },
-      {
-        "amount": "12387873rune",
-        "mode": "EndBlock",
-        "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-        "type": "coin_received"
-      },
-      {
-        "amount": "12387873rune",
-        "mode": "EndBlock",
-        "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-        "type": "transfer"
-      },
-      {
-        "mode": "EndBlock",
-        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
-        "type": "message"
-      },
-      {
-        "chain": "BTC",
-        "coin_amount": "1486000",
-        "coin_asset": "BTC.BTC",
-        "coin_decimals": "8",
-        "gas_rate": "10",
-        "in_hash": "0000000000000000000000000000000000000000000000000000000000000008",
-        "max_gas_amount_0": "10500",
-        "max_gas_asset_0": "BTC.BTC",
-        "max_gas_decimals_0": "8",
-        "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000008",
-        "mode": "EndBlock",
-        "module_name": "",
-        "out_hash": "",
-        "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
-        "type": "scheduled_outbound",
-        "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-      },
-      {
-        "chain": "BTC",
-        "code": "108",
-        "coin": "1500000 BTC.BTC",
-        "from": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
-        "id": "0000000000000000000000000000000000000000000000000000000000000008",
-        "memo": "+:BTC/BTC::tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav:1000",
-        "mode": "EndBlock",
-        "reason": "savers add liquidity for pool (BTC/BTC) not allowed because provided rune address (tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav) is not of chain (BTC)",
-        "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
-        "type": "refund"
-      },
-      {
         "amount": "6btc/btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -9021,7 +8960,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "276378",
+          "gas_used": "1105069",
           "events": [
             {
               "fee": "",
@@ -9042,6 +8981,67 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
+            },
+            {
+              "coins": "14000 BTC.BTC",
+              "msg_index": "0",
+              "pool_deduct": "12387873",
+              "tx_id": "0000000000000000000000000000000000000000000000000000000000000008",
+              "type": "fee"
+            },
+            {
+              "amount": "12387873rune",
+              "msg_index": "0",
+              "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "12387873rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "12387873rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "message"
+            },
+            {
+              "chain": "BTC",
+              "coin_amount": "1486000",
+              "coin_asset": "BTC.BTC",
+              "coin_decimals": "8",
+              "gas_rate": "10",
+              "in_hash": "0000000000000000000000000000000000000000000000000000000000000008",
+              "max_gas_amount_0": "10500",
+              "max_gas_asset_0": "BTC.BTC",
+              "max_gas_decimals_0": "8",
+              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000008",
+              "module_name": "",
+              "msg_index": "0",
+              "out_hash": "",
+              "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+              "type": "scheduled_outbound",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            },
+            {
+              "chain": "BTC",
+              "code": "100",
+              "coin": "1500000 BTC.BTC",
+              "from": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+              "id": "0000000000000000000000000000000000000000000000000000000000000008",
+              "memo": "+:BTC/BTC::tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav:1000",
+              "msg_index": "0",
+              "reason": "add liquidity for pool (BTC/BTC) not allowed because affiliate basis points (1000) are non-zero and affiliate address (tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav) is not of chain (BTC)",
+              "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
+              "type": "refund"
             }
           ]
         }
@@ -9076,8 +9076,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "D95309095F3507333C8D10B091AEA2AF0476B03154074765FBE1DD13571EC9C4",
-      "last_results_hash": "8FC3546E942A7AEFCD9083B3C9177715E19F451145F85A35EAF72904DA242B9A",
+      "app_hash": "E33CA4380022FCE2A1C283F5B91AA692FA20B0FDF1801630599E4566271E9C30",
+      "last_results_hash": "3964731453C0831C02EFBB8C42BA6F40006B51E8456B544A7ECE6B40D7664763",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -9400,7 +9400,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "271267",
+          "gas_used": "271261",
           "events": [
             {
               "fee": "",

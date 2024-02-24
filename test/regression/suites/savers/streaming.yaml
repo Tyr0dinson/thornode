@@ -481,7 +481,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
-  - ..|select(.type? == "refund").reason == "savers add liquidity for pool (BTC/BTC) not allowed because provided rune address ({{ addr_thor_fish }}) is not of chain (BTC)"
+  - ..|select(.type? == "refund").reason == "add liquidity for pool (BTC/BTC) not allowed because affiliate basis points (1000) are non-zero and affiliate address ({{ addr_thor_fish }}) is not of chain (BTC)"
   # The very first sub-swap fails from the fail of the affiliate add liquidity.
   # There is no broken Asgard invariant, or else it would be caught by the create-blocks without skip_invariants: true.
 ---
