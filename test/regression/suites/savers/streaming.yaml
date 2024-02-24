@@ -422,3 +422,135 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
 asserts:
   - .units | tonumber > ${SAVER_UNITS} # Successful Savers add for the Affiliate BTC address.
+---
+###########################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "${IN_TXID={{ observe_txid 8 }}}"
+      chain: BTC
+      from_address: {{ addr_btc_pig }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "${IN_AMOUNT=1500000}"
+          asset: "${IN_ASSET=BTC.BTC}"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "+:BTC/BTC::{{ addr_thor_fish }}:1000" # THOR Affiliate Address directly (failure expected), with no THORName.
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+# Check the Asgard balance before the streaming swap.
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+  - .coins[] | select(.denom == "btc/btc").amount == "${START_SYNTH=12899608}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "refund")] | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - .|length == 1
+  - .[0].tx_id == "${IN_TXID}"
+  - .[0].count == 1
+  - .[0].quantity == 2
+  - .[0].deposit == "${IN_AMOUNT}"
+  - .[0].out == "${HALF_SWAP_SYNTH=743766}"
+  # The Savers add is streaming, and the streaming swap is the full unsplit amount.
+---
+# Check the Asgard balance halfway through the streaming swap.
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+  - .coins[] | select(.denom == "btc/btc").amount | tonumber > ${START_SYNTH} + ${HALF_SWAP_SYNTH} # '>' rather than '==' because of Savers yield minting.
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - .|length == 0 # The streaming swap is done.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "refund")] | length == 1
+  - ..|select(.type? == "refund").reason | contains("fail to refund") | not # Refund possible.
+  - ..|select(.type? == "refund").memo == "+:BTC/BTC::{{ addr_thor_fish }}:1000"
+  - ..|select(.type? == "refund").reason == "memo paired address must be non-empty and together with origin address match the liquidity provider record"
+  # TODO: This is errAddLiquidityMismatchAddr, but should be a different returned error to indicate that an address is of the wrong chain (and indicate the chain).
+  - ..|select(.type? == "refund").coin == "${REFUND_EVENT_AMOUNT=750000} ${IN_ASSET}" # The refund coin was the Layer 1 Asset.
+  - ${REFUND_EVENT_AMOUNT} == ${IN_AMOUNT} / 2 # This was a single BTC.BTC -> BTC/BTC {half-swap and full-add} half-swap-amount refund, leaving the already-half-swapped BTC/BTC floating and not cleaned up.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == true
+  - .msg | length == 1
+  - .msg[0] | contains("oversolvent")
+  - .msg[0] | contains("${HALF_SWAP_SYNTH}btc/btc")
+# TODO: Fix that this broken invariant occurred, with the 'partial succeess' BTC/BTC left not cleaned up.
+---
+# Check the Asgard balance after the streaming swap.
+type: check
+endpoint: http://localhost:1317/thorchain/balance/module/asgard
+asserts:
+  - .coins[] | select(.denom == "btc/btc").amount | tonumber > ${START_SYNTH} + ${HALF_SWAP_SYNTH} # '>' rather than '==' because of Savers yield minting.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].coin.asset == "${IN_ASSET}"
+  - .[0].coin.amount == "${OUT_AMOUNT=736000}"
+  - ${OUT_AMOUNT} < ${IN_AMOUNT} * 50/100 # This is a half-swap's refund (with deducted outbound fee), not a full swap's.
+  - .[0].max_gas[0].amount == "${OUT_GAS_AMOUNT=10500}"
+  - .[0].memo == "REFUND:${IN_TXID}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 9 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_pig }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "${OUT_GAS_AMOUNT}"
+          asset: "BTC.BTC"
+      memo: "REFUND:${IN_TXID}"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0 # No pending outbounds.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == true
+  # Invariant indeed still broken.
