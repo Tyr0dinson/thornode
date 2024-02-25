@@ -174,7 +174,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999998445383",
+              "amount": "34999998445473",
               "denom": "rune"
             }
           ]
@@ -201,7 +201,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000001077",
+              "amount": "5000000000987",
               "denom": "rune"
             }
           ]
@@ -318,13 +318,14 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "10000",
-        "bond_reward_rune": "1077",
+        "LPIncomeSplit": "9999",
+        "NodeIncomeSplit": "1",
+        "bond_reward_rune": "987",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
         "outbound_gas_spent_rune": "119460",
         "outbound_gas_withheld_rune": "114148",
-        "total_bond_units": "7"
+        "total_bond_units": "5"
       },
       "network_fees": [
         {
