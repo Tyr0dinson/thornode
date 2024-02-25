@@ -48,6 +48,11 @@ func (s *NetworkManagerVCURTestSuite) TestUpdateNetwork(c *C) {
 	// no active node , thus no bond
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
 
+	// Vault for getVaultsLiquidityRune.
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{p.Asset.GetChain().String()}, []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(p.Asset, p.BalanceAsset))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
 	// with liquidity fee , and bonds
 	c.Assert(helper.Keeper.AddToLiquidityFees(ctx, common.BNBAsset, cosmos.NewUint(50*common.One)), IsNil)
 
@@ -394,7 +399,7 @@ func (s *NetworkManagerVCURTestSuite) TestSaverYieldCall(c *C) {
 	spool.LPUnits = cosmos.NewUint(100)
 	c.Assert(mgr.Keeper().SetPool(ctx, spool), IsNil)
 
-	// first pool
+	// layer 1 pool
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
@@ -402,6 +407,11 @@ func (s *NetworkManagerVCURTestSuite) TestSaverYieldCall(c *C) {
 	pool.LPUnits = cosmos.NewUint(100)
 	pool.CalcUnits(mgr.GetVersion(), coin.Amount)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Vault for getVaultsLiquidityRune.
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{pool.Asset.GetChain().String()}, []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(pool.Asset, pool.BalanceAsset))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	networkMgr := newNetworkMgrVCUR(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
