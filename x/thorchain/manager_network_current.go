@@ -1473,6 +1473,48 @@ func (vm *NetworkMgrVCUR) getAvailablePoolsRune(ctx cosmos.Context) (Pools, cosm
 	return availablePools, availablePoolsRune, nil
 }
 
+func (vm *NetworkMgrVCUR) getVaultsLiquidityRune(ctx cosmos.Context) (cosmos.Uint, error) {
+	// Sum the RUNE values of non-Inactive vault Coins.
+	vaultsLiquidityRune := cosmos.ZeroUint()
+	poolCache := map[common.Asset]Pool{}
+	vaults, err := vm.k.GetAsgardVaults(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get vaults: %w", err)
+	}
+	for i := range vaults {
+		// cleanupAsgardIndex removes InactiveVaults from the index on churn,
+		// but RetiringVaults which become InactiveVaults and later receive inbounds
+		// are not cleared from the index until the next churn,
+		// so check nevertheless.
+		// Similarly, an InactiveVault inbound (to be automatically refunded)
+		// re-adds that InactiveVault to the Asgard Index with SetVault
+		// until cleared again in the next churn.
+		if vaults[i].Status == InactiveVault {
+			continue
+		}
+
+		for j := range vaults[i].Coins {
+			if vaults[i].Coins[j].Asset.IsRune() {
+				vaultsLiquidityRune = vaultsLiquidityRune.Add(vaults[i].Coins[j].Amount)
+				continue
+			}
+
+			pool, ok := poolCache[vaults[i].Coins[j].Asset]
+			if !ok {
+				var err error // Avoid shadowing.
+				pool, err = vm.k.GetPool(ctx, vaults[i].Coins[j].Asset)
+				if err != nil {
+					return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s, err:%w", vaults[i].Coins[j].Asset, err)
+				}
+				poolCache[vaults[i].Coins[j].Asset] = pool
+			}
+
+			vaultsLiquidityRune = vaultsLiquidityRune.Add(pool.AssetValueInRune(vaults[i].Coins[j].Amount))
+		}
+	}
+	return vaultsLiquidityRune, nil
+}
+
 // Pays out Rewards
 func (vm *NetworkMgrVCUR) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Uint, pools Pools) error {
 	for i, reward := range poolRewards {
