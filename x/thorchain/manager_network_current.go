@@ -1338,14 +1338,14 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 		return nil
 	}
 	currentHeight := uint64(ctx.BlockHeight())
-	pools, totalProvidedLiquidity, err := vm.getTotalProvidedLiquidityRune(ctx)
+	availablePools, availablePoolsRune, err := vm.getAvailablePoolsRune(ctx)
 	if err != nil {
-		return fmt.Errorf("fail to get available pools and total provided liquidity rune: %w", err)
+		return fmt.Errorf("fail to get available pools and their rune: %w", err)
 	}
 
-	// If no Rune is provided liquidity, then don't give out block rewards.
-	if totalProvidedLiquidity.IsZero() {
-		return nil // If no Rune is provided liquidity, then don't give out block rewards.
+	// If no Rune is in Available pools, then don't give out block rewards.
+	if availablePoolsRune.IsZero() {
+		return nil // If no Rune is in available pools, then don't give out block rewards.
 	}
 
 	// get total liquidity fees
@@ -1370,7 +1370,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 		emissionCurve = constAccessor.GetInt64Value(constants.EmissionCurve)
 	}
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
-	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(totalProvidedLiquidity, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear)
+	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(availablePoolsRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear)
 
 	network.LPIncomeSplit = int64(lpShare.Uint64())
 	network.NodeIncomeSplit = int64(10_000) - network.LPIncomeSplit
@@ -1385,13 +1385,10 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 		var rewardAmts []cosmos.Uint
 		var rewardPools []Pool
 		// Pool Rewards are based on Fee Share
-		for _, pool := range pools {
-			if !pool.IsAvailable() {
-				continue
-			}
+		for _, pool := range availablePools {
 			var amt, fees cosmos.Uint
 			if totalLiquidityFees.IsZero() {
-				amt = common.GetSafeShare(pool.BalanceRune, totalProvidedLiquidity, totalPoolRewards)
+				amt = common.GetSafeShare(pool.BalanceRune, availablePoolsRune, totalPoolRewards)
 				fees = cosmos.ZeroUint()
 			} else {
 				var err error
@@ -1421,7 +1418,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 
 	} else { // Else deduct pool deficit
 
-		poolAmts, err := vm.deductPoolRewardDeficit(ctx, pools, totalLiquidityFees, lpDeficit)
+		poolAmts, err := vm.deductPoolRewardDeficit(ctx, availablePools, totalLiquidityFees, lpDeficit)
 		if err != nil {
 			return err
 		}
@@ -1450,10 +1447,10 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	return vm.k.SetNetwork(ctx, network)
 }
 
-func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Pools, cosmos.Uint, error) {
+func (vm *NetworkMgrVCUR) getAvailablePoolsRune(ctx cosmos.Context) (Pools, cosmos.Uint, error) {
 	// First get active pools and total provided liquidity Rune
-	totalProvidedLiquidity := cosmos.ZeroUint()
-	var pools Pools
+	availablePoolsRune := cosmos.ZeroUint()
+	var availablePools Pools
 	iterator := vm.k.GetPoolIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -1461,15 +1458,18 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to unmarhsl pool: %w", err)
 		}
+		if !pool.IsAvailable() {
+			continue
+		}
 		if pool.Asset.IsNative() {
 			continue
 		}
 		if !pool.BalanceRune.IsZero() {
-			totalProvidedLiquidity = totalProvidedLiquidity.Add(pool.BalanceRune)
-			pools = append(pools, pool)
+			availablePoolsRune = availablePoolsRune.Add(pool.BalanceRune)
+			availablePools = append(availablePools, pool)
 		}
 	}
-	return pools, totalProvidedLiquidity, nil
+	return availablePools, availablePoolsRune, nil
 }
 
 // Pays out Rewards
