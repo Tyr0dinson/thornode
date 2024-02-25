@@ -249,7 +249,7 @@ func (*NetworkManagerVCURTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
-func (*NetworkManagerVCURTestSuite) TestGetTotalLiquidityRune(c *C) {
+func (*NetworkManagerVCURTestSuite) TestGetAvailablePoolsRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
 	mgr.K = helper
@@ -260,7 +260,7 @@ func (*NetworkManagerVCURTestSuite) TestGetTotalLiquidityRune(c *C) {
 	p.BalanceAsset = cosmos.NewUint(common.One * 100)
 	p.Status = PoolAvailable
 	c.Assert(helper.SetPool(ctx, p), IsNil)
-	pools, totalLiquidity, err := networkMgr.getTotalProvidedLiquidityRune(ctx)
+	pools, totalLiquidity, err := networkMgr.getAvailablePoolsRune(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(pools, HasLen, 1)
 	c.Assert(totalLiquidity.Equal(p.BalanceRune), Equals, true)
