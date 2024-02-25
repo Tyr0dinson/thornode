@@ -1337,7 +1337,6 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	if totalReserve.IsZero() {
 		return nil
 	}
-	currentHeight := uint64(ctx.BlockHeight())
 	availablePools, availablePoolsRune, err := vm.getAvailablePoolsRune(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get available pools and their rune: %w", err)
@@ -1349,6 +1348,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	}
 
 	// get total liquidity fees
+	currentHeight := uint64(ctx.BlockHeight())
 	totalLiquidityFees, err := vm.k.GetTotalLiquidityFees(ctx, currentHeight)
 	if err != nil {
 		return fmt.Errorf("fail to get total liquidity fee: %w", err)
