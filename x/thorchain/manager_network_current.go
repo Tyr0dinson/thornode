@@ -1448,7 +1448,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 }
 
 func (vm *NetworkMgrVCUR) getAvailablePoolsRune(ctx cosmos.Context) (Pools, cosmos.Uint, error) {
-	// First get active pools and total provided liquidity Rune
+	// Get Available layer 1 pools and sum their RUNE balances.
 	availablePoolsRune := cosmos.ZeroUint()
 	var availablePools Pools
 	iterator := vm.k.GetPoolIterator(ctx)
@@ -1464,10 +1464,11 @@ func (vm *NetworkMgrVCUR) getAvailablePoolsRune(ctx cosmos.Context) (Pools, cosm
 		if pool.Asset.IsNative() {
 			continue
 		}
-		if !pool.BalanceRune.IsZero() {
-			availablePoolsRune = availablePoolsRune.Add(pool.BalanceRune)
-			availablePools = append(availablePools, pool)
+		if pool.BalanceRune.IsZero() {
+			continue
 		}
+		availablePoolsRune = availablePoolsRune.Add(pool.BalanceRune)
+		availablePools = append(availablePools, pool)
 	}
 	return availablePools, availablePoolsRune, nil
 }
