@@ -2054,7 +2054,6 @@ components:
         - to_address
         - coin
         - max_gas
-        - height
       properties:
         chain:
           type: string

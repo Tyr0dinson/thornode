@@ -3102,7 +3102,6 @@ components:
       required:
       - chain
       - coin
-      - height
       - max_gas
       - to_address
       type: object

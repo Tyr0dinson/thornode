@@ -2602,7 +2602,7 @@ func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 		GasRate:    wrapInt64(toi.GasRate),
 		InHash:     wrapString(toi.InHash.String()),
 		OutHash:    wrapString(toi.OutHash.String()),
-		Height:     height,
+		Height:     wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
 		CloutSpent: wrapUintPtr(toi.CloutSpent),
 	}
 }
