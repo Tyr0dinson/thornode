@@ -6,14 +6,14 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Started** | Pointer to **bool** | returns true if any nodes have observed the transaction (to be deprecated in favour of counts) | [optional] 
 **PreConfirmationCount** | Pointer to **int64** | number of signers for pre-confirmation-counting observations | [optional] 
-**FinalCount** | Pointer to **int64** | number of signers for final observations, after any confirmation counting complete | [optional] 
+**FinalCount** | **int64** | number of signers for final observations, after any confirmation counting complete | 
 **Completed** | **bool** | returns true if no transaction observation remains to be done | 
 
 ## Methods
 
 ### NewInboundObservedStage
 
-`func NewInboundObservedStage(completed bool, ) *InboundObservedStage`
+`func NewInboundObservedStage(finalCount int64, completed bool, ) *InboundObservedStage`
 
 NewInboundObservedStage instantiates a new InboundObservedStage object
 This constructor will assign default values to properties that have it defined,
@@ -97,11 +97,6 @@ and a boolean to check if the value has been set.
 
 SetFinalCount sets FinalCount field to given value.
 
-### HasFinalCount
-
-`func (o *InboundObservedStage) HasFinalCount() bool`
-
-HasFinalCount returns a boolean if a field has been set.
 
 ### GetCompleted
 

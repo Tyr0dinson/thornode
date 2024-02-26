@@ -158,8 +158,6 @@ var (
 	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
 	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
-	NewQueryTxStages               = types.NewQueryTxStages
-	NewQueryTxStatus               = types.NewQueryTxStatus
 	ModuleCdc                      = types.ModuleCdc
 	RegisterCodec                  = types.RegisterCodec
 	RegisterInterfaces             = types.RegisterInterfaces
@@ -263,8 +261,6 @@ type (
 	QueryKeysign              = types.QueryKeysign
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
-	QueryTxStages             = types.QueryTxStages
-	QueryTxStatus             = types.QueryTxStatus
 	QuerySaver                = types.QuerySaver
 	QueryStreamingSwap        = types.QueryStreamingSwap
 	QueryChainAddress         = types.QueryChainAddress

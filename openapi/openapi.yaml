@@ -2541,7 +2541,7 @@ components:
           type: object
           title: InboundObservedStage
           required:
-            - final_observations
+            - final_count
             - completed
           properties:
             started:

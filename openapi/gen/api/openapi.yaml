@@ -5824,7 +5824,7 @@ components:
           type: boolean
       required:
       - completed
-      - final_observations
+      - final_count
       title: InboundObservedStage
       type: object
     InboundConfirmationCountedStage:

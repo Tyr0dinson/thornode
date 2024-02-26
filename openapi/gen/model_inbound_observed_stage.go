@@ -21,7 +21,7 @@ type InboundObservedStage struct {
 	// number of signers for pre-confirmation-counting observations
 	PreConfirmationCount *int64 `json:"pre_confirmation_count,omitempty"`
 	// number of signers for final observations, after any confirmation counting complete
-	FinalCount *int64 `json:"final_count,omitempty"`
+	FinalCount int64 `json:"final_count"`
 	// returns true if no transaction observation remains to be done
 	Completed bool `json:"completed"`
 }
@@ -30,8 +30,9 @@ type InboundObservedStage struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewInboundObservedStage(completed bool) *InboundObservedStage {
+func NewInboundObservedStage(finalCount int64, completed bool) *InboundObservedStage {
 	this := InboundObservedStage{}
+	this.FinalCount = finalCount
 	this.Completed = completed
 	return &this
 }
@@ -108,36 +109,28 @@ func (o *InboundObservedStage) SetPreConfirmationCount(v int64) {
 	o.PreConfirmationCount = &v
 }
 
-// GetFinalCount returns the FinalCount field value if set, zero value otherwise.
+// GetFinalCount returns the FinalCount field value
 func (o *InboundObservedStage) GetFinalCount() int64 {
-	if o == nil || o.FinalCount == nil {
+	if o == nil {
 		var ret int64
 		return ret
 	}
-	return *o.FinalCount
+
+	return o.FinalCount
 }
 
-// GetFinalCountOk returns a tuple with the FinalCount field value if set, nil otherwise
+// GetFinalCountOk returns a tuple with the FinalCount field value
 // and a boolean to check if the value has been set.
 func (o *InboundObservedStage) GetFinalCountOk() (*int64, bool) {
-	if o == nil || o.FinalCount == nil {
+	if o == nil {
 		return nil, false
 	}
-	return o.FinalCount, true
+	return &o.FinalCount, true
 }
 
-// HasFinalCount returns a boolean if a field has been set.
-func (o *InboundObservedStage) HasFinalCount() bool {
-	if o != nil && o.FinalCount != nil {
-		return true
-	}
-
-	return false
-}
-
-// SetFinalCount gets a reference to the given int64 and assigns it to the FinalCount field.
+// SetFinalCount sets field value
 func (o *InboundObservedStage) SetFinalCount(v int64) {
-	o.FinalCount = &v
+	o.FinalCount = v
 }
 
 // GetCompleted returns the Completed field value
@@ -172,7 +165,7 @@ func (o InboundObservedStage) MarshalJSON_deprecated() ([]byte, error) {
 	if o.PreConfirmationCount != nil {
 		toSerialize["pre_confirmation_count"] = o.PreConfirmationCount
 	}
-	if o.FinalCount != nil {
+	if true {
 		toSerialize["final_count"] = o.FinalCount
 	}
 	if true {

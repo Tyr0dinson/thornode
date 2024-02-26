@@ -198,48 +198,6 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 	}
 }
 
-// TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
-func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (isSwap, isPending, pending bool, streamingSwap StreamingSwap) {
-	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
-	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
-		return
-	}
-
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
-
-	// Only look for streaming information when a swap is pending.
-	if pending {
-		var err error
-		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
-		if err != nil {
-			// Log the error, but continue without streaming information.
-			ctx.Logger().Error("fail to get streaming swap", "error", err)
-		}
-	}
-
-	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
-	if err != nil {
-		// If unable to parse, assume not a (valid) swap or limit order memo.
-		return
-	}
-
-	memoType := memo.GetType()
-	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
-	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsVaultAsset() {
-		isSwap = true
-		// Only check the KVStore when the inbound transaction has already been finalised
-		// and when there haven't been any Actions planned.
-		// This will also check the KVStore when an inbound transaction has no output,
-		// such as the output being not enough to cover a fee.
-		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
-			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
-			isPending = pending
-		}
-	}
-
-	return
-}
-
 func getPeerIDFromPubKey(pubkey common.PubKey) string {
 	peerID, err := conversion.GetPeerIDFromPubKey(pubkey.String())
 	if err != nil {
@@ -1693,6 +1651,207 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	return jsonify(ctx, result)
 }
 
+// TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
+func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) (isSwap, isPending, pending bool, streamingSwap StreamingSwap) {
+	// If there's no (confirmation-counting-complete) consensus transaction yet, don't spend time checking the swap status.
+	if voter.Tx.IsEmpty() || !voter.Tx.IsFinal() {
+		return
+	}
+
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+
+	// Only look for streaming information when a swap is pending.
+	if pending {
+		var err error
+		streamingSwap, err = keeper.GetStreamingSwap(ctx, voter.TxID)
+		if err != nil {
+			// Log the error, but continue without streaming information.
+			ctx.Logger().Error("fail to get streaming swap", "error", err)
+		}
+	}
+
+	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
+	if err != nil {
+		// If unable to parse, assume not a (valid) swap or limit order memo.
+		return
+	}
+
+	memoType := memo.GetType()
+	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
+	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsVaultAsset() {
+		isSwap = true
+		// Only check the KVStore when the inbound transaction has already been finalised
+		// and when there haven't been any Actions planned.
+		// This will also check the KVStore when an inbound transaction has no output,
+		// such as the output being not enough to cover a fee.
+		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
+			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
+			isPending = pending
+		}
+	}
+
+	return
+}
+
+// Get the largest number of signers for a not-final (pre-confirmation-counting) and final Txs respectively.
+func countSigners(voter ObservedTxVoter) (*int64, int64) {
+	var notFinalCount, finalCount int64
+	for i, refTx := range voter.Txs {
+		signersMap := make(map[string]bool)
+		final := refTx.IsFinal()
+		for f, tx := range voter.Txs {
+			// Earlier Txs already checked against all, so no need to check,
+			// but do include the signers of the current Txs.
+			if f < i {
+				continue
+			}
+			// Count larger number of signers for not-final and final observations separately.
+			if tx.IsFinal() != final {
+				continue
+			}
+			if !refTx.Tx.EqualsEx(tx.Tx) {
+				continue
+			}
+
+			for _, signer := range tx.GetSigners() {
+				signersMap[signer.String()] = true
+			}
+		}
+		if final && int64(len(signersMap)) > finalCount {
+			finalCount = int64(len(signersMap))
+		} else if int64(len(signersMap)) > notFinalCount {
+			notFinalCount = int64(len(signersMap))
+		}
+	}
+	return wrapInt64(notFinalCount), finalCount
+}
+
+// Call newTxStagesResponse from both queryTxStatus (which includes the stages) and queryTxStages.
+// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated in favour of SwapStatus.
+// TODO: Deprecate InboundObserved.Started field in favour of the observation counting.
+func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) (result openapi.TxStagesResponse) {
+	result.InboundObserved.PreConfirmationCount, result.InboundObserved.FinalCount = countSigners(voter)
+	result.InboundObserved.Completed = !voter.Tx.IsEmpty()
+
+	// If not Completed, fill in Started and do not proceed.
+	if !result.InboundObserved.Completed {
+		obStart := (len(voter.Txs) != 0)
+		result.InboundObserved.Started = &obStart
+		return result
+	}
+
+	// Current block height is relevant in the confirmation counting and outbound stages.
+	currentHeight := ctx.BlockHeight()
+
+	// Only fill in InboundConfirmationCounted when confirmation counting took place.
+	if voter.Height != 0 {
+		var confCount openapi.InboundConfirmationCountedStage
+
+		// Set the Completed state first.
+		extObsHeight := voter.Tx.BlockHeight
+		extConfDelayHeight := voter.Tx.FinaliseHeight
+		confCount.Completed = !(extConfDelayHeight > extObsHeight)
+
+		// Only fill in other fields if not Completed.
+		if !confCount.Completed {
+			countStartHeight := voter.Height
+			confCount.CountingStartHeight = wrapInt64(countStartHeight)
+			confCount.Chain = wrapString(voter.Tx.Tx.Chain.String())
+			confCount.ExternalObservedHeight = wrapInt64(extObsHeight)
+			confCount.ExternalConfirmationDelayHeight = wrapInt64(extConfDelayHeight)
+
+			estConfMs := voter.Tx.Tx.Chain.ApproximateBlockMilliseconds() * (extConfDelayHeight - extObsHeight)
+			if currentHeight > countStartHeight {
+				estConfMs -= (currentHeight - countStartHeight) * common.THORChain.ApproximateBlockMilliseconds()
+			}
+			estConfSec := estConfMs / 1000
+			// Floor at 0.
+			if estConfSec < 0 {
+				estConfSec = 0
+			}
+			confCount.RemainingConfirmationSeconds = &estConfSec
+		}
+
+		result.InboundConfirmationCounted = &confCount
+	}
+
+	var inboundFinalised openapi.InboundFinalisedStage
+	inboundFinalised.Completed = (voter.FinalisedHeight != 0)
+	result.InboundFinalised = &inboundFinalised
+
+	var swapStatus openapi.SwapStatus
+	swapStatus.Pending = pending
+	// Only display the SwapStatus stage's Streaming field when there's streaming information available.
+	if streamingSwap.Valid() == nil {
+		streaming := openapi.StreamingStatus{
+			Interval: int64(streamingSwap.Interval),
+			Quantity: int64(streamingSwap.Quantity),
+			Count:    int64(streamingSwap.Count),
+		}
+		swapStatus.Streaming = &streaming
+	}
+	result.SwapStatus = &swapStatus
+
+	// Whether there's an external outbound or not, show the SwapFinalised stage from the start.
+	if isSwap {
+		var swapFinalisedState openapi.SwapFinalisedStage
+
+		swapFinalisedState.Completed = false
+		if !isPending && result.InboundFinalised.Completed {
+			// Record as completed only when not pending after the inbound has already been finalised.
+			swapFinalisedState.Completed = true
+		}
+
+		result.SwapFinalised = &swapFinalisedState
+	}
+
+	// Only fill ExternalOutboundDelay and ExternalOutboundKeysign for inbound transactions with an external outbound;
+	// namely, transactions with an outbound_height .
+	if voter.OutboundHeight == 0 {
+		return result
+	}
+
+	// Only display the OutboundDelay stage when there's a delay.
+	if voter.OutboundHeight > voter.FinalisedHeight {
+		var outDelay openapi.OutboundDelayStage
+
+		// Set the Completed state first.
+		outDelay.Completed = (currentHeight >= voter.OutboundHeight)
+
+		// Only fill in other fields if not Completed.
+		if !outDelay.Completed {
+			remainBlocks := voter.OutboundHeight - currentHeight
+			outDelay.RemainingDelayBlocks = &remainBlocks
+
+			remainSec := remainBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
+			outDelay.RemainingDelaySeconds = &remainSec
+		}
+
+		result.OutboundDelay = &outDelay
+	}
+
+	var outSigned openapi.OutboundSignedStage
+
+	// Set the Completed state first.
+	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete)
+
+	// Only fill in other fields if not Completed.
+	if !outSigned.Completed {
+		scheduledHeight := voter.OutboundHeight
+		outSigned.ScheduledOutboundHeight = &scheduledHeight
+
+		// Only fill in BlocksSinceScheduled if the outbound delay is complete.
+		if currentHeight >= scheduledHeight {
+			sinceScheduled := currentHeight - scheduledHeight
+			outSigned.BlocksSinceScheduled = &sinceScheduled
+		}
+	}
+
+	result.OutboundSigned = &outSigned
+
+	return result
+}
+
 func queryTxStages(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 	// First, get the ObservedTxVoter of interest.
 	_, voter, err := extractVoter(ctx, path, mgr)
@@ -1704,7 +1863,7 @@ func queryTxStages(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 
 	isSwap, isPending, pending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
 
-	result := NewQueryTxStages(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	result := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return jsonify(ctx, result)
 }
@@ -1718,9 +1877,40 @@ func queryTxStatus(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	// when no TxIn voter don't check TxOut voter, as TxOut THORChain observation or not matters little to the user once signed and broadcast
 	// Rather than a "tx: %s doesn't exist" result, allow a response to an existing-but-unobserved hash with Stages.Observation.Started 'false'.
 
+	// TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated.
 	isSwap, isPending, pending, streamingSwap := checkPending(ctx, mgr.Keeper(), voter)
 
-	result := NewQueryTxStatus(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	var result openapi.TxStatusResponse
+
+	// If there's a consensus Tx, display that.
+	// If not, but there's at least one observation, display the first observation's Tx.
+	// If there are no observations yet, don't display a Tx (only showing the 'Observation' stage with 'Started' false).
+	if !voter.Tx.Tx.IsEmpty() {
+		tx := castTx(voter.Tx.Tx)
+		result.Tx = &tx
+	} else if len(voter.Txs) > 0 {
+		tx := castTx(voter.Txs[0].Tx)
+		result.Tx = &tx
+	}
+
+	// If there are no voter Actions yet, result PlannedOutTxs will stay empty and not be displayed.
+	result.PlannedOutTxs = make([]openapi.PlannedOutTx, len(voter.Actions))
+	for i := range voter.Actions {
+		result.PlannedOutTxs[i] = openapi.PlannedOutTx{
+			Chain:     voter.Actions[i].Chain.String(),
+			ToAddress: voter.Actions[i].ToAddress.String(),
+			Coin:      castCoin(voter.Actions[i].Coin),
+			Refund:    strings.HasPrefix(voter.Actions[i].Memo, "REFUND"),
+		}
+	}
+
+	// If there are no voter OutTxs yet, result OutTxs will stay empty and not be displayed.
+	result.OutTxs = make([]openapi.Tx, len(voter.OutTxs))
+	for i := range voter.OutTxs {
+		result.OutTxs[i] = castTx(voter.OutTxs[i])
+	}
+
+	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return jsonify(ctx, result)
 }
@@ -2605,14 +2795,18 @@ func wrapUintPtr(uintPtr *cosmos.Uint) *string {
 	return wrapString(uintPtr.String())
 }
 
+func castCoin(sourceCoin common.Coin) openapi.Coin {
+	return openapi.Coin{
+		Asset:    sourceCoin.Asset.String(),
+		Amount:   sourceCoin.Amount.String(),
+		Decimals: wrapInt64(sourceCoin.Decimals),
+	}
+}
+
 func castCoins(sourceCoins ...common.Coin) []openapi.Coin {
 	coins := make([]openapi.Coin, len(sourceCoins))
 	for i := range sourceCoins {
-		coins[i] = openapi.Coin{
-			Asset:    sourceCoins[i].Asset.String(),
-			Amount:   sourceCoins[i].Amount.String(),
-			Decimals: wrapInt64(sourceCoins[i].Decimals),
-		}
+		coins[i] = castCoin(sourceCoins[i])
 	}
 	return coins
 }
@@ -2622,18 +2816,14 @@ func castTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 		Chain:       toi.Chain.String(),
 		ToAddress:   toi.ToAddress.String(),
 		VaultPubKey: wrapString(toi.VaultPubKey.String()),
-		Coin: openapi.Coin{
-			Asset:    toi.Coin.Asset.String(),
-			Amount:   toi.Coin.Amount.String(),
-			Decimals: wrapInt64(toi.Coin.Decimals),
-		},
-		Memo:       wrapString(toi.Memo),
-		MaxGas:     castCoins(toi.MaxGas...),
-		GasRate:    wrapInt64(toi.GasRate),
-		InHash:     wrapString(toi.InHash.String()),
-		OutHash:    wrapString(toi.OutHash.String()),
-		Height:     wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
-		CloutSpent: wrapUintPtr(toi.CloutSpent),
+		Coin:        castCoin(toi.Coin),
+		Memo:        wrapString(toi.Memo),
+		MaxGas:      castCoins(toi.MaxGas...),
+		GasRate:     wrapInt64(toi.GasRate),
+		InHash:      wrapString(toi.InHash.String()),
+		OutHash:     wrapString(toi.OutHash.String()),
+		Height:      wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
+		CloutSpent:  wrapUintPtr(toi.CloutSpent),
 	}
 }
 
