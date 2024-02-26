@@ -54,7 +54,6 @@ func (Test) TestJSONSpec(c *C) {
 
 	// nodes
 	assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
-	assertJSONStructTagsMatch(c, types.QueryChainHeight{}, gen.ChainHeight{})
 	// As node_address is omitted from the jail display,
 	// skip assertJSONStructTagsMatch for types.Jail{} / gen.NodeJail{}
 	// so that the spec can match the display.

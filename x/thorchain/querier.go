@@ -784,8 +784,8 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 
 	// analyze-ignore(map-iteration)
 	for c, h := range chainHeights {
-		result.ObserveChains = append(result.ObserveChains, types.QueryChainHeight{
-			Chain:  c,
+		result.ObserveChains = append(result.ObserveChains, openapi.ChainHeight{
+			Chain:  c.String(),
 			Height: h,
 		})
 	}
@@ -911,8 +911,8 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 		// analyze-ignore(map-iteration)
 		for c, h := range chainHeights {
-			result[i].ObserveChains = append(result[i].ObserveChains, types.QueryChainHeight{
-				Chain:  c,
+			result[i].ObserveChains = append(result[i].ObserveChains, openapi.ChainHeight{
+				Chain:  c.String(),
 				Height: h,
 			})
 		}

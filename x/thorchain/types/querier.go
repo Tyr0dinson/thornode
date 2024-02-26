@@ -72,12 +72,6 @@ type QueryChainAddress struct {
 	Address common.Address `json:"address"`
 }
 
-// QueryChainHeight chain height
-type QueryChainHeight struct {
-	Chain  common.Chain `json:"chain"`
-	Height int64        `json:"height"`
-}
-
 // QueryLiquidityProvider holds all the information related to a liquidity provider
 type QueryLiquidityProvider struct {
 	Asset              common.Asset   `json:"asset"`
@@ -185,7 +179,7 @@ type QueryNodeAccount struct {
 	SlashPoints         int64                       `json:"slash_points"`
 	Jail                Jail                        `json:"jail"`
 	CurrentAward        cosmos.Uint                 `json:"current_award"`
-	ObserveChains       []QueryChainHeight          `json:"observe_chains"`
+	ObserveChains       []openapi.ChainHeight       `json:"observe_chains"`
 	PreflightStatus     openapi.NodePreflightStatus `json:"preflight_status"`
 }
 
