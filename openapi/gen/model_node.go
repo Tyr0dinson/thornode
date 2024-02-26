@@ -36,7 +36,7 @@ type Node struct {
 	RequestedToLeave bool `json:"requested_to_leave"`
 	// indicates whether the node has been forced to leave by the network, typically via ban
 	ForcedToLeave bool `json:"forced_to_leave"`
-	LeaveHeight int64 `json:"leave_height"`
+	LeaveHeight int32 `json:"leave_height"`
 	IpAddress string `json:"ip_address"`
 	// the currently set version of the node
 	Version string `json:"version"`
@@ -53,7 +53,7 @@ type Node struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, preflightStatus NodePreflightStatus) *Node {
+func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int32, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, preflightStatus NodePreflightStatus) *Node {
 	this := Node{}
 	this.NodeAddress = nodeAddress
 	this.Status = status
@@ -400,9 +400,9 @@ func (o *Node) SetForcedToLeave(v bool) {
 }
 
 // GetLeaveHeight returns the LeaveHeight field value
-func (o *Node) GetLeaveHeight() int64 {
+func (o *Node) GetLeaveHeight() int32 {
 	if o == nil {
-		var ret int64
+		var ret int32
 		return ret
 	}
 
@@ -411,7 +411,7 @@ func (o *Node) GetLeaveHeight() int64 {
 
 // GetLeaveHeightOk returns a tuple with the LeaveHeight field value
 // and a boolean to check if the value has been set.
-func (o *Node) GetLeaveHeightOk() (*int64, bool) {
+func (o *Node) GetLeaveHeightOk() (*int32, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -419,7 +419,7 @@ func (o *Node) GetLeaveHeightOk() (*int64, bool) {
 }
 
 // SetLeaveHeight sets field value
-func (o *Node) SetLeaveHeight(v int64) {
+func (o *Node) SetLeaveHeight(v int32) {
 	o.LeaveHeight = v
 }
 

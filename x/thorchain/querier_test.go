@@ -247,7 +247,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount2), IsNil)
 
 	/* Check Bond-weighted rewards estimation works*/
-	var nodeAccountResp []QueryNodeAccount
+	var nodeAccountResp []openapi.Node
 
 	// Add bond rewards + set min bond for bond-weighted system
 	network, _ := keeper.GetNetwork(ctx)
@@ -263,13 +263,13 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	c.Assert(len(nodeAccountResp), Equals, 2)
 
 	for _, node := range nodeAccountResp {
-		if node.NodeAddress.Equals(nodeAccount.NodeAddress) {
+		if node.NodeAddress == nodeAccount.NodeAddress.String() {
 			// First node has 25% of total bond, gets 25% of rewards
-			c.Assert(node.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*250).Uint64())
+			c.Assert(node.CurrentAward, Equals, cosmos.NewUint(common.One*250).String())
 			continue
-		} else if node.NodeAddress.Equals(nodeAccount2.NodeAddress) {
+		} else if node.NodeAddress == nodeAccount2.NodeAddress.String() {
 			// Second node has 75% of total bond, gets 75% of rewards
-			c.Assert(node.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*750).Uint64())
+			c.Assert(node.CurrentAward, Equals, cosmos.NewUint(common.One*750).String())
 			continue
 		}
 
@@ -600,7 +600,7 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r QueryNodeAccount
+	var r openapi.Node
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 
 	/* Check bond-weighted rewards estimation works */
@@ -623,12 +623,12 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r2 QueryNodeAccount
+	var r2 openapi.Node
 	c.Assert(json.Unmarshal(result, &r2), IsNil)
 
 	// First node has 25% of bond, should have 25% of the rewards
-	c.Assert(r2.TotalBond.Uint64(), Equals, cosmos.NewUint(common.One*1000).Uint64())
-	c.Assert(r2.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*250).Uint64())
+	c.Assert(r2.TotalBond, Equals, cosmos.NewUint(common.One*1000).String())
+	c.Assert(r2.CurrentAward, Equals, cosmos.NewUint(common.One*250).String())
 
 	// Get second node
 	result, err = s.querier(s.ctx, []string{
@@ -637,12 +637,12 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r3 QueryNodeAccount
+	var r3 openapi.Node
 	c.Assert(json.Unmarshal(result, &r3), IsNil)
 
 	// Second node has 75% of bond, should have 75% of the rewards
-	c.Assert(r3.TotalBond.Uint64(), Equals, cosmos.NewUint(common.One*3000).Uint64())
-	c.Assert(r3.CurrentAward.Uint64(), Equals, cosmos.NewUint(common.One*750).Uint64())
+	c.Assert(r3.TotalBond, Equals, cosmos.NewUint(common.One*3000).String())
+	c.Assert(r3.CurrentAward, Equals, cosmos.NewUint(common.One*750).String())
 }
 
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {

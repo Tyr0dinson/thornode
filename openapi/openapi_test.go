@@ -52,12 +52,6 @@ func (Test) TestJSONSpec(c *C) {
 	assertJSONStructTagsMatch(c, types.QueryTxStages{}, gen.TxStagesResponse{})
 	assertJSONStructTagsMatch(c, types.QueryTxStatus{}, gen.TxStatusResponse{})
 
-	// nodes
-	assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
-	// As node_address is omitted from the jail display,
-	// skip assertJSONStructTagsMatch for types.Jail{} / gen.NodeJail{}
-	// so that the spec can match the display.
-
 	// tss
 	assertJSONStructTagsMatch(c, types.NodeTssTime{}, gen.NodeKeygenMetric{})
 	assertJSONStructTagsMatch(c, types.TssKeygenMetric{}, gen.KeygenMetric{})

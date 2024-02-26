@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/config"
+	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 	"gitlab.com/thorchain/tss/go-tss/tss"
 )
@@ -123,7 +124,7 @@ func (s *HealthServer) p2pStatus(w http.ResponseWriter, _ *http.Request) {
 	res := &P2PStatusResponse{Peers: make([]P2PStatusPeer, 0)}
 
 	// get thorchain nodes
-	nodesByIP := map[string]types.QueryNodeAccount{}
+	nodesByIP := map[string]openapi.Node{}
 	thornode := config.GetBifrost().Thorchain.ChainHost
 	url := fmt.Sprintf("http://%s/thorchain/nodes", thornode)
 	// trunk-ignore(golangci-lint/gosec): the request URL is variable, but comes from our local config.
@@ -139,19 +140,19 @@ func (s *HealthServer) p2pStatus(w http.ResponseWriter, _ *http.Request) {
 			s.logger.Error().Err(err).Msg("fail to parse thornode height")
 		}
 
-		nodes := make([]types.QueryNodeAccount, 0)
+		nodes := make([]openapi.Node, 0)
 		if err = json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
 			s.logger.Error().Err(err).Msg("fail to decode thornode status")
 		} else {
 			for _, node := range nodes {
-				otherNode, exists := nodesByIP[node.IPAddress]
+				otherNode, exists := nodesByIP[node.IpAddress]
 
-				if !exists || (otherNode.Status != types.NodeStatus_Active && otherNode.PreflightStatus.Status != types.NodeStatus_Ready.String()) {
+				if !exists || (otherNode.Status != types.NodeStatus_Active.String() && otherNode.PreflightStatus.Status != types.NodeStatus_Ready.String()) {
 					// only add node if the IP is not already in the map
-					nodesByIP[node.IPAddress] = node
-				} else if node.Status == types.NodeStatus_Active || node.PreflightStatus.Status == types.NodeStatus_Ready.String() {
+					nodesByIP[node.IpAddress] = node
+				} else if node.Status == types.NodeStatus_Active.String() || node.PreflightStatus.Status == types.NodeStatus_Ready.String() {
 					// if both nodes are active or ready, report an error
-					res.Errors = append(res.Errors, fmt.Sprintf("active node IP reuse: %s", node.IPAddress))
+					res.Errors = append(res.Errors, fmt.Sprintf("active node IP reuse: %s", node.IpAddress))
 				}
 			}
 		}
@@ -186,9 +187,9 @@ func (s *HealthServer) p2pStatus(w http.ResponseWriter, _ *http.Request) {
 
 			// check if the node is in thornode
 			if node, ok := nodesByIP[pi.Address]; ok {
-				peer.Address = node.NodeAddress.String()
-				peer.Status = node.Status.String()
-				peer.NodesPeerID = node.PeerID
+				peer.Address = node.NodeAddress
+				peer.Status = node.Status
+				peer.NodesPeerID = node.PeerId
 			}
 
 			// get the peer id

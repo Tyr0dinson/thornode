@@ -2183,18 +2183,24 @@ components:
         bond_providers:
           type: object
           title: NodeBondProviders
+          required:
+            - node_operator_fee
+            - providers
           properties:
             node_operator_fee:
               type: string
               description: node operator fee in basis points
             providers:
-              type: object
-              title: NodeBondProvider
-              properties:
-                bond_address:
-                  type: string
-                bond:
-                  type: string
+              type: array
+              description: all the bond providers for the node
+              items:
+                type: object
+                title: NodeBondProvider
+                properties:
+                  bond_address:
+                    type: string
+                  bond:
+                    type: string
         signer_membership:
           type: array
           description: the set of vault public keys of which the node is a member
@@ -2208,7 +2214,7 @@ components:
           description: indicates whether the node has been forced to leave by the network, typically via ban
         leave_height:
           type: integer
-          format: int64
+          format: uint64
           example: 0
         ip_address:
           type: string

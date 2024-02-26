@@ -3171,7 +3171,9 @@ components:
         bond_providers:
           node_operator_fee: node_operator_fee
           providers:
-            bond_address: bond_address
+          - bond_address: bond_address
+            bond: bond
+          - bond_address: bond_address
             bond: bond
         node_operator_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
         status: Active
@@ -3231,7 +3233,7 @@ components:
           type: boolean
         leave_height:
           example: 0
-          format: int64
+          format: uint64
           type: integer
         ip_address:
           example: 10.20.30.40
@@ -5668,14 +5670,22 @@ components:
       example:
         node_operator_fee: node_operator_fee
         providers:
-          bond_address: bond_address
+        - bond_address: bond_address
+          bond: bond
+        - bond_address: bond_address
           bond: bond
       properties:
         node_operator_fee:
           description: node operator fee in basis points
           type: string
         providers:
-          $ref: '#/components/schemas/NodeBondProvider'
+          description: all the bond providers for the node
+          items:
+            $ref: '#/components/schemas/NodeBondProvider'
+          type: array
+      required:
+      - node_operator_fee
+      - providers
       title: NodeBondProviders
       type: object
     NodeJail:

@@ -158,51 +158,6 @@ func NewQueryLiquidityProvider(lp LiquidityProvider, pool Pool, synthSupply cosm
 	}
 }
 
-// QueryNodeAccount hold all the information related to node account
-type QueryNodeAccount struct {
-	NodeAddress         cosmos.AccAddress           `json:"node_address"`
-	Status              NodeStatus                  `json:"status"`
-	PubKeySet           common.PubKeySet            `json:"pub_key_set"`
-	ValidatorConsPubKey string                      `json:"validator_cons_pub_key"`
-	PeerID              string                      `json:"peer_id"`
-	ActiveBlockHeight   int64                       `json:"active_block_height"`
-	StatusSince         int64                       `json:"status_since"`
-	NodeOperatorAddress common.Address              `json:"node_operator_address"`
-	TotalBond           cosmos.Uint                 `json:"total_bond"`
-	BondProviders       BondProviders               `json:"bond_providers"`
-	SignerMembership    common.PubKeys              `json:"signer_membership"`
-	RequestedToLeave    bool                        `json:"requested_to_leave"`
-	ForcedToLeave       bool                        `json:"forced_to_leave"`
-	LeaveScore          uint64                      `json:"leave_height"`
-	IPAddress           string                      `json:"ip_address"`
-	Version             semver.Version              `json:"version"`
-	SlashPoints         int64                       `json:"slash_points"`
-	Jail                Jail                        `json:"jail"`
-	CurrentAward        cosmos.Uint                 `json:"current_award"`
-	ObserveChains       []openapi.ChainHeight       `json:"observe_chains"`
-	PreflightStatus     openapi.NodePreflightStatus `json:"preflight_status"`
-}
-
-// NewQueryNodeAccount create a new QueryNodeAccount based on the given node account parameter
-func NewQueryNodeAccount(na NodeAccount) QueryNodeAccount {
-	return QueryNodeAccount{
-		NodeAddress:         na.NodeAddress,
-		Status:              na.Status,
-		PubKeySet:           na.PubKeySet,
-		ValidatorConsPubKey: na.ValidatorConsPubKey,
-		ActiveBlockHeight:   na.ActiveBlockHeight,
-		StatusSince:         na.StatusSince,
-		NodeOperatorAddress: na.BondAddress,
-		TotalBond:           na.Bond,
-		SignerMembership:    na.GetSignerMembership(),
-		RequestedToLeave:    na.RequestedToLeave,
-		ForcedToLeave:       na.ForcedToLeave,
-		LeaveScore:          na.LeaveScore,
-		IPAddress:           na.IPAddress,
-		Version:             na.GetVersion(),
-	}
-}
-
 // QueryObservedTx holds all the information related to the ObservedTx
 type QueryObservedTx struct {
 	Tx                              common.Tx     `json:"tx"`

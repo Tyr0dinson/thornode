@@ -727,20 +727,43 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
 
-	result := NewQueryNodeAccount(nodeAcc)
-	result.PeerID = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
+	result := openapi.Node{
+		NodeAddress: nodeAcc.NodeAddress.String(),
+		Status:      nodeAcc.Status.String(),
+		PubKeySet: openapi.NodePubKeySet{
+			Secp256k1: wrapString(nodeAcc.PubKeySet.Secp256k1.String()),
+			Ed25519:   wrapString(nodeAcc.PubKeySet.Ed25519.String()),
+		},
+		ValidatorConsPubKey: nodeAcc.ValidatorConsPubKey,
+		ActiveBlockHeight:   nodeAcc.ActiveBlockHeight,
+		StatusSince:         nodeAcc.StatusSince,
+		NodeOperatorAddress: nodeAcc.BondAddress.String(),
+		TotalBond:           nodeAcc.Bond.String(),
+		SignerMembership:    nodeAcc.GetSignerMembership().Strings(),
+		RequestedToLeave:    nodeAcc.RequestedToLeave,
+		ForcedToLeave:       nodeAcc.ForcedToLeave,
+		LeaveHeight:         int32(nodeAcc.LeaveScore), // OpenAPI represents uint64 as int32
+		IpAddress:           nodeAcc.IPAddress,
+		Version:             nodeAcc.GetVersion().String(),
+	}
+	result.PeerId = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
 
-	result.Jail = Jail{
+	result.Jail = openapi.NodeJail{
 		// Since redundant, leave out the node address
-		ReleaseHeight: jail.ReleaseHeight,
-		Reason:        jail.Reason,
+		ReleaseHeight: wrapInt64(jail.ReleaseHeight),
+		Reason:        wrapString(jail.Reason),
 	}
 
-	result.BondProviders = BondProviders{
+	providers := make([]openapi.NodeBondProvider, len(bp.Providers))
+	for i := range bp.Providers {
+		providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
+		providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+	}
+	result.BondProviders = openapi.NodeBondProviders{
 		// Since redundant, leave out the node address
-		NodeOperatorFee: bp.NodeOperatorFee,
-		Providers:       bp.Providers,
+		NodeOperatorFee: bp.NodeOperatorFee.String(),
+		Providers:       providers,
 	}
 
 	// CurrentAward is an estimation of reward for node in active status
@@ -774,7 +797,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 			return nil, fmt.Errorf("fail to get current node rewards: %w", err)
 		}
 
-		result.CurrentAward = reward
+		result.CurrentAward = reward.String()
 	}
 
 	chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, addr)
@@ -871,7 +894,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
-	result := make([]QueryNodeAccount, len(nodeAccounts))
+	result := make([]openapi.Node, len(nodeAccounts))
 	for i, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
@@ -883,8 +906,26 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			return nil, fmt.Errorf("fail to get node slash points: %w", err)
 		}
 
-		result[i] = NewQueryNodeAccount(na)
-		result[i].PeerID = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
+		result[i] = openapi.Node{
+			NodeAddress: na.NodeAddress.String(),
+			Status:      na.Status.String(),
+			PubKeySet: openapi.NodePubKeySet{
+				Secp256k1: wrapString(na.PubKeySet.Secp256k1.String()),
+				Ed25519:   wrapString(na.PubKeySet.Ed25519.String()),
+			},
+			ValidatorConsPubKey: na.ValidatorConsPubKey,
+			ActiveBlockHeight:   na.ActiveBlockHeight,
+			StatusSince:         na.StatusSince,
+			NodeOperatorAddress: na.BondAddress.String(),
+			TotalBond:           na.Bond.String(),
+			SignerMembership:    na.GetSignerMembership().Strings(),
+			RequestedToLeave:    na.RequestedToLeave,
+			ForcedToLeave:       na.ForcedToLeave,
+			LeaveHeight:         int32(na.LeaveScore), // OpenAPI represents uint64 as int32
+			IpAddress:           na.IPAddress,
+			Version:             na.GetVersion().String(),
+		}
+		result[i].PeerId = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
 		result[i].SlashPoints = slashPts
 		if na.Status == NodeActive {
 			reward, err := getNodeCurrentRewards(ctx, mgr, na, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
@@ -892,17 +933,17 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 				return nil, fmt.Errorf("fail to get current node rewards: %w", err)
 			}
 
-			result[i].CurrentAward = reward
+			result[i].CurrentAward = reward.String()
 		}
 
 		jail, err := mgr.Keeper().GetNodeAccountJail(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get node jail: %w", err)
 		}
-		result[i].Jail = Jail{
+		result[i].Jail = openapi.NodeJail{
 			// Since redundant, leave out the node address
-			ReleaseHeight: jail.ReleaseHeight,
-			Reason:        jail.Reason,
+			ReleaseHeight: wrapInt64(jail.ReleaseHeight),
+			Reason:        wrapString(jail.Reason),
 		}
 		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {
@@ -924,15 +965,20 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			result[i].PreflightStatus = preflightCheckResult
 		}
 
-		bp, err := mgr.Keeper().GetBondProviders(ctx, result[i].NodeAddress)
+		bp, err := mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
 		bp.Adjust(version, na.Bond)
-		result[i].BondProviders = BondProviders{
+		providers := make([]openapi.NodeBondProvider, len(bp.Providers))
+		for i := range bp.Providers {
+			providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
+			providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+		}
+		result[i].BondProviders = openapi.NodeBondProviders{
 			// Since redundant, leave out the node address
-			NodeOperatorFee: bp.NodeOperatorFee,
-			Providers:       bp.Providers,
+			NodeOperatorFee: bp.NodeOperatorFee.String(),
+			Providers:       providers,
 		}
 	}
 
