@@ -53,7 +53,6 @@ func (Test) TestJSONSpec(c *C) {
 	assertJSONStructTagsMatch(c, types.QueryTxStatus{}, gen.TxStatusResponse{})
 
 	// nodes
-	assertJSONStructTagsMatch(c, types.QueryNodeAccountPreflightCheck{}, gen.NodePreflightStatus{})
 	assertJSONStructTagsMatch(c, types.QueryNodeAccount{}, gen.Node{})
 	assertJSONStructTagsMatch(c, types.QueryChainHeight{}, gen.ChainHeight{})
 	// As node_address is omitted from the jail display,

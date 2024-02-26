@@ -106,7 +106,7 @@ func main() {
 			fmt.Println("fail to decode thornode status", err.Error())
 		} else {
 			for _, node := range nodes {
-				if node.PreflightStatus.Status == types.NodeStatus_Ready {
+				if node.PreflightStatus.Status == types.NodeStatus_Ready.String() {
 					nodesByPeerID[node.PeerID] = ""
 				}
 			}
@@ -115,7 +115,7 @@ func main() {
 
 	fmt.Println("Discovering IP addresses for nodes...")
 	for _, node := range nodes {
-		if node.PreflightStatus.Status != types.NodeStatus_Ready {
+		if node.PreflightStatus.Status != types.NodeStatus_Ready.String() {
 			continue
 		}
 		if nodesByPeerID[node.PeerID] != "" {
@@ -173,7 +173,7 @@ func main() {
 			}()
 
 			node := fetchNode(peerID, nodes)
-			if node.PreflightStatus.Status != types.NodeStatus_Ready {
+			if node.PreflightStatus.Status != types.NodeStatus_Ready.String() {
 				return
 			}
 			r := rslt{

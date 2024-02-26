@@ -799,16 +799,16 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	return jsonify(ctx, result)
 }
 
-func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (QueryNodeAccountPreflightCheck, error) {
+func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (openapi.NodePreflightStatus, error) {
 	constAccessor := mgr.GetConstants()
-	preflightResult := QueryNodeAccountPreflightCheck{}
+	preflightResult := openapi.NodePreflightStatus{}
 	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
-	preflightResult.Status = status
+	preflightResult.Status = status.String()
 	if err != nil {
-		preflightResult.Description = err.Error()
+		preflightResult.Reason = err.Error()
 		preflightResult.Code = 1
 	} else {
-		preflightResult.Description = "OK"
+		preflightResult.Reason = "OK"
 		preflightResult.Code = 0
 	}
 	return preflightResult, nil

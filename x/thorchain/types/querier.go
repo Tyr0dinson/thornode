@@ -12,22 +12,6 @@ import (
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
 
-// QueryNodeAccountPreflightCheck is structure to hold all the information need to return to client
-// include current node status , and whether it might get churned in next
-type QueryNodeAccountPreflightCheck struct {
-	Status      NodeStatus `json:"status"`
-	Description string     `json:"reason"`
-	Code        int        `json:"code"`
-}
-
-// String implement fmt.Stringer
-func (n QueryNodeAccountPreflightCheck) String() string {
-	sb := strings.Builder{}
-	sb.WriteString("Result Status:" + n.Status.String() + "\n")
-	sb.WriteString("Description:" + n.Description + "\n")
-	return sb.String()
-}
-
 // QueryKeygenBlock query keygen, displays signed keygen requests
 type QueryKeygenBlock struct {
 	KeygenBlock KeygenBlock `json:"keygen_block"`
@@ -202,7 +186,7 @@ type QueryNodeAccount struct {
 	Jail                Jail                           `json:"jail"`
 	CurrentAward        cosmos.Uint                    `json:"current_award"`
 	ObserveChains       []QueryChainHeight             `json:"observe_chains"`
-	PreflightStatus     QueryNodeAccountPreflightCheck `json:"preflight_status"`
+	PreflightStatus     openapi.NodePreflightStatus    `json:"preflight_status"`
 }
 
 // NewQueryNodeAccount create a new QueryNodeAccount based on the given node account parameter

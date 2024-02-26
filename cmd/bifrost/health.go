@@ -146,10 +146,10 @@ func (s *HealthServer) p2pStatus(w http.ResponseWriter, _ *http.Request) {
 			for _, node := range nodes {
 				otherNode, exists := nodesByIP[node.IPAddress]
 
-				if !exists || (otherNode.Status != types.NodeStatus_Active && otherNode.PreflightStatus.Status != types.NodeStatus_Ready) {
+				if !exists || (otherNode.Status != types.NodeStatus_Active && otherNode.PreflightStatus.Status != types.NodeStatus_Ready.String()) {
 					// only add node if the IP is not already in the map
 					nodesByIP[node.IPAddress] = node
-				} else if node.Status == types.NodeStatus_Active || node.PreflightStatus.Status == types.NodeStatus_Ready {
+				} else if node.Status == types.NodeStatus_Active || node.PreflightStatus.Status == types.NodeStatus_Ready.String() {
 					// if both nodes are active or ready, report an error
 					res.Errors = append(res.Errors, fmt.Sprintf("active node IP reuse: %s", node.IPAddress))
 				}
