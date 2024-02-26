@@ -156,10 +156,8 @@ var (
 	NewMsgMigrate                  = types.NewMsgMigrate
 	NewMsgRagnarok                 = types.NewMsgRagnarok
 	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
-	NewQueryObservedTx             = types.NewQueryObservedTx
 	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
-	NewQueryTxDetails              = types.NewQueryTxDetails
 	NewQueryTxStages               = types.NewQueryTxStages
 	NewQueryTxStatus               = types.NewQueryTxStatus
 	ModuleCdc                      = types.ModuleCdc
@@ -265,8 +263,6 @@ type (
 	QueryKeysign              = types.QueryKeysign
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
-	QueryObservedTx           = types.QueryObservedTx
-	QueryTxDetails            = types.QueryTxDetails
 	QueryTxStages             = types.QueryTxStages
 	QueryTxStatus             = types.QueryTxStatus
 	QuerySaver                = types.QuerySaver

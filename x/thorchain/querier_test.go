@@ -370,9 +370,22 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	result, err = s.querier(s.ctx, []string{query.QueryTxVoter.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	var voter QueryTxDetails
+	var voter openapi.TxDetailsResponse
 	c.Assert(json.Unmarshal(result, &voter), IsNil)
-	c.Assert(voter.Valid(), IsNil)
+
+	// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
+	c.Assert(voter.TxId == nil, Equals, false)
+	c.Assert(len(voter.Txs) == 1, Equals, true)
+	c.Assert(voter.Txs[0].ExternalObservedHeight == nil, Equals, false)
+	c.Assert(*voter.Txs[0].ExternalObservedHeight <= 0, Equals, false)
+	c.Assert(voter.Txs[0].ObservedPubKey == nil, Equals, false)
+	c.Assert(voter.Txs[0].ExternalConfirmationDelayHeight == nil, Equals, false)
+	c.Assert(*voter.Txs[0].ExternalConfirmationDelayHeight <= 0, Equals, false)
+	c.Assert(voter.Txs[0].Tx.Id == nil, Equals, false)
+	c.Assert(voter.Txs[0].Tx.FromAddress == nil, Equals, false)
+	c.Assert(voter.Txs[0].Tx.ToAddress == nil, Equals, false)
+	c.Assert(voter.Txs[0].Tx.Chain == nil, Equals, false)
+	c.Assert(len(voter.Txs[0].Tx.Coins) == 0, Equals, false)
 }
 
 func (s *QuerierSuite) TestQueryTxStages(c *C) {
@@ -434,11 +447,22 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	result, err = s.querier(s.ctx, []string{query.QueryTx.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
 	var newTx struct {
-		QueryObservedTx `json:"observed_tx"`
-		KeysignMetrics  types.TssKeysignMetric `json:"keysign_metric,omitempty"`
+		openapi.ObservedTx `json:"observed_tx"`
+		KeysignMetrics     types.TssKeysignMetric `json:"keysign_metric,omitempty"`
 	}
 	c.Assert(json.Unmarshal(result, &newTx), IsNil)
-	c.Assert(newTx.Valid(), IsNil)
+
+	// common.Tx Valid cannot be used for openapi.Tx, so checking some criteria individually.
+	c.Assert(newTx.ExternalObservedHeight == nil, Equals, false)
+	c.Assert(*newTx.ExternalObservedHeight <= 0, Equals, false)
+	c.Assert(newTx.ObservedPubKey == nil, Equals, false)
+	c.Assert(newTx.ExternalConfirmationDelayHeight == nil, Equals, false)
+	c.Assert(*newTx.ExternalConfirmationDelayHeight <= 0, Equals, false)
+	c.Assert(newTx.Tx.Id == nil, Equals, false)
+	c.Assert(newTx.Tx.FromAddress == nil, Equals, false)
+	c.Assert(newTx.Tx.ToAddress == nil, Equals, false)
+	c.Assert(newTx.Tx.Chain == nil, Equals, false)
+	c.Assert(len(newTx.Tx.Coins) == 0, Equals, false)
 }
 
 func (s *QuerierSuite) TestQueryKeyGen(c *C) {

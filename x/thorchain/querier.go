@@ -1665,7 +1665,30 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		}
 	}
 
-	result := NewQueryTxDetails(voter)
+	txs := make([]openapi.ObservedTx, len(voter.Txs))
+	for i := range voter.Txs {
+		txs[i] = wrapObservedTx(voter.Txs[i])
+	}
+	actions := make([]openapi.TxOutItem, len(voter.Actions))
+	for i := range voter.Actions {
+		actions[i] = wrapTxOutItem(voter.Actions[i], 0) // Omitted Height field
+	}
+	outTxs := make([]openapi.Tx, len(voter.OutTxs))
+	for i := range voter.OutTxs {
+		outTxs[i] = wrapTx(voter.OutTxs[i])
+	}
+	result := openapi.TxDetailsResponse{
+		TxId:            wrapString(voter.TxID.String()),
+		Tx:              wrapObservedTx(voter.Tx),
+		Txs:             txs,
+		Actions:         actions,
+		OutTxs:          outTxs,
+		ConsensusHeight: wrapInt64(voter.Height),
+		FinalisedHeight: wrapInt64(voter.FinalisedHeight),
+		UpdatedVault:    wrapBool(voter.UpdatedVault),
+		Reverted:        wrapBool(voter.Reverted),
+		OutboundHeight:  wrapInt64(voter.OutboundHeight),
+	}
 
 	return jsonify(ctx, result)
 }
@@ -1726,18 +1749,18 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 	result := struct {
-		QueryObservedTx `json:"observed_tx"`
+		ObservedTx      openapi.ObservedTx     `json:"observed_tx"`
 		ConsensusHeight int64                  `json:"consensus_height,omitempty"`
 		FinalisedHeight int64                  `json:"finalised_height,omitempty"`
 		OutboundHeight  int64                  `json:"outbound_height,omitempty"`
 		KeysignMetrics  types.TssKeysignMetric `json:"keysign_metric"`
 	}{
+		ObservedTx:      wrapObservedTx(voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
 		KeysignMetrics:  *keysignMetric,
 	}
-	result.QueryObservedTx = NewQueryObservedTx(voter.GetTx(nodeAccounts))
 	return jsonify(ctx, result)
 }
 
@@ -2554,6 +2577,13 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 // Generic Helpers
 // -------------------------------------------------------------------------------------
 
+func wrapBool(b bool) *bool {
+	if !b {
+		return nil
+	}
+	return &b
+}
+
 func wrapString(s string) *string {
 	if s == "" {
 		return nil
@@ -2604,6 +2634,34 @@ func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 		OutHash:    wrapString(toi.OutHash.String()),
 		Height:     wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
 		CloutSpent: wrapUintPtr(toi.CloutSpent),
+	}
+}
+
+func wrapTx(tx common.Tx) openapi.Tx {
+	return openapi.Tx{
+		Id:          wrapString(tx.ID.String()),
+		Chain:       wrapString(tx.Chain.String()),
+		FromAddress: wrapString(tx.FromAddress.String()),
+		ToAddress:   wrapString(tx.ToAddress.String()),
+		Coins:       wrapCoins(tx.Coins...),
+		Gas:         wrapCoins(tx.Gas...),
+		Memo:        wrapString(tx.Memo),
+	}
+}
+
+func wrapObservedTx(observedTx ObservedTx) openapi.ObservedTx {
+	return openapi.ObservedTx{
+		Tx:                              wrapTx(observedTx.Tx),
+		ObservedPubKey:                  wrapString(observedTx.ObservedPubKey.String()),
+		ExternalObservedHeight:          wrapInt64(observedTx.BlockHeight),
+		ExternalConfirmationDelayHeight: wrapInt64(observedTx.FinaliseHeight),
+		Aggregator:                      wrapString(observedTx.Aggregator),
+		AggregatorTarget:                wrapString(observedTx.AggregatorTarget),
+		AggregatorTargetLimit:           wrapUintPtr(observedTx.AggregatorTargetLimit),
+		Signers:                         observedTx.Signers,
+		KeysignMs:                       wrapInt64(observedTx.KeysignMs),
+		OutHashes:                       observedTx.OutHashes,
+		Status:                          wrapString(observedTx.Status.String()),
 	}
 }
 

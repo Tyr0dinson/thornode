@@ -2,7 +2,6 @@ package types
 
 import (
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"github.com/blang/semver"
@@ -155,38 +154,6 @@ func NewQueryLiquidityProvider(lp LiquidityProvider, pool Pool, synthSupply cosm
 		LuviRedeemValue:    luviRedeemValue,
 		LuviDepositValue:   luviDepositValue,
 		LuviGrowthPct:      lgp,
-	}
-}
-
-// QueryObservedTx holds all the information related to the ObservedTx
-type QueryObservedTx struct {
-	Tx                              common.Tx     `json:"tx"`
-	ObservedPubKey                  common.PubKey `json:"observed_pub_key,omitempty"`
-	ExternalObservedHeight          int64         `json:"external_observed_height,omitempty"`
-	ExternalConfirmationDelayHeight int64         `json:"external_confirmation_delay_height,omitempty"`
-	Aggregator                      string        `json:"aggregator,omitempty"`
-	AggregatorTarget                string        `json:"aggregator_target,omitempty"`
-	AggregatorTargetLimit           *cosmos.Uint  `json:"aggregator_target_limit,omitempty"`
-	Signers                         []string      `json:"signers,omitempty"`
-	KeysignMs                       int64         `json:"keysign_ms,omitempty"`
-	OutHashes                       []string      `json:"out_hashes,omitempty"`
-	Status                          Status        `json:"status,omitempty"`
-}
-
-// NewQueryObservedTx create a new QueryObservedTx based on the given ObservedTx parameters
-func NewQueryObservedTx(obTx ObservedTx) QueryObservedTx {
-	return QueryObservedTx{
-		Tx:                              obTx.Tx,
-		ObservedPubKey:                  obTx.ObservedPubKey,
-		ExternalObservedHeight:          obTx.BlockHeight,
-		ExternalConfirmationDelayHeight: obTx.FinaliseHeight,
-		Aggregator:                      obTx.Aggregator,
-		AggregatorTarget:                obTx.AggregatorTarget,
-		AggregatorTargetLimit:           obTx.AggregatorTargetLimit,
-		Signers:                         obTx.Signers,
-		KeysignMs:                       obTx.KeysignMs,
-		OutHashes:                       obTx.OutHashes,
-		Status:                          obTx.Status,
 	}
 }
 
@@ -467,77 +434,6 @@ func NewQueryTxStatus(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPendi
 	result.Stages = NewQueryTxStages(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return result
-}
-
-// Valid checks whether the QueryObservedTx represents valid information
-func (m *QueryObservedTx) Valid() error {
-	if err := m.Tx.Valid(); err != nil {
-		return err
-	}
-	// Memo should not be empty, but it can't be checked here, because a
-	// message failed validation will be rejected by THORNode.
-	// Thus THORNode can't refund customer accordingly , which will result fund lost
-	if m.ExternalObservedHeight <= 0 {
-		return errors.New("external observed height can't be zero")
-	}
-	if m.ObservedPubKey.IsEmpty() {
-		return errors.New("observed pool pubkey is empty")
-	}
-	if m.ExternalConfirmationDelayHeight <= 0 {
-		return errors.New("external confirmation delay height can't be zero")
-	}
-	return nil
-}
-
-type QueryTxDetails struct {
-	TxID            common.TxID       `json:"tx_id,omitempty"`
-	Tx              QueryObservedTx   `json:"tx"`
-	Txs             []QueryObservedTx `json:"txs"`
-	Actions         []TxOutItem       `json:"actions"`
-	OutTxs          []common.Tx       `json:"out_txs"`
-	ConsensusHeight int64             `json:"consensus_height,omitempty"`
-	FinalisedHeight int64             `json:"finalised_height,omitempty"`
-	UpdatedVault    bool              `json:"updated_vault,omitempty"`
-	Reverted        bool              `json:"reverted,omitempty"`
-	OutboundHeight  int64             `json:"outbound_height,omitempty"`
-}
-
-// NewQueryTxDetails creates a new QueryTxDetails based on the given ObservedTxVoter parameters
-func NewQueryTxDetails(voter ObservedTxVoter) QueryTxDetails {
-	result := QueryTxDetails{
-		TxID:            voter.TxID,
-		Actions:         voter.Actions,
-		OutTxs:          voter.OutTxs,
-		ConsensusHeight: voter.Height,
-		FinalisedHeight: voter.FinalisedHeight,
-		UpdatedVault:    voter.UpdatedVault,
-		Reverted:        voter.Reverted,
-		OutboundHeight:  voter.OutboundHeight,
-	}
-
-	result.Tx = NewQueryObservedTx(voter.Tx)
-
-	for _, obTx := range voter.Txs {
-		result.Txs = append(result.Txs, NewQueryObservedTx(obTx))
-	}
-
-	return result
-}
-
-// Valid checks whether the QueryTxDetails represents valid information
-func (m *QueryTxDetails) Valid() error {
-	if m.TxID.IsEmpty() {
-		return errors.New("cannot have an empty tx id")
-	}
-
-	// check all other normal tx
-	for _, in := range m.Txs {
-		if err := in.Valid(); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // QuerySaver holds all the information related to a saver
