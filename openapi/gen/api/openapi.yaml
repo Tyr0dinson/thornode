@@ -4032,19 +4032,19 @@ components:
           completed: false
       properties:
         inbound_observed:
-          $ref: '#/components/schemas/TxStagesResponse_inbound_observed'
+          $ref: '#/components/schemas/InboundObservedStage'
         inbound_confirmation_counted:
-          $ref: '#/components/schemas/TxStagesResponse_inbound_confirmation_counted'
+          $ref: '#/components/schemas/InboundConfirmationCountedStage'
         inbound_finalised:
-          $ref: '#/components/schemas/TxStagesResponse_inbound_finalised'
+          $ref: '#/components/schemas/InboundFinalisedStage'
         swap_status:
-          $ref: '#/components/schemas/TxStagesResponse_swap_status'
+          $ref: '#/components/schemas/SwapStatus'
         swap_finalised:
-          $ref: '#/components/schemas/TxStagesResponse_swap_finalised'
+          $ref: '#/components/schemas/SwapFinalisedStage'
         outbound_delay:
-          $ref: '#/components/schemas/TxStagesResponse_outbound_delay'
+          $ref: '#/components/schemas/OutboundDelayStage'
         outbound_signed:
-          $ref: '#/components/schemas/TxStagesResponse_outbound_signed'
+          $ref: '#/components/schemas/OutboundSignedStage'
       required:
       - inbound_observed
       type: object
@@ -4160,7 +4160,7 @@ components:
           $ref: '#/components/schemas/Tx'
         planned_out_txs:
           items:
-            $ref: '#/components/schemas/TxStatusResponse_planned_out_txs_inner'
+            $ref: '#/components/schemas/PlannedOutTx'
           type: array
         out_txs:
           items:
@@ -5795,7 +5795,7 @@ components:
           example: ibc
           type: string
       type: object
-    TxStagesResponse_inbound_observed:
+    InboundObservedStage:
       example:
         pre_confirmation_count: 80
         started: false
@@ -5825,8 +5825,9 @@ components:
       required:
       - completed
       - final_observations
+      title: InboundObservedStage
       type: object
-    TxStagesResponse_inbound_confirmation_counted:
+    InboundConfirmationCountedStage:
       example:
         chain: BTC
         external_observed_height: 16042625
@@ -5870,8 +5871,9 @@ components:
           type: boolean
       required:
       - completed
+      title: InboundConfirmationCountedStage
       type: object
-    TxStagesResponse_inbound_finalised:
+    InboundFinalisedStage:
       example:
         completed: false
       properties:
@@ -5882,8 +5884,9 @@ components:
           type: boolean
       required:
       - completed
+      title: InboundFinalisedStage
       type: object
-    TxStagesResponse_swap_status_streaming:
+    StreamingStatus:
       example:
         quantity: 6
         count: 1
@@ -5905,8 +5908,9 @@ components:
       - count
       - interval
       - quantity
+      title: StreamingStatus
       type: object
-    TxStagesResponse_swap_status:
+    SwapStatus:
       example:
         streaming:
           quantity: 6
@@ -5919,11 +5923,12 @@ components:
           example: false
           type: boolean
         streaming:
-          $ref: '#/components/schemas/TxStagesResponse_swap_status_streaming'
+          $ref: '#/components/schemas/StreamingStatus'
       required:
       - pending
+      title: SwapStatus
       type: object
-    TxStagesResponse_swap_finalised:
+    SwapFinalisedStage:
       example:
         completed: false
       properties:
@@ -5934,8 +5939,9 @@ components:
           type: boolean
       required:
       - completed
+      title: SwapFinalisedStage
       type: object
-    TxStagesResponse_outbound_delay:
+    OutboundDelayStage:
       example:
         remaining_delay_blocks: 5
         completed: false
@@ -5959,8 +5965,9 @@ components:
           type: boolean
       required:
       - completed
+      title: OutboundDelayStage
       type: object
-    TxStagesResponse_outbound_signed:
+    OutboundSignedStage:
       example:
         completed: false
         scheduled_outbound_height: 1234
@@ -5983,8 +5990,9 @@ components:
           type: boolean
       required:
       - completed
+      title: OutboundSignedStage
       type: object
-    TxStatusResponse_planned_out_txs_inner:
+    PlannedOutTx:
       example:
         chain: BTC
         to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
@@ -6011,6 +6019,7 @@ components:
       - coin
       - refund
       - to_address
+      title: PlannedOutTx
       type: object
     KeysignInfo:
       example:

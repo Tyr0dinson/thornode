@@ -2539,6 +2539,7 @@ components:
       properties:
         inbound_observed:
           type: object
+          title: InboundObservedStage
           required:
             - final_observations
             - completed
@@ -2563,6 +2564,7 @@ components:
               description: returns true if no transaction observation remains to be done
         inbound_confirmation_counted:
           type: object
+          title: InboundConfirmationCountedStage
           required:
             - completed
           properties:
@@ -2596,6 +2598,7 @@ components:
               description: returns true if no transaction confirmation counting remains to be done
         inbound_finalised:
           type: object
+          title: InboundFinalisedStage
           required:
             - completed
           properties:
@@ -2605,6 +2608,7 @@ components:
               description: returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
         swap_status:
           type: object
+          title: SwapStatus
           required:
             - pending
           properties:
@@ -2614,6 +2618,7 @@ components:
               description: true when awaiting a swap
             streaming:
               type: object
+              title: StreamingStatus
               required:
                 - interval
                 - quantity
@@ -2633,6 +2638,7 @@ components:
                   description: the amount of swap attempts so far
         swap_finalised:
           type: object
+          title: SwapFinalisedStage
           required:
             - completed
           properties:
@@ -2642,6 +2648,7 @@ components:
               description: (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
         outbound_delay:
           type: object
+          title: OutboundDelayStage
           required:
             - completed
           properties:
@@ -2661,6 +2668,7 @@ components:
               description: returns true if no transaction outbound delay remains
         outbound_signed:
           type: object
+          title: OutboundSignedStage
           required:
             - completed
           properties:
@@ -2690,6 +2698,7 @@ components:
           type: array
           items:
             type: object
+            title: PlannedOutTx
             required:
               - chain
               - to_address
