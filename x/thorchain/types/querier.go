@@ -190,47 +190,6 @@ func NewQueryObservedTx(obTx ObservedTx) QueryObservedTx {
 	}
 }
 
-// QueryPool holds all the information related to a pool
-type QueryPool struct {
-	Asset                   string `json:"asset"`
-	ShortCode               string `json:"short_code,omitempty"`
-	Status                  string `json:"status"`
-	Decimals                int64  `json:"decimals,omitempty"`
-	PendingInboundAsset     string `json:"pending_inbound_asset"`
-	PendingInboundRune      string `json:"pending_inbound_rune"`
-	BalanceAsset            string `json:"balance_asset"`
-	BalanceRune             string `json:"balance_rune"`
-	PoolUnits               string `json:"pool_units"`
-	LPUnits                 string `json:"LP_units"`
-	SynthUnits              string `json:"synth_units"`
-	SynthSupply             string `json:"synth_supply"`
-	SaversDepth             string `json:"savers_depth"`
-	SaversUnits             string `json:"savers_units"`
-	SynthMintPaused         bool   `json:"synth_mint_paused"`
-	SynthSupplyRemaining    string `json:"synth_supply_remaining"`
-	LoanCollateral          string `json:"loan_collateral"`
-	LoanCollateralRemaining string `json:"loan_collateral_remaining"`
-	LoanCR                  string `json:"loan_cr"`
-	DerivedDepthBps         string `json:"derived_depth_bps"`
-}
-
-// NewQueryPool creates a new QueryPool based on the given pool parameters
-func NewQueryPool(pool Pool) QueryPool {
-	return QueryPool{
-		Asset:               pool.Asset.String(),
-		ShortCode:           pool.Asset.ShortCode(),
-		Status:              pool.Status.String(),
-		Decimals:            pool.Decimals,
-		PendingInboundAsset: pool.PendingInboundAsset.String(),
-		PendingInboundRune:  pool.PendingInboundRune.String(),
-		BalanceAsset:        pool.BalanceAsset.String(),
-		BalanceRune:         pool.BalanceRune.String(),
-		PoolUnits:           pool.GetPoolUnits().String(),
-		LPUnits:             pool.LPUnits.String(),
-		SynthUnits:          pool.SynthUnits.String(),
-	}
-}
-
 // QueryMimirV2IDs contains the information about the mimir V2s currently being voted on
 type QueryMimirV2IDs struct {
 	ID        int             `json:"id"`
