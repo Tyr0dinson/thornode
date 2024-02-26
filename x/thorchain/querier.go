@@ -1873,7 +1873,7 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 			break
 		}
 	}
-	var result []QueryResLastBlockHeights
+	var result []openapi.LastBlock
 	for _, c := range chains {
 		if c == common.THORChain {
 			continue
@@ -1887,11 +1887,11 @@ func queryLastBlockHeights(ctx cosmos.Context, path []string, req abci.RequestQu
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last sign height: %w", err)
 		}
-		result = append(result, QueryResLastBlockHeights{
-			Chain:            c,
-			LastChainHeight:  chainHeight,
-			LastSignedHeight: signed,
-			Thorchain:        ctx.BlockHeight(),
+		result = append(result, openapi.LastBlock{
+			Chain:          c.String(),
+			LastObservedIn: chainHeight,
+			LastSignedOut:  signed,
+			Thorchain:      ctx.BlockHeight(),
 		})
 	}
 

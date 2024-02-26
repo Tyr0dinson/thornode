@@ -13,19 +13,6 @@ import (
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
 
-// QueryResLastBlockHeights used to return the block height query
-type QueryResLastBlockHeights struct {
-	Chain            common.Chain `json:"chain"`
-	LastChainHeight  int64        `json:"last_observed_in"`
-	LastSignedHeight int64        `json:"last_signed_out"`
-	Thorchain        int64        `json:"thorchain"`
-}
-
-// String implement fmt.Stringer return a string representation of QueryResLastBlockHeights
-func (h QueryResLastBlockHeights) String() string {
-	return fmt.Sprintf("Chain: %d, Signed: %d, THORChain: %d", h.LastChainHeight, h.LastSignedHeight, h.Thorchain)
-}
-
 // QueryQueue a struct store the total outstanding out items
 type QueryQueue struct {
 	Swap                   int64       `json:"swap"`

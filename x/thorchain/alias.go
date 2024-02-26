@@ -268,7 +268,6 @@ type (
 	QueryQueue                     = types.QueryQueue
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck
 	QueryKeygenBlock               = types.QueryKeygenBlock
-	QueryResLastBlockHeights       = types.QueryResLastBlockHeights
 	QueryKeysign                   = types.QueryKeysign
 	QueryVaultsPubKeys             = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract       = types.QueryVaultPubKeyContract

@@ -505,7 +505,7 @@ func (s *QuerierSuite) TestQueryHeights(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var q []QueryResLastBlockHeights
+	var q []openapi.LastBlock
 	c.Assert(json.Unmarshal(result, &q), IsNil)
 
 	result, err = s.querier(s.ctx, []string{

@@ -73,7 +73,6 @@ func (Test) TestJSONSpec(c *C) {
 
 	// miscellaneous
 	assertJSONStructTagsMatch(c, types.BanVoter{}, gen.BanResponse{})
-	assertJSONStructTagsMatch(c, types.QueryResLastBlockHeights{}, gen.LastBlock{})
 }
 
 // -------------------------------------------------------------------------------------
