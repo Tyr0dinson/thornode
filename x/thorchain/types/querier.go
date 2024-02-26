@@ -200,27 +200,6 @@ type QueryMimirV2IDs struct {
 	Votes     map[int64]int64 `json:"votes"`
 }
 
-// QueryDerivedPool holds all the information related to a pool
-type QueryDerivedPool struct {
-	Asset           string `json:"asset"`
-	Status          string `json:"status"`
-	Decimals        int64  `json:"decimals,omitempty"`
-	BalanceAsset    string `json:"balance_asset"`
-	BalanceRune     string `json:"balance_rune"`
-	DerivedDepthBps string `json:"derived_depth_bps"`
-}
-
-// NewQueryDerivedPool creates a new QueryDerivedPool based on the given pool parameters
-func NewQueryDerivedPool(pool Pool) QueryDerivedPool {
-	return QueryDerivedPool{
-		Asset:        pool.Asset.String(),
-		Status:       pool.Status.String(),
-		Decimals:     pool.Decimals,
-		BalanceAsset: pool.BalanceAsset.String(),
-		BalanceRune:  pool.BalanceRune.String(),
-	}
-}
-
 type QueryTxOutItem struct {
 	Chain       common.Chain   `json:"chain"`
 	ToAddress   common.Address `json:"to_address"`

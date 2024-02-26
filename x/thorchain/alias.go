@@ -157,7 +157,6 @@ var (
 	NewMsgRagnarok                 = types.NewMsgRagnarok
 	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
 	NewQueryObservedTx             = types.NewQueryObservedTx
-	NewQueryDerivedPool            = types.NewQueryDerivedPool
 	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
 	NewQueryTxOutItem              = types.NewQueryTxOutItem
@@ -268,7 +267,6 @@ type (
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
 	QueryObservedTx           = types.QueryObservedTx
-	QueryDerivedPool          = types.QueryDerivedPool
 	QueryTxOutItem            = types.QueryTxOutItem
 	QueryTxDetails            = types.QueryTxDetails
 	QueryTxStages             = types.QueryTxStages

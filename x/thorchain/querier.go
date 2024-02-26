@@ -1458,19 +1458,25 @@ func queryDerivedPool(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 
 	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
-	dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
-	if dpool.Status != PoolAvailable {
-		dbps = cosmos.ZeroUint()
+	dbps := cosmos.ZeroUint()
+	if dpool.Status == PoolAvailable {
+		dbps = common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 	}
 
-	p := NewQueryDerivedPool(pool)
+	p := openapi.DerivedPool{
+		Asset:        dpool.Asset.String(),
+		Status:       dpool.Status.String(),
+		Decimals:     wrapInt64(dpool.Decimals),
+		BalanceAsset: dpool.BalanceAsset.String(),
+		BalanceRune:  dpool.BalanceRune.String(),
+	}
 	p.DerivedDepthBps = dbps.String()
 
 	return jsonify(ctx, p)
 }
 
 func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	pools := make([]QueryDerivedPool, 0)
+	pools := make([]openapi.DerivedPool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -1484,12 +1490,18 @@ func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]
 
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
-		dbps := common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
-		if dpool.Status != PoolAvailable {
-			dbps = cosmos.ZeroUint()
+		dbps := cosmos.ZeroUint()
+		if dpool.Status == PoolAvailable {
+			dbps = common.GetUncappedShare(dpool.BalanceRune, runeDepth, cosmos.NewUint(constants.MaxBasisPts))
 		}
 
-		p := NewQueryDerivedPool(pool)
+		p := openapi.DerivedPool{
+			Asset:        dpool.Asset.String(),
+			Status:       dpool.Status.String(),
+			Decimals:     wrapInt64(dpool.Decimals),
+			BalanceAsset: dpool.BalanceAsset.String(),
+			BalanceRune:  dpool.BalanceRune.String(),
+		}
 		p.DerivedDepthBps = dbps.String()
 
 		pools = append(pools, p)
