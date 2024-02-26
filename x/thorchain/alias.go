@@ -265,7 +265,6 @@ type (
 	MsgSolvency                    = types.MsgSolvency
 	MsgLoanOpen                    = types.MsgLoanOpen
 	MsgLoanRepayment               = types.MsgLoanRepayment
-	QueryQueue                     = types.QueryQueue
 	QueryNodeAccountPreflightCheck = types.QueryNodeAccountPreflightCheck
 	QueryKeygenBlock               = types.QueryKeygenBlock
 	QueryKeysign                   = types.QueryKeysign

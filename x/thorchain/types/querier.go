@@ -3,7 +3,6 @@ package types
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/blang/semver"
@@ -12,20 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
-
-// QueryQueue a struct store the total outstanding out items
-type QueryQueue struct {
-	Swap                   int64       `json:"swap"`
-	Outbound               int64       `json:"outbound"`
-	Internal               int64       `json:"internal"`
-	ScheduledOutboundValue cosmos.Uint `json:"scheduled_outbound_value"`
-	ScheduledOutboundClout cosmos.Uint `json:"scheduled_outbound_clout"`
-}
-
-// String implement fmt.Stringer
-func (h QueryQueue) String() string {
-	return fmt.Sprintf("Swap: %d, Outboud: %d", h.Swap, h.Outbound)
-}
 
 // QueryNodeAccountPreflightCheck is structure to hold all the information need to return to client
 // include current node status , and whether it might get churned in next

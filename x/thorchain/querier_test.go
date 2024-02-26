@@ -488,7 +488,7 @@ func (s *QuerierSuite) TestQueryQueue(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var q QueryQueue
+	var q openapi.QueueResponse
 	c.Assert(json.Unmarshal(result, &q), IsNil)
 }
 

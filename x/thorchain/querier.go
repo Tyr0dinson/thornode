@@ -1781,10 +1781,9 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	constAccessor := mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
-	query := QueryQueue{
-		ScheduledOutboundValue: cosmos.ZeroUint(),
-		ScheduledOutboundClout: cosmos.ZeroUint(),
-	}
+	var query openapi.QueueResponse
+	scheduledOutboundValue := cosmos.ZeroUint()
+	scheduledOutboundClout := cosmos.ZeroUint()
 
 	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
@@ -1846,9 +1845,12 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			// rest will be empty as well
 			break
 		}
-		query.ScheduledOutboundValue = query.ScheduledOutboundValue.Add(value)
-		query.ScheduledOutboundClout = query.ScheduledOutboundClout.Add(clout)
+		scheduledOutboundValue = scheduledOutboundValue.Add(value)
+		scheduledOutboundClout = scheduledOutboundClout.Add(clout)
 	}
+
+	query.ScheduledOutboundValue = scheduledOutboundValue.String()
+	query.ScheduledOutboundClout = scheduledOutboundClout.String()
 
 	return jsonify(ctx, query)
 }
