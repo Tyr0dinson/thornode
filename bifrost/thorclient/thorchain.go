@@ -672,11 +672,11 @@ func (b *thorchainBridge) GetThorchainVersion() (semver.Version, error) {
 	if s != http.StatusOK {
 		return semver.Version{}, fmt.Errorf("unexpected status code: %d", s)
 	}
-	var version stypes.QueryVersion
+	var version openapi.VersionResponse
 	if err = json.Unmarshal(buf, &version); err != nil {
 		return semver.Version{}, fmt.Errorf("fail to unmarshal THORChain version : %w", err)
 	}
-	return version.Current, nil
+	return semver.MustParse(version.Current), nil
 }
 
 // GetMimir - get mimir settings

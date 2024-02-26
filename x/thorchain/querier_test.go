@@ -807,11 +807,11 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r types.QueryVersion
+	var r openapi.VersionResponse
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 
 	verComputed := s.k.GetLowestActiveVersion(s.ctx)
-	c.Assert(r.Current.String(), Equals, verComputed.String(),
+	c.Assert(r.Current, Equals, verComputed.String(),
 		Commentf("query should return same version as computed"))
 
 	// override the version computed in BeginBlock
@@ -823,7 +823,7 @@ func (s *QuerierSuite) TestQueryVersion(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	c.Assert(json.Unmarshal(result, &r), IsNil)
-	c.Assert(r.Current.String(), Equals, "4.5.6",
+	c.Assert(r.Current, Equals, "4.5.6",
 		Commentf("query should use stored version"))
 }
 
