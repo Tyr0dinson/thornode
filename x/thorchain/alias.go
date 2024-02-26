@@ -159,7 +159,6 @@ var (
 	NewQueryObservedTx             = types.NewQueryObservedTx
 	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
-	NewQueryTxOutItem              = types.NewQueryTxOutItem
 	NewQueryTxDetails              = types.NewQueryTxDetails
 	NewQueryTxStages               = types.NewQueryTxStages
 	NewQueryTxStatus               = types.NewQueryTxStatus
@@ -267,7 +266,6 @@ type (
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
 	QueryObservedTx           = types.QueryObservedTx
-	QueryTxOutItem            = types.QueryTxOutItem
 	QueryTxDetails            = types.QueryTxDetails
 	QueryTxStages             = types.QueryTxStages
 	QueryTxStatus             = types.QueryTxStatus

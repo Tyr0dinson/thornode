@@ -2304,7 +2304,7 @@ func queryBan(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgr
 }
 
 func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	result := make([]QueryTxOutItem, 0)
+	result := make([]openapi.TxOutItem, 0)
 	constAccessor := mgr.GetConstants()
 	maxTxOutOffset, err := mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
 	if maxTxOutOffset < 0 || err != nil {
@@ -2322,7 +2322,7 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			break
 		}
 		for _, toi := range txOut.TxArray {
-			result = append(result, NewQueryTxOutItem(toi, height))
+			result = append(result, wrapTxOutItem(toi, height))
 		}
 	}
 
@@ -2344,7 +2344,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		lastOutboundHeight += rescheduleCoalesceBlocks - (lastOutboundHeight % rescheduleCoalesceBlocks)
 	}
 
-	result := make([]QueryTxOutItem, 0)
+	result := make([]openapi.TxOutItem, 0)
 	for height := startHeight; height <= lastOutboundHeight; height++ {
 		txs, err := mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
@@ -2353,7 +2353,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 		for _, tx := range txs.TxArray {
 			if tx.OutHash.IsEmpty() {
-				result = append(result, NewQueryTxOutItem(tx, height))
+				result = append(result, wrapTxOutItem(tx, height))
 			}
 		}
 	}
@@ -2566,6 +2566,45 @@ func wrapInt64(d int64) *int64 {
 		return nil
 	}
 	return &d
+}
+
+func wrapUintPtr(uintPtr *cosmos.Uint) *string {
+	if uintPtr == nil {
+		return nil
+	}
+	return wrapString(uintPtr.String())
+}
+
+func wrapCoins(sourceCoins ...common.Coin) []openapi.Coin {
+	coins := make([]openapi.Coin, len(sourceCoins))
+	for i := range sourceCoins {
+		coins[i] = openapi.Coin{
+			Asset:    sourceCoins[i].Asset.String(),
+			Amount:   sourceCoins[i].Amount.String(),
+			Decimals: wrapInt64(sourceCoins[i].Decimals),
+		}
+	}
+	return coins
+}
+
+func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
+	return openapi.TxOutItem{
+		Chain:       toi.Chain.String(),
+		ToAddress:   toi.ToAddress.String(),
+		VaultPubKey: wrapString(toi.VaultPubKey.String()),
+		Coin: openapi.Coin{
+			Asset:    toi.Coin.Asset.String(),
+			Amount:   toi.Coin.Amount.String(),
+			Decimals: wrapInt64(toi.Coin.Decimals),
+		},
+		Memo:       wrapString(toi.Memo),
+		MaxGas:     wrapCoins(toi.MaxGas...),
+		GasRate:    wrapInt64(toi.GasRate),
+		InHash:     wrapString(toi.InHash.String()),
+		OutHash:    wrapString(toi.OutHash.String()),
+		Height:     height,
+		CloutSpent: wrapUintPtr(toi.CloutSpent),
+	}
 }
 
 // TODO: Migrate callers to use simulate instead.
