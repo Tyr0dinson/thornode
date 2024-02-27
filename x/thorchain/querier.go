@@ -1667,19 +1667,19 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 
 	txs := make([]openapi.ObservedTx, len(voter.Txs))
 	for i := range voter.Txs {
-		txs[i] = wrapObservedTx(voter.Txs[i])
+		txs[i] = castObservedTx(voter.Txs[i])
 	}
 	actions := make([]openapi.TxOutItem, len(voter.Actions))
 	for i := range voter.Actions {
-		actions[i] = wrapTxOutItem(voter.Actions[i], 0) // Omitted Height field
+		actions[i] = castTxOutItem(voter.Actions[i], 0) // Omitted Height field
 	}
 	outTxs := make([]openapi.Tx, len(voter.OutTxs))
 	for i := range voter.OutTxs {
-		outTxs[i] = wrapTx(voter.OutTxs[i])
+		outTxs[i] = castTx(voter.OutTxs[i])
 	}
 	result := openapi.TxDetailsResponse{
 		TxId:            wrapString(voter.TxID.String()),
-		Tx:              wrapObservedTx(voter.Tx),
+		Tx:              castObservedTx(voter.Tx),
 		Txs:             txs,
 		Actions:         actions,
 		OutTxs:          outTxs,
@@ -1755,7 +1755,7 @@ func queryTx(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs
 		OutboundHeight  int64                  `json:"outbound_height,omitempty"`
 		KeysignMetrics  types.TssKeysignMetric `json:"keysign_metric"`
 	}{
-		ObservedTx:      wrapObservedTx(voter.GetTx(nodeAccounts)),
+		ObservedTx:      castObservedTx(voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
@@ -2345,7 +2345,7 @@ func queryScheduledOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			break
 		}
 		for _, toi := range txOut.TxArray {
-			result = append(result, wrapTxOutItem(toi, height))
+			result = append(result, castTxOutItem(toi, height))
 		}
 	}
 
@@ -2376,7 +2376,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 		for _, tx := range txs.TxArray {
 			if tx.OutHash.IsEmpty() {
-				result = append(result, wrapTxOutItem(tx, height))
+				result = append(result, castTxOutItem(tx, height))
 			}
 		}
 	}
@@ -2605,7 +2605,7 @@ func wrapUintPtr(uintPtr *cosmos.Uint) *string {
 	return wrapString(uintPtr.String())
 }
 
-func wrapCoins(sourceCoins ...common.Coin) []openapi.Coin {
+func castCoins(sourceCoins ...common.Coin) []openapi.Coin {
 	coins := make([]openapi.Coin, len(sourceCoins))
 	for i := range sourceCoins {
 		coins[i] = openapi.Coin{
@@ -2617,7 +2617,7 @@ func wrapCoins(sourceCoins ...common.Coin) []openapi.Coin {
 	return coins
 }
 
-func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
+func castTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 	return openapi.TxOutItem{
 		Chain:       toi.Chain.String(),
 		ToAddress:   toi.ToAddress.String(),
@@ -2628,7 +2628,7 @@ func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 			Decimals: wrapInt64(toi.Coin.Decimals),
 		},
 		Memo:       wrapString(toi.Memo),
-		MaxGas:     wrapCoins(toi.MaxGas...),
+		MaxGas:     castCoins(toi.MaxGas...),
 		GasRate:    wrapInt64(toi.GasRate),
 		InHash:     wrapString(toi.InHash.String()),
 		OutHash:    wrapString(toi.OutHash.String()),
@@ -2637,21 +2637,21 @@ func wrapTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 	}
 }
 
-func wrapTx(tx common.Tx) openapi.Tx {
+func castTx(tx common.Tx) openapi.Tx {
 	return openapi.Tx{
 		Id:          wrapString(tx.ID.String()),
 		Chain:       wrapString(tx.Chain.String()),
 		FromAddress: wrapString(tx.FromAddress.String()),
 		ToAddress:   wrapString(tx.ToAddress.String()),
-		Coins:       wrapCoins(tx.Coins...),
-		Gas:         wrapCoins(tx.Gas...),
+		Coins:       castCoins(tx.Coins...),
+		Gas:         castCoins(tx.Gas...),
 		Memo:        wrapString(tx.Memo),
 	}
 }
 
-func wrapObservedTx(observedTx ObservedTx) openapi.ObservedTx {
+func castObservedTx(observedTx ObservedTx) openapi.ObservedTx {
 	return openapi.ObservedTx{
-		Tx:                              wrapTx(observedTx.Tx),
+		Tx:                              castTx(observedTx.Tx),
 		ObservedPubKey:                  wrapString(observedTx.ObservedPubKey.String()),
 		ExternalObservedHeight:          wrapInt64(observedTx.BlockHeight),
 		ExternalConfirmationDelayHeight: wrapInt64(observedTx.FinaliseHeight),
