@@ -254,7 +254,6 @@ type (
 	MsgSolvency               = types.MsgSolvency
 	MsgLoanOpen               = types.MsgLoanOpen
 	MsgLoanRepayment          = types.MsgLoanRepayment
-	QueryKeygenBlock          = types.QueryKeygenBlock
 	PoolStatus                = types.PoolStatus
 	Pool                      = types.Pool
 	Pools                     = types.Pools

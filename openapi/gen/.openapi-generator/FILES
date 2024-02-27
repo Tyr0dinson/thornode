@@ -52,7 +52,10 @@ docs/InboundObservedStage.md
 docs/InvariantResponse.md
 docs/InvariantsApi.md
 docs/InvariantsResponse.md
+docs/Keygen.md
+docs/KeygenBlock.md
 docs/KeygenMetric.md
+docs/KeygenResponse.md
 docs/KeysignInfo.md
 docs/KeysignMetrics.md
 docs/KeysignResponse.md
@@ -153,7 +156,10 @@ model_inbound_finalised_stage.go
 model_inbound_observed_stage.go
 model_invariant_response.go
 model_invariants_response.go
+model_keygen.go
+model_keygen_block.go
 model_keygen_metric.go
+model_keygen_response.go
 model_keysign_info.go
 model_keysign_metrics.go
 model_keysign_response.go

@@ -1266,6 +1266,38 @@ paths:
           description: OK
       tags:
       - TSS
+  /thorchain/keygen/{height}/{pubkey}:
+    get:
+      description: Returns keygen information for the provided height and pubkey -
+        the pubkey being of one of the members of a keygen block for that height
+      operationId: keygenPubkey
+      parameters:
+      - explode: false
+        in: path
+        name: height
+        required: true
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: simple
+      - explode: false
+        in: path
+        name: pubkey
+        required: true
+        schema:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeygenResponse'
+          description: OK
+      tags:
+      - TSS
   /thorchain/metrics:
     get:
       description: Returns keygen and keysign metrics for current vaults.
@@ -4676,6 +4708,31 @@ components:
       - keysign
       - signature
       type: object
+    KeygenResponse:
+      example:
+        signature: signature
+        keygen_block:
+          height: 0
+          keygens:
+          - members:
+            - members
+            - members
+            id: id
+            type: type
+          - members:
+            - members
+            - members
+            id: id
+            type: type
+      properties:
+        keygen_block:
+          $ref: '#/components/schemas/KeygenBlock'
+        signature:
+          type: string
+      required:
+      - keygen_block
+      - signature
+      type: object
     KeygenMetricsResponse:
       items:
         $ref: '#/components/schemas/KeygenMetric'
@@ -6195,6 +6252,52 @@ components:
       required:
       - tx_array
       title: KeysignInfo
+      type: object
+    keygen:
+      example:
+        members:
+        - members
+        - members
+        id: id
+        type: type
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        members:
+          items:
+            description: pubkeys of the keygen block member nodes
+            type: string
+          type: array
+      title: keygen
+      type: object
+    KeygenBlock:
+      example:
+        height: 0
+        keygens:
+        - members:
+          - members
+          - members
+          id: id
+          type: type
+        - members:
+          - members
+          - members
+          id: id
+          type: type
+      properties:
+        height:
+          description: the height of the keygen block
+          format: int64
+          type: integer
+        keygens:
+          items:
+            $ref: '#/components/schemas/keygen'
+          type: array
+      required:
+      - keygens
+      title: KeygenBlock
       type: object
     KeysignMetrics:
       example:

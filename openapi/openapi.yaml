@@ -772,6 +772,23 @@ paths:
         - TSS
       responses: *keysign-response
 
+  /thorchain/keygen/{height}/{pubkey}:
+    parameters:
+      - $ref: "#/components/parameters/pathHeight"
+      - $ref: "#/components/parameters/pubkey"
+    get:
+      description: Returns keygen information for the provided height and pubkey - the pubkey being of one of the members of a keygen block for that height
+      operationId: keygenPubkey
+      tags:
+        - TSS
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeygenResponse"
+
   # ------------------------------ tss metrics ------------------------------
 
   /thorchain/metrics:
@@ -3087,6 +3104,40 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/TxOutItem"
+        signature:
+          type: string
+
+    KeygenResponse:
+      type: object
+      required:
+        - keygen_block
+        - signature
+      properties:
+        keygen_block:
+          type: object
+          title: KeygenBlock
+          required:
+            - keygens
+          properties:
+            height:
+              type: integer
+              format: int64
+              description: the height of the keygen block
+            keygens:
+              type: array
+              items:
+                type: object
+                title: keygen
+                properties:
+                  id:
+                    type: string
+                  type:
+                    type: string
+                  members:
+                    type: array
+                    items:
+                      type: string
+                      description: pubkeys of the keygen block member nodes
         signature:
           type: string
 

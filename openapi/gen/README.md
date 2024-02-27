@@ -121,6 +121,7 @@ Class | Method | HTTP request | Description
 *SaversApi* | [**Savers**](docs/SaversApi.md#savers) | **Get** /thorchain/pool/{asset}/savers | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
+*TSSApi* | [**KeygenPubkey**](docs/TSSApi.md#keygenpubkey) | **Get** /thorchain/keygen/{height}/{pubkey} | 
 *TSSApi* | [**Keysign**](docs/TSSApi.md#keysign) | **Get** /thorchain/keysign/{height} | 
 *TSSApi* | [**KeysignPubkey**](docs/TSSApi.md#keysignpubkey) | **Get** /thorchain/keysign/{height}/{pubkey} | 
 *TSSApi* | [**Metrics**](docs/TSSApi.md#metrics) | **Get** /thorchain/metrics | 
@@ -163,7 +164,10 @@ Class | Method | HTTP request | Description
  - [InboundObservedStage](docs/InboundObservedStage.md)
  - [InvariantResponse](docs/InvariantResponse.md)
  - [InvariantsResponse](docs/InvariantsResponse.md)
+ - [Keygen](docs/Keygen.md)
+ - [KeygenBlock](docs/KeygenBlock.md)
  - [KeygenMetric](docs/KeygenMetric.md)
+ - [KeygenResponse](docs/KeygenResponse.md)
  - [KeysignInfo](docs/KeysignInfo.md)
  - [KeysignMetrics](docs/KeysignMetrics.md)
  - [KeysignResponse](docs/KeysignResponse.md)

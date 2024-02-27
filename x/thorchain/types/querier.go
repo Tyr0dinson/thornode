@@ -6,17 +6,6 @@ import (
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
 
-// QueryKeygenBlock query keygen, displays signed keygen requests
-type QueryKeygenBlock struct {
-	KeygenBlock KeygenBlock `json:"keygen_block"`
-	Signature   string      `json:"signature"`
-}
-
-// String implement fmt.Stringer
-func (n QueryKeygenBlock) String() string {
-	return n.KeygenBlock.String()
-}
-
 // QueryBlockTx overrides the openapi type with a custom Tx field for marshaling.
 type QueryBlockTx struct {
 	openapi.BlockTx
