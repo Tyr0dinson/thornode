@@ -1,0 +1,110 @@
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# set max synth pool depth
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 6000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .MAXSYNTHPERPOOLDEPTH == 6000
+---
+# swap to synth
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000000"
+    asset: "rune"
+memo: "=:BTC/BTC:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+# withdraw from synth
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000"
+    asset: "BTC/BTC"
+memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .end_block_events[] | select(.type == "swap") | .swap_slip == "10"
+  - .end_block_events[] | select(.type == "swap") | .pool_slip == "10"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "398137"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "398137"
+  - .end_block_events[] | select(.type == "swap") | .emit_asset == "398137015 THOR.RUNE"
+  - .end_block_events[] | select(.type == "mint_burn") | .reason == "swap"
+---
+# set synth backstop mimir
+type: tx-mimir
+key: "9-GLOBAL"
+value: 1
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: "9-GLOBAL"
+value: 1
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: "9-GLOBAL"
+value: 1
+signer: {{ addr_thor_fox }}
+---
+type: tx-mimir
+key: "9-GLOBAL"
+value: 1
+signer: {{ addr_thor_goat }}
+---
+type: tx-mimir
+key: MaxSynthPerPoolDepth
+value: 100
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimirV2
+asserts:
+  - .SYNTHBACKSTOPGLOBAL  == 1
+---
+# set max synth pool depth
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .MAXSYNTHPERPOOLDEPTH == 100
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "200000"
+    asset: "BTC/BTC"
+memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .end_block_events[] | select(.type == "swap") | .swap_slip == "0"
+  - .end_block_events[] | select(.type == "swap") | .pool_slip == "0"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "813"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "813"
+  - .end_block_events[] | select(.type == "swap") | .emit_asset == "17996336 THOR.RUNE"
+  - .end_block_events[] | select(.type == "mint_burn") | .reason == "swap with synth backstop"
