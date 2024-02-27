@@ -2104,15 +2104,18 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 		return nil, fmt.Errorf("fail to sign keygen: %w", err)
 	}
 
-	keygens := make([]openapi.Keygen, len(keygenBlock.Keygens))
-	for i := range keygenBlock.Keygens {
-		keygens[i] = openapi.Keygen{
-			Id:      wrapString(keygenBlock.Keygens[i].ID.String()),
-			Type:    wrapString(keygenBlock.Keygens[i].Type.String()),
-			Members: keygenBlock.Keygens[i].Members,
+	var keygens []openapi.Keygen
+	// Leave this nil (null rather than []) when the source is nil.
+	if keygenBlock.Keygens != nil {
+		keygens = make([]openapi.Keygen, len(keygenBlock.Keygens))
+		for i := range keygenBlock.Keygens {
+			keygens[i] = openapi.Keygen{
+				Id:      wrapString(keygenBlock.Keygens[i].ID.String()),
+				Type:    wrapString(keygenBlock.Keygens[i].Type.String()),
+				Members: keygenBlock.Keygens[i].Members,
+			}
 		}
 	}
-
 	query := openapi.KeygenResponse{
 		KeygenBlock: openapi.KeygenBlock{
 			Height:  wrapInt64(keygenBlock.Height),
