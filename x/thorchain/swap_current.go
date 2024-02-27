@@ -194,7 +194,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, err
 	}
 
-	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination, "fee", transactionFee)
+	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", amount, "target", target, "to", destination, "fee", transactionFee)
 
 	// Set asset to our pool asset
 	var poolAsset common.Asset
@@ -322,7 +322,11 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		} else if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, burnCoin); err != nil {
 			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		} else {
-			burnEvt := NewEventMintBurn(BurnSupplyType, burnCoin.Asset.Native(), burnCoin.Amount, "swap")
+			reason := "swap"
+			if !amount.Equal(burnCoin.Amount) {
+				reason += " with synth backstop"
+			}
+			burnEvt := NewEventMintBurn(BurnSupplyType, burnCoin.Asset.Native(), burnCoin.Amount, reason)
 			if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
 				ctx.Logger().Error("fail to emit burn event", "error", err)
 			}
