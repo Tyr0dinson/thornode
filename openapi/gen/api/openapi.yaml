@@ -4672,6 +4672,9 @@ components:
           $ref: '#/components/schemas/KeysignInfo'
         signature:
           type: string
+      required:
+      - keysign
+      - signature
       type: object
     KeygenMetricsResponse:
       items:

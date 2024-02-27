@@ -712,7 +712,7 @@ func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	var r QueryKeysign
+	var r openapi.KeysignResponse
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 

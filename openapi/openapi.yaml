@@ -3069,6 +3069,9 @@ components:
 
     KeysignResponse:
       type: object
+      required:
+        - keysign
+        - signature
       properties:
         keysign:
           type: object

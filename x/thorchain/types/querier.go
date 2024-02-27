@@ -17,12 +17,6 @@ func (n QueryKeygenBlock) String() string {
 	return n.KeygenBlock.String()
 }
 
-// QueryKeysign query keysign result
-type QueryKeysign struct {
-	Keysign   TxOut  `json:"keysign"`
-	Signature string `json:"signature"`
-}
-
 // QueryBlockTx overrides the openapi type with a custom Tx field for marshaling.
 type QueryBlockTx struct {
 	openapi.BlockTx

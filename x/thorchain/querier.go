@@ -2159,8 +2159,15 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 		ctx.Logger().Error("fail to sign keysign", "error", err)
 		return nil, fmt.Errorf("fail to sign keysign: %w", err)
 	}
-	query := QueryKeysign{
-		Keysign:   *txs,
+	tois := make([]openapi.TxOutItem, len(txs.TxArray))
+	for i := range txs.TxArray {
+		tois[i] = castTxOutItem(txs.TxArray[i], 0) // 0 is omitted.
+	}
+	query := openapi.KeysignResponse{
+		Keysign: openapi.KeysignInfo{
+			Height:  wrapInt64(txs.Height),
+			TxArray: tois,
+		},
 		Signature: base64.StdEncoding.EncodeToString(sig),
 	}
 
