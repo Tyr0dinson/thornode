@@ -382,7 +382,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 	}
 
-	respVaults := make([]QueryYggdrasilVaults, len(vaults))
+	respVaults := make([]openapi.YggdrasilVault, len(vaults))
 	for i, vault := range vaults {
 		totalValue := cosmos.ZeroUint()
 
@@ -407,21 +407,21 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 		}
 
-		respVaults[i] = QueryYggdrasilVaults{
-			BlockHeight:           vault.BlockHeight,
-			PubKey:                vault.PubKey,
-			Coins:                 vault.Coins,
-			Type:                  vault.Type,
-			StatusSince:           vault.StatusSince,
+		respVaults[i] = openapi.YggdrasilVault{
+			BlockHeight:           wrapInt64(vault.BlockHeight),
+			PubKey:                wrapString(vault.PubKey.String()),
+			Coins:                 castCoins(vault.Coins...),
+			Type:                  wrapString(vault.Type.String()),
+			StatusSince:           wrapInt64(vault.StatusSince),
 			Membership:            vault.Membership,
 			Chains:                vault.Chains,
-			InboundTxCount:        vault.InboundTxCount,
-			OutboundTxCount:       vault.OutboundTxCount,
+			InboundTxCount:        wrapInt64(vault.InboundTxCount),
+			OutboundTxCount:       wrapInt64(vault.OutboundTxCount),
 			PendingTxBlockHeights: vault.PendingTxBlockHeights,
-			Routers:               vault.Routers,
-			Status:                na.Status,
-			Bond:                  na.Bond,
-			TotalValue:            totalValue,
+			Routers:               castVaultRouters(vault.Routers),
+			Status:                na.Status.String(),
+			Bond:                  na.Bond.String(),
+			TotalValue:            totalValue.String(),
 			Addresses:             getVaultChainAddresses(ctx, vault),
 		}
 	}

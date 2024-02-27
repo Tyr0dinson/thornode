@@ -366,7 +366,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VaultsResponse"
+                $ref: "#/components/schemas/YggdrasilVaultsResponse"
 
   /thorchain/vault/{pubkey}:
     parameters:
@@ -1694,7 +1694,7 @@ components:
           enum: ["AsgardVault", "YggdrasilVault"]
         status:
           type: string
-          # TODO: Currently status is not consistent between asgard and yggdrasil.
+          # TODO: Currently status is not consistent between asgard (VaultStatus) and yggdrasil (NodeStatus).
           # enum: ["Active", ...]
         status_since:
           type: integer
@@ -1731,6 +1731,72 @@ components:
           type: array
           items:
             type: string
+
+    YggdrasilVault:
+      type: object
+      required:
+        - coins
+        - routers
+        - status
+        - bond
+        - total_value
+        - addresses
+      properties:
+        block_height:
+          type: integer
+          format: int64
+        pub_key:
+          type: string
+        coins:
+          type: array
+          items:
+            $ref: "#/components/schemas/Coin"
+        type:
+          type: string
+          enum: ["AsgardVault", "YggdrasilVault"]
+        status_since:
+          type: integer
+          format: int64
+        membership:
+          type: array
+          description: the list of node public keys which are members of the vault
+          items:
+            type: string
+        chains:
+          type: array
+          items:
+            type: string
+        inbound_tx_count:
+          type: integer
+          format: int64
+        outbound_tx_count:
+          type: integer
+          format: int64
+        pending_tx_block_heights:
+          type: array
+          items:
+            type: integer
+            format: int64
+        routers:
+          type: array
+          items:
+            $ref: "#/components/schemas/VaultRouter"
+        status:
+          type: string
+          # TODO: Currently status is not consistent between asgard (VaultStatus) and yggdrasil (NodeStatus).
+          # enum: ["Active", ...]
+        bond:
+          type: string
+          description: current node bond
+          example: "123456789"
+        total_value:
+          type: string
+          description: value in rune of the vault's assets
+          example: "83456789"
+        addresses:
+          type: array
+          items:
+            $ref: "#/components/schemas/VaultAddress"
 
     VaultRouter:
       type: object
@@ -2736,6 +2802,11 @@ components:
 
     StreamingSwapResponse:
       $ref: "#/components/schemas/StreamingSwap"
+
+    YggdrasilVaultsResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/YggdrasilVault"
 
     VaultsResponse:
       type: array

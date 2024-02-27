@@ -222,6 +222,7 @@ Class | Method | HTTP request | Description
  - [VaultPubkeysResponse](docs/VaultPubkeysResponse.md)
  - [VaultRouter](docs/VaultRouter.md)
  - [VersionResponse](docs/VersionResponse.md)
+ - [YggdrasilVault](docs/YggdrasilVault.md)
 
 
 ## Documentation For Authorization

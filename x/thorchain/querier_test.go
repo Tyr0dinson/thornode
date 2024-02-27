@@ -750,7 +750,7 @@ func (s *QuerierSuite) TestQueryYggdrasilVault(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r []QueryYggdrasilVaults
+	var r []openapi.YggdrasilVault
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 

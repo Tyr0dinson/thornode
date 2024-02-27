@@ -609,7 +609,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VaultsResponse'
+                $ref: '#/components/schemas/YggdrasilVaultsResponse'
           description: OK
       tags:
       - Vaults
@@ -2579,6 +2579,107 @@ components:
       - routers
       - status
       type: object
+    YggdrasilVault:
+      example:
+        total_value: "83456789"
+        addresses:
+        - chain: BTC
+          address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+        - chain: BTC
+          address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
+        coins:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        chains:
+        - chains
+        - chains
+        block_height: 0
+        membership:
+        - membership
+        - membership
+        type: AsgardVault
+        bond: "123456789"
+        pub_key: pub_key
+        inbound_tx_count: 1
+        status_since: 6
+        pending_tx_block_heights:
+        - 5
+        - 5
+        outbound_tx_count: 5
+        routers:
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        - chain: ETH
+          router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        status: status
+      properties:
+        block_height:
+          format: int64
+          type: integer
+        pub_key:
+          type: string
+        coins:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        type:
+          enum:
+          - AsgardVault
+          - YggdrasilVault
+          type: string
+        status_since:
+          format: int64
+          type: integer
+        membership:
+          description: the list of node public keys which are members of the vault
+          items:
+            type: string
+          type: array
+        chains:
+          items:
+            type: string
+          type: array
+        inbound_tx_count:
+          format: int64
+          type: integer
+        outbound_tx_count:
+          format: int64
+          type: integer
+        pending_tx_block_heights:
+          items:
+            format: int64
+            type: integer
+          type: array
+        routers:
+          items:
+            $ref: '#/components/schemas/VaultRouter'
+          type: array
+        status:
+          type: string
+        bond:
+          description: current node bond
+          example: "123456789"
+          type: string
+        total_value:
+          description: value in rune of the vault's assets
+          example: "83456789"
+          type: string
+        addresses:
+          items:
+            $ref: '#/components/schemas/VaultAddress'
+          type: array
+      required:
+      - addresses
+      - bond
+      - coins
+      - routers
+      - status
+      - total_value
+      type: object
     VaultRouter:
       example:
         chain: ETH
@@ -4180,6 +4281,10 @@ components:
       type: array
     StreamingSwapResponse:
       $ref: '#/components/schemas/StreamingSwap'
+    YggdrasilVaultsResponse:
+      items:
+        $ref: '#/components/schemas/YggdrasilVault'
+      type: array
     VaultsResponse:
       items:
         $ref: '#/components/schemas/Vault'

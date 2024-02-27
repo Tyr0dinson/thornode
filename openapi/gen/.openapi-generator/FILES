@@ -129,6 +129,7 @@ docs/VaultPubkeysResponse.md
 docs/VaultRouter.md
 docs/VaultsApi.md
 docs/VersionResponse.md
+docs/YggdrasilVault.md
 git_push.sh
 go.mod
 go.sum
@@ -211,5 +212,6 @@ model_vault_info.go
 model_vault_pubkeys_response.go
 model_vault_router.go
 model_version_response.go
+model_yggdrasil_vault.go
 response.go
 utils.go
