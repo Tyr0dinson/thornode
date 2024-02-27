@@ -1202,8 +1202,38 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 }
 
+func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) openapi.StreamingSwap {
+	var sourceAsset common.Asset
+	// Leave the source_asset field empty if there is more than a single input Coin.
+	if len(msgSwap.Tx.Coins) == 1 {
+		sourceAsset = msgSwap.Tx.Coins[0].Asset
+	}
+
+	failedSwaps := make([]int64, len(streamingSwap.FailedSwaps))
+	for i := range streamingSwap.FailedSwaps {
+		failedSwaps[i] = int64(streamingSwap.FailedSwaps[i])
+	}
+
+	return openapi.StreamingSwap{
+		TxId:              wrapString(streamingSwap.TxID.String()),
+		Interval:          wrapInt64(int64(streamingSwap.Interval)),
+		Quantity:          wrapInt64(int64(streamingSwap.Quantity)),
+		Count:             wrapInt64(int64(streamingSwap.Count)),
+		LastHeight:        wrapInt64(streamingSwap.LastHeight),
+		TradeTarget:       streamingSwap.TradeTarget.String(),
+		SourceAsset:       wrapString(sourceAsset.String()),
+		TargetAsset:       wrapString(msgSwap.TargetAsset.String()),
+		Destination:       wrapString(msgSwap.Destination.String()),
+		Deposit:           streamingSwap.Deposit.String(),
+		In:                streamingSwap.In.String(),
+		Out:               streamingSwap.Out.String(),
+		FailedSwaps:       failedSwaps,
+		FailedSwapReasons: streamingSwap.FailedSwapReasons,
+	}
+}
+
 func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var streams []QueryStreamingSwap
+	var streams []openapi.StreamingSwap
 	iter := mgr.Keeper().GetStreamingSwapIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -1229,7 +1259,7 @@ func queryStreamingSwaps(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			break
 		}
 
-		streams = append(streams, NewQueryStreamingSwap(stream, msgSwap))
+		streams = append(streams, newStreamingSwap(stream, msgSwap))
 	}
 	return jsonify(ctx, streams)
 }
@@ -1288,7 +1318,7 @@ func queryStreamingSwap(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 		break
 	}
 
-	result := NewQueryStreamingSwap(streamingSwap, msgSwap)
+	result := newStreamingSwap(streamingSwap, msgSwap)
 
 	return jsonify(ctx, result)
 }

@@ -39,7 +39,6 @@ func (Test) TestJSONSpec(c *C) {
 
 	// queue and lp
 	assertJSONStructTagsMatch(c, types.MsgSwap{}, gen.MsgSwap{})
-	assertJSONStructTagsMatch(c, types.QueryStreamingSwap{}, gen.StreamingSwap{})
 
 	// txs
 	assertJSONStructTagsMatch(c, types.TxOut{}, gen.KeysignInfo{})
