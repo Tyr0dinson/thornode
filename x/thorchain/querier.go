@@ -742,7 +742,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		SignerMembership:    nodeAcc.GetSignerMembership().Strings(),
 		RequestedToLeave:    nodeAcc.RequestedToLeave,
 		ForcedToLeave:       nodeAcc.ForcedToLeave,
-		LeaveHeight:         int32(nodeAcc.LeaveScore), // OpenAPI represents uint64 as int32
+		LeaveHeight:         int64(nodeAcc.LeaveScore), // OpenAPI can only represent uint64 as int64
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
 	}
@@ -921,7 +921,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			SignerMembership:    na.GetSignerMembership().Strings(),
 			RequestedToLeave:    na.RequestedToLeave,
 			ForcedToLeave:       na.ForcedToLeave,
-			LeaveHeight:         int32(na.LeaveScore), // OpenAPI represents uint64 as int32
+			LeaveHeight:         int64(na.LeaveScore), // OpenAPI can only represent uint64 as int64
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
 		}

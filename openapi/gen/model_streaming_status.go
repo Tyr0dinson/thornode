@@ -17,18 +17,18 @@ import (
 // StreamingStatus struct for StreamingStatus
 type StreamingStatus struct {
 	// how often each swap is made, in blocks
-	Interval int32 `json:"interval"`
+	Interval int64 `json:"interval"`
 	// the total number of swaps in a streaming swaps
-	Quantity int32 `json:"quantity"`
+	Quantity int64 `json:"quantity"`
 	// the amount of swap attempts so far
-	Count int32 `json:"count"`
+	Count int64 `json:"count"`
 }
 
 // NewStreamingStatus instantiates a new StreamingStatus object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewStreamingStatus(interval int32, quantity int32, count int32) *StreamingStatus {
+func NewStreamingStatus(interval int64, quantity int64, count int64) *StreamingStatus {
 	this := StreamingStatus{}
 	this.Interval = interval
 	this.Quantity = quantity
@@ -45,9 +45,9 @@ func NewStreamingStatusWithDefaults() *StreamingStatus {
 }
 
 // GetInterval returns the Interval field value
-func (o *StreamingStatus) GetInterval() int32 {
+func (o *StreamingStatus) GetInterval() int64 {
 	if o == nil {
-		var ret int32
+		var ret int64
 		return ret
 	}
 
@@ -56,7 +56,7 @@ func (o *StreamingStatus) GetInterval() int32 {
 
 // GetIntervalOk returns a tuple with the Interval field value
 // and a boolean to check if the value has been set.
-func (o *StreamingStatus) GetIntervalOk() (*int32, bool) {
+func (o *StreamingStatus) GetIntervalOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -64,14 +64,14 @@ func (o *StreamingStatus) GetIntervalOk() (*int32, bool) {
 }
 
 // SetInterval sets field value
-func (o *StreamingStatus) SetInterval(v int32) {
+func (o *StreamingStatus) SetInterval(v int64) {
 	o.Interval = v
 }
 
 // GetQuantity returns the Quantity field value
-func (o *StreamingStatus) GetQuantity() int32 {
+func (o *StreamingStatus) GetQuantity() int64 {
 	if o == nil {
-		var ret int32
+		var ret int64
 		return ret
 	}
 
@@ -80,7 +80,7 @@ func (o *StreamingStatus) GetQuantity() int32 {
 
 // GetQuantityOk returns a tuple with the Quantity field value
 // and a boolean to check if the value has been set.
-func (o *StreamingStatus) GetQuantityOk() (*int32, bool) {
+func (o *StreamingStatus) GetQuantityOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -88,14 +88,14 @@ func (o *StreamingStatus) GetQuantityOk() (*int32, bool) {
 }
 
 // SetQuantity sets field value
-func (o *StreamingStatus) SetQuantity(v int32) {
+func (o *StreamingStatus) SetQuantity(v int64) {
 	o.Quantity = v
 }
 
 // GetCount returns the Count field value
-func (o *StreamingStatus) GetCount() int32 {
+func (o *StreamingStatus) GetCount() int64 {
 	if o == nil {
-		var ret int32
+		var ret int64
 		return ret
 	}
 
@@ -104,7 +104,7 @@ func (o *StreamingStatus) GetCount() int32 {
 
 // GetCountOk returns a tuple with the Count field value
 // and a boolean to check if the value has been set.
-func (o *StreamingStatus) GetCountOk() (*int32, bool) {
+func (o *StreamingStatus) GetCountOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -112,7 +112,7 @@ func (o *StreamingStatus) GetCountOk() (*int32, bool) {
 }
 
 // SetCount sets field value
-func (o *StreamingStatus) SetCount(v int32) {
+func (o *StreamingStatus) SetCount(v int64) {
 	o.Count = v
 }
 

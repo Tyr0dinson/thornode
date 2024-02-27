@@ -5,8 +5,8 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Started** | Pointer to **bool** | returns true if any nodes have observed the transaction (to be deprecated in favour of counts) | [optional] 
-**PreConfirmationCount** | Pointer to **int32** | number of signers for pre-confirmation-counting observations | [optional] 
-**FinalCount** | Pointer to **int32** | number of signers for final observations, after any confirmation counting complete | [optional] 
+**PreConfirmationCount** | Pointer to **int64** | number of signers for pre-confirmation-counting observations | [optional] 
+**FinalCount** | Pointer to **int64** | number of signers for final observations, after any confirmation counting complete | [optional] 
 **Completed** | **bool** | returns true if no transaction observation remains to be done | 
 
 ## Methods
@@ -55,20 +55,20 @@ HasStarted returns a boolean if a field has been set.
 
 ### GetPreConfirmationCount
 
-`func (o *InboundObservedStage) GetPreConfirmationCount() int32`
+`func (o *InboundObservedStage) GetPreConfirmationCount() int64`
 
 GetPreConfirmationCount returns the PreConfirmationCount field if non-nil, zero value otherwise.
 
 ### GetPreConfirmationCountOk
 
-`func (o *InboundObservedStage) GetPreConfirmationCountOk() (*int32, bool)`
+`func (o *InboundObservedStage) GetPreConfirmationCountOk() (*int64, bool)`
 
 GetPreConfirmationCountOk returns a tuple with the PreConfirmationCount field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetPreConfirmationCount
 
-`func (o *InboundObservedStage) SetPreConfirmationCount(v int32)`
+`func (o *InboundObservedStage) SetPreConfirmationCount(v int64)`
 
 SetPreConfirmationCount sets PreConfirmationCount field to given value.
 
@@ -80,20 +80,20 @@ HasPreConfirmationCount returns a boolean if a field has been set.
 
 ### GetFinalCount
 
-`func (o *InboundObservedStage) GetFinalCount() int32`
+`func (o *InboundObservedStage) GetFinalCount() int64`
 
 GetFinalCount returns the FinalCount field if non-nil, zero value otherwise.
 
 ### GetFinalCountOk
 
-`func (o *InboundObservedStage) GetFinalCountOk() (*int32, bool)`
+`func (o *InboundObservedStage) GetFinalCountOk() (*int64, bool)`
 
 GetFinalCountOk returns a tuple with the FinalCount field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetFinalCount
 
-`func (o *InboundObservedStage) SetFinalCount(v int32)`
+`func (o *InboundObservedStage) SetFinalCount(v int64)`
 
 SetFinalCount sets FinalCount field to given value.
 

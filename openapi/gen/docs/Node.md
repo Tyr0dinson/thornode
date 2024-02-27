@@ -17,7 +17,7 @@ Name | Type | Description | Notes
 **SignerMembership** | **[]string** | the set of vault public keys of which the node is a member | 
 **RequestedToLeave** | **bool** |  | 
 **ForcedToLeave** | **bool** | indicates whether the node has been forced to leave by the network, typically via ban | 
-**LeaveHeight** | **int32** |  | 
+**LeaveHeight** | **int64** |  | 
 **IpAddress** | **string** |  | 
 **Version** | **string** | the currently set version of the node | 
 **SlashPoints** | **int64** | the accumulated slash points, reset at churn but excessive slash points may carry over | 
@@ -30,7 +30,7 @@ Name | Type | Description | Notes
 
 ### NewNode
 
-`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int32, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, preflightStatus NodePreflightStatus, ) *Node`
+`func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, preflightStatus NodePreflightStatus, ) *Node`
 
 NewNode instantiates a new Node object
 This constructor will assign default values to properties that have it defined,
@@ -307,20 +307,20 @@ SetForcedToLeave sets ForcedToLeave field to given value.
 
 ### GetLeaveHeight
 
-`func (o *Node) GetLeaveHeight() int32`
+`func (o *Node) GetLeaveHeight() int64`
 
 GetLeaveHeight returns the LeaveHeight field if non-nil, zero value otherwise.
 
 ### GetLeaveHeightOk
 
-`func (o *Node) GetLeaveHeightOk() (*int32, bool)`
+`func (o *Node) GetLeaveHeightOk() (*int64, bool)`
 
 GetLeaveHeightOk returns a tuple with the LeaveHeight field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetLeaveHeight
 
-`func (o *Node) SetLeaveHeight(v int32)`
+`func (o *Node) SetLeaveHeight(v int64)`
 
 SetLeaveHeight sets LeaveHeight field to given value.
 

@@ -2655,15 +2655,15 @@ components:
           type: string
         interval:
           description: "how often each swap is made, in blocks"
-          format: uint64
+          format: int64
           type: integer
         quantity:
           description: the total number of swaps in a streaming swaps
-          format: uint64
+          format: int64
           type: integer
         count:
           description: the amount of swap attempts so far
-          format: uint64
+          format: int64
           type: integer
         last_height:
           description: the block height of the latest swap
@@ -2701,7 +2701,7 @@ components:
         failed_swaps:
           description: the list of swap indexes that failed
           items:
-            format: uint64
+            format: int64
             type: integer
           type: array
         failed_swap_reasons:
@@ -3029,11 +3029,11 @@ components:
           type: integer
         stream_quantity:
           description: number of swaps to execute in a streaming swap
-          format: uint64
+          format: int64
           type: integer
         stream_interval:
           description: the interval (in blocks) to execute the streaming swap
-          format: uint64
+          format: int64
           type: integer
       required:
       - affiliate_basis_points
@@ -3232,7 +3232,7 @@ components:
           type: boolean
         leave_height:
           example: 0
-          format: uint64
+          format: int64
           type: integer
         ip_address:
           example: 10.20.30.40
@@ -5810,13 +5810,13 @@ components:
         pre_confirmation_count:
           description: number of signers for pre-confirmation-counting observations
           example: 80
-          format: uint64
+          format: int64
           type: integer
         final_count:
           description: "number of signers for final observations, after any confirmation\
             \ counting complete"
           example: 80
-          format: uint64
+          format: int64
           type: integer
         completed:
           description: returns true if no transaction observation remains to be done
@@ -5894,15 +5894,15 @@ components:
       properties:
         interval:
           description: "how often each swap is made, in blocks"
-          format: uint64
+          format: int64
           type: integer
         quantity:
           description: the total number of swaps in a streaming swaps
-          format: uint64
+          format: int64
           type: integer
         count:
           description: the amount of swap attempts so far
-          format: uint64
+          format: int64
           type: integer
       required:
       - count

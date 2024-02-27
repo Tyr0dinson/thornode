@@ -1785,15 +1785,15 @@ components:
           description: the hash of a transaction
         interval:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           description: how often each swap is made, in blocks
         quantity:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           description: the total number of swaps in a streaming swaps
         count:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           description: the amount of swap attempts so far
         last_height:
           type: integer
@@ -1832,7 +1832,7 @@ components:
           description: the list of swap indexes that failed
           items:
             type: integer
-            format: uint64
+            format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
         failed_swap_reasons:
           type: array
           description: the list of reasons that sub-swaps have failed
@@ -2040,11 +2040,11 @@ components:
           description: 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable)
         stream_quantity:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           description: number of swaps to execute in a streaming swap
         stream_interval:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           description: the interval (in blocks) to execute the streaming swap
 
     TxOutItem:
@@ -2213,7 +2213,7 @@ components:
           description: indicates whether the node has been forced to leave by the network, typically via ban
         leave_height:
           type: integer
-          format: uint64
+          format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
           example: 0
         ip_address:
           type: string
@@ -2550,12 +2550,12 @@ components:
               description: returns true if any nodes have observed the transaction (to be deprecated in favour of counts)
             pre_confirmation_count:
               type: integer
-              format: uint64
+              format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
               example: 80
               description: number of signers for pre-confirmation-counting observations
             final_count:
               type: integer
-              format: uint64
+              format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
               example: 80
               description: number of signers for final observations, after any confirmation counting complete
             completed:
@@ -2626,15 +2626,15 @@ components:
               properties:
                 interval:
                   type: integer
-                  format: uint64
+                  format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
                   description: how often each swap is made, in blocks
                 quantity:
                   type: integer
-                  format: uint64
+                  format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
                   description: the total number of swaps in a streaming swaps
                 count:
                   type: integer
-                  format: uint64
+                  format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
                   description: the amount of swap attempts so far
         swap_finalised:
           type: object

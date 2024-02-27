@@ -15,8 +15,8 @@ Name | Type | Description | Notes
 **AggregatorTargetAddress** | Pointer to **string** | the desired output asset of the aggregator SwapOut | [optional] 
 **AggregatorTargetLimit** | Pointer to **string** | the minimum amount of SwapOut asset to receive (else cancelling the SwapOut and receiving THORChain&#39;s output) | [optional] 
 **OrderType** | Pointer to **int64** | 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable) | [optional] 
-**StreamQuantity** | Pointer to **int32** | number of swaps to execute in a streaming swap | [optional] 
-**StreamInterval** | Pointer to **int32** | the interval (in blocks) to execute the streaming swap | [optional] 
+**StreamQuantity** | Pointer to **int64** | number of swaps to execute in a streaming swap | [optional] 
+**StreamInterval** | Pointer to **int64** | the interval (in blocks) to execute the streaming swap | [optional] 
 
 ## Methods
 
@@ -294,20 +294,20 @@ HasOrderType returns a boolean if a field has been set.
 
 ### GetStreamQuantity
 
-`func (o *MsgSwap) GetStreamQuantity() int32`
+`func (o *MsgSwap) GetStreamQuantity() int64`
 
 GetStreamQuantity returns the StreamQuantity field if non-nil, zero value otherwise.
 
 ### GetStreamQuantityOk
 
-`func (o *MsgSwap) GetStreamQuantityOk() (*int32, bool)`
+`func (o *MsgSwap) GetStreamQuantityOk() (*int64, bool)`
 
 GetStreamQuantityOk returns a tuple with the StreamQuantity field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetStreamQuantity
 
-`func (o *MsgSwap) SetStreamQuantity(v int32)`
+`func (o *MsgSwap) SetStreamQuantity(v int64)`
 
 SetStreamQuantity sets StreamQuantity field to given value.
 
@@ -319,20 +319,20 @@ HasStreamQuantity returns a boolean if a field has been set.
 
 ### GetStreamInterval
 
-`func (o *MsgSwap) GetStreamInterval() int32`
+`func (o *MsgSwap) GetStreamInterval() int64`
 
 GetStreamInterval returns the StreamInterval field if non-nil, zero value otherwise.
 
 ### GetStreamIntervalOk
 
-`func (o *MsgSwap) GetStreamIntervalOk() (*int32, bool)`
+`func (o *MsgSwap) GetStreamIntervalOk() (*int64, bool)`
 
 GetStreamIntervalOk returns a tuple with the StreamInterval field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetStreamInterval
 
-`func (o *MsgSwap) SetStreamInterval(v int32)`
+`func (o *MsgSwap) SetStreamInterval(v int64)`
 
 SetStreamInterval sets StreamInterval field to given value.
 

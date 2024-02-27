@@ -19,9 +19,9 @@ type InboundObservedStage struct {
 	// returns true if any nodes have observed the transaction (to be deprecated in favour of counts)
 	Started *bool `json:"started,omitempty"`
 	// number of signers for pre-confirmation-counting observations
-	PreConfirmationCount *int32 `json:"pre_confirmation_count,omitempty"`
+	PreConfirmationCount *int64 `json:"pre_confirmation_count,omitempty"`
 	// number of signers for final observations, after any confirmation counting complete
-	FinalCount *int32 `json:"final_count,omitempty"`
+	FinalCount *int64 `json:"final_count,omitempty"`
 	// returns true if no transaction observation remains to be done
 	Completed bool `json:"completed"`
 }
@@ -77,9 +77,9 @@ func (o *InboundObservedStage) SetStarted(v bool) {
 }
 
 // GetPreConfirmationCount returns the PreConfirmationCount field value if set, zero value otherwise.
-func (o *InboundObservedStage) GetPreConfirmationCount() int32 {
+func (o *InboundObservedStage) GetPreConfirmationCount() int64 {
 	if o == nil || o.PreConfirmationCount == nil {
-		var ret int32
+		var ret int64
 		return ret
 	}
 	return *o.PreConfirmationCount
@@ -87,7 +87,7 @@ func (o *InboundObservedStage) GetPreConfirmationCount() int32 {
 
 // GetPreConfirmationCountOk returns a tuple with the PreConfirmationCount field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *InboundObservedStage) GetPreConfirmationCountOk() (*int32, bool) {
+func (o *InboundObservedStage) GetPreConfirmationCountOk() (*int64, bool) {
 	if o == nil || o.PreConfirmationCount == nil {
 		return nil, false
 	}
@@ -103,15 +103,15 @@ func (o *InboundObservedStage) HasPreConfirmationCount() bool {
 	return false
 }
 
-// SetPreConfirmationCount gets a reference to the given int32 and assigns it to the PreConfirmationCount field.
-func (o *InboundObservedStage) SetPreConfirmationCount(v int32) {
+// SetPreConfirmationCount gets a reference to the given int64 and assigns it to the PreConfirmationCount field.
+func (o *InboundObservedStage) SetPreConfirmationCount(v int64) {
 	o.PreConfirmationCount = &v
 }
 
 // GetFinalCount returns the FinalCount field value if set, zero value otherwise.
-func (o *InboundObservedStage) GetFinalCount() int32 {
+func (o *InboundObservedStage) GetFinalCount() int64 {
 	if o == nil || o.FinalCount == nil {
-		var ret int32
+		var ret int64
 		return ret
 	}
 	return *o.FinalCount
@@ -119,7 +119,7 @@ func (o *InboundObservedStage) GetFinalCount() int32 {
 
 // GetFinalCountOk returns a tuple with the FinalCount field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *InboundObservedStage) GetFinalCountOk() (*int32, bool) {
+func (o *InboundObservedStage) GetFinalCountOk() (*int64, bool) {
 	if o == nil || o.FinalCount == nil {
 		return nil, false
 	}
@@ -135,8 +135,8 @@ func (o *InboundObservedStage) HasFinalCount() bool {
 	return false
 }
 
-// SetFinalCount gets a reference to the given int32 and assigns it to the FinalCount field.
-func (o *InboundObservedStage) SetFinalCount(v int32) {
+// SetFinalCount gets a reference to the given int64 and assigns it to the FinalCount field.
+func (o *InboundObservedStage) SetFinalCount(v int64) {
 	o.FinalCount = &v
 }
 
