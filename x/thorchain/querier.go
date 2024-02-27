@@ -2575,7 +2575,7 @@ func queryPendingOutbound(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	result := make([]MsgSwap, 0)
+	result := make([]openapi.MsgSwap, 0)
 
 	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
@@ -2584,7 +2584,7 @@ func querySwapQueue(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
 			continue
 		}
-		result = append(result, msg)
+		result = append(result, castMsgSwap(msg))
 	}
 
 	return jsonify(ctx, result)
@@ -2852,6 +2852,24 @@ func castObservedTx(observedTx ObservedTx) openapi.ObservedTx {
 		KeysignMs:                       wrapInt64(observedTx.KeysignMs),
 		OutHashes:                       observedTx.OutHashes,
 		Status:                          wrapString(observedTx.Status.String()),
+	}
+}
+
+func castMsgSwap(msg MsgSwap) openapi.MsgSwap {
+	return openapi.MsgSwap{
+		Tx:                      castTx(msg.Tx),
+		TargetAsset:             msg.TargetAsset.String(),
+		Destination:             wrapString(msg.Destination.String()),
+		TradeTarget:             msg.TradeTarget.String(),
+		AffiliateAddress:        wrapString(msg.AffiliateAddress.String()),
+		AffiliateBasisPoints:    msg.AffiliateBasisPoints.String(),
+		Signer:                  wrapString(msg.Signer.String()),
+		Aggregator:              wrapString(msg.Aggregator),
+		AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
+		AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
+		OrderType:               wrapString(msg.OrderType.String()),
+		StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
+		StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
 	}
 }
 

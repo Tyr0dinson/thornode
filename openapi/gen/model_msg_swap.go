@@ -35,8 +35,8 @@ type MsgSwap struct {
 	AggregatorTargetAddress *string `json:"aggregator_target_address,omitempty"`
 	// the minimum amount of SwapOut asset to receive (else cancelling the SwapOut and receiving THORChain's output)
 	AggregatorTargetLimit *string `json:"aggregator_target_limit,omitempty"`
-	// 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable)
-	OrderType *int64 `json:"order_type,omitempty"`
+	// market if immediately completed or refunded, limit if held until fulfillable
+	OrderType *string `json:"order_type,omitempty"`
 	// number of swaps to execute in a streaming swap
 	StreamQuantity *int64 `json:"stream_quantity,omitempty"`
 	// the interval (in blocks) to execute the streaming swap
@@ -353,9 +353,9 @@ func (o *MsgSwap) SetAggregatorTargetLimit(v string) {
 }
 
 // GetOrderType returns the OrderType field value if set, zero value otherwise.
-func (o *MsgSwap) GetOrderType() int64 {
+func (o *MsgSwap) GetOrderType() string {
 	if o == nil || o.OrderType == nil {
-		var ret int64
+		var ret string
 		return ret
 	}
 	return *o.OrderType
@@ -363,7 +363,7 @@ func (o *MsgSwap) GetOrderType() int64 {
 
 // GetOrderTypeOk returns a tuple with the OrderType field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *MsgSwap) GetOrderTypeOk() (*int64, bool) {
+func (o *MsgSwap) GetOrderTypeOk() (*string, bool) {
 	if o == nil || o.OrderType == nil {
 		return nil, false
 	}
@@ -379,8 +379,8 @@ func (o *MsgSwap) HasOrderType() bool {
 	return false
 }
 
-// SetOrderType gets a reference to the given int64 and assigns it to the OrderType field.
-func (o *MsgSwap) SetOrderType(v int64) {
+// SetOrderType gets a reference to the given string and assigns it to the OrderType field.
+func (o *MsgSwap) SetOrderType(v string) {
 	o.OrderType = &v
 }
 

@@ -2035,9 +2035,8 @@ components:
           type: string
           description: the minimum amount of SwapOut asset to receive (else cancelling the SwapOut and receiving THORChain's output)
         order_type:
-          type: integer
-          format: int64
-          description: 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable)
+          type: string
+          description: market if immediately completed or refunded, limit if held until fulfillable
         stream_quantity:
           type: integer
           format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.

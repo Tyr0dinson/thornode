@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **Aggregator** | Pointer to **string** | the contract address if an aggregator is specified for a non-THORChain SwapOut | [optional] 
 **AggregatorTargetAddress** | Pointer to **string** | the desired output asset of the aggregator SwapOut | [optional] 
 **AggregatorTargetLimit** | Pointer to **string** | the minimum amount of SwapOut asset to receive (else cancelling the SwapOut and receiving THORChain&#39;s output) | [optional] 
-**OrderType** | Pointer to **int64** | 0 if a market order (immediately completed or refunded), 1 if a limit order (held until fulfillable) | [optional] 
+**OrderType** | Pointer to **string** | market if immediately completed or refunded, limit if held until fulfillable | [optional] 
 **StreamQuantity** | Pointer to **int64** | number of swaps to execute in a streaming swap | [optional] 
 **StreamInterval** | Pointer to **int64** | the interval (in blocks) to execute the streaming swap | [optional] 
 
@@ -269,20 +269,20 @@ HasAggregatorTargetLimit returns a boolean if a field has been set.
 
 ### GetOrderType
 
-`func (o *MsgSwap) GetOrderType() int64`
+`func (o *MsgSwap) GetOrderType() string`
 
 GetOrderType returns the OrderType field if non-nil, zero value otherwise.
 
 ### GetOrderTypeOk
 
-`func (o *MsgSwap) GetOrderTypeOk() (*int64, bool)`
+`func (o *MsgSwap) GetOrderTypeOk() (*string, bool)`
 
 GetOrderTypeOk returns a tuple with the OrderType field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetOrderType
 
-`func (o *MsgSwap) SetOrderType(v int64)`
+`func (o *MsgSwap) SetOrderType(v string)`
 
 SetOrderType sets OrderType field to given value.
 
