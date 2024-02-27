@@ -1128,7 +1128,37 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 
 	if !isSavers {
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, poolAsset.GetSyntheticAsset())
-		liqp := NewQueryLiquidityProvider(lp, pool, synthSupply, mgr.GetVersion())
+		_, runeRedeemValue := lp.GetRuneRedeemValue(mgr.GetVersion(), pool, synthSupply)
+		_, assetRedeemValue := lp.GetAssetRedeemValue(mgr.GetVersion(), pool, synthSupply)
+		_, luviDepositValue := lp.GetLuviDepositValue(pool)
+		_, luviRedeemValue := lp.GetLuviRedeemValue(runeRedeemValue, assetRedeemValue)
+
+		lgp := cosmos.NewDec(0)
+		if !luviDepositValue.IsZero() {
+			ldv := cosmos.NewDec(luviDepositValue.BigInt().Int64())
+			lrv := cosmos.NewDec(luviRedeemValue.BigInt().Int64())
+			lgp = lrv.Sub(ldv)
+			lgp = lgp.Quo(ldv)
+		}
+
+		liqp := openapi.LiquidityProvider{
+			Asset:              lp.Asset.GetLayer1Asset().String(),
+			RuneAddress:        wrapString(lp.RuneAddress.String()),
+			AssetAddress:       wrapString(lp.AssetAddress.String()),
+			LastAddHeight:      wrapInt64(lp.LastAddHeight),
+			LastWithdrawHeight: wrapInt64(lp.LastWithdrawHeight),
+			Units:              lp.Units.String(),
+			PendingRune:        lp.PendingRune.String(),
+			PendingAsset:       lp.PendingAsset.String(),
+			PendingTxId:        wrapString(lp.PendingTxID.String()),
+			RuneDepositValue:   lp.RuneDepositValue.String(),
+			AssetDepositValue:  lp.AssetDepositValue.String(),
+			RuneRedeemValue:    runeRedeemValue.String(),
+			AssetRedeemValue:   assetRedeemValue.String(),
+			LuviDepositValue:   luviDepositValue.String(),
+			LuviRedeemValue:    luviRedeemValue.String(),
+			LuviGrowthPct:      lgp.String(),
+		}
 		return jsonify(ctx, liqp)
 	} else {
 		saver := NewQuerySaver(lp, pool)

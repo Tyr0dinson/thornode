@@ -155,7 +155,6 @@ var (
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
 	NewMsgMigrate                  = types.NewMsgMigrate
 	NewMsgRagnarok                 = types.NewMsgRagnarok
-	NewQueryLiquidityProvider      = types.NewQueryLiquidityProvider
 	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
 	ModuleCdc                      = types.ModuleCdc

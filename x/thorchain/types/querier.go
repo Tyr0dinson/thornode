@@ -3,8 +3,6 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/blang/semver"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
@@ -70,26 +68,6 @@ type QueryChainAddress struct {
 	Address common.Address `json:"address"`
 }
 
-// QueryLiquidityProvider holds all the information related to a liquidity provider
-type QueryLiquidityProvider struct {
-	Asset              common.Asset   `json:"asset"`
-	RuneAddress        common.Address `json:"rune_address,omitempty"`
-	AssetAddress       common.Address `json:"asset_address,omitempty"`
-	LastAddHeight      int64          `json:"last_add_height,omitempty"`
-	LastWithdrawHeight int64          `json:"last_withdraw_height,omitempty"`
-	Units              cosmos.Uint    `json:"units"`
-	PendingRune        cosmos.Uint    `json:"pending_rune"`
-	PendingAsset       cosmos.Uint    `json:"pending_asset"`
-	PendingTxId        string         `json:"pending_tx_id,omitempty"`
-	RuneDepositValue   cosmos.Uint    `json:"rune_deposit_value"`
-	AssetDepositValue  cosmos.Uint    `json:"asset_deposit_value"`
-	RuneRedeemValue    cosmos.Uint    `json:"rune_redeem_value"`
-	AssetRedeemValue   cosmos.Uint    `json:"asset_redeem_value"`
-	LuviDepositValue   cosmos.Uint    `json:"luvi_deposit_value"`
-	LuviRedeemValue    cosmos.Uint    `json:"luvi_redeem_value"`
-	LuviGrowthPct      cosmos.Dec     `json:"luvi_growth_pct"`
-}
-
 // QueryBlockTx overrides the openapi type with a custom Tx field for marshaling.
 type QueryBlockTx struct {
 	openapi.BlockTx
@@ -119,41 +97,6 @@ func (q QueryBlockResponse) MarshalJSON() ([]byte, error) {
 	toSerialize["end_block_events"] = q.EndBlockEvents
 	toSerialize["txs"] = q.Txs
 	return json.Marshal(toSerialize)
-}
-
-// NewQueryLiquidityProvider creates a new QueryLiquidityProvider based on the given liquidity provider and pool
-func NewQueryLiquidityProvider(lp LiquidityProvider, pool Pool, synthSupply cosmos.Uint, version semver.Version) QueryLiquidityProvider {
-	_, runeRedeemValue := lp.GetRuneRedeemValue(version, pool, synthSupply)
-	_, assetRedeemValue := lp.GetAssetRedeemValue(version, pool, synthSupply)
-	_, luviDepositValue := lp.GetLuviDepositValue(pool)
-	_, luviRedeemValue := lp.GetLuviRedeemValue(runeRedeemValue, assetRedeemValue)
-
-	lgp := cosmos.NewDec(0)
-	if !luviDepositValue.IsZero() {
-		ldv := cosmos.NewDec(luviDepositValue.BigInt().Int64())
-		lrv := cosmos.NewDec(luviRedeemValue.BigInt().Int64())
-		lgp = lrv.Sub(ldv)
-		lgp = lgp.Quo(ldv)
-	}
-
-	return QueryLiquidityProvider{
-		Asset:              lp.Asset.GetLayer1Asset(),
-		AssetAddress:       lp.AssetAddress,
-		RuneAddress:        lp.RuneAddress,
-		LastAddHeight:      lp.LastAddHeight,
-		LastWithdrawHeight: lp.LastWithdrawHeight,
-		PendingAsset:       lp.PendingAsset,
-		PendingRune:        lp.PendingRune,
-		PendingTxId:        lp.PendingTxID.String(),
-		Units:              lp.Units,
-		AssetDepositValue:  lp.AssetDepositValue,
-		RuneDepositValue:   lp.RuneDepositValue,
-		RuneRedeemValue:    runeRedeemValue,
-		AssetRedeemValue:   assetRedeemValue,
-		LuviRedeemValue:    luviRedeemValue,
-		LuviDepositValue:   luviDepositValue,
-		LuviGrowthPct:      lgp,
-	}
 }
 
 // QueryMimirV2IDs contains the information about the mimir V2s currently being voted on
