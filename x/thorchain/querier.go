@@ -291,21 +291,21 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		return nil, errors.New("vault not found")
 	}
 
-	resp := types.QueryVaultResp{
-		BlockHeight:           v.BlockHeight,
-		PubKey:                v.PubKey,
-		Coins:                 v.Coins,
-		Type:                  v.Type,
-		Status:                v.Status,
-		StatusSince:           v.StatusSince,
+	resp := openapi.Vault{
+		BlockHeight:           wrapInt64(v.BlockHeight),
+		PubKey:                wrapString(v.PubKey.String()),
+		Coins:                 castCoins(v.Coins...),
+		Type:                  wrapString(v.Type.String()),
+		Status:                v.Status.String(),
+		StatusSince:           wrapInt64(v.StatusSince),
 		Membership:            v.Membership,
 		Chains:                v.Chains,
-		InboundTxCount:        v.InboundTxCount,
-		OutboundTxCount:       v.OutboundTxCount,
+		InboundTxCount:        wrapInt64(v.InboundTxCount),
+		OutboundTxCount:       wrapInt64(v.OutboundTxCount),
 		PendingTxBlockHeights: v.PendingTxBlockHeights,
-		Routers:               v.Routers,
+		Routers:               castVaultRouters(v.Routers),
+		Addresses:             getVaultChainAddresses(ctx, v),
 		Frozen:                v.Frozen,
-		Addresses:             getVaultChainAddress(ctx, v),
 	}
 	return jsonify(ctx, resp)
 }
@@ -316,7 +316,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
 
-	var vaultsWithFunds []types.QueryVaultResp
+	var vaultsWithFunds []openapi.Vault
 	for _, vault := range vaults {
 		if vault.Status == InactiveVault {
 			continue
@@ -326,21 +326,21 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		}
 		// Being in a RetiringVault blocks a node from unbonding, so display them even if having no funds.
 		if vault.HasFunds() || vault.Status == ActiveVault || vault.Status == RetiringVault {
-			vaultsWithFunds = append(vaultsWithFunds, types.QueryVaultResp{
-				BlockHeight:           vault.BlockHeight,
-				PubKey:                vault.PubKey,
-				Coins:                 vault.Coins,
-				Type:                  vault.Type,
-				Status:                vault.Status,
-				StatusSince:           vault.StatusSince,
+			vaultsWithFunds = append(vaultsWithFunds, openapi.Vault{
+				BlockHeight:           wrapInt64(vault.BlockHeight),
+				PubKey:                wrapString(vault.PubKey.String()),
+				Coins:                 castCoins(vault.Coins...),
+				Type:                  wrapString(vault.Type.String()),
+				Status:                vault.Status.String(),
+				StatusSince:           wrapInt64(vault.StatusSince),
 				Membership:            vault.Membership,
 				Chains:                vault.Chains,
-				InboundTxCount:        vault.InboundTxCount,
-				OutboundTxCount:       vault.OutboundTxCount,
+				InboundTxCount:        wrapInt64(vault.InboundTxCount),
+				OutboundTxCount:       wrapInt64(vault.OutboundTxCount),
 				PendingTxBlockHeights: vault.PendingTxBlockHeights,
-				Routers:               vault.Routers,
+				Routers:               castVaultRouters(vault.Routers),
 				Frozen:                vault.Frozen,
-				Addresses:             getVaultChainAddress(ctx, vault),
+				Addresses:             getVaultChainAddresses(ctx, vault),
 			})
 		}
 	}
@@ -348,8 +348,8 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	return jsonify(ctx, vaultsWithFunds)
 }
 
-func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
-	var result []QueryChainAddress
+func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []openapi.VaultAddress {
+	var result []openapi.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
 		addr, err := vault.PubKey.GetAddress(c)
@@ -358,9 +358,9 @@ func getVaultChainAddress(ctx cosmos.Context, vault Vault) []QueryChainAddress {
 			continue
 		}
 		result = append(result,
-			QueryChainAddress{
-				Chain:   c,
-				Address: addr,
+			openapi.VaultAddress{
+				Chain:   c.String(),
+				Address: addr.String(),
 			})
 	}
 	return result
@@ -422,7 +422,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Status:                na.Status,
 			Bond:                  na.Bond,
 			TotalValue:            totalValue,
-			Addresses:             getVaultChainAddress(ctx, vault),
+			Addresses:             getVaultChainAddresses(ctx, vault),
 		}
 	}
 

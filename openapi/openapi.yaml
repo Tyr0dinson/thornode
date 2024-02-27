@@ -1744,6 +1744,9 @@ components:
 
     VaultAddress:
       type: object
+      required:
+        - chain
+        - address
       properties:
         chain:
           type: string

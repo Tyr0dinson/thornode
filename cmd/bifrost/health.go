@@ -244,14 +244,14 @@ func (s *HealthServer) currentSigning(w http.ResponseWriter, _ *http.Request) {
 	} else {
 		defer resp.Body.Close()
 
-		vaults := make([]types.QueryVaultResp, 0)
+		vaults := make([]openapi.Vault, 0)
 		if err = json.NewDecoder(resp.Body).Decode(&vaults); err != nil {
 			s.logger.Error().Err(err).Msg("fail to decode thornode status")
 		}
 		for _, vault := range vaults {
 			valRes := VaultResponse{
-				Pubkey:       vault.PubKey,
-				Status:       vault.Status,
+				Pubkey:       common.PubKey(*vault.PubKey),
+				Status:       types.VaultStatus(types.VaultStatus_value[vault.Status]),
 				ChainDetails: make([]signingChain, 0),
 			}
 
@@ -262,15 +262,15 @@ func (s *HealthServer) currentSigning(w http.ResponseWriter, _ *http.Request) {
 					continue
 				}
 				var account common.Account
-				account, err = client.GetAccount(vault.PubKey, nil)
+				account, err = client.GetAccount(common.PubKey(*vault.PubKey), nil)
 				if err != nil {
-					s.logger.Error().Err(err).Msgf("failed to get account for vault:%s on chain:%s", vault.PubKey.String(), chain)
+					s.logger.Error().Err(err).Msgf("failed to get account for vault:%s on chain:%s", *vault.PubKey, chain)
 					continue
 				}
 				var lastObserved, lastBroadcasted string
-				lastObserved, lastBroadcasted, err = client.GetLatestTxForVault(vault.PubKey.String())
+				lastObserved, lastBroadcasted, err = client.GetLatestTxForVault(*vault.PubKey)
 				if err != nil {
-					s.logger.Error().Err(err).Msgf("failed to get latest tx for vault:%s on chain:%s", vault.PubKey.String(), chain)
+					s.logger.Error().Err(err).Msgf("failed to get latest tx for vault:%s on chain:%s", *vault.PubKey, chain)
 				}
 				valRes.ChainDetails = append(valRes.ChainDetails, signingChain{
 					Chain:               chain,

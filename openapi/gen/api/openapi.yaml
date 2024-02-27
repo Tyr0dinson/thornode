@@ -2602,6 +2602,9 @@ components:
         address:
           example: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
           type: string
+      required:
+      - address
+      - chain
       type: object
     VaultInfo:
       example:
