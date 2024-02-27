@@ -108,10 +108,3 @@ type QueryMimirV2IDs struct {
 	Type      string          `json:"type"`
 	Votes     map[int64]int64 `json:"votes"`
 }
-
-// QueryVaultsPubKeys represent the result for query vaults pubkeys
-type QueryVaultsPubKeys struct {
-	Asgard    []openapi.VaultInfo `json:"asgard"`
-	Yggdrasil []openapi.VaultInfo `json:"yggdrasil"` // TODO remove on hard fork
-	Inactive  []openapi.VaultInfo `json:"inactive"`
-}

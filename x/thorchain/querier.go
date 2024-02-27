@@ -430,7 +430,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	var resp QueryVaultsPubKeys
+	var resp openapi.VaultPubkeysResponse
 	resp.Asgard = make([]openapi.VaultInfo, 0)
 	resp.Yggdrasil = make([]openapi.VaultInfo, 0) // TODO remove on hard fork
 	resp.Inactive = make([]openapi.VaultInfo, 0)

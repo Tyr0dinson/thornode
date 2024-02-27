@@ -569,18 +569,18 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get vault pubkeys ,err: %w", err)
 	}
-	var result stypes.QueryVaultsPubKeys
+	var result openapi.VaultPubkeysResponse
 	if err = json.Unmarshal(buf, &result); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal pubkeys: %w", err)
 	}
 	var addressPairs []PubKeyContractAddressPair
 	for _, v := range append(result.Asgard, result.Inactive...) {
 		kp := PubKeyContractAddressPair{
-			PubKey:    v.PubKey,
+			PubKey:    common.PubKey(v.PubKey),
 			Contracts: make(map[common.Chain]common.Address),
 		}
 		for _, item := range v.Routers {
-			kp.Contracts[item.Chain] = item.Router
+			kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
 		}
 		addressPairs = append(addressPairs, kp)
 	}
@@ -593,18 +593,18 @@ func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error
 	if err != nil {
 		return nil, fmt.Errorf("fail to get vault pubkeys ,err: %w", err)
 	}
-	var result stypes.QueryVaultsPubKeys
+	var result openapi.VaultPubkeysResponse
 	if err = json.Unmarshal(buf, &result); err != nil {
 		return nil, fmt.Errorf("fail to unmarshal pubkeys: %w", err)
 	}
 	var addressPairs []PubKeyContractAddressPair
 	for _, v := range append(result.Asgard, result.Inactive...) {
 		kp := PubKeyContractAddressPair{
-			PubKey:    v.PubKey,
+			PubKey:    common.PubKey(v.PubKey),
 			Contracts: make(map[common.Chain]common.Address),
 		}
 		for _, item := range v.Routers {
-			kp.Contracts[item.Chain] = item.Router
+			kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
 		}
 		addressPairs = append(addressPairs, kp)
 	}

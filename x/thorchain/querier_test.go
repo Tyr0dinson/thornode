@@ -778,7 +778,7 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 	}, abci.RequestQuery{})
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
-	var r types.QueryVaultsPubKeys
+	var r openapi.VaultPubkeysResponse
 	c.Assert(json.Unmarshal(result, &r), IsNil)
 }
 

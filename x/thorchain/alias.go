@@ -256,7 +256,6 @@ type (
 	MsgLoanRepayment          = types.MsgLoanRepayment
 	QueryKeygenBlock          = types.QueryKeygenBlock
 	QueryKeysign              = types.QueryKeysign
-	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryChainAddress         = types.QueryChainAddress
 	PoolStatus                = types.PoolStatus
 	Pool                      = types.Pool

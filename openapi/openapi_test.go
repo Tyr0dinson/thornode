@@ -50,7 +50,6 @@ func (Test) TestJSONSpec(c *C) {
 
 	// vaults
 	assertJSONStructTagsMatch(c, types.QueryVaultResp{}, gen.Vault{})
-	assertJSONStructTagsMatch(c, types.QueryVaultsPubKeys{}, gen.VaultPubkeysResponse{})
 
 	// miscellaneous
 	assertJSONStructTagsMatch(c, types.BanVoter{}, gen.BanResponse{})
