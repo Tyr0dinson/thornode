@@ -431,9 +431,9 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	var resp QueryVaultsPubKeys
-	resp.Asgard = make([]QueryVaultPubKeyContract, 0)
-	resp.Yggdrasil = make([]QueryVaultPubKeyContract, 0) // TODO remove on hard fork
-	resp.Inactive = make([]QueryVaultPubKeyContract, 0)
+	resp.Asgard = make([]openapi.VaultInfo, 0)
+	resp.Yggdrasil = make([]openapi.VaultInfo, 0) // TODO remove on hard fork
+	resp.Inactive = make([]openapi.VaultInfo, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
 	active, err := mgr.Keeper().ListActiveValidators(ctx)
@@ -455,17 +455,17 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 			}
 			if !na.Bond.IsZero() {
-				resp.Yggdrasil = append(resp.Yggdrasil, QueryVaultPubKeyContract{
-					PubKey:  vault.PubKey,
-					Routers: vault.Routers,
+				resp.Yggdrasil = append(resp.Yggdrasil, openapi.VaultInfo{
+					PubKey:  vault.PubKey.String(),
+					Routers: castVaultRouters(vault.Routers),
 				})
 			}
 		} else if vault.IsAsgard() {
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
-				resp.Asgard = append(resp.Asgard, QueryVaultPubKeyContract{
-					PubKey:  vault.PubKey,
-					Routers: vault.Routers,
+				resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
+					PubKey:  vault.PubKey.String(),
+					Routers: castVaultRouters(vault.Routers),
 				})
 			case InactiveVault:
 				// skip inactive vaults that have never received an inbound
@@ -485,9 +485,9 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				}
 				allMembers := vault.Membership
 				if HasSuperMajority(len(activeMembers), len(allMembers)) {
-					resp.Inactive = append(resp.Inactive, QueryVaultPubKeyContract{
-						PubKey:  vault.PubKey,
-						Routers: vault.Routers,
+					resp.Inactive = append(resp.Inactive, openapi.VaultInfo{
+						PubKey:  vault.PubKey.String(),
+						Routers: castVaultRouters(vault.Routers),
 					})
 				}
 			}
@@ -2967,6 +2967,17 @@ func castMsgSwap(msg MsgSwap) openapi.MsgSwap {
 		StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
 		StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
 	}
+}
+
+func castVaultRouters(chainContracts []ChainContract) []openapi.VaultRouter {
+	routers := make([]openapi.VaultRouter, len(chainContracts))
+	for i := range chainContracts {
+		routers[i] = openapi.VaultRouter{
+			Chain:  wrapString(chainContracts[i].Chain.String()),
+			Router: wrapString(chainContracts[i].Router.String()),
+		}
+	}
+	return routers
 }
 
 // TODO: Migrate callers to use simulate instead.

@@ -257,7 +257,6 @@ type (
 	QueryKeygenBlock          = types.QueryKeygenBlock
 	QueryKeysign              = types.QueryKeysign
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
-	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
 	QueryChainAddress         = types.QueryChainAddress
 	PoolStatus                = types.PoolStatus
 	Pool                      = types.Pool

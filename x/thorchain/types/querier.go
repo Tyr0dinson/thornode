@@ -109,15 +109,9 @@ type QueryMimirV2IDs struct {
 	Votes     map[int64]int64 `json:"votes"`
 }
 
-// QueryVaultPubKeyContract is a type to combine PubKey and it's related contract
-type QueryVaultPubKeyContract struct {
-	PubKey  common.PubKey   `json:"pub_key"`
-	Routers []ChainContract `json:"routers"`
-}
-
 // QueryVaultsPubKeys represent the result for query vaults pubkeys
 type QueryVaultsPubKeys struct {
-	Asgard    []QueryVaultPubKeyContract `json:"asgard"`
-	Yggdrasil []QueryVaultPubKeyContract `json:"yggdrasil"` // TODO remove on hard fork
-	Inactive  []QueryVaultPubKeyContract `json:"inactive"`
+	Asgard    []openapi.VaultInfo `json:"asgard"`
+	Yggdrasil []openapi.VaultInfo `json:"yggdrasil"` // TODO remove on hard fork
+	Inactive  []openapi.VaultInfo `json:"inactive"`
 }
