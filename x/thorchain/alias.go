@@ -155,7 +155,6 @@ var (
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
 	NewMsgMigrate                  = types.NewMsgMigrate
 	NewMsgRagnarok                 = types.NewMsgRagnarok
-	NewQuerySaver                  = types.NewQuerySaver
 	NewQueryStreamingSwap          = types.NewQueryStreamingSwap
 	ModuleCdc                      = types.ModuleCdc
 	RegisterCodec                  = types.RegisterCodec
@@ -260,7 +259,6 @@ type (
 	QueryKeysign              = types.QueryKeysign
 	QueryVaultsPubKeys        = types.QueryVaultsPubKeys
 	QueryVaultPubKeyContract  = types.QueryVaultPubKeyContract
-	QuerySaver                = types.QuerySaver
 	QueryStreamingSwap        = types.QueryStreamingSwap
 	QueryChainAddress         = types.QueryChainAddress
 	PoolStatus                = types.PoolStatus

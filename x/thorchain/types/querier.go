@@ -109,42 +109,6 @@ type QueryMimirV2IDs struct {
 	Votes     map[int64]int64 `json:"votes"`
 }
 
-// QuerySaver holds all the information related to a saver
-type QuerySaver struct {
-	Asset              common.Asset   `json:"asset"`
-	AssetAddress       common.Address `json:"asset_address"`
-	LastAddHeight      int64          `json:"last_add_height,omitempty"`
-	LastWithdrawHeight int64          `json:"last_withdraw_height,omitempty"`
-	Units              cosmos.Uint    `json:"units"`
-	AssetDepositValue  cosmos.Uint    `json:"asset_deposit_value"`
-	AssetRedeemValue   cosmos.Uint    `json:"asset_redeem_value"`
-	GrowthPct          cosmos.Dec     `json:"growth_pct"`
-}
-
-// NewQuerySaver creates a new QuerySaver based on the given liquidity provider parameters and pool
-func NewQuerySaver(lp LiquidityProvider, pool Pool) QuerySaver {
-	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
-
-	gp := cosmos.NewDec(0)
-	if !lp.AssetDepositValue.IsZero() {
-		adv := cosmos.NewDec(lp.AssetDepositValue.BigInt().Int64())
-		arv := cosmos.NewDec(assetRedeemableValue.BigInt().Int64())
-		gp = arv.Sub(adv)
-		gp = gp.Quo(adv)
-	}
-
-	return QuerySaver{
-		Asset:              lp.Asset.GetLayer1Asset(),
-		AssetAddress:       lp.AssetAddress,
-		LastAddHeight:      lp.LastAddHeight,
-		LastWithdrawHeight: lp.LastWithdrawHeight,
-		Units:              lp.Units,
-		AssetDepositValue:  lp.AssetDepositValue,
-		AssetRedeemValue:   lp.GetSaversAssetRedeemValue(pool),
-		GrowthPct:          gp,
-	}
-}
-
 // QueryStreamingSwap holds all the information related to a streaming swap
 type QueryStreamingSwap struct {
 	TxID              common.TxID    `json:"tx_id,omitempty"`

@@ -1025,6 +1025,29 @@ func queryBorrower(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 	return jsonify(ctx, borrower)
 }
 
+func newSaver(lp LiquidityProvider, pool Pool) openapi.Saver {
+	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
+
+	gp := cosmos.NewDec(0)
+	if !lp.AssetDepositValue.IsZero() {
+		adv := cosmos.NewDec(lp.AssetDepositValue.BigInt().Int64())
+		arv := cosmos.NewDec(assetRedeemableValue.BigInt().Int64())
+		gp = arv.Sub(adv)
+		gp = gp.Quo(adv)
+	}
+
+	return openapi.Saver{
+		Asset:              lp.Asset.GetLayer1Asset().String(),
+		AssetAddress:       lp.AssetAddress.String(),
+		LastAddHeight:      wrapInt64(lp.LastAddHeight),
+		LastWithdrawHeight: wrapInt64(lp.LastWithdrawHeight),
+		Units:              lp.Units.String(),
+		AssetDepositValue:  lp.AssetDepositValue.String(),
+		AssetRedeemValue:   assetRedeemableValue.String(),
+		GrowthPct:          gp.String(),
+	}
+}
+
 // queryLiquidityProviders
 // isSavers is true if request is for the savers of a Savers Pool, if false the request is for an L1 pool
 func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs, isSavers bool) ([]byte, error) {
@@ -1060,7 +1083,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 	}
 
 	var lps LiquidityProviders
-	var savers []QuerySaver
+	var savers []openapi.Saver
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -1069,7 +1092,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		if !isSavers {
 			lps = append(lps, lp)
 		} else {
-			savers = append(savers, NewQuerySaver(lp, pool))
+			savers = append(savers, newSaver(lp, pool))
 		}
 	}
 	if !isSavers {
@@ -1161,7 +1184,7 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 		}
 		return jsonify(ctx, liqp)
 	} else {
-		saver := NewQuerySaver(lp, pool)
+		saver := newSaver(lp, pool)
 		return jsonify(ctx, saver)
 	}
 }
