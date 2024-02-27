@@ -2356,14 +2356,9 @@ components:
       required:
       - asset
       - asset_deposit_value
-      - asset_redeem_value
-      - luvi_deposit_value
-      - luvi_growth_pct
-      - luvi_redeem_value
       - pending_asset
       - pending_rune
       - rune_deposit_value
-      - rune_redeem_value
       - units
       type: object
     Saver:

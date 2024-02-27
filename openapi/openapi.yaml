@@ -1519,11 +1519,6 @@ components:
         - pending_asset
         - rune_deposit_value
         - asset_deposit_value
-        - rune_redeem_value
-        - asset_redeem_value
-        - luvi_deposit_value
-        - luvi_redeem_value
-        - luvi_growth_pct
       properties:
         asset:
           type: string

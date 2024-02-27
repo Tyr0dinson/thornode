@@ -1082,7 +1082,7 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		return nil, fmt.Errorf("fail to get pool: %w", err)
 	}
 
-	var lps LiquidityProviders
+	var lps []openapi.LiquidityProvider
 	var savers []openapi.Saver
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
 	defer iterator.Close()
@@ -1090,7 +1090,20 @@ func queryLiquidityProviders(ctx cosmos.Context, path []string, req abci.Request
 		var lp LiquidityProvider
 		mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &lp)
 		if !isSavers {
-			lps = append(lps, lp)
+			lps = append(lps, openapi.LiquidityProvider{
+				// No redeem or LUVI calculations for the array response.
+				Asset:              lp.Asset.GetLayer1Asset().String(),
+				RuneAddress:        wrapString(lp.RuneAddress.String()),
+				AssetAddress:       wrapString(lp.AssetAddress.String()),
+				LastAddHeight:      wrapInt64(lp.LastAddHeight),
+				LastWithdrawHeight: wrapInt64(lp.LastWithdrawHeight),
+				Units:              lp.Units.String(),
+				PendingRune:        lp.PendingRune.String(),
+				PendingAsset:       lp.PendingAsset.String(),
+				PendingTxId:        wrapString(lp.PendingTxID.String()),
+				RuneDepositValue:   lp.RuneDepositValue.String(),
+				AssetDepositValue:  lp.AssetDepositValue.String(),
+			})
 		} else {
 			savers = append(savers, newSaver(lp, pool))
 		}
@@ -1176,11 +1189,11 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 			PendingTxId:        wrapString(lp.PendingTxID.String()),
 			RuneDepositValue:   lp.RuneDepositValue.String(),
 			AssetDepositValue:  lp.AssetDepositValue.String(),
-			RuneRedeemValue:    runeRedeemValue.String(),
-			AssetRedeemValue:   assetRedeemValue.String(),
-			LuviDepositValue:   luviDepositValue.String(),
-			LuviRedeemValue:    luviRedeemValue.String(),
-			LuviGrowthPct:      lgp.String(),
+			RuneRedeemValue:    wrapString(runeRedeemValue.String()),
+			AssetRedeemValue:   wrapString(assetRedeemValue.String()),
+			LuviDepositValue:   wrapString(luviDepositValue.String()),
+			LuviRedeemValue:    wrapString(luviRedeemValue.String()),
+			LuviGrowthPct:      wrapString(lgp.String()),
 		}
 		return jsonify(ctx, liqp)
 	} else {
