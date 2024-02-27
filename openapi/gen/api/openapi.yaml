@@ -4832,12 +4832,24 @@ components:
           type: int
         name:
           type: string
-        legacy_key:
-          type: string
         vote_key:
           type: string
+        legacy_key:
+          type: string
+        type:
+          type: string
         votes:
+          additionalProperties:
+            format: int64
+            type: integer
           type: object
+      required:
+      - id
+      - legacy_key
+      - name
+      - type
+      - vote_key
+      - votes
       type: object
     InvariantResponse:
       example:

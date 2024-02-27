@@ -3202,17 +3202,29 @@ components:
 
     MimirV2IDsResponse:
       type: object
+      required:
+        - id
+        - name
+        - vote_key
+        - legacy_key
+        - type
+        - votes
       properties:
         id:
           type: int
         name:
           type: string
+        vote_key:
+          type: string
         legacy_key:
           type: string
-        vote_key:
+        type:
           type: string
         votes:
           type: object
+          additionalProperties:
+            type: integer
+            format: int64
       example:
         - id: 1
           name: AFFILIATEFEEBASISPOINTSMAXGLOBAL

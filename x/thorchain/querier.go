@@ -2411,7 +2411,7 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 }
 
 func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	mimirsMap := make(map[string]types.QueryMimirV2IDs, 0)
+	mimirsMap := make(map[string]openapi.MimirV2IDsResponse, 0)
 	iter := mgr.Keeper().GetNodeMimirIteratorV2(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2435,16 +2435,16 @@ func queryMimirV2IDs(ctx cosmos.Context, path []string, req abci.RequestQuery, m
 			}
 
 			if _, exists := mimirsMap[m.Key]; !exists {
-				mimirsMap[m.Key] = types.QueryMimirV2IDs{
-					ID:        id,
+				mimirsMap[m.Key] = openapi.MimirV2IDsResponse{
+					Id:        id,
 					Name:      mv2.Name(),
 					Type:      mv2.Type().String(),
 					VoteKey:   fmt.Sprintf("%d-%s", id, ref),
 					LegacyKey: mv2.LegacyKey(ref),
-					Votes:     make(map[int64]int64),
+					Votes:     make(map[string]int64), // OpenAPI only supports string keys.
 				}
 			}
-			mimirsMap[m.Key].Votes[m.Value] += 1
+			mimirsMap[m.Key].Votes[strconv.FormatInt(m.Value, 10)] += 1
 		}
 	}
 	// jsonify's json.Marshal sorts the map keys alphabetically.

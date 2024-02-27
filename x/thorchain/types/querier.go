@@ -53,13 +53,3 @@ func (q QueryBlockResponse) MarshalJSON() ([]byte, error) {
 	toSerialize["txs"] = q.Txs
 	return json.Marshal(toSerialize)
 }
-
-// QueryMimirV2IDs contains the information about the mimir V2s currently being voted on
-type QueryMimirV2IDs struct {
-	ID        int             `json:"id"`
-	Name      string          `json:"name"`
-	VoteKey   string          `json:"vote_key"`
-	LegacyKey string          `json:"legacy_key"`
-	Type      string          `json:"type"`
-	Votes     map[int64]int64 `json:"votes"`
-}
