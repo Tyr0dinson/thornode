@@ -1512,6 +1512,15 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 		Notes:   msg.Coin.Asset.Chain.InboundNotes(),
 	}
 
+	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset, cosmos.ZeroUint())
+	if err != nil {
+		data, err = quoteErrorResponse(fmt.Errorf("failed to calculate min amount in: %s", err.Error()))
+		return nil, data, err
+	}
+	if msg.Coin.Amount.LT(minLoanCloseAmount) {
+		msg.Coin.Amount = minLoanCloseAmount
+	}
+
 	// simulate message handling
 	events, err := simulate(ctx, mgr, msg)
 	if err != nil {
@@ -1718,11 +1727,6 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 	res.Memo = memo.String()
 
-	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset, cosmos.ZeroUint())
-	if err != nil {
-		data, err = quoteErrorResponse(fmt.Errorf("Failed to calculate min amount in: %s", err.Error()))
-		return nil, data, err
-	}
 	res.RecommendedMinAmountIn = wrapString(minLoanCloseAmount.String())
 
 	streamingSwapSeconds += streamingSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
