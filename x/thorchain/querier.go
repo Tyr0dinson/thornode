@@ -713,11 +713,16 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		Reason:        wrapString(jail.Reason),
 	}
 
-	providers := make([]openapi.NodeBondProvider, len(bp.Providers))
-	for i := range bp.Providers {
-		providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
-		providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+	var providers []openapi.NodeBondProvider
+	// Leave this nil (null rather than []) if the source is nil.
+	if bp.Providers != nil {
+		providers = make([]openapi.NodeBondProvider, len(bp.Providers))
+		for i := range bp.Providers {
+			providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
+			providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+		}
 	}
+
 	result.BondProviders = openapi.NodeBondProviders{
 		// Since redundant, leave out the node address
 		NodeOperatorFee: bp.NodeOperatorFee.String(),
@@ -928,11 +933,17 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
 		bp.Adjust(version, na.Bond)
-		providers := make([]openapi.NodeBondProvider, len(bp.Providers))
-		for i := range bp.Providers {
-			providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
-			providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+
+		var providers []openapi.NodeBondProvider
+		// Leave this nil (null rather than []) if the source is nil.
+		if bp.Providers != nil {
+			providers = make([]openapi.NodeBondProvider, len(bp.Providers))
+			for i := range bp.Providers {
+				providers[i].BondAddress = wrapString(bp.Providers[i].BondAddress.String())
+				providers[i].Bond = wrapString(bp.Providers[i].Bond.String())
+			}
 		}
+
 		result[i].BondProviders = openapi.NodeBondProviders{
 			// Since redundant, leave out the node address
 			NodeOperatorFee: bp.NodeOperatorFee.String(),
@@ -1209,9 +1220,13 @@ func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) openapi.Stre
 		sourceAsset = msgSwap.Tx.Coins[0].Asset
 	}
 
-	failedSwaps := make([]int64, len(streamingSwap.FailedSwaps))
-	for i := range streamingSwap.FailedSwaps {
-		failedSwaps[i] = int64(streamingSwap.FailedSwaps[i])
+	var failedSwaps []int64
+	// Leave this nil (null rather than []) if the source is nil.
+	if streamingSwap.FailedSwaps != nil {
+		failedSwaps = make([]int64, len(streamingSwap.FailedSwaps))
+		for i := range streamingSwap.FailedSwaps {
+			failedSwaps[i] = int64(streamingSwap.FailedSwaps[i])
+		}
 	}
 
 	return openapi.StreamingSwap{
@@ -1719,18 +1734,33 @@ func queryTxVoters(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		}
 	}
 
-	txs := make([]openapi.ObservedTx, len(voter.Txs))
-	for i := range voter.Txs {
-		txs[i] = castObservedTx(voter.Txs[i])
+	var txs []openapi.ObservedTx
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.Txs != nil {
+		txs = make([]openapi.ObservedTx, len(voter.Txs))
+		for i := range voter.Txs {
+			txs[i] = castObservedTx(voter.Txs[i])
+		}
 	}
-	actions := make([]openapi.TxOutItem, len(voter.Actions))
-	for i := range voter.Actions {
-		actions[i] = castTxOutItem(voter.Actions[i], 0) // Omitted Height field
+
+	var actions []openapi.TxOutItem
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.Actions != nil {
+		actions = make([]openapi.TxOutItem, len(voter.Actions))
+		for i := range voter.Actions {
+			actions[i] = castTxOutItem(voter.Actions[i], 0) // Omitted Height field
+		}
 	}
-	outTxs := make([]openapi.Tx, len(voter.OutTxs))
-	for i := range voter.OutTxs {
-		outTxs[i] = castTx(voter.OutTxs[i])
+
+	var outTxs []openapi.Tx
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.OutTxs != nil {
+		outTxs = make([]openapi.Tx, len(voter.OutTxs))
+		for i := range voter.OutTxs {
+			outTxs[i] = castTx(voter.OutTxs[i])
+		}
 	}
+
 	result := openapi.TxDetailsResponse{
 		TxId:            wrapString(voter.TxID.String()),
 		Tx:              castObservedTx(voter.Tx),
@@ -1989,21 +2019,25 @@ func queryTxStatus(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr
 		result.Tx = &tx
 	}
 
-	// If there are no voter Actions yet, result PlannedOutTxs will stay empty and not be displayed.
-	result.PlannedOutTxs = make([]openapi.PlannedOutTx, len(voter.Actions))
-	for i := range voter.Actions {
-		result.PlannedOutTxs[i] = openapi.PlannedOutTx{
-			Chain:     voter.Actions[i].Chain.String(),
-			ToAddress: voter.Actions[i].ToAddress.String(),
-			Coin:      castCoin(voter.Actions[i].Coin),
-			Refund:    strings.HasPrefix(voter.Actions[i].Memo, "REFUND"),
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.Actions != nil {
+		result.PlannedOutTxs = make([]openapi.PlannedOutTx, len(voter.Actions))
+		for i := range voter.Actions {
+			result.PlannedOutTxs[i] = openapi.PlannedOutTx{
+				Chain:     voter.Actions[i].Chain.String(),
+				ToAddress: voter.Actions[i].ToAddress.String(),
+				Coin:      castCoin(voter.Actions[i].Coin),
+				Refund:    strings.HasPrefix(voter.Actions[i].Memo, "REFUND"),
+			}
 		}
 	}
 
-	// If there are no voter OutTxs yet, result OutTxs will stay empty and not be displayed.
-	result.OutTxs = make([]openapi.Tx, len(voter.OutTxs))
-	for i := range voter.OutTxs {
-		result.OutTxs[i] = castTx(voter.OutTxs[i])
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.OutTxs != nil {
+		result.OutTxs = make([]openapi.Tx, len(voter.OutTxs))
+		for i := range voter.OutTxs {
+			result.OutTxs[i] = castTx(voter.OutTxs[i])
+		}
 	}
 
 	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
@@ -2105,7 +2139,7 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 	}
 
 	var keygens []openapi.Keygen
-	// Leave this nil (null rather than []) when the source is nil.
+	// Leave this nil (null rather than []) if the source is nil.
 	if keygenBlock.Keygens != nil {
 		keygens = make([]openapi.Keygen, len(keygenBlock.Keygens))
 		for i := range keygenBlock.Keygens {
@@ -2116,6 +2150,7 @@ func queryKeygen(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, req
 			}
 		}
 	}
+
 	query := openapi.KeygenResponse{
 		KeygenBlock: openapi.KeygenBlock{
 			Height:  wrapInt64(keygenBlock.Height),
@@ -2174,10 +2209,16 @@ func queryKeysign(ctx cosmos.Context, kbs cosmos.KeybaseStore, path []string, re
 		ctx.Logger().Error("fail to sign keysign", "error", err)
 		return nil, fmt.Errorf("fail to sign keysign: %w", err)
 	}
-	tois := make([]openapi.TxOutItem, len(txs.TxArray))
-	for i := range txs.TxArray {
-		tois[i] = castTxOutItem(txs.TxArray[i], 0) // 0 is omitted.
+
+	var tois []openapi.TxOutItem
+	// Leave this nil (null rather than []) if the source is nil.
+	if txs.TxArray != nil {
+		tois = make([]openapi.TxOutItem, len(txs.TxArray))
+		for i := range txs.TxArray {
+			tois[i] = castTxOutItem(txs.TxArray[i], 0) // 0 is omitted.
+		}
 	}
+
 	query := openapi.KeysignResponse{
 		Keysign: openapi.KeysignInfo{
 			Height:  wrapInt64(txs.Height),
@@ -2922,6 +2963,11 @@ func castCoin(sourceCoin common.Coin) openapi.Coin {
 }
 
 func castCoins(sourceCoins ...common.Coin) []openapi.Coin {
+	// Leave this nil (null rather than []) if the source is nil.
+	if sourceCoins == nil {
+		return nil
+	}
+
 	coins := make([]openapi.Coin, len(sourceCoins))
 	for i := range sourceCoins {
 		coins[i] = castCoin(sourceCoins[i])
@@ -2992,6 +3038,11 @@ func castMsgSwap(msg MsgSwap) openapi.MsgSwap {
 }
 
 func castVaultRouters(chainContracts []ChainContract) []openapi.VaultRouter {
+	// Leave this nil (null rather than []) if the source is nil.
+	if chainContracts == nil {
+		return nil
+	}
+
 	routers := make([]openapi.VaultRouter, len(chainContracts))
 	for i := range chainContracts {
 		routers[i] = openapi.VaultRouter{
