@@ -44,9 +44,9 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "10"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "10"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "398137"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "398137"
-  - .end_block_events[] | select(.type == "swap") | .emit_asset == "398137015 THOR.RUNE"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "397550"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "397550"
+  - .end_block_events[] | select(.type == "swap") | .emit_asset == "397550548 THOR.RUNE"
   - .end_block_events[] | select(.type == "mint_burn") | .reason == "swap"
 ---
 # set synth backstop mimir
@@ -104,7 +104,7 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "0"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "0"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "813"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "813"
-  - .end_block_events[] | select(.type == "swap") | .emit_asset == "17996336 THOR.RUNE"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "812"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "812"
+  - .end_block_events[] | select(.type == "swap") | .emit_asset == "17969825 THOR.RUNE"
   - .end_block_events[] | select(.type == "mint_burn") | .reason == "swap with synth backstop"
