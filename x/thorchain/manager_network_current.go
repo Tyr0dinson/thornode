@@ -1497,23 +1497,23 @@ func (vm *NetworkMgrVCUR) getVaultsLiquidityRune(ctx cosmos.Context) (cosmos.Uin
 			continue
 		}
 
-		for j := range vaults[i].Coins {
-			if vaults[i].Coins[j].Asset.IsRune() {
-				vaultsLiquidityRune = vaultsLiquidityRune.Add(vaults[i].Coins[j].Amount)
+		for _, coin := range vaults[i].Coins {
+			if coin.Asset.IsRune() {
+				vaultsLiquidityRune = vaultsLiquidityRune.Add(coin.Amount)
 				continue
 			}
 
-			pool, ok := poolCache[vaults[i].Coins[j].Asset]
+			pool, ok := poolCache[coin.Asset]
 			if !ok {
 				var err error // Avoid shadowing.
-				pool, err = vm.k.GetPool(ctx, vaults[i].Coins[j].Asset)
+				pool, err = vm.k.GetPool(ctx, coin.Asset)
 				if err != nil {
-					return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s, err:%w", vaults[i].Coins[j].Asset, err)
+					return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s, err:%w", coin.Asset, err)
 				}
-				poolCache[vaults[i].Coins[j].Asset] = pool
+				poolCache[coin.Asset] = pool
 			}
 
-			vaultsLiquidityRune = vaultsLiquidityRune.Add(pool.AssetValueInRune(vaults[i].Coins[j].Amount))
+			vaultsLiquidityRune = vaultsLiquidityRune.Add(pool.AssetValueInRune(coin.Amount))
 		}
 	}
 	return vaultsLiquidityRune, nil
