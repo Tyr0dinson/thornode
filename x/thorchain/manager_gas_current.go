@@ -310,25 +310,25 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	reserveRune := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
 	poolCache := map[common.Asset]Pool{}
 	for i := range gm.outAssetGas {
-		for j := range gm.outAssetGas[i].gas {
+		for _, coin := range gm.outAssetGas[i].gas {
 			// if the coin is empty, don't need to do anything
-			if gm.outAssetGas[i].gas[j].IsEmpty() {
+			if coin.IsEmpty() {
 				continue
 			}
 
-			pool, ok := poolCache[gm.outAssetGas[i].gas[j].Asset]
+			pool, ok := poolCache[coin.Asset]
 			if !ok {
 				var err error // Declare error variable to prevent 'pool' shadowing
-				pool, err = keeper.GetPool(ctx, gm.outAssetGas[i].gas[j].Asset)
+				pool, err = keeper.GetPool(ctx, coin.Asset)
 				if err != nil {
-					ctx.Logger().Error("fail to get pool", "pool", gm.outAssetGas[i].gas[j].Asset, "error", err)
+					ctx.Logger().Error("fail to get pool", "pool", coin.Asset, "error", err)
 					continue
 				}
 				if err = pool.Valid(); err != nil {
 					// Cache the invalid pool, logging only when added to the cache.
-					ctx.Logger().Error("invalid pool", "pool", gm.outAssetGas[i].gas[j].Asset, "error", err)
+					ctx.Logger().Error("invalid pool", "pool", coin.Asset, "error", err)
 				}
-				poolCache[gm.outAssetGas[i].gas[j].Asset] = pool
+				poolCache[coin.Asset] = pool
 			}
 			if err := pool.Valid(); err != nil {
 				continue
@@ -337,7 +337,7 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			// TODO:  Use RuneReimbursementForAssetWithdrawal and, within this range, do cached pool updates before a single later SetPool?
 			// Currently this uses a constant AssetValueInRune ratio without ensuring a constant depths-product,
 			// as a result of which asset-associated reimbursement order does not matter.
-			runeGas := pool.AssetValueInRune(gm.outAssetGas[i].gas[j].Amount) // Convert to Rune (gas will never be RUNE)
+			runeGas := pool.AssetValueInRune(coin.Amount) // Convert to Rune (gas will never be RUNE)
 			if runeGas.IsZero() {
 				continue
 			}
@@ -355,10 +355,10 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			}
 
 			gasPool := GasPool{
-				Asset:    gm.outAssetGas[i].gas[j].Asset,
-				AssetAmt: gm.outAssetGas[i].gas[j].Amount,
+				Asset:    coin.Asset,
+				AssetAmt: coin.Amount,
 				RuneAmt:  runeGas,
-				Count:    gm.gasCount[gm.outAssetGas[i].gas[j].Asset],
+				Count:    gm.gasCount[coin.Asset],
 			}
 			gm.gasEvent.UpsertGasPool(gasPool)
 		}
