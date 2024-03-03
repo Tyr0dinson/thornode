@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -703,6 +704,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		LeaveHeight:         int64(nodeAcc.LeaveScore), // OpenAPI can only represent uint64 as int64
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
+		CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
 	}
 	result.PeerId = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
@@ -763,11 +765,12 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		result.CurrentAward = reward.String()
 	}
 
+	// TODO: Represent this map as the field directly, instead of making an array?
+	// It would then always be represented in alphabetical order.
 	chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 	}
-
 	// analyze-ignore(map-iteration)
 	for c, h := range chainHeights {
 		result.ObserveChains = append(result.ObserveChains, openapi.ChainHeight{
@@ -861,6 +864,15 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	for i, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
 			// ignore the node , it left and also has very little bond
+			// Set the default display for fields which would otherwise be "".
+			result[i] = openapi.Node{
+				Status:          types.NodeStatus_Unknown.String(),
+				TotalBond:       cosmos.ZeroUint().String(),
+				BondProviders:   openapi.NodeBondProviders{NodeOperatorFee: cosmos.ZeroUint().String()},
+				Version:         semver.MustParse("0.0.0").String(),
+				CurrentAward:    cosmos.ZeroUint().String(),
+				PreflightStatus: openapi.NodePreflightStatus{Status: types.NodeStatus_Unknown.String()},
+			}
 			continue
 		}
 
@@ -887,6 +899,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			LeaveHeight:         int64(na.LeaveScore), // OpenAPI can only represent uint64 as int64
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
+			CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
 		}
 		result[i].PeerId = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
 		result[i].SlashPoints = slashPts
@@ -908,11 +921,13 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 			ReleaseHeight: wrapInt64(jail.ReleaseHeight),
 			Reason:        wrapString(jail.Reason),
 		}
+
+		// TODO: Represent this map as the field directly, instead of making an array?
+		// It would then always be represented in alphabetical order.
 		chainHeights, err := mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 		}
-
 		// analyze-ignore(map-iteration)
 		for c, h := range chainHeights {
 			result[i].ObserveChains = append(result[i].ObserveChains, openapi.ChainHeight{
@@ -3004,6 +3019,12 @@ func castTx(tx common.Tx) openapi.Tx {
 }
 
 func castObservedTx(observedTx ObservedTx) openapi.ObservedTx {
+	// Only display the Status if it is "done", not if "incomplete".
+	var status *string
+	if observedTx.Status != types.Status_incomplete {
+		status = wrapString(observedTx.Status.String())
+	}
+
 	return openapi.ObservedTx{
 		Tx:                              castTx(observedTx.Tx),
 		ObservedPubKey:                  wrapString(observedTx.ObservedPubKey.String()),
@@ -3015,11 +3036,19 @@ func castObservedTx(observedTx ObservedTx) openapi.ObservedTx {
 		Signers:                         observedTx.Signers,
 		KeysignMs:                       wrapInt64(observedTx.KeysignMs),
 		OutHashes:                       observedTx.OutHashes,
-		Status:                          wrapString(observedTx.Status.String()),
+		Status:                          status,
 	}
 }
 
 func castMsgSwap(msg MsgSwap) openapi.MsgSwap {
+	// Only display the OrderType if it is "limit", not if "market".
+	var orderType *string
+	if msg.OrderType != types.OrderType_market {
+		orderType = wrapString(msg.OrderType.String())
+	}
+	// TODO: After order books implementation,
+	// always display the OrderType?
+
 	return openapi.MsgSwap{
 		Tx:                      castTx(msg.Tx),
 		TargetAsset:             msg.TargetAsset.String(),
@@ -3031,7 +3060,7 @@ func castMsgSwap(msg MsgSwap) openapi.MsgSwap {
 		Aggregator:              wrapString(msg.Aggregator),
 		AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
 		AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
-		OrderType:               wrapString(msg.OrderType.String()),
+		OrderType:               orderType,
 		StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
 		StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
 	}
