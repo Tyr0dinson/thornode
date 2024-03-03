@@ -17,14 +17,3 @@ type QueryBlockResponse struct {
 	openapi.BlockResponse
 	Txs []QueryBlockTx `json:"txs"`
 }
-
-// MarshalJSON custom marshalling to add the custom Tx field.
-func (q QueryBlockResponse) MarshalJSON() ([]byte, error) {
-	toSerialize := map[string]interface{}{}
-	toSerialize["id"] = q.Id
-	toSerialize["header"] = q.Header
-	toSerialize["begin_block_events"] = q.BeginBlockEvents
-	toSerialize["end_block_events"] = q.EndBlockEvents
-	toSerialize["txs"] = q.Txs
-	return json.Marshal(toSerialize)
-}
