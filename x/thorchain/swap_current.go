@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	"gitlab.com/thorchain/thornode/mimir"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -29,6 +30,12 @@ func (s *SwapperVCUR) validateMessage(tx common.Tx, target common.Asset, destina
 	}
 	if destination.IsEmpty() {
 		return errors.New("destination is empty")
+	}
+	if tx.Coins[0].Asset.IsTradeAsset() && !target.IsTradeAsset() {
+		return errors.New("swaps from trade asset to L1 incur slip, use trade-")
+	}
+	if (!tx.Coins[0].Asset.IsSyntheticAsset() && !tx.Coins[0].Asset.IsTradeAsset()) && target.IsTradeAsset() {
+		return errors.New("swaps from L1 to trade asset incur slip, use trade+")
 	}
 
 	return nil
@@ -125,7 +132,8 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 			if err := keeper.AddToLiquidityFees(ctx, evt.Pool, evt.LiquidityFeeInRune); err != nil {
 				return assetAmount, swapEvents, fmt.Errorf("fail to add to liquidity fees: %w", err)
 			}
-			if err := keeper.AddToSwapSlip(ctx, evt.Pool, cosmos.NewInt(int64(evt.SwapSlip.Uint64()))); err != nil {
+			// use calculated floor
+			if err := keeper.AddToSwapSlip(ctx, evt.Pool, cosmos.NewInt(int64(evt.PoolSlip.Uint64()))); err != nil {
 				return assetAmount, swapEvents, fmt.Errorf("fail to add to swap slip: %w", err)
 			}
 		}
@@ -197,6 +205,20 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		poolAsset = source.GetLayer1Asset()
 	}
 
+	if source.IsTradeAsset() {
+		if mimir.NewTradeAccountsEnabled().IsOff(ctx, mgr.Keeper()) {
+			return cosmos.ZeroUint(), evt, fmt.Errorf("trade account is disabled")
+		}
+		fromAcc, err := cosmos.AccAddressFromBech32(tx.FromAddress.String())
+		if err != nil {
+			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse from address")
+		}
+		amount, err = mgr.TradeAccountManager().Withdrawal(ctx, source, amount, fromAcc)
+		if err != nil {
+			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to withdraw from trade")
+		}
+	}
+
 	swapEvt := NewEventSwap(
 		poolAsset,
 		swapTarget,
@@ -263,20 +285,23 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailInvalidBalance
 	}
 
-	liquidityFee := s.CalcLiquidityFee(X, x, Y)
-	swapSlip := s.CalcSwapSlip(X, x)
-	emitAssets := s.CalcAssetEmission(X, x, Y)
-	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
-	swapEvt.LiquidityFee = liquidityFee
-
+	swapSlipBps := s.CalcSwapSlip(X, x)
+	swapEvt.PoolSlip = swapSlipBps
+	minSlipBps := s.MinSlipBps(ctx, mgr.Keeper(), target.IsSyntheticAsset(), target.IsTradeAsset())
+	var (
+		emitAssets   cosmos.Uint
+		liquidityFee cosmos.Uint
+	)
+	emitAssets, liquidityFee, swapEvt.SwapSlip = s.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
 	if source.IsRune() {
 		swapEvt.LiquidityFeeInRune = pool.AssetValueInRune(liquidityFee)
 	} else {
-		// because the output asset is RUNE , so liqualidtyFee is already in RUNE
+		// because the output asset is RUNE , so liquidity Fee is already in RUNE
 		swapEvt.LiquidityFeeInRune = liquidityFee
 	}
-	swapEvt.SwapSlip = swapSlip
+	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
 	swapEvt.EmitAsset = common.NewCoin(target, emitAssets)
+	swapEvt.LiquidityFee = liquidityFee
 
 	// do THORNode have enough balance to swap?
 	if emitAssets.GTE(Y) {
@@ -347,6 +372,21 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, fmt.Errorf("fail to set pool")
 	}
 
+	// if target is trade account, deposit the asset to trade account
+	if target.IsTradeAsset() {
+		if mimir.NewTradeAccountsEnabled().IsOff(ctx, keeper) {
+			return cosmos.ZeroUint(), evt, fmt.Errorf("trade account is disabled")
+		}
+		acc, err := destination.AccAddress()
+		if err != nil {
+			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse trade account address")
+		}
+		_, err = mgr.TradeAccountManager().Deposit(ctx, target, emitAssets, acc)
+		if err != nil {
+			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to deposit to trade account")
+		}
+	}
+
 	// apply swapper clout
 	availableClout := swapEvt.LiquidityFeeInRune
 	for i, addr := range []common.Address{tx.FromAddress, destination} {
@@ -385,12 +425,36 @@ func (s *SwapperVCUR) CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 	return numerator.Quo(denominator)
 }
 
+// calculate the asset amount to be sent to address using a predefined fee (fee calculated using artificial floor)
+// nolint
+func (s *SwapperVCUR) CalcMaxAssetEmission(X, x, Y, fee cosmos.Uint) cosmos.Uint {
+	// (( x * Y ) / ( x + X )) - fee
+	numerator := x.Mul(Y)
+	denominator := x.Add(X)
+	if denominator.IsZero() {
+		return cosmos.ZeroUint()
+	}
+	return common.SafeSub(numerator.Quo(denominator), fee)
+}
+
 // CalculateLiquidityFee the fee of the swap
 // nolint
 func (s *SwapperVCUR) CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x^2 *  Y ) / ( x + X )^2
 	numerator := x.Mul(x).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
+	if denominator.IsZero() {
+		return cosmos.ZeroUint()
+	}
+	return numerator.Quo(denominator)
+}
+
+// CalcMinLiquidityFee calculates the fee of the swap using min artificial slip floor
+// nolint
+func (s *SwapperVCUR) CalcMinLiquidityFee(X, x, Y, minSlipBps cosmos.Uint) cosmos.Uint {
+	// minSlip * ( x  *  Y ) / ( x + X )
+	numerator := common.GetSafeShare(minSlipBps, cosmos.NewUint(constants.MaxBasisPts), x.Mul(Y))
+	denominator := x.Add(X)
 	if denominator.IsZero() {
 		return cosmos.ZeroUint()
 	}
@@ -413,4 +477,43 @@ func (s *SwapperVCUR) CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
 	swapSlip := swapSlipD.Mul(dec10k)                             // Adds 5 0's
 	swapSlipUint := cosmos.NewUint(uint64(swapSlip.RoundInt64())) // Casts back to Uint as Basis Points
 	return swapSlipUint
+}
+
+// GetSwapCalc returns emission, liquidity fee and slip for a swap
+// nolint
+func (s *SwapperVCUR) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emitAssets, liquidityFee, slip cosmos.Uint) {
+	if minSlipBps.GT(slipBps) {
+		// adjust calc emission based on artificial floor
+		liquidityFee = s.CalcMinLiquidityFee(X, x, Y, minSlipBps)
+		emitAssets = s.CalcMaxAssetEmission(X, x, Y, liquidityFee)
+		slip = minSlipBps
+	} else {
+		liquidityFee = s.CalcLiquidityFee(X, x, Y)
+		emitAssets = s.CalcAssetEmission(X, x, Y)
+		slip = slipBps
+	}
+	return
+}
+
+// MinSlipBps returns artificial slip floor, expressed in basis points (10000)
+func (s *SwapperVCUR) MinSlipBps(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	isSynth bool,
+	isTradeAccounts bool,
+) cosmos.Uint {
+	var ref string
+	switch {
+	case isSynth:
+		ref = constants.SynthSlipMinBps.String()
+	case isTradeAccounts:
+		ref = constants.TradeAccountsSlipMinBps.String()
+	default:
+		ref = constants.L1SlipMinBps.String()
+	}
+	minFeeMimir, found := mimir.GetMimir(mimir.SwapSlipBasisPointsMin, ref)
+	if !found {
+		return cosmos.ZeroUint()
+	}
+	return cosmos.SafeUintFromInt64(minFeeMimir.FetchValue(ctx, k))
 }

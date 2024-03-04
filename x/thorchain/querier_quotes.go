@@ -214,10 +214,11 @@ func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (
 	}
 
 	// find all other assets that match the chain and ticker
+	// (without exactly matching the symbol)
 	addressMatches := []string{}
 	for _, p := range pools {
 		if p.IsAvailable() && !p.IsEmpty() && !p.Asset.IsVaultAsset() &&
-			!p.Asset.Equals(asset) &&
+			!p.Asset.Symbol.Equals(asset.Symbol) &&
 			p.Asset.Chain.Equals(asset.Chain) && p.Asset.Ticker.Equals(asset.Ticker) {
 			pSplit := strings.Split(p.Asset.Symbol.String(), "-")
 			if len(pSplit) != 2 {
@@ -288,12 +289,15 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	}
 	finalSwap := swaps[len(swaps)-1]
 
-	// parse outbound fee from event
-	outboundFeeCoin, err := common.ParseCoin(fee["coins"])
-	if err != nil {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
+	// parse outbound fee from event (except on trade assets with no outbound fee)
+	outboundFeeAmount = sdk.ZeroUint()
+	if !msg.TargetAsset.IsTradeAsset() {
+		outboundFeeCoin, err := common.ParseCoin(fee["coins"])
+		if err != nil {
+			return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
+		}
+		outboundFeeAmount = outboundFeeCoin.Amount
 	}
-	outboundFeeAmount = outboundFeeCoin.Amount
 
 	// parse outbound amount from event
 	emitCoin, err := common.ParseCoin(finalSwap["emit_asset"])
@@ -388,7 +392,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, chain comm
 	}
 
 	// estimate the inbound confirmation count blocks: ceil(amount/coinbase * conf adjustment)
-	confMimir, found := mimir.GetMimir(mimir.ConfMultiplierBasisPointsId, chain.String())
+	confMimir, found := mimir.GetMimir(mimir.ConfMultiplierBasisPoints, chain.String())
 	if !found {
 		return common.NoAddress, common.NoAddress, 0, fmt.Errorf("conf multiplier mimir not found")
 	}
@@ -413,7 +417,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, chain comm
 
 	// max confirmation adjustment for btc and eth
 	if chain.Equals(common.BTCChain) || chain.Equals(common.ETHChain) {
-		maxConfMimir, found := mimir.GetMimir(mimir.MaxConfirmationsId, chain.String())
+		maxConfMimir, found := mimir.GetMimir(mimir.MaxConfirmations, chain.String())
 		if !found {
 			return common.NoAddress, common.NoAddress, 0, fmt.Errorf("max conf multiplier mimir not found")
 		}
@@ -446,15 +450,24 @@ func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, 
 // Swap
 // -------------------------------------------------------------------------------------
 
-// calculateMinSwapAmount returns the recommended minimum swap amount
-// The recommended min swap amount is:
-// - MAX(outbound_fee(src_chain), outbound_fee(dest_chain)) * 4 (priced in the inbound asset)
+// calculateMinSwapAmount returns the recommended minimum swap amount The recommended
+// min swap amount is: - MAX(
 //
-// The reason the base value is the MAX of the outbound fees of each chain is because if the swap is refunded
-// the input amount will need to cover the outbound fee of the source chain.
-// A 4x buffer is applied because outbound fees can spike quickly, meaning the original input amount could be less than the new
-// outbound fee. If this happens and the swap is refunded, the refund will fail, and the user will lose the entire input amount.
-func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset) (cosmos.Uint, error) {
+//	  outbound_fee(src_chain) * 4,
+//	  outbound_fee(dest_chain) * 4,
+//	  (native_tx_fee_rune * 2) * 10,000 / affiliateBps
+//	)
+//
+// The reason the base value is the MAX of the outbound fees of each chain is because if
+// the swap is refunded the input amount will need to cover the outbound fee of the
+// source chain. A 4x buffer is applied because outbound fees can spike quickly, meaning
+// the original input amount could be less than the new outbound fee. If this happens
+// and the swap is refunded, the refund will fail, and the user will lose the entire
+// input amount. The min amount could also be determined by the affiliate bps of the
+// swap. The affiliate bps of the input amount needs to be enough to cover the native tx fee for the
+// affiliate swap to RUNE. In this case, we give a 2x buffer on the native_tx_fee so the
+// affiliate receives some amount after the fee is deducted.
+func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset, affiliateBps cosmos.Uint) (cosmos.Uint, error) {
 	srcOutboundFee := mgr.GasMgr().GetFee(ctx, fromAsset.GetChain(), fromAsset)
 	destOutboundFee := mgr.GasMgr().GetFee(ctx, toAsset.GetChain(), toAsset)
 
@@ -474,7 +487,24 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 		minSwapAmount = destInSrcAsset
 	}
 
-	return minSwapAmount.Mul(cosmos.NewUint(4)), nil
+	minSwapAmount = minSwapAmount.Mul(cosmos.NewUint(4))
+
+	if affiliateBps.GT(cosmos.ZeroUint()) {
+		nativeTxFeeRune := mgr.GasMgr().GetFee(ctx, common.THORChain, common.RuneNative)
+		affSwapAmountRune := nativeTxFeeRune.Mul(cosmos.NewUint(2))
+		mainSwapAmountRune := affSwapAmountRune.Mul(cosmos.NewUint(10_000)).Quo(affiliateBps)
+
+		mainSwapAmount, err := quoteConvertAsset(ctx, mgr, common.RuneAsset(), mainSwapAmountRune, fromAsset)
+		if err != nil {
+			return cosmos.ZeroUint(), fmt.Errorf("fail to convert main swap amount to src asset %w", err)
+		}
+
+		if mainSwapAmount.GT(minSwapAmount) {
+			minSwapAmount = mainSwapAmount
+		}
+	}
+
+	return minSwapAmount, nil
 }
 
 func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -492,14 +522,16 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// parse assets
-	fromAsset, err := common.NewAsset(params[fromAssetParam][0])
+	fromAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad from asset: %w", err))
 	}
-	toAsset, err := common.NewAsset(params[toAssetParam][0])
+	fromAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), fromAsset)
+	toAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad to asset: %w", err))
 	}
+	toAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), toAsset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -690,12 +722,35 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		}
 	}
 
+	// trade assets must have from address on the source tx
+	fromChain := fromAsset.Chain
+	if fromAsset.IsSyntheticAsset() || fromAsset.IsDerivedAsset() || fromAsset.IsTradeAsset() {
+		fromChain = common.THORChain
+	}
+	fromPubkey := types.GetRandomPubKey()
+	fromAddress, err := fromPubkey.GetAddress(fromChain)
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("bad from address: %w", err))
+	}
+
+	// if from asset is a trade asset, create fake balance
+	if fromAsset.IsTradeAsset() {
+		thorAddr, err := fromPubkey.GetThorAddress()
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("failed to get thor address: %w", err))
+		}
+		_, err = mgr.TradeAccountManager().Deposit(ctx, fromAsset, amount, thorAddr)
+		if err != nil {
+			return quoteErrorResponse(fmt.Errorf("failed to deposit trade asset: %w", err))
+		}
+	}
+
 	// create the swap message
 	msg := &types.MsgSwap{
 		Tx: common.Tx{
 			ID:          common.BlankTxID,
 			Chain:       fromAsset.Chain,
-			FromAddress: common.NoopAddress,
+			FromAddress: fromAddress,
 			ToAddress:   common.NoopAddress,
 			Coins: []common.Coin{
 				{
@@ -824,7 +879,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	res.Notes = fromAsset.GetChain().InboundNotes()
 	res.Warning = quoteWarning
 	res.Expiry = time.Now().Add(quoteExpiration).Unix()
-	minSwapAmount, err := calculateMinSwapAmount(ctx, mgr, fromAsset, toAsset)
+	minSwapAmount, err := calculateMinSwapAmount(ctx, mgr, fromAsset, toAsset, affiliateBps)
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("Failed to calculate min amount in: %s", err.Error()))
 	}
@@ -852,10 +907,11 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[assetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[assetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -962,10 +1018,11 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[assetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[assetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 	asset = asset.GetSyntheticAsset() // always use the vault asset
 
 	// parse address
@@ -1101,10 +1158,11 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[fromAssetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse amount
 	amount, err := cosmos.ParseUint(params[amountParam][0])
@@ -1133,10 +1191,11 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse target asset
-	targetAsset, err := common.NewAsset(params[toAssetParam][0])
+	targetAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad target asset: %w", err))
 	}
+	targetAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), targetAsset)
 
 	// parse destination address or generate a random one
 	sendMemo := true
@@ -1377,7 +1436,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 		res.Memo = wrapString(memoString)
 	}
 
-	minLoanOpenAmount, err := calculateMinSwapAmount(ctx, mgr, asset, targetAsset)
+	minLoanOpenAmount, err := calculateMinSwapAmount(ctx, mgr, asset, targetAsset, cosmos.ZeroUint())
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("Failed to calculate min amount in: %s", err.Error()))
 	}
@@ -1620,7 +1679,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 	res.Memo = memo.String()
 
-	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset)
+	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset, cosmos.ZeroUint())
 	if err != nil {
 		data, err = quoteErrorResponse(fmt.Errorf("Failed to calculate min amount in: %s", err.Error()))
 		return nil, data, err
@@ -1673,10 +1732,11 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// parse asset
-	asset, err := common.NewAsset(params[fromAssetParam][0])
+	asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[fromAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad asset: %w", err))
 	}
+	asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 
 	// parse repayment bps
 	repayBps, err := cosmos.ParseUint(params[repayBpsParam][0])
@@ -1694,10 +1754,11 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// parse loan asset
-	loanAsset, err := common.NewAsset(params[toAssetParam][0])
+	loanAsset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), params[toAssetParam][0])
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad loan asset: %w", err))
 	}
+	loanAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), loanAsset)
 
 	// parse loan owner
 	loanOwner, err := common.NewAddress(params[loanOwnerParam][0])

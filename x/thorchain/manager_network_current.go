@@ -176,14 +176,31 @@ func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 	// TODO: if a gas asset is removed from the network, this pool needs to be
 	// removed
 
+	// TODO: cleanup after BNB is removed from the network
+	bnbAvailable := false
+	bnb, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
+	if err == nil && bnb.Status == PoolAvailable {
+		bnbAvailable = true
+	}
+
 	// get assets to create derived pools
 	layer1Assets := []common.Asset{common.TOR}
 	for _, chain := range active[0].GetChains() {
-		// Skipping BSC chain to avoid THOR.BNB derived asset overwrite
-		// https://gitlab.com/thorchain/thornode/-/issues/1724
-		if chain.IsTHORChain() || chain.IsBSCChain() {
+		// skip BSC chain to avoid THOR.BNB overwrite if BNB pool is available
+		if bnbAvailable && chain.IsBSCChain() {
 			continue
 		}
+
+		// skip BNB chain to avoid THOR.BNB overwrite if BNB pool is unavailable
+		if !bnbAvailable && chain.Equals(common.BNBChain) {
+			continue
+		}
+
+		// no derived asset for thorchain
+		if chain.IsTHORChain() {
+			continue
+		}
+
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
@@ -391,10 +408,7 @@ func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 }
 
 func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
-	migrateInterval, err := vm.k.GetMimir(ctx, constants.FundMigrationInterval.String())
-	if migrateInterval < 0 || err != nil {
-		migrateInterval = mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
-	}
+	migrateInterval := vm.k.GetConfigInt64(ctx, constants.FundMigrationInterval)
 
 	retiring, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
 	if err != nil {
@@ -1081,23 +1095,70 @@ func (vm *NetworkMgrVCUR) RecallChainFunds(_ cosmos.Context, _ common.Chain, _ M
 	return fmt.Errorf("dev error: RecallChainFunds is obsolete")
 }
 
-// withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
-// once the all LP get processed, none-gas pool will be removed , gas pool will be set to Suspended
-func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
-	if pool.Status == PoolSuspended {
-		ctx.Logger().Info("cannot further withdraw liquidity from a suspended pool", "pool", pool.Asset)
-		return nil
-	}
+func (vm *NetworkMgrVCUR) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
 	handler := NewInternalHandler(mgr)
-	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
-	lpPerIteration := mgr.GetConstants().GetInt64Value(constants.RagnarokProcessNumOfLPPerIteration)
+	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
+
+	saverIterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset.GetSyntheticAsset())
+	defer saverIterator.Close()
+	for ; saverIterator.Valid(); saverIterator.Next() {
+		var lp LiquidityProvider
+		if err := vm.k.Cdc().Unmarshal(saverIterator.Value(), &lp); err != nil {
+			return false, fmt.Errorf("fail to unmarshal liquidity provider, err: %w", err)
+		}
+
+		// create the saver withdraw message
+		tx := common.GetRagnarokTx(pool.Asset.GetChain(), lp.AssetAddress, lp.AssetAddress)
+		tx.ID, err = common.NewTxID(tx.Hash())
+		if err != nil {
+			ctx.Logger().Error("fail to create tx id", "error", err, "tx", tx)
+			return false, fmt.Errorf("fail to create tx id: %w", err)
+		}
+		withdrawMsg := NewMsgWithdrawLiquidity(
+			tx,
+			lp.AssetAddress,
+			cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
+			pool.Asset.GetSyntheticAsset(),
+			common.EmptyAsset,
+			na.NodeAddress,
+		)
+
+		// best effort to process the withdraw
+		_, err = handler(ctx, withdrawMsg)
+		if err != nil {
+			ctx.Logger().Error("saver withdraw failed", "address", lp.AssetAddress, "error", err)
+			vm.k.RemoveLiquidityProvider(ctx, lp)
+		}
+
+		// only process up to the max per iteration of savers per fund migration interval
+		totalCount++
+		if totalCount >= lpPerIteration {
+			break
+		}
+	}
+
+	// return false if there were any savers withdrawn
+	if totalCount > 0 {
+		ctx.Logger().Info("savers withdrawn", "count", totalCount, "pool", pool.Asset)
+		return false, nil
+	}
+
+	// return true (done) if there were no savers to withdraw this round
+	return true, nil
+}
+
+func (vm *NetworkMgrVCUR) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool) {
+	handler := NewInternalHandler(mgr)
+	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
+	totalCount := int64(0)
+
+	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var lp LiquidityProvider
 		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &lp); err != nil {
 			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
-			vm.k.RemoveLiquidityProvider(ctx, lp)
 			continue
 		}
 		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
@@ -1126,12 +1187,15 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 			na.NodeAddress,
 		)
 
+		// withdraw is best effort only, fails and deletes LP if vault has insufficient gas
 		_, err := handler(ctx, withdrawMsg)
 		if err != nil {
-			ctx.Logger().Error("fail to withdraw, remove LP", "liquidity provider", lp.RuneAddress, "asset address", lp.AssetAddress, "error", err)
-			// in a ragnarok scenario , try best to withdraw it  ,
-			// if an LP failed to withdraw most likely it is due to not enough asset to pay for gas fee, then let's remove the LP record
-			// write a log first , so we can grep the log to deal with it manually
+			ctx.Logger().Error(
+				"fail to withdraw, remove LP",
+				"liquidity provider", lp.RuneAddress,
+				"asset address", lp.AssetAddress,
+				"error", err,
+			)
 			vm.k.RemoveLiquidityProvider(ctx, lp)
 		}
 		totalCount++
@@ -1139,24 +1203,71 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 			break
 		}
 	}
-	// this means finished
-	if totalCount < lpPerIteration {
-		afterPool, err := vm.k.GetPool(ctx, pool.Asset)
-		if err != nil {
-			return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
+
+	// return true (done) if there are no more LPs to withdraw
+	return totalCount < lpPerIteration
+}
+
+// withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
+// once the all LP get processed, none-gas pool will be removed , gas pool will be set to Suspended
+func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
+	if pool.Status == PoolSuspended {
+		ctx.Logger().Info("cannot further withdraw liquidity from a suspended pool", "pool", pool.Asset)
+		return nil
+	}
+
+	// withdraw savers first
+	done, err := vm.withdrawSavers(ctx, pool, na, mgr)
+	if err != nil || !done {
+		return err
+	}
+
+	// if saver withdraws are complete, set the pool status to staged and redeem synths
+	if pool.Status == PoolAvailable {
+		// redeem all synth asset from the pool, and send RUNE to reserve
+		ctx.Logger().Info("redeeming synth to reserve", "pool", pool.Asset)
+		if err := vm.redeemSynthAssetToReserve(ctx, pool); err != nil {
+			ctx.Logger().Error("fail to redeem synth to reserve, continue to ragnarok", "error", err)
 		}
-		poolEvent := NewEventPool(pool.Asset, PoolSuspended)
+
+		ctx.Logger().Info("setting pool to staged", "pool", pool.Asset)
+		pool.Status = PoolStaged
+		if err := vm.k.SetPool(ctx, pool); err != nil {
+			return fmt.Errorf("fail to set pool to stage,err: %w", err)
+		}
+		poolEvent := NewEventPool(pool.Asset, PoolStaged)
 		if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
 			ctx.Logger().Error("fail to emit pool event", "error", err)
 		}
-		if afterPool.Asset.IsGasAsset() {
-			afterPool.Status = PoolSuspended
-			return vm.k.SetPool(ctx, afterPool)
-		} else {
-			// remove the pool
-			vm.k.RemovePool(ctx, pool.Asset)
-		}
 	}
+
+	done = vm.withdrawLPs(ctx, pool, na, mgr)
+	if !done {
+		return nil
+	}
+
+	// suspend the pool
+	afterPool, err := vm.k.GetPool(ctx, pool.Asset)
+	if err != nil {
+		return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
+	}
+	poolEvent := NewEventPool(pool.Asset, PoolSuspended)
+	if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
+		ctx.Logger().Error("fail to emit pool event", "error", err)
+	}
+
+	// store gas asset pools as suspended, remove token pools
+	if afterPool.Asset.IsGasAsset() {
+		afterPool.Status = PoolSuspended
+		return vm.k.SetPool(ctx, afterPool)
+	} else {
+		vm.k.RemovePool(ctx, pool.Asset)
+	}
+
+	// remove synth and derived asset pools
+	vm.k.RemovePool(ctx, pool.Asset.GetSyntheticAsset())
+	vm.k.RemovePool(ctx, pool.Asset.GetDerivedAsset())
+
 	return nil
 }
 
@@ -1194,21 +1305,19 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	// extremely unlikely), ignore it for now (attempt to recover in the next
 	// block). This should be OK as the asset amount in the pool has already
 	// been deducted so the balances are correct. Just operating at a deficit.
-	totalBonded, err := vm.getTotalActiveBond(ctx)
+	active, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
-		return fmt.Errorf("fail to get total active bond: %w", err)
+		return fmt.Errorf("fail to get all active accounts: %w", err)
 	}
+	effectiveSecurityBond := getEffectiveSecurityBond(active)
+	totalEffectiveBond, _ := getTotalEffectiveBond(active)
 
 	emissionCurve, err := vm.k.GetMimir(ctx, constants.EmissionCurve.String())
 	if emissionCurve < 0 || err != nil {
 		emissionCurve = constAccessor.GetInt64Value(constants.EmissionCurve)
 	}
-	incentiveCurve, err := vm.k.GetMimir(ctx, constants.IncentiveCurve.String())
-	if incentiveCurve < 0 || err != nil {
-		incentiveCurve = constAccessor.GetInt64Value(constants.IncentiveCurve)
-	}
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
-	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(totalProvidedLiquidity, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, incentiveCurve, blocksPerYear)
+	bondReward, totalPoolRewards, lpDeficit, lpShare := vm.calcBlockRewards(totalProvidedLiquidity, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear)
 
 	network.LPIncomeSplit = int64(lpShare.Uint64())
 	network.NodeIncomeSplit = int64(10_000) - network.LPIncomeSplit
@@ -1310,18 +1419,6 @@ func (vm *NetworkMgrVCUR) getTotalProvidedLiquidityRune(ctx cosmos.Context) (Poo
 	return pools, totalProvidedLiquidity, nil
 }
 
-func (vm *NetworkMgrVCUR) getTotalActiveBond(ctx cosmos.Context) (cosmos.Uint, error) {
-	totalBonded := cosmos.ZeroUint()
-	nodes, err := vm.k.ListActiveValidators(ctx)
-	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get all active accounts: %w", err)
-	}
-	for _, node := range nodes {
-		totalBonded = totalBonded.Add(node.Bond)
-	}
-	return totalBonded, nil
-}
-
 // Pays out Rewards
 func (vm *NetworkMgrVCUR) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Uint, pools Pools) error {
 	for i, reward := range poolRewards {
@@ -1346,7 +1443,7 @@ func (vm *NetworkMgrVCUR) calcPoolDeficit(lpDeficit, totalFees, poolFees cosmos.
 }
 
 // Calculate the block rewards that bonders and liquidity providers should receive
-func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, incentiveCurve, blocksPerYear int64) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, blocksPerYear int64) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	// Block Rewards will take the latest reserve, divide it by the emission
 	// curve factor, then divide by blocks per year
 	trD := cosmos.NewDec(int64(totalReserve.Uint64()))
@@ -1357,8 +1454,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, 
 
 	systemIncome := blockReward.Add(totalLiquidityFees) // Get total system income for block
 
-	lpSplit := vm.getPoolShare(incentiveCurve, totalProvidedLiquidity, totalBonded, systemIncome) // Get liquidity provider share
-	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                          // Remainder to Bonders
+	lpSplit := vm.getPoolShare(totalProvidedLiquidity, effectiveSecurityBond, totalEffectiveBond, systemIncome) // Get liquidity provider share
+	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                        // Remainder to Bonders
 	lpShare := common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(10_000))
 
 	lpDeficit := cosmos.ZeroUint()
@@ -1375,37 +1472,34 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(totalProvidedLiquidity, totalBonded, 
 	return bonderSplit, poolReward, lpDeficit, lpShare
 }
 
-func (vm *NetworkMgrVCUR) getPoolShare(incentiveCurve int64, totalProvidedLiquidity, totalBonded, totalRewards cosmos.Uint) cosmos.Uint {
-	/*
-		Pooled : Share
-		0 : 100%
-		33% : 50% <- need to be 50% to match node rewards, when 33% is pooled
-		50% : 0%
-		https://gitlab.com/thorchain/thornode/-/issues/693
-	*/
-	if incentiveCurve <= 0 {
-		incentiveCurve = 1
-	}
-	if totalProvidedLiquidity.GTE(totalBonded) { // Zero payments to liquidity providers when provided liquidity == bonded
+// getPoolShare calculates the pool share of the total rewards. The distribution is
+// calculated such that the amount distributed to pools should equal the amount
+// distributed to the security bond when security bond is 2x the value in pools.
+//
+// totalLiquidty: RUNE value in pools
+// securityBond: RUNE value bonded by smallest 66% of nodes
+// effectiveBond: total RUNE value bonded, with max per-node at 66th percentile
+// totalRewards: total RUNE rewards to be distributed
+func (vm *NetworkMgrVCUR) getPoolShare(
+	totalLiquidity, securityBond, effectiveBond, totalRewards cosmos.Uint,
+) cosmos.Uint {
+	// no payments to liquidity providers when more liquidity than security
+	if securityBond.LTE(totalLiquidity) {
 		return cosmos.ZeroUint()
 	}
-	/*
-		B = bondedRune
-		P = pooledRune
-		incentiveCurve = 33
-		poolShareFactor = (B - P)/(B + P/incentiveCurve)
-	*/
 
-	var total cosmos.Uint
-	if incentiveCurve >= 100 {
-		total = totalBonded
-	} else {
-		inD := cosmos.NewDec(incentiveCurve)
-		divi := cosmos.NewDecFromBigInt(totalProvidedLiquidity.BigInt()).Quo(inD)
-		total = cosmos.NewUint(uint64((divi).RoundInt64())).Add(totalBonded)
-	}
-	part := common.SafeSub(totalBonded, totalProvidedLiquidity)
-	return common.GetSafeShare(part, total, totalRewards)
+	// calculate the base node share rewards
+	baseNodeShare := common.GetSafeShare(totalLiquidity, securityBond, totalRewards)
+
+	// base pool share is the remaining
+	basePoolShare := common.SafeSub(totalRewards, baseNodeShare)
+
+	// compensate for share of node rewards not received by the security bond
+	adjustmentNodeShare := common.GetUncappedShare(effectiveBond, securityBond, baseNodeShare)
+	adjustmentRewards := basePoolShare.Add(adjustmentNodeShare)
+
+	// reduce the pool share according to the adjustment rewards
+	return common.GetSafeShare(basePoolShare, adjustmentRewards, totalRewards)
 }
 
 // deductPoolRewardDeficit - When swap fees accrued by the pools surpass what
@@ -1460,7 +1554,8 @@ func (vm *NetworkMgrVCUR) deductPoolRewardDeficit(ctx cosmos.Context, pools Pool
 // this function will only run in an interval , defined by constants.FundMigrationInterval
 func (vm *NetworkMgrVCUR) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 	// check whether pool need to be ragnarok per constants.FundMigrationInterval
-	if ctx.BlockHeight()%mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) > 0 {
+	migrateInterval := vm.k.GetConfigInt64(ctx, constants.FundMigrationInterval)
+	if ctx.BlockHeight()%migrateInterval > 0 {
 		return nil
 	}
 	pools, err := vm.k.GetPools(ctx)
@@ -1469,6 +1564,11 @@ func (vm *NetworkMgrVCUR) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) err
 	}
 
 	for _, pool := range pools {
+		// skip synth and derived pool records
+		if pool.Asset.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
+			continue
+		}
+
 		// The Ragnarok key for the TERRA.UST pool would be RAGNAROK-TERRA-UST .
 		k := "RAGNAROK-" + pool.Asset.MimirString()
 		v, err := vm.k.GetMimir(ctx, k)
@@ -1533,40 +1633,6 @@ func (vm *NetworkMgrVCUR) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) 
 func (vm *NetworkMgrVCUR) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
 	if p.Status == PoolSuspended {
 		ctx.Logger().Info("cannot further ragnarok a suspended pool", "pool", p.Asset)
-		return nil
-	}
-	startBlockHeight, err := vm.k.GetPoolRagnarokStart(ctx, p.Asset)
-	if err != nil || startBlockHeight == 0 {
-		if err != nil {
-			ctx.Logger().Error("fail to get pool ragnarok start block height", "error", err)
-		}
-
-		// redeem all synth asset from the pool , and send RUNE to reserve
-		if err := vm.redeemSynthAssetToReserve(ctx, p); err != nil {
-			ctx.Logger().Error("fail to redeem synth to reserve, continue to ragnarok", "error", err)
-		}
-		// set it to current block height
-		vm.k.SetPoolRagnarokStart(ctx, p.Asset)
-		startBlockHeight = ctx.BlockHeight()
-	}
-	nth := (ctx.BlockHeight()-startBlockHeight)/mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval) + 1
-
-	// set the pool status to stage
-	if p.Status != PoolStaged {
-		p.Status = PoolStaged
-		if err := vm.k.SetPool(ctx, p); err != nil {
-			return fmt.Errorf("fail to set pool to stage,err: %w", err)
-		}
-		poolEvent := NewEventPool(p.Asset, PoolStaged)
-		if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
-			ctx.Logger().Error("fail to emit pool event", "error", err)
-		}
-
-	}
-
-	// first round , let's set the pool to stage
-	if nth == 1 {
-		// TODO used to be yggdrasil recall
 		return nil
 	}
 

@@ -126,6 +126,22 @@ func (k KVStoreDummy) GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) GetTradeAccount(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) (TradeAccount, error) {
+	return TradeAccount{}, kaboom
+}
+func (k KVStoreDummy) SetTradeAccount(ctx cosmos.Context, record TradeAccount)    {}
+func (k KVStoreDummy) RemoveTradeAccount(ctx cosmos.Context, record TradeAccount) {}
+func (k KVStoreDummy) GetTradeAccountIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetTradeAccountIteratorWithAddress(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetTradeUnit(ctx cosmos.Context, asset common.Asset) (TradeUnit, error) {
+	return TradeUnit{}, kaboom
+}
+func (k KVStoreDummy) SetTradeUnit(ctx cosmos.Context, unit TradeUnit)         {}
+func (k KVStoreDummy) GetTradeUnitIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+
 func (k KVStoreDummy) GetRagnarokBlockHeight(_ cosmos.Context) (int64, error) {
 	return 0, kaboom
 }
@@ -318,6 +334,10 @@ func (k KVStoreDummy) GetKeygenBlockIterator(_ cosmos.Context) cosmos.Iterator {
 func (k KVStoreDummy) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error)      { return nil, kaboom }
 func (k KVStoreDummy) GetTxOutValue(_ cosmos.Context, _ int64) (cosmos.Uint, cosmos.Uint, error) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetTOIsValue(_ cosmos.Context, _ ...TxOutItem) (cosmos.Uint, cosmos.Uint) {
+	return cosmos.ZeroUint(), cosmos.ZeroUint()
 }
 func (k KVStoreDummy) SetTxOut(_ cosmos.Context, _ *TxOut) error                { return kaboom }
 func (k KVStoreDummy) AppendTxOut(_ cosmos.Context, _ int64, _ TxOutItem) error { return kaboom }
@@ -553,7 +573,7 @@ func (k KVStoreDummy) GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cos
 	return nil
 }
 
-func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error) {
+func (k KVStoreDummy) GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate, size int64) (ObservedNetworkFeeVoter, error) {
 	return ObservedNetworkFeeVoter{}, nil
 }
 

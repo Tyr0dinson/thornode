@@ -8061,7 +8061,15 @@
       "name": "vTHOR",
       "symbol": "vTHOR",
       "decimals": 18,
-      "logoURI": "https://cdn.discordapp.com/emojis/971344444391563275.webp"
+      "logoURI": "https://static.thorswap.net/token-list/images/eth.vthor-0x815c23eca83261b6ec689b60cc4a58b54bc24d8d.png"
+    },
+    {
+      "address": "0x826180541412D574cf1336d22c0C0a287822678A",
+      "chainId": 1,
+      "name": "Chainflip",
+      "symbol": "FLIP",
+      "decimals": 18,
+      "logoURI": "https://static.thorswap.net/token-list/images/eth.flip-0x826180541412d574cf1336d22c0c0a287822678a.png"
     }
   ],
   "logoURI": "https://1inch.exchange/assets/images/logo.png"

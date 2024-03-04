@@ -15,7 +15,6 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	ctypes "gitlab.com/thorchain/binance-sdk/common/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -100,7 +99,6 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 	s.cfg.UTXO.MaxReorgRescanBlocks = 1
 	s.cfg.UTXO.GetBlockVerboseTxsAvailable = true
 	ns := strconv.Itoa(time.Now().Nanosecond())
-	ctypes.Network = ctypes.TestNetwork
 
 	thordir := filepath.Join(os.TempDir(), ns, ".thorcli")
 	cfg := config.BifrostClientConfiguration{

@@ -146,6 +146,11 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+	if toi.Coin.Asset.IsTradeAsset() {
+		// no outbound needed for trade assets
+		return true, nil
+	}
+
 	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
@@ -804,18 +809,10 @@ func (tos *TxOutStorageVCUR) CalcTxOutHeight(ctx cosmos.Context, version semver.
 	maxOffset := cosmos.NewUint(uint64(maxTxOutOffset))
 
 	// get txout item value in rune
-	var cloutApplied cosmos.Uint
-	runeValue := toi.Coin.Amount
-	if !toi.Coin.Asset.IsRune() {
-		pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
-		if err != nil {
-			ctx.Logger().Error("fail to get pool for appending txout item", "error", err)
-			return ctx.BlockHeight() + maxTxOutOffset, cosmos.ZeroUint(), err
-		}
-		runeValue = pool.AssetValueInRune(toi.Coin.Amount)
-	}
+	runeValue, _ := tos.keeper.GetTOIsValue(ctx, toi)
+
 	// reduce rune value based on clout
-	runeValue, cloutApplied = tos.calcClout(ctx, runeValue, toi)
+	runeValue, cloutApplied := tos.calcClout(ctx, runeValue, toi)
 	// if clout was large enough to cover the outbound value, no delay applied
 	if runeValue.IsZero() {
 		return ctx.BlockHeight(), cloutApplied, nil

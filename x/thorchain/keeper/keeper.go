@@ -86,6 +86,7 @@ type Keeper interface {
 	KeeperAnchors
 	KeeperStreamingSwap
 	KeeperSwapperClout
+	KeeperTradeAccount
 }
 
 type KeeperConfig interface {
@@ -197,6 +198,7 @@ type KeeperTxOut interface {
 	GetTxOutIterator(ctx cosmos.Context) cosmos.Iterator
 	GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error)
 	GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, cosmos.Uint, error)
+	GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uint, cosmos.Uint)
 }
 
 type KeeperLiquidityFees interface {
@@ -219,6 +221,17 @@ type KeeperSwapSlip interface {
 	GetSwapSlipSnapShot(ctx cosmos.Context, asset common.Asset, height int64) (int64, error)
 	SetSwapSlipSnapShot(ctx cosmos.Context, asset common.Asset, height, currRollup int64)
 	GetSwapSlipSnapShotIterator(ctx cosmos.Context, asset common.Asset) cosmos.Iterator
+}
+
+type KeeperTradeAccount interface {
+	GetTradeAccount(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) (TradeAccount, error)
+	SetTradeAccount(ctx cosmos.Context, record TradeAccount)
+	RemoveTradeAccount(ctx cosmos.Context, record TradeAccount)
+	GetTradeAccountIterator(ctx cosmos.Context) cosmos.Iterator
+	GetTradeAccountIteratorWithAddress(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Iterator
+	GetTradeUnit(ctx cosmos.Context, asset common.Asset) (TradeUnit, error)
+	SetTradeUnit(ctx cosmos.Context, unit TradeUnit)
+	GetTradeUnitIterator(ctx cosmos.Context) cosmos.Iterator
 }
 
 type KeeperVault interface {
@@ -350,7 +363,7 @@ type KeeperNetworkFee interface {
 type KeeperObservedNetworkFeeVoter interface {
 	SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter)
 	GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator
-	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate int64) (ObservedNetworkFeeVoter, error)
+	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate, size int64) (ObservedNetworkFeeVoter, error)
 }
 
 type KeeperChainContract interface {

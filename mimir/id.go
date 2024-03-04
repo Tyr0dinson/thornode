@@ -5,53 +5,40 @@ import (
 	"strings"
 )
 
+//go:generate stringer --type=Id
 type Id int32
 
 const (
-	UnknownId Id = iota
-	AffiliateFeeBasisPointsMaxId
-	BondPauseId
-	ConfMultiplierBasisPointsId // https://gitlab.com/thorchain/thornode/-/issues/1599
-	MaxConfirmationsId          // https://gitlab.com/thorchain/thornode/-/issues/1761
-	CloutSwapperLimitId
-	CloutSwapperResetId
+	Unknown Id = iota
+	AffiliateFeeBasisPointsMax
+	BondPause
+	ConfMultiplierBasisPoints // https://gitlab.com/thorchain/thornode/-/issues/1599
+	MaxConfirmations          // https://gitlab.com/thorchain/thornode/-/issues/1761
+	CloutSwapperLimit
+	CloutSwapperReset
+	SwapSlipBasisPointsMin
+	TradeAccountEnabled
 )
-
-var StringToId = map[string]Id{
-	"unknown":                    UnknownId,
-	"AffiliateFeeBasisPointsMax": AffiliateFeeBasisPointsMaxId,
-	"BondPause":                  BondPauseId,
-	"ConfMultiplierBasisPoints":  ConfMultiplierBasisPointsId,
-	"MaxConfirmations":           MaxConfirmationsId,
-	"CloutSwapperLimit":          CloutSwapperLimitId,
-	"CloutSwapperReset":          CloutSwapperResetId,
-}
-
-var mimirRefToStringMap = map[Id]string{
-	UnknownId:                    "unknown",
-	AffiliateFeeBasisPointsMaxId: "AffiliateFeeBasisPointsMax",
-	BondPauseId:                  "BondPause",
-	ConfMultiplierBasisPointsId:  "ConfMultiplierBasisPoints",
-	MaxConfirmationsId:           "MaxConfirmations",
-	CloutSwapperLimitId:          "CloutSwapperLimit",
-	CloutSwapperResetId:          "CloutSwapperReset",
-}
 
 // GetMimir fetches a mimir by id number
 func GetMimir(id Id, ref string) (Mimir, bool) {
 	switch id {
-	case AffiliateFeeBasisPointsMaxId:
+	case AffiliateFeeBasisPointsMax:
 		return NewAffiliateFeeBasisPointsMax(ref), true
-	case BondPauseId:
+	case BondPause:
 		return NewBondPause(ref), true
-	case ConfMultiplierBasisPointsId:
+	case ConfMultiplierBasisPoints:
 		return NewConfBasisPointValue(ref), true
-	case MaxConfirmationsId:
+	case MaxConfirmations:
 		return NewMaxConfValue(ref), true
-	case CloutSwapperLimitId:
+	case CloutSwapperLimit:
 		return NewSwapperCloutLimit(ref), true
-	case CloutSwapperResetId:
+	case CloutSwapperReset:
 		return NewSwapperCloutReset(ref), true
+	case SwapSlipBasisPointsMin:
+		return NewSwapSlipBasisPointsMin(ref), true
+	case TradeAccountEnabled:
+		return NewTradeAccountsEnabled(ref), true
 	default:
 		return nil, false
 	}

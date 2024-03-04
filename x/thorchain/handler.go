@@ -22,7 +22,7 @@ type MsgHandler interface {
 // NewExternalHandler returns a handler for "thorchain" type messages.
 func NewExternalHandler(mgr Manager) cosmos.Handler {
 	return func(ctx cosmos.Context, msg cosmos.Msg) (_ *cosmos.Result, err error) {
-		// recover
+		// TODO: remove the outer if-check on hard fork, always add deferred recover
 		if mgr.GetVersion().GTE(semver.MustParse("1.106.0")) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -72,7 +72,8 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 
-	// consensus handlers
+	// Consensus handlers - can only be sent by addresses in
+	//   the active validator set.
 	m[MsgTssPool{}.Type()] = NewTssHandler(mgr)
 	m[MsgObservedTxIn{}.Type()] = NewObservedTxInHandler(mgr)
 	m[MsgObservedTxOut{}.Type()] = NewObservedTxOutHandler(mgr)
@@ -112,6 +113,7 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 			errMsg := fmt.Sprintf("Unrecognized thorchain Msg type: %v", legacyMsg.Type())
 			return nil, cosmos.ErrUnknownRequest(errMsg)
 		}
+		// TODO: remove if-check on hardfork. Always use CacheContext.
 		if version.GTE(semver.MustParse("1.88.1")) {
 			// CacheContext() returns a context which caches all changes and only forwards
 			// to the underlying context when commit() is called. Call commit() only when
@@ -133,6 +135,8 @@ func NewInternalHandler(mgr Manager) cosmos.Handler {
 func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return getInternalHandlerMappingV128(mgr)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return getInternalHandlerMappingV124(mgr)
 	case version.GTE(semver.MustParse("1.117.0")):
@@ -142,7 +146,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	}
 }
 
-func getInternalHandlerMappingV124(mgr Manager) map[string]MsgHandler {
+func getInternalHandlerMappingV128(mgr Manager) map[string]MsgHandler {
 	// New arch handlers
 	m := make(map[string]MsgHandler)
 	m[MsgOutboundTx{}.Type()] = NewOutboundTxHandler(mgr)
@@ -162,6 +166,8 @@ func getInternalHandlerMappingV124(mgr Manager) map[string]MsgHandler {
 	m[MsgManageTHORName{}.Type()] = NewManageTHORNameHandler(mgr)
 	m[MsgLoanOpen{}.Type()] = NewLoanOpenHandler(mgr)
 	m[MsgLoanRepayment{}.Type()] = NewLoanRepaymentHandler(mgr)
+	m[MsgTradeAccountDeposit{}.Type()] = NewTradeAccountDepositHandler(mgr)
+	m[MsgTradeAccountWithdrawal{}.Type()] = NewTradeAccountWithdrawalHandler(mgr)
 	return m
 }
 
@@ -266,6 +272,8 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 
 func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return processOneTxInV128(ctx, keeper, tx, signer)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return processOneTxInV124(ctx, keeper, tx, signer)
 	case version.GTE(semver.MustParse("1.120.0")):
@@ -280,12 +288,17 @@ func processOneTxIn(ctx cosmos.Context, version semver.Version, keeper keeper.Ke
 	return nil, errBadVersion
 }
 
-func processOneTxInV124(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func processOneTxInV128(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	if len(tx.Tx.Coins) != 1 {
+		return nil, cosmos.ErrInvalidCoins("only send 1 coins per message")
+	}
+
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, tx.Tx.Memo)
 	if err != nil {
 		ctx.Logger().Error("fail to parse memo", "error", err)
 		return nil, err
 	}
+
 	// THORNode should not have one tx across chain, if it is cross chain it should be separate tx
 	var newMsg cosmos.Msg
 	// interpret the memo and initialize a corresponding msg event
@@ -335,6 +348,12 @@ func processOneTxInV124(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx,
 			from = tx.Tx.FromAddress
 		}
 		newMsg, err = getMsgLoanRepaymentFromMemo(m, from, tx.Tx.Coins[0], signer, tx.Tx.ID)
+	case TradeAccountDepositMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgTradeAccountDeposit(coin.Asset, coin.Amount, m.GetAccAddress(), signer, tx.Tx)
+	case TradeAccountWithdrawalMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgTradeAccountWithdrawal(coin.Asset, coin.Amount, m.GetAddress(), signer, tx.Tx)
 	default:
 		return nil, errInvalidMemo
 	}

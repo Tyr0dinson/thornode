@@ -339,6 +339,22 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:BNB.BNB:tbnb18f55frcvknxvcpx2vvpfedvw4l8eutuhca3lll:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
 	c.Assert(err, IsNil)
 
+	// trade account unit tests
+	trAccAddr := types.GetRandomBech32Addr()
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("trade+:%s", trAccAddr))
+	c.Assert(err, IsNil)
+	tr1, ok := memo.(TradeAccountDepositMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(tr1.GetAccAddress().Equals(trAccAddr), Equals, true)
+
+	bnbAddr := types.GetRandomBNBAddress()
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("trade-:%s", bnbAddr))
+	c.Assert(err, IsNil)
+	tr2, ok := memo.(TradeAccountWithdrawalMemo)
+	c.Assert(ok, Equals, true)
+	fmt.Println(tr2)
+	c.Check(tr2.GetAddress().Equals(bnbAddr), Equals, true)
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "WITHDRAW:"+common.RuneAsset().String()+":25")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
@@ -463,6 +479,16 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BNB.BNB:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:5000")
+
+	// aff fee savers memo
+	_, err = ParseMemoWithTHORNames(ctx, k, "+:BSC/BNB::t:0")
+	// should fail, thorname not registered
+	c.Assert(err.Error(), Equals, "MEMO: +:BSC/BNB::t:0\nPARSE FAILURE(S): cannot parse 't' as an Address: t is not recognizable")
+	// register thorname
+	thorname := types.NewTHORName("t", 50, []types.THORNameAlias{{Chain: common.THORChain, Address: thorAddr}})
+	k.SetTHORName(ctx, thorname)
+	_, err = ParseMemoWithTHORNames(ctx, k, "+:BSC/BNB::t:15")
+	c.Assert(err, IsNil)
 
 	// no address or aff fee
 	memo, err = ParseMemoWithTHORNames(ctx, k, "add:bnb.bnb")

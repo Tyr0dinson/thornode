@@ -79,7 +79,7 @@ bifrost:
         write_buffer: 20971520 # 20mb
         block_cache_capacity: 536870912 # 512mb
       min_confirmations: 0
-      max_rpc_retries: 3
+      max_rpc_retries: 9 # about 1 min
       max_pending_nonces: 0
       fixed_outbound_gas_rate: false
       token_max_gas_multiplier: 0
@@ -130,7 +130,7 @@ bifrost:
       chain_network: ""
       rpc_host: ""
       cosmos_grpc_host: ""
-      cosmos_grpc_tls: ""
+      cosmos_grpc_tls: false
       opt_to_retire: false
       solvency_blocks: 0
 

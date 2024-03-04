@@ -82,6 +82,14 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryLiquidityProviders(ctx, path[1:], req, mgr, false)
 		case q.QueryLiquidityProvider.Key:
 			return queryLiquidityProvider(ctx, path[1:], req, mgr, false)
+		case q.QueryTradeUnit.Key:
+			return queryTradeUnit(ctx, path[1:], req, mgr)
+		case q.QueryTradeUnits.Key:
+			return queryTradeUnits(ctx, path[1:], req, mgr)
+		case q.QueryTradeAccount.Key:
+			return queryTradeAccount(ctx, path[1:], req, mgr)
+		case q.QueryTradeAccounts.Key:
+			return queryTradeAccounts(ctx, path[1:], req, mgr)
 		case q.QueryTxStages.Key:
 			return queryTxStages(ctx, path[1:], req, mgr)
 		case q.QueryTxStatus.Key:
@@ -750,11 +758,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 			return nil, fmt.Errorf("no active vaults")
 		}
 
-		bondHardCap := getHardBondCap(active)
-		totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
-		if err != nil {
-			return nil, fmt.Errorf("fail to get total effective bond: %w", err)
-		}
+		totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
 
 		// Note that unlike actual BondRewardRune distribution in manager_validator_current.go ,
 		// this estimate treats lastChurnHeight as the block_height of the first (oldest) Asgard vault,
@@ -837,27 +841,6 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 	return reward, nil
 }
 
-// Calculates total "effective bond" - the total bond when taking into account the
-// Bond-weighted hard-cap
-func getTotalEffectiveBond(ctx cosmos.Context, mgr *Mgrs, bondHardCap cosmos.Uint) (cosmos.Uint, error) {
-	activeNodes, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeActive)
-	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get active nodes: %w", err)
-	}
-
-	totalEffectiveBond := cosmos.ZeroUint()
-	for _, item := range activeNodes {
-		b := item.Bond
-		if item.Bond.GT(bondHardCap) {
-			b = bondHardCap
-		}
-
-		totalEffectiveBond = totalEffectiveBond.Add(b)
-	}
-
-	return totalEffectiveBond, nil
-}
-
 // queryNodes return all the nodes that has bond
 // /thorchain/nodes
 func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
@@ -884,11 +867,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		return nil, fmt.Errorf("no active vaults")
 	}
 
-	bondHardCap := getHardBondCap(active)
-	totalEffectiveBond, err := getTotalEffectiveBond(ctx, mgr, bondHardCap)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get total effective bond: %w", err)
-	}
+	totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
 
 	lastChurnHeight := vaults[0].BlockHeight
 	version := mgr.GetVersion()
@@ -1287,11 +1266,12 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	}
 
 	loanHandler := NewLoanOpenHandler(mgr)
+	// getPoolCR and GetLoanCollateralRemainingForPool
+	// are expected to error for block heights earlier than 12241034
+	// from negative MaxRuneSupply, so dropping the errors for both
+	// and instead displaying both as zero when unretrievable.
 	cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
-	loanCollateralRemaining, err := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
-	if err != nil {
-		return nil, fmt.Errorf("fail to fetch remaining loan collateral: %w", err)
-	}
+	loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
 	runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, asset)
 	dpool, _ := mgr.Keeper().GetPool(ctx, asset.GetDerivedAsset())
@@ -1359,11 +1339,12 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		}
 
 		loanHandler := NewLoanOpenHandler(mgr)
+		// getPoolCR and GetLoanCollateralRemainingForPool
+		// are expected to error for block heights earlier than 12241034
+		// from negative MaxRuneSupply, so dropping the errors for both
+		// and instead displaying both as zero when unretrievable.
 		cr, _ := loanHandler.getPoolCR(ctx, pool, cosmos.OneUint())
-		loanCollateralRemaining, err := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
-		if err != nil {
-			return nil, fmt.Errorf("fail to fetch remaining loan collateral: %w", err)
-		}
+		loanCollateralRemaining, _ := loanHandler.GetLoanCollateralRemainingForPool(ctx, pool)
 
 		runeDepth, _, _ := mgr.NetworkMgr().CalcAnchor(ctx, mgr, pool.Asset)
 		dpool, _ := mgr.Keeper().GetPool(ctx, pool.Asset.GetDerivedAsset())
@@ -1446,6 +1427,129 @@ func queryDerivedPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]
 		pools = append(pools, p)
 	}
 	return jsonify(ctx, pools)
+}
+
+func queryTradeUnit(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	if len(path) == 0 {
+		return nil, errors.New("asset not provided")
+	}
+	asset, err := common.NewAsset(path[0])
+	if err != nil {
+		ctx.Logger().Error("fail to parse asset", "error", err)
+		return nil, fmt.Errorf("could not parse asset: %w", err)
+	}
+
+	tu, err := mgr.Keeper().GetTradeUnit(ctx, asset)
+	if err != nil {
+		ctx.Logger().Error("fail to get trade unit", "error", err)
+		return nil, fmt.Errorf("could not get trade unit: %w", err)
+	}
+	tuResp := openapi.TradeUnitResponse{
+		Asset: tu.Asset.String(),
+		Units: tu.Units.String(),
+		Depth: tu.Depth.String(),
+	}
+	return jsonify(ctx, tuResp)
+}
+
+func queryTradeUnits(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	pools, err := mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return nil, errors.New("failed to get pools")
+	}
+	units := make([]openapi.TradeUnitResponse, 0)
+	for _, pool := range pools {
+		// skip non-layer1 pools
+		if pool.Asset.GetChain().IsTHORChain() {
+			continue
+		}
+		asset := pool.Asset.GetTradeAsset()
+		tu, err := mgr.Keeper().GetTradeUnit(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get trade unit", "error", err)
+			return nil, fmt.Errorf("could not get trade unit: %w", err)
+		}
+		tuResp := openapi.TradeUnitResponse{
+			Asset: tu.Asset.String(),
+			Units: tu.Units.String(),
+			Depth: tu.Depth.String(),
+		}
+		units = append(units, tuResp)
+	}
+
+	return jsonify(ctx, units)
+}
+
+func queryTradeAccounts(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	if len(path) == 0 {
+		return nil, errors.New("asset not provided")
+	}
+	asset, err := common.NewAsset(path[0])
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return nil, fmt.Errorf("could not parse address: %w", err)
+	}
+
+	accounts := make([]openapi.TradeAccountResponse, 0)
+	iter := mgr.Keeper().GetTradeAccountIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var ta TradeAccount
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &ta); err != nil {
+			continue
+		}
+		if !ta.Asset.Equals(asset) {
+			continue
+		}
+		if ta.Units.IsZero() {
+			continue
+		}
+		taResp := openapi.TradeAccountResponse{
+			Asset:              ta.Asset.String(),
+			Units:              ta.Units.String(),
+			Owner:              ta.Owner.String(),
+			LastAddHeight:      &ta.LastAddHeight,
+			LastWithdrawHeight: &ta.LastWithdrawHeight,
+		}
+		accounts = append(accounts, taResp)
+	}
+
+	return jsonify(ctx, accounts)
+}
+
+func queryTradeAccount(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+	if len(path) == 0 {
+		return nil, errors.New("address not provided")
+	}
+	addr, err := cosmos.AccAddressFromBech32(path[0])
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return nil, fmt.Errorf("could not parse address: %w", err)
+	}
+
+	accounts := make([]openapi.TradeAccountResponse, 0)
+	iter := mgr.Keeper().GetTradeAccountIteratorWithAddress(ctx, addr)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var ta TradeAccount
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &ta); err != nil {
+			continue
+		}
+		if ta.Units.IsZero() {
+			continue
+		}
+
+		taResp := openapi.TradeAccountResponse{
+			Asset:              ta.Asset.String(),
+			Units:              ta.Units.String(),
+			Owner:              ta.Owner.String(),
+			LastAddHeight:      &ta.LastAddHeight,
+			LastWithdrawHeight: &ta.LastWithdrawHeight,
+		}
+		accounts = append(accounts, taResp)
+	}
+
+	return jsonify(ctx, accounts)
 }
 
 func extractVoter(ctx cosmos.Context, path []string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {

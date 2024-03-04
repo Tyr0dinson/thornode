@@ -115,6 +115,10 @@ func refundTxV124(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason string) {
 	coin := toi.Coin
 
+	if coin.Asset.IsTradeAsset() {
+		return
+	}
+
 	sourceModuleName := toi.GetModuleName() // Ensure that non-"".
 
 	// For context in emitted events, retrieve the original transaction that prompted the cleanup.
@@ -628,6 +632,8 @@ func getSynthSupplyRemainingV102(ctx cosmos.Context, mgr Manager, asset common.A
 func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.128.0")):
+		return isSynthMintPausedV128(ctx, mgr, targetAsset, outputAmt)
 	case version.GTE(semver.MustParse("1.116.0")):
 		return isSynthMintPausedV116(ctx, mgr, targetAsset, outputAmt)
 	case version.GTE(semver.MustParse("1.103.0")):
@@ -639,6 +645,20 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 	default:
 		return nil
 	}
+}
+
+func isSynthMintPausedV128(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
+	// check if the pool is in ragnarok
+	k := "RAGNAROK-" + targetAsset.MimirString()
+	v, err := mgr.Keeper().GetMimir(ctx, k)
+	if err != nil {
+		return err
+	}
+	if v > 0 {
+		return fmt.Errorf("pool is in ragnarok")
+	}
+
+	return isSynthMintPausedV116(ctx, mgr, targetAsset, outputAmt)
 }
 
 func isSynthMintPausedV116(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
@@ -908,6 +928,24 @@ func getEffectiveSecurityBond(nas NodeAccounts) cosmos.Uint {
 		}
 	}
 	return amt
+}
+
+// Calculates total "effective bond" - the total bond when taking into account the
+// Bond-weighted hard-cap
+func getTotalEffectiveBond(nas NodeAccounts) (cosmos.Uint, cosmos.Uint) {
+	bondHardCap := getHardBondCap(nas)
+
+	totalEffectiveBond := cosmos.ZeroUint()
+	for _, item := range nas {
+		b := item.Bond
+		if item.Bond.GT(bondHardCap) {
+			b = bondHardCap
+		}
+
+		totalEffectiveBond = totalEffectiveBond.Add(b)
+	}
+
+	return totalEffectiveBond, bondHardCap
 }
 
 // find the bond size the highest of the bottom 2/3rds node bonds
