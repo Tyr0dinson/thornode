@@ -102,9 +102,9 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .end_block_events[] | select(.type == "swap") | .swap_slip == "0"
-  - .end_block_events[] | select(.type == "swap") | .pool_slip == "0"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "812"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "812"
+  - .end_block_events[] | select(.type == "swap") | .swap_slip == "9548"
+  - .end_block_events[] | select(.type == "swap") | .pool_slip == "10"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "379187493"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "379187493"
   - .end_block_events[] | select(.type == "swap") | .emit_asset == "17969825 THOR.RUNE"
   - .end_block_events[] | select(.type == "mint_burn") | .reason == "swap with synth backstop"

@@ -193,6 +193,10 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 	if err != nil {
 		return cosmos.ZeroUint(), evt, err
 	}
+	synthBackstop := false
+	if amount.LT(tx.Coins[0].Amount) {
+		synthBackstop = true
+	}
 
 	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", amount, "target", target, "to", destination, "fee", transactionFee)
 
@@ -288,7 +292,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailInvalidBalance
 	}
 
-	swapSlipBps := s.CalcSwapSlip(X, x)
+	swapSlipBps := s.CalcSwapSlip(X, tx.Coins[0].Amount)
 	swapEvt.PoolSlip = swapSlipBps
 	minSlipBps := s.MinSlipBps(ctx, mgr.Keeper(), target.IsSyntheticAsset(), target.IsTradeAsset())
 	var (
@@ -300,6 +304,10 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		swapEvt.LiquidityFeeInRune = pool.AssetValueInRune(liquidityFee)
 	} else {
 		// because the output asset is RUNE , so liquidity Fee is already in RUNE
+		if synthBackstop {
+			//adjust fee and slip for original swap amount
+			liquidityFee, swapEvt.SwapSlip = s.adjustForBackstop(emitAssets, tx.Coins[0].Amount, X, Y)
+		}
 		swapEvt.LiquidityFeeInRune = liquidityFee
 	}
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
@@ -323,7 +331,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		} else {
 			reason := "swap"
-			if !amount.Equal(burnCoin.Amount) {
+			if synthBackstop {
 				reason += " with synth backstop"
 			}
 			burnEvt := NewEventMintBurn(BurnSupplyType, burnCoin.Asset.Native(), burnCoin.Amount, reason)
@@ -528,22 +536,35 @@ func (s *SwapperVCUR) MinSlipBps(
 func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin common.Coin) (cosmos.Uint, error) {
 	source := coin.Asset
 	sourceAmt := coin.Amount
-	if !source.IsSyntheticAsset() {
+	if !source.IsSyntheticAsset() || mimir.NewSynthBackStop().IsOff(ctx, mgr.Keeper()) {
 		return sourceAmt, nil
 	}
-	if mimir.NewSynthBackStop().IsOn(ctx, mgr.Keeper()) {
-		synthCap := mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
-		synthSupply := mgr.Keeper().GetTotalSupply(ctx, source.GetSyntheticAsset())
-		pool, err := mgr.Keeper().GetPool(ctx, source.GetLayer1Asset())
-		if err != nil {
-			return cosmos.ZeroUint(), err
-		}
-		maxSynth := common.GetUncappedShare(pool.BalanceAsset.MulUint64(2), cosmos.NewUint(MaxWithdrawBasisPoints), cosmos.NewUint(uint64(synthCap)))
-		if synthSupply.LTE(maxSynth) {
-			return sourceAmt, nil
-		}
-		// if synth supply exceeds max synth
-		sourceAmt = common.GetUncappedShare(sourceAmt, synthSupply, maxSynth)
+	synthCap := mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
+	synthSupply := mgr.Keeper().GetTotalSupply(ctx, source.GetSyntheticAsset())
+	pool, err := mgr.Keeper().GetPool(ctx, source.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), err
 	}
-	return sourceAmt, nil
+	maxSynth := common.GetUncappedShare(pool.BalanceAsset.MulUint64(2), cosmos.NewUint(MaxWithdrawBasisPoints), cosmos.NewUint(uint64(synthCap)))
+	if synthSupply.LTE(maxSynth) {
+		return sourceAmt, nil
+	}
+	// if synth supply exceeds max synth
+	return common.GetUncappedShare(sourceAmt, synthSupply, maxSynth), nil
+}
+
+func (s *SwapperVCUR) adjustForBackstop(emitAsset, x, X, Y cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
+	xD := cosmos.NewDecFromBigInt(x.BigInt())
+	XD := cosmos.NewDecFromBigInt(X.BigInt())
+	YD := cosmos.NewDecFromBigInt(Y.BigInt())
+	eD := cosmos.NewDecFromBigInt(emitAsset.BigInt())
+	denD := xD.Add(XD)
+	numD := xD.Mul(YD)
+	output := numD.Quo(denD)
+	// fee = output - emit
+	feeD := output.Sub(eD)
+	// slip = fee / output
+	slipD := feeD.Quo(output)
+	slipD = slipD.MulInt64(int64(constants.MaxBasisPts))
+	return cosmos.NewUint(uint64(feeD.RoundInt64())), cosmos.NewUint(uint64(slipD.RoundInt64()))
 }
