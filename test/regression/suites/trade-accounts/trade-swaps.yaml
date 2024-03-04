@@ -369,3 +369,44 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund").reason | contains("swapping to a trade asset of a native coin is not allowed")
+---
+########################################################################################
+# swap to RUNE (for instance if there were an arbitrage opportunity)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result | length == 1
+  - .result[0].denom == "rune"
+  - .result[0].amount == "${INITIAL_RUNE=2499992000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .native_tx_fee_rune == "${NATIVE_TX_FEE_RUNE=2000000}"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${IN_AMOUNT=1000000}" # 0.01 BTC
+    asset: "${IN_ASSET=BTC~BTC}"
+memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result | length == 1
+  - .result[0].denom == "rune"
+  - .result[0].amount|tonumber == ${INITIAL_RUNE} - ${NATIVE_TX_FEE_RUNE}
+  # TODO: Consider whether RUNE swaps should instead be allowed.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "refund")] | length == 1
+  - .|..|select(.type? == "refund") | .coin == "${IN_AMOUNT} ${IN_ASSET}"
+  - .|..|select(.type? == "refund") | .reason == "swaps from trade asset to L1 incur slip, use trade-"
+  # TODO: As above, consider whether RUNE swaps should instead be allowed.
