@@ -305,8 +305,11 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 	} else {
 		// because the output asset is RUNE , so liquidity Fee is already in RUNE
 		if synthBackstop {
-			//adjust fee and slip for original swap amount
-			liquidityFee, swapEvt.SwapSlip = s.adjustForBackstop(emitAssets, tx.Coins[0].Amount, X, Y)
+			// adjust fee and slip for original swap amount
+			liquidityFee, swapEvt.SwapSlip, err = s.adjustForBackstop(emitAssets, tx.Coins[0].Amount, X, Y)
+			if err != nil {
+				return cosmos.ZeroUint(), evt, err
+			}
 		}
 		swapEvt.LiquidityFeeInRune = liquidityFee
 	}
@@ -533,6 +536,7 @@ func (s *SwapperVCUR) MinSlipBps(
 	return cosmos.SafeUintFromInt64(minFeeMimir.FetchValue(ctx, k))
 }
 
+// adjustSourceAmount returns adjusted source amount for swap
 func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin common.Coin) (cosmos.Uint, error) {
 	source := coin.Asset
 	sourceAmt := coin.Amount
@@ -553,7 +557,8 @@ func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin c
 	return common.GetUncappedShare(sourceAmt, synthSupply, maxSynth), nil
 }
 
-func (s *SwapperVCUR) adjustForBackstop(emitAsset, x, X, Y cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
+// adjustForBackstop returns liquidity fee and slip based on source amount and emitted assets
+func (s *SwapperVCUR) adjustForBackstop(emitAsset, x, X, Y cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
 	xD := cosmos.NewDecFromBigInt(x.BigInt())
 	XD := cosmos.NewDecFromBigInt(X.BigInt())
 	YD := cosmos.NewDecFromBigInt(Y.BigInt())
@@ -562,9 +567,12 @@ func (s *SwapperVCUR) adjustForBackstop(emitAsset, x, X, Y cosmos.Uint) (cosmos.
 	numD := xD.Mul(YD)
 	output := numD.Quo(denD)
 	// fee = output - emit
+	if output.LT(eD) {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errSwapFail
+	}
 	feeD := output.Sub(eD)
 	// slip = fee / output
 	slipD := feeD.Quo(output)
 	slipD = slipD.MulInt64(int64(constants.MaxBasisPts))
-	return cosmos.NewUint(uint64(feeD.RoundInt64())), cosmos.NewUint(uint64(slipD.RoundInt64()))
+	return cosmos.NewUint(uint64(feeD.RoundInt64())), cosmos.NewUint(uint64(slipD.RoundInt64())), nil
 }

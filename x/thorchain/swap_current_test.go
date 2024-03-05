@@ -609,6 +609,7 @@ func (s *SwapVCURSuite) TestSynthSwap_SynthBurnAdjustment(c *C) {
 	initialBalanceRune := pool.BalanceRune
 	initialBalanceAsset := pool.BalanceAsset
 	pool.LPUnits = pool.BalanceRune
+	synthVirtualDepth := int64(20_000)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	asgardVault := GetRandomVault()
@@ -641,16 +642,23 @@ func (s *SwapVCURSuite) TestSynthSwap_SynthBurnAdjustment(c *C) {
 	c.Assert(mintErr, IsNil)
 	sendErr := mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx.Coins)
 	c.Assert(sendErr, IsNil)
-
-	amount, _, err := newSwapperVCUR().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, cosmos.NewUint(1000_000), 20_000, mgr)
+	finalAmount, evts, err := newSwapperVCUR().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, cosmos.NewUint(1000_000), synthVirtualDepth, mgr)
 	c.Assert(err, IsNil)
-	swapAmt = cosmos.NewUint(uint64(synthPoolDepth)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
 
-	// For synths, the pool depths are double (synth virtual depth mult)
+	adjustedSourceAmt := cosmos.NewUint(uint64(synthPoolDepth)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
+	// For synths, the pool depths are double (synth virtual depth / max basis points)
 	TWO := cosmos.NewUint(2)
-	numerator := swapAmt.Mul(TWO).Mul(initialBalanceRune).Mul(TWO).Mul(initialBalanceAsset)
-	denom := swapAmt.Add(TWO.Mul(initialBalanceAsset))
+	X := initialBalanceAsset.Mul(TWO)
+	Y := initialBalanceRune.Mul(TWO)
+	// x * X * Y / (x + X) ^2
+	numerator := adjustedSourceAmt.Mul(X).Mul(Y)
+	denom := adjustedSourceAmt.Add(X)
 	denom = denom.Mul(denom)
-	swapResult := cosmos.NewUint(uint64(QuoUint(numerator, denom).TruncateInt64()))
-	c.Check(swapResult.String(), Equals, amount.String())
+
+	// check swap result amount
+	expectedAmount := cosmos.NewUint(uint64(QuoUint(numerator, denom).TruncateInt64()))
+	c.Check(finalAmount.String(), Equals, expectedAmount.String())
+	// pool slip should match acc to original swap amt
+	poolSlip := newSwapperVCUR().CalcSwapSlip(X, swapAmt)
+	c.Check(evts[0].PoolSlip, DeepEquals, poolSlip)
 }
