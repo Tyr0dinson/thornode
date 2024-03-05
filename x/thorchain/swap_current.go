@@ -558,6 +558,7 @@ func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin c
 }
 
 // adjustForBackstop returns liquidity fee and slip based on source amount and emitted assets
+// nolint
 func (s *SwapperVCUR) adjustForBackstop(emitAsset, x, X, Y cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
 	xD := cosmos.NewDecFromBigInt(x.BigInt())
 	XD := cosmos.NewDecFromBigInt(X.BigInt())
