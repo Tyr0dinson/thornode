@@ -67,6 +67,35 @@ params:
 asserts:
   - .error|contains("minting synthetics has been disabled")
 ---
+# set pause swap
+type: tx-mimir
+key: "10-GLOBAL"
+value: 1
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: "10-GLOBAL"
+value: 1
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: "10-GLOBAL"
+value: 1
+signer: {{ addr_thor_fox }}
+---
+type: tx-mimir
+key: "10-GLOBAL"
+value: 1
+signer: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimirV2
+asserts:
+  - .PAUSESWAPSGLOBAL == 1
+---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
 params:
@@ -75,4 +104,5 @@ params:
   amount: 20000000
   destination: {{ addr_thor_fox }}
 asserts:
-  - .error|contains("burning synthetics has been disabled")
+  - .error|contains("trading is halted, can't process swap")
+---
