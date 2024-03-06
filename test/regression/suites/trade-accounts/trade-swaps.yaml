@@ -362,31 +362,10 @@ coins:
 memo: "=:THOR~BTC:{{ addr_thor_fox }}"
 ---
 type: create-blocks
-count: 2 # Two to demonstrate the result of the above.
-# TODO: If the above result is resolved, perhaps continue testing with the below.
-# ---
-# type: check
-# endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
-# asserts:
-#   - .|length == 2
-#   - .[1].asset == "THOR~BTC"
-#   - .[1].units|tonumber > 0
-#   - .[1].units == "0" # TODO: Expected false; update.
-# ---
-# type: tx-deposit
-# signer: {{ addr_thor_fox }}
-# coins:
-#   - amount: "0"
-#     asset: "THOR.RUNE"
-# memo: "trade-:THOR~BTC:{{ addr_thor_fox }}"
-# # TODO: Observe what happens with DEBUG=1.
-# ---
-# type: create-blocks
-# count: 1
-# ---
-# type: check
-# endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
-# asserts:
-#   - .result | length == 2
-#   - .result[]|select(.denom == "thor.btc")|.amount|tonumber > 0
-#   # TODO: See what happens.
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type? == "refund")] | length == 1
+  - .|..|select(.type? == "refund").reason | contains("swapping to a trade asset of a native coin is not allowed")
