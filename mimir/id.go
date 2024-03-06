@@ -44,6 +44,20 @@ func GetMimir(id Id, ref string) (Mimir, bool) {
 	}
 }
 
+var stringToId = map[string]Id{}
+
+func init() {
+	for i := Unknown + 1; i < Id(len(_Id_index)-1); i++ {
+		stringToId[strings.ToUpper(i.String())] = i
+	}
+}
+
+// GetMimirIDFromString fetches a mimir id from a string.
+func GetMimirIDFromString(s string) (Id, bool) {
+	id, ok := stringToId[strings.ToUpper(s)]
+	return id, ok
+}
+
 // GetMimirByKey fetches a mimir by key
 func GetMimirByKey(key string) (Mimir, bool) {
 	idAndRef := strings.Split(key, "-")

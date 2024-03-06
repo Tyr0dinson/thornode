@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	mimirValidKey    = regexp.MustCompile(`^[a-zA-Z-]+$`).MatchString
-	mimirValidKeyV95 = regexp.MustCompile(constants.MimirKeyRegex).MatchString
-	mimirV2ValidKey  = regexp.MustCompile(`^[0-9]+-[a-zA-Z0-9]+$`).MatchString
+	mimirValidKey       = regexp.MustCompile(`^[a-zA-Z-]+$`).MatchString
+	mimirValidKeyV95    = regexp.MustCompile(constants.MimirKeyRegex).MatchString
+	mimirV2ValidKey     = regexp.MustCompile(`^[0-9]+-[a-zA-Z0-9]+$`).MatchString
+	mimirV2V129ValidKey = regexp.MustCompile(`^V2-[a-zA-Z]+-[a-zA-Z0-9]+$`).MatchString
 )
 
 // MimirHandler is to handle admin messages
@@ -84,6 +85,8 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	ctx.Logger().Info("handleMsgMimir request", "node", msg.Signer, "key", msg.Key, "value", msg.Value)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.129.0")):
+		return h.handleV129(ctx, msg)
 	case version.GTE(semver.MustParse("1.125.0")):
 		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.124.0")):
@@ -101,18 +104,27 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	return errBadVersion
 }
 
-func (h MimirHandler) handleV125(ctx cosmos.Context, msg MsgMimir) error {
-	if mimirV2ValidKey(msg.Key) {
-		return h.mVer2V125(ctx, msg)
+func (h MimirHandler) handleV129(ctx cosmos.Context, msg MsgMimir) error {
+	if mimirV2V129ValidKey(msg.Key) {
+		return h.mVer2V129(ctx, msg)
 	} else {
 		return h.handleV112(ctx, msg)
 	}
 }
 
-func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
+func (h MimirHandler) mVer2V129(ctx cosmos.Context, msg MsgMimir) error {
 	if isAdmin(msg.Signer) {
 		return fmt.Errorf("cannot set mimir v2 with a mimir admin account: %s", msg.Key)
 	}
+
+	// update message mapping the string id to the enum value
+	idString := strings.Split(msg.Key, "-")[1]
+	id, ok := mimir.GetMimirIDFromString(idString)
+	if !ok {
+		return fmt.Errorf("fail to get mimir id with key: %s", msg.Key)
+	}
+	refString := strings.Join(strings.Split(msg.Key, "-")[2:], "-")
+	msg.Key = fmt.Sprintf("%d-%s", id, refString)
 
 	mimirVal, found := mimir.GetMimirByKey(msg.Key)
 	if !found {

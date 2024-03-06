@@ -269,22 +269,22 @@ asserts:
 ---
 type: tx-mimir
 signer: {{ addr_thor_cat }}
-key: "7-TradeAccountsSlipMinBps"
+key: "V2-SwapSlipBasisPointsMin-TradeAccountsSlipMinBps"
 value: 1000
 ---
 type: tx-mimir
 signer: {{ addr_thor_pig }}
-key: "7-TradeAccountsSlipMinBps"
+key: "V2-SwapSlipBasisPointsMin-TradeAccountsSlipMinBps"
 value: 1000
 ---
 type: tx-mimir
 signer: {{ addr_thor_fox }}
-key: "7-TradeAccountsSlipMinBps"
+key: "V2-SwapSlipBasisPointsMin-TradeAccountsSlipMinBps"
 value: 1000
 ---
 type: tx-mimir
 signer: {{ addr_thor_goat }}
-key: "7-TradeAccountsSlipMinBps"
+key: "V2-SwapSlipBasisPointsMin-TradeAccountsSlipMinBps"
 value: 1000
 ---
 type: create-blocks
