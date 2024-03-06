@@ -1,0 +1,78 @@
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# set mint synth
+type: tx-mimir
+key: "9-MINTSYNTHS"
+value: 1
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: "9-MINTSYNTHS"
+value: 1
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: "9-MINTSYNTHS"
+value: 1
+signer: {{ addr_thor_fox }}
+---
+type: tx-mimir
+key: "9-MINTSYNTHS"
+value: 1
+signer: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+# set burn synth
+type: tx-mimir
+key: "9-BURNSYNTHS"
+value: 1
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: "9-BURNSYNTHS"
+value: 1
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: "9-BURNSYNTHS"
+value: 1
+signer: {{ addr_thor_fox }}
+---
+type: tx-mimir
+key: "9-BURNSYNTHS"
+value: 1
+signer: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimirV2
+asserts:
+  - .PAUSESYNTHSMINTSYNTHS == 1
+  - .PAUSESYNTHSBURNSYNTHS == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC/BTC
+  amount: 20000000
+  destination: {{ addr_thor_fox }}
+asserts:
+  - .error|contains("minting synthetics has been disabled")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: BTC/BTC
+  to_asset: rune
+  amount: 20000000
+  destination: {{ addr_thor_fox }}
+asserts:
+  - .error|contains("burning synthetics has been disabled")

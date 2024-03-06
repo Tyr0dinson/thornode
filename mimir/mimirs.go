@@ -155,7 +155,7 @@ func NewPauseSynths(refs ...string) Mimir {
 	return &mimir{
 		id:           id,
 		name:         id.String(),
-		reference:    ref,
+		reference:    refConst.String(),
 		mimirType:    OperationalMimir,
 		tags:         []string{"operational", "synths"},
 		defaultValue: constants.NewConstantValue().GetInt64Value(refConst),

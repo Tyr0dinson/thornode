@@ -70,7 +70,7 @@ func (m *mimir) Type() MimirType {
 }
 
 func (m *mimir) Reference() string {
-	if m.reference == "" {
+	if isRefGlobal(m.reference) {
 		return "GLOBAL"
 	}
 	return strings.ToUpper(m.reference)
