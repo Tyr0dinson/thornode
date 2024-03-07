@@ -51,3 +51,69 @@ func (s *TradeManagerVCURSuite) TestDepositAndWithdrawal(c *C) {
 	bal = mgr.BalanceOf(ctx, asset, addr2)
 	c.Check(bal.String(), Equals, cosmos.NewUint(0).String())
 }
+
+func (s *TradeManagerVCURSuite) TestReducedDepth(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := newTradeMgrVCUR(k)
+
+	asset := common.BTCAsset.GetTradeAsset()
+	addr1 := GetRandomBech32Addr()
+
+	depositDepth := cosmos.NewUint(100 * common.One)
+
+	amt, err := mgr.Deposit(ctx, asset, depositDepth, addr1)
+	c.Assert(err, IsNil)
+	c.Check(amt.String(), Equals, depositDepth.String())
+
+	bal := mgr.BalanceOf(ctx, asset, addr1)
+	c.Check(bal.String(), Equals, depositDepth.String())
+
+	tu, err := k.GetTradeUnit(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Check(tu.Depth.String(), Equals, depositDepth.String())
+	c.Check(tu.Units.String(), Equals, depositDepth.String())
+
+	// Halve the depth, as though experiencing negative interest.
+	tu.Depth = tu.Depth.QuoUint64(2)
+	k.SetTradeUnit(ctx, tu)
+
+	bal = mgr.BalanceOf(ctx, asset, addr1)
+	c.Check(bal.String() == tu.Depth.String(), Equals, false)
+	c.Check(bal.String(), Equals, tu.Depth.MulUint64(2).String())
+	// The BalanceOf result is double the total Depth,
+	// because the tr.Units * tu.Units / tu.Depth GetSafeShare is capping 100 * 100 / 50 at 100.
+
+	// Attempt to withdraw half of the remaining depth
+	// which should also reduce the units by half.
+	previousDepth := tu.Depth
+	previousUnits := tu.Units
+	amt, err = mgr.Withdrawal(ctx, asset, previousDepth.QuoUint64(2), addr1)
+	c.Assert(err, IsNil)
+	c.Check(amt.String() == previousDepth.QuoUint64(2).String(), Equals, false)
+	c.Check(amt.String(), Equals, previousDepth.QuoUint64(4).String())
+	// This withdraws a quarter of the previous depth rather than the specified half.
+
+	tu, err = k.GetTradeUnit(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Check(tu.Depth.String() == previousDepth.QuoUint64(2).String(), Equals, false)
+	c.Check(tu.Depth.String(), Equals, previousDepth.MulUint64(3).QuoUint64(4).String())
+	c.Check(tu.Units.String() == previousUnits.QuoUint64(2).String(), Equals, false)
+	c.Check(tu.Units.String(), Equals, previousUnits.MulUint64(3).QuoUint64(4).String())
+
+	// Now deposit to double the tu.Depth, which should double the tu.Units .
+	previousDepth = tu.Depth
+	previousUnits = tu.Units
+	amt, err = mgr.Deposit(ctx, asset, previousDepth, addr1)
+	c.Assert(err, IsNil)
+	c.Check(amt.String(), Equals, previousDepth.String())
+	// 'amt' is always returned by Deposit as-is with no modification.
+	tu, err = k.GetTradeUnit(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Check(tu.Depth.String(), Equals, previousDepth.MulUint64(2).String())
+	c.Check(tu.Units.String(), Equals, previousUnits.MulUint64(2).String())
+
+	// Confirm that the address's units are consistent with the total units.
+	tr, err := k.GetTradeAccount(ctx, addr1, asset)
+	c.Assert(err, IsNil)
+	c.Check(tr.Units.String(), Equals, tu.Units.String())
+}
