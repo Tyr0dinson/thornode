@@ -198,7 +198,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		synthBackstop = true
 	}
 
-	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", amount, "target", target, "to", destination, "fee", transactionFee)
+	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "adjusted amount", amount, "target", target, "to", destination, "fee", transactionFee)
 
 	// Set asset to our pool asset
 	var poolAsset common.Asset
