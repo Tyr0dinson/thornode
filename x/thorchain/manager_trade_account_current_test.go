@@ -78,10 +78,7 @@ func (s *TradeManagerVCURSuite) TestReducedDepth(c *C) {
 	k.SetTradeUnit(ctx, tu)
 
 	bal = mgr.BalanceOf(ctx, asset, addr1)
-	c.Check(bal.String() == tu.Depth.String(), Equals, false)
-	c.Check(bal.String(), Equals, tu.Depth.MulUint64(2).String())
-	// The BalanceOf result is double the total Depth,
-	// because the tr.Units * tu.Units / tu.Depth GetSafeShare is capping 100 * 100 / 50 at 100.
+	c.Check(bal.String(), Equals, tu.Depth.String())
 
 	// Attempt to withdraw half of the remaining depth
 	// which should also reduce the units by half.
@@ -89,16 +86,12 @@ func (s *TradeManagerVCURSuite) TestReducedDepth(c *C) {
 	previousUnits := tu.Units
 	amt, err = mgr.Withdrawal(ctx, asset, previousDepth.QuoUint64(2), addr1)
 	c.Assert(err, IsNil)
-	c.Check(amt.String() == previousDepth.QuoUint64(2).String(), Equals, false)
-	c.Check(amt.String(), Equals, previousDepth.QuoUint64(4).String())
-	// This withdraws a quarter of the previous depth rather than the specified half.
+	c.Check(amt.String(), Equals, previousDepth.QuoUint64(2).String())
 
 	tu, err = k.GetTradeUnit(ctx, asset)
 	c.Assert(err, IsNil)
-	c.Check(tu.Depth.String() == previousDepth.QuoUint64(2).String(), Equals, false)
-	c.Check(tu.Depth.String(), Equals, previousDepth.MulUint64(3).QuoUint64(4).String())
-	c.Check(tu.Units.String() == previousUnits.QuoUint64(2).String(), Equals, false)
-	c.Check(tu.Units.String(), Equals, previousUnits.MulUint64(3).QuoUint64(4).String())
+	c.Check(tu.Depth.String(), Equals, previousDepth.QuoUint64(2).String())
+	c.Check(tu.Units.String(), Equals, previousUnits.QuoUint64(2).String())
 
 	// Now deposit to double the tu.Depth, which should double the tu.Units .
 	previousDepth = tu.Depth
