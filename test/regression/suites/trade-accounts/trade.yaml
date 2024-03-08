@@ -167,9 +167,9 @@ asserts:
   - .[0].units|tonumber == ${REMAINING_UNITS}
   - .[0].owner == "{{ addr_thor_fox }}"
   # Prepare the withdraw amount (~2/3rds of remaining units, leaving a round number).
-  - .| ${REMAINING_UNITS} * (1/3) | log10 | floor | pow(10;.) == ${DIGITS=1000000}
-  - .| ${REMAINING_UNITS} * (1/3) / ${DIGITS} | floor * ${DIGITS} == ${NEW_REMAINING_UNITS=3000000}
-  - .| ${REMAINING_UNITS} - ${NEW_REMAINING_UNITS} == ${WITHDRAW_AMOUNT=6522367}
+  - ${REMAINING_UNITS} * (1/3) | log10 | floor | pow(10;.) == ${DIGITS=1000000}
+  - ${REMAINING_UNITS} * (1/3) / ${DIGITS} | floor * ${DIGITS} == ${NEW_REMAINING_UNITS=3000000}
+  - ${REMAINING_UNITS} - ${NEW_REMAINING_UNITS} == ${WITHDRAW_AMOUNT=6522367}
 ---
 ########################################################################################
 # withdraw btc
@@ -221,7 +221,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
-  - .| ${WITHDRAW_AMOUNT} - ${OUT_FEE} == ${OUT_AMOUNT=6508367}
+  -  ${WITHDRAW_AMOUNT} - ${OUT_FEE} == ${OUT_AMOUNT=6508367}
   - .[0].coin.amount == "${OUT_AMOUNT}"
 ---
 type: tx-observed-out
@@ -297,7 +297,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
-  - .| ${NEW_REMAINING_UNITS} - ${OUT_FEE} == ${OUT_AMOUNT=2986000}
+  - ${NEW_REMAINING_UNITS} - ${OUT_FEE} == ${OUT_AMOUNT=2986000}
   - .[0].coin.amount == "${OUT_AMOUNT}"
 ---
 type: tx-observed-out

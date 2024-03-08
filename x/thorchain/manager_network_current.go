@@ -1505,7 +1505,6 @@ func (vm *NetworkMgrVCUR) getVaultsLiquidityRune(ctx cosmos.Context) (cosmos.Uin
 
 			pool, ok := poolCache[coin.Asset]
 			if !ok {
-				var err error // Avoid shadowing.
 				pool, err = vm.k.GetPool(ctx, coin.Asset)
 				if err != nil {
 					return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s, err:%w", coin.Asset, err)

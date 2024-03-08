@@ -450,7 +450,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances[]|select(.denom == "rune")|.amount == "${RUNE_BORROWED}"
   # Prepare repay amount.
-  - .| ${RUNE_BORROWED} - 2000000 == ${REPAY_AMOUNT=397979715}
+  - ${RUNE_BORROWED} - 2000000 == ${REPAY_AMOUNT=397979715}
 ---
 type: tx-deposit
 signer: {{ addr_thor_pig }}

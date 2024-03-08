@@ -545,8 +545,8 @@ asserts:
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}" # should now be fully repaid
   - .[0]|.debt_repaid == "${DEBT_REPAID=4675174325}" # over repaid
-  - .| ${DEBT_REPAID} > ${DEBT_ISSUED}
-  - .| ${DEBT_REPAID} > ${DEBT_ISSUED} * 4 # (Greatly over-repaid.)
+  - ${DEBT_REPAID} > ${DEBT_ISSUED}
+  - ${DEBT_REPAID} > ${DEBT_ISSUED} * 4 # (Greatly over-repaid.)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -639,7 +639,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2503838201869}
-  - .| ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856855119}
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856855119}
 ---
 type: create-blocks
 count: 1
@@ -699,9 +699,9 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2504315267795}
-  - .| ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477065926}
-  - .| ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} # Over-repayment output is greater than no-over-repayment output.
-  - .| ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} * 8
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477065926}
+  - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} # Over-repayment output is greater than no-over-repayment output.
+  - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} * 8
   
 ---
 type: create-blocks
