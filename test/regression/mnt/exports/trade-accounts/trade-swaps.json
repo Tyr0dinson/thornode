@@ -424,6 +424,10 @@
           "key": "ENABLEDERIVEDASSETS"
         },
         {
+          "key": "SWAPSLIPBASISPOINTSMIN-TRADEACCOUNTS",
+          "value": "1000"
+        },
+        {
           "key": "TRADEACCOUNTSENABLED",
           "value": "1"
         }

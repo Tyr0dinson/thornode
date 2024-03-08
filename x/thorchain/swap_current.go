@@ -495,15 +495,19 @@ func (s *SwapperVCUR) MinSlipBps(
 	var ref string
 	switch {
 	case isSynth:
-		ref = constants.SynthSlipMinBps.String()
+		ref = "Synth"
 	case isTradeAccounts:
-		ref = constants.TradeAccountsSlipMinBps.String()
+		ref = "TradeAccounts"
 	default:
-		ref = constants.L1SlipMinBps.String()
+		ref = "L1"
 	}
-	minFeeMimir, found := mimir.GetMimir(mimir.SwapSlipBasisPointsMin, ref)
-	if !found {
+	key := fmt.Sprintf("SwapSlipBasisPointsMin-%s", ref)
+	minFeeMimir, err := k.GetMimir(ctx, key)
+	if minFeeMimir < 0 || err != nil {
+		if err != nil {
+			ctx.Logger().Error("fail to get mimir", "key", key, "error", err)
+		}
 		return cosmos.ZeroUint()
 	}
-	return cosmos.SafeUintFromInt64(minFeeMimir.FetchValue(ctx, k))
+	return cosmos.SafeUintFromInt64(minFeeMimir)
 }
