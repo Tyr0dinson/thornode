@@ -205,7 +205,12 @@ func (h ObservedTxInHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxIn)
 		voter.Tx.Tx.Memo = tx.Tx.Memo
 
 		hasFinalised := voter.HasFinalised(activeNodeAccounts)
-		if hasFinalised {
+		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
+		// Update vault balances from inbounds with Migrate memos immediately,
+		// to minimise any gap between outbound and inbound observations.
+		// TODO: In future somehow update both balances in a single action,
+		// so the ActiveVault balance increase is guaranteed to never be early nor late?
+		if hasFinalised || memo.IsType(TxMigrate) {
 			if vault.IsAsgard() && !voter.UpdatedVault {
 				if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 					// Don't add to or subtract from vault balances when the sender and recipient are the same
@@ -232,7 +237,6 @@ func (h ObservedTxInHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
-		memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), tx.Tx.Memo) // ignore err
 		if memo.IsOutbound() || memo.IsInternal() {
 			// do not process outbound handlers here, or internal handlers
 			continue
