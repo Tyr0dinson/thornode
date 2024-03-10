@@ -218,8 +218,8 @@ func (h ObservedTxInHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxIn)
 					vault.AddFunds(tx.Tx.Coins)
 				}
 				voter.UpdatedVault = true
+				vault.InboundTxCount++
 			}
-			vault.InboundTxCount++
 		}
 		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
