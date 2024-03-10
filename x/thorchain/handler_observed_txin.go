@@ -216,9 +216,9 @@ func (h ObservedTxInHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxIn)
 					// Don't add to or subtract from vault balances when the sender and recipient are the same
 					// (particularly avoid Consolidate SafeSub zeroing of vault balances).
 					vault.AddFunds(tx.Tx.Coins)
+					vault.InboundTxCount++
 				}
 				voter.UpdatedVault = true
-				vault.InboundTxCount++
 			}
 		}
 		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {

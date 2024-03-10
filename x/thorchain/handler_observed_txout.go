@@ -265,8 +265,8 @@ func (h ObservedTxOutHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxOu
 			// Don't add to or subtract from vault balances when the sender and recipient are the same
 			// (particularly avoid Consolidate SafeSub zeroing of vault balances).
 			vault.SubFunds(tx.Tx.Coins)
+			vault.OutboundTxCount++
 		}
-		vault.OutboundTxCount++
 		if vault.IsAsgard() && memo.IsType(TxMigrate) {
 			// only remove the block height that had been specified in the memo
 			vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
