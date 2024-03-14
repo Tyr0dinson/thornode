@@ -82,8 +82,8 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 
 		// TODO: Further simplify the conditions below.
 
-		// skip utxos with no confirmations unless from ourself or an asgard
-		if item.Confirmations == 0 && !isSelfTx && !c.isAsgardAddress(item.Address) {
+		// skip utxos with no confirmations (mempool) unless from an asgard ('self')
+		if item.Confirmations == 0 && !isSelfTx {
 			continue
 		}
 
@@ -92,7 +92,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 			continue
 		}
 
-		// include utxo for self transactions, or has enough confirmations
+		// include utxo for asgard ('self') transactions, or has enough confirmations
 		if isSelfTx || item.Confirmations >= c.cfg.UTXO.MinUTXOConfirmations {
 			result = append(result, item)
 			toSpend += item.Amount
