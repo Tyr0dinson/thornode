@@ -45,6 +45,8 @@ func (h SwapHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, erro
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.129.0")):
+		return h.validateV129(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.validateV121(ctx, msg)
 	case version.GTE(semver.MustParse("1.120.0")):
@@ -74,7 +76,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	}
 }
 
-func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
+func (h SwapHandler) validateV129(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasicV63(); err != nil {
 		return err
 	}
@@ -132,6 +134,10 @@ func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
 		return errors.New("minting a synthetic of a native coin is not allowed")
 	}
 
+	if target.IsTradeAsset() && target.GetLayer1Asset().IsNative() {
+		return errors.New("swapping to a trade asset of a native coin is not allowed")
+	}
+
 	var sourceCoin common.Coin
 	if len(msg.Tx.Coins) > 0 {
 		sourceCoin = msg.Tx.Coins[0]
@@ -141,6 +147,15 @@ func (h SwapHandler) validateV121(ctx cosmos.Context, msg MsgSwap) error {
 		pausedStreaming := fetchConfigInt64(ctx, h.mgr, constants.StreamingSwapPause)
 		if pausedStreaming > 0 {
 			return fmt.Errorf("streaming swaps are paused")
+		}
+
+		// if either source or target in ragnarok, streaming is not allowed
+		for _, asset := range []common.Asset{sourceCoin.Asset, target} {
+			key := "RAGNAROK-" + asset.MimirString()
+			ragnarok, err := h.mgr.Keeper().GetMimir(ctx, key)
+			if err == nil && ragnarok > 0 {
+				return fmt.Errorf("streaming swaps disabled on ragnarok asset %s", asset)
+			}
 		}
 
 		swp := msg.GetStreamingSwap()

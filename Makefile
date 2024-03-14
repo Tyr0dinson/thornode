@@ -56,7 +56,6 @@ BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD)
 # ------------------------------ Generate ------------------------------
 
 generate: go-generate openapi protob-docker
-	@git ls-files openapi/gen | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
 
 go-generate:
 	@go install golang.org/x/tools/cmd/stringer@v0.15.0
@@ -97,6 +96,8 @@ openapi:
 		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
+	@find ./openapi/gen -type f | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
+	@find ./openapi/gen -type f | grep model | xargs sed -i 's/MarshalJSON(/MarshalJSON_deprecated(/'
 
 # ------------------------------ Docs ------------------------------
 
@@ -140,18 +141,12 @@ format:
 
 lint:
 	@./scripts/lint.sh
-	@go run tools/analyze/main.go ./common/... ./constants/... ./x/... ./mimir/...
-	@go run tools/lint-whitelist-tokens/main.go
 	@./scripts/trunk check --no-fix --upstream origin/develop
 
 lint-ci:
 	@./scripts/lint.sh
-	@go run tools/analyze/main.go ./common/... ./constants/... ./x/... ./mimir/...
-	@go run tools/lint-whitelist-tokens/main.go
-	@./scripts/lint-versions.bash
-	@./scripts/lint-mimir-ids.bash
 ifdef CI_MERGE_REQUEST_ID
-	# only check changes on merge requests
+# only check changes on merge requests
 	@./scripts/trunk check --ci -j8 --upstream FETCH_HEAD
 else
 	@./scripts/trunk check --all --ci -j8
