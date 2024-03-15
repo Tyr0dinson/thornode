@@ -73,7 +73,7 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 		maxGas := maxGasCache[tx.Chain]
 		gasRate := gasRateCache[tx.Chain]
-		if len(tx.MaxGas) == 0 || !maxGas.Amount.Equal(tx.MaxGas[0].Amount) {
+		if len(tx.MaxGas) == 0 || (!maxGas.Amount.Equal(tx.MaxGas[0].Amount) && !maxGas.IsEmpty()) {
 			txOut.TxArray[i].MaxGas = common.Gas{maxGas}
 			// Update MaxGas in ObservedTxVoter action as well
 			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGas})
@@ -81,7 +81,7 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			}
 		}
-		if txOut.TxArray[i].GasRate != gasRate {
+		if txOut.TxArray[i].GasRate != gasRate && gasRate > 0 {
 			// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
 			// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
 			if err := updateTxOutGasRate(ctx, tos.keeper, tx, gasRate); err != nil {
