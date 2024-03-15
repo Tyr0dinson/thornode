@@ -78,25 +78,22 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 			c.log.Warn().Str("script", item.ScriptPubKey).Msgf("invalid utxo, unable to spend")
 			continue
 		}
-		isSelfTx := c.isSelfTransaction(item.TxID)
 
-		// TODO: Further simplify the conditions below.
+		// If from an asgard ('self'), use even if mempool-only or under the dust threshold.
+		if !c.isSelfTransaction(item.TxID) {
+			// skip utxos with insufficient confirmations
+			if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations {
+				continue
+			}
 
-		// skip utxos with no confirmations (mempool) unless from an asgard ('self')
-		if item.Confirmations == 0 && !isSelfTx {
-			continue
+			// skip utxos under the dust threshold
+			if item.Amount < minUTXOAmt {
+				continue
+			}
 		}
 
-		// skip utxos under the dust threshold for asgards, unless it is a self transaction
-		if item.Amount < minUTXOAmt && !isSelfTx {
-			continue
-		}
-
-		// include utxo for asgard ('self') transactions, or has enough confirmations
-		if isSelfTx || item.Confirmations >= c.cfg.UTXO.MinUTXOConfirmations {
-			result = append(result, item)
-			toSpend += item.Amount
-		}
+		result = append(result, item)
+		toSpend += item.Amount
 
 		// in the scenario that there are too many unspent utxos available, make sure it
 		// doesn't spend too much as too much UTXO will cause huge pressure on TSS, also
