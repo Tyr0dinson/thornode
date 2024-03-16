@@ -310,6 +310,7 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	reserveRune := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
 	poolCache := map[common.Asset]Pool{}
 	for i := range gm.outAssetGas {
+		gasReimbursedRune := cosmos.ZeroUint()
 		for _, coin := range gm.outAssetGas[i].gas {
 			// if the coin is empty, don't need to do anything
 			if coin.IsEmpty() {
@@ -349,11 +350,6 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				runeGas = cosmos.ZeroUint()
 			}
 
-			// Add RUNE spent on gas by the reserve
-			if err := keeper.AddToOutboundGasReimbursedRune(ctx, gm.outAssetGas[i].outAsset, runeGas); err != nil {
-				ctx.Logger().Error("fail to add to outbound gas reimbursed rune", "outbound asset", gm.outAssetGas[i].outAsset, "error", err)
-			}
-
 			gasPool := GasPool{
 				Asset:    coin.Asset,
 				AssetAmt: coin.Amount,
@@ -361,6 +357,12 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 				Count:    gm.gasCount[coin.Asset],
 			}
 			gm.gasEvent.UpsertGasPool(gasPool)
+
+			gasReimbursedRune = gasReimbursedRune.Add(runeGas)
+		}
+		// Add RUNE spent on gas by the reserve
+		if err := keeper.AddToOutboundGasReimbursedRune(ctx, gm.outAssetGas[i].outAsset, gasReimbursedRune); err != nil {
+			ctx.Logger().Error("fail to add to outbound gas reimbursed rune", "outbound asset", gm.outAssetGas[i].outAsset, "error", err)
 		}
 	}
 
