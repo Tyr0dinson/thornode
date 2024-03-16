@@ -337,13 +337,7 @@ asserts:
   - .["DerivedDepthBasisPts" | ascii_upcase] == 10000
   - .["EnableDerivedAssets" | ascii_upcase] == 0
   - .["TradeAccountsEnabled" | ascii_upcase] == 1
-  - .[""] == 1000 # (from "7-TradeAccountsSlipMinBps" earlier)
----
-type: check
-endpoint: http://localhost:1317/thorchain/mimirV2
-asserts:
-  - . == {"SWAPSLIPBASISPOINTSMINTRADEACCOUNTSSLIPMINBPS":1000}
-  # TODO: Is this satisfactorily readable?
+  - .["SWAPSLIPBASISPOINTSMINTRADEACCOUNTSSLIPMINBPS" | ascii_upcase] == 1000 # (from "7-TradeAccountsSlipMinBps" earlier)
 ---
 # Confirm that the THOR.BTC pool exists.
 type: check

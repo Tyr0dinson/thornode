@@ -2481,7 +2481,12 @@ func queryMimirValues(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 			value = mimirs.ValueOfOperational(key, constants.MinMimirV2Vote, active.GetNodeAddresses())
 		}
 		if value >= 0 {
-			values[m.LegacyKey(m.Reference())] = value
+			mKey := m.LegacyKey(m.Reference())
+			if mKey == "" {
+				// no legacy key
+				mKey = m.Name()
+			}
+			values[mKey] = value
 		}
 	}
 
