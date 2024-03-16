@@ -2681,14 +2681,11 @@ func queryOutboundFees(ctx cosmos.Context, path []string, req abci.RequestQuery,
 	if len(path) > 0 && len(path[0]) > 0 {
 		// If an Asset has been specified, return information for just that Asset
 		// (even if for instance a Derived Asset to show its THORChain outbound fee).
-
-		// Allow short code or fuzzy-matching Asset specification.
-		asset, err := common.NewAssetWithShortCodes(mgr.GetVersion(), path[0])
+		asset, err := common.NewAsset(path[0])
 		if err != nil {
 			ctx.Logger().Error("fail to parse asset", "error", err, "asset", path[0])
 			return nil, fmt.Errorf("fail to parse asset (%s): %w", path[0], err)
 		}
-		asset = fuzzyAssetMatch(ctx, mgr.Keeper(), asset)
 		assets = []common.Asset{asset}
 	} else {
 		// By default display the outbound fees of RUNE and all external-chain Layer 1 assets.
