@@ -183,7 +183,7 @@ func useMimirV2(version semver.Version, id Id) bool {
 	case id >= SwapSlipBasisPointsMin && id <= TradeAccountEnabled:
 		return version.GTE(semver.MustParse("1.128.0"))
 	case id >= PauseSynths && id <= PauseChain:
-		return version.GTE(semver.MustParse("1.129.0"))
+		return version.GTE(semver.MustParse("1.130.0"))
 	default:
 		return false
 	}
