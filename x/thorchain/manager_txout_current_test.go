@@ -63,10 +63,10 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 
 	outboundFeeWithheldRune, err := w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	outboundGasReimbursedRune, err := w.keeper.GetOutboundGasReimbursedRune(w.ctx, common.BNBAsset)
+	outboundFeeSpentRune, err := w.keeper.GetOutboundFeeSpentRune(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Check(outboundFeeWithheldRune.String(), Equals, "0")
-	c.Check(outboundGasReimbursedRune.String(), Equals, "0")
+	c.Check(outboundFeeSpentRune.String(), Equals, "0")
 
 	acc1 := GetRandomValidatorNode(NodeActive)
 	acc2 := GetRandomValidatorNode(NodeActive)
@@ -109,10 +109,10 @@ func (s TxOutStoreVCURSuite) TestAddOutTxItem(c *C) {
 	// Gas withheld should be updated
 	outboundFeeWithheldRune, err = w.keeper.GetOutboundFeeWithheldRune(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
-	outboundGasReimbursedRune, err = w.keeper.GetOutboundGasReimbursedRune(w.ctx, common.BNBAsset)
+	outboundFeeSpentRune, err = w.keeper.GetOutboundFeeSpentRune(w.ctx, common.BNBAsset)
 	c.Assert(err, IsNil)
 	c.Check(outboundFeeWithheldRune.String(), Equals, "74999") // After slippage the 75000 BNB fee is 74999 in RUNE
-	c.Check(outboundGasReimbursedRune.String(), Equals, "0")
+	c.Check(outboundFeeSpentRune.String(), Equals, "0")
 
 	// Should get acc1. Acc3 hasn't signed and acc1 now has the highest amount
 	// of coin.

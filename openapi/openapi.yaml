@@ -2126,14 +2126,14 @@ components:
           type: string
           example: "30000000000000"
           description: Total RUNE the network has withheld as fees to later cover gas costs for this asset's outbounds
-        gas_reimbursed_rune:
+        fee_spent_rune:
           type: string
           example: "20000000000000"
           description: Total RUNE the network has spent to reimburse gas costs for this asset's outbounds
         surplus_rune:
           type: string
           example: "10000000000000"
-          description: amount of RUNE by which the fee_withheld_rune exceeds the gas_reimbursed_rune
+          description: amount of RUNE by which the fee_withheld_rune exceeds the fee_spent_rune
         dynamic_multiplier_basis_points:
           type: string
           example: "15000"

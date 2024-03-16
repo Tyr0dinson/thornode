@@ -23,8 +23,8 @@ type OutboundFee struct {
 	// Total RUNE the network has withheld as fees to later cover gas costs for this asset's outbounds
 	FeeWithheldRune *string `json:"fee_withheld_rune,omitempty"`
 	// Total RUNE the network has spent to reimburse gas costs for this asset's outbounds
-	GasReimbursedRune *string `json:"gas_reimbursed_rune,omitempty"`
-	// amount of RUNE by which the fee_withheld_rune exceeds the gas_reimbursed_rune
+	FeeSpentRune *string `json:"fee_spent_rune,omitempty"`
+	// amount of RUNE by which the fee_withheld_rune exceeds the fee_spent_rune
 	SurplusRune *string `json:"surplus_rune,omitempty"`
 	// dynamic multiplier basis points, based on the surplus_rune, affecting the size of the outbound_fee
 	DynamicMultiplierBasisPoints *string `json:"dynamic_multiplier_basis_points,omitempty"`
@@ -129,36 +129,36 @@ func (o *OutboundFee) SetFeeWithheldRune(v string) {
 	o.FeeWithheldRune = &v
 }
 
-// GetGasReimbursedRune returns the GasReimbursedRune field value if set, zero value otherwise.
-func (o *OutboundFee) GetGasReimbursedRune() string {
-	if o == nil || o.GasReimbursedRune == nil {
+// GetFeeSpentRune returns the FeeSpentRune field value if set, zero value otherwise.
+func (o *OutboundFee) GetFeeSpentRune() string {
+	if o == nil || o.FeeSpentRune == nil {
 		var ret string
 		return ret
 	}
-	return *o.GasReimbursedRune
+	return *o.FeeSpentRune
 }
 
-// GetGasReimbursedRuneOk returns a tuple with the GasReimbursedRune field value if set, nil otherwise
+// GetFeeSpentRuneOk returns a tuple with the FeeSpentRune field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *OutboundFee) GetGasReimbursedRuneOk() (*string, bool) {
-	if o == nil || o.GasReimbursedRune == nil {
+func (o *OutboundFee) GetFeeSpentRuneOk() (*string, bool) {
+	if o == nil || o.FeeSpentRune == nil {
 		return nil, false
 	}
-	return o.GasReimbursedRune, true
+	return o.FeeSpentRune, true
 }
 
-// HasGasReimbursedRune returns a boolean if a field has been set.
-func (o *OutboundFee) HasGasReimbursedRune() bool {
-	if o != nil && o.GasReimbursedRune != nil {
+// HasFeeSpentRune returns a boolean if a field has been set.
+func (o *OutboundFee) HasFeeSpentRune() bool {
+	if o != nil && o.FeeSpentRune != nil {
 		return true
 	}
 
 	return false
 }
 
-// SetGasReimbursedRune gets a reference to the given string and assigns it to the GasReimbursedRune field.
-func (o *OutboundFee) SetGasReimbursedRune(v string) {
-	o.GasReimbursedRune = &v
+// SetFeeSpentRune gets a reference to the given string and assigns it to the FeeSpentRune field.
+func (o *OutboundFee) SetFeeSpentRune(v string) {
+	o.FeeSpentRune = &v
 }
 
 // GetSurplusRune returns the SurplusRune field value if set, zero value otherwise.
@@ -236,8 +236,8 @@ func (o OutboundFee) MarshalJSON_deprecated() ([]byte, error) {
 	if o.FeeWithheldRune != nil {
 		toSerialize["fee_withheld_rune"] = o.FeeWithheldRune
 	}
-	if o.GasReimbursedRune != nil {
-		toSerialize["gas_reimbursed_rune"] = o.GasReimbursedRune
+	if o.FeeSpentRune != nil {
+		toSerialize["fee_spent_rune"] = o.FeeSpentRune
 	}
 	if o.SurplusRune != nil {
 		toSerialize["surplus_rune"] = o.SurplusRune

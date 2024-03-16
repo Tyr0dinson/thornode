@@ -378,15 +378,15 @@
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "orderbook_items": [],
-      "outbound_fee_withheld_rune": [
+      "outbound_fee_spent_rune": [
         {
-          "amount": "16646671",
+          "amount": "12479372",
           "asset": "BTC.BTC"
         }
       ],
-      "outbound_gas_reimbursed_rune": [
+      "outbound_fee_withheld_rune": [
         {
-          "amount": "12479372",
+          "amount": "16646671",
           "asset": "BTC.BTC"
         }
       ],

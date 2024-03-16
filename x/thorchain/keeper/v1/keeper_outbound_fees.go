@@ -39,27 +39,27 @@ func (k KVStore) GetOutboundFeeWithheldRuneIterator(ctx cosmos.Context) cosmos.I
 	return k.getIterator(ctx, prefixOutboundFeeWithheldRune)
 }
 
-// GetOutboundGasReimbursedRune - record of RUNE reimbursed by the Reserve for an Asset's outbounds' gas costs
-func (k KVStore) GetOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
+// GetOutboundFeeSpentRune - record of RUNE spent by the Reserve for an Asset's outbounds' gas costs
+func (k KVStore) GetOutboundFeeSpentRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
 	var record uint64
-	_, err := k.getUint64(ctx, k.GetKey(ctx, prefixOutboundGasReimbursedRune, outAsset.String()), &record)
+	_, err := k.getUint64(ctx, k.GetKey(ctx, prefixOutboundFeeSpentRune, outAsset.String()), &record)
 	return cosmos.NewUint(record), err
 }
 
-// AddToOutboundGasReimbursedRune - add to record of RUNE reimbursed by the Reserve for an Asset's outbounds' gas costs
-func (k KVStore) AddToOutboundGasReimbursedRune(ctx cosmos.Context, outAsset common.Asset, reimbursed cosmos.Uint) error {
-	outboundGasReimbursedRune, err := k.GetOutboundGasReimbursedRune(ctx, outAsset)
+// AddToOutboundFeeSpentRune - add to record of RUNE spent by the Reserve for an Asset's outbounds' gas costs
+func (k KVStore) AddToOutboundFeeSpentRune(ctx cosmos.Context, outAsset common.Asset, spent cosmos.Uint) error {
+	outboundFeeSpentRune, err := k.GetOutboundFeeSpentRune(ctx, outAsset)
 	if err != nil {
 		return err
 	}
 
-	outboundGasReimbursedRune = outboundGasReimbursedRune.Add(reimbursed)
-	k.setUint64(ctx, k.GetKey(ctx, prefixOutboundGasReimbursedRune, outAsset.String()), outboundGasReimbursedRune.Uint64())
+	outboundFeeSpentRune = outboundFeeSpentRune.Add(spent)
+	k.setUint64(ctx, k.GetKey(ctx, prefixOutboundFeeSpentRune, outAsset.String()), outboundFeeSpentRune.Uint64())
 	return nil
 }
 
-// GetOutboundGasReimbursedRuneIterator to iterate through all Assets' OutboundGasReimbursedRune
+// GetOutboundFeeSpentRuneIterator to iterate through all Assets' OutboundFeeSpentRune
 // (e.g. for hard-fork GenesisState export)
-func (k KVStore) GetOutboundGasReimbursedRuneIterator(ctx cosmos.Context) cosmos.Iterator {
-	return k.getIterator(ctx, prefixOutboundGasReimbursedRune)
+func (k KVStore) GetOutboundFeeSpentRuneIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixOutboundFeeSpentRune)
 }

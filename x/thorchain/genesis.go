@@ -122,31 +122,31 @@ func ValidateGenesis(data GenesisState) error {
 // DefaultGenesisState the default values THORNode put in the Genesis
 func DefaultGenesisState() GenesisState {
 	return GenesisState{
-		Pools:                     make([]Pool, 0),
-		NodeAccounts:              NodeAccounts{},
-		BondProviders:             make([]BondProviders, 0),
-		TxOuts:                    make([]TxOut, 0),
-		LiquidityProviders:        make(LiquidityProviders, 0),
-		Vaults:                    make(Vaults, 0),
-		ObservedTxInVoters:        make(ObservedTxVoters, 0),
-		ObservedTxOutVoters:       make(ObservedTxVoters, 0),
-		LastSignedHeight:          0,
-		LastChainHeights:          make([]LastChainHeight, 0),
-		Network:                   NewNetwork(),
-		OutboundFeeWithheldRune:   common.Coins{},
-		OutboundGasReimbursedRune: common.Coins{},
-		POL:                       NewProtocolOwnedLiquidity(),
-		OrderbookItems:            make([]MsgSwap, 0),
-		SwapQueueItems:            make([]MsgSwap, 0),
-		StreamingSwaps:            make([]StreamingSwap, 0),
-		NetworkFees:               make([]NetworkFee, 0),
-		ChainContracts:            make([]ChainContract, 0),
-		THORNames:                 make([]THORName, 0),
-		StoreVersion:              38, // refer to func `GetStoreVersion` , let's keep it consistent
-		Loans:                     make([]Loan, 0),
-		SwapperClout:              make([]SwapperClout, 0),
-		TradeAccounts:             make([]TradeAccount, 0),
-		TradeUnits:                make([]TradeUnit, 0),
+		Pools:                   make([]Pool, 0),
+		NodeAccounts:            NodeAccounts{},
+		BondProviders:           make([]BondProviders, 0),
+		TxOuts:                  make([]TxOut, 0),
+		LiquidityProviders:      make(LiquidityProviders, 0),
+		Vaults:                  make(Vaults, 0),
+		ObservedTxInVoters:      make(ObservedTxVoters, 0),
+		ObservedTxOutVoters:     make(ObservedTxVoters, 0),
+		LastSignedHeight:        0,
+		LastChainHeights:        make([]LastChainHeight, 0),
+		Network:                 NewNetwork(),
+		OutboundFeeWithheldRune: common.Coins{},
+		OutboundFeeSpentRune:    common.Coins{},
+		POL:                     NewProtocolOwnedLiquidity(),
+		OrderbookItems:          make([]MsgSwap, 0),
+		SwapQueueItems:          make([]MsgSwap, 0),
+		StreamingSwaps:          make([]StreamingSwap, 0),
+		NetworkFees:             make([]NetworkFee, 0),
+		ChainContracts:          make([]ChainContract, 0),
+		THORNames:               make([]THORName, 0),
+		StoreVersion:            38, // refer to func `GetStoreVersion` , let's keep it consistent
+		Loans:                   make([]Loan, 0),
+		SwapperClout:            make([]SwapperClout, 0),
+		TradeAccounts:           make([]TradeAccount, 0),
+		TradeUnits:              make([]TradeUnit, 0),
 	}
 }
 
@@ -231,8 +231,8 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			panic(err)
 		}
 	}
-	for i := range data.OutboundGasReimbursedRune {
-		if err := keeper.AddToOutboundGasReimbursedRune(ctx, data.OutboundGasReimbursedRune[i].Asset, data.OutboundGasReimbursedRune[i].Amount); err != nil {
+	for i := range data.OutboundFeeSpentRune {
+		if err := keeper.AddToOutboundFeeSpentRune(ctx, data.OutboundFeeSpentRune[i].Asset, data.OutboundFeeSpentRune[i].Amount); err != nil {
 			panic(err)
 		}
 	}
@@ -607,7 +607,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	// Use Coin struct to represent these Asset-Amount pairs.
 	outboundFeeWithheldRune := common.Coins{}
-	outboundGasReimbursedRune := common.Coins{}
+	outboundFeeSpentRune := common.Coins{}
 	iterOFWR := k.GetOutboundFeeWithheldRuneIterator(ctx)
 	defer iterOFWR.Close()
 	for ; iterOFWR.Valid(); iterOFWR.Next() {
@@ -624,7 +624,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		}
 		outboundFeeWithheldRune = append(outboundFeeWithheldRune, common.NewCoin(asset, amount))
 	}
-	iterOGRR := k.GetOutboundGasReimbursedRuneIterator(ctx)
+	iterOGRR := k.GetOutboundFeeSpentRuneIterator(ctx)
 	defer iterOGRR.Close()
 	for ; iterOGRR.Valid(); iterOGRR.Next() {
 		var asset common.Asset
@@ -634,38 +634,38 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		var amount cosmos.Uint
-		amount, err = k.GetOutboundGasReimbursedRune(ctx, asset)
+		amount, err = k.GetOutboundFeeSpentRune(ctx, asset)
 		if err != nil {
 			continue
 		}
-		outboundGasReimbursedRune = append(outboundGasReimbursedRune, common.NewCoin(asset, amount))
+		outboundFeeSpentRune = append(outboundFeeSpentRune, common.NewCoin(asset, amount))
 	}
 
 	return GenesisState{
-		Pools:                     pools,
-		LiquidityProviders:        liquidityProviders,
-		ObservedTxInVoters:        observedTxInVoters,
-		TxOuts:                    outs,
-		NodeAccounts:              nodeAccounts,
-		BondProviders:             bps,
-		Vaults:                    vaults,
-		LastSignedHeight:          lastSignedHeight,
-		LastChainHeights:          lastChainHeights,
-		Network:                   network,
-		OutboundFeeWithheldRune:   outboundFeeWithheldRune,
-		OutboundGasReimbursedRune: outboundGasReimbursedRune,
-		POL:                       pol,
-		OrderbookItems:            swapMsgs,
-		SwapQueueItems:            swapQ,
-		StreamingSwaps:            streamSwaps,
-		NetworkFees:               networkFees,
-		ChainContracts:            chainContracts,
-		THORNames:                 names,
-		Loans:                     loans,
-		Mimirs:                    mimirs,
-		SwapperClout:              clouts,
-		TradeAccounts:             tradeAccts,
-		TradeUnits:                tradeUnits,
-		StoreVersion:              storeVersion,
+		Pools:                   pools,
+		LiquidityProviders:      liquidityProviders,
+		ObservedTxInVoters:      observedTxInVoters,
+		TxOuts:                  outs,
+		NodeAccounts:            nodeAccounts,
+		BondProviders:           bps,
+		Vaults:                  vaults,
+		LastSignedHeight:        lastSignedHeight,
+		LastChainHeights:        lastChainHeights,
+		Network:                 network,
+		OutboundFeeWithheldRune: outboundFeeWithheldRune,
+		OutboundFeeSpentRune:    outboundFeeSpentRune,
+		POL:                     pol,
+		OrderbookItems:          swapMsgs,
+		SwapQueueItems:          swapQ,
+		StreamingSwaps:          streamSwaps,
+		NetworkFees:             networkFees,
+		ChainContracts:          chainContracts,
+		THORNames:               names,
+		Loans:                   loans,
+		Mimirs:                  mimirs,
+		SwapperClout:            clouts,
+		TradeAccounts:           tradeAccts,
+		TradeUnits:              tradeUnits,
+		StoreVersion:            storeVersion,
 	}
 }

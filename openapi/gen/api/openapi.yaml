@@ -3144,9 +3144,9 @@ components:
         surplus_rune: "10000000000000"
         outbound_fee: "300000"
         fee_withheld_rune: "30000000000000"
-        gas_reimbursed_rune: "20000000000000"
         dynamic_multiplier_basis_points: "15000"
         asset: ETH.ETH
+        fee_spent_rune: "20000000000000"
       properties:
         asset:
           description: the asset to display the outbound fee for
@@ -3161,13 +3161,13 @@ components:
             gas costs for this asset's outbounds
           example: "30000000000000"
           type: string
-        gas_reimbursed_rune:
+        fee_spent_rune:
           description: Total RUNE the network has spent to reimburse gas costs for
             this asset's outbounds
           example: "20000000000000"
           type: string
         surplus_rune:
-          description: amount of RUNE by which the fee_withheld_rune exceeds the gas_reimbursed_rune
+          description: amount of RUNE by which the fee_withheld_rune exceeds the fee_spent_rune
           example: "10000000000000"
           type: string
         dynamic_multiplier_basis_points:

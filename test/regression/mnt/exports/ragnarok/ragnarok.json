@@ -354,13 +354,7 @@
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "orderbook_items": [],
-      "outbound_fee_withheld_rune": [
-        {
-          "amount": "206902",
-          "asset": "ETH.ETH"
-        }
-      ],
-      "outbound_gas_reimbursed_rune": [
+      "outbound_fee_spent_rune": [
         {
           "amount": "219412",
           "asset": "ETH.ETH"
@@ -368,6 +362,12 @@
         {
           "amount": "32959",
           "asset": "ETH.FOO"
+        }
+      ],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "206902",
+          "asset": "ETH.ETH"
         }
       ],
       "pools": null,

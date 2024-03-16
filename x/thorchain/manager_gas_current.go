@@ -147,10 +147,10 @@ func (gm *GasMgrVCUR) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 		ctx.Logger().Error("fail to get outbound fee withheld rune", "outbound asset", asset, "error", err)
 		outboundFeeWithheldRune = cosmos.ZeroUint()
 	}
-	outboundGasReimbursedRune, err := gm.keeper.GetOutboundGasReimbursedRune(ctx, asset)
+	outboundFeeSpentRune, err := gm.keeper.GetOutboundFeeSpentRune(ctx, asset)
 	if err != nil {
-		ctx.Logger().Error("fail to get outbound gas reimbursed rune", "outbound asset", asset, "error", err)
-		outboundGasReimbursedRune = cosmos.ZeroUint()
+		ctx.Logger().Error("fail to get outbound fee spent rune", "outbound asset", asset, "error", err)
+		outboundFeeSpentRune = cosmos.ZeroUint()
 	}
 
 	targetOutboundFeeSurplus := gm.keeper.GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)
@@ -159,7 +159,7 @@ func (gm *GasMgrVCUR) GetFee(ctx cosmos.Context, chain common.Chain, asset commo
 
 	// Calculate outbound fee based on current fee multiplier
 	chainBaseFee := networkFee.TransactionSize * networkFee.TransactionFeeRate
-	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundGasReimbursedRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
+	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundFeeSpentRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUint(chainBaseFee))
 
 	fee := cosmos.RoundToDecimal(
@@ -310,7 +310,7 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	reserveRune := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
 	poolCache := map[common.Asset]Pool{}
 	for i := range gm.outAssetGas {
-		gasReimbursedRune := cosmos.ZeroUint()
+		feeSpentRune := cosmos.ZeroUint()
 		for _, coin := range gm.outAssetGas[i].gas {
 			// if the coin is empty, don't need to do anything
 			if coin.IsEmpty() {
@@ -358,11 +358,11 @@ func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			}
 			gm.gasEvent.UpsertGasPool(gasPool)
 
-			gasReimbursedRune = gasReimbursedRune.Add(runeGas)
+			feeSpentRune = feeSpentRune.Add(runeGas)
 		}
 		// Add RUNE spent on gas by the reserve
-		if err := keeper.AddToOutboundGasReimbursedRune(ctx, gm.outAssetGas[i].outAsset, gasReimbursedRune); err != nil {
-			ctx.Logger().Error("fail to add to outbound gas reimbursed rune", "outbound asset", gm.outAssetGas[i].outAsset, "error", err)
+		if err := keeper.AddToOutboundFeeSpentRune(ctx, gm.outAssetGas[i].outAsset, feeSpentRune); err != nil {
+			ctx.Logger().Error("fail to add to outbound fee spent rune", "outbound asset", gm.outAssetGas[i].outAsset, "error", err)
 		}
 	}
 

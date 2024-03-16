@@ -408,13 +408,13 @@
       ],
       "observed_tx_out_voters": null,
       "orderbook_items": [],
+      "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
           "amount": "16784978",
           "asset": "BTC.BTC"
         }
       ],
-      "outbound_gas_reimbursed_rune": [],
       "pools": [
         {
           "LP_units": "100000000000",

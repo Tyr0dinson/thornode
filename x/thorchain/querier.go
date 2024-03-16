@@ -2727,7 +2727,7 @@ func queryOutboundFees(ctx cosmos.Context, path []string, req abci.RequestQuery,
 
 		// Only display fields other than asset and outbound_fee when the Asset is external,
 		// as a non-zero dynamic multiplier could be misleading otherwise.
-		var outboundFeeWithheldRuneString, outboundGasReimbursedRuneString, surplusRuneString, dynamicMultiplierBasisPointsString string
+		var outboundFeeWithheldRuneString, outboundFeeSpentRuneString, surplusRuneString, dynamicMultiplierBasisPointsString string
 		if !assets[i].IsNative() {
 			outboundFeeWithheldRune, err := mgr.Keeper().GetOutboundFeeWithheldRune(ctx, assets[i])
 			if err != nil {
@@ -2736,16 +2736,16 @@ func queryOutboundFees(ctx cosmos.Context, path []string, req abci.RequestQuery,
 			}
 			outboundFeeWithheldRuneString = outboundFeeWithheldRune.String()
 
-			outboundGasReimbursedRune, err := mgr.Keeper().GetOutboundGasReimbursedRune(ctx, assets[i])
+			outboundFeeSpentRune, err := mgr.Keeper().GetOutboundFeeSpentRune(ctx, assets[i])
 			if err != nil {
-				ctx.Logger().Error("fail to get outbound gas reimbursed rune", "outbound asset", assets[i], "error", err)
-				return nil, fmt.Errorf("fail to get outbound gas reimbursed rune for asset (%s): %w", assets[i], err)
+				ctx.Logger().Error("fail to get outbound fee spent rune", "outbound asset", assets[i], "error", err)
+				return nil, fmt.Errorf("fail to get outbound fee spent rune for asset (%s): %w", assets[i], err)
 			}
-			outboundGasReimbursedRuneString = outboundGasReimbursedRune.String()
+			outboundFeeSpentRuneString = outboundFeeSpentRune.String()
 
-			surplusRuneString = common.SafeSub(outboundFeeWithheldRune, outboundGasReimbursedRune).String()
+			surplusRuneString = common.SafeSub(outboundFeeWithheldRune, outboundFeeSpentRune).String()
 
-			dynamicMultiplierBasisPointsString = mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, targetSurplusRune, outboundGasReimbursedRune, outboundFeeWithheldRune, maxMultiplier, minMultiplier).String()
+			dynamicMultiplierBasisPointsString = mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, targetSurplusRune, outboundFeeSpentRune, outboundFeeWithheldRune, maxMultiplier, minMultiplier).String()
 		}
 
 		// As the entire endpoint is for outbounds, the term 'Outbound' is omitted from the field names.
@@ -2753,7 +2753,7 @@ func queryOutboundFees(ctx cosmos.Context, path []string, req abci.RequestQuery,
 			Asset:                        assets[i].String(),
 			OutboundFee:                  outboundFee.String(),
 			FeeWithheldRune:              wrapString(outboundFeeWithheldRuneString),
-			GasReimbursedRune:            wrapString(outboundGasReimbursedRuneString),
+			FeeSpentRune:                 wrapString(outboundFeeSpentRuneString),
 			SurplusRune:                  wrapString(surplusRuneString),
 			DynamicMultiplierBasisPoints: wrapString(dynamicMultiplierBasisPointsString),
 		})

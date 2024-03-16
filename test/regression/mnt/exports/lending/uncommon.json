@@ -492,15 +492,15 @@
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "orderbook_items": [],
-      "outbound_fee_withheld_rune": [
+      "outbound_fee_spent_rune": [
         {
-          "amount": "390424086",
+          "amount": "293121583",
           "asset": "ETH.ETH"
         }
       ],
-      "outbound_gas_reimbursed_rune": [
+      "outbound_fee_withheld_rune": [
         {
-          "amount": "293121583",
+          "amount": "390424086",
           "asset": "ETH.ETH"
         }
       ],

@@ -471,6 +471,20 @@
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "orderbook_items": [],
+      "outbound_fee_spent_rune": [
+        {
+          "amount": "13442550",
+          "asset": "BTC.BTC"
+        },
+        {
+          "amount": "93577610",
+          "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
+        },
+        {
+          "amount": "90674525",
+          "asset": "ETH.USDY-0X9999999999999999999999999999999999999999"
+        }
+      ],
       "outbound_fee_withheld_rune": [
         {
           "amount": "17952480",
@@ -482,20 +496,6 @@
         },
         {
           "amount": "120756466",
-          "asset": "ETH.USDY-0X9999999999999999999999999999999999999999"
-        }
-      ],
-      "outbound_gas_reimbursed_rune": [
-        {
-          "amount": "13442550",
-          "asset": "BTC.BTC"
-        },
-        {
-          "amount": "93577610",
-          "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
-        },
-        {
-          "amount": "90674525",
           "asset": "ETH.USDY-0X9999999999999999999999999999999999999999"
         }
       ],

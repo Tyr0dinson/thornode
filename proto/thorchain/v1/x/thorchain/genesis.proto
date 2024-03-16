@@ -63,5 +63,5 @@ message GenesisState {
   repeated types.TradeAccount trade_accounts = 32 [(gogoproto.nullable) = false];
   repeated types.TradeUnit trade_units = 33 [(gogoproto.nullable) = false];
   repeated common.Coin outbound_fee_withheld_rune = 34 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
-  repeated common.Coin outbound_gas_reimbursed_rune = 35 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
+  repeated common.Coin outbound_fee_spent_rune = 35 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
 }

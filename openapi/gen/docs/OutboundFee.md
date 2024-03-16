@@ -7,8 +7,8 @@ Name | Type | Description | Notes
 **Asset** | **string** | the asset to display the outbound fee for | 
 **OutboundFee** | **string** | the asset&#39;s outbound fee, in (1e8-format) units of the asset | 
 **FeeWithheldRune** | Pointer to **string** | Total RUNE the network has withheld as fees to later cover gas costs for this asset&#39;s outbounds | [optional] 
-**GasReimbursedRune** | Pointer to **string** | Total RUNE the network has spent to reimburse gas costs for this asset&#39;s outbounds | [optional] 
-**SurplusRune** | Pointer to **string** | amount of RUNE by which the fee_withheld_rune exceeds the gas_reimbursed_rune | [optional] 
+**FeeSpentRune** | Pointer to **string** | Total RUNE the network has spent to reimburse gas costs for this asset&#39;s outbounds | [optional] 
+**SurplusRune** | Pointer to **string** | amount of RUNE by which the fee_withheld_rune exceeds the fee_spent_rune | [optional] 
 **DynamicMultiplierBasisPoints** | Pointer to **string** | dynamic multiplier basis points, based on the surplus_rune, affecting the size of the outbound_fee | [optional] 
 
 ## Methods
@@ -95,30 +95,30 @@ SetFeeWithheldRune sets FeeWithheldRune field to given value.
 
 HasFeeWithheldRune returns a boolean if a field has been set.
 
-### GetGasReimbursedRune
+### GetFeeSpentRune
 
-`func (o *OutboundFee) GetGasReimbursedRune() string`
+`func (o *OutboundFee) GetFeeSpentRune() string`
 
-GetGasReimbursedRune returns the GasReimbursedRune field if non-nil, zero value otherwise.
+GetFeeSpentRune returns the FeeSpentRune field if non-nil, zero value otherwise.
 
-### GetGasReimbursedRuneOk
+### GetFeeSpentRuneOk
 
-`func (o *OutboundFee) GetGasReimbursedRuneOk() (*string, bool)`
+`func (o *OutboundFee) GetFeeSpentRuneOk() (*string, bool)`
 
-GetGasReimbursedRuneOk returns a tuple with the GasReimbursedRune field if it's non-nil, zero value otherwise
+GetFeeSpentRuneOk returns a tuple with the FeeSpentRune field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetGasReimbursedRune
+### SetFeeSpentRune
 
-`func (o *OutboundFee) SetGasReimbursedRune(v string)`
+`func (o *OutboundFee) SetFeeSpentRune(v string)`
 
-SetGasReimbursedRune sets GasReimbursedRune field to given value.
+SetFeeSpentRune sets FeeSpentRune field to given value.
 
-### HasGasReimbursedRune
+### HasFeeSpentRune
 
-`func (o *OutboundFee) HasGasReimbursedRune() bool`
+`func (o *OutboundFee) HasFeeSpentRune() bool`
 
-HasGasReimbursedRune returns a boolean if a field has been set.
+HasFeeSpentRune returns a boolean if a field has been set.
 
 ### GetSurplusRune
 
