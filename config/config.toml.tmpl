@@ -140,7 +140,7 @@ max_subscriptions_per_client = 5
 # buffer, per subscription, before returning an error and closing the
 # subscription. Must be set to at least 100, but higher values will accommodate
 # higher event throughput rates (and will use more memory).
-experimental_subscription_buffer_size = 1000
+experimental_subscription_buffer_size = {{ .RPC.ExperimentalSubscriptionBufferSize }}
 
 # Experimental parameter to specify the maximum number of RPC responses that
 # can be buffered per WebSocket client. If clients cannot read from the
@@ -152,7 +152,7 @@ experimental_subscription_buffer_size = 1000
 # otherwise connections could be dropped unnecessarily. This value should
 # ideally be somewhat higher than "experimental_subscription_buffer_size" to
 # accommodate non-subscription-related RPC responses.
-experimental_websocket_write_buffer_size = 1000
+experimental_websocket_write_buffer_size = {{ .RPC.ExperimentalWebsocketWriteBufferSize }}
 
 # If a WebSocket client cannot read fast enough, at present we may
 # silently drop events instead of generating an error or disconnecting the
