@@ -1268,3 +1268,38 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 		ctx.Logger().Error("failed to migrate v129", "error", err)
 	}
 }
+
+// Relevant Gitlab issues:
+// https://gitlab.com/thorchain/thornode/-/issues/1913
+// https://gitlab.com/thorchain/thornode/-/issues/1914
+func migrateStoreV130(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v130", "error", err)
+		}
+	}()
+
+	mgr.Keeper().SetMimir(ctx, "CONFMULTIPLIERBASISPOINTS", 50000)
+	evt := NewEventSetMimir("CONFMULTIPLIERBASISPOINTS", "50000")
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit event in v130 store miration", "error", err)
+	}
+
+	mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS", 10)
+	evt = NewEventSetMimir("MAXCONFIRMATIONS", "10")
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit event in v130 store miration", "error", err)
+	}
+
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-BNB-BNB", 1)
+	evt = NewEventSetMimir("RAGNAROK-BNB-BNB", "1")
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit event in v130 store miration", "error", err)
+	}
+
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-BNB-BUSD-BD1", 1)
+	evt = NewEventSetMimir("RAGNAROK-BNB-BUSD-BD1", "1")
+	if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit event in v130 store miration", "error", err)
+	}
+}

@@ -258,3 +258,14 @@ func migrateStoreV128(ctx cosmos.Context, mgr *Mgrs) {
 }
 
 func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {}
+
+func migrateStoreV130(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v130", "error", err)
+		}
+	}()
+
+	mgr.Keeper().SetMimir(ctx, "CONFMULTIPLIERBASISPOINTS", 50000)
+	mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS", 10)
+}
