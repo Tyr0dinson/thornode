@@ -38,7 +38,7 @@ func (gm *GasMgrVCUR) reset() {
 }
 
 // BeginBlock need to be called when a new block get created , update the internal EventGas to new one
-func (gm *GasMgrVCUR) BeginBlock(mgr Manager) {
+func (gm *GasMgrVCUR) BeginBlock(_ Manager) { // TODO: Remove Manager argument on hard fork.
 	gm.reset()
 }
 
