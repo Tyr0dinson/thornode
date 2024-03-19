@@ -467,11 +467,14 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
-			// round up to next coalesce block
+			// round up to nearest multiple of RescheduleCoalesceBlocks
 			rescheduleHeight := ctx.BlockHeight()
 			rescheduleCoalesceBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
 			if rescheduleCoalesceBlocks > 1 {
-				rescheduleHeight += rescheduleCoalesceBlocks - (rescheduleHeight % rescheduleCoalesceBlocks)
+				overBlocks := rescheduleHeight % rescheduleCoalesceBlocks
+				if overBlocks != 0 {
+					rescheduleHeight += rescheduleCoalesceBlocks - overBlocks
+				}
 			}
 
 			err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
