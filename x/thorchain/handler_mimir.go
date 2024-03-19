@@ -84,6 +84,8 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	ctx.Logger().Info("handleMsgMimir request", "node", msg.Signer, "key", msg.Key, "value", msg.Value)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.130.0")):
+		return h.handleV130(ctx, msg)
 	case version.GTE(semver.MustParse("1.125.0")):
 		return h.handleV125(ctx, msg)
 	case version.GTE(semver.MustParse("1.124.0")):
@@ -101,15 +103,15 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 	return errBadVersion
 }
 
-func (h MimirHandler) handleV125(ctx cosmos.Context, msg MsgMimir) error {
+func (h MimirHandler) handleV130(ctx cosmos.Context, msg MsgMimir) error {
 	if mimirV2ValidKey(msg.Key) {
-		return h.mVer2V125(ctx, msg)
+		return h.mVer2V130(ctx, msg)
 	} else {
 		return h.handleV112(ctx, msg)
 	}
 }
 
-func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
+func (h MimirHandler) mVer2V130(ctx cosmos.Context, msg MsgMimir) error {
 	if isAdmin(msg.Signer) {
 		return fmt.Errorf("cannot set mimir v2 with a mimir admin account: %s", msg.Key)
 	}
@@ -119,6 +121,7 @@ func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
 		// v2 mimir does not exist
 		return fmt.Errorf("fail to get mimir v2 with key:%s", msg.Key)
 	}
+	currentMimirValue := mimirVal.FetchValue(ctx, h.mgr.Keeper())
 
 	// Cost and emitting of SetNodeMimir, even if a duplicate
 	// (for instance if needed to confirm a new supermajority after a node number decrease).
@@ -129,24 +132,24 @@ func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
 	}
 	cost := h.mgr.Keeper().GetNativeTxFee(ctx)
 	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+	if err = h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		ctx.Logger().Error("fail to save node account", "error", err)
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
 	// move set mimir cost from bond module to reserve
 	coin := common.NewCoin(common.RuneNative, cost)
 	if !cost.IsZero() {
-		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
+		if err = h.mgr.Keeper().SendFromModuleToModule(ctx, BondName, ReserveName, common.NewCoins(coin)); err != nil {
 			ctx.Logger().Error("fail to transfer funds from bond to reserve", "error", err)
 			return err
 		}
 	}
-	if err := h.mgr.Keeper().SetNodeMimirV2(ctx, msg.Key, msg.Value, msg.Signer); err != nil {
+	if err = h.mgr.Keeper().SetNodeMimirV2(ctx, msg.Key, msg.Value, msg.Signer); err != nil {
 		ctx.Logger().Error("fail to save node mimir", "error", err)
 		return err
 	}
 	nodeMimirEvent := NewEventSetNodeMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10), msg.Signer.String())
-	if err := h.mgr.EventMgr().EmitEvent(ctx, nodeMimirEvent); err != nil {
+	if err = h.mgr.EventMgr().EmitEvent(ctx, nodeMimirEvent); err != nil {
 		ctx.Logger().Error("fail to emit set_node_mimir event", "error", err)
 		return err
 	}
@@ -154,17 +157,10 @@ func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
 	tx.ID = common.BlankTxID
 	tx.ToAddress = common.Address(nodeAccount.String())
 	bondEvent := NewEventBond(cost, BondCost, tx)
-	if err := h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
+	if err = h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 		return err
 	}
-
-	if mimirVal.Type() != mimir.EconomicMimir {
-		return nil
-	}
-
-	// Get the current Mimir key value if it exists.
-	currentMimirValue, _ := h.mgr.Keeper().GetMimirV2(ctx, msg.Key)
 
 	// If the Mimir key is already the submitted value, don't do anything further.
 	if msg.Value == currentMimirValue {
@@ -183,11 +179,20 @@ func (h MimirHandler) mVer2V125(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
-	value := mimirs.ValueOfEconomic(msg.Key, activeNodes.GetNodeAddresses())
-	if value >= 0 {
-		h.mgr.Keeper().SetMimirV2(ctx, msg.Key, value)
+	var value int64
+	switch mimirVal.Type() {
+	case mimir.EconomicMimir:
+		value = mimirs.ValueOfEconomic(msg.Key, activeNodes.GetNodeAddresses())
+	case mimir.OperationalMimir:
+		value = mimirs.ValueOfOperational(msg.Key, constants.MinMimirV2Vote, activeNodes.GetNodeAddresses())
+	}
+
+	if value >= 0 && value != currentMimirValue {
+		if mimirVal.Type() == mimir.EconomicMimir {
+			h.mgr.Keeper().SetMimirV2(ctx, msg.Key, value)
+		}
 		mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(value, 10))
-		if err := h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+		if err = h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
 			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
 	}
