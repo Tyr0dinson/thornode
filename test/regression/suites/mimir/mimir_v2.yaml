@@ -106,6 +106,14 @@ asserts:
   - .|[.[]][1].type == "OperationalMimir"
   - .|[.[]][1].votes."1" == 1
 ---
+# not enough votes for v2, no set mimir event
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events[] | select(.type == "set_node_mimir") | .key == "2-GLOBAL"
+  - .txs[].result.events[] | select(.type == "set_node_mimir") | .value == "1"
+  - any(.txs[].result.events[]; .type == "set_mimir") | not
+---
 # send in two more votes
 type: tx-mimir
 key: "2-GLOBAL"
@@ -119,6 +127,15 @@ signer: {{ addr_thor_pig }}
 ---
 type: create-blocks
 count: 1
+---
+# should have a set mimir event
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events[] | select(.type == "set_node_mimir") | .key == "2-GLOBAL"
+  - .txs[].result.events[] | select(.type == "set_node_mimir") | .value == "1"
+  - .txs[].result.events[] | select(.type == "set_mimir") | .key == "2-GLOBAL"
+  - .txs[].result.events[] | select(.type == "set_mimir") | .value = "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimirV2
