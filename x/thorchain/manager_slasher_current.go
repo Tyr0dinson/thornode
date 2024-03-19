@@ -284,6 +284,17 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	if err != nil {
 		return fmt.Errorf("fail to get txout from block height(%d): %w", height, err)
 	}
+
+	// round up to nearest multiple of RescheduleCoalesceBlocks
+	rescheduleHeight := ctx.BlockHeight()
+	rescheduleCoalesceBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
+	if rescheduleCoalesceBlocks > 1 {
+		overBlocks := rescheduleHeight % rescheduleCoalesceBlocks
+		if overBlocks != 0 {
+			rescheduleHeight += rescheduleCoalesceBlocks - overBlocks
+		}
+	}
+
 	for i, toi := range txs.TxArray {
 		if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(mgr.GetVersion(), toi.Chain)) {
 			continue // skip this transaction
@@ -465,16 +476,6 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			if !toi.Coin.Asset.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
 				ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
 				continue
-			}
-
-			// round up to nearest multiple of RescheduleCoalesceBlocks
-			rescheduleHeight := ctx.BlockHeight()
-			rescheduleCoalesceBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-			if rescheduleCoalesceBlocks > 1 {
-				overBlocks := rescheduleHeight % rescheduleCoalesceBlocks
-				if overBlocks != 0 {
-					rescheduleHeight += rescheduleCoalesceBlocks - overBlocks
-				}
 			}
 
 			err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
