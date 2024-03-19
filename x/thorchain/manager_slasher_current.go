@@ -275,6 +275,7 @@ func (s *SlasherVCUR) checkSignerAndSlash(ctx cosmos.Context, nodes NodeAccounts
 // LackSigning slash account that fail to sign tx
 func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	var resultErr error
+	maxOutboundAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundAttempts)
 	signingTransPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	if ctx.BlockHeight() < signingTransPeriod {
 		return nil
@@ -348,7 +349,6 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				}
 			}
 
-			maxOutboundAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundAttempts)
 			if maxOutboundAttempts > 0 {
 				age := ctx.BlockHeight() - voter.FinalisedHeight
 				attempts := age / signingTransPeriod
