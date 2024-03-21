@@ -703,7 +703,7 @@ func GetYggManager(version semver.Version, keeper keeper.Keeper) (YggManager, er
 // GetSwapper return an implementation of Swapper
 func GetSwapper(version semver.Version) (Swapper, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.130.0")):
+	case version.GTE(semver.MustParse("1.131.0")):
 		return newSwapperVCUR(), nil
 	case version.GTE(semver.MustParse("1.129.0")):
 		return newSwapperV129(), nil
