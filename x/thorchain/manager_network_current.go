@@ -1734,6 +1734,12 @@ func (vm *NetworkMgrVCUR) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) 
 		return nil
 	}
 	runeValue := p.AssetValueInRune(totalSupply)
+
+	// Never send more RUNE from the Pool Module than the Pool has available to send.
+	if runeValue.GT(p.BalanceRune) {
+		runeValue = p.BalanceRune
+	}
+
 	p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
 	// Here didn't set synth unit to zero , but `GetTotalSupply` will check pool ragnarok status
 	// when Pool Ragnarok started , then the synth supply will return zero.
