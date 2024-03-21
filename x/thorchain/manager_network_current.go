@@ -1289,6 +1289,12 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 			ctx.Logger().Error("fail to redeem synth to reserve, continue to ragnarok", "error", err)
 		}
 
+		// Before updating the Status, get the pool with deducted BalanceRune from synth redemption.
+		pool, err = vm.k.GetPool(ctx, pool.Asset)
+		if err != nil {
+			return fmt.Errorf("fail to get pool after synth redemption,err: %w", err)
+		}
+
 		ctx.Logger().Info("setting pool to staged", "pool", pool.Asset)
 		pool.Status = PoolStaged
 		if err := vm.k.SetPool(ctx, pool); err != nil {
