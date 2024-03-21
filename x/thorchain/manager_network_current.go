@@ -1332,6 +1332,11 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 		vm.k.RemovePool(ctx, pool.Asset)
 	}
 
+	// Now that the pool has been suspended or removed, clear PoolRagnarokStart
+	// (used to treat synth supply as 0)
+	// in case the pool is ever recreated.
+	vm.k.DeletePoolRagnarokStart(ctx, pool.Asset)
+
 	// zero all loans
 	iterator := vm.k.GetLoanIterator(ctx, pool.Asset)
 	defer iterator.Close()
@@ -1742,10 +1747,11 @@ func (vm *NetworkMgrVCUR) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) 
 
 	p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
 	// Here didn't set synth unit to zero , but `GetTotalSupply` will check pool ragnarok status
-	// when Pool Ragnarok started , then the synth supply will return zero.
+	// with GetPoolRagnarokStart, then the synth supply will return zero.
 	if err := vm.k.SetPool(ctx, p); err != nil {
 		return fmt.Errorf("fail to save pool,err: %w", err)
 	}
+	vm.k.SetPoolRagnarokStart(ctx, p.Asset)
 	if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName,
 		common.NewCoins(common.NewCoin(common.RuneNative, runeValue))); err != nil {
 		ctx.Logger().Error("fail to send redeemed synth RUNE to reserve", "error", err)
