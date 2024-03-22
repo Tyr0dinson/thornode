@@ -1311,20 +1311,22 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 		return nil
 	}
 
-	// suspend the pool
-	afterPool, err := vm.k.GetPool(ctx, pool.Asset)
+	// update with the deducted balances
+	pool, err = vm.k.GetPool(ctx, pool.Asset) 
 	if err != nil {
 		return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
 	}
+
+	// suspend the pool
 	poolEvent := NewEventPool(pool.Asset, PoolSuspended)
 	if err := mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {
 		ctx.Logger().Error("fail to emit pool event", "error", err)
 	}
 
 	// store gas asset pools as suspended, remove token pools
-	if afterPool.Asset.IsGasAsset() {
-		afterPool.Status = PoolSuspended
-		err = vm.k.SetPool(ctx, afterPool)
+	if pool.Asset.IsGasAsset() {
+		pool.Status = PoolSuspended
+		err = vm.k.SetPool(ctx, pool)
 		if err != nil {
 			ctx.Logger().Error("fail to set pool to suspended", "error", err)
 		}
