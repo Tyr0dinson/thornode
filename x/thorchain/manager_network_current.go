@@ -1312,9 +1312,21 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 	}
 
 	// update with the deducted balances
-	pool, err = vm.k.GetPool(ctx, pool.Asset) 
+	pool, err = vm.k.GetPool(ctx, pool.Asset)
 	if err != nil {
 		return fmt.Errorf("fail to get pool after ragnarok,err: %w", err)
+	}
+
+	// If any RUNE remains in the pool (such as if the last withdraw were Asset-address-only),
+	// transfer it to the Reserve to prevent broken-invariant Pool Module oversolvency.
+	remainingRune := common.NewCoin(common.RuneAsset(), pool.BalanceRune)
+	pool.BalanceRune = cosmos.ZeroUint()
+	remainingRune.Amount = remainingRune.Amount.Add(pool.PendingInboundRune)
+	pool.PendingInboundRune = cosmos.ZeroUint()
+	if !remainingRune.IsEmpty() {
+		if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingRune)); err != nil {
+			return fmt.Errorf("fail to transfer remaining pool ragnarok rune from asgard to reserve: %w", err)
+		}
 	}
 
 	// suspend the pool
