@@ -550,11 +550,7 @@ func (s *SwapperVCUR) adjustSourceAmount(ctx cosmos.Context, mgr Manager, coin c
 		return cosmos.ZeroUint(), err
 	}
 	maxSynth := common.GetUncappedShare(pool.BalanceAsset.MulUint64(2), cosmos.NewUint(MaxWithdrawBasisPoints), cosmos.NewUint(uint64(synthCap)))
-	if synthSupply.LTE(maxSynth) {
-		return sourceAmt, nil
-	}
-	// if synth supply exceeds max synth
-	return common.GetUncappedShare(sourceAmt, synthSupply, maxSynth), nil
+	return common.GetSafeShare(maxSynth, synthSupply, sourceAmt), nil
 }
 
 // adjustForBackstop returns liquidity fee and slip based on source amount and emitted assets
