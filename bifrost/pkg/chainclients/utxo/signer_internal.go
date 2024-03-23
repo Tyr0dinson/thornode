@@ -80,7 +80,18 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 		}
 
 		// If from an asgard ('self'), use even if mempool-only or under the dust threshold.
-		if !c.isSelfTransaction(item.TxID) {
+		isSelfTx := c.isSelfTransaction(item.TxID)
+		if !isSelfTx {
+			// In case from self or Asgard yet not recorded in the block meta, double-check.
+			minimalTx := btcjson.TxRawResult{Vin: []btcjson.Vin{{Txid: item.TxID, Vout: item.Vout}}}
+			var sender string
+			sender, err = c.getSender(&minimalTx, nil)
+			// If this errors (fails lookup), assume non-self and proceed (still attempting to sign together with other nodes).
+			if err == nil {
+				isSelfTx = c.isAsgardAddress(sender)
+			}
+		}
+		if !isSelfTx {
 			// skip utxos with insufficient confirmations
 			if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations {
 				continue
