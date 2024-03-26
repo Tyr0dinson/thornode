@@ -111,6 +111,9 @@ type (
 	Jail                     = types.Jail
 	BondProvider             = types.BondProvider
 	BondProviders            = types.BondProviders
+	BondAllocation           = types.BondAllocation
+	BondAllocations          = types.BondAllocations
+	BondAllocationList       = types.BondAllocationList
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
 	NodeStatus               = types.NodeStatus

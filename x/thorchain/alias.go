@@ -235,6 +235,7 @@ type (
 	MsgDeposit                     = types.MsgDeposit
 	MsgBond                        = types.MsgBond
 	MsgUnBond                      = types.MsgUnBond
+	MsgBondAllocation              = types.MsgBondAllocation
 	MsgNoOp                        = types.MsgNoOp
 	MsgTradeAccountDeposit         = types.MsgTradeAccountDeposit
 	MsgTradeAccountWithdrawal      = types.MsgTradeAccountWithdrawal

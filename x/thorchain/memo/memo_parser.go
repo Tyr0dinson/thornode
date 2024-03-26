@@ -106,6 +106,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseTradeAccountDeposit()
 	case TxTradeAccountWithdrawal:
 		return p.ParseTradeAccountWithdrawal()
+	case TxBondAllocation:
+		return p.ParseManageBondAllocationMemo()
 
 	case TxSwitch: // TODO remove on hard fork
 		if p.keeper.GetVersion().GTE(semver.MustParse("1.117.0")) {
@@ -159,6 +161,18 @@ func (p *parser) get(idx int) string {
 		return ""
 	}
 	return p.parts[idx]
+}
+
+func (p *parser) getInt32(idx int, required bool, def int32) int32 {
+	p.incRequired(required)
+	value, err := strconv.ParseInt(p.get(idx), 10, 32)
+	if err != nil {
+		if required || p.get(idx) != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as an int32: %w", p.get(idx), err))
+		}
+		return def
+	}
+	return int32(value)
 }
 
 func (p *parser) getInt64(idx int, required bool, def int64) int64 {

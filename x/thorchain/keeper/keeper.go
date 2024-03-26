@@ -172,6 +172,8 @@ type KeeperNodeAccount interface {
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
 	DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error
 	RemoveLowBondValidatorAccounts(ctx cosmos.Context) error
+	GetBondAllocations(ctx cosmos.Context) (BondAllocations, error)
+	SetBondAllocations(ctx cosmos.Context, _ BondAllocations) error
 }
 
 type KeeperObserver interface {

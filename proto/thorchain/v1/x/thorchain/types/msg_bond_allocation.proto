@@ -1,0 +1,14 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "thorchain/v1/x/thorchain/types/type_node_account.proto";
+import "gogoproto/gogo.proto";
+
+message MsgBondAllocation {
+  string name = 1 ;
+  BondAllocationType bond_type = 2;
+  string amount = 3 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  bytes signer = 4  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+}

@@ -293,6 +293,10 @@ func (k KVStoreDummy) SetBondProviders(ctx cosmos.Context, _ BondProviders) erro
 func (k KVStoreDummy) GetBondProviders(ctx cosmos.Context, _ cosmos.AccAddress) (BondProviders, error) {
 	return BondProviders{}, kaboom
 }
+func (k KVStoreDummy) SetBondAllocations(ctx cosmos.Context, _ BondAllocations) error { return kaboom }
+func (k KVStoreDummy) GetBondAllocations(ctx cosmos.Context) (BondAllocations, error) {
+	return BondAllocations{}, kaboom
+}
 
 func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error {
 	return kaboom

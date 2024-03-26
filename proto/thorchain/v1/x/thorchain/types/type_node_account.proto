@@ -58,6 +58,26 @@ message BondProviders {
   repeated BondProvider providers = 3 [(gogoproto.nullable) = false];
 }
 
+enum BondAllocationType {
+  option (gogoproto.goproto_enum_stringer) = true;
+  BondAllocUnknown = 0;
+  BondClout = 1;
+  BondConfCount =  2;
+}
+
+message BondAllocation {
+  option (gogoproto.stringer) = true;
+  string THORName = 1;
+  string amount = 2 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
+  bytes node_address = 3 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  BondAllocationType type = 4;
+}
+
+message BondAllocationList {
+  option (gogoproto.stringer) = true;
+  repeated BondAllocation allocations = 1 [(gogoproto.nullable) = false];
+}
+
 message MinJoinLast {
   option (gogoproto.stringer) = true;
   int64 last_changed_height = 1;

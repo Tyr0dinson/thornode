@@ -56,6 +56,8 @@ type (
 	Jail                     = types.Jail
 	BondProvider             = types.BondProvider
 	BondProviders            = types.BondProviders
+	BondAllocation           = types.BondAllocation
+	BondAllocations          = types.BondAllocations
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
 	NodeMimirs               = types.NodeMimirs

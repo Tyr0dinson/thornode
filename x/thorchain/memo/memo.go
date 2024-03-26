@@ -40,6 +40,7 @@ const (
 	TxNoOp
 	TxConsolidate
 	TxTHORName
+	TxBondAllocation
 	TxLoanOpen
 	TxLoanRepayment
 	TxTradeAccountDeposit
@@ -72,6 +73,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"name":        TxTHORName,
 	"n":           TxTHORName,
 	"~":           TxTHORName,
+	"ba":          TxBondAllocation,
 	"$+":          TxLoanOpen,
 	"loan+":       TxLoanOpen,
 	"$-":          TxLoanRepayment,
@@ -102,6 +104,7 @@ var txToStringMap = map[TxType]string{
 	TxNoOp:                   "noop",
 	TxConsolidate:            "consolidate",
 	TxTHORName:               "thorname",
+	TxBondAllocation:         "ba",
 	TxLoanOpen:               "$+",
 	TxLoanRepayment:          "$-",
 	TxTradeAccountDeposit:    "trade+",
@@ -126,7 +129,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxTradeAccountDeposit, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxLeave, TxReserve, TxNoOp, TxTHORName, TxLoanOpen, TxLoanRepayment:
+	case TxAdd, TxWithdraw, TxTradeAccountDeposit, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxLeave, TxReserve, TxNoOp, TxTHORName, TxBondAllocation, TxLoanOpen, TxLoanRepayment:
 		return true
 	case TxSwitch: // TODO remove on hard fork
 		return true

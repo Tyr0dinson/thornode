@@ -520,3 +520,40 @@ func (k KVStore) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.A
 
 	return nil
 }
+
+func (k KVStore) setBondAllocations(ctx cosmos.Context, key string, record BondAllocationList) {
+	store := ctx.KVStore(k.storeKey)
+	buf := k.cdc.MustMarshal(&record)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
+}
+
+func (k KVStore) getBondAllocations(ctx cosmos.Context, key string, record *BondAllocationList) (bool, error) {
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	bz := store.Get([]byte(key))
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return true, nil
+}
+
+// SetBondAllocations save the bond allocations
+func (k KVStore) SetBondAllocations(ctx cosmos.Context, b BondAllocations) error {
+	alloc := BondAllocationList{Allocations: b}
+	k.setBondAllocations(ctx, k.GetKey(ctx, prefixBondAllocationList, ""), alloc)
+	return nil
+}
+
+// GetBondAllocations - gets bond allocatinos
+func (k KVStore) GetBondAllocations(ctx cosmos.Context) (BondAllocations, error) {
+	var record BondAllocationList
+	_, err := k.getBondAllocations(ctx, k.GetKey(ctx, prefixBondAllocationList, ""), &record)
+	return record.Allocations, err
+}

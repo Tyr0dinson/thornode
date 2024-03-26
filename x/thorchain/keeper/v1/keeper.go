@@ -42,6 +42,7 @@ const (
 	prefixLastObserveHeight       types.DbPrefix = "last_observe_height/"
 	prefixNodeAccount             types.DbPrefix = "node_account/"
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
+	prefixBondAllocationList      types.DbPrefix = "bond_allocs/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
 	prefixNetwork                 types.DbPrefix = "network/"
