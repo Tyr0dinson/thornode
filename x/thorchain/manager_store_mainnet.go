@@ -1295,7 +1295,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		if err != nil {
 			ctx.Logger().Error("fail to attempt BTC rescue tx", "error", err)
 		} else {
-			ctx.Logger().Info("v131 migration: succesfully handled issue 1")
+			ctx.Logger().Info("v131 migration: successfully handled issue 1")
 		}
 	}
 
@@ -1327,7 +1327,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		if err != nil {
 			ctx.Logger().Error("v131 migration: fail to attempt ETH rescue tx", "error", err)
 		} else {
-			ctx.Logger().Info("v131 migration: succesfully handled issue 2")
+			ctx.Logger().Info("v131 migration: successfully handled issue 2")
 		}
 	}
 
