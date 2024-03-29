@@ -1326,7 +1326,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 
 		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
 		if err != nil {
-			ctx.Logger().Error("v131 migration: fail to attempt ETH rescue tx", "error", err)
+			ctx.Logger().Error("v131 migration: fail to attempt ETH.USDT rescue tx", "error", err)
 		} else {
 			ctx.Logger().Info("v131 migration: successfully handled issue 2")
 		}
