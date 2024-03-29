@@ -1268,3 +1268,184 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 		ctx.Logger().Error("failed to migrate v129", "error", err)
 	}
 }
+
+func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
+	// This migration address 4 separate issues.
+
+	// Issue 1: https://gitlab.com/thorchain/thornode/-/issues/1898
+	// Attempt to rescue 1 BTC from old vault, original tx unobserved by majority of nodes
+	originalTxID := "9F465AE9A43655619E0ADCC0EC52187B8856BF7F025E9142A424C272394CFA50"
+	initialAmount := cosmos.NewUint(100000000)
+	gasRate := mgr.GasMgr().GetGasRate(ctx, common.BTCChain)
+	maxGas, err := mgr.GasMgr().GetMaxGas(ctx, common.BTCChain)
+	refundAmount := initialAmount.Sub(maxGas.Amount)
+	if err == nil {
+		droppedRescue := TxOutItem{
+			Chain:       common.BTCChain,
+			ToAddress:   common.Address("bc1qneepjkjy2p3rzk9aryvygm39gv9kzk0tvzt7g7"),
+			VaultPubKey: common.PubKey("thorpub1addwnpepqw68vqcyfyerpqvmfn7r39myxgn9q5hwd7crk82radl7ggl5dvmm2uqxzwk"),
+			Coin:        common.NewCoin(common.BTCAsset, refundAmount),
+			Memo:        fmt.Sprintf("REFUND:%s", originalTxID),
+			InHash:      common.TxID(originalTxID),
+			GasRate:     int64(gasRate.Uint64()),
+			MaxGas:      common.Gas{maxGas},
+		}
+
+		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
+		if err != nil {
+			ctx.Logger().Error("fail to attempt BTC rescue tx", "error", err)
+		} else {
+			ctx.Logger().Info("v131 migration: succesfully handled issue 1")
+		}
+	}
+
+	// Issue 2: https://gitlab.com/thorchain/thornode/-/issues/1880
+	// The target asset (partial fill) sent OK, but THORChain did not reschedule
+	// the source asset refund (USDT) and it dropped off.
+	// The vault has since migrated and has zero allowance for USDT on the router contract.
+	// The sum of vault asset amount ~= the sum of vault allowances on the router contract.
+	// the pool asset amount is -300k than the vault amount. so THORChain knows it has 300k more USDT than the pool.
+	// Therefore, for this transaction, balance was already deducted from pool, but remains in vault.
+	// Methodology: create the outbound without VaultPubKey specified, allowing THORChain to choose a vault.
+	// NOTE: per the issue above, the UI advanced the refund to the customer, so refund the wallet that sent that tx.
+	// https://etherscan.io/tx/0x705b941fc7b5d619836b03b711bb5cbe8b1a1251cff8fe3a94a357a27ad52905
+	originalTxID = "8C7A9E17BDDE0E1F90EB2251E65ED4633B9F44E8EF3D0BA04308DB2C4D5CA92D"
+	gasRate = mgr.GasMgr().GetGasRate(ctx, common.ETHChain)
+	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	if err == nil {
+		droppedRescue := TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: common.Address("0xc85fef7a1b039a9e080aadf80ff6f1536dada088"),
+			Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(11225335474500)),
+			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
+			InHash:    common.TxID(originalTxID),
+			GasRate:   int64(gasRate.Uint64()),
+			MaxGas:    common.Gas{maxGas},
+		}
+
+		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
+		if err != nil {
+			ctx.Logger().Error("v131 migration: fail to attempt ETH rescue tx", "error", err)
+		} else {
+			ctx.Logger().Info("v131 migration: succesfully handled issue 2")
+		}
+	}
+
+	// Issue 3: https://gitlab.com/thorchain/thornode/-/issues/1926
+	// V129 fix for an edge case in vault accounting for UTXO chains.
+	// Pool accounting is correct, but vaults think they have more asset (DOGE) than they do.
+	// Remove those improperly credited balances, so that vault accounting more closely matches pool accounting.
+	subBalance := func(ctx cosmos.Context, mgr *Mgrs, amountUint64 uint64, assetString, pkString string) {
+		amount := cosmos.NewUint(amountUint64)
+
+		asset, err := common.NewAsset(assetString)
+		if err != nil {
+			ctx.Logger().Error("fail to make asset", "assetString", assetString, "error", err)
+			return
+		}
+
+		pubkey, err := common.NewPubKey(pkString)
+		if err != nil {
+			ctx.Logger().Error("fail to make pubkey", "pkString", pkString, "error", err)
+			return
+		}
+
+		vault, err := mgr.Keeper().GetVault(ctx, pubkey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "pubkey", pubkey, "error", err)
+			return
+		}
+
+		coins := common.NewCoins(common.NewCoin(asset, amount))
+		vault.SubFunds(coins)
+
+		if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to set vault", "vault", vault, "error", err)
+			return
+		}
+	}
+
+	subBalance(ctx, mgr, 1160074_8155_8121, "DOGE.DOGE", "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx")
+	subBalance(ctx, mgr, 1004979_3428_7850, "DOGE.DOGE", "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3")
+	subBalance(ctx, mgr, 414685_0000_0000, "DOGE.DOGE", "thorpub1addwnpepq23r8srfathem5jgu8szm9mrjylx9y9atjeawwz4kajqpg3y9vvy7xghtst")
+	subBalance(ctx, mgr, 156000_0000_0000, "DOGE.DOGE", "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq")
+	subBalance(ctx, mgr, 124812_2354_6484, "DOGE.DOGE", "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy")
+	subBalance(ctx, mgr, 500_0000_0000, "DOGE.DOGE", "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr")
+	ctx.Logger().Info("v131 migration: finished handling issue 3")
+
+	// Issue 4: https://gitlab.com/thorchain/thornode/-/issues/1881
+	// Savers add with affiliates had a bug where not only would the add liquidity fail,
+	// but the user would only be partially refunded..
+	// Return the customer the difference between what they got and what they were owed.
+
+	// First refund (LTC)
+	originalTxID = "8EC6D7B459136D708BF03FCB55C3BBA04F0F32E924354E7BBB3F40637F0E56AD"
+	gasRate = mgr.GasMgr().GetGasRate(ctx, common.LTCChain)
+	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.LTCChain)
+	if err == nil {
+		droppedRescue := TxOutItem{
+			Chain:     common.LTCChain,
+			ToAddress: common.Address("ltc1qe2jleyfezmahfcmlgls2flqht9mlu8aaal7xhm"),
+			Coin:      common.NewCoin(common.LTCAsset, cosmos.NewUint(5978657911)),
+			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
+			InHash:    common.TxID(originalTxID),
+			GasRate:   int64(gasRate.Uint64()),
+			MaxGas:    common.Gas{maxGas},
+		}
+
+		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
+		if err != nil {
+			ctx.Logger().Error("fail to attempt LTC rescue tx", "error", err)
+		} else {
+			ctx.Logger().Info("v131 migration: successfully handled issue 4.1")
+		}
+	}
+
+	// Second refund (ETH.USDC)
+	originalTxID = "B42EBA71BCF8D7ACEB14BE738A25670327A9441FCC29D70754AAF1D68A793529"
+	gasRate = mgr.GasMgr().GetGasRate(ctx, common.ETHChain)
+	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	if err == nil {
+		usdc, _ := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+		droppedRescue := TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: common.Address("0x58fa7c9c34e1e54e9b66d586203ec074ce412501"),
+			Coin:      common.NewCoin(usdc, cosmos.NewUint(4751145371600)),
+			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
+			InHash:    common.TxID(originalTxID),
+			GasRate:   int64(gasRate.Uint64()),
+			MaxGas:    common.Gas{maxGas},
+		}
+
+		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
+		if err != nil {
+			ctx.Logger().Error("fail to attempt ETH.USDC rescue tx", "error", err)
+		} else {
+			ctx.Logger().Info("v131 migration: successfully handled issue 4.2")
+		}
+	}
+
+	// Third refund (BNB)
+	originalTxID = "374E024BB5162CF62F3A8F1C0DA7B0A52F2B4B395E154EECDC4F3EDB0C5E3D43"
+	gasRate = mgr.GasMgr().GetGasRate(ctx, common.BSCChain)
+	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.BSCChain)
+	if err == nil {
+		bnb, _ := common.NewAsset("BSC.BNB")
+		droppedRescue := TxOutItem{
+			Chain:     common.BSCChain,
+			ToAddress: common.Address("0xebe5fc89804e8f357e307ec5ec3d03db89bb8e30"),
+			Coin:      common.NewCoin(bnb, cosmos.NewUint(10482232608)),
+			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
+			InHash:    common.TxID(originalTxID),
+			GasRate:   int64(gasRate.Uint64()),
+			MaxGas:    common.Gas{maxGas},
+		}
+
+		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
+		if err != nil {
+			ctx.Logger().Error("fail to attempt BNB rescue tx", "error", err)
+		} else {
+			ctx.Logger().Info("v131 migration: successfully handled issue 4.3")
+		}
+	}
+}
