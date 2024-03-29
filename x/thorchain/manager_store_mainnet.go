@@ -1387,7 +1387,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		droppedRescue := TxOutItem{
 			Chain:     common.LTCChain,
 			ToAddress: common.Address("ltc1qe2jleyfezmahfcmlgls2flqht9mlu8aaal7xhm"),
-			Coin:      common.NewCoin(common.LTCAsset, cosmos.NewUint(5978657911)),
+			Coin:      common.NewCoin(common.LTCAsset, cosmos.NewUint(5978633839)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
 			InHash:    common.TxID(originalTxID),
 			GasRate:   int64(gasRate.Uint64()),
