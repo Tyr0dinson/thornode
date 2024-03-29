@@ -1313,10 +1313,11 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	gasRate = mgr.GasMgr().GetGasRate(ctx, common.ETHChain)
 	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
 	if err == nil {
+		usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
 		droppedRescue := TxOutItem{
 			Chain:     common.ETHChain,
 			ToAddress: common.Address("0xc85fef7a1b039a9e080aadf80ff6f1536dada088"),
-			Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(11225335474500)),
+			Coin:      common.NewCoin(usdt, cosmos.NewUint(11225335474500)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
 			InHash:    common.TxID(originalTxID),
 			GasRate:   int64(gasRate.Uint64()),
