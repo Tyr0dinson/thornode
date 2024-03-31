@@ -1270,7 +1270,7 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 }
 
 func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
-	// This migration address 4 separate issues.
+	// This migration address 5 separate issues.
 
 	// Issue 1: https://gitlab.com/thorchain/thornode/-/issues/1898
 	// Attempt to rescue 1 BTC from old vault, original tx unobserved by majority of nodes
@@ -1448,5 +1448,16 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		} else {
 			ctx.Logger().Info("v131 migration: successfully handled issue 4.3")
 		}
+	}
+
+	// Issue 5: https://gitlab.com/thorchain/thornode/-/issues/1935
+	// BNB Beacon ragnarok resulted in ~8229 RUNE left in RESERVE that should have been
+	// transferred to the Pool Module. Bug fixed in separate PR.
+	ragnarokPoolModuleInsolvency := cosmos.NewUint(822893701389)
+	// send coins from pool to bond module
+	if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{common.NewCoin(common.RuneNative, ragnarokPoolModuleInsolvency)}); err != nil {
+		ctx.Logger().Error("fail to transfer coin from reserve to ppol module", "error", err)
+	} else {
+		ctx.Logger().Info("v131 migration: successfully handled issue 5")
 	}
 }
