@@ -1458,10 +1458,10 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	}
 
 	// Issue 5: https://gitlab.com/thorchain/thornode/-/issues/1935
-	// BNB Beacon ragnarok resulted in ~8229 RUNE left in RESERVE that should have been
-	// transferred to the Pool Module. Bug fixed in separate PR.
+	// BNB Beacon ragnarok resulted in ~8229 RUNE sent to RESERVE that should have been
+	// left in the Pool Module. Bug fixed in separate PR.
 	ragnarokPoolModuleInsolvency := cosmos.NewUint(822893701389)
-	// send coins from pool to bond module
+	// send coins from reserve to pool module
 	if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{common.NewCoin(common.RuneNative, ragnarokPoolModuleInsolvency)}); err != nil {
 		ctx.Logger().Error("fail to transfer coin from reserve to pool module", "error", err)
 	} else {
