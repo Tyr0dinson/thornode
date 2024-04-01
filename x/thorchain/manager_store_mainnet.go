@@ -1270,6 +1270,12 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 }
 
 func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v131", "error", err)
+		}
+	}()
+
 	// This migration address 6 separate issues.
 
 	// Issue 1: https://gitlab.com/thorchain/thornode/-/issues/1898
