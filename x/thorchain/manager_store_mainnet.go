@@ -1396,7 +1396,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ToAddress: common.Address("ltc1qe2jleyfezmahfcmlgls2flqht9mlu8aaal7xhm"),
 			Coin:      common.NewCoin(common.LTCAsset, cosmos.NewUint(5978633839)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
-			InHash:    common.TxID(originalTxID),
+			InHash:    originalTxID,
 			GasRate:   int64(gasRate.Uint64()),
 			MaxGas:    common.Gas{maxGas},
 		}
@@ -1420,7 +1420,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ToAddress: common.Address("0x58fa7c9c34e1e54e9b66d586203ec074ce412501"),
 			Coin:      common.NewCoin(usdc, cosmos.NewUint(4751145371600)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
-			InHash:    common.TxID(originalTxID),
+			InHash:    originalTxID,
 			GasRate:   int64(gasRate.Uint64()),
 			MaxGas:    common.Gas{maxGas},
 		}
@@ -1444,7 +1444,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ToAddress: common.Address("0xebe5fc89804e8f357e307ec5ec3d03db89bb8e30"), // TODO: refund to treasury
 			Coin:      common.NewCoin(bnb, cosmos.NewUint(10482232608)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
-			InHash:    common.TxID(originalTxID),
+			InHash:    originalTxID,
 			GasRate:   int64(gasRate.Uint64()),
 			MaxGas:    common.Gas{maxGas},
 		}
