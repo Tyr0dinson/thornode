@@ -1284,7 +1284,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	initialAmount := cosmos.NewUint(100000000)
 	gasRate := mgr.GasMgr().GetGasRate(ctx, common.BTCChain)
 	maxGas, err := mgr.GasMgr().GetMaxGas(ctx, common.BTCChain)
-	refundAmount := initialAmount.Sub(maxGas.Amount)
+	refundAmount := common.SafeSub(initialAmount, maxGas.Amount)
 	if err == nil {
 		droppedRescue := TxOutItem{
 			Chain:       common.BTCChain,
