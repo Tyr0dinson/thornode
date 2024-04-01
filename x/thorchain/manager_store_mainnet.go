@@ -1280,29 +1280,30 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 
 	// Issue 1: https://gitlab.com/thorchain/thornode/-/issues/1898
 	// Attempt to rescue 1 BTC from old vault, original tx unobserved by majority of nodes
-	originalTxID := "9F465AE9A43655619E0ADCC0EC52187B8856BF7F025E9142A424C272394CFA50"
-	initialAmount := cosmos.NewUint(100000000)
-	gasRate := mgr.GasMgr().GetGasRate(ctx, common.BTCChain)
-	maxGas, err := mgr.GasMgr().GetMaxGas(ctx, common.BTCChain)
-	refundAmount := common.SafeSub(initialAmount, maxGas.Amount)
-	if err == nil {
-		droppedRescue := TxOutItem{
+	originalTxID := common.TxID("9F465AE9A43655619E0ADCC0EC52187B8856BF7F025E9142A424C272394CFA50")
+	vaultPubKey := common.PubKey("thorpub1addwnpepqw68vqcyfyerpqvmfn7r39myxgn9q5hwd7crk82radl7ggl5dvmm2uqxzwk")
+	externalHeight := int64(837277)
+	unobservedTxs := ObservedTxs{
+		NewObservedTx(common.Tx{
+			ID:          originalTxID,
 			Chain:       common.BTCChain,
-			ToAddress:   common.Address("bc1qneepjkjy2p3rzk9aryvygm39gv9kzk0tvzt7g7"),
-			VaultPubKey: common.PubKey("thorpub1addwnpepqw68vqcyfyerpqvmfn7r39myxgn9q5hwd7crk82radl7ggl5dvmm2uqxzwk"),
-			Coin:        common.NewCoin(common.BTCAsset, refundAmount),
-			Memo:        fmt.Sprintf("REFUND:%s", originalTxID),
-			InHash:      common.TxID(originalTxID),
-			GasRate:     int64(gasRate.Uint64()),
-			MaxGas:      common.Gas{maxGas},
-		}
-
-		err := mgr.txOutStore.UnSafeAddTxOutItem(ctx, mgr, droppedRescue, ctx.BlockHeight())
-		if err != nil {
-			ctx.Logger().Error("fail to attempt BTC rescue tx", "error", err)
-		} else {
-			ctx.Logger().Info("v131 migration: successfully handled issue 1")
-		}
+			FromAddress: "bc1qneepjkjy2p3rzk9aryvygm39gv9kzk0tvzt7g7",
+			ToAddress:   "bc1qgydyyxt7t3nq73vk98t0850t4kxhx8tmfw78js",
+			Coins: common.NewCoins(common.Coin{
+				Asset:  common.BTCAsset,
+				Amount: cosmos.NewUint(100000000),
+			}),
+			Gas: common.Gas{common.Coin{
+				Asset:  common.BTCAsset,
+				Amount: cosmos.NewUint(1),
+			}},
+			Memo: "badMemo",
+		}, externalHeight, vaultPubKey, externalHeight),
+	}
+	if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
+		ctx.Logger().Error("v131 migrations: fail to handle issue 1", "err", err)
+	} else {
+		ctx.Logger().Info("v131 migrations: successfully handled issue 1")
 	}
 
 	// Issue 2: https://gitlab.com/thorchain/thornode/-/issues/1880
