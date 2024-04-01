@@ -1317,8 +1317,8 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	// NOTE: per the issue above, the UI advanced the refund to the customer, so refund the wallet that sent that tx.
 	// https://etherscan.io/tx/0x705b941fc7b5d619836b03b711bb5cbe8b1a1251cff8fe3a94a357a27ad52905
 	originalTxID = "8C7A9E17BDDE0E1F90EB2251E65ED4633B9F44E8EF3D0BA04308DB2C4D5CA92D"
-	gasRate = mgr.GasMgr().GetGasRate(ctx, common.ETHChain)
-	maxGas, err = mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	gasRate := mgr.GasMgr().GetGasRate(ctx, common.ETHChain)
+	maxGas, err := mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
 	if err == nil {
 		usdt, _ := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
 		droppedRescue := TxOutItem{
@@ -1528,7 +1528,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(720964), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(1859478374319), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 
-	externalHeight := int64(372853682)
+	externalHeight = int64(372853682)
 	fakeInboundTxBnb := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
 		asset, err := common.NewAsset(recovery.Asset)
 		if err != nil {
