@@ -1270,7 +1270,7 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 }
 
 func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
-	// This migration address 5 separate issues.
+	// This migration address 6 separate issues.
 
 	// Issue 1: https://gitlab.com/thorchain/thornode/-/issues/1898
 	// Attempt to rescue 1 BTC from old vault, original tx unobserved by majority of nodes
@@ -1459,5 +1459,96 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		ctx.Logger().Error("fail to transfer coin from reserve to pool module", "error", err)
 	} else {
 		ctx.Logger().Info("v131 migration: successfully handled issue 5")
+	}
+
+	// Issue 6: https://gitlab.com/thorchain/thornode/-/issues/1936
+	// Following ragnarok, attempt to donate remaining tokens in BNB vaults to treasury
+	// A subsequent store migration will drop any remaining vault balances from the KV store
+	type TreasuryRecovery struct {
+		Asset        string
+		Amount       cosmos.Uint
+		VaultPubKey  string
+		VaultAddress string
+	}
+	recoveries := []TreasuryRecovery{}
+
+	// bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f
+	// manually decremented for 0.2 BNB to ensure there is enough for gas
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.BNB", Amount: cosmos.NewUint(35858610344), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.AVA-645", Amount: cosmos.NewUint(16463772289), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(669391046606), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(415113), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(23596032), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1rca9ta0x2znmqahnwwsfpkddjlg73sn73le82f", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(248757), VaultPubKey: "thorpub1addwnpepq0y6xyun0469ngddnsufuglvem6rkh0lwnm5dq3p6uhu690g953kgku4uhx"})
+
+	// bnb1pg8zcjzrjjnknzkqh2eenyeaxj7qlax6rl9a0z
+	// this vault needs a donation of BNB to pay for gas
+	// recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1pg8zcjzrjjnknzkqh2eenyeaxj7qlax6rl9a0z", Asset: "BNB.BNB", Amount: cosmos.NewUint(106412), VaultPubKey: "thorpub1addwnpepq23r8srfathem5jgu8szm9mrjylx9y9atjeawwz4kajqpg3y9vvy7xghtst"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1pg8zcjzrjjnknzkqh2eenyeaxj7qlax6rl9a0z", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(14317902698143), VaultPubKey: "thorpub1addwnpepq23r8srfathem5jgu8szm9mrjylx9y9atjeawwz4kajqpg3y9vvy7xghtst"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1pg8zcjzrjjnknzkqh2eenyeaxj7qlax6rl9a0z", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(21192302), VaultPubKey: "thorpub1addwnpepq23r8srfathem5jgu8szm9mrjylx9y9atjeawwz4kajqpg3y9vvy7xghtst"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1pg8zcjzrjjnknzkqh2eenyeaxj7qlax6rl9a0z", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(3453816695), VaultPubKey: "thorpub1addwnpepq23r8srfathem5jgu8szm9mrjylx9y9atjeawwz4kajqpg3y9vvy7xghtst"})
+
+	// bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u
+	// this vault needs a donation of BNB to pay for gas
+	// recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.BNB", Amount: cosmos.NewUint(27689), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(2507), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.AVA-645", Amount: cosmos.NewUint(25227036220), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(1867406976001), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(119945), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1wy9467ppep0z8sdmzd5nc3xtt0ygu092l9a93u", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(1896139686), VaultPubKey: "thorpub1addwnpepqf3h9xa9qantpfjmvv37cuvzm7u0zy48qrh25tafctyzvyn2l8fr7e66mqq"})
+
+	// bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae
+	// this vault needs a donation of BNB to pay for gas
+	// recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.BNB", Amount: cosmos.NewUint(150552), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(2301791), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(387443465935), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(329860), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(7542272440680), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1hal0a2ywtd5qt97zfc2mmjwelxwlshgjn27xae", Asset: "BNB.AVA-645", Amount: cosmos.NewUint(46237488), VaultPubKey: "thorpub1addwnpepqdaln9pasrj33vzcupezwp60hdgk8v797shp75jxp23xfvtu5gyd546uwcy"})
+
+	// bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh
+	// manually decremented for 0.2 BNB to ensure there is enough for gas
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.BNB", Amount: cosmos.NewUint(44312404328), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(23758202063840), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(612881), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(235740384), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(26936939), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+
+	// bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu
+	// manually decremented for 0.2 BNB to ensure there is enough for gas
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BNB", Amount: cosmos.NewUint(166821351), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(13784540734936), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(720964), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(1859478374319), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+
+	externalHeight := int64(1)
+	fakeInboundTxBnb := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
+		asset, _ := common.NewAsset(recovery.Asset)
+		unobservedTxs := ObservedTxs{
+			NewObservedTx(common.Tx{
+				ID:          GetRandomTx().ID,
+				Chain:       common.BNBChain,
+				FromAddress: "bnb1pa6hpjs7qv0vkd5ks5tqa2xtt2gk5n08yw7v7f", // this is faked to refund to treasury
+				ToAddress:   common.Address(recovery.VaultAddress),
+				Coins: common.NewCoins(common.Coin{
+					Asset:  asset,
+					Amount: recovery.Amount,
+				}),
+				Gas: common.Gas{common.Coin{
+					Asset:  common.BNBAsset,
+					Amount: cosmos.NewUint(1),
+				}},
+				Memo: "badMemo",
+			}, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight),
+		}
+		if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
+			ctx.Logger().Error("v131 migrations: fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
+		} else {
+			ctx.Logger().Info("v131 migration: successfully observed tx for issue 6", "recovery", recovery)
+		}
+	}
+
+	for _, recovery := range recoveries {
+		fakeInboundTxBnb(ctx, mgr, recovery)
 	}
 }
