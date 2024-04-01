@@ -1529,7 +1529,11 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 
 	externalHeight := int64(1)
 	fakeInboundTxBnb := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
-		asset, _ := common.NewAsset(recovery.Asset)
+		asset, err := common.NewAsset(recovery.Asset)
+		if err != nil {
+			ctx.Logger().Error("v131 migrations: fail to create asset", "error", err, "recovery", recovery)
+			return
+		}
 		unobservedTxs := ObservedTxs{
 			NewObservedTx(common.Tx{
 				ID:          GetRandomTx().ID,
