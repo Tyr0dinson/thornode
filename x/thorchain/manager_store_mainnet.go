@@ -1527,7 +1527,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(720964), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(1859478374319), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 
-	externalHeight := int64(1)
+	externalHeight := int64(372853682)
 	fakeInboundTxBnb := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
 		asset, err := common.NewAsset(recovery.Asset)
 		if err != nil {
