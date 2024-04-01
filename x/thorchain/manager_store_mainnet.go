@@ -1456,7 +1456,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	ragnarokPoolModuleInsolvency := cosmos.NewUint(822893701389)
 	// send coins from pool to bond module
 	if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.Coins{common.NewCoin(common.RuneNative, ragnarokPoolModuleInsolvency)}); err != nil {
-		ctx.Logger().Error("fail to transfer coin from reserve to ppol module", "error", err)
+		ctx.Logger().Error("fail to transfer coin from reserve to pool module", "error", err)
 	} else {
 		ctx.Logger().Info("v131 migration: successfully handled issue 5")
 	}
