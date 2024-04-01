@@ -1553,7 +1553,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			}, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight),
 		}
 		if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
-			ctx.Logger().Error("v131 migrations: fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
+			ctx.Logger().Error("v131 migration: fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
 		} else {
 			subBalance(ctx, mgr, recovery.Amount.Uint64(), recovery.Asset, recovery.VaultPubKey)
 			ctx.Logger().Info("v131 migration: successfully observed tx for issue 6", "recovery", recovery)
