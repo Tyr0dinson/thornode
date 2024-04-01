@@ -1326,7 +1326,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ToAddress: common.Address("0xc85fef7a1b039a9e080aadf80ff6f1536dada088"),
 			Coin:      common.NewCoin(usdt, cosmos.NewUint(11225335474500)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
-			InHash:    common.TxID(originalTxID),
+			InHash:    originalTxID,
 			GasRate:   int64(gasRate.Uint64()),
 			MaxGas:    common.Gas{maxGas},
 		}
