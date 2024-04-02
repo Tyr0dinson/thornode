@@ -1441,8 +1441,8 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		bnb, _ := common.NewAsset("BSC.BNB")
 		droppedRescue := TxOutItem{
 			Chain:     common.BSCChain,
-			ToAddress: common.Address("0xebe5fc89804e8f357e307ec5ec3d03db89bb8e30"), // TODO: refund to treasury
-			Coin:      common.NewCoin(bnb, cosmos.NewUint(10482232608)),
+			ToAddress: common.Address("0x04c5998ded94f89263370444ce64a99b7dbc9f46"),
+			Coin:      common.NewCoin(bnb, cosmos.NewUint(2691840026)),
 			Memo:      fmt.Sprintf("REFUND:%s", originalTxID),
 			InHash:    originalTxID,
 			GasRate:   int64(gasRate.Uint64()),
