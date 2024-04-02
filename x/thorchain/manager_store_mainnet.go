@@ -1535,23 +1535,23 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("v131 migrations: fail to create asset", "error", err, "recovery", recovery)
 			return
 		}
-		unobservedTxs := ObservedTxs{
-			NewObservedTx(common.Tx{
-				ID:          GetRandomTx().ID,
-				Chain:       common.BNBChain,
-				FromAddress: "bnb1pa6hpjs7qv0vkd5ks5tqa2xtt2gk5n08yw7v7f", // this is faked to refund to treasury
-				ToAddress:   common.Address(recovery.VaultAddress),
-				Coins: common.NewCoins(common.Coin{
-					Asset:  asset,
-					Amount: recovery.Amount,
-				}),
-				Gas: common.Gas{common.Coin{
-					Asset:  common.BNBAsset,
-					Amount: cosmos.NewUint(1),
-				}},
-				Memo: "badMemo",
-			}, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight),
+		tx := common.Tx{
+			ID:          "",
+			Chain:       common.BNBChain,
+			FromAddress: "bnb1pa6hpjs7qv0vkd5ks5tqa2xtt2gk5n08yw7v7f", // this is faked to refund to treasury
+			ToAddress:   common.Address(recovery.VaultAddress),
+			Coins: common.NewCoins(common.Coin{
+				Asset:  asset,
+				Amount: recovery.Amount,
+			}),
+			Gas: common.Gas{common.Coin{
+				Asset:  common.BNBAsset,
+				Amount: cosmos.NewUint(1),
+			}},
+			Memo: "badMemo",
 		}
+		tx.ID = common.TxID(tx.Hash())
+		unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
 		if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
 			ctx.Logger().Error("v131 migration: fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
 		} else {
