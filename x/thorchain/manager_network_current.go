@@ -1325,7 +1325,8 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 	pool.PendingInboundRune = cosmos.ZeroUint()
 	if !remainingRune.IsEmpty() {
 		if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingRune)); err != nil {
-			return fmt.Errorf("fail to transfer remaining pool ragnarok rune from asgard to reserve: %w", err)
+			// Still proceed to suspend the pool, but log the error.
+			ctx.Logger().Error("fail to transfer remaining pool ragnarok rune from asgard to reserve", "error", err)
 		}
 	}
 
