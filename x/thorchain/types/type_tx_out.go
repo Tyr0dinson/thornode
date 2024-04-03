@@ -47,9 +47,9 @@ func (m TxOutItem) TxHash() (string, error) {
 	tx := common.Tx{
 		FromAddress: fromAddr,
 		ToAddress:   m.ToAddress,
-		Coins:       common.Coins{m.Coin},
+		Coins:       common.Coins{m.Coin}, // TODO: Currently Hash_deprecated ignores this Coins.
 	}
-	return tx.Hash(), nil
+	return tx.Hash_deprecated(), nil
 }
 
 // Equals compare two tx out item
