@@ -60,6 +60,9 @@ if [ "$SEED" = "$(hostname)" ]; then
       add_account tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr rune 200000000000000 # fox
       add_account tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u rune 200000000000000 # pig
 
+      # simulation master
+      add_account tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g rune 100000000000000 # master
+
       reserve 22000000000000000
 
       # deploy evm contracts
