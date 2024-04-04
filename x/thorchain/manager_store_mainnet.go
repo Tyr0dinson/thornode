@@ -1535,11 +1535,11 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(23758202063840), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(612881), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1faprhnsvxmv586zwuyv3dugtegsa8yqz8nnmnh", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(235740384), VaultPubKey: "thorpub1addwnpepq0xtamtm6l35efh3f5wlt5fql7cx9j94fywtumz83vvnzagx46h76yk8sa3"})
-	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(26936939), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 
 	// bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu
 	// manually decremented for 0.2 BNB to ensure there is enough for gas
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BNB", Amount: cosmos.NewUint(166821351), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.ETH-1C9", Amount: cosmos.NewUint(26936939), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BUSD-BD1", Amount: cosmos.NewUint(13784540734936), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.BTCB-1DE", Amount: cosmos.NewUint(720964), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
 	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bnb1tdrfuq4my89fk39lq8u9zp3x8zh9qnk7s0vgqu", Asset: "BNB.TWT-8C2", Amount: cosmos.NewUint(1859478374319), VaultPubKey: "thorpub1addwnpepq2v44c4392cwa80mt9enycql7m90ghukuw2x2u72t60e9knlqer7gdcprrr"})
