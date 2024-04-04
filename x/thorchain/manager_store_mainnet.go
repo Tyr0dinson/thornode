@@ -6,6 +6,7 @@ package thorchain
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/cometbft/cometbft/crypto/tmhash"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
@@ -1571,7 +1572,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("unable to marshal tx", "error", err)
 		} else {
 			hash := hex.EncodeToString(tmhash.Sum(txBytes))
-			tx.ID = common.TxID(hash)
+			tx.ID = common.TxID(strings.ToUpper(hash))
 			unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
 			if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
 				ctx.Logger().Error("fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
