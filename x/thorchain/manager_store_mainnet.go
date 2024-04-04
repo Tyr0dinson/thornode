@@ -4,8 +4,10 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
 
+	"github.com/cometbft/cometbft/crypto/tmhash"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -1564,13 +1566,19 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 			}},
 			Memo: "badMemo",
 		}
-		tx.ID = common.TxID(tx.Hash())
-		unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
-		if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
-			ctx.Logger().Error("fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
+		txBytes, err := tx.Marshal()
+		if err != nil {
+			ctx.Logger().Error("unable to marshal tx", "error", err)
 		} else {
-			subBalance(ctx, mgr, recovery.Amount.Uint64(), recovery.Asset, recovery.VaultPubKey)
-			ctx.Logger().Info("successfully observed tx for issue 6", "recovery", recovery)
+			hash := hex.EncodeToString(tmhash.Sum(txBytes))
+			tx.ID = common.TxID(hash)
+			unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
+			if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
+				ctx.Logger().Error("fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
+			} else {
+				subBalance(ctx, mgr, recovery.Amount.Uint64(), recovery.Asset, recovery.VaultPubKey)
+				ctx.Logger().Info("successfully observed tx for issue 6", "recovery", recovery)
+			}
 		}
 	}
 
