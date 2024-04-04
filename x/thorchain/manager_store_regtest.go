@@ -4,6 +4,10 @@
 package thorchain
 
 import (
+	"encoding/hex"
+	"strings"
+
+	"github.com/cometbft/cometbft/crypto/tmhash"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -151,4 +155,54 @@ func migrateStoreV128(ctx cosmos.Context, mgr *Mgrs) {}
 
 func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {}
 
-func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {}
+func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
+	type TreasuryRecovery struct {
+		Asset        string
+		Amount       cosmos.Uint
+		VaultPubKey  string
+		VaultAddress string
+	}
+	recoveries := []TreasuryRecovery{}
+	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk", Asset: "BTC.BTC", Amount: cosmos.NewUint(100000000), VaultPubKey: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"})
+
+	externalHeight := int64(372853682)
+	fakeInboundTxBtc := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
+		asset, err := common.NewAsset(recovery.Asset)
+		if err != nil {
+			ctx.Logger().Error("fail to create asset", "error", err, "recovery", recovery)
+			return
+		}
+		tx := common.Tx{
+			ID:          "",
+			Chain:       common.BTCChain,
+			FromAddress: "bc1qpfp573lvekn89yjc5jvlcspla4j3yr2hwmj6ga", // this is faked to refund to treasury
+			ToAddress:   common.Address(recovery.VaultAddress),
+			Coins: common.NewCoins(common.Coin{
+				Asset:  asset,
+				Amount: recovery.Amount,
+			}),
+			Gas: common.Gas{common.Coin{
+				Asset:  common.BTCAsset,
+				Amount: cosmos.NewUint(1),
+			}},
+			Memo: "badMemo",
+		}
+		txBytes, err := tx.Marshal()
+		if err != nil {
+			ctx.Logger().Error("unable to marshal tx", "error", err)
+		} else {
+			hash := hex.EncodeToString(tmhash.Sum(txBytes))
+			tx.ID = common.TxID(strings.ToUpper(hash))
+			unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
+			if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
+				ctx.Logger().Error("fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
+			} else {
+				ctx.Logger().Info("successfully observed tx for regtest", "recovery", recovery)
+			}
+		}
+	}
+
+	for _, recovery := range recoveries {
+		fakeInboundTxBtc(ctx, mgr, recovery)
+	}
+}
