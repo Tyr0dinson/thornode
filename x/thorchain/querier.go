@@ -1588,7 +1588,7 @@ func queryPoolSlips(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	if len(assets) == 1 {
 		maxAnchorBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 		var summedRollup int64
-		for i := ctx.BlockHeight() - maxAnchorBlocks; i <= ctx.BlockHeight()-1; i++ {
+		for i := ctx.BlockHeight() - maxAnchorBlocks; i < ctx.BlockHeight(); i++ {
 			poolSlip, err := mgr.Keeper().GetPoolSwapSlip(ctx, i, assets[0])
 			if err != nil {
 				// Log the error, zero the sum, and exit the loop.
