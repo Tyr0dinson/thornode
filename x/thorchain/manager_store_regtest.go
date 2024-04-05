@@ -34,53 +34,7 @@ func migrateStoreV113(ctx cosmos.Context, mgr *Mgrs) {}
 
 func migrateStoreV114(ctx cosmos.Context, mgr *Mgrs) {}
 
-// migrateStoreV116 subset of mainnet migration
-func migrateStoreV116(ctx cosmos.Context, mgr *Mgrs) {
-	bondRuneOver := cosmos.NewUint(6936522592883)
-	asgardRuneUnder := cosmos.NewUint(5082320319988)
-	thorchainRuneOver := cosmos.NewUint(100000000)
-
-	actions := []ModuleBalanceAction{
-		// send rune from bond oversolvency to fix asgard insolvency
-		{
-			ModuleName:     BondName,
-			RuneRecipient:  AsgardName,
-			RuneToTransfer: asgardRuneUnder,
-			SynthsToBurn:   common.Coins{},
-		},
-
-		// send remaining bond rune oversolvency to reserve
-		{
-			ModuleName:     BondName,
-			RuneRecipient:  ReserveName,
-			RuneToTransfer: common.SafeSub(bondRuneOver, asgardRuneUnder),
-			SynthsToBurn:   common.Coins{},
-		},
-
-		// transfer rune from thorchain to reserve to clear thorchain balances
-		{
-			ModuleName:     ModuleName,
-			RuneRecipient:  ReserveName,
-			RuneToTransfer: thorchainRuneOver,
-			SynthsToBurn:   common.Coins{},
-		},
-
-		// burn synths from asgard to fix oversolvencies
-		{
-			ModuleName:     AsgardName,
-			RuneRecipient:  AsgardName, // noop
-			RuneToTransfer: cosmos.ZeroUint(),
-			SynthsToBurn: common.Coins{
-				{
-					Asset:  common.AVAXAsset.GetSyntheticAsset(),
-					Amount: cosmos.NewUint(1000001),
-				},
-			},
-		},
-	}
-
-	processModuleBalanceActions(ctx, mgr.Keeper(), actions)
-}
+func migrateStoreV116(ctx cosmos.Context, mgr *Mgrs) {}
 
 func migrateStoreV117(ctx cosmos.Context, mgr *Mgrs) {}
 
@@ -162,11 +116,53 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		VaultPubKey  string
 		VaultAddress string
 	}
-	recoveries := []TreasuryRecovery{}
-	recoveries = append(recoveries, TreasuryRecovery{VaultAddress: "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk", Asset: "BTC.BTC", Amount: cosmos.NewUint(100000000), VaultPubKey: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"})
+	recoveries := []TreasuryRecovery{
+		{
+			VaultAddress: "tbnb1zf3gsk7edzwl9syyefvfhle37cjtql35emgye7",
+			Asset:        "BNB.BUSD-BD1",
+			Amount:       cosmos.NewUint(1000000000),
+			VaultPubKey:  "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+		},
+		{
+			VaultAddress: "tbnb1zf3gsk7edzwl9syyefvfhle37cjtql35emgye7",
+			Asset:        "BNB.BNB",
+			Amount:       cosmos.NewUint(980000000), // minus 0.2 BNB
+			VaultPubKey:  "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+		},
+	}
+
+	subBalance := func(ctx cosmos.Context, mgr *Mgrs, amountUint64 uint64, assetString, pkString string) {
+		amount := cosmos.NewUint(amountUint64)
+
+		asset, err := common.NewAsset(assetString)
+		if err != nil {
+			ctx.Logger().Error("fail to make asset", "assetString", assetString, "error", err)
+			return
+		}
+
+		pubkey, err := common.NewPubKey(pkString)
+		if err != nil {
+			ctx.Logger().Error("fail to make pubkey", "pkString", pkString, "error", err)
+			return
+		}
+
+		vault, err := mgr.Keeper().GetVault(ctx, pubkey)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault", "pubkey", pubkey, "error", err)
+			return
+		}
+
+		coins := common.NewCoins(common.NewCoin(asset, amount))
+		vault.SubFunds(coins)
+
+		if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+			ctx.Logger().Error("fail to set vault", "vault", vault, "error", err)
+			return
+		}
+	}
 
 	externalHeight := int64(372853682)
-	fakeInboundTxBtc := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
+	fakeInboundTxBNB := func(ctx cosmos.Context, mgr *Mgrs, recovery TreasuryRecovery) {
 		asset, err := common.NewAsset(recovery.Asset)
 		if err != nil {
 			ctx.Logger().Error("fail to create asset", "error", err, "recovery", recovery)
@@ -174,15 +170,15 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		}
 		tx := common.Tx{
 			ID:          "",
-			Chain:       common.BTCChain,
-			FromAddress: "bc1qpfp573lvekn89yjc5jvlcspla4j3yr2hwmj6ga", // this is faked to refund to treasury
+			Chain:       common.BNBChain,
+			FromAddress: "tbnb1uuds8pd92qnnq0udw0rpg0szpgcslc9pf7pl5h", // regtest "cat"
 			ToAddress:   common.Address(recovery.VaultAddress),
 			Coins: common.NewCoins(common.Coin{
 				Asset:  asset,
 				Amount: recovery.Amount,
 			}),
 			Gas: common.Gas{common.Coin{
-				Asset:  common.BTCAsset,
+				Asset:  common.BNBAsset,
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: "badMemo",
@@ -193,16 +189,19 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 		} else {
 			hash := hex.EncodeToString(tmhash.Sum(txBytes))
 			tx.ID = common.TxID(strings.ToUpper(hash))
-			unobservedTxs := ObservedTxs{NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight)}
+			unobservedTxs := ObservedTxs{
+				NewObservedTx(tx, externalHeight, common.PubKey(recovery.VaultPubKey), externalHeight),
+			}
 			if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
 				ctx.Logger().Error("fail to makeFakeTxInObservation", "error", err, "recovery", recovery)
 			} else {
+				subBalance(ctx, mgr, recovery.Amount.Uint64(), recovery.Asset, recovery.VaultPubKey)
 				ctx.Logger().Info("successfully observed tx for regtest", "recovery", recovery)
 			}
 		}
 	}
 
 	for _, recovery := range recoveries {
-		fakeInboundTxBtc(ctx, mgr, recovery)
+		fakeInboundTxBNB(ctx, mgr, recovery)
 	}
 }

@@ -108,7 +108,11 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		TransactionSize:    1,
 		TransactionFeeRate: 37500,
 	}), IsNil)
-
+	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain:              common.ETHChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 37500,
+	}), IsNil)
 	c.Assert(k.SaveNetworkFee(ctx, common.TERRAChain, NetworkFee{
 		Chain:              common.TERRAChain,
 		TransactionSize:    1,
@@ -299,7 +303,7 @@ func (HandlerSuite) TestRefund(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 
 	pool := Pool{
-		Asset:        common.BNBAsset,
+		Asset:        common.ETHAsset,
 		BalanceRune:  cosmos.NewUint(100 * common.One),
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 	}
@@ -311,14 +315,16 @@ func (HandlerSuite) TestRefund(c *C) {
 	txin := NewObservedTx(
 		common.Tx{
 			ID:    GetRandomTxHash(),
-			Chain: common.BNBChain,
+			Chain: common.ETHChain,
 			Coins: common.Coins{
-				common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
 			},
-			Memo:        "withdraw:BNB.BNB",
-			FromAddress: GetRandomBNBAddress(),
-			ToAddress:   GetRandomBNBAddress(),
-			Gas:         BNBGasFeeSingleton,
+			Memo:        "withdraw:ETH.ETH",
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   GetRandomETHAddress(),
+			Gas: common.Gas{
+				{Asset: common.ETHAsset, Amount: bnbSingleTxFee},
+			},
 		},
 		1024,
 		vault.PubKey, 1024,
@@ -331,7 +337,7 @@ func (HandlerSuite) TestRefund(c *C) {
 
 	// check THORNode DONT create a refund transaction when THORNode don't have a pool for
 	// the asset sent.
-	lokiAsset, _ := common.NewAsset("BNB.LOKI")
+	lokiAsset, _ := common.NewAsset("ETH.LOKI")
 	txin.Tx.Coins = common.Coins{
 		common.NewCoin(lokiAsset, cosmos.NewUint(100*common.One)),
 	}

@@ -48,11 +48,11 @@ func (s *SlashingVCURSuite) TestObservingSlashing(c *C) {
 	k.SetObservedTxInVoter(ctx, txVoter)
 
 	txOut.TxArray = append(txOut.TxArray, TxOutItem{
-		Chain:       common.BNBChain,
+		Chain:       common.BTCChain,
 		InHash:      txHash,
-		ToAddress:   GetRandomBNBAddress(),
+		ToAddress:   GetRandomBTCAddress(),
 		VaultPubKey: GetRandomPubKey(),
-		Coin:        common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1024)),
 		Memo:        "whatever",
 	})
 
@@ -175,23 +175,23 @@ func (s *SlashingVCURSuite) TestNodeSignSlashErrors(c *C) {
 		na := GetRandomValidatorNode(NodeActive)
 		inTx := common.NewTx(
 			GetRandomTxHash(),
-			GetRandomBNBAddress(),
-			GetRandomBNBAddress(),
+			GetRandomBTCAddress(),
+			GetRandomBTCAddress(),
 			common.Coins{
-				common.NewCoin(common.BNBAsset, cosmos.NewUint(320000000)),
+				common.NewCoin(common.BTCAsset, cosmos.NewUint(320000000)),
 				common.NewCoin(common.RuneAsset(), cosmos.NewUint(420000000)),
 			},
 			nil,
-			"SWAP:BNB.BNB",
+			"SWAP:BTC.BTC",
 		)
 
 		txOutItem := TxOutItem{
-			Chain:       common.BNBChain,
+			Chain:       common.BTCChain,
 			InHash:      inTx.ID,
 			VaultPubKey: na.PubKeySet.Secp256k1,
-			ToAddress:   GetRandomBNBAddress(),
+			ToAddress:   GetRandomBTCAddress(),
 			Coin: common.NewCoin(
-				common.BNBAsset, cosmos.NewUint(3980500*common.One),
+				common.BTCAsset, cosmos.NewUint(3980500*common.One),
 			),
 		}
 		txOut := NewTxOut(3)
@@ -229,23 +229,23 @@ func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	inTx := common.NewTx(
 		GetRandomTxHash(),
-		GetRandomBNBAddress(),
-		GetRandomBNBAddress(),
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
 		common.Coins{
-			common.NewCoin(common.BNBAsset, cosmos.NewUint(320000000)),
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(320000000)),
 			common.NewCoin(common.RuneAsset(), cosmos.NewUint(420000000)),
 		},
 		nil,
-		"SWAP:BNB.BNB",
+		"SWAP:BTC.BTC",
 	)
 
 	txOutItem := TxOutItem{
-		Chain:       common.BNBChain,
+		Chain:       common.BTCChain,
 		InHash:      inTx.ID,
 		VaultPubKey: na.PubKeySet.Secp256k1,
-		ToAddress:   GetRandomBNBAddress(),
+		ToAddress:   GetRandomBTCAddress(),
 		Coin: common.NewCoin(
-			common.BNBAsset, cosmos.NewUint(3980500*common.One),
+			common.BTCAsset, cosmos.NewUint(3980500*common.One),
 		),
 	}
 	txOut := NewTxOut(3)
@@ -254,7 +254,7 @@ func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
 	ygg := GetRandomVault()
 	ygg.Type = YggdrasilVault
 	ygg.Coins = common.Coins{
-		common.NewCoin(common.BNBAsset, cosmos.NewUint(5000000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(5000000*common.One)),
 	}
 	keeper := &TestSlashingLackKeeper{
 		txOut:  txOut,

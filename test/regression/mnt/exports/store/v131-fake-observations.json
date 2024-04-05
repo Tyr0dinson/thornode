@@ -11,7 +11,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "7"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -159,7 +159,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "100000786612",
+              "amount": "5625",
               "denom": "rune"
             }
           ]
@@ -168,7 +168,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000001061462",
+              "amount": "34999989776535",
               "denom": "rune"
             }
           ]
@@ -186,7 +186,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "2500000000000",
+              "amount": "2700010968842",
               "denom": "rune"
             }
           ]
@@ -195,7 +195,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998151926",
+              "amount": "4999999248998",
               "denom": "rune"
             }
           ]
@@ -208,7 +208,7 @@
       },
       "supply": [
         {
-          "amount": "50100000000000",
+          "amount": "50200000000000",
           "denom": "rune"
         },
         {
@@ -290,39 +290,41 @@
       "chain_contracts": [],
       "last_chain_heights": [
         {
-          "chain": "BTC",
+          "chain": "BNB",
           "height": "372853682"
         }
       ],
-      "last_signed_height": "3",
-      "liquidity_providers": [
+      "last_signed_height": "13",
+      "liquidity_providers": null,
+      "loans": [],
+      "mimirs": [
         {
-          "asset": "BTC.BTC",
-          "asset_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
-          "asset_deposit_value": "100000000",
-          "last_add_height": "1",
-          "pending_asset": "0",
-          "pending_rune": "0",
-          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "rune_deposit_value": "100000000000",
-          "units": "100000000000"
+          "key": "FUNDMIGRATIONINTERVAL",
+          "value": "5"
+        },
+        {
+          "key": "RAGNAROK-BNB-BNB",
+          "value": "1"
+        },
+        {
+          "key": "RAGNAROK-BNB-BUSD-BD1",
+          "value": "1"
         }
       ],
-      "loans": [],
-      "mimirs": [],
       "network": {
-        "LPIncomeSplit": "9800",
-        "NodeIncomeSplit": "200",
-        "bond_reward_rune": "151926",
+        "LPIncomeSplit": "9231",
+        "NodeIncomeSplit": "769",
+        "bond_reward_rune": "1248998",
         "burned_bep2_rune": "0",
         "burned_erc20_rune": "0",
-        "total_bond_units": "4"
+        "outbound_gas_spent_rune": "1125038",
+        "total_bond_units": "10"
       },
       "network_fees": [
         {
-          "chain": "BTC",
-          "transaction_fee_rate": "7",
-          "transaction_size": "1000"
+          "chain": "BNB",
+          "transaction_fee_rate": "11250",
+          "transaction_size": "1"
         }
       ],
       "node_accounts": [
@@ -345,29 +347,16 @@
       "orderbook_items": [],
       "outbound_fee_spent_rune": [
         {
-          "amount": "10497511",
-          "asset": "BTC.BTC"
-        }
-      ],
-      "outbound_fee_withheld_rune": [
+          "amount": "0",
+          "asset": "BNB.BNB"
+        },
         {
-          "amount": "13998345",
-          "asset": "BTC.BTC"
+          "amount": "0",
+          "asset": "BNB.BUSD-BD1"
         }
       ],
-      "pools": [
-        {
-          "LP_units": "100000000000",
-          "asset": "BTC.BTC",
-          "balance_asset": "100003500",
-          "balance_rune": "100000786612",
-          "decimals": "8",
-          "pending_inbound_asset": "0",
-          "pending_inbound_rune": "0",
-          "status": "Available",
-          "synth_units": "0"
-        }
-      ],
+      "outbound_fee_withheld_rune": [],
+      "pools": null,
       "reserve_contributors": null,
       "streaming_swaps": [],
       "swap_queue_items": [],
@@ -392,16 +381,21 @@
           ],
           "coins": [
             {
-              "amount": "100003500",
-              "asset": "BTC.BTC",
+              "amount": "19977499",
+              "asset": "BNB.BNB",
+              "decimals": "8"
+            },
+            {
+              "amount": "0",
+              "asset": "BNB.BUSD-BD1",
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "2",
+          "inbound_tx_count": "3",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
-          "outbound_tx_count": "1",
+          "outbound_tx_count": "4",
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
           "routers": null,
           "status": "ActiveVault",
@@ -438,5 +432,5 @@
     },
     "version": {}
   },
-  "initial_height": "5"
+  "initial_height": "19"
 }

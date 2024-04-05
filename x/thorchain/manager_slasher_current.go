@@ -365,7 +365,10 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 
-			if !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
+			isBNBChain := toi.Coin.Asset.Chain.Equals(common.BNBChain)
+
+			// TODO: Remove BNB chain check (temporary for ragnarok vault recovery).
+			if !isBNBChain && !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
 				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
@@ -473,7 +476,8 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			}
 
 			// if a pool with the asset name doesn't exist, skip rescheduling
-			if !toi.Coin.Asset.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
+			// TODO: Remove BNB chain check (temporary for ragnarok vault recovery).
+			if !isBNBChain && !toi.Coin.Asset.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
 				ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
 				continue
 			}

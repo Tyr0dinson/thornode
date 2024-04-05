@@ -1,12 +1,20 @@
-{{ template "default-state.yaml" }}
+type: env
+key: SIGNING_TRANSACTION_PERIOD
+value: "2"
 ---
-{{ template "btc-pool-state.yaml" }}
+{{ template "default-state.yaml" }}
 ---
 type: state
 genesis:
   app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "200000000000"
+              denom: rune
     thorchain:
-      store_version: "129"
+      store_version: "130"
       node_accounts:
         - active_block_height: "0"
           bond: "5000000000000"
@@ -21,6 +29,74 @@ genesis:
           # matches the priv_validator_key.json mounted in the test container
           validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
           version: "1.130.0"
+      liquidity_providers:
+        - asset: BNB.BNB
+          asset_address: {{ addr_bnb_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+        - asset: BNB.BUSD-BD1
+          asset_address: {{ addr_bnb_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: BNB.BNB
+          balance_asset: "1000000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+        - LP_units: "100000000000"
+          asset: BNB.BUSD-BD1
+          balance_asset: "1000000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: BNB
+          transaction_fee_rate: "11250"
+          transaction_size: "1"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - BNB
+            - ETH
+            - DOGE
+            - TERRA
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "2000000000" # 10 BNB extra than the pool
+              asset: BNB.BNB
+              decimals: "8"
+            - amount: "2000000000" # 10 BUSD extra than the pool
+              asset: BNB.BUSD-BD1
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
 ---
 type: create-blocks
 count: 1
@@ -35,45 +111,57 @@ endpoint: http://localhost:1317/thorchain/invariant/asgard
 asserts:
   - .broken == false
 ---
-type: tx-version
-version: "1.131.0"
+########################################################################################
+# ragnarok the chain
+########################################################################################
+type: tx-mimir
+key: "RAGNAROK-BNB-BNB"
+value: 1
 signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: "RAGNAROK-BNB-BUSD-BD1"
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: "FundMigrationInterval"
+value: 5
+signer: {{ addr_thor_dog }}
+sequence: 2
 ---
 type: create-blocks
-count: 2  # need to produce 2 blocks for migration to take place
+count: 4
 ---
-type: check
-endpoint: http://localhost:1317/thorchain/version
-asserts:
-  - .|.current == "1.131.0"
----
+########################################################################################
+# observe the ragnarok BUSD outbound
+########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].in_hash == "03CBF3901E5D1219A0268FCDED3F80F4B9712305BFAAE6445BFE7CF111CE5A1B"
-  - .[0].coin.asset == "BTC.BTC"
-  - .[0].coin.amount == "99986000"
-  - .[0].to_address == "bc1qpfp573lvekn89yjc5jvlcspla4j3yr2hwmj6ga"
+  - .|length == 1
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 2 }}'
-    chain: BTC
-    from_address: {{ addr_btc_dog }}
-    to_address: "bc1qpfp573lvekn89yjc5jvlcspla4j3yr2hwmj6ga"
-    coins:
-      - amount: "99986000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10500"
-        asset: "BTC.BTC"
-    memo: "REFUND:03CBF3901E5D1219A0268FCDED3F80F4B9712305BFAAE6445BFE7CF111CE5A1B"
-  block_height: 2
-  finalise_height: 2
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BNB
+      from_address: {{ addr_bnb_dog }}
+      to_address: {{ addr_bnb_cat }}
+      coins:
+        - amount: "1000000000"
+          asset: "BNB.BUSD-BD1"
+          decimals: 8
+      gas:
+        - amount: "11250"
+          asset: "BNB.BNB"
+      memo: "RAGNAROK:5"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -84,6 +172,151 @@ asserts:
   - .|length == 0
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/invariant/asgard
+endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
-  - .broken == false
+  - .[0]|.coins[]|select(.asset=="BNB.BUSD-BD1")|.amount|tonumber == 1000000000 # 10 BUSD left
+---
+########################################################################################
+# observe the ragnarok BNB outbound
+########################################################################################
+type: create-blocks
+count: 4
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BNB
+      from_address: {{ addr_bnb_dog }}
+      to_address: {{ addr_bnb_cat }}
+      coins:
+        - amount: "999977501"
+          asset: "BNB.BNB"
+          decimals: 8
+      gas:
+        - amount: "11250"
+          asset: "BNB.BNB"
+      memo: "RAGNAROK:10"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0]|.coins[]|select(.asset=="BNB.BNB")|.amount|tonumber == 999999999 # 10 BNB left
+---
+########################################################################################
+# upgrade 131
+########################################################################################
+type: tx-version
+version: "1.131.0"
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2 # need to produce 2 blocks for migration to take place
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/version
+asserts:
+  - .|.current == "1.131.0"
+---
+########################################################################################
+# outbounds should properly reschedule every signing period (2 blocks)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.coin.asset == "BNB.BNB")|.height == 13
+  - .[]|select(.coin.asset == "BNB.BUSD-BD1")|.height == 13
+---
+type: create-blocks
+count: 2
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.coin.asset == "BNB.BNB")|.height == 15
+  - .[]|select(.coin.asset == "BNB.BUSD-BD1")|.height == 15
+---
+type: create-blocks
+count: 2
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 2
+  - .[]|select(.coin.asset == "BNB.BNB")|.height == 17
+  - .[]|select(.coin.asset == "BNB.BUSD-BD1")|.height == 17
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 3 }}"
+      chain: BNB
+      from_address: {{ addr_bnb_dog }}
+      to_address: {{ addr_bnb_cat }}
+      coins:
+        - amount: "980000000"
+          asset: "BNB.BNB"
+          decimals: 8
+      gas:
+        - amount: "11250"
+          asset: "BNB.BNB"
+      memo: "REFUND:B52501BFEE855CFD1B296F9D0284D949339FAFD3151FF48CB4DB222A836BC50C"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: BNB
+      from_address: {{ addr_bnb_dog }}
+      to_address: {{ addr_bnb_cat }}
+      coins:
+        - amount: "1000000000"
+          asset: "BNB.BUSD-BD1"
+          decimals: 8
+      gas:
+        - amount: "11250"
+          asset: "BNB.BNB"
+      memo: "REFUND:682B1C595486A24301311AAE5911935CA038CE7412DCFA307377FC6F2CF547B2"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[0]|.coins[]|select(.asset == "BNB.BNB")|.amount|tonumber == 19977499 # just what we subbed for gas
+  - .[0]|.coins[]|select(.asset == "BNB.BUSD-BD1")|.amount|tonumber == 0

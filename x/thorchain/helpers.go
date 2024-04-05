@@ -22,6 +22,8 @@ import (
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.131.0")):
+		return refundTxV131(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return refundTxV124(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.117.0")):
@@ -37,7 +39,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 	}
 }
 
-func refundTxV124(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
+func refundTxV131(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -52,7 +54,8 @@ func refundTxV124(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 		}
 
 		// Only attempt an outbound if a fee can be taken from the coin.
-		if coin.Asset.IsNativeRune() || !pool.BalanceRune.IsZero() {
+		// TODO: Remove BNB chain check (temporary for ragnarok vault recovery).
+		if coin.Asset.Chain.Equals(common.BNBChain) || coin.Asset.IsNativeRune() || !pool.BalanceRune.IsZero() {
 			toAddr := tx.Tx.FromAddress
 			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
 			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
