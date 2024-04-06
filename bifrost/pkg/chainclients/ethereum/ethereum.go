@@ -605,21 +605,30 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.TokenMaxGasMultiplier))
 	}
 
-	// if over max scheduled gas, abort and let thornode reschedule
-	estimatedFee := big.NewInt(int64(estimatedGas) * gasRate.Int64())
-	if scheduledMaxFee.Cmp(estimatedFee) < 0 {
+	// From the planned gasRate and scheduledMaxFee (in Wei terms), calculate the planned gas units.
+	plannedGasInt := scheduledMaxFee
+	plannedGasInt.Div(plannedGasInt, gasRate)
+	plannedGas := estimatedGas
+	if plannedGasInt.IsUint64() { // Do not check '.Uint64() > 0' here as 'estimatedGas > plannedGas' below covers it.
+		plannedGas = plannedGasInt.Uint64()
+	}
+
+	// if estimated gas is more than the planned gas, abort and let thornode reschedule
+	if estimatedGas > plannedGas {
 		c.logger.Warn().
 			Stringer("in_hash", tx.InHash).
 			Stringer("rate", gasRate).
 			Uint64("estimated_gas", estimatedGas).
-			Str("estimated_fee", estimatedFee.String()).
+			Uint64("planned_gas", plannedGas).
 			Str("scheduled_max_fee", scheduledMaxFee.String()).
 			Msg("max gas exceeded, aborting to let thornode reschedule")
 		return nil, nil, nil, nil
 	}
 
+	// Use the plannedGas number of gas units, expecting this to represent the MaxGas Amount
+	// (and any Multiplier) limit, and for any unused gas units to cost THORChain nothing.
 	createdTx = etypes.NewTransaction(
-		nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, estimatedGas, gasRate, data,
+		nonce, ecommon.HexToAddress(contractAddr.String()), ethValue, plannedGas, gasRate, data,
 	)
 
 	rawTx, err := c.sign(createdTx, tx.VaultPubKey, height, tx)
