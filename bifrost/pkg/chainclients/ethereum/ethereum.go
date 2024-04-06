@@ -608,10 +608,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// From the planned gasRate and scheduledMaxFee (in Wei terms), calculate the planned gas units.
 	plannedGasInt := scheduledMaxFee
 	plannedGasInt.Div(plannedGasInt, gasRate)
-	plannedGas := estimatedGas
-	if plannedGasInt.IsUint64() { // Do not check '.Uint64() > 0' here as 'estimatedGas > plannedGas' below covers it.
-		plannedGas = plannedGasInt.Uint64()
-	}
+	plannedGas := plannedGasInt.Uint64()
 
 	// if estimated gas is more than the planned gas, abort and let thornode reschedule
 	if estimatedGas > plannedGas {
