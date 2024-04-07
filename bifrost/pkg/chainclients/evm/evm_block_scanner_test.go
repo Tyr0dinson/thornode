@@ -474,7 +474,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 		true,
 	)
 	c.Check(
-		txInItem.Gas[0].Amount.Equal(cosmos.NewUint(100000)),
+		txInItem.Gas[0].Amount.Equal(cosmos.NewUint(2488)), // from GasUsed rather than gas limit
 		Equals,
 		true,
 	)
