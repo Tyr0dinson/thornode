@@ -696,6 +696,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	coin := tx.Coins[0]
 	gas := common.MakeEVMGas(c.GetChain(), createdTx.GasPrice(), createdTx.Gas())
+	// This is the maximum gas, using the gas limit for instant-observation
+	// rather than the GasUsed which can only be gotten from the receipt when scanning.
 
 	signedTx := &etypes.Transaction{}
 	if err = signedTx.UnmarshalJSON(rawTx); err != nil {

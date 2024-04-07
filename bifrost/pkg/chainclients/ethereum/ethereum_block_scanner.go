@@ -841,7 +841,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 	return txInItem, nil
 }
 
-func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
 	}
@@ -869,7 +869,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas())
+	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed)
 	if txInItem.Coins.IsEmpty() {
 		if txInItem.Sender == txInItem.To {
 			// When the Sender and To is the same then there's no balance chance whatever the Coins,
@@ -912,7 +912,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 	if e.isToValidContractAddress(tx.To(), true) {
 		return e.getTxInFromSmartContract(tx, receipt)
 	}
-	return e.getTxInFromTransaction(tx)
+	return e.getTxInFromTransaction(tx, receipt)
 }
 
 // getTxInFromFailedTransaction when a transaction failed due to out of gas, this method will check whether the transaction is an outbound
@@ -945,6 +945,6 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		Sender: strings.ToLower(fromAddr.String()),
 		To:     strings.ToLower(tx.To().String()),
 		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
-		Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas()),
+		Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed),
 	}
 }

@@ -534,7 +534,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 	}
 
 	e.logger.Debug().Stringer("txid", tx.Hash()).Stringer("to", tx.To()).Msg("not a valid contract")
-	return e.getTxInFromTransaction(tx)
+	return e.getTxInFromTransaction(tx, receipt)
 }
 
 // --------------------------------- gas ---------------------------------
@@ -619,7 +619,7 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 
 // --------------------------------- parse transaction ---------------------------------
 
-func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
@@ -649,7 +649,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction) (*stypes.TxI
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeEVMGas(e.cfg.ChainID, txGasPrice, tx.Gas())
+	txInItem.Gas = common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed)
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
 	if txInItem.Coins.IsEmpty() {
@@ -788,6 +788,6 @@ func (e *EVMScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		Sender: strings.ToLower(fromAddr.String()),
 		To:     strings.ToLower(tx.To().String()),
 		Coins:  common.NewCoins(common.NewCoin(e.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1))),
-		Gas:    common.MakeEVMGas(e.cfg.ChainID, txGasPrice, tx.Gas()),
+		Gas:    common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed),
 	}
 }
