@@ -18,13 +18,13 @@ variables:
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 stages:
+  - simulation
   - fork
   - reset
   - generate
   - test
   - build
   - long-test
-  - simulation
 
 fork:
   stage: fork
