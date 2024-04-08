@@ -82,6 +82,7 @@ bifrost:
       max_rpc_retries: 9 # about 1 min
       max_pending_nonces: 0
       fixed_outbound_gas_rate: false
+      max_gas_tip_percentage: 0
       token_max_gas_multiplier: 0
       aggregator_max_gas_multiplier: 0
       utxo: &utxo
@@ -146,6 +147,7 @@ bifrost:
       <<: *default-chain
       chain_id: ETH
       max_pending_nonces: 3
+      max_gas_tip_percentage: 20
       token_max_gas_multiplier: 3
       aggregator_max_gas_multiplier: 10
       block_scanner:

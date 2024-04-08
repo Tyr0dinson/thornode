@@ -624,6 +624,10 @@ type BifrostChainConfiguration struct {
 	// only used in mocknet to for smoke tests.
 	FixedOutboundGasRate bool `mapstructure:"fixed_outbound_gas_rate"`
 
+	// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
+	// dynamic fee EVM transactions.
+	MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
+
 	// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
 	// not the gas asset. This compensates for variance in gas units when contracts for
 	// pool assets use more than the configured MaxGasLimit gas units in transferOut.

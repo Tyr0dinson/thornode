@@ -233,6 +233,40 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
+func (e *ETHScanner) updateGasPriceV3(baseFee *big.Int, priorityFees []*big.Int) {
+	// skip empty blocks
+	if len(priorityFees) == 0 {
+		return
+	}
+
+	// find the 25th percentile priority fee in the block
+	sort.Slice(priorityFees, func(i, j int) bool { return priorityFees[i].Cmp(priorityFees[j]) == -1 })
+	priorityFee := priorityFees[len(priorityFees)/2]
+
+	// gasPrice is baseFee + 25th percentile priorityFee
+	gasPriceWei := new(big.Int).Add(baseFee, priorityFee)
+
+	// conversion factors
+	gweiToWei := big.NewInt(1e9)
+	tenGweiInWei := new(big.Int).Mul(big.NewInt(10), gweiToWei)
+
+	// add (10 gwei - 1 wei) for rounding up
+	roundingFactor := new(big.Int).Sub(tenGweiInWei, big.NewInt(1))
+	gasPriceWei = new(big.Int).Add(gasPriceWei, roundingFactor)
+
+	// round gas price to 10 gwei
+	gasPriceWei = gasPriceWei.Div(gasPriceWei, tenGweiInWei)
+	gasPriceWei = gasPriceWei.Mul(gasPriceWei, tenGweiInWei)
+
+	// add to the cache
+	e.gasCache = append(e.gasCache, gasPriceWei)
+	if len(e.gasCache) > e.cfg.GasCacheBlocks {
+		e.gasCache = e.gasCache[(len(e.gasCache) - e.cfg.GasCacheBlocks):]
+	}
+
+	e.updateGasPriceFromCache()
+}
+
 func (e *ETHScanner) updateGasPriceV2(prices []*big.Int) {
 	// skip empty blocks
 	if len(prices) == 0 {
@@ -249,19 +283,23 @@ func (e *ETHScanner) updateGasPriceV2(prices []*big.Int) {
 		e.gasCache = e.gasCache[(len(e.gasCache) - e.cfg.GasCacheBlocks):]
 	}
 
+	e.updateGasPriceFromCache()
+}
+
+func (e *ETHScanner) updateGasPriceFromCache() {
 	// skip update unless cache is full
 	if len(e.gasCache) < e.cfg.GasCacheBlocks {
 		return
 	}
 
-	// compute the mean of the 25th percentiles in the cache
+	// compute the mean of cache
 	sum := new(big.Int)
 	for _, fee := range e.gasCache {
 		sum.Add(sum, fee)
 	}
 	mean := new(big.Int).Quo(sum, big.NewInt(int64(e.cfg.GasCacheBlocks)))
 
-	// compute the standard deviation of the 25th percentiles in cache
+	// compute the standard deviation of cache
 	std := new(big.Int)
 	for _, fee := range e.gasCache {
 		v := new(big.Int).Sub(fee, mean)
@@ -293,11 +331,24 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 
 	// update gas price
-	var txsGas []*big.Int
-	for _, tx := range block.Transactions() {
-		txsGas = append(txsGas, tx.GasPrice())
+	version, err := e.bridge.GetThorchainVersion()
+	if err != nil || version.GTE(semver.MustParse("1.131.0")) {
+		var priorityFees []*big.Int
+		for _, tx := range block.Transactions() {
+			tipCap := tx.GasTipCap()
+			if tipCap == nil {
+				tipCap = big.NewInt(0)
+			}
+			priorityFees = append(priorityFees, tipCap)
+		}
+		e.updateGasPriceV3(block.BaseFee(), priorityFees)
+	} else {
+		var txsGas []*big.Int
+		for _, tx := range block.Transactions() {
+			txsGas = append(txsGas, tx.GasPrice())
+		}
+		e.updateGasPriceV2(txsGas)
 	}
-	e.updateGasPriceV2(txsGas)
 
 	reorgedTxIns, err := e.processReorg(block.Header())
 	if err != nil {

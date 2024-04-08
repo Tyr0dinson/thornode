@@ -2,6 +2,7 @@ package ethereum
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -66,6 +67,9 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.RequestURI {
+		case thorclient.ChainVersionEndpoint:
+			_, err := rw.Write([]byte(`{"current":"1.131.0"}`))
+			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
 			priKey, _ := s.thorKeys.GetPrivateKey()
 			tm, _ := codec.ToTmPubKeyInterface(priKey.PubKey())
@@ -112,6 +116,9 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 			}
 			var rpcRequest RPCRequest
 			err = json.Unmarshal(body, &rpcRequest)
+			if err != nil {
+				fmt.Println(string(body))
+			}
 			c.Assert(err, IsNil)
 			if rpcRequest.Method == "eth_getBalance" {
 				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x3b9aca00"}`))

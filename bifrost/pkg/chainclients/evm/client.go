@@ -587,21 +587,23 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.TokenMaxGasMultiplier))
 	}
 
-	// if over max scheduled gas, abort and let thornode reschedule
-	estimatedFee := big.NewInt(int64(estimatedGas) * gasRate.Int64())
-	if scheduledMaxFee.Cmp(estimatedFee) < 0 {
+	// determine max gas units based on scheduled max gas (fee) and current rate
+	maxGasUnits := new(big.Int).Div(scheduledMaxFee, gasRate).Uint64()
+
+	// if estimated gas is more than the planned gas, abort and let thornode reschedule
+	if estimatedGas > maxGasUnits {
 		c.logger.Warn().
 			Stringer("in_hash", txOutItem.InHash).
 			Stringer("rate", gasRate).
-			Uint64("estimated_gas", estimatedGas).
-			Str("estimated_fee", estimatedFee.String()).
+			Uint64("estimated_gas_units", estimatedGas).
+			Uint64("max_gas_units", maxGasUnits).
 			Str("scheduled_max_fee", scheduledMaxFee.String()).
 			Msg("max gas exceeded, aborting to let thornode reschedule")
 		return nil, nil
 	}
 
 	createdTx = etypes.NewTransaction(
-		nonce, ecommon.HexToAddress(contractAddr.String()), evmValue, estimatedGas, gasRate, txData,
+		nonce, ecommon.HexToAddress(contractAddr.String()), evmValue, maxGasUnits, gasRate, txData,
 	)
 
 	return createdTx, nil
