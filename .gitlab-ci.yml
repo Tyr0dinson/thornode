@@ -223,6 +223,8 @@ smoke-test:
       chmod +x $PLUGIN
 
   script:
+    - apk add coreutils
+    - du -sh .[^.]* * | sort -h
     - make smoke
   after_script:
     - mkdir logs
