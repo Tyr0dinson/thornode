@@ -29,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/x/thorchain"
+	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 const Mainnet = 1
@@ -164,7 +165,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
-			_, err := rw.Write([]byte(`{"current":"1.131.0"}`))
+			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
 		case req.RequestURI == thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
@@ -274,7 +275,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
-			_, err := rw.Write([]byte(`{"current":"1.132.0"}`))
+			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
 		case req.RequestURI == thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
