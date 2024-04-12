@@ -262,6 +262,7 @@ func (e *ETHScanner) updateGasPriceV3(baseFee *big.Int, priorityFees []*big.Int)
 	e.updateGasPriceFromCache()
 }
 
+// TODO: Delete updateGasPriceV2 after replacing its unit test calls with updateGasPriceV3
 // updateGasPriceV2 records the 25th percentile gas price in the block.
 func (e *ETHScanner) updateGasPriceV2(prices []*big.Int) {
 	// skip empty blocks
@@ -327,24 +328,15 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 
 	// update gas price
-	version, err := e.bridge.GetThorchainVersion()
-	if err != nil || version.GTE(semver.MustParse("1.131.0")) {
-		var priorityFees []*big.Int
-		for _, tx := range block.Transactions() {
-			tipCap := tx.GasTipCap()
-			if tipCap == nil {
-				tipCap = big.NewInt(0)
-			}
-			priorityFees = append(priorityFees, tipCap)
+	var priorityFees []*big.Int
+	for _, tx := range block.Transactions() {
+		tipCap := tx.GasTipCap()
+		if tipCap == nil {
+			tipCap = big.NewInt(0)
 		}
-		e.updateGasPriceV3(block.BaseFee(), priorityFees)
-	} else {
-		var txsGas []*big.Int
-		for _, tx := range block.Transactions() {
-			txsGas = append(txsGas, tx.GasPrice())
-		}
-		e.updateGasPriceV2(txsGas)
+		priorityFees = append(priorityFees, tipCap)
 	}
+	e.updateGasPriceV3(block.BaseFee(), priorityFees)
 
 	reorgedTxIns, err := e.processReorg(block.Header())
 	if err != nil {
