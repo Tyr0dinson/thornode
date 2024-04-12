@@ -869,7 +869,16 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
 		txGasPrice = big.NewInt(tenGwei)
 	}
-	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed)
+	// TODO: remove version check after v132
+	version, err := e.bridge.GetThorchainVersion()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get thorchain version: %w", err)
+	}
+	if version.GTE(semver.MustParse("1.132.0")) {
+		txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed)
+	} else {
+		txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas())
+	}
 	if txInItem.Coins.IsEmpty() {
 		if txInItem.Sender == txInItem.To {
 			// When the Sender and To is the same then there's no balance chance whatever the Coins,
@@ -939,12 +948,29 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 	}
 	txHash := tx.Hash().Hex()[2:]
 
-	return &stypes.TxInItem{
-		Tx:     txHash,
-		Memo:   memo.NewOutboundMemo(common.TxID(txHash)).String(),
-		Sender: strings.ToLower(fromAddr.String()),
-		To:     strings.ToLower(tx.To().String()),
-		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
-		Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed),
+	// TODO: remove version check after v132
+	version, err := e.bridge.GetThorchainVersion()
+	if err != nil {
+		e.logger.Err(err).Msg("fail to get thorchain version")
+		return nil
+	}
+	if version.GTE(semver.MustParse("1.132.0")) {
+		return &stypes.TxInItem{
+			Tx:     txHash,
+			Memo:   memo.NewOutboundMemo(common.TxID(txHash)).String(),
+			Sender: strings.ToLower(fromAddr.String()),
+			To:     strings.ToLower(tx.To().String()),
+			Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+			Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed),
+		}
+	} else {
+		return &stypes.TxInItem{
+			Tx:     txHash,
+			Memo:   memo.NewOutboundMemo(common.TxID(txHash)).String(),
+			Sender: strings.ToLower(fromAddr.String()),
+			To:     strings.ToLower(tx.To().String()),
+			Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+			Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, tx.Gas()),
+		}
 	}
 }
