@@ -439,7 +439,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	}()
 	c.Assert(err, IsNil)
 	config := getConfigForTest(server.URL)
-	bs, err := NewEVMScanner(config, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err := NewEVMScanner(config, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -485,7 +485,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 		true,
 	)
 
-	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -504,7 +504,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 
 	config.WhitelistTokens = append(config.WhitelistTokens, "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d")
 
-	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	// whitelist the address for test

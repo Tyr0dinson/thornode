@@ -383,7 +383,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		c.Assert(pkeyMgr.Stop(), IsNil)
 	}()
 	c.Assert(err, IsNil)
-	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err := NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -429,7 +429,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		true,
 	)
 
-	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -448,7 +448,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(500000000)), Equals, true)
 
-	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err = NewETHScanner(getConfigForTest(server.URL), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	// whitelist the address for test
