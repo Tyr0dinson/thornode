@@ -262,27 +262,6 @@ func (e *ETHScanner) updateGasPriceV3(baseFee *big.Int, priorityFees []*big.Int)
 	e.updateGasPriceFromCache()
 }
 
-// TODO: Delete updateGasPriceV2 after replacing its unit test calls with updateGasPriceV3
-// updateGasPriceV2 records the 25th percentile gas price in the block.
-func (e *ETHScanner) updateGasPriceV2(prices []*big.Int) {
-	// skip empty blocks
-	if len(prices) == 0 {
-		return
-	}
-
-	// find the 25th percentile gas price in the block
-	sort.Slice(prices, func(i, j int) bool { return prices[i].Cmp(prices[j]) == -1 })
-	gasPrice := prices[len(prices)/4]
-
-	// add to the cache
-	e.gasCache = append(e.gasCache, gasPrice)
-	if len(e.gasCache) > e.cfg.GasCacheBlocks {
-		e.gasCache = e.gasCache[(len(e.gasCache) - e.cfg.GasCacheBlocks):]
-	}
-
-	e.updateGasPriceFromCache()
-}
-
 func (e *ETHScanner) updateGasPriceFromCache() {
 	// skip update unless cache is full
 	if len(e.gasCache) < e.cfg.GasCacheBlocks {

@@ -645,10 +645,10 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 }
 
 // -------------------------------------------------------------------------------------
-// GasPriceV2
+// GasPriceV3
 // -------------------------------------------------------------------------------------
 
-func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
+func (s *BlockScannerTestSuite) TestGasPriceV3(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, err := io.ReadAll(req.Body)
 		c.Assert(err, IsNil)
@@ -684,39 +684,42 @@ func (s *BlockScannerTestSuite) TestGasPriceV2(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
+	baseFee := big.NewInt(0)
+	var resolution int64 = 1e10
+
 	// almost fill gas cache
 	for i := 0; i < 39; i++ {
-		bs.updateGasPriceV2([]*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3), big.NewInt(4)})
+		bs.updateGasPriceV3(baseFee, []*big.Int{big.NewInt(1 * resolution), big.NewInt(2 * resolution), big.NewInt(3 * resolution), big.NewInt(4 * resolution)})
 	}
 
 	// empty blocks should not count
-	bs.updateGasPriceV2([]*big.Int{})
+	bs.updateGasPriceV3(baseFee, []*big.Int{})
 	c.Assert(len(bs.gasCache), Equals, 39)
 	c.Assert(bs.gasPrice.Cmp(big.NewInt(initialGasPrice)), Equals, 0)
 
 	// now we should get the average of the 25th percentile gas (2)
-	bs.updateGasPriceV2([]*big.Int{big.NewInt(1), big.NewInt(2), big.NewInt(3), big.NewInt(4)})
+	bs.updateGasPriceV3(baseFee, []*big.Int{big.NewInt(1 * resolution), big.NewInt(2 * resolution), big.NewInt(3 * resolution), big.NewInt(4 * resolution)})
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(2).Uint64())
+	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(2*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 6 (3 + 3x stddev)
 	for i := 0; i < 20; i++ {
-		bs.updateGasPriceV2([]*big.Int{big.NewInt(2), big.NewInt(4), big.NewInt(6), big.NewInt(8)})
+		bs.updateGasPriceV3(baseFee, []*big.Int{big.NewInt(2 * resolution), big.NewInt(4 * resolution), big.NewInt(6 * resolution), big.NewInt(8 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(6).Uint64())
+	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(6*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 4
 	for i := 0; i < 20; i++ {
-		bs.updateGasPriceV2([]*big.Int{big.NewInt(2), big.NewInt(4), big.NewInt(6), big.NewInt(8)})
+		bs.updateGasPriceV3(baseFee, []*big.Int{big.NewInt(2 * resolution), big.NewInt(4 * resolution), big.NewInt(6 * resolution), big.NewInt(8 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(4).Uint64())
+	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(4*resolution).Uint64())
 
 	// add 20 more blocks with 2x the 25th percentile and we should get 12 (6 + 3x stddev)
 	for i := 0; i < 20; i++ {
-		bs.updateGasPriceV2([]*big.Int{big.NewInt(4), big.NewInt(8), big.NewInt(12), big.NewInt(16)})
+		bs.updateGasPriceV3(baseFee, []*big.Int{big.NewInt(4 * resolution), big.NewInt(8 * resolution), big.NewInt(12 * resolution), big.NewInt(16 * resolution)})
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
-	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(12).Uint64())
+	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(12*resolution).Uint64())
 }
