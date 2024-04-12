@@ -443,7 +443,7 @@ endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - .|length == 0
 ---
-# all saver outbounds plus the first LP
+# outbounds for all savers withdrawals, synth swap, and the first LP withdrawal
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
@@ -459,7 +459,7 @@ endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .status == "Staged"
 ---
-# observe saver outbounds
+# observe outbounds for saver withdrawals and the synth swap
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
