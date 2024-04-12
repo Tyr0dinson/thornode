@@ -273,6 +273,9 @@ func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
 func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch {
+		case req.RequestURI == thorclient.ChainVersionEndpoint:
+			_, err := rw.Write([]byte(`{"current":"1.132.0"}`))
+			c.Assert(err, IsNil)
 		case req.RequestURI == thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 		case req.RequestURI == thorclient.InboundAddressesEndpoint:
