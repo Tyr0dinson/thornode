@@ -427,7 +427,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, chain comm
 		}
 	}
 	// min confirmation adjustment
-	if chain.Equals(common.ETHChain) || chain.Equals(common.DOGEChain) && confirmations < 2 {
+	if (chain.Equals(common.ETHChain) || chain.Equals(common.DOGEChain)) && confirmations < 2 {
 		confirmations = 2
 	}
 
