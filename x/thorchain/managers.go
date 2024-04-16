@@ -159,7 +159,7 @@ type Swapper interface {
 		dexAggTargetAsset string,
 		dexAggLimit *cosmos.Uint,
 		swp StreamingSwap,
-		transactionFee cosmos.Uint,
+		transactionFee cosmos.Uint, // TODO: Remove this argument on hard fork.
 		synthVirtualDepthMult int64,
 		mgr Manager,
 	) (cosmos.Uint, []*EventSwap, error)

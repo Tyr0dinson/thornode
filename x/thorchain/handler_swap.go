@@ -308,10 +308,6 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		return nil, fmt.Errorf("address(%s) is not same network", msg.Destination)
 	}
 
-	transactionFee, err := h.mgr.GasMgr().GetAssetOutboundFee(ctx, msg.TargetAsset, true)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get transaction fee: %w", err)
-	}
 	synthVirtualDepthMult, err := h.mgr.Keeper().GetMimir(ctx, constants.VirtualMultSynthsBasisPoints.String())
 	if synthVirtualDepthMult < 1 || err != nil {
 		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynthsBasisPoints)
@@ -383,7 +379,7 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		dexAggTargetAsset,
 		msg.AggregatorTargetLimit,
 		swp,
-		transactionFee,
+		cosmos.ZeroUint(), // TODO: Remove this argument on hard fork.
 		synthVirtualDepthMult,
 		h.mgr)
 	if swapErr != nil {
@@ -410,9 +406,15 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		if err != nil {
 			ctx.Logger().Error("failed to retrieve AffiliateCollector for thorname owner", "address", affThorname.Owner.String(), "error", err)
 		} else {
-			addRuneAmt := common.SafeSub(emit, transactionFee)
-			affCol.RuneAmount = affCol.RuneAmount.Add(addRuneAmt)
-			h.mgr.Keeper().SetAffiliateCollector(ctx, affCol)
+			// The TargetAsset has already been established to be RUNE.
+			transactionFee, err := h.mgr.GasMgr().GetAssetOutboundFee(ctx, common.RuneAsset(), true)
+			if err != nil {
+				ctx.Logger().Error("failed to get transaction fee", "error", err)
+			} else {
+				addRuneAmt := common.SafeSub(emit, transactionFee)
+				affCol.RuneAmount = affCol.RuneAmount.Add(addRuneAmt)
+				h.mgr.Keeper().SetAffiliateCollector(ctx, affCol)
+			}
 		}
 	}
 
