@@ -2506,6 +2506,18 @@ components:
         memo:
           type: string
           example: "OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA"
+        aggregator:
+          type: string
+          description: whitelisted DEX Aggregator contract address
+          example: "0xe4ddca21881bac219af7f217703db0475d2a9f02"
+        aggregator_target_asset:
+          type: string
+          description: target asset for the aggregator contract to attempt a swap to
+          example: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        aggregator_target_limit:
+          type: string
+          description: the minimum number of tokens the swapper wants to receive of the output asset
+          example: "100"
         clout_spent:
           type: string
           description: clout spent in RUNE for the outbound

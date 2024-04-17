@@ -3158,17 +3158,20 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 
 func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 	return &types.QueryTxOutItem{
-		Height:      height, // Omitted if 0, for use in openapi.TxDetailsResponse
-		VaultPubKey: toi.VaultPubKey.String(),
-		InHash:      toi.InHash.String(),
-		OutHash:     toi.OutHash.String(),
-		Chain:       toi.Chain.String(),
-		ToAddress:   toi.ToAddress.String(),
-		Coin:        &toi.Coin,
-		MaxGas:      toi.MaxGas,
-		GasRate:     toi.GasRate,
-		Memo:        toi.Memo,
-		CloutSpent:  toi.CloutSpent.String(),
+		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
+		VaultPubKey:           toi.VaultPubKey.String(),
+		InHash:                toi.InHash.String(),
+		OutHash:               toi.OutHash.String(),
+		Chain:                 toi.Chain.String(),
+		ToAddress:             toi.ToAddress.String(),
+		Coin:                  &toi.Coin,
+		MaxGas:                toi.MaxGas,
+		GasRate:               toi.GasRate,
+		Memo:                  toi.Memo,
+		Aggregator:            toi.Aggregator,
+		AggregatorTargetAsset: toi.AggregatorTargetAsset,
+		AggregatorTargetLimit: toi.AggregatorTargetLimit.String(),
+		CloutSpent:            toi.CloutSpent.String(),
 	}
 }
 

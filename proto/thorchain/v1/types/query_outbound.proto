@@ -32,6 +32,9 @@ message QueryTxOutItem{
   repeated common.Coin max_gas = 6 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/v3/common.Gas", (gogoproto.nullable) = false, (gogoproto.jsontag) = "max_gas"];
   int64 gas_rate = 7;
   string memo = 5;
+  string aggregator = 12;
+  string aggregator_target_asset = 13;
+  string aggregator_target_limit = 14;
   // clout spent in RUNE for the outbound
   string clout_spent = 11;
 }

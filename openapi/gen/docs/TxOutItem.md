@@ -14,6 +14,9 @@ Name | Type | Description | Notes
 **MaxGas** | [**[]Coin**](Coin.md) |  | 
 **GasRate** | Pointer to **int64** |  | [optional] 
 **Memo** | Pointer to **string** |  | [optional] 
+**Aggregator** | Pointer to **string** | whitelisted DEX Aggregator contract address | [optional] 
+**AggregatorTargetAsset** | Pointer to **string** | target asset for the aggregator contract to attempt a swap to | [optional] 
+**AggregatorTargetLimit** | Pointer to **string** | the minimum number of tokens the swapper wants to receive of the output asset | [optional] 
 **CloutSpent** | Pointer to **string** | clout spent in RUNE for the outbound | [optional] 
 
 ## Methods
@@ -264,6 +267,81 @@ SetMemo sets Memo field to given value.
 `func (o *TxOutItem) HasMemo() bool`
 
 HasMemo returns a boolean if a field has been set.
+
+### GetAggregator
+
+`func (o *TxOutItem) GetAggregator() string`
+
+GetAggregator returns the Aggregator field if non-nil, zero value otherwise.
+
+### GetAggregatorOk
+
+`func (o *TxOutItem) GetAggregatorOk() (*string, bool)`
+
+GetAggregatorOk returns a tuple with the Aggregator field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAggregator
+
+`func (o *TxOutItem) SetAggregator(v string)`
+
+SetAggregator sets Aggregator field to given value.
+
+### HasAggregator
+
+`func (o *TxOutItem) HasAggregator() bool`
+
+HasAggregator returns a boolean if a field has been set.
+
+### GetAggregatorTargetAsset
+
+`func (o *TxOutItem) GetAggregatorTargetAsset() string`
+
+GetAggregatorTargetAsset returns the AggregatorTargetAsset field if non-nil, zero value otherwise.
+
+### GetAggregatorTargetAssetOk
+
+`func (o *TxOutItem) GetAggregatorTargetAssetOk() (*string, bool)`
+
+GetAggregatorTargetAssetOk returns a tuple with the AggregatorTargetAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAggregatorTargetAsset
+
+`func (o *TxOutItem) SetAggregatorTargetAsset(v string)`
+
+SetAggregatorTargetAsset sets AggregatorTargetAsset field to given value.
+
+### HasAggregatorTargetAsset
+
+`func (o *TxOutItem) HasAggregatorTargetAsset() bool`
+
+HasAggregatorTargetAsset returns a boolean if a field has been set.
+
+### GetAggregatorTargetLimit
+
+`func (o *TxOutItem) GetAggregatorTargetLimit() string`
+
+GetAggregatorTargetLimit returns the AggregatorTargetLimit field if non-nil, zero value otherwise.
+
+### GetAggregatorTargetLimitOk
+
+`func (o *TxOutItem) GetAggregatorTargetLimitOk() (*string, bool)`
+
+GetAggregatorTargetLimitOk returns a tuple with the AggregatorTargetLimit field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAggregatorTargetLimit
+
+`func (o *TxOutItem) SetAggregatorTargetLimit(v string)`
+
+SetAggregatorTargetLimit sets AggregatorTargetLimit field to given value.
+
+### HasAggregatorTargetLimit
+
+`func (o *TxOutItem) HasAggregatorTargetLimit() bool`
+
+HasAggregatorTargetLimit returns a boolean if a field has been set.
 
 ### GetCloutSpent
 
