@@ -42,6 +42,7 @@ func (Test) TestJSONSpec(c *C) {
 
 	// txs
 	assertJSONStructTagsMatch(c, types.TxOut{}, gen.KeysignInfo{})
+	assertJSONStructTagsMatch(c, types.TxOutItem{}, gen.TxOutItem{})
 
 	// tss
 	assertJSONStructTagsMatch(c, types.NodeTssTime{}, gen.NodeKeygenMetric{})
