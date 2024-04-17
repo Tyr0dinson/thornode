@@ -42,7 +42,9 @@ func (Test) TestJSONSpec(c *C) {
 
 	// txs
 	assertJSONStructTagsMatch(c, types.TxOut{}, gen.KeysignInfo{})
-	assertJSONStructTagsMatch(c, types.TxOutItem{}, gen.TxOutItem{})
+	// TODO: Check that TxOutItem struct tags match
+	// if or when the THORNode struct includes its (scheduled) Height field.
+	// assertJSONStructTagsMatch(c, types.TxOutItem{}, gen.TxOutItem{})
 
 	// tss
 	assertJSONStructTagsMatch(c, types.NodeTssTime{}, gen.NodeKeygenMetric{})
