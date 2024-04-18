@@ -402,9 +402,6 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 		}
 
 	}
-	if err := vm.checkContractUpgrade(ctx, mgr, removedNodeKeys); err != nil {
-		ctx.Logger().Error("fail to check contract upgrade", "error", err)
-	}
 	// reset all nodes in ready status back to standby status
 	ready, err := vm.k.ListValidatorsByStatus(ctx, NodeReady)
 	if err != nil {
@@ -421,52 +418,6 @@ func (vm *ValidatorMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Val
 	vm.k.SetMinJoinLast(ctx)
 
 	return validators
-}
-
-// checkContractUpgrade for those chains that support smart contract, it the contract get changed, take ETH for example , if the smart contract used to process transactions on ETH chain get updated for some reason
-// then the network has to recall all the fund on ETH(include both ETH and ERC20)
-func (vm *ValidatorMgrVCUR) checkContractUpgrade(ctx cosmos.Context, mgr Manager, removedNodeKeys common.PubKeys) error {
-	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
-		return fmt.Errorf("fail to get active asgards: %w", err)
-	}
-	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
-	if err != nil {
-		return fmt.Errorf("fail to get retiring asgards: %w", err)
-	}
-
-	// no active asgard vault , not possible
-	if len(activeVaults) == 0 {
-		return nil
-	}
-	if len(retiringVaults) == 0 {
-		return nil
-	}
-	oldChainRouters := retiringVaults[0].Routers
-	newChainRouters := activeVaults[0].Routers
-	chains := common.Chains{}
-	for _, old := range oldChainRouters {
-		found := false
-		for _, n := range newChainRouters {
-			if n.Chain.Equals(old.Chain) {
-				found = true
-				if !n.Router.Equals(old.Router) {
-					// contract address get changed , need to recall funds
-					chains = append(chains, n.Chain)
-				}
-			}
-		}
-		if !found {
-			chains = append(chains, old.Chain)
-		}
-	}
-
-	for _, c := range chains.Distinct() {
-		if err := vm.networkMgr.RecallChainFunds(ctx, c, mgr, removedNodeKeys); err != nil {
-			ctx.Logger().Error("fail to recall chain fund", "error", err, "chain", c.String())
-		}
-	}
-	return nil
 }
 
 // getChangedNodes to identify which node had been removed ,and which one had been added
@@ -1369,24 +1320,6 @@ func (vm *ValidatorMgrVCUR) NodeAccountPreflightCheck(ctx cosmos.Context, na Nod
 	// Check that the node account has an pubkey set
 	if na.PubKeySet.IsEmpty() {
 		return NodeWhiteListed, fmt.Errorf("node account has not registered their pubkey set")
-	}
-
-	// check if node account is whitelisted. This is used for mocknet/stagenet environments
-	if len(VALIDATORS) > 0 {
-		found := false
-		for _, val := range VALIDATORS {
-			acc, err := cosmos.AccAddressFromBech32(val)
-			if err != nil {
-				continue
-			}
-			if acc.Equals(na.NodeAddress) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return NodeStandby, fmt.Errorf("node account is not a whitelisted validator")
-		}
 	}
 
 	// ensure we have enough rune

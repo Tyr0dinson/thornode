@@ -99,7 +99,6 @@ type ObserverManager interface {
 type ValidatorManager interface {
 	BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
 	EndBlock(ctx cosmos.Context, mgr Manager) []abci.ValidatorUpdate
-	RequestYggReturn(ctx cosmos.Context, node NodeAccount, mgr Manager) error // TODO remove on hard fork
 	processRagnarok(ctx cosmos.Context, mgr Manager) error
 	NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error)
 }
@@ -534,43 +533,9 @@ func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMg
 	switch {
 	case version.GTE(semver.MustParse("1.128.0")):
 		return newValidatorMgrVCUR(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.126.0")):
-		return newValidatorMgrV126(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.124.0")):
-		return newValidatorMgrV124(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.123.0")):
-		return newValidatorMgrV123(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.121.0")):
-		return newValidatorMgrV121(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.119.0")):
-		return newValidatorMgrV119(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.117.0")):
-		return newValidatorMgrV117(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.116.0")):
-		return newValidatorMgrV116(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.112.0")):
-		return newValidatorMgrV112(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.110.0")):
-		return newValidatorMgrV110(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.109.0")):
-		return newValidatorMgrV109(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.106.0")):
-		return newValidatorMgrV106(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.103.0")):
-		return newValidatorMgrV103(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.95.0")):
-		return newValidatorMgrV95(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.92.0")):
-		return newValidatorMgrV92(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.87.0")):
-		return newValidatorMgrV87(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("1.84.0")):
-		return newValidatorMgrV84(keeper, networkMgr, txOutStore, eventMgr), nil
-	case version.GTE(semver.MustParse("0.80.0")):
-		return newValidatorMgrV80(keeper, networkMgr, txOutStore, eventMgr), nil
-
+	default:
+		return nil, errInvalidVersion
 	}
-	return nil, errInvalidVersion
 }
 
 // GetObserverManager return an instance that implements ObserverManager interface
