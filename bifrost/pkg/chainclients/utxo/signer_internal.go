@@ -370,9 +370,11 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	if err != nil {
 		c.log.Err(err).Msg("fail to get thorchain version")
 	}
+	// TODO: after v132 remove 'var memo mem.Memo' and change 'memo, err =' to 'memo, err :='
+	var memo mem.Memo
 	if err == nil && version.GTE(semver.MustParse("1.132.0")) {
 		// Parse the memo to be able to identify Migrate or Consolidate outbounds.
-		memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
+		memo, err = mem.ParseMemo(common.LatestVersion, tx.Memo)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
 		}
