@@ -33,8 +33,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.code?)]|length == 1
-  - ..|select(.code?).code == 1
-  - ..|select(.code?).log == "internal" # Redacted error details.
+  - ..|select(.code?).code == 99
+  - ..|select(.code?).log| contains("internal error") and contains("invalid memo")
 ---
 ########################################################################################
 type: tx-deposit
