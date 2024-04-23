@@ -972,7 +972,11 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssets(c *C) {
 	bscPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, bscPool), IsNil)
 
+	// For different paths, use CacheContext for comparison.
+	refctx := ctx
+
 	// happy path
+	ctx, _ = refctx.CacheContext()
 	err = nmgr.spawnDerivedAssets(ctx, mgr)
 	c.Assert(err, IsNil)
 	usd, err := mgr.Keeper().GetPool(ctx, common.TOR)
@@ -986,6 +990,7 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Check(bnbPool.BalanceRune.Uint64(), Equals, uint64(110119961610327), Commentf("%d", bnbPool.BalanceRune.Uint64()))
 
 	// happy path, but some trade volume triggers a lower pool depth
+	ctx, _ = refctx.CacheContext()
 	newctx := ctx.WithBlockHeight(ctx.BlockHeight() - 1)
 	err = mgr.Keeper().AddToSwapSlip(newctx, busd, cosmos.NewInt(maxAnchorSlip/4))
 	c.Assert(err, IsNil)
@@ -998,6 +1003,12 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Check(usd.BalanceRune.Uint64(), Equals, uint64(140620169539027), Commentf("%d", usd.BalanceRune.Uint64()))
 
 	// unhappy path, too much liquidity fees collected in the anchor pools, goes to 1% depth
+	ctx, _ = refctx.CacheContext()
+	newctx = ctx.WithBlockHeight(ctx.BlockHeight() - 1)
+	err = mgr.Keeper().AddToSwapSlip(newctx, busd, cosmos.NewInt(maxAnchorSlip/4))
+	c.Assert(err, IsNil)
+	err = nmgr.spawnDerivedAssets(ctx, mgr)
+	c.Assert(err, IsNil)
 	err = mgr.Keeper().AddToSwapSlip(newctx, busd, cosmos.NewInt(10_000))
 	c.Assert(err, IsNil)
 	err = nmgr.spawnDerivedAssets(ctx, mgr)
