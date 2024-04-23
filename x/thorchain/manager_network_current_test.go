@@ -1002,6 +1002,15 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Check(usd.BalanceAsset.Uint64(), Equals, uint64(694261260136726), Commentf("%d", usd.BalanceAsset.Uint64()))
 	c.Check(usd.BalanceRune.Uint64(), Equals, uint64(140620169539027), Commentf("%d", usd.BalanceRune.Uint64()))
 
+	// Show that another spawnDerivedAssets call now (as for a swap) changes the spawned depths, despite no slip change.
+	err = nmgr.spawnDerivedAssets(ctx, mgr)
+	c.Assert(err, IsNil)
+	usd, err = mgr.Keeper().GetPool(ctx, common.TOR)
+	c.Assert(err, IsNil)
+	c.Check(usd.Status.String(), Equals, "Available")
+	c.Check(usd.BalanceAsset.Uint64(), Equals, uint64(462840840091148), Commentf("%d", usd.BalanceAsset.Uint64()))
+	c.Check(usd.BalanceRune.Uint64(), Equals, uint64(93746779692684), Commentf("%d", usd.BalanceRune.Uint64()))
+
 	// unhappy path, too much liquidity fees collected in the anchor pools, goes to 1% depth
 	ctx, _ = refctx.CacheContext()
 	newctx = ctx.WithBlockHeight(ctx.BlockHeight() - 1)
