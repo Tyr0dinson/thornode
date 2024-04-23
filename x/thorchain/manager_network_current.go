@@ -172,44 +172,9 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 }
 
 func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error {
-	active, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	layer1Assets, err := vm.getLayer1Assets(ctx)
 	if err != nil {
 		return err
-	}
-
-	if len(active) == 0 {
-		return fmt.Errorf("dev error: no active asgard vaults")
-	}
-
-	// TODO: if a gas asset is removed from the network, this pool needs to be
-	// removed
-
-	// TODO: cleanup after BNB is removed from the network
-	bnbAvailable := false
-	bnb, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
-	if err == nil && bnb.Status == PoolAvailable {
-		bnbAvailable = true
-	}
-
-	// get assets to create derived pools
-	layer1Assets := []common.Asset{common.TOR}
-	for _, chain := range active[0].GetChains() {
-		// skip BSC chain to avoid THOR.BNB overwrite if BNB pool is available
-		if bnbAvailable && chain.IsBSCChain() {
-			continue
-		}
-
-		// skip BNB chain to avoid THOR.BNB overwrite if BNB pool is unavailable
-		if !bnbAvailable && chain.Equals(common.BNBChain) {
-			continue
-		}
-
-		// no derived asset for thorchain
-		if chain.IsTHORChain() {
-			continue
-		}
-
-		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
 	for _, asset := range layer1Assets {
@@ -1813,4 +1778,47 @@ func getTotalActiveNodeWithBond(ctx cosmos.Context, k keeper.Keeper) (int64, err
 		}
 	}
 	return total, nil
+}
+
+func (vm *NetworkMgrVCUR) getLayer1Assets(ctx cosmos.Context) ([]common.Asset, error) {
+	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(active) == 0 {
+		return nil, fmt.Errorf("dev error: no active asgard vaults")
+	}
+
+	// TODO: if a gas asset is removed from the network, this pool needs to be
+	// removed
+
+	// TODO: cleanup after BNB is removed from the network
+	bnbAvailable := false
+	bnb, err := vm.k.GetPool(ctx, common.BNBAsset)
+	if err == nil && bnb.Status == PoolAvailable {
+		bnbAvailable = true
+	}
+
+	// get assets to create derived pools
+	layer1Assets := []common.Asset{common.TOR}
+	for _, chain := range active[0].GetChains() {
+		// skip BSC chain to avoid THOR.BNB overwrite if BNB pool is available
+		if bnbAvailable && chain.IsBSCChain() {
+			continue
+		}
+
+		// skip BNB chain to avoid THOR.BNB overwrite if BNB pool is unavailable
+		if !bnbAvailable && chain.Equals(common.BNBChain) {
+			continue
+		}
+
+		// no derived asset for thorchain
+		if chain.IsTHORChain() {
+			continue
+		}
+
+		layer1Assets = append(layer1Assets, chain.GetGasAsset())
+	}
+	return layer1Assets, nil
 }
