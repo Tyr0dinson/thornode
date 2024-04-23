@@ -125,8 +125,6 @@ func (vm *NetworkMgrVCUR) suspendVirtualPool(ctx cosmos.Context, mgr Manager, de
 func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	anchors := mgr.Keeper().GetAnchors(ctx, asset)
 
-	maxAnchorBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
-
 	// sum anchor pool rune depths
 	totalRuneDepth := cosmos.ZeroUint()
 	availableAnchors := make([]common.Asset, 0)
@@ -152,19 +150,19 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 			continue
 		}
 
-		slip, err := mgr.Keeper().RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
+		slip, err := mgr.Keeper().GetCurrentRollup(ctx, anchorAsset)
 		if err != nil {
-			ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
+			ctx.Logger().Error("failed to get current rollup", "asset", anchorAsset, "err", err)
 			continue
 		}
-		// if slip is not in uint64 range, default to 0
-		if !slip.IsUint64() {
-			slip = cosmos.ZeroInt()
+		// if slip is negative, default to 0
+		if slip < 0 {
+			slip = 0
 		}
 
 		totalRuneDepth = totalRuneDepth.Add(p.BalanceRune)
 		availableAnchors = append(availableAnchors, anchorAsset)
-		slippageCollector = append(slippageCollector, cosmos.NewUint(slip.Uint64()))
+		slippageCollector = append(slippageCollector, cosmos.NewUint(uint64(slip)))
 	}
 
 	slippage := common.GetMedianUint(slippageCollector)
