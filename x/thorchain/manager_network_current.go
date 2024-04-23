@@ -85,6 +85,9 @@ func (vm *NetworkMgrVCUR) processGenesisSetup(ctx cosmos.Context) error {
 }
 
 func (vm *NetworkMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager) error {
+	if err := vm.rollupSwapSlips(ctx); err != nil {
+		ctx.Logger().Error("fail to rollup swap slips", "error", err)
+	}
 	return vm.spawnDerivedAssets(ctx, mgr)
 }
 
@@ -1807,4 +1810,23 @@ func (vm *NetworkMgrVCUR) getLayer1Assets(ctx cosmos.Context) ([]common.Asset, e
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 	return layer1Assets, nil
+}
+
+func (vm *NetworkMgrVCUR) rollupSwapSlips(ctx cosmos.Context) error {
+	layer1Assets, err := vm.getLayer1Assets(ctx)
+	if err != nil {
+		return err
+	}
+
+	maxAnchorBlocks := vm.k.GetConfigInt64(ctx, constants.MaxAnchorBlocks)
+	for _, asset := range layer1Assets {
+		anchors := vm.k.GetAnchors(ctx, asset)
+		for _, anchorAsset := range anchors {
+			_, err := vm.k.RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
+			if err != nil {
+				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
+			}
+		}
+	}
+	return nil
 }
