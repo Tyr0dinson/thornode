@@ -1766,20 +1766,6 @@ func (vm *NetworkMgrVCUR) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) 
 	return vm.withdrawLiquidity(ctx, p, na, mgr)
 }
 
-func getTotalActiveNodeWithBond(ctx cosmos.Context, k keeper.Keeper) (int64, error) {
-	nas, err := k.ListActiveValidators(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("fail to get active node accounts: %w", err)
-	}
-	var total int64
-	for _, item := range nas {
-		if !item.Bond.IsZero() {
-			total++
-		}
-	}
-	return total, nil
-}
-
 func (vm *NetworkMgrVCUR) getLayer1Assets(ctx cosmos.Context) ([]common.Asset, error) {
 	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
