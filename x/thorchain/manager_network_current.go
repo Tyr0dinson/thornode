@@ -212,10 +212,18 @@ func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
+	// Update anchor swap slip rollups and spawn assets.
+	anchorMap := map[common.Asset]bool{}
 	maxAnchorBlocks := vm.k.GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 	for _, asset := range layer1Assets {
 		anchors := vm.k.GetAnchors(ctx, asset)
 		for _, anchorAsset := range anchors {
+			// Ensure RollupSwapSlip called only once per anchor.
+			if anchorMap[anchorAsset] {
+				continue
+			}
+			anchorMap[anchorAsset] = true
+
 			_, err := vm.k.RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
 			if err != nil {
 				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
