@@ -85,9 +85,6 @@ func (vm *NetworkMgrVCUR) processGenesisSetup(ctx cosmos.Context) error {
 }
 
 func (vm *NetworkMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager) error {
-	if err := vm.rollupSwapSlips(ctx); err != nil {
-		ctx.Logger().Error("fail to rollup swap slips", "error", err)
-	}
 	return vm.spawnDerivedAssets(ctx, mgr)
 }
 
@@ -175,12 +172,55 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 }
 
 func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error {
-	layer1Assets, err := vm.getLayer1Assets(ctx)
+	active, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return err
 	}
 
+	if len(active) == 0 {
+		return fmt.Errorf("dev error: no active asgard vaults")
+	}
+
+	// TODO: if a gas asset is removed from the network, this pool needs to be
+	// removed
+
+	// TODO: cleanup after BNB is removed from the network
+	bnbAvailable := false
+	bnb, err := mgr.Keeper().GetPool(ctx, common.BNBAsset)
+	if err == nil && bnb.Status == PoolAvailable {
+		bnbAvailable = true
+	}
+
+	// get assets to create derived pools
+	layer1Assets := []common.Asset{common.TOR}
+	for _, chain := range active[0].GetChains() {
+		// skip BSC chain to avoid THOR.BNB overwrite if BNB pool is available
+		if bnbAvailable && chain.IsBSCChain() {
+			continue
+		}
+
+		// skip BNB chain to avoid THOR.BNB overwrite if BNB pool is unavailable
+		if !bnbAvailable && chain.Equals(common.BNBChain) {
+			continue
+		}
+
+		// no derived asset for thorchain
+		if chain.IsTHORChain() {
+			continue
+		}
+
+		layer1Assets = append(layer1Assets, chain.GetGasAsset())
+	}
+
+	maxAnchorBlocks := vm.k.GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 	for _, asset := range layer1Assets {
+		anchors := vm.k.GetAnchors(ctx, asset)
+		for _, anchorAsset := range anchors {
+			_, err := vm.k.RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
+			if err != nil {
+				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
+			}
+		}
 		vm.SpawnDerivedAsset(ctx, asset, mgr)
 	}
 
@@ -1767,66 +1807,4 @@ func (vm *NetworkMgrVCUR) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) 
 	na := nas[0]
 
 	return vm.withdrawLiquidity(ctx, p, na, mgr)
-}
-
-func (vm *NetworkMgrVCUR) getLayer1Assets(ctx cosmos.Context) ([]common.Asset, error) {
-	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(active) == 0 {
-		return nil, fmt.Errorf("dev error: no active asgard vaults")
-	}
-
-	// TODO: if a gas asset is removed from the network, this pool needs to be
-	// removed
-
-	// TODO: cleanup after BNB is removed from the network
-	bnbAvailable := false
-	bnb, err := vm.k.GetPool(ctx, common.BNBAsset)
-	if err == nil && bnb.Status == PoolAvailable {
-		bnbAvailable = true
-	}
-
-	// get assets to create derived pools
-	layer1Assets := []common.Asset{common.TOR}
-	for _, chain := range active[0].GetChains() {
-		// skip BSC chain to avoid THOR.BNB overwrite if BNB pool is available
-		if bnbAvailable && chain.IsBSCChain() {
-			continue
-		}
-
-		// skip BNB chain to avoid THOR.BNB overwrite if BNB pool is unavailable
-		if !bnbAvailable && chain.Equals(common.BNBChain) {
-			continue
-		}
-
-		// no derived asset for thorchain
-		if chain.IsTHORChain() {
-			continue
-		}
-
-		layer1Assets = append(layer1Assets, chain.GetGasAsset())
-	}
-	return layer1Assets, nil
-}
-
-func (vm *NetworkMgrVCUR) rollupSwapSlips(ctx cosmos.Context) error {
-	layer1Assets, err := vm.getLayer1Assets(ctx)
-	if err != nil {
-		return err
-	}
-
-	maxAnchorBlocks := vm.k.GetConfigInt64(ctx, constants.MaxAnchorBlocks)
-	for _, asset := range layer1Assets {
-		anchors := vm.k.GetAnchors(ctx, asset)
-		for _, anchorAsset := range anchors {
-			_, err := vm.k.RollupSwapSlip(ctx, maxAnchorBlocks, anchorAsset)
-			if err != nil {
-				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
-			}
-		}
-	}
-	return nil
 }
