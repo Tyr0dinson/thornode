@@ -73,7 +73,7 @@ func (h AddLiquidityHandler) validateV131(ctx cosmos.Context, msg MsgAddLiquidit
 
 	// TODO on hard fork move network check to ValidateBasic
 	if !msg.AssetAddress.IsEmpty() {
-		if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(h.mgr.GetVersion(), msg.AssetAddress.GetChain())) {
+		if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain())) {
 			return fmt.Errorf("address(%s) is not same network", msg.AssetAddress)
 		}
 	}

@@ -70,7 +70,7 @@ func (h ManageTHORNameHandler) validateV116(ctx cosmos.Context, msg MsgManageTHO
 	}
 
 	// TODO on hard fork move network check to ValidateBasic
-	if !common.CurrentChainNetwork.SoftEquals(msg.Address.GetNetwork(h.mgr.GetVersion(), msg.Address.GetChain())) {
+	if !common.CurrentChainNetwork.SoftEquals(msg.Address.GetNetwork(msg.Address.GetChain())) {
 		return fmt.Errorf("address(%s) is not same network", msg.Address)
 	}
 

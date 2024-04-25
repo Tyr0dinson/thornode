@@ -297,7 +297,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	for i, toi := range txs.TxArray {
-		if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(mgr.GetVersion(), toi.Chain)) {
+		if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(toi.Chain)) {
 			continue // skip this transaction
 		}
 		if toi.OutHash.IsEmpty() {
