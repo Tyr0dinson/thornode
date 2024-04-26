@@ -294,9 +294,9 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	// fund is not enough to pay for transaction fee
+	// swap of only 0.00000001 would emit 0, thus rejected.
 	_, err = handler.handle(ctx, *msg)
-	c.Assert(err.Error(), Equals, "fail swap, not enough fee")
+	c.Assert(err.Error(), Equals, "zero emit asset")
 
 	tx = common.NewTx(
 		txID,
