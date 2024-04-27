@@ -76,8 +76,6 @@ func (h LeaveHandler) handle(ctx cosmos.Context, msg MsgLeave) error {
 	switch {
 	case version.GTE(semver.MustParse("1.124.0")):
 		return h.handleV124(ctx, msg)
-	case version.GTE(semver.MustParse("0.76.0")):
-		return h.handleV76(ctx, msg)
 	default:
 		return errBadVersion
 	}
