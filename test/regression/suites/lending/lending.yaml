@@ -513,8 +513,8 @@ asserts:
   - .inbound_address == "{{ addr_eth_dog }}"
   - .expected_amount_out|tonumber == 937138
   - .expected_collateral_withdrawn|tonumber == ${INITIAL_COLLATERAL_DEPOSITED}
-  - .expected_debt_repaid|tonumber == 485166066
-  - .expected_amount_in|tonumber == 4906926
+  - .expected_debt_repaid|tonumber == 505805999
+  - .expected_amount_in|tonumber == 5120000
   - .streaming_swap_seconds|tonumber == 24
   - .total_repay_seconds|tonumber == 48
   - .fees.total_bps|tonumber == 407
