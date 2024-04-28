@@ -127,8 +127,6 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 			return queryBalanceModule(ctx, path[1:], mgr)
 		case q.QueryVaultsAsgard.Key:
 			return queryAsgardVaults(ctx, mgr)
-		case q.QueryVaultsYggdrasil.Key: // TODO remove on hard fork
-			return queryYggdrasilVaults(ctx, mgr)
 		case q.QueryVault.Key:
 			return queryVault(ctx, path[1:], mgr)
 		case q.QueryVaultPubkeys.Key:
@@ -375,73 +373,9 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []openapi.VaultAddr
 	return result
 }
 
-// TODO remove on hard fork
-func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	vaults := make(Vaults, 0)
-	iter := mgr.Keeper().GetVaultIterator(ctx)
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		var vault Vault
-		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
-			ctx.Logger().Error("fail to unmarshal yggdrasil", "error", err)
-			return nil, fmt.Errorf("fail to unmarshal yggdrasil: %w", err)
-		}
-		if vault.IsYggdrasil() && vault.HasFunds() {
-			vaults = append(vaults, vault)
-		}
-	}
-
-	respVaults := make([]openapi.YggdrasilVault, len(vaults))
-	for i, vault := range vaults {
-		totalValue := cosmos.ZeroUint()
-
-		// find the bond of this node account
-		na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
-		if err != nil {
-			ctx.Logger().Error("fail to get node account by pubkey", "error", err)
-			continue
-		}
-
-		// calculate the total value of this yggdrasil vault
-		for _, coin := range vault.Coins {
-			if coin.Asset.IsRune() {
-				totalValue = totalValue.Add(coin.Amount)
-			} else {
-				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset)
-				if err != nil {
-					ctx.Logger().Error("fail to get pool", "error", err)
-					continue
-				}
-				totalValue = totalValue.Add(pool.AssetValueInRune(coin.Amount))
-			}
-		}
-
-		respVaults[i] = openapi.YggdrasilVault{
-			BlockHeight:           wrapInt64(vault.BlockHeight),
-			PubKey:                wrapString(vault.PubKey.String()),
-			Coins:                 castCoins(vault.Coins...),
-			Type:                  wrapString(vault.Type.String()),
-			StatusSince:           wrapInt64(vault.StatusSince),
-			Membership:            vault.Membership,
-			Chains:                vault.Chains,
-			InboundTxCount:        wrapInt64(vault.InboundTxCount),
-			OutboundTxCount:       wrapInt64(vault.OutboundTxCount),
-			PendingTxBlockHeights: vault.PendingTxBlockHeights,
-			Routers:               castVaultRouters(vault.Routers),
-			Status:                na.Status.String(),
-			Bond:                  na.Bond.String(),
-			TotalValue:            totalValue.String(),
-			Addresses:             getVaultChainAddresses(ctx, vault),
-		}
-	}
-
-	return jsonify(ctx, respVaults)
-}
-
 func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	var resp openapi.VaultPubkeysResponse
 	resp.Asgard = make([]openapi.VaultInfo, 0)
-	resp.Yggdrasil = make([]openapi.VaultInfo, 0) // TODO remove on hard fork
 	resp.Inactive = make([]openapi.VaultInfo, 0)
 	iter := mgr.Keeper().GetVaultIterator(ctx)
 
@@ -457,19 +391,7 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			ctx.Logger().Error("fail to unmarshal vault", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
-		if vault.IsYggdrasil() { // TODO remove ygg on hard fork
-			na, err := mgr.Keeper().GetNodeAccountByPubKey(ctx, vault.PubKey)
-			if err != nil {
-				ctx.Logger().Error("fail to unmarshal vault", "error", err)
-				return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
-			}
-			if !na.Bond.IsZero() {
-				resp.Yggdrasil = append(resp.Yggdrasil, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
-				})
-			}
-		} else if vault.IsAsgard() {
+		if vault.IsAsgard() {
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
 				resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
