@@ -66,20 +66,20 @@ contract THORChain_Aggregator {
 
     //############################## OUT ##############################
 
-    function swapOut(address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, uint256[] memory flags) public payable nonReentrant {
+    function swapOut(address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, bytes memory payload) public payable nonReentrant {
         address[] memory path = new address[](2);
 
         if(fromAsset == address(0)) {
             // received ETH, swap to toToken or do as you please
             path[0] = WETH; path[1] = toAsset;
 
-            if(flags.length == 0) {
-                // no flags, process without wasting gas
+            if(payload.length == 0) {
+                // no payload, process without wasting gas
                 swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, recipient, type(uint).max);
                 return;
             }
 
-            // do something with your flags, in this case, nothing
+            // do something with your payload like parse to an aggregator specific structure
             swapRouter.swapExactETHForTokens{value: msg.value}(amountOutMin, path, recipient, type(uint).max);
             return;
         } else {
@@ -88,13 +88,13 @@ contract THORChain_Aggregator {
             safeApprove(fromAsset, address(swapRouter), 0); // best practice
             safeApprove(fromAsset, address(swapRouter), fromAmount);
 
-            if(flags.length == 0) {
-                // no flags, process without wasting gas
+            if(payload.length == 0) {
+                // no payload, process without wasting gas
                 swapRouter.swapExactTokensForETH(fromAmount, amountOutMin, path, address(this), type(uint).max);
                 return;
             }
 
-            // do something with your flags, in this case, nothing
+            // do something with your payload like parse to an aggregator specific structure
             swapRouter.swapExactTokensForETH(fromAmount, amountOutMin, path, address(this), type(uint).max);
             return;
         }

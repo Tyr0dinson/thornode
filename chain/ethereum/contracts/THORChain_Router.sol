@@ -121,7 +121,7 @@ contract THORChain_Router {
         emit TransferOut(msg.sender, to, asset, safeAmount, memo);
     }
 
-    // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,uint256[])"
+    // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,bytes)"
     // Example Memo: "~1b3:ETH.0xFinalToken:0xTo:"
     // Target is fuzzy-matched to the last three digits of whitelisted aggregators
     // toAsset, recipient, amountOutMin come from originating memo
@@ -134,7 +134,7 @@ contract THORChain_Router {
         if(fromAsset == address(0)) {
             _safeAmount = msg.value;
             // call swapOut with ether
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload));
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload));
             if(!swapOutSuccess) {
                 bool sendSuccess = payable(recipient).send(_safeAmount); // If can't swap, just send the recipient the ETH
                 if (!sendSuccess) {
@@ -148,7 +148,7 @@ contract THORChain_Router {
             safeApprove(fromAsset, target, _safeAmount); // Approve target to spend asset
 
             // call swapOut with erc20
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, payload));
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes)", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, payload));
             
             if(!swapOutSuccess) {
                 // call transfer with erc20
