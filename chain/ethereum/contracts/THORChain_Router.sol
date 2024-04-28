@@ -9,10 +9,6 @@ interface iERC20 {
     function balanceOf(address) external view returns (uint256);
     function burn(uint) external;
 }
-// RUNE Interface
-interface iRUNE {
-    function transferTo(address, uint) external returns (bool);
-}
 // ROUTER Interface
 interface iROUTER {
     function depositWithExpiry(address, address, uint, string calldata, uint) external;
@@ -76,14 +72,8 @@ contract THORChain_Router {
             require(success);
         } else {
             require(msg.value == 0, "unexpected eth");  // protect user from accidentally locking up eth
-            if(asset == RUNE) {
-                safeAmount = amount;
-                iRUNE(RUNE).transferTo(address(this), amount);
-                iERC20(RUNE).burn(amount);
-            } else {
-                safeAmount = safeTransferFrom(asset, amount); // Transfer asset
-                _vaultAllowance[vault][asset] += safeAmount; // Credit to chosen vault
-            }
+            safeAmount = safeTransferFrom(asset, amount); // Transfer asset
+            _vaultAllowance[vault][asset] += safeAmount; // Credit to chosen vault
         }
         emit Deposit(vault, asset, safeAmount, memo);
     }
