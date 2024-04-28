@@ -66,8 +66,10 @@ contract THORChain_Aggregator {
 
     //############################## OUT ##############################
 
-    function swapOut(address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, bytes memory payload) public payable nonReentrant {
+    function swapOut(address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, bytes memory payload, string memory originAddress) public payable nonReentrant {
         address[] memory path = new address[](2);
+        
+        // you can do something with originAddress: https://gitlab.com/thorchain/thornode/-/merge_requests/3339#note_1884273837
 
         if(fromAsset == address(0)) {
             // received ETH, swap to toToken or do as you please
