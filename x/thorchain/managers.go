@@ -621,40 +621,6 @@ func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventMana
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newSlasherVCUR(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.129.0")):
-		return newSlasherV129(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.128.0")):
-		return newSlasherV128(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.127.0")):
-		return newSlasherV127(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.126.0")):
-		return newSlasherV126(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.125.0")):
-		return newSlasherV125(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.124.0")):
-		return newSlasherV124(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.116.0")):
-		return newSlasherV116(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.115.0")):
-		return newSlasherV115(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.112.0")):
-		return newSlasherV112(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.109.0")):
-		return newSlasherV109(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.108.0")):
-		return newSlasherV108(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.92.0")):
-		return newSlasherV92(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.89.0")):
-		return newSlasherV89(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.88.0")):
-		return newSlasherV88(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.87.0")):
-		return newSlasherV87(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("1.86.0")):
-		return newSlasherV86(keeper, eventMgr), nil
-	case version.GTE(semver.MustParse("0.75.0")):
-		return newSlasherV75(keeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}
