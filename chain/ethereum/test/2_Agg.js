@@ -39,7 +39,7 @@ describe("Aggregator contract", function () {
   before(async function () {
     accounts = await web3.eth.getAccounts();
     RUNE = await Rune.new();
-    ROUTER = await Router.new(RUNE.address);
+    ROUTER = await Router.new();
     TOKEN = await Token.new(); // User gets 1m TOKENS during construction
     USDT = await Usdt.new(_1m, "Tether", "USDT", 6);
     USER1 = accounts[0];
