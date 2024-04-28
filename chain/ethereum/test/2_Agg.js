@@ -158,7 +158,7 @@ describe("Aggregator contract", function () {
         USER1,
         "0",
         "OUT:HASH",
-        ["0"],
+        "0x0",
         { from: ASGARD, value: _1 },
       );
 
@@ -200,7 +200,7 @@ describe("Aggregator contract", function () {
         USER1,
         "99999999999999999999999999999999999",
         "OUT:HASH",
-        ["0"],
+        "0x0",
         { from: ASGARD, value: _1 },
       );
 
@@ -243,7 +243,7 @@ describe("Aggregator contract", function () {
         REVERTINGCONTRACT.address,
         "99999999999999999999999999999999999",
         "OUT:HASH",
-        ["0"],
+        "0x0",
         { from: ASGARD, value: _1 },
       );
 

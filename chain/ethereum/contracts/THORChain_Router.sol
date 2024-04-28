@@ -41,7 +41,7 @@ contract THORChain_Router {
     event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
 
     // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
-    event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, uint256[] flags);
+    event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload);
 
     // Changes the spend allowance between vaults
     event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
@@ -127,15 +127,14 @@ contract THORChain_Router {
     // toAsset, recipient, amountOutMin come from originating memo
     // Memo passed in here is the "OUT:HASH" type
     // RouterV5: transferOutAndCall can be used with ERC20 tokens as well as Ether
-    // RouterV5: flags field can be passed from the originating memo like this thorchainMemo|flag1:flag2:flag3
-    // RouterV5: Bifrost parses the flags and passes them here as an array of uint256
-    function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, uint256[] calldata flags) external payable nonReentrant {
+    // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
+    function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, bytes calldata payload) external payable nonReentrant {
         uint256 _safeAmount;
 
         if(fromAsset == address(0)) {
             _safeAmount = msg.value;
             // call swapOut with ether
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, fromAmount, toAsset, recipient, amountOutMin, flags));
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload));
             if(!swapOutSuccess) {
                 bool sendSuccess = payable(recipient).send(_safeAmount); // If can't swap, just send the recipient the ETH
                 if (!sendSuccess) {
@@ -149,7 +148,7 @@ contract THORChain_Router {
             safeApprove(fromAsset, target, _safeAmount); // Approve target to spend asset
 
             // call swapOut with erc20
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, flags));
+            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,uint256[])", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, payload));
             
             if(!swapOutSuccess) {
                 // call transfer with erc20
@@ -162,7 +161,7 @@ contract THORChain_Router {
             }
         }
         
-        emit TransferOutAndCall(msg.sender, target, _safeAmount, toAsset, recipient, amountOutMin, memo, flags);
+        emit TransferOutAndCall(msg.sender, target, _safeAmount, toAsset, recipient, amountOutMin, memo, payload);
     }
 
 
