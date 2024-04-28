@@ -52,7 +52,7 @@ type TradeAccountManager interface {
 
 // GasManager define all the methods required to manage gas
 type GasManager interface {
-	BeginBlock(mgr Manager) // TODO: Remove Manager argument on hard fork.
+	BeginBlock()
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager)
 	AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool)
 	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)

@@ -202,7 +202,7 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 
 		am.mgr.Keeper().ClearObservingAddresses(ctx)
 	}
-	am.mgr.GasMgr().BeginBlock(am.mgr) // TODO: Remove (am.)mgr argument on hard fork.
+	am.mgr.GasMgr().BeginBlock()
 	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}

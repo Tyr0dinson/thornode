@@ -123,7 +123,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		Commentf("version should not be stored until BeginBlock"))
 
 	c.Assert(mgr.BeginBlock(ctx), IsNil)
-	mgr.gasMgr.BeginBlock(mgr)
+	mgr.gasMgr.BeginBlock()
 
 	verStored, hasVerStored := k.GetVersionWithCtx(ctx)
 	c.Assert(hasVerStored, Equals, true,
