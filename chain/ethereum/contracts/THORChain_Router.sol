@@ -117,39 +117,39 @@ contract THORChain_Router {
     // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
     // RouterV5: originAddress field is what nodes observed + had consensus on
     function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, bytes calldata payload, string calldata originAddress) external payable nonReentrant {
-        uint256 _safeAmount;
 
         if(fromAsset == address(0)) {
-            _safeAmount = msg.value;
             // call swapOut with ether
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
+            (bool swapOutSuccess, ) = target.call{value:msg.value}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
             if(!swapOutSuccess) {
-                bool sendSuccess = payable(recipient).send(_safeAmount); // If can't swap, just send the recipient the ETH
+                bool sendSuccess = payable(recipient).send(msg.value); // If can't swap, just send the recipient the gas asset
                 if (!sendSuccess) {
-                    payable(address(msg.sender)).transfer(_safeAmount); // For failure, bounce back to Yggdrasil & continue.
+                    payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to Yggdrasil & continue.
                 }
             }
+            
+            emit TransferOutAndCall(msg.sender, target, msg.value, toAsset, recipient, amountOutMin, memo, payload, originAddress);
         } else {
-            _safeAmount = fromAmount;
-            _vaultAllowance[msg.sender][fromAsset] -= _safeAmount; // Reduce allowance
+            _vaultAllowance[msg.sender][fromAsset] -= fromAmount; // Reduce allowance
             safeApprove(fromAsset, target, 0); // best practice
-            safeApprove(fromAsset, target, _safeAmount); // Approve target to spend asset
+            safeApprove(fromAsset, target, fromAmount); // Approve target to spend asset
 
             // call swapOut with erc20
-            (bool swapOutSuccess, ) = target.call{value:_safeAmount}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, _safeAmount, toAsset, recipient, amountOutMin, payload, originAddress));
+            (bool swapOutSuccess, ) = target.call{value:0}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
             
             if(!swapOutSuccess) {
                 // call transfer with erc20
-                (bool transferSuccess, bytes memory data) = fromAsset.call(abi.encodeWithSignature("transfer(address,uint256)" , recipient, _safeAmount));
+                (bool transferSuccess, ) = fromAsset.call(abi.encodeWithSignature("transfer(address,uint256)" , recipient, fromAmount));
                 safeApprove(fromAsset, target, 0); // reset approval in all cases
 
-                require(transferSuccess && (data.length == 0 || abi.decode(data, (bool))));
+                require(transferSuccess, "Failed to transfer token after failed dex agg call");
             } else {
                 safeApprove(fromAsset, target, 0); // reset approval on successful swapOut
             }
+
+            emit TransferOutAndCall(msg.sender, target, fromAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress);
         }
         
-        emit TransferOutAndCall(msg.sender, target, _safeAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress);
     }
 
 
