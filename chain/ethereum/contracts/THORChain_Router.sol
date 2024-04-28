@@ -16,8 +16,6 @@ interface iROUTER {
 
 // THORChain_Router is managed by THORChain Vaults
 contract THORChain_Router {
-    address public RUNE;
-
     struct Coin {
         address asset;
         uint amount;
@@ -52,8 +50,7 @@ contract THORChain_Router {
         _status = _NOT_ENTERED;
     }
 
-    constructor(address rune) {
-        RUNE = rune;
+    constructor() {
         _status = _NOT_ENTERED;
     }
 
