@@ -159,6 +159,7 @@ describe("Aggregator contract", function () {
         "0",
         "OUT:HASH",
         "", // empty bytes
+        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 
@@ -201,6 +202,7 @@ describe("Aggregator contract", function () {
         "99999999999999999999999999999999999",
         "OUT:HASH",
         "", // empty bytes
+        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 
@@ -244,6 +246,7 @@ describe("Aggregator contract", function () {
         "99999999999999999999999999999999999",
         "OUT:HASH",
         "", // empty bytes
+        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 

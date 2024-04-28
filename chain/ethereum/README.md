@@ -32,7 +32,7 @@ Asgard/Ygg vaults should compose the transactions:
 
 - ETH: `await web3.eth.sendTransaction({ from:0xself, value:value, to:to, data:memo })`
 - ERC20: `await VAULT.transferOut(to, asset, value, memo)`
-- Aggregation `await VAULT.transferOutAndCall(target, fromAsset, fromAmount, toAsset, recipient, amountOutMin, memo, flags)`
+- Aggregation `await VAULT.transferOutAndCall(target, fromAsset, fromAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress)`
 
 ### Funding Ygg (only ERC20)
 
@@ -62,7 +62,7 @@ mapping(address => mapping(address => uint)) public vaultAllowance;
 ```solidity
 event Deposit(address indexed to, address indexed asset, uint amount, string memo);
 event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
-event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, uint256[] flags)
+event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress)
 event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
 event VaultTransfer(address indexed oldVault, address indexed newVault, Coin[] coins, string memo);
 ```
