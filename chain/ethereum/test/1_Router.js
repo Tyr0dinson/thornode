@@ -59,9 +59,9 @@ describe("Router contract", function () {
   before(async function () {
     accounts = await web3.eth.getAccounts();
     RUNE = await Rune.new();
-    ROUTER1 = await Router.new(RUNE.address);
-    ROUTER2 = await Router.new(RUNE.address);
-    ROUTER3 = await Router.new(RUNE.address);
+    ROUTER1 = await Router.new();
+    ROUTER2 = await Router.new();
+    ROUTER3 = await Router.new();
     TOKEN = await Token.new(); // User gets 1m TOKENS during construction
     EVILTOKEN = await EvilToken.new();
     REVERTINGCONTRACT = await RevertingContract.new();
