@@ -117,7 +117,6 @@ contract THORChain_Router {
     // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
     // RouterV5: originAddress field is what nodes observed + had consensus on
     function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, bytes calldata payload, string calldata originAddress) external payable nonReentrant {
-
         if(fromAsset == address(0)) {
             // call swapOut with ether
             (bool swapOutSuccess, ) = target.call{value:msg.value}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
@@ -149,7 +148,6 @@ contract THORChain_Router {
 
             emit TransferOutAndCall(msg.sender, target, fromAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress);
         }
-        
     }
 
 
