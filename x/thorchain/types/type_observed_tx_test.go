@@ -618,7 +618,7 @@ func (TypeObservedTxSuite) TestNewGetConsensusTx(c *C) {
 	c.Assert(voter.HasConsensus(trusts4), Equals, true)
 	tx := voter.GetTx(trusts4)
 
-	c.Assert(tx.Tx.Equals(tx1), Equals, true)
+	c.Assert(tx.Tx.EqualsEx(tx1), Equals, true)
 	c.Assert(voter.Add(obTx3, acc2), Equals, true)
 	c.Assert(voter.Add(obTx3, acc3), Equals, true)
 	c.Assert(voter.Add(obTx3, acc4), Equals, true)

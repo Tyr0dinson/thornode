@@ -51,7 +51,7 @@ func (m *ObservedTx) IsEmpty() bool {
 
 // Equals compare two ObservedTx
 func (m ObservedTx) Equals(tx2 ObservedTx) bool {
-	if !m.Tx.Equals(tx2.Tx) {
+	if !m.Tx.EqualsEx(tx2.Tx) {
 		return false
 	}
 	if !m.ObservedPubKey.Equals(tx2.ObservedPubKey) {
