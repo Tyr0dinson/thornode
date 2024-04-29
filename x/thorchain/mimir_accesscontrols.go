@@ -9,7 +9,6 @@ import (
 
 var adminMimirDenyList = []*re.Regexp{
 	re.MustCompile("(?i)EmissionCurve"),
-	re.MustCompile("(?i)IncentiveCurve"),
 	re.MustCompile("(?i)BlocksPerYear"),
 	re.MustCompile("(?i)MinimumBondInRune"),
 	re.MustCompile("(?i)NumberOfNewNodesPerChurn"),

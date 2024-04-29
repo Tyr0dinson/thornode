@@ -6,20 +6,16 @@ func NewConstantValue() *ConstantVals {
 		int64values: map[ConstantName]int64{
 			EmissionCurve:                       6,
 			BlocksPerYear:                       5256000,
-			MaxRuneSupply:                       -1,                 // max supply of rune. Default set to -1 to avoid consensus failure
-			IncentiveCurve:                      100,                // configures incentive pendulum
-			OutboundTransactionFee:              2_000000,           // TODO: remove me on hard fork
-			NativeOutboundFeeUSD:                2_000000,           // $0.02 fee on all swaps and withdrawals
-			NativeTransactionFee:                2_000000,           // TODO: remove me on hard fork
+			MaxRuneSupply:                       -1, // max supply of rune. Default set to -1 to avoid consensus failure
+			OutboundTransactionFee:              2_000000,
+			NativeOutboundFeeUSD:                2_000000, // $0.02 fee on all swaps and withdrawals
+			NativeTransactionFee:                2_000000,
 			NativeTransactionFeeUSD:             2_000000,           // $0.02 fee on all on chain txs
 			PoolCycle:                           43200,              // Make a pool available every 3 days
 			StagedPoolCost:                      10_00000000,        // amount of rune to take from a staged pool on every pool cycle
 			PendingLiquidityAgeLimit:            100800,             // age pending liquidity can be pending before its auto committed to the pool
-			KillSwitchStart:                     0,                  // block height to start the kill switch of BEP2/ERC20 old RUNE // TODO remove on hard fork
-			KillSwitchDuration:                  5256000,            // number of blocks until switch no longer works // TODO remove on hard fork
 			MinRunePoolDepth:                    10000_00000000,     // minimum rune pool depth to be an available pool
 			MaxAvailablePools:                   100,                // maximum number of available pools
-			MinimumNodesForYggdrasil:            6,                  // No yggdrasil pools if THORNode have less than 6 active nodes
 			MinimumNodesForBFT:                  4,                  // Minimum node count to keep network running. Below this, Ragnarök is performed.
 			DesiredValidatorSet:                 100,                // desire validator set
 			AsgardSize:                          40,                 // desired node operators in an asgard vault
@@ -50,8 +46,6 @@ func NewConstantValue() *ConstantVals {
 			ObserveSlashPoints:                  1,                  // the number of slashpoints for making an observation (redeems later if observation reaches consensus
 			MissBlockSignSlashPoints:            1,                  // slash points for not signing a block
 			ObservationDelayFlexibility:         10,                 // number of blocks of flexibility for a validator to get their slash points taken off for making an observation
-			YggFundLimit:                        50,                 // percentage of the amount of funds a ygg vault is allowed to have.
-			YggFundRetry:                        1000,               // number of blocks before retrying to fund a yggdrasil vault
 			JailTimeKeygen:                      720 * 6,            // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
 			JailTimeKeysign:                     60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
 			NodePauseChainBlocks:                720,                // number of blocks that a node can pause/resume a global chain halt
@@ -62,11 +56,9 @@ func NewConstantValue() *ConstantVals {
 			EnableOrderBooks:                    0,                  // enable order books instead of swap queue
 			VirtualMultSynths:                   2,                  // pool depth multiplier for synthetic swaps
 			VirtualMultSynthsBasisPoints:        10_000,             // pool depth multiplier for synthetic swaps (in basis points)
-			MaxSynthPerAssetDepth:               3300,               // TODO: remove me on hard fork
 			MaxSynthPerPoolDepth:                1700,               // percentage (in basis points) of how many synths are allowed relative to pool depth of the related pool
 			MaxSynthsForSaversYield:             0,                  // percentage (in basis points) synth per pool where synth yield reaches 0%
 			MinSlashPointsForBadValidator:       100,                // The minimum slash point
-			FullImpLossProtectionBlocks:         1440000,            // TODO: remove me on hard fork
 			StreamingSwapPause:                  0,                  // pause streaming swaps from being processed or accepted
 			StreamingSwapMinBPFee:               0,                  // min swap fee (in basis points) for a streaming swap trade
 			StreamingSwapMaxLength:              14400,              // max number of blocks a streaming swap can trade for
@@ -88,12 +80,10 @@ func NewConstantValue() *ConstantVals {
 			TNSFeePerBlockUSD:                   20,                 // per block cost for TNS in USD
 			PermittedSolvencyGap:                100,                // the setting is in basis points
 			ValidatorMaxRewardRatio:             1,                  // the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
-			PoolDepthForYggFundingMin:           500_000_00000000,   // the minimum pool depth in RUNE required for ygg funding
 			MaxNodeToChurnOutForLowVersion:      1,                  // the maximum number of nodes to churn out for low version per churn
 			ChurnOutForLowVersionBlocks:         21600,              // the blocks after the MinJoinVersion changes before nodes can be churned out for low version
 			POLMaxNetworkDeposit:                0,                  // Maximum amount of rune deposited into the pools
 			POLMaxPoolMovement:                  100,                // Maximum amount of rune to enter/exit a pool per iteration - 1 equals one hundredth of a basis point of pool rune depth
-			POLSynthUtilization:                 0,                  // TODO: remove me on hard fork
 			POLTargetSynthPerPoolDepth:          0,                  // target synth per pool depth for POL (basis points)
 			POLBuffer:                           0,                  // buffer around the POL synth utilization (basis points added to/subtracted from POLTargetSynthPerPoolDepth basis points)
 			RagnarokProcessNumOfLPPerIteration:  200,                // the number of LP to be processed per iteration during ragnarok pool
@@ -101,7 +91,6 @@ func NewConstantValue() *ConstantVals {
 			SynthYieldCycle:                     0,                  // number of blocks when the network pays out rewards to yield bearing synths
 			MinimumL1OutboundFeeUSD:             1000000,            // Minimum fee in USD to charge for LP swap, default to $0.01 , nodes need to vote it to a larger value
 			MinimumPoolLiquidityFee:             0,                  // Minimum liquidity fee made by the pool,active pool fail to meet this within a PoolCycle will be demoted
-			ILPCutoff:                           0,                  // TODO: remove me on hard fork
 			ChurnMigrateRounds:                  5,                  // Number of rounds to migrate vaults during churn
 			AllowWideBlame:                      0,                  // allow for a wide blame, only set in mocknet for regression testing tss keysign failures
 			MaxAffiliateFeeBasisPoints:          10_000,             // Max allowed affiliate fee basis points

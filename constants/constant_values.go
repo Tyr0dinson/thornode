@@ -12,20 +12,16 @@ import (
 type ConstantName int
 
 const (
-	EmissionCurve  ConstantName = iota
-	IncentiveCurve              // TODO remove on hard fork
+	EmissionCurve ConstantName = iota
 	MaxRuneSupply
 	BlocksPerYear
 	OutboundTransactionFee
 	NativeTransactionFee
-	KillSwitchStart    // TODO remove on hard fork
-	KillSwitchDuration // TODO remove on hard fork
 	PoolCycle
 	MinRunePoolDepth
 	MaxAvailablePools
 	StagedPoolCost
 	PendingLiquidityAgeLimit
-	MinimumNodesForYggdrasil // TODO remove on hard fork
 	MinimumNodesForBFT
 	DesiredValidatorSet
 	AsgardSize
@@ -61,9 +57,6 @@ const (
 	ObserveSlashPoints
 	MissBlockSignSlashPoints
 	ObservationDelayFlexibility
-	StopFundYggdrasil // TODO remove on hard fork
-	YggFundLimit      // TODO remove on hard fork
-	YggFundRetry      // TODO remove on hard fork
 	JailTimeKeygen
 	JailTimeKeysign
 	NodePauseChainBlocks
@@ -73,13 +66,11 @@ const (
 	EnableOrderBooks
 	MintSynths
 	BurnSynths
-	MaxSynthPerAssetDepth // TODO: remove me on hard fork
 	MaxSynthPerPoolDepth
 	MaxSynthsForSaversYield
 	VirtualMultSynths
 	VirtualMultSynthsBasisPoints
 	MinSlashPointsForBadValidator
-	FullImpLossProtectionBlocks // TODO: remove me on hard fork
 	BondLockupPeriod
 	MaxBondProviders
 	NumberOfNewNodesPerChurn
@@ -103,12 +94,10 @@ const (
 	PermittedSolvencyGap
 	NodeOperatorFee
 	ValidatorMaxRewardRatio
-	PoolDepthForYggFundingMin // TODO remove on hard fork
 	MaxNodeToChurnOutForLowVersion
 	ChurnOutForLowVersionBlocks
 	POLMaxNetworkDeposit
 	POLMaxPoolMovement
-	POLSynthUtilization // TODO: remove me on hard fork
 	POLTargetSynthPerPoolDepth
 	POLBuffer
 	RagnarokProcessNumOfLPPerIteration
@@ -117,7 +106,6 @@ const (
 	SynthYieldCycle
 	MinimumL1OutboundFeeUSD
 	MinimumPoolLiquidityFee
-	ILPCutoff // TODO: remove me on hard fork
 	ChurnMigrateRounds
 	AllowWideBlame
 	MaxAffiliateFeeBasisPoints
