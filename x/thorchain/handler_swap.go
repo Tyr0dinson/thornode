@@ -47,30 +47,6 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	switch {
 	case version.GTE(semver.MustParse("1.129.0")):
 		return h.validateV129(ctx, msg)
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.validateV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.120.0")):
-		return h.validateV120(ctx, msg)
-	case version.GTE(semver.MustParse("1.117.0")):
-		return h.validateV117(ctx, msg)
-	case version.GTE(semver.MustParse("1.116.0")):
-		return h.validateV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.validateV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.validateV112(ctx, msg)
-	case version.GTE(semver.MustParse("1.99.0")):
-		return h.validateV99(ctx, msg)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.validateV98(ctx, msg)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.validateV95(ctx, msg)
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.validateV92(ctx, msg)
-	case version.GTE(semver.MustParse("1.88.1")):
-		return h.validateV88(ctx, msg)
-	case version.GTE(semver.MustParse("0.65.0")):
-		return h.validateV65(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
@@ -271,28 +247,6 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	switch {
 	case version.GTE(semver.MustParse("1.132.0")):
 		return h.handleV132(ctx, msg)
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.handleV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.116.0")):
-		return h.handleV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.handleV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.handleV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.handleV107(ctx, msg)
-	case version.GTE(semver.MustParse("1.99.0")):
-		return h.handleV99(ctx, msg)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.handleV98(ctx, msg)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.handleV95(ctx, msg)
-	case version.GTE(semver.MustParse("1.93.0")):
-		return h.handleV93(ctx, msg)
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.handleV92(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.handleV81(ctx, msg)
 	default:
 		return nil, errBadVersion
 	}
@@ -554,18 +508,8 @@ func (h SwapHandler) processPreferredAssetSwap(ctx cosmos.Context, msg MsgSwap) 
 	return nil
 }
 
-func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.getTotalLiquidityRUNEV108(ctx)
-	default:
-		return h.getTotalLiquidityRUNEV1(ctx)
-	}
-}
-
 // getTotalLiquidityRUNE we have in all pools
-func (h SwapHandler) getTotalLiquidityRUNEV108(ctx cosmos.Context) (cosmos.Uint, error) {
+func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, error) {
 	pools, err := h.mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)

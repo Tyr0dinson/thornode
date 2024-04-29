@@ -54,30 +54,6 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
 		return h.validateV131(ctx, msg)
-	case version.GTE(semver.MustParse("1.128.0")):
-		return h.validateV128(ctx, msg)
-	case version.GTE(semver.MustParse("1.119.0")):
-		return h.validateV119(ctx, msg)
-	case version.GTE(semver.MustParse("1.117.0")):
-		return h.validateV117(ctx, msg)
-	case version.GTE(semver.MustParse("1.116.0")):
-		return h.validateV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.validateV112(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.validateV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.99.0")):
-		return h.validateV99(ctx, msg)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.validateV98(ctx, msg)
-	case version.GTE(semver.MustParse("1.96.0")):
-		return h.validateV96(ctx, msg)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.validateV95(ctx, msg)
-	case version.GTE(semver.MustParse("1.93.0")):
-		return h.validateV93(ctx, msg)
-	case version.GTE(semver.MustParse("0.76.0")):
-		return h.validateV76(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -240,18 +216,6 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 	switch {
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.handleV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.116.0")):
-		return h.handleV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.handleV107(ctx, msg)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.handleV98(ctx, msg)
-	case version.GTE(semver.MustParse("1.96.0")):
-		return h.handleV96(ctx, msg)
-	case version.GTE(semver.MustParse("1.93.0")):
-		return h.handleV93(ctx, msg)
-	case version.GTE(semver.MustParse("0.63.0")):
-		return h.handleV63(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -376,16 +340,6 @@ func (h AddLiquidityHandler) handleV121(ctx cosmos.Context, msg MsgAddLiquidity)
 }
 
 func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.swapV121(ctx, msg)
-	default:
-		return h.swapV93(ctx, msg)
-	}
-}
-
-func (h AddLiquidityHandler) swapV121(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	// ensure TxID does NOT have a collision with another swap, this could
 	// happen if the user submits two identical loan requests in the same
 	// block
@@ -445,16 +399,6 @@ func (h AddLiquidityHandler) validateAddLiquidityMessage(ctx cosmos.Context, kee
 	return nil
 }
 
-func (h AddLiquidityHandler) calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.98.0")):
-		return calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset)
-	default:
-		return calculatePoolUnitsV1(oldPoolUnits, poolRune, poolAsset, addRune, addAsset)
-	}
-}
-
 // r = rune provided;
 // a = asset provided
 // R = rune Balance (before)
@@ -462,7 +406,7 @@ func (h AddLiquidityHandler) calculatePoolUnits(oldPoolUnits, poolRune, poolAsse
 // P = Pool Units (before)
 // units / (P + units) = (1/2) * ((r / (R + r)) + (a / (A + a)))
 // units = P * (r*A + a*R + 2*r*a) / (r*A + a*R + 2*R*A)
-func calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+func calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
 	if addRune.Add(poolRune).IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
 	}
@@ -498,7 +442,7 @@ func calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset 
 	return pUnits, sUnits, nil
 }
 
-func calculateVaultUnitsV1(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
+func calculateVaultUnits(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Uint, cosmos.Uint) {
 	if oldPoolUnits.IsZero() || poolAmt.IsZero() {
 		return addAmt, addAmt
 	}
@@ -510,33 +454,6 @@ func calculateVaultUnitsV1(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Ui
 }
 
 func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
-	asset common.Asset,
-	addRuneAmount, addAssetAmount cosmos.Uint,
-	runeAddr, assetAddr common.Address,
-	requestTxHash common.TxID,
-	stage bool,
-	constAccessor constants.ConstantValues,
-) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.addLiquidityV107(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.addLiquidityV98(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	case version.GTE(semver.MustParse("1.96.0")):
-		return h.addLiquidityV96(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.addLiquidityV95(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	case version.GTE(semver.MustParse("1.90.0")):
-		return h.addLiquidityV90(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	case version.GTE(semver.MustParse("0.79.0")):
-		return h.addLiquidityV79(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h AddLiquidityHandler) addLiquidityV107(ctx cosmos.Context,
 	asset common.Asset,
 	addRuneAmount, addAssetAmount cosmos.Uint,
 	runeAddr, assetAddr common.Address,
@@ -664,9 +581,9 @@ func (h AddLiquidityHandler) addLiquidityV107(ctx cosmos.Context,
 	var newPoolUnits, liquidityUnits cosmos.Uint
 	if asset.IsVaultAsset() {
 		pendingRuneAmt = cosmos.ZeroUint() // sanity check
-		newPoolUnits, liquidityUnits = calculateVaultUnitsV1(oldPoolUnits, balanceAsset, pendingAssetAmt)
+		newPoolUnits, liquidityUnits = calculateVaultUnits(oldPoolUnits, balanceAsset, pendingAssetAmt)
 	} else {
-		newPoolUnits, liquidityUnits, err = h.calculatePoolUnits(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
+		newPoolUnits, liquidityUnits, err = calculatePoolUnits(oldPoolUnits, balanceRune, balanceAsset, pendingRuneAmt, pendingAssetAmt)
 		if err != nil {
 			return ErrInternal(err, "fail to calculate pool unit")
 		}
@@ -737,18 +654,8 @@ func (h AddLiquidityHandler) addLiquidityV107(ctx cosmos.Context,
 	return nil
 }
 
-func (h AddLiquidityHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.getTotalLiquidityRUNEV108(ctx)
-	default:
-		return h.getTotalLiquidityRUNEV1(ctx)
-	}
-}
-
 // getTotalLiquidityRUNE we have in all pools
-func (h AddLiquidityHandler) getTotalLiquidityRUNEV108(ctx cosmos.Context) (cosmos.Uint, error) {
+func (h AddLiquidityHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, error) {
 	pools, err := h.mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)

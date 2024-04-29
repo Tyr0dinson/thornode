@@ -48,12 +48,6 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 	switch {
 	case version.GTE(semver.MustParse("1.116.0")):
 		return h.validateV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.validateV112(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.validateV110(ctx, msg)
-	case version.GTE(semver.MustParse("0.1.0")):
-		return h.validateV1(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -133,12 +127,9 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 	switch {
 	case version.GTE(semver.MustParse("1.116.0")):
 		return h.handleV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.handleV112(ctx, msg)
-	case version.GTE(semver.MustParse("0.1.0")):
-		return h.handleV1(ctx, msg)
+	default:
+		return nil, errBadVersion
 	}
-	return nil, errBadVersion
 }
 
 // handle process MsgManageTHORName
