@@ -1212,11 +1212,6 @@ func (vm *NetworkMgrVCUR) cleanupAsgardIndex(ctx cosmos.Context) error {
 	return nil
 }
 
-// TODO remove on hard fork
-func (vm *NetworkMgrVCUR) RecallChainFunds(_ cosmos.Context, _ common.Chain, _ Manager, _ common.PubKeys) error {
-	return fmt.Errorf("dev error: RecallChainFunds is obsolete")
-}
-
 func (vm *NetworkMgrVCUR) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
 	handler := NewInternalHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
