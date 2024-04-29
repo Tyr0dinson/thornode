@@ -237,10 +237,9 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// FORK TODO: uncomment this on next fork
-	// if err := keeper.SetPOL(ctx, data.POL); err != nil {
-	// panic(err)
-	// }
+	if err := keeper.SetPOL(ctx, data.POL); err != nil {
+		panic(err)
+	}
 
 	for _, item := range data.OrderbookItems {
 		if err := keeper.SetOrderBookItem(ctx, item); err != nil {
