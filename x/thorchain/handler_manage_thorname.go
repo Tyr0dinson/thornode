@@ -14,7 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-var IsValidTHORNameV1 = regexp.MustCompile(`^[a-zA-Z0-9+_-]+$`).MatchString
+var IsValidTHORName = regexp.MustCompile(`^[a-zA-Z0-9+_-]+$`).MatchString
 
 // ManageTHORNameHandler a handler to process MsgNetworkFee messages
 type ManageTHORNameHandler struct {
@@ -53,12 +53,12 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 	}
 }
 
-func (h ManageTHORNameHandler) validateNameV1(n string) error {
+func (h ManageTHORNameHandler) validateName(n string) error {
 	// validate THORName
 	if len(n) > 30 {
 		return errors.New("THORName cannot exceed 30 characters")
 	}
-	if !IsValidTHORNameV1(n) {
+	if !IsValidTHORName(n) {
 		return errors.New("invalid THORName")
 	}
 	return nil
@@ -78,7 +78,7 @@ func (h ManageTHORNameHandler) validateV116(ctx cosmos.Context, msg MsgManageTHO
 
 	if !exists {
 		// thorname doesn't appear to exist, let's validate the name
-		if err := h.validateNameV1(msg.Name); err != nil {
+		if err := h.validateName(msg.Name); err != nil {
 			return err
 		}
 		registrationFee := h.mgr.Keeper().GetTHORNameRegisterFee(ctx)
@@ -156,7 +156,7 @@ func (h ManageTHORNameHandler) handleV116(ctx cosmos.Context, msg MsgManageTHORN
 	// check if user is trying to extend expiration
 	if !msg.Coin.Amount.IsZero() {
 		// check that THORName is still valid, can't top up an invalid THORName
-		if err := h.validateNameV1(msg.Name); err != nil {
+		if err := h.validateName(msg.Name); err != nil {
 			return nil, err
 		}
 		var addBlocks int64

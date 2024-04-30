@@ -48,28 +48,9 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	switch {
 	case version.GTE(semver.MustParse("1.127.0")):
 		return h.handleV127(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.125.0")):
-		return h.handleV125(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.118.0")):
-		return h.handleV118(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.98.0")):
-		return h.handleV98(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.96.0")):
-		return h.handleV96(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.94.0")):
-		return h.handleV94(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.92.0")):
-		return h.handleV92(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.handleV88(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.87.0")):
-		return h.handleV87(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("1.85.0")):
-		return h.handleV85(ctx, tx, inTxID)
-	case version.GTE(semver.MustParse("0.69.0")):
-		return h.handleV69(ctx, tx, inTxID)
+	default:
+		return nil, errBadVersion
 	}
-	return nil, errBadVersion
 }
 
 func (h CommonOutboundTxHandler) handleV127(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {

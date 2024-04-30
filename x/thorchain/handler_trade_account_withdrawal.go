@@ -44,10 +44,12 @@ func (h TradeAccountWithdrawalHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*c
 
 func (h TradeAccountWithdrawalHandler) validate(ctx cosmos.Context, msg MsgTradeAccountWithdrawal) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.validateV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 func (h TradeAccountWithdrawalHandler) validateV1(ctx cosmos.Context, msg MsgTradeAccountWithdrawal) error {
@@ -59,10 +61,12 @@ func (h TradeAccountWithdrawalHandler) validateV1(ctx cosmos.Context, msg MsgTra
 
 func (h TradeAccountWithdrawalHandler) handle(ctx cosmos.Context, msg MsgTradeAccountWithdrawal) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.handleV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 // handle process MsgTradeAccountWithdrawal

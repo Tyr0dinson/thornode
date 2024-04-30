@@ -55,12 +55,9 @@ func (h LoanRepaymentHandler) validate(ctx cosmos.Context, msg MsgLoanRepayment)
 	switch {
 	case version.GTE(semver.MustParse("1.111.0")):
 		return h.validateV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.validateV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.validateV107(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 func (h LoanRepaymentHandler) validateV111(ctx cosmos.Context, msg MsgLoanRepayment) error {
@@ -109,52 +106,6 @@ func (h LoanRepaymentHandler) handle(ctx cosmos.Context, msg MsgLoanRepayment) e
 	switch {
 	case version.GTE(semver.MustParse("1.113.0")):
 		return h.handleV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.111.0")):
-		return h.handleV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.handleV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.handleV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.handleV107(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h LoanRepaymentHandler) repay(ctx cosmos.Context, msg MsgLoanRepayment) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.repayV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.repayV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.111.0")):
-		return h.repayV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.repayV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.repayV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.repayV107(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h LoanRepaymentHandler) swap(ctx cosmos.Context, msg MsgLoanRepayment) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.swapV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.swapV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.110.0")):
-		return h.swapV110(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.swapV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.swapV107(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -170,7 +121,7 @@ func (h LoanRepaymentHandler) handleV113(ctx cosmos.Context, msg MsgLoanRepaymen
 	}
 }
 
-func (h LoanRepaymentHandler) repayV121(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) repay(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	// collect data
 	loan, err := h.mgr.Keeper().GetLoan(ctx, msg.CollateralAsset, msg.Owner)
 	if err != nil {
@@ -272,7 +223,7 @@ func (h LoanRepaymentHandler) repayV121(ctx cosmos.Context, msg MsgLoanRepayment
 	return nil
 }
 
-func (h LoanRepaymentHandler) swapV121(ctx cosmos.Context, msg MsgLoanRepayment) error {
+func (h LoanRepaymentHandler) swap(ctx cosmos.Context, msg MsgLoanRepayment) error {
 	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
 	if !ok {
 		return fmt.Errorf("fail to get txid")

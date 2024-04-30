@@ -105,7 +105,7 @@ func ValidateGenesis(data GenesisState) error {
 		if len(n.Name) > 30 {
 			return errors.New("THORName cannot exceed 30 characters")
 		}
-		if !IsValidTHORNameV1(n.Name) {
+		if !IsValidTHORName(n.Name) {
 			return errors.New("invalid THORName")
 		}
 	}

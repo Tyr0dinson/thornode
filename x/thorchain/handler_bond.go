@@ -52,12 +52,6 @@ func (h BondHandler) validate(ctx cosmos.Context, msg MsgBond) error {
 	switch {
 	case version.GTE(semver.MustParse("1.96.0")):
 		return h.validateV96(ctx, msg)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.validateV95(ctx, msg)
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.validateV88(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.validateV81(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -79,10 +73,8 @@ func (h BondHandler) validateV96(ctx cosmos.Context, msg MsgBond) error {
 		return ErrInternal(err, "cannot add bond while node is ready status")
 	}
 
-	if h.mgr.GetVersion().GTE(semver.MustParse("1.88.1")) {
-		if mimir.NewBondPause().IsOn(ctx, h.mgr.Keeper()) {
-			return ErrInternal(err, "bonding has been paused")
-		}
+	if mimir.NewBondPause().IsOn(ctx, h.mgr.Keeper()) {
+		return ErrInternal(err, "bonding has been paused")
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
@@ -137,20 +129,9 @@ func (h BondHandler) handle(ctx cosmos.Context, msg MsgBond) error {
 	switch {
 	case version.GTE(semver.MustParse("1.105.0")):
 		return h.handleV105(ctx, msg)
-	case version.GTE(semver.MustParse("1.103.0")):
-		return h.handleV103(ctx, msg)
-	case version.GTE(semver.MustParse("1.95.0")):
-		return h.handleV95(ctx, msg)
-	case version.GTE(semver.MustParse("1.88.0")):
-		return h.handleV88(ctx, msg)
-	case version.GTE(semver.MustParse("1.87.0")):
-		return h.handleV87(ctx, msg)
-	case version.GTE(semver.MustParse("1.86.0")):
-		return h.handleV86(ctx, msg)
-	case version.GTE(semver.MustParse("0.81.0")):
-		return h.handleV81(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 func (h BondHandler) handleV105(ctx cosmos.Context, msg MsgBond) error {

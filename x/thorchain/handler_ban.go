@@ -39,10 +39,12 @@ func (h BanHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error
 
 func (h BanHandler) validate(ctx cosmos.Context, msg MsgBan) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.validateV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 func (h BanHandler) validateV1(ctx cosmos.Context, msg MsgBan) error {
@@ -60,11 +62,13 @@ func (h BanHandler) validateV1(ctx cosmos.Context, msg MsgBan) error {
 func (h BanHandler) handle(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, error) {
 	ctx.Logger().Info("handleMsgBan request", "node address", msg.NodeAddress.String())
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.handleV1(ctx, msg)
+	default:
+		ctx.Logger().Error(errInvalidVersion.Error())
+		return nil, errBadVersion
 	}
-	ctx.Logger().Error(errInvalidVersion.Error())
-	return nil, errBadVersion
 }
 
 func (h BanHandler) handleV1(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, error) {
