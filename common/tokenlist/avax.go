@@ -7,9 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/tokenlist/avaxtokens"
 )
 
-var (
-	avaxTokenListV131 EVMTokenList
-)
+var avaxTokenListV131 EVMTokenList
 
 func init() {
 	if err := json.Unmarshal(avaxtokens.AVAXTokenListRawV131, &avaxTokenListV131); err != nil {
