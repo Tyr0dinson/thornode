@@ -722,14 +722,6 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 				}
-				if coin.Asset.Equals(common.BEP2RuneAsset()) {
-					bepRuneOwnerAddr, err := common.NewAddress(BEP2RuneOwnerAddress)
-					if err != nil {
-						ctx.Logger().Error("fail to parse BEP2 RUNE owner address", "address", BEP2RuneOwnerAddress)
-					} else {
-						addr = bepRuneOwnerAddr
-					}
-				}
 				toi := TxOutItem{
 					Chain:       coin.Asset.GetChain(),
 					InHash:      common.BlankTxID,
