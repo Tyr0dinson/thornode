@@ -55,7 +55,7 @@ func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
 }
 
 func (h UnBondHandler) validateV124(ctx cosmos.Context, msg MsgUnBond) error {
-	if err := msg.ValidateBasicV117(); err != nil {
+	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 

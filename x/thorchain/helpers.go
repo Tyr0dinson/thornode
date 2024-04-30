@@ -286,7 +286,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 		return err
 	}
 
-	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond) // redistribute node bond amongst bond providers
+	bp.Adjust(nodeAcc.Bond) // redistribute node bond amongst bond providers
 	provider := bp.Get(acc)
 
 	if !provider.IsEmpty() && !provider.Bond.IsZero() {
@@ -405,7 +405,7 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 			continue
 		}
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+		pool.CalcUnits(synthSupply)
 		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
 		if err != nil {
 			return total, err
@@ -479,7 +479,7 @@ func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason str
 	}
 }
 
-func getSynthSupplyRemainingV102(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, error) {
+func getSynthSupplyRemaining(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, error) {
 	maxSynths, err := mgr.Keeper().GetMimir(ctx, constants.MaxSynthPerPoolDepth.String())
 	if maxSynths < 0 || err != nil {
 		maxSynths = mgr.GetConstants().GetInt64Value(constants.MaxSynthPerPoolDepth)
@@ -520,7 +520,7 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 		return fmt.Errorf("minting synthetics has been disabled")
 	}
 
-	remaining, err := getSynthSupplyRemainingV102(ctx, mgr, targetAsset)
+	remaining, err := getSynthSupplyRemaining(ctx, mgr, targetAsset)
 	if err != nil {
 		return err
 	}
@@ -649,7 +649,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "pending", "rune"}, telem(pool.PendingInboundRune), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "pending", "asset"}, telem(pool.PendingInboundAsset), labels)
 
-		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "units", "pool"}, telem(pool.CalcUnits(mgr.GetVersion(), synthSupply)), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "units", "pool"}, telem(pool.CalcUnits(synthSupply)), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "units", "lp"}, telem(pool.LPUnits), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "units", "synth"}, telem(pool.SynthUnits), labels)
 

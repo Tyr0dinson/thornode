@@ -18,10 +18,10 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	c.Check(err, IsNil)
 	c.Check(existVault, Equals, false)
 
-	pubKey := GetRandomPubKey()
 	asgards, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
 	c.Assert(asgards, HasLen, 0)
+	pubKey := GetRandomPubKey()
 	asgard := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, asgard), IsNil)
 	asgard2 := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
@@ -36,6 +36,13 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	asgards, err = k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
 	c.Assert(asgards, HasLen, 0)
+
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	vault1.AddFunds(common.Coins{
+		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*100)),
+	})
+	c.Check(k.SetVault(ctx, vault1), IsNil)
+	c.Check(k.DeleteVault(ctx, vault1.PubKey), NotNil)
 }
 
 func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {

@@ -119,7 +119,7 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 				continue
 			}
 
-			bps.Adjust(k.GetVersion(), na.Bond)
+			bps.Adjust(na.Bond)
 			totalSent := cosmos.ZeroUint()
 			for _, provider := range bps.Providers {
 				if provider.Bond.IsZero() || provider.BondAddress.Empty() {

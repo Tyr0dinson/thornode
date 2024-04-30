@@ -86,11 +86,10 @@ func removeTransactions(ctx cosmos.Context, mgr Manager, hashes ...string) {
 		if voter.Tx.IsEmpty() {
 			continue
 		}
-		version := mgr.GetVersion()
-		voter.Tx.SetDone(version, common.BlankTxID, 0)
+		voter.Tx.SetDone(common.BlankTxID, 0)
 		// set the tx outbound with a blank txid will mark it as down , and will be skipped in the reschedule logic
 		for idx := range voter.Txs {
-			voter.Txs[idx].SetDone(version, common.BlankTxID, 0)
+			voter.Txs[idx].SetDone(common.BlankTxID, 0)
 		}
 		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	}

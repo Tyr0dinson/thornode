@@ -53,7 +53,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 }
 
 func (h SwapHandler) validateV129(ctx cosmos.Context, msg MsgSwap) error {
-	if err := msg.ValidateBasicV63(); err != nil {
+	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 
@@ -321,7 +321,7 @@ func (h SwapHandler) handleV132(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		// NOTE: its okay if the amount is zero. The swap will fail as it
 		// should, which will cause the swap queue manager later to send out
 		// the In/Out amounts accordingly
-		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize(h.mgr.GetVersion())
+		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize()
 	}
 
 	emit, _, swapErr := swapper.Swap(

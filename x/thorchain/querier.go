@@ -607,7 +607,7 @@ func queryNode(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	if err != nil {
 		return nil, fmt.Errorf("fail to get bond providers: %w", err)
 	}
-	bp.Adjust(mgr.GetVersion(), nodeAcc.Bond)
+	bp.Adjust(nodeAcc.Bond)
 
 	active, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
@@ -787,7 +787,6 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
 
 	lastChurnHeight := vaults[0].BlockHeight
-	version := mgr.GetVersion()
 	result := make([]openapi.Node, len(nodeAccounts))
 	for i, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
@@ -875,7 +874,7 @@ func queryNodes(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 		if err != nil {
 			ctx.Logger().Error("fail to get bond providers", "error", err)
 		}
-		bp.Adjust(version, na.Bond)
+		bp.Adjust(na.Bond)
 
 		var providers []openapi.NodeBondProvider
 		// Leave this nil (null rather than []) if the source is nil.
@@ -1118,8 +1117,8 @@ func queryLiquidityProvider(ctx cosmos.Context, path []string, req abci.RequestQ
 
 	if !isSavers {
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, poolAsset.GetSyntheticAsset())
-		_, runeRedeemValue := lp.GetRuneRedeemValue(mgr.GetVersion(), pool, synthSupply)
-		_, assetRedeemValue := lp.GetAssetRedeemValue(mgr.GetVersion(), pool, synthSupply)
+		_, runeRedeemValue := lp.GetRuneRedeemValue(pool, synthSupply)
+		_, assetRedeemValue := lp.GetAssetRedeemValue(pool, synthSupply)
 		_, luviDepositValue := lp.GetLuviDepositValue(pool)
 		_, luviRedeemValue := lp.GetLuviRedeemValue(runeRedeemValue, assetRedeemValue)
 
@@ -1315,10 +1314,10 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 	saversUnits := saversPool.LPUnits
 
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-	pool.CalcUnits(mgr.GetVersion(), synthSupply)
+	pool.CalcUnits(synthSupply)
 
 	synthMintPausedErr := isSynthMintPaused(ctx, mgr, saversAsset, cosmos.ZeroUint())
-	synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, saversAsset)
+	synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, mgr, saversAsset)
 
 	totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 	if err != nil {
@@ -1400,10 +1399,10 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 		saversUnits := saversPool.LPUnits
 
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+		pool.CalcUnits(synthSupply)
 
 		synthMintPausedErr := isSynthMintPaused(ctx, mgr, pool.Asset, cosmos.ZeroUint())
-		synthSupplyRemaining, _ := getSynthSupplyRemainingV102(ctx, mgr, pool.Asset)
+		synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, mgr, pool.Asset)
 
 		totalCollateral, err := mgr.Keeper().GetTotalCollateral(ctx, pool.Asset)
 		if err != nil {

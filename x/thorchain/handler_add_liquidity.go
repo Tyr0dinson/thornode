@@ -61,7 +61,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 
 func (h AddLiquidityHandler) validateV131(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if !msg.Tx.ID.IsBlank() { // don't validate tx if internal txn
-		if err := msg.ValidateBasicV98(); err != nil {
+		if err := msg.ValidateBasic(); err != nil {
 			ctx.Logger().Error(err.Error())
 			return errAddLiquidityFailValidation
 		}
@@ -471,7 +471,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		return ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
 	}
 	synthSupply := h.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-	originalUnits := pool.CalcUnits(h.mgr.GetVersion(), synthSupply)
+	originalUnits := pool.CalcUnits(synthSupply)
 
 	fetchAddr := runeAddr
 	if fetchAddr.IsEmpty() {
