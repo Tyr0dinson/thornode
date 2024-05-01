@@ -49,10 +49,9 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 	switch {
 	case version.GTE(semver.MustParse("1.130.0")):
 		return h.validateV130(ctx, msg)
-	case version.GTE(semver.MustParse("0.1.0")):
-		return h.validateV1(ctx, msg)
+	default:
+		return errInvalidVersion
 	}
-	return errInvalidVersion
 }
 
 func (h DepositHandler) validateV130(ctx cosmos.Context, msg MsgDeposit) error {
@@ -76,28 +75,9 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
 		return h.handleV131(ctx, msg)
-	case version.GTE(semver.MustParse("1.128.0")):
-		return h.handleV128(ctx, msg)
-	case version.GTE(semver.MustParse("1.119.0")):
-		return h.handleV119(ctx, msg)
-	case version.GTE(semver.MustParse("1.115.0")):
-		return h.handleV115(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.handleV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.handleV112(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.handleV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.105.0")):
-		return h.handleV105(ctx, msg)
-	case version.GTE(semver.MustParse("1.99.0")):
-		return h.handleV99(ctx, msg)
-	case version.GTE(semver.MustParse("1.87.0")):
-		return h.handleV87(ctx, msg)
-	case version.GTE(semver.MustParse("0.67.0")):
-		return h.handleV67(ctx, msg)
+	default:
+		return nil, errInvalidVersion
 	}
-	return nil, errInvalidVersion
 }
 
 func (h DepositHandler) handleV131(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
@@ -183,7 +163,7 @@ func (h DepositHandler) handleV131(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 	txInVoter.Tx = txIn
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 
-	m, txErr := processOneTxIn(ctx, h.mgr.GetVersion(), h.mgr.Keeper(), txIn, msg.Signer)
+	m, txErr := processOneTxIn(ctx, h.mgr.Keeper(), txIn, msg.Signer)
 	if txErr != nil {
 		ctx.Logger().Error("fail to process native inbound tx", "error", txErr.Error(), "tx hash", tx.ID.String())
 		return nil, txErr
@@ -235,18 +215,6 @@ func (h DepositHandler) handleV131(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 }
 
 func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.116.0")):
-		h.addSwapV116(ctx, msg)
-	case version.GTE(semver.MustParse("1.98.0")):
-		h.addSwapV98(ctx, msg)
-	default:
-		h.addSwapV65(ctx, msg)
-	}
-}
-
-func (h DepositHandler) addSwapV116(ctx cosmos.Context, msg MsgSwap) {
 	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
 		source := msg.Tx.Coins[0]
 		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
@@ -266,16 +234,6 @@ func (h DepositHandler) addSwapV116(ctx cosmos.Context, msg MsgSwap) {
 // out into its own function to allow easier maintenance of original behavior vs order
 // book behavior.
 func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.116.0")):
-		h.addSwapDirectV116(ctx, msg)
-	default:
-		h.addSwapV65(ctx, msg)
-	}
-}
-
-func (h DepositHandler) addSwapDirectV116(ctx cosmos.Context, msg MsgSwap) {
 	if msg.Tx.Coins.IsEmpty() {
 		return
 	}
@@ -328,21 +286,9 @@ func (h DepositHandler) addSwapDirectV116(ctx cosmos.Context, msg MsgSwap) {
 	}
 }
 
-func (h DepositHandler) updateAffiliateCollector(ctx cosmos.Context, coin common.Coin, msg MsgSwap, thorname *THORName) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.132.0")):
-		h.updateAffiliateCollectorV132(ctx, coin, msg, thorname)
-	case version.GTE(semver.MustParse("1.116.0")):
-		h.updateAffiliateCollectorV116(ctx, coin, msg, thorname)
-	default:
-		return
-	}
-}
-
 // updateAffiliateCollector - accrue RUNE in the AffiliateCollector module and check if
 // a PreferredAsset swap should be triggered
-func (h DepositHandler) updateAffiliateCollectorV132(ctx cosmos.Context, coin common.Coin, msg MsgSwap, thorname *THORName) {
+func (h DepositHandler) updateAffiliateCollector(ctx cosmos.Context, coin common.Coin, msg MsgSwap, thorname *THORName) {
 	affcol, err := h.mgr.Keeper().GetAffiliateCollector(ctx, thorname.Owner)
 	if err != nil {
 		ctx.Logger().Error("failed to get affiliate collector", "msg", msg.AffiliateAddress, "error", err)
@@ -376,20 +322,5 @@ func (h DepositHandler) updateAffiliateCollectorV132(ctx cosmos.Context, coin co
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func DepositAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgDeposit) error {
-	// TODO remove on hard fork
-	if v.LT(semver.MustParse("1.115.0")) {
-		nativeTxFee := k.GetNativeTxFee(ctx)
-		gas := common.NewCoin(common.RuneNative, nativeTxFee)
-		gasFee, err := gas.Native()
-		if err != nil {
-			return fmt.Errorf("fail to get gas fee: %w", err)
-		}
-		totalCoins := cosmos.NewCoins(gasFee)
-		if !k.HasCoins(ctx, msg.GetSigners()[0], totalCoins) {
-			return cosmos.ErrInsufficientCoins(err, "insufficient funds")
-		}
-		return nil
-	}
-
 	return k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
 }

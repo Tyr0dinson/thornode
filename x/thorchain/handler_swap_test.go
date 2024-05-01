@@ -341,6 +341,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	c.Assert(items, HasLen, 0)
 
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil) // reset the pool
+
 	_, err = handler.Run(ctx, msgSwapFromTxIn.(*MsgSwap))
 	c.Assert(err, IsNil)
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
@@ -536,10 +537,10 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 
 	_, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, IsNil)
-
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
+
 	// double swap , RUNE not enough to pay for transaction fee
 	testnetBNBAddr := GetRandomBNBAddress()
 	m1, err := ParseMemo(mgr.GetVersion(), "swap:BNB.BNB:"+testnetBNBAddr.String())
@@ -559,6 +560,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	c.Assert(err, IsNil)
 	mgr.TxOutStore().ClearOutboundItems(ctx)
 	_, err = handler.Run(ctx, msgSwapFromTxIn1)
+
 	c.Assert(err, Equals, errSwapFailNotEnoughFee)
 
 	items, err = mgr.TxOutStore().GetOutboundItems(ctx)

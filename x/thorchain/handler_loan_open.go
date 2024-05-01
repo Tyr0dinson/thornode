@@ -59,14 +59,6 @@ func (h LoanOpenHandler) validate(ctx cosmos.Context, msg MsgLoanOpen) error {
 	switch {
 	case version.GTE(semver.MustParse("1.128.0")):
 		return h.validateV128(ctx, msg)
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.validateV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.111.0")):
-		return h.validateV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.validateV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.validateV107(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -171,50 +163,6 @@ func (h LoanOpenHandler) handle(ctx cosmos.Context, msg MsgLoanOpen) error {
 	switch {
 	case version.GTE(semver.MustParse("1.113.0")):
 		return h.handleV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.111.0")):
-		return h.handleV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.handleV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.handleV107(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h LoanOpenHandler) openLoan(ctx cosmos.Context, msg MsgLoanOpen) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.openLoanV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.openLoanV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.112.0")):
-		return h.openLoanV112(ctx, msg)
-	case version.GTE(semver.MustParse("1.111.0")):
-		return h.openLoanV111(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.openLoanV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.openLoanV107(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h LoanOpenHandler) swap(ctx cosmos.Context, msg MsgLoanOpen) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.132.0")):
-		return h.swapV132(ctx, msg)
-	case version.GTE(semver.MustParse("1.121.0")):
-		return h.swapV121(ctx, msg)
-	case version.GTE(semver.MustParse("1.113.0")):
-		return h.swapV113(ctx, msg)
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.swapV108(ctx, msg)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.swapV107(ctx, msg)
 	default:
 		return errBadVersion
 	}
@@ -230,7 +178,7 @@ func (h LoanOpenHandler) handleV113(ctx cosmos.Context, msg MsgLoanOpen) error {
 	}
 }
 
-func (h LoanOpenHandler) openLoanV121(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) openLoan(ctx cosmos.Context, msg MsgLoanOpen) error {
 	var err error
 	zero := cosmos.ZeroUint()
 
@@ -418,7 +366,7 @@ func (h LoanOpenHandler) calcCR(a, b cosmos.Uint, minCR, maxCR int64) cosmos.Uin
 	return cr.AddUint64(uint64(minCR))
 }
 
-func (h LoanOpenHandler) swapV132(ctx cosmos.Context, msg MsgLoanOpen) error {
+func (h LoanOpenHandler) swap(ctx cosmos.Context, msg MsgLoanOpen) error {
 	txID, ok := ctx.Value(constants.CtxLoanTxID).(common.TxID)
 	if !ok {
 		return fmt.Errorf("fail to get txid")
@@ -472,16 +420,6 @@ func (h LoanOpenHandler) swapV132(ctx cosmos.Context, msg MsgLoanOpen) error {
 // handleAffiliateSwap handles the affiliate swap for the loan open and returns updated
 // collateral amount for the loan with affiliate amount deducted
 func (h LoanOpenHandler) handleAffiliateSwap(ctx cosmos.Context, msg MsgLoanOpen, collateral common.Coin) (cosmos.Uint, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.132.0")):
-		return h.handleAffiliateSwapV132(ctx, msg, collateral)
-	default:
-		return cosmos.ZeroUint(), errBadVersion
-	}
-}
-
-func (h LoanOpenHandler) handleAffiliateSwapV132(ctx cosmos.Context, msg MsgLoanOpen, collateral common.Coin) (cosmos.Uint, error) {
 	// Setup affiliate swap
 	affAmt := common.GetSafeShare(
 		msg.AffiliateBasisPoints,
@@ -550,20 +488,8 @@ func (h LoanOpenHandler) handleAffiliateSwapV132(ctx cosmos.Context, msg MsgLoan
 	return collateral.Amount, nil
 }
 
-func (h LoanOpenHandler) getTotalLiquidityRUNELoanPools(ctx cosmos.Context) (cosmos.Uint, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("1.108.0")):
-		return h.getTotalLiquidityRUNELoanPoolsV108(ctx)
-	case version.GTE(semver.MustParse("1.107.0")):
-		return h.getTotalLiquidityRUNELoanPoolsV107(ctx)
-	default:
-		return cosmos.ZeroUint(), errBadVersion
-	}
-}
-
 // getTotalLiquidityRUNE we have in all pools
-func (h LoanOpenHandler) getTotalLiquidityRUNELoanPoolsV108(ctx cosmos.Context) (cosmos.Uint, error) {
+func (h LoanOpenHandler) getTotalLiquidityRUNELoanPools(ctx cosmos.Context) (cosmos.Uint, error) {
 	pools, err := h.mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)

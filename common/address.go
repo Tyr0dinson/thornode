@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blang/semver"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
@@ -325,7 +324,7 @@ func (addr Address) GetChain() Chain {
 	return EmptyChain
 }
 
-func (addr Address) GetNetwork(ver semver.Version, chain Chain) ChainNetwork {
+func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 	currentNetwork := CurrentChainNetwork
 	mainNetPredicate := func() ChainNetwork {
 		if currentNetwork == StageNet {
@@ -434,12 +433,7 @@ func (addr Address) GetNetwork(ver semver.Version, chain Chain) ChainNetwork {
 			return MockNet
 		}
 	}
-	switch {
-	case ver.GTE(semver.MustParse("1.93.0")):
-		return currentNetwork
-	default:
-		return MockNet
-	}
+	return currentNetwork
 }
 
 func (addr Address) AccAddress() (cosmos.AccAddress, error) {

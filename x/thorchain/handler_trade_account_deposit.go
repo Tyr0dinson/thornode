@@ -42,10 +42,12 @@ func (h TradeAccountDepositHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosm
 
 func (h TradeAccountDepositHandler) validate(ctx cosmos.Context, msg MsgTradeAccountDeposit) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.validateV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 func (h TradeAccountDepositHandler) validateV1(ctx cosmos.Context, msg MsgTradeAccountDeposit) error {
@@ -57,10 +59,12 @@ func (h TradeAccountDepositHandler) validateV1(ctx cosmos.Context, msg MsgTradeA
 
 func (h TradeAccountDepositHandler) handle(ctx cosmos.Context, msg MsgTradeAccountDeposit) error {
 	version := h.mgr.GetVersion()
-	if version.GTE(semver.MustParse("0.1.0")) {
+	switch {
+	case version.GTE(semver.MustParse("0.1.0")):
 		return h.handleV1(ctx, msg)
+	default:
+		return errBadVersion
 	}
-	return errBadVersion
 }
 
 // handle process MsgTradeAccountDeposit
