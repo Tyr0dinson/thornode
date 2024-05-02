@@ -30,6 +30,7 @@ func NewTssHandler(mgr Manager) BaseHandler[*MsgTssPool] {
 			Register("1.114.0", MsgTssPoolValidateV114).
 			Register("0.71.0", MsgTssPoolValidateV71),
 		handlers: NewHandlers[*MsgTssPool]().
+			Register("1.134.0", MsgTssPoolHandleV134).
 			Register("1.124.0", MsgTssPoolHandleV124).
 			Register("1.123.0", MsgTssPoolHandleV123).
 			Register("1.120.0", MsgTssPoolHandleV120).
@@ -109,7 +110,7 @@ func validateTssAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddre
 	return nil
 }
 
-func MsgTssPoolHandleV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
+func MsgTssPoolHandleV134(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", mgr.GetVersion())
 	blames := make([]string, 0)
 	if !msg.Blame.IsEmpty() {
