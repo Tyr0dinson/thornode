@@ -63,6 +63,8 @@ func (h NetworkFeeHandler) validateV1(ctx cosmos.Context, msg MsgNetworkFee) err
 func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.134.0")):
+		return h.handleV134(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
 		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("0.47.0")):
@@ -72,7 +74,7 @@ func (h NetworkFeeHandler) handle(ctx cosmos.Context, msg MsgNetworkFee) (*cosmo
 	}
 }
 
-func (h NetworkFeeHandler) handleV123(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
+func (h NetworkFeeHandler) handleV134(ctx cosmos.Context, msg MsgNetworkFee) (*cosmos.Result, error) {
 	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to get list of active node accounts")
