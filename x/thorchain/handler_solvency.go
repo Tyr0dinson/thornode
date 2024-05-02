@@ -73,6 +73,8 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 	ctx.Logger().Debug("handle Solvency request", "id", msg.Id.String(), "signer", msg.Signer.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.134.0")):
+		return h.handleV134(ctx, msg)
 	case version.GTE(semver.MustParse("1.128.0")):
 		return h.handleV128(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
@@ -94,7 +96,7 @@ func (h SolvencyHandler) handle(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Re
 //     if wallet has less fund than asgard vault , and the gap is more than 1% , then the chain
 //     that is insolvent will be halt
 //  3. When chain is halt , bifrost will not observe inbound , and will not sign outbound txs until the issue has been investigated , and enabled it again using mimir
-func (h SolvencyHandler) handleV128(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
+func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmos.Result, error) {
 	voter, err := h.mgr.Keeper().GetSolvencyVoter(ctx, msg.Id, msg.Chain)
 	if err != nil {
 		return &cosmos.Result{}, fmt.Errorf("fail to get solvency voter, err: %w", err)
