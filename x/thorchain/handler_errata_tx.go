@@ -63,6 +63,8 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	ctx.Logger().Info("handleMsgErrataTx request", "txid", msg.TxID.String())
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.134.0")):
+		return h.handleV134(ctx, msg)
 	case version.GTE(semver.MustParse("1.123.0")):
 		return h.handleV123(ctx, msg)
 	case version.GTE(semver.MustParse("0.58.0")):
@@ -73,7 +75,7 @@ func (h ErrataTxHandler) handle(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Re
 	}
 }
 
-func (h ErrataTxHandler) handleV123(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
+func (h ErrataTxHandler) handleV134(ctx cosmos.Context, msg MsgErrataTx) (*cosmos.Result, error) {
 	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
