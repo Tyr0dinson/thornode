@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -58,8 +59,10 @@ func (s *ActorSuite) TestWalkDepthFirst(c *C) {
 		return a.Execute(nil) == nil
 	})
 
-	expected := []string{"root", "child1", "grandchild1", "child2", "grandchild2"}
-	c.Assert(visited, DeepEquals, expected)
+	// Not deterministic which child gets visited first due to map iteration.
+	order1 := []string{"root", "child1", "grandchild1", "child2", "grandchild2"}
+	order2 := []string{"root", "child2", "grandchild2", "child1", "grandchild1"}
+	c.Assert(reflect.DeepEqual(visited, order1) || reflect.DeepEqual(visited, order2), Equals, true)
 }
 
 func (s *ActorSuite) TestWalkDepthFirstFail(c *C) {
