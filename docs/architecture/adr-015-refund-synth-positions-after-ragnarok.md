@@ -30,13 +30,13 @@ Only "Available" pools had RUNE to send to the THORChain Reserve.  These pools w
 
 ### BNB/BNB
 
-'''
+```
 [15265440, {"type": "pool", "pool": "BNB.BNB", "pool_status": "Staged"}]
 6:50PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BNB
 6:50PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=206909292040 synth_supply=2178708870
-'''
+```
 
-'''
+```
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0,BNB/BNB,15.884561,1508.537150664005
 thor1vsnj373g9uqke6z5fdpps8p8udrls3a8m75t86,BNB/BNB,1.233685,117.16154162
@@ -53,11 +53,11 @@ thor1fq9sculy0ej2p9sa52e304m0hq96edgq3qg95m,BNB/BNB,0.115925,11.009254155071
 
 Synth_BNB_BNB_summary.csv: total rune: 1885.823460
 Synth_BNB_BNB_summary.csv: total addresses: 12
-'''
+```
 
 The following is the SQL code used to query the Flipside database:
 
-'''
+```
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -85,17 +85,17 @@ FROM (
 )
 GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
-'''
+```
 
 ### BNB/BTCB
 
-'''
+```
 [15208560, {"type": "pool", "pool": "BNB.BTCB-1DE", "pool_status": "Staged"}]
 5:47PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BTCB-1DE
 5:47PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=1543832682001 synth_supply=197741221
-'''
+```
 
-'''
+```
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor12z9pwgw50pepl7mazv4nf2868c6ke882a6aw8x,BNB/BTCB-1DE,1.035567,8085.022287799718
 thor1mq8mzl9272dzhee3flkndyz2lux9nvzq8zn0f7,BNB/BTCB-1DE,0.295774,2309.207788729917
@@ -115,11 +115,11 @@ thor1nc8kha8hn74h0w7zdyclncq5h039wecgeftnyn,BNB/BTCB-1DE,0.001456,11.36748510819
 
 Synth_BNB_BTCB_summary.csv: total rune: 15381.058351
 Synth_BNB_BTCB_summary.csv: total addresses: 15
-'''
+```
 
 The following is the SQL code used to query the Flipside database:
 
-'''
+```
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -147,17 +147,17 @@ FROM (
 )
 GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
-'''
+```
 
 ### BNB/BUSD
 
-'''
+```
 [15209280, {"type": "pool", "pool": "BNB.BUSD-BD1", "pool_status": "Staged"}]
 7:00PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BUSD-BD1
 7:00PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=278944032906 synth_supply=2178219990168
-'''
+```
 
-'''
+```
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1x4d5g75v67affmr9qjuu75swjsgme4jscxj7pl,BNB/BUSD-BD1,9170.798605,1174.417441486301
 thor1dmgdpkqngg3amua5hffjcharngzdp4wv39azjs,BNB/BUSD-BD1,3496.943135,447.820433805043
@@ -170,11 +170,11 @@ thor1wudr3yyc0d436k8cml7c8dvtqxwsvwlztvgq8s,BNB/BUSD-BD1,103.782854,13.290488551
 
 Synth_BNB_BUSD_summary.csv: total rune: 2727.876671
 Synth_BNB_BUSD_summary.csv: total addresses: 8
-'''
+```
 
 The following is the SQL code used to query the Flipside database:
 
-'''
+```
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -202,17 +202,17 @@ FROM (
 )
 GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
-'''
+```
 
 ### BNB/ETH
 
-'''
+```
 [15207120, {"type": "pool", "pool": "BNB.ETH-1C9", "pool_status": "Staged"}]
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.ETH-1C9
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=115286909700 synth_supply=283716656
-'''
+```
 
-'''
+```
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1j47es49m8llprlpcxrt3a2hqyhperwc7ta6ksm,BNB/ETH-1C9,1.132255,460.086417846309
 thor1rpu6ndvg0r25y6xqdl2svqlwglc3yhh3wv7j9v,BNB/ETH-1C9,1.009999,410.408275466528
@@ -226,11 +226,11 @@ thor1a8m2shzvyya0ckvq76fxsnd5800hm0uxxjuy3g,BNB/ETH-1C9,0.025754,10.46501504097
 
 Synth_BNB_ETH_summary.csv: total rune: 1062.547671
 Synth_BNB_ETH_summary.csv: total addresses: 9
-'''
+```
 
 The following is the SQL code used to query the Flipside database:
 
-'''
+```
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -258,28 +258,28 @@ FROM (
 )
 GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
-'''
+```
 
 ### BNB/TWT
 
-'''
+```
 [15207120, {"type": "pool", "pool": "BNB.TWT-8C2", "pool_status": "Staged"}]
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.TWT-8C2
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=315117680195 synth_supply=2018826348469
-'''
+```
 
-'''
+```
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1rzxvqhepnqqcn7973jp4y0ygasr709gpj673lw,BNB/TWT-8C2,20000.788343,3121.913892939335
 thor1sth9gz5asawsvfrq08ag7wzwqqlrjxl0egxuym,BNB/TWT-8C2,87.193871,13.610051393266
 
 Synth_BNB_TWT_summary.csv: total rune: 3135.523944
 Synth_BNB_TWT_summary.csv: total addresses: 2
-'''
+```
 
 The following is the SQL code used to query the Flipside database:
 
-'''
+```
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -307,7 +307,7 @@ FROM (
 )
 GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
-'''
+```
 
 ## Alternative Approaches
 
