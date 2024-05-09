@@ -72,7 +72,7 @@ func (h TradeAccountDepositHandler) handleV1(ctx cosmos.Context, msg MsgTradeAcc
 	}
 	depositEvent := NewEventTradeAccountDeposit(msg.Amount, msg.Asset.GetTradeAsset(), msg.Tx.FromAddress, common.Address(msg.Address.String()), msg.Tx.ID)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, depositEvent); err != nil {
-		ctx.Logger().Error("fail to emit deposit event", "error", err)
+		ctx.Logger().Error("fail to emit trade account deposit event", "error", err)
 	}
 	return nil
 }
