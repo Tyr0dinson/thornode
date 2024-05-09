@@ -46,9 +46,9 @@ type Manager interface {
 
 type TradeAccountManager interface {
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error
-	Deposit(_ cosmos.Context, _ common.Asset, _ cosmos.Uint, _ cosmos.AccAddress) (cosmos.Uint, error)
-	Withdrawal(_ cosmos.Context, _ common.Asset, _ cosmos.Uint, _ cosmos.AccAddress) (cosmos.Uint, error)
-	BalanceOf(_ cosmos.Context, _ common.Asset, _ cosmos.AccAddress) cosmos.Uint
+	Deposit(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID, _ EventManager) (cosmos.Uint, error)
+	Withdrawal(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID, _ EventManager) (cosmos.Uint, error)
+	BalanceOf(_ cosmos.Context, _ common.Asset, owner cosmos.AccAddress) cosmos.Uint
 }
 
 // GasManager define all the methods required to manage gas

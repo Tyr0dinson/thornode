@@ -65,7 +65,7 @@ func (h TradeAccountDepositHandler) handle(ctx cosmos.Context, msg MsgTradeAccou
 
 // handle process MsgTradeAccountDeposit
 func (h TradeAccountDepositHandler) handleV1(ctx cosmos.Context, msg MsgTradeAccountDeposit) error {
-	_, err := h.mgr.TradeAccountManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Address)
+	_, err := h.mgr.TradeAccountManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Address, msg.Tx.FromAddress, msg.Tx.ID, h.mgr.EventMgr())
 	if err != nil {
 		ctx.Logger().Error("fail to handle Deposit", "error", err)
 		return err

@@ -36,14 +36,14 @@ func (s *TradeMgrV128) BalanceOf(ctx cosmos.Context, asset common.Asset, addr co
 	return common.GetSafeShare(tu.Units, tu.Depth, tr.Units)
 }
 
-func (s *TradeMgrV128) Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, addr cosmos.AccAddress) (cosmos.Uint, error) {
+func (s *TradeMgrV128) Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID, eventMgr EventManager) (cosmos.Uint, error) {
 	asset = asset.GetTradeAsset()
 	tu, err := s.keeper.GetTradeUnit(ctx, asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
 
-	tr, err := s.keeper.GetTradeAccount(ctx, addr, asset)
+	tr, err := s.keeper.GetTradeAccount(ctx, owner, asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
@@ -70,14 +70,14 @@ func (s *TradeMgrV128) calcDepositUnits(oldUnits, depth, add cosmos.Uint) cosmos
 	return common.GetUncappedShare(add, depth, oldUnits)
 }
 
-func (s *TradeMgrV128) Withdrawal(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, addr cosmos.AccAddress) (cosmos.Uint, error) {
+func (s *TradeMgrV128) Withdrawal(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID, eventMgr EventManager) (cosmos.Uint, error) {
 	asset = asset.GetTradeAsset()
 	tu, err := s.keeper.GetTradeUnit(ctx, asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
 
-	tr, err := s.keeper.GetTradeAccount(ctx, addr, asset)
+	tr, err := s.keeper.GetTradeAccount(ctx, owner, asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
