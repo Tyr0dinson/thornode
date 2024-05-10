@@ -58,6 +58,11 @@ func (s *TradeMgrVCUR) Deposit(ctx cosmos.Context, asset common.Asset, amount co
 	s.keeper.SetTradeUnit(ctx, tu)
 	s.keeper.SetTradeAccount(ctx, tr)
 
+	depositEvent := NewEventTradeAccountDeposit(amount, asset, assetAddr, common.Address(owner.String()), txID)
+	if err := eventMgr.EmitEvent(ctx, depositEvent); err != nil {
+		ctx.Logger().Error("fail to emit trade account deposit event", "error", err)
+	}
+
 	return amount, nil
 }
 
@@ -102,6 +107,11 @@ func (s *TradeMgrVCUR) Withdrawal(ctx cosmos.Context, asset common.Asset, amount
 
 	s.keeper.SetTradeUnit(ctx, tu)
 	s.keeper.SetTradeAccount(ctx, tr)
+
+	withdrawEvent := NewEventTradeAccountWithdraw(tokensToClaim, asset, assetAddr, common.Address(owner.String()), txID)
+	if err := eventMgr.EmitEvent(ctx, withdrawEvent); err != nil {
+		ctx.Logger().Error("fail to emit trade account withdraw event", "error", err)
+	}
 
 	return tokensToClaim, nil
 }
