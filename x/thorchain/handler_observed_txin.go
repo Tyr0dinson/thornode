@@ -170,6 +170,20 @@ func (h ObservedTxInHandler) handleV133(ctx cosmos.Context, msg MsgObservedTxIn)
 	}
 	handler := NewInternalHandler(h.mgr)
 	for _, tx := range msg.Txs {
+		// Do not act on MsgObservedTxIn observations of native coins
+		// (they should be through MsgDeposit or MsgSend only).
+		var nativeCoin bool
+		for i := range tx.Tx.Coins {
+			if tx.Tx.Coins[i].IsNative() {
+				nativeCoin = true
+				ctx.Logger().Info("MsgObservedTxIn must not observe a native coin", "txid", tx.Tx.ID, "asset", tx.Tx.Coins[i].Asset)
+				break
+			}
+		}
+		if nativeCoin {
+			continue
+		}
+
 		// check we are sending to a valid vault
 		if !h.mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
 			ctx.Logger().Info("Not valid Observed Pubkey", "observed pub key", tx.ObservedPubKey)
