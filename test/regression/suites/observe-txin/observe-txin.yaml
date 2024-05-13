@@ -71,3 +71,46 @@ endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 2 }}
 status: 404
 asserts:
 - .error|length > 0
+---
+# THOR-chain coin MsgObservedTxIns should not be valid,
+# for instance a malicious-or-erroneous manual observation which is then manually observed without noticing the problem,
+# as there is no solvency checking 
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_thor_dog }}
+    coins:
+      - amount: "100000000000"
+        asset: "THOR.RUNE"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:BTC.BTC:{{ addr_btc_cat }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == true
+  - .msg[0] | contains("insolvent") and contains("rune")
+  # Though the Pool Module would be insolvent, this would not cause a solvency halt.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 3 }}"
+  - .[0].coin == {"asset":"BTC.BTC","amount":"49985999"}
+---
+type: fail-export-invariants
