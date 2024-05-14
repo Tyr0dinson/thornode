@@ -2059,6 +2059,59 @@ paths:
           description: OK
       tags:
       - Quote
+  /thorchain/quote/pair:
+    get:
+      description: "Provide availability, exchange rate, and minimum amount for a\
+        \ given swap pair."
+      operationId: quotepair
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: the source asset
+        explode: true
+        in: query
+        name: from_asset
+        required: false
+        schema:
+          example: BTC.BTC
+          type: string
+        style: form
+      - description: the target asset
+        explode: true
+        in: query
+        name: to_asset
+        required: false
+        schema:
+          example: ETH.ETH
+          type: string
+        style: form
+      - description: the affiliate fee in basis points
+        explode: true
+        in: query
+        name: affiliate_bps
+        required: false
+        schema:
+          example: 100
+          format: int64
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotePairResponse'
+          description: OK
+      tags:
+      - Quote
   /thorchain/invariant/{invariant}:
     get:
       description: Returns result of running the given invariant.
@@ -5454,6 +5507,55 @@ components:
       - slippage_bps
       - streaming_slippage_bps
       - warning
+      type: object
+    QuotePairResponse:
+      example:
+        recommended_gas_rate: "10"
+        notes: "Transfer the inbound_address the asset with the memo. Do not use multi-in,\
+          \ multi-out transactions."
+        exchange_rate: "1.0"
+        recommended_min_amount_in: "15000"
+        available: true
+        dust_threshold: "10000"
+      properties:
+        available:
+          description: returns true if the pair is available for trading
+          example: true
+          type: boolean
+        dust_threshold:
+          description: "defines the minimum observable transaction size for the chain\
+            \ in base units (sats, wei, uatom). Transactions with asset amounts lower\
+            \ than the dust_threshold are ignored."
+          example: "10000"
+          type: string
+        exchange_rate:
+          description: the flat exchange rate of the pair. Note the actual exchange
+            rate will change based on the size of the swap.
+          example: "1.0"
+          type: string
+        notes:
+          description: chain specific quote notes
+          example: "Transfer the inbound_address the asset with the memo. Do not use\
+            \ multi-in, multi-out transactions."
+          type: string
+        recommended_min_amount_in:
+          description: The recommended minimum inbound amount for this transaction
+            type & inbound asset. Sending less than this amount could result in failed
+            refunds.
+          example: "15000"
+          type: string
+        recommended_gas_rate:
+          description: the recommended gas rate to use for the inbound to ensure timely
+            confirmation
+          example: "10"
+          type: string
+      required:
+      - available
+      - dust_threshold
+      - exchange_rate
+      - notes
+      - recommended_gas_rate
+      - recommended_min_amount_in
       type: object
     QuoteSaverDepositResponse:
       example:

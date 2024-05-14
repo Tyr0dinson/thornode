@@ -118,6 +118,7 @@ Class | Method | HTTP request | Description
 *QueueApi* | [**QueueSwap**](docs/QueueApi.md#queueswap) | **Get** /thorchain/queue/swap | 
 *QuoteApi* | [**Quoteloanclose**](docs/QuoteApi.md#quoteloanclose) | **Get** /thorchain/quote/loan/close | 
 *QuoteApi* | [**Quoteloanopen**](docs/QuoteApi.md#quoteloanopen) | **Get** /thorchain/quote/loan/open | 
+*QuoteApi* | [**Quotepair**](docs/QuoteApi.md#quotepair) | **Get** /thorchain/quote/pair | 
 *QuoteApi* | [**Quotesaverdeposit**](docs/QuoteApi.md#quotesaverdeposit) | **Get** /thorchain/quote/saver/deposit | 
 *QuoteApi* | [**Quotesaverwithdraw**](docs/QuoteApi.md#quotesaverwithdraw) | **Get** /thorchain/quote/saver/withdraw | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
@@ -204,6 +205,7 @@ Class | Method | HTTP request | Description
  - [QuoteFees](docs/QuoteFees.md)
  - [QuoteLoanCloseResponse](docs/QuoteLoanCloseResponse.md)
  - [QuoteLoanOpenResponse](docs/QuoteLoanOpenResponse.md)
+ - [QuotePairResponse](docs/QuotePairResponse.md)
  - [QuoteSaverDepositResponse](docs/QuoteSaverDepositResponse.md)
  - [QuoteSaverWithdrawResponse](docs/QuoteSaverWithdrawResponse.md)
  - [QuoteSwapResponse](docs/QuoteSwapResponse.md)

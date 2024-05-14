@@ -360,6 +360,145 @@ func (a *QuoteApiService) QuoteloanopenExecute(r ApiQuoteloanopenRequest) (*Quot
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ApiQuotepairRequest struct {
+	ctx context.Context
+	ApiService *QuoteApiService
+	height *int64
+	fromAsset *string
+	toAsset *string
+	affiliateBps *int64
+}
+
+// optional block height, defaults to current tip
+func (r ApiQuotepairRequest) Height(height int64) ApiQuotepairRequest {
+	r.height = &height
+	return r
+}
+
+// the source asset
+func (r ApiQuotepairRequest) FromAsset(fromAsset string) ApiQuotepairRequest {
+	r.fromAsset = &fromAsset
+	return r
+}
+
+// the target asset
+func (r ApiQuotepairRequest) ToAsset(toAsset string) ApiQuotepairRequest {
+	r.toAsset = &toAsset
+	return r
+}
+
+// the affiliate fee in basis points
+func (r ApiQuotepairRequest) AffiliateBps(affiliateBps int64) ApiQuotepairRequest {
+	r.affiliateBps = &affiliateBps
+	return r
+}
+
+func (r ApiQuotepairRequest) Execute() (*QuotePairResponse, *http.Response, error) {
+	return r.ApiService.QuotepairExecute(r)
+}
+
+/*
+Quotepair Method for Quotepair
+
+Provide availability, exchange rate, and minimum amount for a given swap pair.
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQuotepairRequest
+*/
+func (a *QuoteApiService) Quotepair(ctx context.Context) ApiQuotepairRequest {
+	return ApiQuotepairRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return QuotePairResponse
+func (a *QuoteApiService) QuotepairExecute(r ApiQuotepairRequest) (*QuotePairResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QuotePairResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quotepair")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/quote/pair"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	if r.height != nil {
+		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	if r.fromAsset != nil {
+		localVarQueryParams.Add("from_asset", parameterToString(*r.fromAsset, ""))
+	}
+	if r.toAsset != nil {
+		localVarQueryParams.Add("to_asset", parameterToString(*r.toAsset, ""))
+	}
+	if r.affiliateBps != nil {
+		localVarQueryParams.Add("affiliate_bps", parameterToString(*r.affiliateBps, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiQuotesaverdepositRequest struct {
 	ctx context.Context
 	ApiService *QuoteApiService

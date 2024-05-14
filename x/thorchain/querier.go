@@ -186,7 +186,7 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 		case q.QueryTHORName.Key:
 			return queryTHORName(ctx, path[1:], req, mgr)
 		case q.QueryQuotePair.Key:
-			return queryQuotePair(ctx, mgr)
+			return queryQuotePair(ctx, path[1:], req, mgr)
 		case q.QueryQuoteSwap.Key:
 			return queryQuoteSwap(ctx, path[1:], req, mgr)
 		case q.QueryQuoteSaverDeposit.Key:
@@ -3067,9 +3067,6 @@ func queryBlock(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	}
 
 	return jsonify(ctx, res)
-}
-
-func queryPair(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 }
 
 // -------------------------------------------------------------------------------------

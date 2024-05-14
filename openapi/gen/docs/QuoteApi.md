@@ -6,6 +6,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**Quoteloanclose**](QuoteApi.md#Quoteloanclose) | **Get** /thorchain/quote/loan/close | 
 [**Quoteloanopen**](QuoteApi.md#Quoteloanopen) | **Get** /thorchain/quote/loan/open | 
+[**Quotepair**](QuoteApi.md#Quotepair) | **Get** /thorchain/quote/pair | 
 [**Quotesaverdeposit**](QuoteApi.md#Quotesaverdeposit) | **Get** /thorchain/quote/saver/deposit | 
 [**Quotesaverwithdraw**](QuoteApi.md#Quotesaverwithdraw) | **Get** /thorchain/quote/saver/withdraw | 
 [**Quoteswap**](QuoteApi.md#Quoteswap) | **Get** /thorchain/quote/swap | 
@@ -153,6 +154,78 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**QuoteLoanOpenResponse**](QuoteLoanOpenResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
+[[Back to Model list]](../README.md#documentation-for-models)
+[[Back to README]](../README.md)
+
+
+## Quotepair
+
+> QuotePairResponse Quotepair(ctx).Height(height).FromAsset(fromAsset).ToAsset(toAsset).AffiliateBps(affiliateBps).Execute()
+
+
+
+
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    openapiclient "./openapi"
+)
+
+func main() {
+    height := int64(789) // int64 | optional block height, defaults to current tip (optional)
+    fromAsset := "BTC.BTC" // string | the source asset (optional)
+    toAsset := "ETH.ETH" // string | the target asset (optional)
+    affiliateBps := int64(100) // int64 | the affiliate fee in basis points (optional)
+
+    configuration := openapiclient.NewConfiguration()
+    apiClient := openapiclient.NewAPIClient(configuration)
+    resp, r, err := apiClient.QuoteApi.Quotepair(context.Background()).Height(height).FromAsset(fromAsset).ToAsset(toAsset).AffiliateBps(affiliateBps).Execute()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error when calling `QuoteApi.Quotepair``: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
+    }
+    // response from `Quotepair`: QuotePairResponse
+    fmt.Fprintf(os.Stdout, "Response from `QuoteApi.Quotepair`: %v\n", resp)
+}
+```
+
+### Path Parameters
+
+
+
+### Other Parameters
+
+Other parameters are passed through a pointer to a apiQuotepairRequest struct via the builder pattern
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **height** | **int64** | optional block height, defaults to current tip | 
+ **fromAsset** | **string** | the source asset | 
+ **toAsset** | **string** | the target asset | 
+ **affiliateBps** | **int64** | the affiliate fee in basis points | 
+
+### Return type
+
+[**QuotePairResponse**](QuotePairResponse.md)
 
 ### Authorization
 

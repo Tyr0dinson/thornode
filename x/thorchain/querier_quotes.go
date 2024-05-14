@@ -452,8 +452,7 @@ func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, 
 // Swap
 // -------------------------------------------------------------------------------------
 
-// calculateMinSwapAmount returns the recommended minimum swap amount The recommended
-// min swap amount is: - MAX(
+// calculateExchangeRate returns the flat exchange rate between two assets
 func calculateExchangeRate(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset) (sdk.Uint, error) {
 	// get the fromPool for the from asset
 	fromPool, err := mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
@@ -477,8 +476,8 @@ func calculateExchangeRate(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset com
 		return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
 	}
 
-	// calculate the exchange rate
-	return fromPool.AssetValueInRune(sdk.OneUint()).Mul(toPool.RuneValueInAsset(sdk.OneUint())), nil
+	// calculate the exchange rate between assets
+	return fromPool.AssetValueInRune(cosmos.OneUint()).Quo(toPool.AssetValueInRune(cosmos.OneUint())), nil
 }
 
 // calculateMinSwapAmount returns the recommended minimum swap amount
@@ -573,6 +572,41 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 	toAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), toAsset)
 
+	isSrcChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, fromAsset.GetChain())
+	isDstChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, toAsset.GetChain())
+	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
+
+	srcPoolAsset := fromAsset
+	if fromAsset.IsSyntheticAsset() || fromAsset.IsTradeAsset() {
+		srcPoolAsset = fromAsset.GetLayer1Asset()
+	}
+	dstPoolAsset := toAsset
+	if toAsset.IsSyntheticAsset() || toAsset.IsTradeAsset() {
+		dstPoolAsset = toAsset.GetLayer1Asset()
+	}
+
+	srcPool, err := mgr.Keeper().GetPool(ctx, srcPoolAsset)
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("failed to get source pool: %w", err))
+	}
+	dstPool, err := mgr.Keeper().GetPool(ctx, dstPoolAsset)
+	if err != nil {
+		return quoteErrorResponse(fmt.Errorf("failed to get destination pool: %w", err))
+	}
+
+	srcAssetAvailable := !srcPool.IsEmpty() && srcPool.Status == PoolAvailable
+	dstAssetAvailable := !dstPool.IsEmpty() && dstPool.Status == PoolAvailable
+
+	isAvailable := !isSrcChainTradingPaused && !isDstChainTradingPaused && !isGlobalTradingPaused && srcAssetAvailable && dstAssetAvailable
+
+	res := openapi.QuotePairResponse{
+		Available: isAvailable,
+	}
+
+	if !isAvailable {
+		return json.MarshalIndent(res, "", "  ")
+	}
+
 	// parse affiliate bps
 	affiliateBps := sdk.NewUint(0)
 	if len(params[affiliateBpsParam]) > 0 {
@@ -588,7 +622,26 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return quoteErrorResponse(err)
 	}
 
-	minAmount, err := calculateMinSwapAmount(ctx, mgr, fromAsset, toAsset)
+	minAmount, err := calculateMinSwapAmount(ctx, mgr, fromAsset, toAsset, affiliateBps)
+	if err != nil {
+		return quoteErrorResponse(err)
+	}
+
+	gasRate := mgr.GasMgr().GetGasRate(ctx, fromAsset.GetChain())
+
+	res.DustThreshold = fromAsset.GetChain().DustThreshold().String()
+	exchangeRate, err := calculateExchangeRate(ctx, mgr, fromAsset, toAsset)
+
+	if err != nil {
+		return quoteErrorResponse(err)
+	}
+
+	res.ExchangeRate = exchangeRate.String()
+	res.RecommendedMinAmountIn = minAmount.String()
+	res.RecommendedGasRate = gasRate.String()
+	res.Notes = fromAsset.GetChain().InboundNotes()
+
+	return json.MarshalIndent(res, "", "  ")
 }
 
 func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
