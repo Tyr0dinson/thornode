@@ -631,7 +631,6 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 	res.DustThreshold = fromAsset.GetChain().DustThreshold().String()
 	exchangeRate, err := calculateExchangeRate(ctx, mgr, fromAsset, toAsset)
-
 	if err != nil {
 		return quoteErrorResponse(err)
 	}
