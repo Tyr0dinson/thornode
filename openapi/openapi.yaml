@@ -3798,7 +3798,7 @@ components:
         exchange_rate:
           type: string
           example: "1.0"
-          description: the flat exchange rate of the pair. Note the actual exchange rate will change based on the size of the swap. 
+          description: the flat exchange rate of the pair. Note the actual exchange rate will change based on the size of the swap.
         notes:
           type: string
           description: chain specific quote notes

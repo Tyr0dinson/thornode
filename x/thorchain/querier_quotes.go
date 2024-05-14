@@ -482,11 +482,11 @@ func calculateExchangeRate(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset com
 
 // calculateMinSwapAmount returns the recommended minimum swap amount
 // The recommended min swap amount is:
-// - MAX(
-//	  outbound_fee(src_chain) * 4,
-//	  outbound_fee(dest_chain) * 4,
-//	  (native_tx_fee_rune * 2) * 10,000 / affiliateBps
-//	)
+//   - MAX(
+//     outbound_fee(src_chain) * 4,
+//     outbound_fee(dest_chain) * 4,
+//     (native_tx_fee_rune * 2) * 10,000 / affiliateBps
+//     )
 //
 // The reason the base value is the MAX of the outbound fees of each chain is because if
 // the swap is refunded the input amount will need to cover the outbound fee of the
