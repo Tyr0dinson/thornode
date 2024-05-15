@@ -56,7 +56,7 @@ func (vm *ValidatorMgrV121) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 		return nil
 	}
 
-	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
+	halt, err := vm.k.GetMimir(ctx, constants.MimirKeyHaltChurning)
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
 		return nil

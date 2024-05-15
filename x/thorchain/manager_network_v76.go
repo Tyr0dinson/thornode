@@ -284,7 +284,7 @@ func (vm *NetworkMgrV76) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 // TriggerKeygen generate a record to instruct signer kick off keygen process
 func (vm *NetworkMgrV76) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error {
-	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
+	halt, err := vm.k.GetMimir(ctx, constants.MimirKeyHaltChurning)
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
 		return nil
