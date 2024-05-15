@@ -1764,7 +1764,7 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 }
 
 func isSynthMintPausedV103(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
-	mintHeight, err := mgr.Keeper().GetMimir(ctx, "MintSynths")
+	mintHeight, err := mgr.Keeper().GetMimir(ctx, constants.MintSynths.String())
 	if (mintHeight > 0 && ctx.BlockHeight() > mintHeight) || err != nil {
 		return fmt.Errorf("minting synthetics has been disabled")
 	}

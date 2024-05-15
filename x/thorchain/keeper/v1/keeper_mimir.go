@@ -7,6 +7,7 @@ import (
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 // TODO: Remove Kraken checks on next hard fork.
@@ -157,8 +158,8 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 
 func isOperationalMimirV133(key string) bool {
 	exactMatches := []string{
-		"BurnSynths",
-		"MintSynths",
+		constants.BurnSynths.String(),
+		constants.MintSynths.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

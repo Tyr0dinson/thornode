@@ -457,7 +457,7 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 		// hyperinflation. In any case, pause everything and allow the
 		// community time to find a solution to the issue.
 		coin := k.coinKeeper.GetSupply(ctx, common.RuneAsset().Native())
-		maxAmt, _ := k.GetMimir(ctx, "MaxRuneSupply")
+		maxAmt, _ := k.GetMimir(ctx, constants.MaxRuneSupply.String())
 		if maxAmt > 0 && coin.Amount.GT(cosmos.NewInt(maxAmt)) {
 			k.SetMimir(ctx, "HaltTrading", 1)
 			k.SetMimir(ctx, "HaltChainGlobal", 1)
