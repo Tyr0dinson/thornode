@@ -7,14 +7,7 @@ import (
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-)
-
-const (
-	MimirRecallFund      = `MimirRecallFund`
-	MimirUpgradeContract = `MimirUpgradeContract`
-
-	MimirRecallFundTemplate      = `MimirRecallFund%s`
-	MimirUpgradeContractTemplate = `MimirUpgradeContract%s`
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type RouterUpgradeController struct {
@@ -78,7 +71,7 @@ func (r *RouterUpgradeController) upgradeContractV124(ctx cosmos.Context, versio
 
 	// Iterate through all the chains with routers, see if any need their contracts updated
 	for _, chain := range chains {
-		mimirKey := fmt.Sprintf(MimirUpgradeContractTemplate, chain)
+		mimirKey := fmt.Sprintf(constants.MimirTemplateUpgradeContract, chain)
 		mimirValue, err := r.mgr.Keeper().GetMimir(ctx, mimirKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get router upgrade mimir", "chain", chain.String(), "error", err)

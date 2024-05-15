@@ -1,9 +1,12 @@
 package constants
 
 const (
-	MimirKeyDollarInRune = "DollarInRune"
+	MimirKeyDollarInRune          = "DollarInRune"
+	MimirKeyRecallFundGlobal      = "MimirRecallFund"
+	MimirKeyUpgradeContractGlobal = "MimirUpgradeContract"
 
 	MimirTemplateILPDisabled            = "ILP-Disabled-%s"
+	MimirTemplateRecallFund             = "MimirRecallFund%s"
 	MimirTemplateSwapSlipBasisPointsMin = "SwapSlipBasisPointsMin-%s"
 
 	MimirRefL1           = "L1"

@@ -7,6 +7,7 @@ import (
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 func (r *RouterUpgradeController) recallYggdrasilFund(ctx cosmos.Context, version semver.Version) error {
@@ -27,7 +28,7 @@ func (r *RouterUpgradeController) recallYggdrasilFundV94(ctx cosmos.Context, ver
 	}
 
 	for _, chain := range chains {
-		mimirKey := fmt.Sprintf(MimirRecallFundTemplate, chain)
+		mimirKey := fmt.Sprintf(constants.MimirTemplateRecallFund, chain)
 		recallFund, err := r.mgr.Keeper().GetMimir(ctx, mimirKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get recall funds mimir", "chain", chain.String(), "error", err)
@@ -53,7 +54,7 @@ func (r *RouterUpgradeController) recallYggdrasilFundV94(ctx cosmos.Context, ver
 }
 
 func (r *RouterUpgradeController) recallYggdrasilFundV1(ctx cosmos.Context) error {
-	recallFund, err := r.mgr.Keeper().GetMimir(ctx, MimirRecallFund)
+	recallFund, err := r.mgr.Keeper().GetMimir(ctx, constants.MimirKeyRecallFundGlobal)
 	if err != nil {
 		return fmt.Errorf("fail to get mimir: %w", err)
 	}
@@ -66,7 +67,7 @@ func (r *RouterUpgradeController) recallYggdrasilFundV1(ctx cosmos.Context) erro
 	if err := networkMgr.RecallChainFunds(ctx, common.ETHChain, r.mgr, common.PubKeys{}); err != nil {
 		return fmt.Errorf("fail to recall chain funds, err:%w", err)
 	}
-	return r.mgr.Keeper().DeleteMimir(ctx, MimirRecallFund)
+	return r.mgr.Keeper().DeleteMimir(ctx, constants.MimirKeyRecallFundGlobal)
 }
 
 func (r *RouterUpgradeController) upgradeContractV94(ctx cosmos.Context, version semver.Version) error {
@@ -77,7 +78,7 @@ func (r *RouterUpgradeController) upgradeContractV94(ctx cosmos.Context, version
 
 	// Iterate through all the chains with routers, see if any need their contracts updated
 	for _, chain := range chains {
-		mimirKey := fmt.Sprintf(MimirUpgradeContractTemplate, chain)
+		mimirKey := fmt.Sprintf(constants.MimirTemplateUpgradeContract, chain)
 		mimirValue, err := r.mgr.Keeper().GetMimir(ctx, mimirKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get router upgrade mimir", "chain", chain.String(), "error", err)
@@ -161,7 +162,7 @@ func (r *RouterUpgradeController) upgradeContractV94(ctx cosmos.Context, version
 }
 
 func (r *RouterUpgradeController) upgradeContractV1(ctx cosmos.Context) error {
-	upgrade, err := r.mgr.Keeper().GetMimir(ctx, MimirUpgradeContract)
+	upgrade, err := r.mgr.Keeper().GetMimir(ctx, constants.MimirKeyUpgradeContractGlobal)
 	if err != nil {
 		return fmt.Errorf("fail to get mimir: %w", err)
 	}
@@ -213,5 +214,5 @@ func (r *RouterUpgradeController) upgradeContractV1(ctx cosmos.Context) error {
 
 	}
 
-	return r.mgr.Keeper().DeleteMimir(ctx, MimirUpgradeContract)
+	return r.mgr.Keeper().DeleteMimir(ctx, constants.MimirKeyUpgradeContractGlobal)
 }

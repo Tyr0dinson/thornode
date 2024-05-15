@@ -32,4 +32,5 @@ const (
 	MimirTemplateSolvencyHaltChain         = "SolvencyHalt%sChain"          // Use with Chain
 	MimirTemplateStopSolvencyCheck         = "StopSolvencyCheck%s"          // Use with Chain
 	MimirTemplateTorAnchor                 = "TorAnchor-%s"                 // Use with Asset MimirString
+	MimirTemplateUpgradeContract           = "MimirUpgradeContract%s"       // Use with Chain; Key contains legacy "Mimir" prefix
 )

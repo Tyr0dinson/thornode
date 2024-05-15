@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -84,7 +85,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 
 	// update contract
 	ctx = ctx.WithBlockHeight(3048)
-	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(MimirUpgradeContractTemplate, "ETH"), 1)
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateUpgradeContract, "ETH"), 1)
 	controller.Process(ctx)
 	asgards, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
@@ -92,7 +93,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 	// contract will be update for the next asgard, when churn
 	c.Assert(asgards[0].GetContract(common.ETHChain), Equals, oldChainContract)
 
-	upgradeContractMimir, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(MimirUpgradeContractTemplate, "ETH"))
+	upgradeContractMimir, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateUpgradeContract, "ETH"))
 	c.Assert(err, IsNil)
 	c.Assert(upgradeContractMimir, Equals, int64(-1))
 
@@ -108,7 +109,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 
 	// update contract
 	ctx = ctx.WithBlockHeight(3048)
-	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(MimirUpgradeContractTemplate, "AVAX"), 1)
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateUpgradeContract, "AVAX"), 1)
 	controller.Process(ctx)
 	asgards, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
@@ -116,7 +117,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 	// contract will be update for the next asgard, when churn
 	c.Assert(asgards[0].GetContract(common.AVAXChain), Equals, emptyChainContract)
 
-	upgradeContractMimir, err = mgr.Keeper().GetMimir(ctx, fmt.Sprintf(MimirUpgradeContractTemplate, "AVAX"))
+	upgradeContractMimir, err = mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateUpgradeContract, "AVAX"))
 	c.Assert(err, IsNil)
 	c.Assert(upgradeContractMimir, Equals, int64(-1))
 
@@ -135,7 +136,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 	avaxNewRouter = "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
 
 	ctx = ctx.WithBlockHeight(6048)
-	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(MimirUpgradeContractTemplate, "AVAX"), 1)
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateUpgradeContract, "AVAX"), 1)
 	controller.Process(ctx)
 	asgards, err = mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
