@@ -88,6 +88,7 @@ Mimir setting can be created and changed without a corresponding Constant.
 - `PauseLP<chain>`#: Pauses the ability for LPs to add/remove liquidity, per chain
 - `MaximumLiquidityRune`#: Maximum RUNE capped on the pools known as the ‘soft cap’
 - `LiquidityLockUpBlocks`: The number of blocks LP can withdraw after their liquidity
+- `PauseAsymWithdrawal<chain>`: Pauses the ability for dual-address LPs to remove liquidity asymmetrically (making all dual-address withdrawals symmetrical)
 - `PendingLiquidityAgeLimit`: The number of blocks the network waits before initiating pending liquidity cleanup. Cleanup of all pools lasts for the same duration.
 
 ## Chain Management
@@ -119,6 +120,7 @@ Mimir setting can be created and changed without a corresponding Constant.
 
 ## Node Management
 
+- `MaximumBondInRune`\*: Sets an upper bound on how much a node can bond
 - `MinimumBondInRune`\*: Sets a lower bound on bond for a node to be considered to be churned in
 - `ValidatorMaxRewardRatio`\*: the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 - `MaxBondProviders`\*: Maximum number of bond providers per mode
@@ -161,7 +163,6 @@ Mimir setting can be created and changed without a corresponding Constant.
 - `FundMigrationInterval`\*: Number of blocks between attempts to migrate funds between asgard vaults during a migration
 - `NumberOfNewNodesPerChurn`#: Number of targeted additional nodes added to the validator set each churn
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
-- `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond
 - `MaxNodeToChurnOutForLowVersion`\*: Maximum number of validators to churn out for low version each churn
 
 ## Economics
