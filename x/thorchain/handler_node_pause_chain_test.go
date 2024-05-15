@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 var _ = Suite(&HandlerNodePauseChainSuite{})
@@ -42,28 +44,28 @@ func (s *HandlerNodePauseChainSuite) TestHandle(c *C) {
 	msg := NewMsgNodePauseChain(300, node.NodeAddress)
 	err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	pause, err := k.GetMimir(ctx, "NodePauseChainGlobal")
+	pause, err := k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	c.Assert(err, IsNil)
 	c.Check(pause, Equals, int64(738))
 
 	msg = NewMsgNodePauseChain(1, node2.NodeAddress)
 	err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	pause, err = k.GetMimir(ctx, "NodePauseChainGlobal")
+	pause, err = k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	c.Assert(err, IsNil)
 	c.Check(pause, Equals, int64(1458))
 
 	msg = NewMsgNodePauseChain(-1, node3.NodeAddress)
 	err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
-	pause, err = k.GetMimir(ctx, "NodePauseChainGlobal")
+	pause, err = k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	c.Assert(err, IsNil)
 	c.Check(pause, Equals, int64(738))
 
 	msg = NewMsgNodePauseChain(1, node2.NodeAddress)
 	err = handler.handle(ctx, *msg)
 	c.Assert(err, NotNil)
-	pause, err = k.GetMimir(ctx, "NodePauseChainGlobal")
+	pause, err = k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	c.Assert(err, IsNil)
 	c.Check(pause, Equals, int64(738))
 }

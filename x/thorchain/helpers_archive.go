@@ -1827,7 +1827,7 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 		return true
 	}
 
-	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	haltChain, err = mgr.Keeper().GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	if err == nil && haltChain > ctx.BlockHeight() {
 		ctx.Logger().Info("node global is halt")
 		return true
@@ -1969,7 +1969,7 @@ func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 		return true
 	}
 
-	haltChain, err = mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	haltChain, err = mgr.Keeper().GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	if err == nil && haltChain > ctx.BlockHeight() {
 		ctx.Logger().Info("node global is halt")
 		return true

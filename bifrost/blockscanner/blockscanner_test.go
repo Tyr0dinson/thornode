@@ -243,7 +243,7 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 		fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain):         0,
 		fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.BNBChain): 0,
 		constants.MimirKeyHaltChainGlobal:                                      0,
-		"NodePauseChainGlobal":                                                 0,
+		constants.MimirKeyNodePauseChainGlobal:                                 0,
 	}
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
@@ -325,7 +325,7 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap[constants.MimirKeyHaltChainGlobal] = 0
 
 	// Setting NodePauseChainGlobal should pause
-	mimirMap["NodePauseChainGlobal"] = 4 // node pause only halts for an hour, so pause height needs to be larger than thor height
+	mimirMap[constants.MimirKeyNodePauseChainGlobal] = 4 // node pause only halts for an hour, so pause height needs to be larger than thor height
 	// Wait for one block's time so as to replace the cache with an updated query.
 	time.Sleep(constants.ThorchainBlockTime)
 	isHalted = cbs.isChainPaused()

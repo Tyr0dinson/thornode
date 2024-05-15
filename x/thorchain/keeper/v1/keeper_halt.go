@@ -72,7 +72,7 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	haltChain, err = k.GetMimir(ctx, "NodePauseChainGlobal")
+	haltChain, err = k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	if err == nil && haltChain > ctx.BlockHeight() {
 		ctx.Logger().Debug("node global is halt")
 		return true

@@ -175,9 +175,9 @@ func (b *BlockScanner) isChainPaused() bool {
 		haltHeight = globalHaltHeight
 	}
 	// Check if a node paused all chains
-	nodeHaltHeight, err = b.thorchainBridge.GetMimir("NodePauseChainGlobal")
+	nodeHaltHeight, err = b.thorchainBridge.GetMimir(constants.MimirKeyNodePauseChainGlobal)
 	if err != nil {
-		b.logger.Error().Err(err).Msg("fail to get mimir setting NodePauseChainGlobal")
+		b.logger.Error().Err(err).Msg("fail to get mimir setting " + constants.MimirKeyNodePauseChainGlobal)
 	}
 	thorHeight, err = b.thorchainBridge.GetBlockHeight()
 	if err != nil {

@@ -27,7 +27,7 @@ func (h NodePauseChainHandler) handleV1(ctx cosmos.Context, msg MsgNodePauseChai
 	}
 
 	// get the current block height set by node pause chain global
-	pauseHeight, err := h.mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	pauseHeight, err := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func (h NodePauseChainHandler) handleV1(ctx cosmos.Context, msg MsgNodePauseChai
 		}
 	}
 
-	h.mgr.Keeper().SetMimir(ctx, "NodePauseChainGlobal", pauseHeight)
+	h.mgr.Keeper().SetMimir(ctx, constants.MimirKeyNodePauseChainGlobal, pauseHeight)
 
 	return nil
 }

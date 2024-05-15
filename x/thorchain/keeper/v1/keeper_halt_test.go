@@ -4,6 +4,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type KeeperHaltSuite struct{}
@@ -150,16 +151,16 @@ func (s *KeeperHaltSuite) TestIsChainHalted(c *C) {
 	_ = k.DeleteMimir(ctx, constants.MimirKeyHaltChainGlobal)
 
 	// expired node pause
-	k.SetMimir(ctx, "NodePauseChainGlobal", 1)
+	k.SetMimir(ctx, constants.MimirKeyNodePauseChainGlobal, 1)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
 	// current node pause
-	k.SetMimir(ctx, "NodePauseChainGlobal", 11)
+	k.SetMimir(ctx, constants.MimirKeyNodePauseChainGlobal, 11)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "NodePauseChainGlobal")
+	_ = k.DeleteMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 
 	// expired btc halt
 	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 10)
