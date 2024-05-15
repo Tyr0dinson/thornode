@@ -681,7 +681,7 @@ func (HandlerObservedTxInSuite) TestObservedTxHandler_validations(c *C) {
 			name: "chain halt, it should refund",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *ObservedTxInHandlerTestHelper) cosmos.Msg {
 				m := setupAnLegitObservedTx(ctx, helper, c)
-				helper.Keeper.SetMimir(ctx, "HaltTrading", 1)
+				helper.Keeper.SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 1)
 				return m
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ObservedTxInHandlerTestHelper, name string) {

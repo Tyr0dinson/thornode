@@ -1929,7 +1929,7 @@ func isTradingHaltV65(ctx cosmos.Context, msg cosmos.Msg, mgr Manager) bool {
 
 // isGlobalTradingHalted check whether trading has been halt at global level
 func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
-	haltTrading, err := mgr.Keeper().GetMimir(ctx, "HaltTrading")
+	haltTrading, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyHaltTradingGlobal)
 	if err == nil && ((haltTrading > 0 && haltTrading < ctx.BlockHeight()) || mgr.Keeper().RagnarokInProgress(ctx)) {
 		return true
 	}
@@ -1938,7 +1938,7 @@ func isGlobalTradingHalted(ctx cosmos.Context, mgr Manager) bool {
 
 // isChainTradingHalted check whether trading on the given chain is halted
 func isChainTradingHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
-	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
+	mimirKey := fmt.Sprintf(constants.MimirTemplateHaltTrading, chain)
 	haltChainTrading, err := mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
 		ctx.Logger().Info("trading is halt", "chain", chain)

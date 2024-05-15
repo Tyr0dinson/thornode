@@ -48,28 +48,28 @@ func (s *KeeperHaltSuite) TestIsTradingHalt(c *C) {
 	_ = k.DeleteMimir(ctx, "RAGNAROK-BTC-BTC")
 
 	// btc chain trading halt
-	k.SetMimir(ctx, "HaltBTCTrading", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.BTCChain.String(), 1)
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, true) // source asset
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, false)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "HaltBTCTrading")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, common.BTCChain.String()))
 
 	// eth chain trading halt
-	k.SetMimir(ctx, "HaltETHTrading", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.ETHChain.String(), 1)
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, true) // target asset
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, true)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "HaltETHTrading")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, common.ETHChain.String()))
 
 	// global trading halt
-	k.SetMimir(ctx, "HaltTrading", 1)
+	k.SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 1)
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, true)
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, true)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "HaltTrading")
+	_ = k.DeleteMimir(ctx, constants.MimirKeyHaltTradingGlobal)
 
 	// no halts
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, false)
@@ -85,14 +85,14 @@ func (s *KeeperHaltSuite) TestIsGlobalTradingHalted(c *C) {
 	c.Check(k.IsGlobalTradingHalted(ctx), Equals, false)
 
 	// expired global trading halt
-	k.SetMimir(ctx, "HaltTrading", 10)
+	k.SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 10)
 	c.Check(k.IsGlobalTradingHalted(ctx), Equals, false)
 
 	// current global trading halt
-	k.SetMimir(ctx, "HaltTrading", 1)
+	k.SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 1)
 	c.Check(k.IsGlobalTradingHalted(ctx), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "HaltTrading")
+	_ = k.DeleteMimir(ctx, constants.MimirKeyHaltTradingGlobal)
 
 	// no halts
 	c.Check(k.IsGlobalTradingHalted(ctx), Equals, false)
@@ -107,16 +107,16 @@ func (s *KeeperHaltSuite) TestIsChainTradingHalted(c *C) {
 	c.Check(k.IsChainTradingHalted(ctx, common.ETHChain), Equals, false)
 
 	// expired btc trading halt
-	k.SetMimir(ctx, "HaltBTCTrading", 10)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.BTCChain.String(), 10)
 	c.Check(k.IsChainTradingHalted(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsChainTradingHalted(ctx, common.ETHChain), Equals, false)
 
 	// current btc trading halt
-	k.SetMimir(ctx, "HaltBTCTrading", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.BTCChain.String(), 1)
 	c.Check(k.IsChainTradingHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainTradingHalted(ctx, common.ETHChain), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "HaltBTCTrading")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, common.BTCChain.String()))
 
 	// current btc chain halt
 	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 1)

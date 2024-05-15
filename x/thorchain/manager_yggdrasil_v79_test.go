@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -301,7 +302,7 @@ func (s YggdrasilManagerV79Suite) TestChainTradingHaltWillNotFundYggdrasil(c *C)
 	ethPool.BalanceAsset = cosmos.NewUint(10000 * common.One)
 	ethPool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, ethPool), IsNil)
-	ymgr.keeper.SetMimir(ctx, "HaltETHTrading", 1)
+	ymgr.keeper.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.ETHChain.String(), 1)
 	err1 := ymgr.Fund(ctx, mgr)
 	c.Assert(err1, IsNil)
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
