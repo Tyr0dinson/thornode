@@ -60,7 +60,7 @@ func withdrawV98(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	ctx.Logger().Info("pool before withdraw", "pool units", pool.GetPoolUnits(), "balance RUNE", poolRune, "balance asset", poolAsset)
 	ctx.Logger().Info("liquidity provider before withdraw", "liquidity provider unit", fLiquidityProviderUnit)
 
-	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
+	pauseAsym, _ := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePauseAsymWithdrawal, pool.Asset.GetChain().String())
 	assetToWithdraw := assetToWithdrawV89(msg, lp, pauseAsym)
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
@@ -247,7 +247,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	ctx.Logger().Info("pool before withdraw", "pool units", pool.GetPoolUnits(), "balance RUNE", poolRune, "balance asset", poolAsset)
 	ctx.Logger().Info("liquidity provider before withdraw", "liquidity provider unit", fLiquidityProviderUnit)
 
-	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
+	pauseAsym, _ := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePauseAsymWithdrawal, pool.Asset.GetChain().String())
 	assetToWithdraw := assetToWithdrawV89(msg, lp, pauseAsym)
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
@@ -434,7 +434,7 @@ func withdrawV89(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	ctx.Logger().Info("pool before withdraw", "pool units", pool.GetPoolUnits(), "balance RUNE", poolRune, "balance asset", poolAsset)
 	ctx.Logger().Info("liquidity provider before withdraw", "liquidity provider unit", fLiquidityProviderUnit)
 
-	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.Chain))
+	pauseAsym, _ := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePauseAsymWithdrawal, pool.Asset.Chain.String())
 	assetToWithdraw := assetToWithdrawV89(msg, lp, pauseAsym)
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
@@ -1020,7 +1020,7 @@ func withdrawV102(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 	ctx.Logger().Info("pool before withdraw", "pool units", pool.GetPoolUnits(), "balance RUNE", poolRune, "balance asset", poolAsset)
 	ctx.Logger().Info("liquidity provider before withdraw", "liquidity provider unit", fLiquidityProviderUnit)
 
-	pauseAsym, _ := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
+	pauseAsym, _ := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePauseAsymWithdrawal, pool.Asset.GetChain().String())
 	assetToWithdraw := assetToWithdrawV89(msg, lp, pauseAsym)
 
 	if pool.Status == PoolAvailable && lp.RuneDepositValue.IsZero() && lp.AssetDepositValue.IsZero() {
