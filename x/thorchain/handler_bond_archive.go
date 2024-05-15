@@ -116,7 +116,7 @@ func (h BondHandler) validateV81(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
-	maxBond, err := h.mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
+	maxBond, err := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyMaximumBondInRune)
 	if maxBond > 0 && err == nil {
 		maxValidatorBond := cosmos.NewUint(uint64(maxBond))
 		if bond.GT(maxValidatorBond) {
@@ -194,7 +194,7 @@ func (h BondHandler) validateV88(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
-	maxBond, err := h.mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
+	maxBond, err := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyMaximumBondInRune)
 	if maxBond > 0 && err == nil {
 		maxValidatorBond := cosmos.NewUint(uint64(maxBond))
 		if bond.GT(maxValidatorBond) {
@@ -295,7 +295,7 @@ func (h BondHandler) validateV95(ctx cosmos.Context, msg MsgBond) error {
 	}
 
 	bond := msg.Bond.Add(nodeAccount.Bond)
-	maxBond, err := h.mgr.Keeper().GetMimir(ctx, "MaximumBondInRune")
+	maxBond, err := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyMaximumBondInRune)
 	if maxBond > 0 && err == nil {
 		maxValidatorBond := cosmos.NewUint(uint64(maxBond))
 		if bond.GT(maxValidatorBond) {
