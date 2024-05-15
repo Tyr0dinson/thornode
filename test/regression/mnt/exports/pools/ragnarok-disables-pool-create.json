@@ -341,10 +341,6 @@
       "loans": [],
       "mimirs": [
         {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        },
-        {
           "key": "RAGNAROK-ETH-ETH",
           "value": "1"
         },

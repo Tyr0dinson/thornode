@@ -300,10 +300,6 @@
       "loans": [],
       "mimirs": [
         {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        },
-        {
           "key": "REGRESSIONTEST",
           "value": "1"
         }

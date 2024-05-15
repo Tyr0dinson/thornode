@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type HandlerMimirSuite struct{}
@@ -139,7 +140,9 @@ func (s *HandlerMimirSuite) TestMimirHandle(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Operational Mimir should not be set until at least three nodes agree.
+	// With OperationalVotesMin 3, Operational Mimir should not be set until at least three nodes agree.
+	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
+
 	result, err = handler.Run(ctx, NewMsgMimir("HaltSigning", 1, na1.NodeAddress))
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)

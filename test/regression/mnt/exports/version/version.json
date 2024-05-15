@@ -308,12 +308,7 @@
       "last_chain_heights": [],
       "liquidity_providers": null,
       "loans": [],
-      "mimirs": [
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        }
-      ],
+      "mimirs": [],
       "network": {
         "bond_reward_rune": "0",
         "burned_bep2_rune": "0",

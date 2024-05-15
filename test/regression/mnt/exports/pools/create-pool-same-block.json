@@ -327,12 +327,7 @@
         }
       ],
       "loans": [],
-      "mimirs": [
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        }
-      ],
+      "mimirs": [],
       "network": {
         "LPIncomeSplit": "10000",
         "bond_reward_rune": "44",

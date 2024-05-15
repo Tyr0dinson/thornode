@@ -350,10 +350,6 @@
       "mimirs": [
         {
           "key": "HALTETHTRADING"
-        },
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
         }
       ],
       "network": {

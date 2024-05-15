@@ -341,10 +341,6 @@
       "loans": [],
       "mimirs": [
         {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        },
-        {
           "key": "TRADEACCOUNTSENABLED",
           "value": "1"
         }

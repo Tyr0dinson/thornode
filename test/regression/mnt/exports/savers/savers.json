@@ -348,10 +348,6 @@
           "key": "HALTTRADING"
         },
         {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
-        },
-        {
           "key": "SAVERSSTREAMINGSWAPSINTERVAL",
           "value": "1"
         }

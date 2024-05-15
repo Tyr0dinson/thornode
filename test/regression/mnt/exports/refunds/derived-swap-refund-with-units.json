@@ -338,10 +338,6 @@
         {
           "key": "ENABLEDERIVEDASSETS",
           "value": "1"
-        },
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
         }
       ],
       "network": {

@@ -18,8 +18,6 @@ genesis:
           value: "1"
         - key: LENDING-THOR-ETH
           value: "1"
-        - key: "OPERATIONALVOTESMIN"
-          value: "1" # Single 'dog' vote sufficient to set Operational Mimirs in regression tests
       liquidity_providers:
         - asset: BTC.BTC
           asset_address: {{ addr_btc_cat }}

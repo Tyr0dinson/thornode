@@ -366,10 +366,6 @@
         {
           "key": "MAXSYNTHPERPOOLDEPTH",
           "value": "6000"
-        },
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
         }
       ],
       "network": {

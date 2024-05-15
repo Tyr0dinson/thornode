@@ -379,10 +379,6 @@
         {
           "key": "LENDING-THOR-ETH",
           "value": "1"
-        },
-        {
-          "key": "OPERATIONALVOTESMIN",
-          "value": "1"
         }
       ],
       "network": {
