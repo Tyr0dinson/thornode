@@ -41,7 +41,7 @@ func (ConstantsTestSuite) TestGetConstantValues(c *C) {
 }
 
 func (ConstantsTestSuite) TestAllConstantName(c *C) {
-	keyRegex := regexp.MustCompile(MimirKeyRegex).MatchString
+	keyRegex := regexp.MustCompile(MimirRegex).MatchString
 	for i := 0; i < len(_ConstantName_index)-1; i++ {
 		key := ConstantName(i)
 		if !keyRegex(key.String()) {

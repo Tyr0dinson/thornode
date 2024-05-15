@@ -53,8 +53,6 @@ const (
 	CtxLoanToAddress contextKey = "loan-toaddress"
 )
 
-const MimirKeyRegex = `^[a-zA-Z0-9-]+$`
-
 // ConstantVals implement ConstantValues interface
 type ConstantVals struct {
 	int64values  map[ConstantName]int64

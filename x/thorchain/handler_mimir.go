@@ -14,10 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-var (
-	mimirValidKey    = regexp.MustCompile(`^[a-zA-Z-]+$`).MatchString
-	mimirValidKeyV95 = regexp.MustCompile(constants.MimirKeyRegex).MatchString
-)
+var mimirValidKeyV95 = regexp.MustCompile(constants.MimirRegex).MatchString
 
 // MimirHandler is to handle admin messages
 type MimirHandler struct {

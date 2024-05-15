@@ -12,7 +12,10 @@ import (
 	"gitlab.com/thorchain/thornode/mimir"
 )
 
-var mimirV2ValidKey = regexp.MustCompile(`^[0-9]+-[a-zA-Z0-9]+$`).MatchString
+var (
+	mimirValidKey   = regexp.MustCompile(`^[a-zA-Z-]+$`).MatchString
+	mimirV2ValidKey = regexp.MustCompile(`^[0-9]+-[a-zA-Z0-9]+$`).MatchString
+)
 
 func (h MimirHandler) validateV95(ctx cosmos.Context, msg MsgMimir) error {
 	if err := msg.ValidateBasic(); err != nil {

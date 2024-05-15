@@ -5,6 +5,8 @@ package constants
 // Each string should clearly indicate its usage for the final Mimir key (key, template, reference)
 // and no Mimir key should require the combination of more than two strings.
 const (
+	MimirRegex = "^[a-zA-Z0-9-]+$"
+
 	MimirKeyDollarsPerRune          = "DollarsPerRune"
 	MimirKeyHaltChainGlobal         = "HaltChainGlobal"
 	MimirKeyHaltChurning            = "HaltChurning"
