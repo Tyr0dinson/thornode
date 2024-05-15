@@ -495,13 +495,13 @@ func (s *SwapperVCUR) MinSlipBps(
 	var ref string
 	switch {
 	case isSynth:
-		ref = "Synth"
+		ref = constants.MimirSuffixSynth
 	case isTradeAccount:
-		ref = "TradeAccount"
+		ref = constants.MimirSuffixTradeAccount
 	default:
-		ref = "L1"
+		ref = constants.MimirSuffixL1
 	}
-	key := fmt.Sprintf("SwapSlipBasisPointsMin-%s", ref)
+	key := fmt.Sprintf(constants.MimirPrefixSwapSlipBasisPointsMin + "-" + ref)
 	minFeeMimir, err := k.GetMimir(ctx, key)
 	if minFeeMimir < 0 || err != nil {
 		if err != nil {

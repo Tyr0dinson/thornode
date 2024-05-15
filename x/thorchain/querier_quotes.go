@@ -391,7 +391,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, chain comm
 	}
 
 	// estimate the inbound confirmation count blocks: ceil(amount/coinbase * conf adjustment)
-	confMul, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("ConfMultiplierBasisPoints-%s", chain.String()))
+	confMul, err := mgr.Keeper().GetMimir(ctx, constants.MimirPrefixConfMultiplierBasisPoints+"-"+chain.String())
 	if confMul < 0 || err != nil {
 		confMul = int64(constants.MaxBasisPts)
 	}
@@ -415,7 +415,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, chain comm
 
 	// max confirmation adjustment for btc and eth
 	if chain.Equals(common.BTCChain) || chain.Equals(common.ETHChain) {
-		maxConfirmations, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("MaxConfirmations-%s", chain.String()))
+		maxConfirmations, err := mgr.Keeper().GetMimir(ctx, constants.MimirPrefixMaxConfirmations+"-"+chain.String())
 		if maxConfirmations < 0 || err != nil {
 			maxConfirmations = 0
 		}
