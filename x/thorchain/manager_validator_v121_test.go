@@ -37,8 +37,8 @@ func (vts *ValidatorMgrV121TestSuite) TestChurnWithChainHalt(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// set mimir to halt btc chain
-	mgr.Keeper().SetMimir(ctx, "HaltBTCChain", 1)
-	mgr.Keeper().SetMimir(ctx, "HaltBNBChain", 1) // ignored since not in active vault
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BNBChain.String(), 1) // ignored since not in active vault
 
 	// should not start churn with chain halted
 	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
@@ -47,7 +47,7 @@ func (vts *ValidatorMgrV121TestSuite) TestChurnWithChainHalt(c *C) {
 	c.Assert(len(ready), Equals, 0) // standby node should not be ready if churn did not start
 
 	// set mimir to halt btc chain
-	mgr.Keeper().SetMimir(ctx, "HaltBTCChain", -1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), -1)
 
 	// should start churn with chain unhalted
 	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)

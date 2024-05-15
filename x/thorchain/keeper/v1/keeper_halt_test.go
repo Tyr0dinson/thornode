@@ -118,11 +118,11 @@ func (s *KeeperHaltSuite) TestIsChainTradingHalted(c *C) {
 	_ = k.DeleteMimir(ctx, "HaltBTCTrading")
 
 	// current btc chain halt
-	k.SetMimir(ctx, "HaltBTCChain", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 1)
 	c.Check(k.IsChainTradingHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainTradingHalted(ctx, common.ETHChain), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "HaltBTCChain")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltChain, common.BTCChain))
 
 	// no halts
 	c.Check(k.IsChainTradingHalted(ctx, common.BTCChain), Equals, false)
@@ -138,16 +138,16 @@ func (s *KeeperHaltSuite) TestIsChainHalted(c *C) {
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
 	// expired global halt
-	k.SetMimir(ctx, "HaltChainGlobal", 10)
+	k.SetMimir(ctx, constants.MimirKeyHaltChainGlobal, 10)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
 	// current global halt
-	k.SetMimir(ctx, "HaltChainGlobal", 1)
+	k.SetMimir(ctx, constants.MimirKeyHaltChainGlobal, 1)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "HaltChainGlobal")
+	_ = k.DeleteMimir(ctx, constants.MimirKeyHaltChainGlobal)
 
 	// expired node pause
 	k.SetMimir(ctx, "NodePauseChainGlobal", 1)
@@ -162,16 +162,16 @@ func (s *KeeperHaltSuite) TestIsChainHalted(c *C) {
 	_ = k.DeleteMimir(ctx, "NodePauseChainGlobal")
 
 	// expired btc halt
-	k.SetMimir(ctx, "HaltBTCChain", 10)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 10)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
 	// current btc halt
-	k.SetMimir(ctx, "HaltBTCChain", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String(), 1)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "HaltBTCChain")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltChain, common.BTCChain))
 
 	// expired btc solvency halt
 	k.SetMimir(ctx, "SolvencyHaltBTCChain", 10)

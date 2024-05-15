@@ -1821,7 +1821,7 @@ func subsidizePoolWithSlashBondV74(ctx cosmos.Context, ygg Vault, yggTotalStolen
 // chain halt is different as halt trading , when a chain is halt , there is no observation on the given chain
 // outbound will not be signed and broadcast
 func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
-	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
+	haltChain, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyHaltChainGlobal)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("global is halt")
 		return true
@@ -1833,7 +1833,7 @@ func isChainHaltedV65(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 		return true
 	}
 
-	mimirKey := fmt.Sprintf("Halt%sChain", chain)
+	mimirKey := fmt.Sprintf(constants.MimirTemplateHaltChain, chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, mimirKey)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt", "chain", chain)
@@ -1963,7 +1963,7 @@ func isChainHalted(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
 // chain halt is different as halt trading , when a chain is halt , there is no observation on the given chain
 // outbound will not be signed and broadcast
 func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool {
-	haltChain, err := mgr.Keeper().GetMimir(ctx, "HaltChainGlobal")
+	haltChain, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyHaltChainGlobal)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("global is halt")
 		return true
@@ -1975,7 +1975,7 @@ func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 		return true
 	}
 
-	haltMimirKey := fmt.Sprintf("Halt%sChain", chain)
+	haltMimirKey := fmt.Sprintf(constants.MimirTemplateHaltChain, chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, haltMimirKey)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt via admin or double-spend check", "chain", chain)

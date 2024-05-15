@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
+	"gitlab.com/thorchain/thornode/constants"
 	stypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -296,7 +297,7 @@ func (s *ThorchainSuite) TestGetThorchainVersion(c *C) {
 }
 
 func (s *ThorchainSuite) TestGetMimir(c *C) {
-	result, err := s.bridge.GetMimir("HaltBNBChain")
+	result, err := s.bridge.GetMimirWithRef(constants.MimirTemplateHaltChain, common.BNBChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(result, Equals, int64(10))
 }

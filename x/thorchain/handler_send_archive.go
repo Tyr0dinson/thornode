@@ -54,7 +54,7 @@ func MsgSendValidateV1(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 }
 
 func MsgSendHandleV1(ctx cosmos.Context, mgr Manager, msg *MsgSend) (*cosmos.Result, error) {
-	haltHeight, err := mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}

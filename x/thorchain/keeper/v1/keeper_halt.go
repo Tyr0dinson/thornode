@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 func (k KVStore) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool {
@@ -65,7 +66,7 @@ func (k KVStore) IsChainTradingHalted(ctx cosmos.Context, chain common.Chain) bo
 }
 
 func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
-	haltChain, err := k.GetMimir(ctx, "HaltChainGlobal")
+	haltChain, err := k.GetMimir(ctx, constants.MimirKeyHaltChainGlobal)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Debug("global is halt")
 		return true
@@ -77,8 +78,7 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	haltMimirKey := fmt.Sprintf("Halt%sChain", chain)
-	haltChain, err = k.GetMimir(ctx, haltMimirKey)
+	haltChain, err = k.GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, chain.String())
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Debug("chain is halt via admin or double-spend check", "chain", chain)
 		return true

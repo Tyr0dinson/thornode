@@ -447,7 +447,7 @@ func (s *SlasherV89) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 			}
 
-			key := fmt.Sprintf("Halt%sChain", coin.Asset.Chain)
+			key := fmt.Sprintf(constants.MimirTemplateHaltChain, coin.Asset.Chain)
 			s.keeper.SetMimir(ctx, key, ctx.BlockHeight())
 			mimirEvent = NewEventSetMimir(strings.ToUpper(key), strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {

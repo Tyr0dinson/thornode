@@ -27,7 +27,7 @@ func (h SwitchHandler) validateV1(ctx cosmos.Context, msg MsgSwitch) error {
 }
 
 func (h SwitchHandler) handleV93(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}
@@ -43,7 +43,7 @@ func (h SwitchHandler) handleV93(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Res
 }
 
 func (h SwitchHandler) handleV87(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}
@@ -59,7 +59,7 @@ func (h SwitchHandler) handleV87(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Res
 }
 
 func (h SwitchHandler) handleV56(ctx cosmos.Context, msg MsgSwitch) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}

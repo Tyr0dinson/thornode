@@ -441,7 +441,7 @@ func (s *SlashingV125Suite) TestSlashVault(c *C) {
 	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(76457722), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
 	c.Check(node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64(), Equals, uint64(76572581), Commentf("%d", node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64()))
 
-	val, err := mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	val, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 }
@@ -559,7 +559,7 @@ func (s *SlashingV125Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(37862675), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
 	c.Check(node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64(), Equals, uint64(37891094), Commentf("%d", node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64()))
 
-	val, err := mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	val, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 

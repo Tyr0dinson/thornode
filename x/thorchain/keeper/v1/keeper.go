@@ -462,9 +462,9 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 		maxAmt, _ := k.GetMimir(ctx, "MaxRuneSupply")
 		if maxAmt > 0 && coin.Amount.GT(cosmos.NewInt(maxAmt)) {
 			k.SetMimir(ctx, "HaltTrading", 1)
-			k.SetMimir(ctx, "HaltChainGlobal", 1)
+			k.SetMimir(ctx, constants.MimirKeyHaltChainGlobal, 1)
 			k.SetMimir(ctx, "PauseLP", 1)
-			k.SetMimir(ctx, "HaltTHORChain", 1)
+			k.SetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String(), 1)
 		}
 	}
 

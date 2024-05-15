@@ -438,7 +438,7 @@ func (s *SlashingV89Suite) TestSlashVault(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 
-	val, err = mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	val, err = mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 }
@@ -582,7 +582,7 @@ func (s *SlashingV89Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 
-	val, err = mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	val, err = mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.BTCChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
 }

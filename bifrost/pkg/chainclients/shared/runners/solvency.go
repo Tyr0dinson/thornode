@@ -1,7 +1,6 @@
 package runners
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -49,7 +48,7 @@ func SolvencyCheckRunner(chain common.Chain,
 			return
 		case <-time.After(backOffDuration):
 			// check whether the chain is halted via mimir or not
-			haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", chain))
+			haltHeight, err := bridge.GetMimirWithRef(constants.MimirTemplateHaltChain, chain.String())
 			if err != nil {
 				logger.Err(err).Msg("fail to get chain halt height")
 				continue

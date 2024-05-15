@@ -446,7 +446,7 @@ func (h DepositHandler) handleV112(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 }
 
 func (h DepositHandler) handleV105(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}
@@ -599,7 +599,7 @@ func (h DepositHandler) handleV105(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 }
 
 func (h DepositHandler) handleV99(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}
@@ -745,7 +745,7 @@ func (h DepositHandler) handleV99(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 }
 
 func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}
@@ -897,7 +897,7 @@ func (h DepositHandler) handleV87(ctx cosmos.Context, msg MsgDeposit) (*cosmos.R
 }
 
 func (h DepositHandler) handleV67(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
-	haltHeight, err := h.mgr.Keeper().GetMimir(ctx, "HaltTHORChain")
+	haltHeight, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateHaltChain, common.THORChain.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mimir setting: %w", err)
 	}

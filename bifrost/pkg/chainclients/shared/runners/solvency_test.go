@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -65,8 +66,8 @@ func (s *SolvencyTestSuite) SetUpSuite(c *C) {
 
 func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	mimirMap := map[string]int{
-		"HaltBNBChain":         0,
-		"SolvencyHaltBNBChain": 0,
+		fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain): 0,
+		"SolvencyHaltBNBChain":                                         0,
 	}
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +111,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	c.Assert(s.sp.ReportSolvencyRun, Equals, false)
 
 	// Admin halted, still don't check solvency
-	mimirMap["HaltBNBChain"] = 1
+	mimirMap[fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain)] = 1
 	s.sp.ResetChecks()
 	wg.Add(1)
 	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
@@ -120,7 +121,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 	c.Assert(s.sp.ReportSolvencyRun, Equals, false)
 
 	// Double-spend check halted chain client, check solvency here
-	mimirMap["HaltBNBChain"] = 10
+	mimirMap[fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain)] = 10
 	s.sp.ResetChecks()
 	wg.Add(1)
 	go SolvencyCheckRunner(common.BNBChain, s.sp, bridge, stopchan, wg, constants.ThorchainBlockTime)
@@ -128,7 +129,7 @@ func (s *SolvencyTestSuite) TestSolvencyCheck(c *C) {
 
 	c.Assert(s.sp.ShouldReportSolvencyRan, Equals, true)
 	c.Assert(s.sp.ReportSolvencyRun, Equals, true)
-	mimirMap["HaltBNBChain"] = 0
+	mimirMap[fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain)] = 0
 
 	// Solvency halted chain, need to report solvency here as chain client is paused
 	mimirMap["SolvencyHaltBNBChain"] = 1
