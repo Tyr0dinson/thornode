@@ -2001,12 +2001,12 @@ func isLPPaused(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 
 func isLPPausedV1(ctx cosmos.Context, chain common.Chain, mgr Manager) bool {
 	// check if global LP is paused
-	pauseLPGlobal, err := mgr.Keeper().GetMimir(ctx, "PauseLP")
+	pauseLPGlobal, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyPauseLPGlobal)
 	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
 		return true
 	}
 
-	pauseLP, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("PauseLP%s", chain))
+	pauseLP, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePauseLP, chain.String())
 	if err == nil && pauseLP > 0 && pauseLP < ctx.BlockHeight() {
 		ctx.Logger().Info("chain has paused LP actions", "chain", chain)
 		return true

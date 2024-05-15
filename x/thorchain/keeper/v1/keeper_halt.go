@@ -1,8 +1,6 @@
 package keeperv1
 
 import (
-	"fmt"
-
 	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -93,12 +91,12 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 
 func (k KVStore) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool {
 	// check if global LP is paused
-	pauseLPGlobal, err := k.GetMimir(ctx, "PauseLP")
+	pauseLPGlobal, err := k.GetMimir(ctx, constants.MimirKeyPauseLPGlobal)
 	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
 		return true
 	}
 
-	pauseLP, err := k.GetMimir(ctx, fmt.Sprintf("PauseLP%s", chain))
+	pauseLP, err := k.GetMimirWithRef(ctx, constants.MimirTemplatePauseLP, chain.String())
 	if err == nil && pauseLP > 0 && pauseLP < ctx.BlockHeight() {
 		ctx.Logger().Debug("chain has paused LP actions", "chain", chain)
 		return true

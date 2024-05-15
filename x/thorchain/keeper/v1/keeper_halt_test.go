@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -200,28 +202,28 @@ func (s *KeeperHaltSuite) TestIsLPPaused(c *C) {
 	c.Check(k.IsLPPaused(ctx, common.ETHChain), Equals, false)
 
 	// expired btc pause
-	k.SetMimir(ctx, "PauseLPBTC", 10)
+	k.SetMimirWithRef(ctx, constants.MimirTemplatePauseLP, common.BTCChain.String(), 10)
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsLPPaused(ctx, common.ETHChain), Equals, false)
 
 	// current btc pause
-	k.SetMimir(ctx, "PauseLPBTC", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplatePauseLP, common.BTCChain.String(), 1)
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsLPPaused(ctx, common.ETHChain), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "PauseLPBTC")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplatePauseLP, common.BTCChain))
 
 	// expired global pause
-	k.SetMimir(ctx, "PauseLP", 10)
+	k.SetMimir(ctx, constants.MimirKeyPauseLPGlobal, 10)
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsLPPaused(ctx, common.ETHChain), Equals, false)
 
 	// current global pause
-	k.SetMimir(ctx, "PauseLP", 1)
+	k.SetMimir(ctx, constants.MimirKeyPauseLPGlobal, 1)
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsLPPaused(ctx, common.ETHChain), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "PauseLP")
+	_ = k.DeleteMimir(ctx, constants.MimirKeyPauseLPGlobal)
 
 	// no pauses
 	c.Check(k.IsLPPaused(ctx, common.BTCChain), Equals, false)
