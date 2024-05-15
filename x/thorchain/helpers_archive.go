@@ -343,7 +343,7 @@ func atTVLCapV116(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 
 func DollarInRuneV1(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 	// check for mimir override
-	dollarInRune, err := mgr.Keeper().GetMimir(ctx, "DollarInRune")
+	dollarInRune, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyDollarInRune)
 	if err == nil && dollarInRune > 0 {
 		return cosmos.NewUint(uint64(dollarInRune))
 	}
@@ -2055,7 +2055,7 @@ func DollarInRune(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 
 func DollarInRuneV102(ctx cosmos.Context, mgr Manager) cosmos.Uint {
 	// check for mimir override
-	dollarInRune, err := mgr.Keeper().GetMimir(ctx, "DollarInRune")
+	dollarInRune, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyDollarInRune)
 	if err == nil && dollarInRune > 0 {
 		return cosmos.NewUint(uint64(dollarInRune))
 	}

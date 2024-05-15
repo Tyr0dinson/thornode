@@ -65,7 +65,7 @@ func (k KVStore) RunePerDollar(ctx cosmos.Context) cosmos.Uint {
 // DollarsPerRune gets in 1e8 terms the amount of USD that is equal to 1 RUNE (in other words, 1 RUNE's price in USD)
 func (k KVStore) DollarsPerRune(ctx cosmos.Context) cosmos.Uint {
 	// check for mimir override
-	dollarsPerRune, err := k.GetMimir(ctx, "DollarsPerRune")
+	dollarsPerRune, err := k.GetMimir(ctx, constants.MimirKeyDollarsPerRune)
 	if err == nil && dollarsPerRune > 0 {
 		return cosmos.NewUint(uint64(dollarsPerRune))
 	}
