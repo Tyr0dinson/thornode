@@ -123,7 +123,7 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	pool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	busd := NewPool()
 	busd.Asset, _ = common.NewAsset("BNB.BUSD-BD1")
 	busd.Status = PoolAvailable

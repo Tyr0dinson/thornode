@@ -128,7 +128,7 @@ func (s *HelperSuite) TestRefundBondDisableRequestToLeaveNode(c *C) {
 func (s *HelperSuite) TestDollarsPerRune(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 	pool := NewPool()
@@ -143,7 +143,7 @@ func (s *HelperSuite) TestDollarsPerRune(c *C) {
 	c.Assert(runeUSDPrice, Equals, float32(8.300317))
 
 	// Now try with a second pool, identical depths.
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1) // enable USDC pool as a TOR anchor
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1) // enable USDC pool as a TOR anchor
 	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	c.Assert(err, IsNil)
 	pool = NewPool()

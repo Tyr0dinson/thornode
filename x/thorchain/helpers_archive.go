@@ -2098,8 +2098,12 @@ func getAnchors(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) []
 			return assets
 		}
 		for _, pool := range pools {
-			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
+			mimirKey := fmt.Sprintf(constants.MimirTemplateTorAnchor, pool.Asset.String())
 			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
+			// Note, from GetPools synth pools this calls GetMimir for keys containing "/".
+			// This archived code should not be changed to .MimirString() (or exclude synth pools as anchors)
+			// as this would result in sync failure.
+
 			val, err := keeper.GetMimir(ctx, mimirKey)
 			if err != nil {
 				ctx.Logger().Error("unable to fetch pool for anchor", "mimir", mimirKey, "error", err)

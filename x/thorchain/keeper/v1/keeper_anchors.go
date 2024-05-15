@@ -27,8 +27,12 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 			return assets
 		}
 		for _, pool := range pools {
-			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
+			mimirKey := fmt.Sprintf(constants.MimirTemplateTorAnchor, pool.Asset.String())
 			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
+			// Note, from GetPools synth pools this calls GetMimir for keys containing "/".
+			// TODO: Changing this to .MimirString() (and perhaps excluding synth pools as anchors)
+			// requires versioning to prevent consensus failure.
+
 			var val int64
 			val, err = k.GetMimir(ctx, mimirKey)
 			if err != nil {

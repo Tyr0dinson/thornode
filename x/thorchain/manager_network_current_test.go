@@ -936,7 +936,7 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssets(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	maxAnchorSlip := fetchConfigInt64(ctx, mgr, constants.MaxAnchorSlip)
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
@@ -1023,7 +1023,7 @@ func (s *NetworkManagerVCURTestSuite) TestSpawnDerivedAssetsBasisPoints(c *C) {
 	vault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	busd, err := common.NewAsset("BNB.BUSD-BD1")
 	c.Assert(err, IsNil)
 
