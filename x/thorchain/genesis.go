@@ -582,7 +582,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		mimirs = append(mimirs, Mimir{
-			Key:   strings.ReplaceAll(string(mimirIter.Key()), "mimir//", ""),
+			Key:   trimKeyPrefix(mimirIter.Key()),
 			Value: value.GetValue(),
 		})
 	}
