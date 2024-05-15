@@ -174,16 +174,16 @@ func (s *KeeperHaltSuite) TestIsChainHalted(c *C) {
 	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltChain, common.BTCChain))
 
 	// expired btc solvency halt
-	k.SetMimir(ctx, "SolvencyHaltBTCChain", 10)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateSolvencyHaltChain, common.BTCChain.String(), 10)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, false)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
 	// current btc solvency halt
-	k.SetMimir(ctx, "SolvencyHaltBTCChain", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateSolvencyHaltChain, common.BTCChain.String(), 1)
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, true)
 	c.Check(k.IsChainHalted(ctx, common.ETHChain), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "SolvencyHaltBTCChain")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.BTCChain))
 
 	// no halts
 	c.Check(k.IsChainHalted(ctx, common.BTCChain), Equals, false)

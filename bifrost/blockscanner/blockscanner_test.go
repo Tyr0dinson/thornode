@@ -240,10 +240,10 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 
 func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap := map[string]int{
-		fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain): 0,
-		"SolvencyHaltBNBChain":                                         0,
-		constants.MimirKeyHaltChainGlobal:                              0,
-		"NodePauseChainGlobal":                                         0,
+		fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain):         0,
+		fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.BNBChain): 0,
+		constants.MimirKeyHaltChainGlobal:                                      0,
+		"NodePauseChainGlobal":                                                 0,
 	}
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
@@ -309,12 +309,12 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap[fmt.Sprintf(constants.MimirTemplateHaltChain, common.BNBChain)] = 0
 
 	// Setting SolvencyHalt<chain>Chain should pause
-	mimirMap["SolvencyHaltBNBChain"] = 2
+	mimirMap[fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.BNBChain)] = 2
 	// Wait for one block's time so as to replace the cache with an updated query.
 	time.Sleep(constants.ThorchainBlockTime)
 	isHalted = cbs.isChainPaused()
 	c.Assert(isHalted, Equals, true)
-	mimirMap["SolvencyHaltBNBChain"] = 0
+	mimirMap[fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.BNBChain)] = 0
 
 	// Setting HaltChainGlobal should pause
 	mimirMap[constants.MimirKeyHaltChainGlobal] = 2

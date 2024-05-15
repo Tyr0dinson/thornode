@@ -196,7 +196,7 @@ func (h SolvencyHandler) handleV123(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < ctx.BlockHeight() {
 		return &cosmos.Result{}, nil
 	}
-	haltChainKey := fmt.Sprintf(`SolvencyHalt%sChain`, voter.Chain)
+	haltChainKey := fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, voter.Chain)
 	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)
@@ -303,7 +303,7 @@ func (h SolvencyHandler) handleV110(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < ctx.BlockHeight() {
 		return &cosmos.Result{}, nil
 	}
-	haltChainKey := fmt.Sprintf(`SolvencyHalt%sChain`, voter.Chain)
+	haltChainKey := fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, voter.Chain)
 	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)
@@ -410,7 +410,7 @@ func (h SolvencyHandler) handleV87(ctx cosmos.Context, msg MsgSolvency) (*cosmos
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < ctx.BlockHeight() {
 		return &cosmos.Result{}, nil
 	}
-	haltChainKey := fmt.Sprintf(`SolvencyHalt%sChain`, voter.Chain)
+	haltChainKey := fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, voter.Chain)
 	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir", "error", err)

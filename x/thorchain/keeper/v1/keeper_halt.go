@@ -84,8 +84,7 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	solvencyHaltMimirKey := fmt.Sprintf("SolvencyHalt%sChain", chain)
-	haltChain, err = k.GetMimir(ctx, solvencyHaltMimirKey)
+	haltChain, err = k.GetMimirWithRef(ctx, constants.MimirTemplateSolvencyHaltChain, chain.String())
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Debug("chain is halt via solvency check", "chain", chain)
 		return true

@@ -92,10 +92,10 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 	result, err = handler.Run(ctx, msgSolvency1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	halt, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateSolvencyHaltChain, common.ETHChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, ctx.BlockHeight())
-	c.Assert(mgr.Keeper().DeleteMimir(ctx, "SolvencyHaltETHChain"), IsNil)
+	c.Assert(mgr.Keeper().DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, common.ETHChain)), IsNil)
 
 	// vault suppose to have 1024 ETH, however only 1000 left , but there are 20 ETH in the pending outbound queue
 	// chain should not stopped
@@ -130,7 +130,7 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 	result, err = handler.Run(ctx, msgSolvency2)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	halt, err = mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	halt, err = mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateSolvencyHaltChain, common.ETHChain.String())
 	c.Assert(err, IsNil)
 	c.Assert(halt, Equals, int64(-1))
 

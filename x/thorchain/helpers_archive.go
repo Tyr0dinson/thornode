@@ -1982,7 +1982,7 @@ func isChainHaltedV87(ctx cosmos.Context, mgr Manager, chain common.Chain) bool 
 		return true
 	}
 
-	solvencyHaltMimirKey := fmt.Sprintf("SolvencyHalt%sChain", chain)
+	solvencyHaltMimirKey := fmt.Sprintf(constants.MimirTemplateSolvencyHaltChain, chain)
 	haltChain, err = mgr.Keeper().GetMimir(ctx, solvencyHaltMimirKey)
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Info("chain is halt via solvency check", "chain", chain)

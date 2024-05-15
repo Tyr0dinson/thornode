@@ -55,7 +55,7 @@ func SolvencyCheckRunner(chain common.Chain,
 			}
 
 			// check whether the chain is halted via solvency check
-			solvencyHaltHeight, err := bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", chain))
+			solvencyHaltHeight, err := bridge.GetMimirWithRef(constants.MimirTemplateSolvencyHaltChain, chain.String())
 			if err != nil {
 				logger.Err(err).Msg("fail to get solvency halt height")
 				continue
