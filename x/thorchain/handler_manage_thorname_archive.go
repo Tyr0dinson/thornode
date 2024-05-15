@@ -137,7 +137,7 @@ func (h ManageTHORNameHandler) validateV112(ctx cosmos.Context, msg MsgManageTHO
 func (h ManageTHORNameHandler) handleV112(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
-	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORNames")
+	enable, _ := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyTHORNames)
 	if enable == 0 {
 		return nil, fmt.Errorf("THORNames are currently disabled")
 	}
@@ -206,7 +206,7 @@ func (h ManageTHORNameHandler) handleV112(ctx cosmos.Context, msg MsgManageTHORN
 func (h ManageTHORNameHandler) handleV1(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
-	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORNames")
+	enable, _ := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyTHORNames)
 	if enable == 0 {
 		return nil, fmt.Errorf("THORNames are currently disabled")
 	}
