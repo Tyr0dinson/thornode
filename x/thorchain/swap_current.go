@@ -490,14 +490,14 @@ func (s *SwapperVCUR) MinSlipBps(
 	ctx cosmos.Context,
 	k keeper.Keeper,
 	isSynth bool,
-	isTradeAccounts bool,
+	isTradeAccount bool,
 ) cosmos.Uint {
 	var ref string
 	switch {
 	case isSynth:
 		ref = "Synth"
-	case isTradeAccounts:
-		ref = "TradeAccounts"
+	case isTradeAccount:
+		ref = "TradeAccount"
 	default:
 		ref = "L1"
 	}
