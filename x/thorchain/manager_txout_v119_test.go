@@ -544,10 +544,10 @@ func (s TxOutStoreV119Suite) TestCalcTxOutHeight(c *C) {
 		mimir: make(map[string]int64),
 	}
 
-	keeper.mimir["MinTxOutVolumeThreshold"] = 25_00000000
-	keeper.mimir["TxOutDelayRate"] = 25_00000000
-	keeper.mimir["MaxTxOutOffset"] = 720
-	keeper.mimir["TxOutDelayMax"] = 17280
+	keeper.mimir[constants.MinTxOutVolumeThreshold.String()] = 25_00000000
+	keeper.mimir[constants.TxOutDelayRate.String()] = 25_00000000
+	keeper.mimir[constants.MaxTxOutOffset.String()] = 720
+	keeper.mimir[constants.TxOutDelayMax.String()] = 17280
 	// With the above values, a RUNE value of 18,000 would be delayed for the full MaxTxOutOffset.
 
 	addValue := func(h int64, v cosmos.Uint) {

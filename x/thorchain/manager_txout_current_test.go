@@ -387,10 +387,10 @@ func (s TxOutStoreVCURSuite) TestCalcTxOutHeight(c *C) {
 	pool.BalanceAsset = cosmos.NewUint(1402011488988)
 	c.Assert(keeper.SetPool(ctx, pool), IsNil)
 
-	keeper.SetMimir(ctx, "MinTxOutVolumeThreshold", 2500000000)
-	keeper.SetMimir(ctx, "TxOutDelayRate", 2500000000)
-	keeper.SetMimir(ctx, "MaxTxOutOffset", 720)
-	keeper.SetMimir(ctx, "TxOutDelayMax", 17280)
+	keeper.SetMimir(ctx, constants.MinTxOutVolumeThreshold.String(), 2500000000)
+	keeper.SetMimir(ctx, constants.TxOutDelayRate.String(), 2500000000)
+	keeper.SetMimir(ctx, constants.MaxTxOutOffset.String(), 720)
+	keeper.SetMimir(ctx, constants.TxOutDelayMax.String(), 17280)
 	// With the above values, a RUNE value of 18,000 would be delayed for the full MaxTxOutOffset.
 
 	version := GetCurrentVersion()

@@ -534,10 +534,10 @@ func (s TxOutStoreV97Suite) TestCalcTxOutHeight(c *C) {
 		mimir: make(map[string]int64),
 	}
 
-	keeper.mimir["MinTxOutVolumeThreshold"] = 25_00000000
-	keeper.mimir["TxOutDelayRate"] = 25_00000000
-	keeper.mimir["MaxTxOutOffset"] = 720
-	keeper.mimir["TxOutDelayMax"] = 17280
+	keeper.mimir[constants.MinTxOutVolumeThreshold.String()] = 25_00000000
+	keeper.mimir[constants.TxOutDelayRate.String()] = 25_00000000
+	keeper.mimir[constants.MaxTxOutOffset.String()] = 720
+	keeper.mimir[constants.TxOutDelayMax.String()] = 17280
 
 	addValue := func(h int64, v cosmos.Uint) {
 		if _, ok := keeper.value[h]; !ok {

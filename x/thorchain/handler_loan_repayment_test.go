@@ -51,13 +51,13 @@ func (s *HandlerLoanRepaymentSuite) TestLoanValidate(c *C) {
 	// unhappy path: loan paused
 	loan.DebtIssued = cosmos.NewUint(10 * common.One)
 	mgr.Keeper().SetLoan(ctx, loan)
-	mgr.Keeper().SetMimir(ctx, "PauseLoans", 1)
+	mgr.Keeper().SetMimir(ctx, constants.PauseLoans.String(), 1)
 	c.Check(handler.validate(ctx.WithBlockHeight(14400000), *msg), NotNil)
 }
 
 func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithTOR(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 10_000)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -114,7 +114,7 @@ func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithTOR(c *C) {
 
 func (s *HandlerLoanRepaymentSuite) TestLoanRepaymentHandleWithSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 10_000)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset

@@ -24,6 +24,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
@@ -133,7 +134,7 @@ func (KeeperTestSuit) TestMaxMint(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	max := int64(200000000_00000000)
-	k.SetMimir(ctx, "MaxRuneSupply", max)
+	k.SetMimir(ctx, constants.MaxRuneSupply.String(), max)
 	maxCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(uint64(max)))
 
 	// ship asgard rune to reserve

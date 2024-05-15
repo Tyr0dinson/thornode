@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/query"
@@ -253,7 +254,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	network, _ := keeper.GetNetwork(ctx)
 	network.BondRewardRune = cosmos.NewUint(common.One * 1000)
 	c.Assert(keeper.SetNetwork(ctx, network), IsNil)
-	keeper.SetMimir(ctx, "MinimumBondInRune", common.One*1000)
+	keeper.SetMimir(ctx, constants.MinimumBondInRune.String(), common.One*1000)
 
 	res, err = querier(ctx, path, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -632,7 +633,7 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	network, _ := s.k.GetNetwork(s.ctx)
 	network.BondRewardRune = cosmos.NewUint(common.One * 1000)
 	c.Assert(s.k.SetNetwork(s.ctx, network), IsNil)
-	s.k.SetMimir(s.ctx, "MinimumBondInRune", common.One*1000)
+	s.k.SetMimir(s.ctx, constants.MinimumBondInRune.String(), common.One*1000)
 
 	// Get first node
 	result, err = s.querier(s.ctx, []string{

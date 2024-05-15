@@ -424,7 +424,7 @@ func (s *SlashingV108Suite) TestSlashVault(c *C) {
 	c.Assert(err, IsNil)
 	nodeBondBeforeSlash := nodeBeforeSlash.Bond
 	node1BondBeforeSlash := node1.Bond
-	mgr.Keeper().SetMimir(ctx, "PauseOnSlashThreshold", 1)
+	mgr.Keeper().SetMimir(ctx, constants.PauseOnSlashThreshold.String(), 1)
 	err = slasher.SlashVault(ctx, vault1.PubKey, common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))), mgr)
 	c.Assert(err, IsNil)
 
@@ -587,7 +587,7 @@ func (s *SlashingV108Suite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Assert(err, IsNil)
 	nodeBondBeforeSlash := nodeBeforeSlash.Bond
 	node1BondBeforeSlash := node1.Bond
-	mgr.Keeper().SetMimir(ctx, "PauseOnSlashThreshold", 1)
+	mgr.Keeper().SetMimir(ctx, constants.PauseOnSlashThreshold.String(), 1)
 	err = slasher.SlashVault(ctx, vault1.PubKey, common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))), mgr)
 	c.Assert(err, IsNil)
 

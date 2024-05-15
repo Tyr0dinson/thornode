@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -192,7 +193,7 @@ func (s YggdrasilManagerV79Suite) TestFund(c *C) {
 		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	}
 	ymgr := newYggMgrV79(k)
-	ymgr.keeper.SetMimir(ctx, "PoolDepthForYggFundingMin", 100000_00000000)
+	ymgr.keeper.SetMimir(ctx, constants.PoolDepthForYggFundingMin.String(), 100000_00000000)
 	err := ymgr.Fund(ctx, mgr)
 	c.Assert(err, IsNil)
 	na1 := GetRandomValidatorNode(NodeActive)
@@ -230,7 +231,7 @@ func (s YggdrasilManagerV79Suite) TestNotAvailablePoolAssetWillNotFundYggdrasil(
 		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	}
 	ymgr := newYggMgrV79(k)
-	ymgr.keeper.SetMimir(ctx, "PoolDepthForYggFundingMin", 100000_00000000)
+	ymgr.keeper.SetMimir(ctx, constants.PoolDepthForYggFundingMin.String(), 100000_00000000)
 	err = ymgr.Fund(ctx, mgr)
 	c.Assert(err, IsNil)
 	na1 := GetRandomValidatorNode(NodeActive)
@@ -277,7 +278,7 @@ func (s YggdrasilManagerV79Suite) TestChainTradingHaltWillNotFundYggdrasil(c *C)
 		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
 	}
 	ymgr := newYggMgrV79(k)
-	ymgr.keeper.SetMimir(ctx, "PoolDepthForYggFundingMin", 100000_00000000)
+	ymgr.keeper.SetMimir(ctx, constants.PoolDepthForYggFundingMin.String(), 100000_00000000)
 
 	na1 := GetRandomValidatorNode(NodeActive)
 	na1.Bond = cosmos.NewUint(1000000 * common.One)

@@ -51,7 +51,7 @@ func (s *HandlerLoanSuite) TestLoanValidate(c *C) {
 	c.Assert(mgr.Keeper().BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneAsset(), bal)), IsNil)
 	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
-	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
+	mgr.Keeper().SetMimir(ctx, constants.MaxRuneSupply.String(), int64(max.Uint64()))
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
 	owner := GetRandomBNBAddress()
@@ -98,14 +98,14 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
 	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 10_000)
 
 	// reduce the supply of rune
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ModuleName)
 	c.Assert(mgr.Keeper().BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneAsset(), bal)), IsNil)
 	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
-	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
+	mgr.Keeper().SetMimir(ctx, constants.MaxRuneSupply.String(), int64(max.Uint64()))
 
 	vault := GetRandomVault()
 	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000000000))))
@@ -167,9 +167,9 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	busdPool.BalanceRune = cosmos.NewUint(314031308608965)
 	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
-	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
-	mgr.Keeper().SetMimir(ctx, "EnableDerivedAssets", 1)    // enable derived assets
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1)               // enable BUSD pool as a TOR anchor
+	mgr.Keeper().SetMimir(ctx, constants.EnableDerivedAssets.String(), 1) // enable derived assets
+	mgr.Keeper().SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 10_000)
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
 
@@ -178,7 +178,7 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	c.Assert(mgr.Keeper().BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneAsset(), bal)), IsNil)
 	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
-	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
+	mgr.Keeper().SetMimir(ctx, constants.MaxRuneSupply.String(), int64(max.Uint64()))
 
 	vault := GetRandomVault()
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
@@ -237,7 +237,7 @@ func (s *HandlerLoanSuite) TestLoanSwapFails(c *C) {
 	busdPool.Decimals = 8
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
 	mgr.Keeper().SetMimir(ctx, "TorAnchor-BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
-	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 0)
+	mgr.Keeper().SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 0)
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
 	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
 
