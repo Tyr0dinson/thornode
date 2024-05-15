@@ -24,7 +24,7 @@ func NewAffiliateFeeBasisPointsMax(refs ...string) Mimir {
 		tags:         []string{"economic", "affiliate fee"},
 		description:  "Maximum fee to allow affiliates to set",
 		legacyMimirKey: func(_ string) string {
-			return "MaxAffiliateFeeBasisPoints"
+			return constants.MaxAffiliateFeeBasisPoints.String()
 		},
 	}
 }
@@ -40,7 +40,7 @@ func NewBondPause(refs ...string) Mimir {
 		tags:         []string{"operational", "bond"},
 		description:  "Pauses bonding (unbonding is still allowed)",
 		legacyMimirKey: func(_ string) string {
-			return "PauseBond"
+			return constants.PauseBond.String()
 		},
 	}
 }
@@ -88,7 +88,7 @@ func NewSwapperCloutLimit(refs ...string) Mimir {
 		tags:         []string{"economic", "clout"},
 		description:  "Maximum clout applicable to an outbound txn",
 		legacyMimirKey: func(_ string) string {
-			return "CloutLimit"
+			return constants.CloutLimit.String()
 		},
 	}
 }
@@ -104,7 +104,7 @@ func NewSwapperCloutReset(refs ...string) Mimir {
 		tags:         []string{"economic", "clout"},
 		description:  "Amount of blocks before pending clout spent is reset",
 		legacyMimirKey: func(_ string) string {
-			return "CloutReset"
+			return constants.CloutReset.String()
 		},
 	}
 }
@@ -135,7 +135,7 @@ func NewTradeAccountsEnabled(refs ...string) Mimir {
 		tags:        []string{"operational", "trade"},
 		description: "Enable or disable trade accounts",
 		legacyMimirKey: func(_ string) string {
-			return "TradeAccountsEnabled"
+			return constants.TradeAccountsEnabled.String()
 		},
 	}
 }
