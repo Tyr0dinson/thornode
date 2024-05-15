@@ -1,0 +1,40 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# quote pair rune -> btc
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+asserts:
+  - .available == true
+  - .recommended_gas_rate == "11500"
+  - .recommended_min_amount_in == "56000300"
+  - .exchange_rate == "10000000000"
+---
+########################################################################################
+# quote pair btc -> rune
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+asserts:
+  - .available == true
+  - .recommended_gas_rate == "11500"
+  - .recommended_min_amount_in == "56000300"
+  - .exchange_rate == "10000000000"
+---

@@ -452,32 +452,41 @@ func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, 
 // Swap
 // -------------------------------------------------------------------------------------
 
-// calculateExchangeRate returns the flat exchange rate between two assets
+// calculateExchangeRate returns the flat exchange rate between two assets in 8 decimal
+// places
 func calculateExchangeRate(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset) (sdk.Uint, error) {
-	// get the fromPool for the from asset
-	fromPool, err := mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
-	if err != nil {
-		return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+	amt := cosmos.NewUint(common.One)
+	if !fromAsset.IsNativeRune() {
+		// get the fromPool for the from asset
+		fromPool, err := mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+		if err != nil {
+			return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+		}
+
+		// ensure pool exists
+		if fromPool.IsEmpty() {
+			return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+		}
+
+		amt = fromPool.AssetValueInRune(amt)
 	}
 
-	// ensure pool exists
-	if fromPool.IsEmpty() {
-		return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+	if !toAsset.IsNativeRune() {
+		// get the toPool for the to asset
+		toPool, err := mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
+		if err != nil {
+			return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+		}
+
+		// ensure pool exists
+		if toPool.IsEmpty() {
+			return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+		}
+
+		amt = toPool.RuneValueInAsset(amt)
 	}
 
-	// get the toPool for the to asset
-	toPool, err := mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
-	if err != nil {
-		return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
-	}
-
-	// ensure pool exists
-	if toPool.IsEmpty() {
-		return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
-	}
-
-	// calculate the exchange rate between assets
-	return fromPool.AssetValueInRune(cosmos.OneUint()).Quo(toPool.AssetValueInRune(cosmos.OneUint())), nil
+	return amt, nil
 }
 
 // calculateMinSwapAmount returns the recommended minimum swap amount

@@ -854,3 +854,58 @@ func (s *QuerierSuite) TestPeerIDFromPubKey(c *C) {
 	expectedErrorString := "fail to parse account pub key(nonsense): decoding bech32 failed: invalid separator index -1"
 	c.Assert(getPeerIDFromPubKey("nonsense"), Equals, expectedErrorString)
 }
+
+func (s *QuerierSuite) TestCalculateExchangeRate(c *C) {
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.LPUnits = cosmos.NewUint(100)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Status = PoolAvailable
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.LPUnits = cosmos.NewUint(100)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(20 * common.One)
+	ethPool.Status = PoolAvailable
+
+	err := s.k.SetPool(s.ctx, btcPool)
+	c.Assert(err, IsNil)
+
+	err = s.k.SetPool(s.ctx, ethPool)
+	c.Assert(err, IsNil)
+
+	// BTC -> ETH (2x)
+	rate, err := calculateExchangeRate(s.ctx, s.mgr, common.BTCAsset, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(2*common.One).Uint64())
+
+	// ETH -> BTC (0.5x)
+	rate, err = calculateExchangeRate(s.ctx, s.mgr, common.ETHAsset, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(0.5*common.One).Uint64())
+
+	synthEth, err := common.NewAsset("ETH/ETH")
+	c.Assert(err, IsNil)
+
+	// BTC -> sETH (2x)
+	rate, err = calculateExchangeRate(s.ctx, s.mgr, common.BTCAsset, synthEth)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(2*common.One).Uint64())
+
+	// sETH -> BTC (0.5x)
+	rate, err = calculateExchangeRate(s.ctx, s.mgr, synthEth, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(0.5*common.One).Uint64())
+
+	// BTC -> RUNE (10x)
+	rate, err = calculateExchangeRate(s.ctx, s.mgr, common.BTCAsset, common.RuneNative)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(10*common.One).Uint64())
+
+	// RUNE -> BTC (0.1x)
+	rate, err = calculateExchangeRate(s.ctx, s.mgr, common.RuneNative, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(rate.Uint64(), Equals, cosmos.NewUint(0.1*common.One).Uint64())
+}
