@@ -52,8 +52,8 @@ func (s *HandlerLoanSuite) TestLoanValidate(c *C) {
 	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
 	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
 	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BNB", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BTC", 1)
 	owner := GetRandomBNBAddress()
 
 	handler := NewLoanOpenHandler(mgr)
@@ -74,8 +74,8 @@ func (s *HandlerLoanSuite) TestLoanValidate(c *C) {
 func (s *HandlerLoanSuite) TestLoanOpenHandleToBTC(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(128)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BNB", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BTC", 1)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -170,8 +170,8 @@ func (s *HandlerLoanSuite) TestLoanOpenHandleToTOR(c *C) {
 	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	mgr.Keeper().SetMimir(ctx, "EnableDerivedAssets", 1)                                   // enable derived assets
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 10_000)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BNB", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BTC", 1)
 
 	// reduce the supply of rune
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ModuleName)
@@ -238,8 +238,8 @@ func (s *HandlerLoanSuite) TestLoanSwapFails(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, busdPool), IsNil)
 	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateTorAnchor, "BNB-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
 	mgr.Keeper().SetMimir(ctx, "DerivedDepthBasisPts", 0)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-BTC", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BNB", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplateLending, "THOR-BTC", 1)
 
 	vault := GetRandomVault()
 	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000000000))))

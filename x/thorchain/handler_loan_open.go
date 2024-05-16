@@ -116,8 +116,7 @@ func (h LoanOpenHandler) validateV128(ctx cosmos.Context, msg MsgLoanOpen) error
 	}
 
 	// The lending key for the ETH.ETH pool would be LENDING-THOR-ETH .
-	key := "LENDING-" + msg.CollateralAsset.GetDerivedAsset().MimirString()
-	val, err := h.mgr.Keeper().GetMimir(ctx, key)
+	val, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateLending, msg.CollateralAsset.GetDerivedAsset().MimirString())
 	if err != nil {
 		ctx.Logger().Error("fail to fetch LENDING key", "pool", msg.CollateralAsset.GetDerivedAsset().String(), "error", err)
 		return err
@@ -582,8 +581,7 @@ func (h LoanOpenHandler) getTotalLiquidityRUNELoanPoolsV108(ctx cosmos.Context) 
 			continue
 		}
 
-		key := "LENDING-" + p.Asset.GetDerivedAsset().MimirString()
-		val, err := h.mgr.Keeper().GetMimir(ctx, key)
+		val, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateLending, p.Asset.GetDerivedAsset().MimirString())
 		if err != nil {
 			continue
 		}
