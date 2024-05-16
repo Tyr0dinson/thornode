@@ -330,8 +330,7 @@ func (h WithdrawLiquidityHandler) swapV129(ctx cosmos.Context, msg MsgWithdrawLi
 	}
 
 	// if the asset is in ragnarok, disable streaming withdraw
-	key := "RAGNAROK-" + targetAsset.MimirString()
-	ragnarok, err := h.mgr.Keeper().GetMimir(ctx, key)
+	ragnarok, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateRagnarok, targetAsset.MimirString())
 	if err == nil && ragnarok > 0 {
 		ssInterval = 0
 	}

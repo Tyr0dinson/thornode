@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
@@ -22,7 +23,7 @@ type RagnarokPoolActor struct {
 
 func NewRagnarokPoolActor(asset common.Asset) *Actor {
 	a := &RagnarokPoolActor{
-		Actor: *NewActor(fmt.Sprintf("Ragnarok-%s", asset)),
+		Actor: *NewActor(fmt.Sprintf(constants.MimirTemplateRagnarok, asset)),
 		asset: asset,
 	}
 	a.Timeout = 5 * time.Minute
@@ -53,7 +54,7 @@ func (a *RagnarokPoolActor) sendMimir(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
-	mimir := types.NewMsgMimir(fmt.Sprintf("RAGNAROK-%s", a.asset.MimirString()), 1, accAddr)
+	mimir := types.NewMsgMimir(fmt.Sprintf(constants.MimirTemplateRagnarok, a.asset.MimirString()), 1, accAddr)
 	txid, err := config.AdminUser.Thorchain.Broadcast(mimir)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast mimir")

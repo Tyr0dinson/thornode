@@ -151,8 +151,7 @@ func (h SwapHandler) validateV129(ctx cosmos.Context, msg MsgSwap) error {
 
 		// if either source or target in ragnarok, streaming is not allowed
 		for _, asset := range []common.Asset{sourceCoin.Asset, target} {
-			key := "RAGNAROK-" + asset.MimirString()
-			ragnarok, err := h.mgr.Keeper().GetMimir(ctx, key)
+			ragnarok, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateRagnarok, asset.MimirString())
 			if err == nil && ragnarok > 0 {
 				return fmt.Errorf("streaming swaps disabled on ragnarok asset %s", asset)
 			}

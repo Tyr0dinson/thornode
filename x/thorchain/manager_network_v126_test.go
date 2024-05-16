@@ -432,7 +432,7 @@ func (s *NetworkManagerV126TestSuite) TestRagnarokPool(c *C) {
 	c.Assert(err, IsNil)
 
 	// happy path
-	networkMgr.k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	networkMgr.k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, common.BTCAsset.MimirString(), 1)
 	// first round
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
@@ -464,7 +464,7 @@ func (s *NetworkManagerV126TestSuite) TestRagnarokPool(c *C) {
 	busdPool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, busdPool), IsNil)
 
-	networkMgr.k.SetMimir(ctx, "RAGNAROK-BNB-BNB", 1)
+	networkMgr.k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, common.BNBAsset.MimirString(), 1)
 	err = networkMgr.checkPoolRagnarok(ctx, mgr)
 	c.Assert(err, IsNil)
 	tempPool, err = k.GetPool(ctx, common.BNBAsset)

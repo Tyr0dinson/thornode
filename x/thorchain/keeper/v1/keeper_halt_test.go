@@ -27,7 +27,7 @@ func (s *KeeperHaltSuite) TestIsTradingHalt(c *C) {
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
 
 	// eth ragnarok
-	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, common.ETHAsset.MimirString(), 1)
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, true) // target asset
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, true)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
@@ -39,15 +39,15 @@ func (s *KeeperHaltSuite) TestIsTradingHalt(c *C) {
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
 
 	swapMsg.Tx.Coins[0].Asset = common.BTCAsset
-	_ = k.DeleteMimir(ctx, "RAGNAROK-ETH-ETH")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateRagnarok, common.ETHAsset.MimirString()))
 
 	// btc ragnarok
-	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, common.BTCAsset.MimirString(), 1)
 	c.Check(k.IsTradingHalt(ctx, swapMsg), Equals, true) // source asset
 	c.Check(k.IsTradingHalt(ctx, addMsg), Equals, false)
 	c.Check(k.IsTradingHalt(ctx, withdrawMsg), Equals, false)
 
-	_ = k.DeleteMimir(ctx, "RAGNAROK-BTC-BTC")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateRagnarok, common.BTCAsset.MimirString()))
 
 	// btc chain trading halt
 	k.SetMimirWithRef(ctx, constants.MimirTemplateHaltTrading, common.BTCChain.String(), 1)

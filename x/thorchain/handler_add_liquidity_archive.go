@@ -34,7 +34,7 @@ func (h AddLiquidityHandler) validateV128(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -191,7 +191,7 @@ func (h AddLiquidityHandler) validateV119(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -348,7 +348,7 @@ func (h AddLiquidityHandler) validateV117(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -487,7 +487,7 @@ func (h AddLiquidityHandler) validateV116(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -631,7 +631,7 @@ func (h AddLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -775,7 +775,7 @@ func (h AddLiquidityHandler) validateV110(ctx cosmos.Context, msg MsgAddLiquidit
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)
@@ -3248,7 +3248,7 @@ func (h AddLiquidityHandler) validateV99(ctx cosmos.Context, msg MsgAddLiquidity
 	}
 
 	// The Ragnarok key for the TERRA.LUNA pool would be RAGNAROK-TERRA-LUNA .
-	k := "RAGNAROK-" + msg.Asset.MimirString()
+	k := fmt.Sprintf(constants.MimirTemplateRagnarok, msg.Asset.MimirString())
 	v, err := h.mgr.Keeper().GetMimir(ctx, k)
 	if err != nil {
 		ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)

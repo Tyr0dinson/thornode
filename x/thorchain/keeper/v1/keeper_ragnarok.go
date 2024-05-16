@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 )
 
@@ -121,8 +122,7 @@ func (k KVStore) IsRagnarok(ctx cosmos.Context, assets []common.Asset) bool {
 
 	// check if any of the assets are in ragnarok
 	for i := range assets {
-		key := "RAGNAROK-" + assets[i].MimirString()
-		v, err := k.GetMimir(ctx, key)
+		v, err := k.GetMimirWithRef(ctx, constants.MimirTemplateRagnarok, assets[i].MimirString())
 		if err == nil && v > 0 {
 			return true
 		}

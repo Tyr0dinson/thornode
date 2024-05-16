@@ -1,9 +1,12 @@
 package keeperv1
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/constants"
 )
 
 type KeeperRagnarokSuite struct{}
@@ -55,20 +58,20 @@ func (s *KeeperRagnarokSuite) TestIsRagnarok(c *C) {
 	c.Check(k.IsRagnarok(ctx, []common.Asset{tokenAsset}), Equals, false)
 
 	// non-gas ragnarok
-	k.SetMimir(ctx, "RAGNAROK-ETH-TOKEN", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, "ETH-TOKEN", 1)
 	c.Check(k.IsRagnarok(ctx, nil), Equals, false)
 	c.Check(k.IsRagnarok(ctx, []common.Asset{gasAsset}), Equals, false)
 	c.Check(k.IsRagnarok(ctx, []common.Asset{tokenAsset}), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "RAGNAROK-ETH-TOKEN")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateRagnarok, "ETH-TOKEN"))
 
 	// gas ragnarok
-	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
+	k.SetMimirWithRef(ctx, constants.MimirTemplateRagnarok, common.ETHAsset.MimirString(), 1)
 	c.Check(k.IsRagnarok(ctx, nil), Equals, false)
 	c.Check(k.IsRagnarok(ctx, []common.Asset{gasAsset}), Equals, true)
 	c.Check(k.IsRagnarok(ctx, []common.Asset{tokenAsset}), Equals, true)
 
-	_ = k.DeleteMimir(ctx, "RAGNAROK-ETH-ETH")
+	_ = k.DeleteMimir(ctx, fmt.Sprintf(constants.MimirTemplateRagnarok, common.ETHAsset.MimirString()))
 
 	// no ragnarok
 	c.Check(k.IsRagnarok(ctx, nil), Equals, false)

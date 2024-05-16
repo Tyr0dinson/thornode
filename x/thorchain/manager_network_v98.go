@@ -1329,7 +1329,7 @@ func (vm *NetworkMgrV98) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) erro
 
 	for _, pool := range pools {
 		// The Ragnarok key for the TERRA.UST pool would be RAGNAROK-TERRA-UST .
-		k := "RAGNAROK-" + pool.Asset.MimirString()
+		k := fmt.Sprintf(constants.MimirTemplateRagnarok, pool.Asset.MimirString())
 		v, err := vm.k.GetMimir(ctx, k)
 		if err != nil {
 			ctx.Logger().Error("fail to get mimir value", "mimir", k, "error", err)

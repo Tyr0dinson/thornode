@@ -561,8 +561,7 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 
 func isSynthMintPausedV128(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	// check if the pool is in ragnarok
-	k := "RAGNAROK-" + targetAsset.MimirString()
-	v, err := mgr.Keeper().GetMimir(ctx, k)
+	v, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateRagnarok, targetAsset.MimirString())
 	if err != nil {
 		return err
 	}
