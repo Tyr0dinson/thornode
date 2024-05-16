@@ -20,9 +20,11 @@ params:
   to_asset: BTC.BTC
 asserts:
   - .available == true
-  - .recommended_gas_rate == "11500"
+  - .dust_threshold == "0"
+  - .exchange_rate == "99999"
+  - .notes == "Broadcast a MsgDeposit to the THORChain network with the appropriate memo. Do not use multi-in, multi-out transactions."
+  - .recommended_gas_rate == "2000000"
   - .recommended_min_amount_in == "56000300"
-  - .exchange_rate == "10000000000"
 ---
 ########################################################################################
 # quote pair btc -> rune
@@ -30,11 +32,90 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/quote/pair
 params:
-  from_asset: THOR.RUNE
+  from_asset: BTC.BTC
+  to_asset: THOR.RUNE
+asserts:
+  - .available == true
+  - .dust_threshold == "10000"
+  - .exchange_rate == "100000532724"
+  - .notes == "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats (P2WSH with Bech32 address format preferred)."
+  - .recommended_gas_rate == "10"
+  - .recommended_min_amount_in == "56000"
+---
+########################################################################################
+# quote pair btc -> eth
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+asserts:
+  - .available == true
+  - .dust_threshold == "10000"
+  - .exchange_rate == "1000000000"
+  - .notes == "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats (P2WSH with Bech32 address format preferred)."
+  - .recommended_gas_rate == "10"
+  - .recommended_min_amount_in == "512000"
+---
+########################################################################################
+# quote pair eth -> btc
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: ETH.ETH
   to_asset: BTC.BTC
 asserts:
   - .available == true
-  - .recommended_gas_rate == "11500"
-  - .recommended_min_amount_in == "56000300"
-  - .exchange_rate == "10000000000"
+  - .dust_threshold == "0"
+  - .exchange_rate == "10000000"
+  - .recommended_gas_rate == "12"
+  - .recommended_min_amount_in == "5120000"
+---
+########################################################################################
+# btc paused
+########################################################################################
+type: tx-mimir
+key: HaltBTCTrading
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: ETH.ETH
+  to_asset: BTC.BTC
+asserts:
+- .error|test("trading pair not available")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+asserts:
+- .error|test("trading pair not available")
+---
+########################################################################################
+# malformed/non-existent asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.TKN
+asserts:
+- .error|test("trading pair not available")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/pair
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH
+asserts:
+- .error|test("trading pair not available")
 ---

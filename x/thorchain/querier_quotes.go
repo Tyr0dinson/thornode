@@ -581,8 +581,8 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 	toAsset = fuzzyAssetMatch(ctx, mgr.Keeper(), toAsset)
 
-	isSrcChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, fromAsset.GetChain())
-	isDstChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, toAsset.GetChain())
+	isSrcChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, fromAsset.GetLayer1Asset().Chain)
+	isDstChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, toAsset.GetLayer1Asset().Chain)
 	isGlobalTradingPaused := mgr.Keeper().IsGlobalTradingHalted(ctx)
 
 	srcPoolAsset := fromAsset
@@ -603,8 +603,8 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		return quoteErrorResponse(fmt.Errorf("failed to get destination pool: %w", err))
 	}
 
-	srcAssetAvailable := !srcPool.IsEmpty() && srcPool.Status == PoolAvailable
-	dstAssetAvailable := !dstPool.IsEmpty() && dstPool.Status == PoolAvailable
+	srcAssetAvailable := srcPoolAsset.IsNativeRune() || (!srcPool.IsEmpty() && srcPool.Status == PoolAvailable)
+	dstAssetAvailable := dstPoolAsset.IsNativeRune() || (!dstPool.IsEmpty() && dstPool.Status == PoolAvailable)
 
 	isAvailable := !isSrcChainTradingPaused && !isDstChainTradingPaused && !isGlobalTradingPaused && srcAssetAvailable && dstAssetAvailable
 
@@ -613,7 +613,7 @@ func queryQuotePair(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	if !isAvailable {
-		return json.MarshalIndent(res, "", "  ")
+		return quoteErrorResponse(fmt.Errorf("trading pair not available: %s/%s", fromAsset, toAsset))
 	}
 
 	// parse affiliate bps
