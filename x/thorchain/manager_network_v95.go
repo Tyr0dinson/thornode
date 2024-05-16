@@ -336,7 +336,7 @@ func (vm *NetworkMgrV95) POLCycle(ctx cosmos.Context, mgr Manager) error {
 
 	pool := pools[int(ctx.BlockHeight()%int64(len(pools)))]
 
-	val, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("POL-%s", pool.Asset))
+	val, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePOL, pool.Asset.String())
 	if err != nil {
 		ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 		return nil
@@ -402,7 +402,7 @@ func (mv *NetworkMgrV95) fetchPOLPools(ctx cosmos.Context, mgr Manager) Pools {
 			continue
 		}
 
-		val, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf("POL-%s", pool.Asset))
+		val, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplatePOL, pool.Asset.String())
 		if err != nil {
 			ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			continue

@@ -740,8 +740,8 @@ func (*NetworkManagerV128TestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(err, ErrorMatches, "no POL pools")
 
 	// cycle should silently succeed when there is a pool enabled
-	mgr.Keeper().SetMimir(ctx, "POL-BNB-BNB", 1)
-	mgr.Keeper().SetMimir(ctx, "POL-BTC-BTC", 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplatePOL, common.BNBAsset.MimirString(), 1)
+	mgr.Keeper().SetMimirWithRef(ctx, constants.MimirTemplatePOL, common.BTCAsset.MimirString(), 1)
 	err = net.POLCycle(ctx, mgr)
 	c.Assert(err, IsNil)
 

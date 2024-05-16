@@ -901,7 +901,7 @@ func (mv *NetworkMgrV129) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools,
 		}
 
 		// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
-		key := "POL-" + pool.Asset.MimirString()
+		key := fmt.Sprintf(constants.MimirTemplatePOL, pool.Asset.MimirString())
 		val, err := mgr.Keeper().GetMimir(ctx, key)
 		if err != nil {
 			ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)

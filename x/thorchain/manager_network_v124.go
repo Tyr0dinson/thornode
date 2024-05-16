@@ -767,7 +767,7 @@ func (vm *NetworkMgrV124) POLCycle(ctx cosmos.Context, mgr Manager) error {
 	pool := pools[int(ctx.BlockHeight()%int64(len(pools)))]
 
 	// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
-	key := "POL-" + pool.Asset.MimirString()
+	key := fmt.Sprintf(constants.MimirTemplatePOL, pool.Asset.MimirString())
 	val, err := mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
 		ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
@@ -835,7 +835,7 @@ func (mv *NetworkMgrV124) fetchPOLPools(ctx cosmos.Context, mgr Manager) Pools {
 		}
 
 		// The POL key for the ETH.ETH pool would be POL-ETH-ETH .
-		key := "POL-" + pool.Asset.MimirString()
+		key := fmt.Sprintf(constants.MimirTemplatePOL, pool.Asset.MimirString())
 		val, err := mgr.Keeper().GetMimir(ctx, key)
 		if err != nil {
 			ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
