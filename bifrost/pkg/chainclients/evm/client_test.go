@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
+	"gitlab.com/thorchain/thornode/constants"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -101,7 +102,7 @@ func (s *EVMSuite) SetUpTest(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/lastblock/root.json")
 		case thorclient.NodeAccountEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
-		case "/thorchain/mimir/key/MaxUTXOsToSpend":
+		case "/thorchain/mimir/key/" + constants.MimirKeyMaxUTXOsToSpend:
 			_, err := rw.Write([]byte(`-1`))
 			c.Assert(err, IsNil)
 		default:

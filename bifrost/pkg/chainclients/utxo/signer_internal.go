@@ -26,6 +26,7 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/constants"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -35,8 +36,7 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (c *Client) getMaximumUtxosToSpend() int64 {
-	const mimirMaxUTXOsToSpend = `MaxUTXOsToSpend`
-	utxosToSpend, err := c.bridge.GetMimir(mimirMaxUTXOsToSpend)
+	utxosToSpend, err := c.bridge.GetMimir(constants.MimirKeyMaxUTXOsToSpend)
 	if err != nil {
 		c.log.Err(err).Msg("fail to get MaxUTXOsToSpend")
 	}

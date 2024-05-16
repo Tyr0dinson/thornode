@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
+	"gitlab.com/thorchain/thornode/constants"
 	ttypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -178,7 +179,7 @@ func (s *LitecoinSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
-		} else if req.RequestURI == "/thorchain/mimir/key/MaxUTXOsToSpend" {
+		} else if req.RequestURI == "/thorchain/mimir/key/"+constants.MimirKeyMaxUTXOsToSpend {
 			_, err := rw.Write([]byte(`-1`))
 			c.Assert(err, IsNil)
 		} else if req.RequestURI == "/thorchain/vaults/pubkeys" {
