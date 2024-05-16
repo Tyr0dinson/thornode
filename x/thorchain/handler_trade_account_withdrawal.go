@@ -67,7 +67,7 @@ func (h TradeAccountWithdrawalHandler) handle(ctx cosmos.Context, msg MsgTradeAc
 
 // handle process MsgTradeAccountWithdrawal
 func (h TradeAccountWithdrawalHandler) handleV1(ctx cosmos.Context, msg MsgTradeAccountWithdrawal) error {
-	withdraw, err := h.mgr.TradeAccountManager().Withdrawal(ctx, msg.Asset, msg.Amount, msg.Signer, msg.AssetAddress, msg.Tx.ID, h.mgr.EventMgr())
+	withdraw, err := h.mgr.TradeAccountManager().Withdrawal(ctx, msg.Asset, msg.Amount, msg.Signer, msg.AssetAddress, msg.Tx.ID)
 	if err != nil {
 		return err
 	}

@@ -8,12 +8,16 @@ import (
 
 // TradeMgrVCUR is VCUR implementation of slasher
 type TradeMgrVCUR struct {
-	keeper keeper.Keeper
+	keeper   keeper.Keeper
+	eventMgr EventManager
 }
 
 // newTradeMgrVCUR create a new instance of Slasher
-func newTradeMgrVCUR(keeper keeper.Keeper) *TradeMgrVCUR {
-	return &TradeMgrVCUR{keeper: keeper}
+func newTradeMgrVCUR(keeper keeper.Keeper, eventMgr EventManager) *TradeMgrVCUR {
+	return &TradeMgrVCUR{
+		keeper:   keeper,
+		eventMgr: eventMgr,
+	}
 }
 
 func (s *TradeMgrVCUR) EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error {
@@ -37,7 +41,7 @@ func (s *TradeMgrVCUR) BalanceOf(ctx cosmos.Context, asset common.Asset, addr co
 	return common.GetSafeShare(tr.Units, tu.Units, tu.Depth)
 }
 
-func (s *TradeMgrVCUR) Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID, eventMgr EventManager) (cosmos.Uint, error) {
+func (s *TradeMgrVCUR) Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID) (cosmos.Uint, error) {
 	asset = asset.GetTradeAsset()
 	tu, err := s.keeper.GetTradeUnit(ctx, asset)
 	if err != nil {
@@ -59,7 +63,7 @@ func (s *TradeMgrVCUR) Deposit(ctx cosmos.Context, asset common.Asset, amount co
 	s.keeper.SetTradeAccount(ctx, tr)
 
 	depositEvent := NewEventTradeAccountDeposit(amount, asset, assetAddr, common.Address(owner.String()), txID)
-	if err := eventMgr.EmitEvent(ctx, depositEvent); err != nil {
+	if err := s.eventMgr.EmitEvent(ctx, depositEvent); err != nil {
 		ctx.Logger().Error("fail to emit trade account deposit event", "error", err)
 	}
 
@@ -76,7 +80,7 @@ func (s *TradeMgrVCUR) calcDepositUnits(oldUnits, depth, add cosmos.Uint) cosmos
 	return common.GetUncappedShare(add, depth, oldUnits)
 }
 
-func (s *TradeMgrVCUR) Withdrawal(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID, eventMgr EventManager) (cosmos.Uint, error) {
+func (s *TradeMgrVCUR) Withdrawal(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID) (cosmos.Uint, error) {
 	asset = asset.GetTradeAsset()
 	tu, err := s.keeper.GetTradeUnit(ctx, asset)
 	if err != nil {
@@ -109,7 +113,7 @@ func (s *TradeMgrVCUR) Withdrawal(ctx cosmos.Context, asset common.Asset, amount
 	s.keeper.SetTradeAccount(ctx, tr)
 
 	withdrawEvent := NewEventTradeAccountWithdraw(tokensToClaim, asset, assetAddr, common.Address(owner.String()), txID)
-	if err := eventMgr.EmitEvent(ctx, withdrawEvent); err != nil {
+	if err := s.eventMgr.EmitEvent(ctx, withdrawEvent); err != nil {
 		ctx.Logger().Error("fail to emit trade account withdraw event", "error", err)
 	}
 
