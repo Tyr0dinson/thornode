@@ -156,10 +156,10 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	}
 
 	// Do checks for whether to act on this consensus or not.
-	const StopSolvencyCheckKey = `StopSolvencyCheck`
-	stopSolvencyCheck, err := h.mgr.Keeper().GetMimir(ctx, StopSolvencyCheckKey)
+	key := constants.MimirKeyStopSolvencyCheckGlobal
+	stopSolvencyCheck, err := h.mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
-		ctx.Logger().Error("fail to get mimir", "key", StopSolvencyCheckKey, "error", err)
+		ctx.Logger().Error("fail to get mimir", "key", key, "error", err)
 	}
 	if stopSolvencyCheck > 0 && stopSolvencyCheck < ctx.BlockHeight() {
 		return &cosmos.Result{}, nil
@@ -167,9 +167,10 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	// stop solvency checker per chain
 	// this allows the network to stop solvency checker for ETH chain for example , while other chains like BNB/BTC chains
 	// their solvency checker are still active
-	stopSolvencyCheckChain, err := h.mgr.Keeper().GetMimir(ctx, fmt.Sprintf(StopSolvencyCheckKey+voter.Chain.String()))
+	key = fmt.Sprintf(constants.MimirTemplateStopSolvencyCheck, voter.Chain)
+	stopSolvencyCheckChain, err := h.mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
-		ctx.Logger().Error("fail to get mimir", "key", StopSolvencyCheckKey+voter.Chain.String(), "error", err)
+		ctx.Logger().Error("fail to get mimir", "key", key, "error", err)
 	}
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < ctx.BlockHeight() {
 		return &cosmos.Result{}, nil
