@@ -1503,7 +1503,7 @@
               "id": "0000000000000000000000000000000000000000000000000000000000000005",
               "memo": "+:ETH.ETH",
               "msg_index": "0",
-              "reason": "memo paired address must be non-empty and together with origin address match the liquidity provider record",
+              "reason": "add liquidity for pool (ETH.ETH) not allowed because address (bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw) is not of chain (ETH)",
               "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
               "type": "refund"
             }
@@ -3481,8 +3481,8 @@
           ]
         },
         "result": {
-          "code": 123,
-          "log": "failed to execute message; message index: 0: memo paired address must be non-empty and together with origin address match the liquidity provider record",
+          "code": 99,
+          "log": "failed to execute message; message index: 0: add liquidity for pool (BTC.BTC) not allowed because address (0xe3c64974c78f5693bd2bc68b3221d58df5c6e877) is not of chain (BTC): internal error",
           "gas_wanted": "-1",
           "gas_used": "107640",
           "events": [

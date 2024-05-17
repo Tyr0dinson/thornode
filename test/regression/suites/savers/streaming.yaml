@@ -490,8 +490,7 @@ asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - ..|select(.type? == "refund").reason | contains("fail to refund") | not # Refund possible.
   - ..|select(.type? == "refund").memo == "+:BTC/BTC::{{ addr_thor_fish }}:1000"
-  - ..|select(.type? == "refund").reason == "memo paired address must be non-empty and together with origin address match the liquidity provider record"
-  # TODO: This is errAddLiquidityMismatchAddr, but should be a different returned error to indicate that an address is of the wrong chain (and indicate the chain).
+  - ..|select(.type? == "refund").reason == "savers add liquidity for pool (BTC/BTC) not allowed because provided rune address ({{ addr_thor_fish }}) is not of chain (BTC)"
   - ..|select(.type? == "refund").coin == "${REFUND_EVENT_AMOUNT=750000} ${IN_ASSET}" # The refund coin was the Layer 1 Asset.
   - ${REFUND_EVENT_AMOUNT} == ${IN_AMOUNT} / 2 # This was a single BTC.BTC -> BTC/BTC {half-swap and full-add} half-swap-amount refund, leaving the already-half-swapped BTC/BTC floating and not cleaned up.
 ---

@@ -7915,14 +7915,14 @@
         "id": "0000000000000000000000000000000000000000000000000000000000000008",
         "memo": "+:BTC/BTC::tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav:1000",
         "mode": "EndBlock",
-        "reason": "memo paired address must be non-empty and together with origin address match the liquidity provider record",
+        "reason": "savers add liquidity for pool (BTC/BTC) not allowed because provided rune address (tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav) is not of chain (BTC)",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "refund"
       },
       {
         "count": "2",
         "deposit": "1500000 BTC.BTC",
-        "failed_swap_reasons": "memo paired address must be non-empty and together with origin address match the liquidity provider record",
+        "failed_swap_reasons": "savers add liquidity for pool (BTC/BTC) not allowed because provided rune address (tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav) is not of chain (BTC)",
         "failed_swaps": "2",
         "in": "750000 BTC.BTC",
         "interval": "1",
