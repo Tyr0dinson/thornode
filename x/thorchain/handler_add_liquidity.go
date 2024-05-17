@@ -448,6 +448,8 @@ func (h AddLiquidityHandler) validateAddLiquidityMessage(ctx cosmos.Context, kee
 func (h AddLiquidityHandler) calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.134.0")):
+		return calculatePoolUnitsV134(oldPoolUnits, poolRune, poolAsset, addRune, addAsset)
 	case version.GTE(semver.MustParse("1.98.0")):
 		return calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset)
 	default:
@@ -462,7 +464,7 @@ func (h AddLiquidityHandler) calculatePoolUnits(oldPoolUnits, poolRune, poolAsse
 // P = Pool Units (before)
 // units / (P + units) = (1/2) * ((r / (R + r)) + (a / (A + a)))
 // units = P * (r*A + a*R + 2*r*a) / (r*A + a*R + 2*R*A)
-func calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+func calculatePoolUnitsV134(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
 	if addRune.Add(poolRune).IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
 	}

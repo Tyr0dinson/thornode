@@ -1977,6 +1977,42 @@ func (h AddLiquidityHandler) swapV93(ctx cosmos.Context, msg MsgAddLiquidity) er
 	return nil
 }
 
+func calculatePoolUnitsV98(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cosmos.Uint) (cosmos.Uint, cosmos.Uint, error) {
+	if addRune.Add(poolRune).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total RUNE in the pool is zero")
+	}
+	if addAsset.Add(poolAsset).IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
+	}
+	if poolRune.IsZero() || poolAsset.IsZero() {
+		return addRune, addRune, nil
+	}
+	P := cosmos.NewDecFromBigInt(oldPoolUnits.BigInt())
+	R := cosmos.NewDecFromBigInt(poolRune.BigInt())
+	A := cosmos.NewDecFromBigInt(poolAsset.BigInt())
+	r := cosmos.NewDecFromBigInt(addRune.BigInt())
+	a := cosmos.NewDecFromBigInt(addAsset.BigInt())
+
+	// r*A + a*R
+	cross := (r.Mul(A)).Add(a.Mul(R))
+
+	// P * (r*A + a*R + 2*r*a)
+	numerator := P.Mul(cross.Add(cosmos.NewDec(2).Mul(r).Mul(a)))
+	// r*A + a*R + 2*R*A
+	denominator := cross.Add(cosmos.NewDec(2).Mul(A).Mul(R))
+	if denominator.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("denominator of new pool units calculation is zero")
+	}
+
+	liquidityUnits := numerator.Quo(denominator)
+	newPoolUnit := P.Add(liquidityUnits)
+
+	pUnits := cosmos.NewUintFromBigInt(newPoolUnit.TruncateInt().BigInt())
+	sUnits := cosmos.NewUintFromBigInt(liquidityUnits.TruncateInt().BigInt())
+
+	return pUnits, sUnits, nil
+}
+
 // r = rune provided;
 // a = asset provided
 // R = rune Balance (before)
