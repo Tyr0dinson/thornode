@@ -412,6 +412,47 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 		}
 	}
 
+	// Being a Constant, GasSafetyMarginMultiplier is always 0 or higher.
+	//
+	// At 0, outbounds can be assigned to vaults without sufficient gas asset to send them
+	// (particularly bad for GAIA which can fail outbound attempts and incur gas costs if this happens).
+	//
+	// At 1, the vault having enough gas for the assigned outbound is assured,
+	// but no gas is held in reserve for the next churn's migrate rounds.
+	//
+	// When at least ChurnMigrateRounds multiplied by the larger number of migrated assets (pools and Issue #1508 zombie coins)
+	// enough gas asset is kept unused by non-migrate outbounds to be available for churn migrate rounds.
+	//
+	// If GasSafetyMarginMultiplier were set unnecessarily very high, then the coins of any vault without that much gas
+	// would become unavailable for outbounds, potentially causing TxOutItem creation to fail
+	// (e.g. non-streaming swaps refunded, streaming swap outputs unrefundable).
+	//
+	// Neither migrates nor InactiveVault refunds (VaultPubKey always specified, no DiscoverOutbounds)
+	// nor consolidates (no TxOutItem used) are affected by this.
+	gasSafetyMarginMultiplier := uint64(tos.keeper.GetConfigInt64(ctx, constants.GasSafetyMarginMultiplier))
+	maxGasSafetyMargin := maxGasAsset.Amount.MulUint64(gasSafetyMarginMultiplier)
+
+	// If the outbound is too large to be satisfied while respecting the MaxGas safety margin for all vaults,
+	// such as a pool's final withdraw or a poolless Trade Asset final withdraw or a gas pool Ragnarok,
+	// prioritise the success of the outbound rather than saving gas asset for a future migration.
+	isGasOutbound := toi.Coin.Asset.Equals(maxGasAsset.Asset)
+	if gasSafetyMarginMultiplier > 1 {
+		availableAmount := cosmos.ZeroUint()
+		for i := range vaults {
+			if vaults[i].GetCoin(maxGasAsset.Asset).Amount.LT(maxGasSafetyMargin) {
+				continue
+			}
+			vaultAmount := vaults[i].GetCoin(toi.Coin.Asset).Amount
+			if isGasOutbound {
+				vaultAmount = common.SafeSub(vaultAmount, maxGasSafetyMargin)
+			}
+			availableAmount = availableAmount.Add(vaultAmount)
+		}
+		if toi.Coin.Amount.GT(availableAmount) {
+			maxGasSafetyMargin = maxGasAsset.Amount
+		}
+	}
+
 	for _, vault := range vaults {
 		// Ensure THORNode are not sending from and to the same address
 		fromAddr, err := vault.PubKey.GetAddress(toi.Chain)
@@ -424,17 +465,19 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 		if vaultCoinAmount.LTE(transactionFeeAsset) {
 			continue
 		}
-		// if the vault doesn't have gas asset in it , or it doesn't have enough to pay for gas
+		// If the vault's gas asset is under maxGasSafetyMargin, then skip it.
 		gasAsset := vault.GetCoin(toi.Chain.GetGasAsset())
-		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasAsset.Amount) {
+		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasSafetyMargin) {
 			continue
 		}
 
-		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
-		// so reduce the available vaultCoinAmount by that MaxGas Amount.
-		if toi.Coin.Asset.Equals(maxGasAsset.Asset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasAsset.Amount)
+		// If the outbound Asset is the gas Asset, assigning to the limit would include the amount reserved for gas,
+		// so reduce the available vaultCoinAmount by that amount.
+		if isGasOutbound {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasSafetyMargin)
 			if vaultCoinAmount.IsZero() {
+				// If there's nothing to send from this vault after subtracting the amount reserved for gas,
+				// skip the vault.
 				continue
 			}
 		}
