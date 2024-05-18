@@ -353,7 +353,7 @@ func (tos *TxOutStorageVCUR) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager,
 	return tos.addToBlockOut(ctx, mgr, toi, height)
 }
 
-func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAsset cosmos.Uint, maxGasAsset common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
+func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAsset cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
 	var outputs []TxOutItem
 
 	// When there is more than one vault, sort the vaults by
@@ -387,7 +387,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 				if err != nil {
 					ctx.Logger().Error("failed to convert chains", "error", err)
 				}
-				if chains.Has(maxGasAsset.Asset.GetChain()) {
+				if chains.Has(maxGasCoin.Asset.GetChain()) {
 					continue
 				}
 			}
@@ -430,16 +430,16 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 	// Neither migrates nor InactiveVault refunds (VaultPubKey always specified, no DiscoverOutbounds)
 	// nor consolidates (no TxOutItem used) are affected by this.
 	gasSafetyMarginMultiplier := uint64(tos.keeper.GetConfigInt64(ctx, constants.GasSafetyMarginMultiplier))
-	maxGasSafetyMargin := maxGasAsset.Amount.MulUint64(gasSafetyMarginMultiplier)
+	maxGasSafetyMargin := maxGasCoin.Amount.MulUint64(gasSafetyMarginMultiplier)
 
 	// If the outbound is too large to be satisfied while respecting the MaxGas safety margin for all vaults,
 	// such as a pool's final withdraw or a poolless Trade Asset final withdraw or a gas pool Ragnarok,
 	// prioritise the success of the outbound rather than saving gas asset for a future migration.
-	isGasOutbound := toi.Coin.Asset.Equals(maxGasAsset.Asset)
+	isGasOutbound := toi.Coin.Asset.Equals(maxGasCoin.Asset)
 	if gasSafetyMarginMultiplier > 1 {
 		availableAmount := cosmos.ZeroUint()
 		for i := range vaults {
-			if vaults[i].GetCoin(maxGasAsset.Asset).Amount.LT(maxGasSafetyMargin) {
+			if vaults[i].GetCoin(maxGasCoin.Asset).Amount.LT(maxGasSafetyMargin) {
 				continue
 			}
 			vaultAmount := vaults[i].GetCoin(toi.Coin.Asset).Amount
@@ -449,7 +449,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 			availableAmount = availableAmount.Add(vaultAmount)
 		}
 		if toi.Coin.Amount.GT(availableAmount) {
-			maxGasSafetyMargin = maxGasAsset.Amount
+			maxGasSafetyMargin = maxGasCoin.Amount
 		}
 	}
 
@@ -559,7 +559,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
 	}
-	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
+	maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get max gas asset", "error", err)
 	}
@@ -608,7 +608,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// iterate over discovered vaults and find vaults to send funds from
 
 			// All else being equal, choose active Asgards over retiring Asgards.
-			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFee, maxGasAsset, toi, append(activeAsgards, retiringAsgards...))
+			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFee, maxGasCoin, toi, append(activeAsgards, retiringAsgards...))
 
 			// Check we found enough funds to satisfy the request, error if we didn't
 			if !remaining.IsZero() {
