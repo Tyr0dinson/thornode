@@ -42,6 +42,7 @@ const (
 	PauseUnbond
 	MinimumBondInRune
 	FundMigrationInterval
+	GasSafetyMarginMultiplier
 	MaxOutboundAttempts
 	SlashPenalty
 	PauseOnSlashThreshold

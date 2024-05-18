@@ -27,6 +27,7 @@ func NewConstantValue() *ConstantVals {
 			DynamicMaxAnchorTarget:              0,                  // target depth of derived virtual pool (in basis points)
 			DynamicMaxAnchorCalcInterval:        14400,              // number of blocks to recalculate the dynamic max anchor
 			FundMigrationInterval:               360,                // number of blocks THORNode will attempt to move funds from a retiring vault to an active one
+			GasSafetyMarginMultiplier:           200,                // MaxGas multiplier to keep in a vault without using for non-migrate outbounds; should be enough for all a chain's pools' ChurnMigrateRounds
 			ChurnInterval:                       43200,              // How many blocks THORNode try to rotate validators
 			ChurnRetryInterval:                  720,                // How many blocks until we retry a churn (only if we haven't had a successful churn in ChurnInterval blocks
 			BadValidatorRedline:                 3,                  // redline multiplier to find a multitude of bad actors
