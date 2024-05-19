@@ -11,7 +11,7 @@ Proposed
 
 ## Context
 
-During a Ragnarok, all funds remaining in pools are returned in a best-effort fashion and any synthetic tokens are burned.  When these tokens are burned, they are effectively converted to RUNE and transferred to the Reserve.  While synthetic tokens are tracked and associated with specific addresses, enumerating these addresses is not feasible in the current code and therefore the associated RUNE was not able to be returned to their owners.
+During a Ragnarok, all funds remaining in pools are returned in a best-effort fashion and any synthetic tokens are burned.  When these tokens are burned, they are effectively converted to RUNE and transferred to the Reserve.  While synthetic tokens are tracked and associated with specific addresses, enumerating these addresses is not feasible in the current code and therefore this converted RUNE cannot be returned to its owner during the Ragnarok.
 
 While it can't be done in the current code, Multipartite has come up with a method to identify these addresses using THORNode logs and the Flipside databases.
 
@@ -20,7 +20,7 @@ After the recent Ragnarok of the BNB blockchain, roughly 24,601 RUNE was transfe
 ### Method
 By searching through THORNode logs it is possible to identify all pools that sent synth-associated RUNE to the reserve.
 
-```
+```text
 $ docker logs fullnode-v1 |& grep -A3 'redeeming synth to reserve'
 
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.ETH-1C9
@@ -48,7 +48,7 @@ From these logs, we can identify the pools that transferred RUNE to the Reserve 
 
 In the THORNode code, pools are set to `Staged` immediately after RUNE transfer to Reserve.  We can use this to identify the block number where the RUNE was transferred to Resreve for each pool.
 
-```
+```text
 $ docker run --rm --network host -e RPC_ENDPOINT=http://localhost:27148 registry.gitlab.com/ninerealms/cosmoscan 'block_events_listener(lambda h,e: (h,e), types={"pool"}), start=15206145, end=15269760, progress=True'
 
 [15207120, {"type": "pool", "pool": "BNB.ETH-1C9", "pool_status": "Staged"}]
@@ -64,7 +64,7 @@ With a given address, it is then possible to check exactly how much of a synthet
 
 For example, the following is the query in the case of the BNB.BNB pool:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -98,7 +98,7 @@ ORDER BY asset ASC, amount DESC
 
 Using this method, we find roughly 24,601 RUNE to be returned to 1,309 addresses.  As a refund must be done by hand with a store-migration, we suggest that only balances greater than 10 RUNE be returned.  This reduces the number of addresses which must be refunded to 46 and the amount of RUNE to 24,192.83.
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0,BNB/BNB,15.884561,1508.537150664005
 thor1vsnj373g9uqke6z5fdpps8p8udrls3a8m75t86,BNB/BNB,1.233685,117.16154162
@@ -154,7 +154,7 @@ Total:
 
 Note that two addresses held multiple positions.  Specifically,
 
-```
+```text
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0:
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0,BNB/BNB,15.884561,1508.537150664005
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0,BNB/BTCB-1DE,0.1197,934.538439183197
@@ -172,13 +172,13 @@ The following are the details for each pool.
 
 **BNB.BNB**
 
-```
+```text
 [15265440, {"type": "pool", "pool": "BNB.BNB", "pool_status": "Staged"}]
 6:50PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BNB
 6:50PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=206909292040 synth_supply=2178708870
 ```
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1g98cy3n9mmjrpn0sxmn63lztelera37n8n67c0,BNB/BNB,15.884561,1508.537150664005
 thor1vsnj373g9uqke6z5fdpps8p8udrls3a8m75t86,BNB/BNB,1.233685,117.16154162
@@ -199,7 +199,7 @@ total addresses: 12
 
 The following is the SQL code used to query the Flipside database:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -231,13 +231,13 @@ ORDER BY asset ASC, amount DESC
 
 **BNB.BTCB**
 
-```
+```text
 [15208560, {"type": "pool", "pool": "BNB.BTCB-1DE", "pool_status": "Staged"}]
 5:47PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BTCB-1DE
 5:47PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=1543832682001 synth_supply=197741221
 ```
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor12z9pwgw50pepl7mazv4nf2868c6ke882a6aw8x,BNB/BTCB-1DE,1.035567,8085.022287799718
 thor1mq8mzl9272dzhee3flkndyz2lux9nvzq8zn0f7,BNB/BTCB-1DE,0.295774,2309.207788729917
@@ -261,7 +261,7 @@ total addresses: 15
 
 The following is the SQL code used to query the Flipside database:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -293,13 +293,13 @@ ORDER BY asset ASC, amount DESC
 
 **BNB.BUSD**
 
-```
+```text
 [15209280, {"type": "pool", "pool": "BNB.BUSD-BD1", "pool_status": "Staged"}]
 7:00PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.BUSD-BD1
 7:00PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=278944032906 synth_supply=2178219990168
 ```
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1x4d5g75v67affmr9qjuu75swjsgme4jscxj7pl,BNB/BUSD-BD1,9170.798605,1174.417441486301
 thor1dmgdpkqngg3amua5hffjcharngzdp4wv39azjs,BNB/BUSD-BD1,3496.943135,447.820433805043
@@ -316,7 +316,7 @@ total addresses: 8
 
 The following is the SQL code used to query the Flipside database:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -348,13 +348,13 @@ ORDER BY asset ASC, amount DESC
 
 **BNB.ETH**
 
-```
+```text
 [15207120, {"type": "pool", "pool": "BNB.ETH-1C9", "pool_status": "Staged"}]
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.ETH-1C9
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=115286909700 synth_supply=283716656
 ```
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1j47es49m8llprlpcxrt3a2hqyhperwc7ta6ksm,BNB/ETH-1C9,1.132255,460.086417846309
 thor1rpu6ndvg0r25y6xqdl2svqlwglc3yhh3wv7j9v,BNB/ETH-1C9,1.009999,410.408275466528
@@ -372,7 +372,7 @@ total addresses: 9
 
 The following is the SQL code used to query the Flipside database:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -404,13 +404,13 @@ ORDER BY asset ASC, amount DESC
 
 **BNB.TWT**
 
-```
+```text
 [15207120, {"type": "pool", "pool": "BNB.TWT-8C2", "pool_status": "Staged"}]
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1287 > redeeming synth to reserve pool=BNB.TWT-8C2
 3:17PM INF gitlab.com/thorchain/thornode/x/thorchain/manager_network_current.go:1750 > sending synth redeem RUNE to Reserve rune_amount=315117680195 synth_supply=2018826348469
 ```
 
-```
+```text
 ADDRESS,ASSET,AMOUNT,RUNE_AMOUNT
 thor1rzxvqhepnqqcn7973jp4y0ygasr709gpj673lw,BNB/TWT-8C2,20000.788343,3121.913892939335
 thor1sth9gz5asawsvfrq08ag7wzwqqlrjxl0egxuym,BNB/TWT-8C2,87.193871,13.610051393266
@@ -421,7 +421,7 @@ total addresses: 2
 
 The following is the SQL code used to query the Flipside database:
 
-```
+```sql
 WITH
 transfers_to AS (
   SELECT to_address AS address, asset, amount_e8
@@ -472,3 +472,4 @@ Moreover, while we believe the process used to identify these balances as well a
 ## References
 
 - https://discord.com/channels/838986635756044328/1225291406344716378
+
