@@ -145,12 +145,7 @@ lint:
 
 lint-ci:
 	@./scripts/lint.sh
-ifdef CI_MERGE_REQUEST_ID
-# only check changes on merge requests
-	@./scripts/trunk check --ci -j8 --upstream FETCH_HEAD
-else
-	@./scripts/trunk check --all --ci -j8
-endif
+	@./scripts/trunk-ci.sh
 
 # ------------------------------ Unit Tests ------------------------------
 
@@ -282,6 +277,7 @@ run-simulation-mocknet:
 		BCH_MASTER_ADDR="qpxh73huzlhjfzcccr03zkpd9nd3wsasegmrreet72" \
 		DOGE_MASTER_ADDR="mnaioCtEGdw6bd6rWJ13Mbre1kN5rPa2Mo" \
 		LTC_MASTER_ADDR="rltc1qf4l5dlqhaujgkxxqmug4stfvmvt58vx2fc03xm" \
+		SMOKE="false" \
 		docker compose -f build/docker/docker-compose.yml --profile mocknet up -d
 
 stop-mocknet:
@@ -366,7 +362,9 @@ docker-gitlab-build:
 ########################################################################################
 
 thorscan-build:
-	@docker build -f build/docker/Dockerfile.thorscan -t thorscan tools/thorscan
+	@docker build tools/thorscan -f tools/thorscan/Dockerfile \
+		-t registry.gitlab.com/thorchain/thornode:thorscan-${GITREF} \
+		-t registry.gitlab.com/thorchain/thornode:thorscan
 
 thorscan-gitlab-push:
 	@docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
