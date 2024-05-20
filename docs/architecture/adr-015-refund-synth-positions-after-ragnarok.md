@@ -170,7 +170,7 @@ These positions should most likely be combined to simplify the store-migration.
 
 The following are the details for each pool.
 
-**BNB.BNB**
+#### BNB.BNB
 
 ```text
 [15265440, {"type": "pool", "pool": "BNB.BNB", "pool_status": "Staged"}]
@@ -229,7 +229,7 @@ GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
 ```
 
-**BNB.BTCB**
+#### BNB.BTCB
 
 ```text
 [15208560, {"type": "pool", "pool": "BNB.BTCB-1DE", "pool_status": "Staged"}]
@@ -291,7 +291,7 @@ GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
 ```
 
-**BNB.BUSD**
+#### BNB.BUSD
 
 ```text
 [15209280, {"type": "pool", "pool": "BNB.BUSD-BD1", "pool_status": "Staged"}]
@@ -346,7 +346,7 @@ GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
 ```
 
-**BNB.ETH**
+#### BNB.ETH
 
 ```text
 [15207120, {"type": "pool", "pool": "BNB.ETH-1C9", "pool_status": "Staged"}]
@@ -402,7 +402,7 @@ GROUP BY address, asset
 ORDER BY asset ASC, amount DESC
 ```
 
-**BNB.TWT**
+#### BNB.TWT
 
 ```text
 [15207120, {"type": "pool", "pool": "BNB.TWT-8C2", "pool_status": "Staged"}]
