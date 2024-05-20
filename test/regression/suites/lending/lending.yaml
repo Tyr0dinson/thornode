@@ -517,10 +517,10 @@ asserts:
   - .expected_amount_in|tonumber == 5120000
   - .streaming_swap_seconds|tonumber == 24
   - .total_repay_seconds|tonumber == 48
-  - .fees.total_bps|tonumber == 407
-  - .fees.slippage_bps|tonumber == 98
+  - .fees.total_bps|tonumber == 412
+  - .fees.slippage_bps|tonumber == 102
   - .fees.outbound|tonumber == 14000
-  - .fees.liquidity|tonumber == 24197
+  - .fees.liquidity|tonumber == 24626
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .recommended_gas_rate == "12"
   - .gas_rate_units == "gwei"
@@ -918,4 +918,79 @@ type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
   - .result[]|select(.denom == "rune")|.amount == "10000801977"
+---
+########################################################################################
+# Close partially less minimun amount
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
+asserts:
+  - .|length == 1
+  - .[0]|.debt_current == "1918070000"
+  - .[0]|.collateral_current == "1971188"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 12 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "2159441"
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "LOAN-:BTC.BTC:{{ addr_btc_fox }}:0"
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/loan/close
+params:
+  from_asset: BTC.BTC
+  repay_bps: 10000
+  to_asset: BTC.BTC
+  loan_owner: {{ addr_btc_fox }}
+asserts:
+  - .expected_amount_in|tonumber == 56000
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 13 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "56000" # min amount
+          asset: "BTC.BTC"
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "LOAN-:BTC.BTC:{{ addr_btc_fox }}:0"
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
+asserts:
+  - .|length == 1
+  - .[0]|.debt_repaid == "6607043147"
+  - .[0]|.debt_current == "0"
+  - .[0]|.collateral_current == "0"
+---
+type: create-blocks
+count: 1
 ---
