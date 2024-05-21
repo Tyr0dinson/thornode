@@ -352,6 +352,7 @@ type KeeperOrderBooks interface {
 
 type KeeperMimir interface {
 	GetMimir(_ cosmos.Context, key string) (int64, error)
+	GetMimirWithRef(_ cosmos.Context, template, ref string) (int64, error)
 	SetMimir(_ cosmos.Context, key string, value int64)
 	GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error)
 	SetNodeMimir(_ cosmos.Context, key string, value int64, acc cosmos.AccAddress) error

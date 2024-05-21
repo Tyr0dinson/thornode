@@ -42,6 +42,14 @@ func (k KVStore) GetMimir(ctx cosmos.Context, key string) (int64, error) {
 	return record, err
 }
 
+// GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.
+func (k KVStore) GetMimirWithRef(ctx cosmos.Context, template, ref string) (int64, error) {
+	// 'template' should be something like "Halt%sChain" (to halt an arbitrary specified chain)
+	// or "Ragnarok-%s" (to halt the pool of an arbitrary specified Asset (MimirString used for Assets to join Chain and Symbol with a hyphen).
+	key := fmt.Sprintf(template, ref)
+	return k.GetMimir(ctx, key)
+}
+
 // TODO: Remove Kraken checks on next hard fork.
 // haveKraken - check to see if we have "released the kraken"
 func (k KVStore) haveKraken(ctx cosmos.Context) bool {
@@ -96,7 +104,7 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 	return err
 }
 
-// DeleteNodeMimirs deletss all node mimir votes for a given key
+// DeleteNodeMimirs deletes all node mimir votes for a given key
 func (k KVStore) DeleteNodeMimirs(ctx cosmos.Context, key string) {
 	k.del(ctx, k.GetKey(ctx, prefixNodeMimir, key))
 }
