@@ -920,7 +920,7 @@ asserts:
   - .result[]|select(.denom == "rune")|.amount == "10000801977"
 ---
 ########################################################################################
-# Close partially less minimun amount
+# Close partially less minimum amount
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
