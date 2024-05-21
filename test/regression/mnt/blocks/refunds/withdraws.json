@@ -5573,9 +5573,9 @@
         },
         "result": {
           "code": 99,
-          "log": "failed to execute message; message index: 0: fail to process withdraw request: 2 errors occurred:\n\t* internal error\n\t* pool-DOGE.DOGE doesn't exist\n\n: internal error",
+          "log": "failed to execute message; message index: 0: pool (DOGE.DOGE) doesn't exist: internal error",
           "gas_wanted": "0",
-          "gas_used": "123176",
+          "gas_used": "109176",
           "events": [
             {
               "fee": "",
