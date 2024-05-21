@@ -12,6 +12,37 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 )
 
+func (h WithdrawLiquidityHandler) validateV112(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return errWithdrawFailValidation
+	}
+
+	if msg.Asset.IsDerivedAsset() {
+		return fmt.Errorf("cannot withdraw from a derived asset virtual pool")
+	}
+
+	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
+	if err != nil {
+		errMsg := fmt.Sprintf("fail to get pool(%s)", msg.Asset)
+		return ErrInternal(err, errMsg)
+	}
+
+	if err := pool.EnsureValidPoolStatus(&msg); err != nil {
+		return multierror.Append(errInvalidPoolStatus, err)
+	}
+
+	// when ragnarok kicks off,  all pool will be set PoolStaged , the ragnarok tx's hash will be common.BlankTxID
+	if pool.Status != PoolAvailable && !msg.WithdrawalAsset.IsEmpty() && !msg.Tx.ID.Equals(common.BlankTxID) {
+		return fmt.Errorf("cannot specify a withdrawal asset while the pool is not available")
+	}
+
+	if h.mgr.Keeper().IsChainHalted(ctx, msg.Asset.Chain) || h.mgr.Keeper().IsLPPaused(ctx, msg.Asset.Chain) {
+		return fmt.Errorf("unable to withdraw liquidity while chain is halted or paused LP actions")
+	}
+
+	return nil
+}
+
 func (h WithdrawLiquidityHandler) validateV96(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return errWithdrawFailValidation
