@@ -550,7 +550,8 @@ func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { re
 func (k KVStoreDummy) GetMimirWithRef(_ cosmos.Context, template, key string) (int64, error) {
 	return 0, kaboom
 }
-func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64) {}
+func (k KVStoreDummy) SetMimir(_ cosmos.Context, key string, value int64)                  {}
+func (k KVStoreDummy) SetMimirWithRef(_ cosmos.Context, template, ref string, value int64) {}
 func (k KVStoreDummy) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	return NodeMimirs{}, kaboom
 }

@@ -70,6 +70,14 @@ func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 	k.setInt64(ctx, k.GetKey(ctx, prefixMimir, key), value)
 }
 
+// SetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.
+func (k KVStore) SetMimirWithRef(ctx cosmos.Context, template, ref string, value int64) {
+	// 'template' should be something like "Halt%sChain" (to halt an arbitrary specified chain)
+	// or "Ragnarok-%s" (to halt the pool of an arbitrary specified Asset (MimirString used for Assets to join Chain and Symbol with a hyphen).
+	key := fmt.Sprintf(template, ref)
+	k.SetMimir(ctx, key, value)
+}
+
 // GetNodeMimirs get node mimirs value from key value store
 func (k KVStore) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	key = strings.ToUpper(key)
