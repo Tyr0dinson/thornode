@@ -991,5 +991,53 @@ asserts:
   - .[0]|.debt_current == "0"
   - .[0]|.collateral_current == "0"
 ---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 14 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "341856600"
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ observe_txid 11 }}"
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
 type: create-blocks
 count: 1
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 15 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "1774606"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 13 }}"
+    block_height: 9
+    finalise_height: 9
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
