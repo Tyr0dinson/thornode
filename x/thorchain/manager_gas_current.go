@@ -20,11 +20,6 @@ type GasMgrVCUR struct {
 	keeper            keeper.Keeper
 }
 
-type OutAssetGas struct {
-	outAsset common.Asset
-	gas      common.Gas
-}
-
 // newGasMgrVCUR create a new instance of GasMgrV1
 func newGasMgrVCUR(constantsAccessor constants.ConstantValues, k keeper.Keeper) *GasMgrVCUR {
 	return &GasMgrVCUR{
