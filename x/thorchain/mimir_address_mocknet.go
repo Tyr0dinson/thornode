@@ -11,6 +11,6 @@ var ADMINS = []string{
 	// "dog" mnemonic key for mocknet and regtest
 	"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
 
-	// "master" mnemonic for simulation tests
-	"tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
+	// "master" mnemonic for simulation tests disabled
+	// "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
 }
