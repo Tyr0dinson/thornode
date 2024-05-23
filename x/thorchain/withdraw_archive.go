@@ -75,7 +75,7 @@ func withdrawV98(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
@@ -262,7 +262,7 @@ func withdrawV91(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
@@ -449,7 +449,7 @@ func withdrawV89(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
@@ -637,7 +637,7 @@ func withdrawV84(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
@@ -824,7 +824,7 @@ func withdrawV76(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cos
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
@@ -1035,7 +1035,7 @@ func withdrawV102(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 	if fullProtectionLine < 0 || err != nil {
 		fullProtectionLine = cv.GetInt64Value(constants.FullImpLossProtectionBlocks)
 	}
-	ilpPoolMimirKey := fmt.Sprintf("ILP-DISABLED-%s", pool.Asset)
+	ilpPoolMimirKey := fmt.Sprintf(constants.MimirTemplateILPDisabled, pool.Asset) // This perhaps would contain a "." and so could never be set.
 	ilpDisabled, err := mgr.Keeper().GetMimir(ctx, ilpPoolMimirKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get ILP-DISABLED mimir", "error", err, "key", ilpPoolMimirKey)
