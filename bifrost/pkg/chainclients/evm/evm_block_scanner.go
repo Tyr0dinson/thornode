@@ -599,6 +599,11 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 
 	// round the price up to nearest configured resolution
 	resolution := big.NewInt(e.cfg.GasPriceResolution)
+	// TODO: remove version check after v133
+	version, err := e.bridge.GetThorchainVersion()
+	if err != nil || version.LT(semver.MustParse("1.133.0")) {
+		resolution = big.NewInt(50_000_000_000) // resolution for both BSC and AVAX before v133
+	}
 	median.Add(median, new(big.Int).Sub(resolution, big.NewInt(1)))
 	median = median.Div(median, resolution)
 	median = median.Mul(median, resolution)
@@ -622,7 +627,13 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 	// skip fee if less than 1 resolution away from the last
 	feeDelta := new(big.Int).Sub(gasPrice, big.NewInt(int64(e.lastReportedGasPrice)))
 	feeDelta.Abs(feeDelta)
-	if e.lastReportedGasPrice != 0 && feeDelta.Cmp(big.NewInt(e.cfg.GasPriceResolution)) != 1 {
+	resolution := big.NewInt(e.cfg.GasPriceResolution)
+	// TODO: remove version check after v133
+	version, err := e.bridge.GetThorchainVersion()
+	if err != nil || version.LT(semver.MustParse("1.133.0")) {
+		resolution = big.NewInt(50_000_000_000) // resolution for both BSC and AVAX before v133
+	}
+	if e.lastReportedGasPrice != 0 && feeDelta.Cmp(resolution) != 1 {
 		skip := true
 
 		// every 100 blocks send the fee if none is set
