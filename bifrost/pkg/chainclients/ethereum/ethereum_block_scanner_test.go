@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,6 +180,9 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/lastblock/bnb.json")
 		case strings.HasPrefix(req.RequestURI, thorclient.AuthAccountEndpoint):
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/auth/accounts/template.json")
+		case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
+			_, err := rw.Write([]byte(strconv.Itoa(-1)))
+			c.Assert(err, IsNil)
 		default:
 			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)
@@ -285,6 +289,9 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		case strings.HasPrefix(req.RequestURI, thorclient.NodeAccountEndpoint):
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
+		case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
+			_, err := rw.Write([]byte(strconv.Itoa(-1)))
+			c.Assert(err, IsNil)
 		default:
 			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)
@@ -527,6 +534,9 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		case strings.HasPrefix(req.RequestURI, thorclient.NodeAccountEndpoint):
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
+		case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
+			_, err := rw.Write([]byte(strconv.Itoa(-1)))
+			c.Assert(err, IsNil)
 		default:
 			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)
