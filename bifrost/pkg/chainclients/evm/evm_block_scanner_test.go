@@ -552,24 +552,30 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 
 func (s *BlockScannerTestSuite) TestUpdateGasPrice(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		body, err := io.ReadAll(req.Body)
-		c.Assert(err, IsNil)
-		type RPCRequest struct {
-			JSONRPC string          `json:"jsonrpc"`
-			ID      interface{}     `json:"id"`
-			Method  string          `json:"method"`
-			Params  json.RawMessage `json:"params"`
-		}
-		var rpcRequest RPCRequest
-		err = json.Unmarshal(body, &rpcRequest)
-		c.Assert(err, IsNil)
-		if rpcRequest.Method == "eth_chainId" {
-			_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x539"}`))
+		switch {
+		case req.RequestURI == thorclient.ChainVersionEndpoint:
+			_, err := rw.Write([]byte(`{"current":"` + types.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
-		}
-		if rpcRequest.Method == "eth_gasPrice" {
-			_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+		default:
+			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)
+			type RPCRequest struct {
+				JSONRPC string          `json:"jsonrpc"`
+				ID      interface{}     `json:"id"`
+				Method  string          `json:"method"`
+				Params  json.RawMessage `json:"params"`
+			}
+			var rpcRequest RPCRequest
+			err = json.Unmarshal(body, &rpcRequest)
+			c.Assert(err, IsNil)
+			if rpcRequest.Method == "eth_chainId" {
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x539"}`))
+				c.Assert(err, IsNil)
+			}
+			if rpcRequest.Method == "eth_gasPrice" {
+				_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+				c.Assert(err, IsNil)
+			}
 		}
 	}))
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
@@ -578,13 +584,22 @@ func (s *BlockScannerTestSuite) TestUpdateGasPrice(c *C) {
 	c.Assert(err, IsNil)
 	rpcClient, err := evm.NewEthRPC(server.URL, time.Second, "AVAX")
 	c.Assert(err, IsNil)
-	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+		ChainID:         "thorchain",
+		ChainHost:       server.Listener.Addr().String(),
+		SignerName:      "bob",
+		SignerPasswd:    "password",
+		ChainHomeFolder: "",
+	}, s.m, s.keys)
+	c.Assert(err, IsNil)
+	c.Assert(bridge, NotNil)
+	pubKeyManager, err := pubkeymanager.NewPubKeyManager(bridge, s.m)
 	c.Assert(err, IsNil)
 	solvencyReporter := func(height int64) error {
 		return nil
 	}
 	conf := getConfigForTest("http://" + server.Listener.Addr().String())
-	bs, err := NewEVMScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewEVMScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, bridge, s.m, pubKeyManager, solvencyReporter, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
