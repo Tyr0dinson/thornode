@@ -4,7 +4,6 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
@@ -19,10 +18,11 @@ func (s *HandlerMimirSuite) SetUpSuite(c *C) {
 func (s *HandlerMimirSuite) TestValidate(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 
-	addr, _ := cosmos.AccAddressFromBech32(ADMINS[0])
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(keeper.SetNodeAccount(ctx, na), IsNil)
 	handler := NewMimirHandler(NewDummyMgrWithKeeper(keeper))
 	// happy path
-	msg := NewMsgMimir("foo", 44, addr)
+	msg := NewMsgMimir("foo", 44, na.NodeAddress)
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
