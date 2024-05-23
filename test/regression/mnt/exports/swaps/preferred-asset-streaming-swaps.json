@@ -174,10 +174,6 @@
             {
               "amount": "4500000000000",
               "denom": "rune"
-            },
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
             }
           ]
         },
@@ -203,7 +199,11 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
+<<<<<<< HEAD
               "amount": "498181509829",
+=======
+              "amount": "500844687061",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
               "denom": "rune"
             }
           ]
@@ -221,7 +221,20 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
+<<<<<<< HEAD
               "amount": "35010028777394",
+=======
+              "amount": "35010066763977",
+              "denom": "rune"
+            }
+          ]
+        },
+        {
+          "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+          "coins": [
+            {
+              "amount": "145869646",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
               "denom": "rune"
             }
           ]
@@ -230,7 +243,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
+<<<<<<< HEAD
               "amount": "2501378594532",
+=======
+              "amount": "2498558071114",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
               "denom": "rune"
             }
           ]
@@ -248,7 +265,11 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
+<<<<<<< HEAD
               "amount": "5000417118245",
+=======
+              "amount": "5000390608202",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
               "denom": "rune"
             }
           ]
@@ -266,7 +287,7 @@
           "denom": "rune"
         },
         {
-          "amount": "400000000000",
+          "amount": "300000000000",
           "denom": "thor.mimir"
         }
       ]
@@ -396,10 +417,19 @@
         }
       ],
       "network": {
+<<<<<<< HEAD
         "LPIncomeSplit": "9004",
         "NodeIncomeSplit": "996",
         "bond_reward_rune": "417118245",
         "total_bond_units": "18"
+=======
+        "LPIncomeSplit": "8999",
+        "NodeIncomeSplit": "1001",
+        "bond_reward_rune": "392608202",
+        "burned_bep2_rune": "0",
+        "burned_erc20_rune": "0",
+        "total_bond_units": "15"
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       },
       "network_fees": [
         {
@@ -417,7 +447,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "5000000000000",
+          "bond": "4999998000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -456,8 +486,13 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
+<<<<<<< HEAD
           "balance_asset": "104228533",
           "balance_rune": "99805668625",
+=======
+          "balance_asset": "104086604",
+          "balance_rune": "99582263365",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -467,8 +502,13 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
+<<<<<<< HEAD
           "balance_asset": "1029040000",
           "balance_rune": "97198278540",
+=======
+          "balance_asset": "1028080000",
+          "balance_rune": "97286209227",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -478,8 +518,13 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.USDX-0X9999999999999999999999999999999999999999",
+<<<<<<< HEAD
           "balance_asset": "98856555500",
           "balance_rune": "101174376082",
+=======
+          "balance_asset": "98698020600",
+          "balance_rune": "101340890078",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -489,8 +534,13 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.USDY-0X9999999999999999999999999999999999999999",
+<<<<<<< HEAD
           "balance_asset": "100000000000",
           "balance_rune": "100001593291",
+=======
+          "balance_asset": "97450307100",
+          "balance_rune": "102633732917",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

@@ -203,10 +203,6 @@
             {
               "amount": "4999498000000",
               "denom": "rune"
-            },
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
             }
           ]
         },
@@ -322,7 +318,7 @@
           "denom": "rune"
         },
         {
-          "amount": "400000000000",
+          "amount": "300000000000",
           "denom": "thor.mimir"
         }
       ]

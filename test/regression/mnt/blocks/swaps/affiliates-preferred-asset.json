@@ -146,7 +146,11 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "26AD4F751D405E34857DEA12509080E4F74D76C8287A8A1F885BB13FE49E0BE8",
+=======
+      "app_hash": "F71886C2948F45F37AF55E3E9206559C35FBFA1AF72444BECEE0C298186E514A",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -387,8 +391,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "7C2AF947A2A67E5B5A6CB5F22D222F3245A71E9E5E8D1E03D42AD9E70CEDE123",
       "last_results_hash": "9245B58FD364659B00F873F23591D1C61891FFC261D6D458FD350B870CB2E2B0",
+=======
+      "app_hash": "3D027EEACF979739A5F03DC7430D3F6FACB585C9B6C5EFE359B0D6BF08C2C44D",
+      "last_results_hash": "CD7520FCCCC4EF2D4E0E800AE1B96AA24858E8F958C32F80D752E636D60A80BB",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -599,8 +608,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "BE9BA56353575F6056790465E9B18AEFC32CF453F575235BD5C0F396322B4DD3",
       "last_results_hash": "62C9D73962185F6530CAF04DD7BCA89FCA9C48336DFE6C2FEA6FA5748C8B1ECA",
+=======
+      "app_hash": "C06A887A03DC62E8A474B6CC56DEF60861AC3BB4D251B84AAE29BF3CB1391B50",
+      "last_results_hash": "284D1737190BE8BEBFCE7DB258F60B72E3FF72851292543936E23B49135F17EC",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -852,8 +866,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "0063CF98C7804260D7B891B63E5A7C6D46CCBE4576556EEF3691ADF1680F9065",
       "last_results_hash": "076FB0AA6320B82B0EDE466482CECBD5AAAD8D789D5F3B9AD8865BBD393ABC5A",
+=======
+      "app_hash": "3C35EF5F91636D9EC28475CA846D0237AA5A8F679200E91E4F8E1A155D949CA0",
+      "last_results_hash": "28B69F5DF038B2CC44193DB86ED8F310C40A42856893815336D1B5CD34E7C730",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1105,8 +1124,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "5496D8AD5B18BEF60A3ADCDCFBAC8A53D8D2A8FC97A67B8ED59346CEC4DE5A12",
       "last_results_hash": "020D551297F149ED2252965EBD93436E725070A2AFAF629D733202E4DE29D29F",
+=======
+      "app_hash": "4068F2466AD00DA14921BBFD72F48B7F0E65C5769375D999AB39329C7ED69D4D",
+      "last_results_hash": "7EA12D0EB8906308CA09E84BC3817B72ADA6A02A7B804B575DF5515172527A7C",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1426,8 +1450,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "31AAC55AA59C4520558F8714B7397275C8C5C40562C4FDB281857F06BF3B7D06",
       "last_results_hash": "E32DCAD6BC1E0FFF36025A981BB4E70FB5FA302E860CE5094EFB2590819F1545",
+=======
+      "app_hash": "E7EA218D3EB6D86A0BFCC45120A905B56B6DE0BC2D754F95286FB628EA804278",
+      "last_results_hash": "01B09361610F62EB384D1E11F9C7D66A84B05DC5B9F86EF8EE39BC2768F3123B",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1723,8 +1752,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "A919C8C6A95A522CAA7E4CECAF52552798930EDA5013B47C977E73D2A0215DCE",
       "last_results_hash": "2E6ACA1377CECBA55F60441DE0EC231CE0D91BA5D47740E22F6B7E95330E761F",
+=======
+      "app_hash": "9BB4DBBB850CD1B2E7FD7AEA63CA76D470F26BEC06E7DE3D16E1047556FF3560",
+      "last_results_hash": "8E5D794EE81575DD308C0C2D3838D02AA103036F1A27DC5EE43B8F3BC9C7928D",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2170,8 +2204,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "99EA7027916F3D96D19094637DBD9CCA55B0A2C30F1CC6DC299AFF5B526BF9A9",
       "last_results_hash": "A96E903A836379AB543E4CA675D95AB4412A0BA4F0E82A593F9F0BF96B256AF4",
+=======
+      "app_hash": "3578E772E53B413483A62EA22E9721097C3B1CD938974455D8663AEF85F643A8",
+      "last_results_hash": "DDF091675CCDDA04FA63F4866146C84A2F236980CEAC1403DA718A09EBAF01F3",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2433,6 +2472,273 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
+<<<<<<< HEAD
+=======
+            },
+            {
+              "amount": "2500000000rune",
+              "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2500000000rune",
+              "receiver": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2500000000rune",
+              "recipient": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "transfer"
+            },
+            {
+              "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "message"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": {
+      "hash": "",
+      "parts": {
+        "total": 0,
+        "hash": ""
+      }
+    },
+    "header": {
+      "version": {
+        "block": "11",
+        "app": "0"
+      },
+      "chain_id": "thorchain",
+      "height": 10,
+      "time": "",
+      "last_block_id": {
+        "hash": "",
+        "parts": {
+          "total": 0,
+          "hash": ""
+        }
+      },
+      "last_commit_hash": "",
+      "data_hash": "98F6A512DDDB846860EEE093F1A1FC82732A159BAF654275830A308D031F5605",
+      "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
+      "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
+      "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+      "app_hash": "910D7FDBBFA8C2BDAD7BA08E49C58AACFC323F56F289A6FCEAF25BCD43BDE853",
+      "last_results_hash": "6090148374A8136417EB87849921447B0E108721EBF11577846AC13626E97AA2",
+      "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
+    },
+    "begin_block_events": [],
+    "end_block_events": [
+      {
+        "amount": "631835rune",
+        "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "631835rune",
+        "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_received"
+      },
+      {
+        "amount": "631835rune",
+        "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "transfer"
+      },
+      {
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "message"
+      },
+      {
+        "amount": "421579rune",
+        "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "421579rune",
+        "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_received"
+      },
+      {
+        "amount": "421579rune",
+        "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "transfer"
+      },
+      {
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "message"
+      },
+      {
+        "amount": "56748rune",
+        "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "56748rune",
+        "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+        "type": "coin_received"
+      },
+      {
+        "amount": "56748rune",
+        "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "transfer"
+      },
+      {
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "message"
+      },
+      {
+        "BTC.BTC": "631835",
+        "ETH.ETH": "421579",
+        "bond_reward": "56748",
+        "type": "rewards"
+      },
+      {
+        "amount": "20465810rune",
+        "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "20465810rune",
+        "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_received"
+      },
+      {
+        "amount": "20465810rune",
+        "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "transfer"
+      },
+      {
+        "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "message"
+      },
+      {
+        "asset": "BTC.BTC",
+        "asset_amt": "10500",
+        "rune_amt": "20465810",
+        "transaction_count": "1",
+        "type": "gas"
+      }
+    ],
+    "txs": [
+      {
+        "hash": "86DDDFB03FD494DE29EE8C50686D51C95CC93D2661BD7E431DACF03E221DEC9D",
+        "tx": {
+          "auth_info": {
+            "fee": {
+              "amount": [],
+              "gas_limit": "0",
+              "granter": "",
+              "payer": ""
+            },
+            "signer_infos": [
+              {
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
+                },
+                "sequence": "2"
+              }
+            ]
+          },
+          "body": {
+            "extension_options": [],
+            "memo": "",
+            "messages": [
+              {
+                "@type": "/types.MsgObservedTxOut",
+                "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+                "txs": [
+                  {
+                    "aggregator": "",
+                    "aggregator_target": "",
+                    "aggregator_target_limit": null,
+                    "block_height": "8",
+                    "finalise_height": "8",
+                    "keysign_ms": "0",
+                    "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+                    "out_hashes": [],
+                    "signers": [],
+                    "status": "incomplete",
+                    "tx": {
+                      "chain": "BTC",
+                      "coins": [
+                        {
+                          "amount": "21861985",
+                          "asset": "BTC.BTC",
+                          "decimals": "8"
+                        }
+                      ],
+                      "from_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
+                      "gas": [
+                        {
+                          "amount": "10500",
+                          "asset": "BTC.BTC",
+                          "decimals": "0"
+                        }
+                      ],
+                      "id": "0000000000000000000000000000000000000000000000000000000000000003",
+                      "memo": "OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
+                      "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
+                    }
+                  }
+                ]
+              }
+            ],
+            "non_critical_extension_options": [],
+            "timeout_height": "0"
+          },
+          "signatures": [
+            "hG3VYa/kZmlOUawOZIq1uc017/VBXv5N6+ugsNOWLAggOYgfevakWbYHtUUvpMChsNcjTjbGut7/YrvuT4Ruvg=="
+          ]
+        },
+        "result": {
+          "code": 0,
+          "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"coin\",\"value\":\"21861985 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"}]}]}]",
+          "gas_wanted": "0",
+          "gas_used": "268520",
+          "events": [
+            {
+              "fee": "",
+              "type": "tx"
+            },
+            {
+              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/2",
+              "type": "tx"
+            },
+            {
+              "signature": "hG3VYa/kZmlOUawOZIq1uc017/VBXv5N6+ugsNOWLAggOYgfevakWbYHtUUvpMChsNcjTjbGut7/YrvuT4Ruvg==",
+              "type": "tx"
+            },
+            {
+              "action": "set_observed_txout",
+              "type": "message"
+            },
+            {
+              "chain": "BTC",
+              "coin": "21861985 BTC.BTC",
+              "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
+              "id": "0000000000000000000000000000000000000000000000000000000000000003",
+              "in_tx_id": "4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
+              "memo": "OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
+              "to": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
+              "type": "outbound"
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
             }
           ]
         }
@@ -2467,8 +2773,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "A2364D4DE676CCA5EFD8B5FAA564DE785331D3A5B7736E3761763A00B9A662C2",
       "last_results_hash": "D90E235400802EFB1EA4951CE1D549EE8A304AAF906232E43541F28980019587",
+=======
+      "app_hash": "095FFABD77958E44EB16BD1FF903DC49C1B40C49EE78BA9AC3906F30AFD09CF3",
+      "last_results_hash": "CB93651B6222C4E3B375F8D6ED72E2032B110147A188A7CF50ADC6A3701DB679",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2646,6 +2957,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "BB95F080964E89137AFB2D617E47EBF371FC38F1529F14A224B368D57D43E3FB",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
@@ -2916,6 +3228,10 @@
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "CEE128419133DCB240B610DC0EF5058297F151E007BBBCD1A95956D764B38220",
       "last_results_hash": "8ADDCA8D55D48E47E4BFBE3946AC7DC02606504634FCE6BBAA76A36D35C6F36C",
+=======
+      "app_hash": "D44392B837B3DA8AF8825A553EFA3DD82C5A8E781914C3A857495A555FFD2F2B",
+      "last_results_hash": "F1EF901F155EF70DA4F538266A83F798C2606F7B5E20B950D5E5DFDBD7E862BC",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -4010,8 +4326,13 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "EA2EFA4F97F165104FBB9F6ACD14F353658A92736241826BB03C668BB6B01FEE",
       "last_results_hash": "4C8D6ED3539D0193BD98B2E9C37558A6356AD812C36321855E0E87038CF0BB7A",
+=======
+      "app_hash": "3F82CA6DC59A6FF6C2CDDE66337E89708E2C4C3939DA77DD31E1EB84CC47B77A",
+      "last_results_hash": "6CC4590A739373516594230D946CD92A5C573E4849C5B971ACDDBBB5B81BBD91",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -4146,8 +4467,15 @@
         },
         "result": {
           "code": 0,
+<<<<<<< HEAD
           "gas_wanted": "-1",
           "gas_used": "36290",
+=======
+          "data": "\n\u0011\n\u000f/types.MsgMimir",
+          "log": "[{\"events\":[{\"type\":\"bond\",\"attributes\":[{\"key\":\"amount\",\"value\":\"2000000\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\"},{\"key\":\"to\",\"value\":\"node:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\\nstatus:Active\\nnode pubkeys:\\n\\tsecp256k1: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4\\n\\ted25519: tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql\\n\\nvalidator consensus pub key:tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz\\nbond:4999998000000\\nversion:1.133.0\\nbond address:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\\nrequested to leave:false\\n\"},{\"key\":\"coin\"},{\"key\":\"memo\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"2000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_mimir_attr\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"HALTBTCTRADING\"},{\"key\":\"value\",\"value\":\"1\"}]},{\"type\":\"set_node_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"HALTBTCTRADING\"},{\"key\":\"value\",\"value\":\"1\"},{\"key\":\"address\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2000000rune\"}]}]}]",
+          "gas_wanted": "0",
+          "gas_used": "97563",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
           "events": [
             {
               "fee": "",
@@ -4168,6 +4496,43 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
+            },
+            {
+              "amount": "2000000rune",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2000000rune",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2000000rune",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "key": "HALTBTCTRADING",
+              "type": "set_node_mimir",
+              "value": "1"
+            },
+            {
+              "amount": "2000000",
+              "bond_type": "\u0003",
+              "chain": "",
+              "coin": "",
+              "from": "",
+              "id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "memo": "",
+              "to": "node:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\nstatus:Active\nnode pubkeys:\n\tsecp256k1: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4\n\ted25519: tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql\n\nvalidator consensus pub key:tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz\nbond:4999998000000\nversion:1.133.0\nbond address:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\nrequested to leave:false\n",
+              "type": "bond"
             },
             {
               "key": "HALTBTCTRADING",
@@ -4208,6 +4573,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "77642FC719BF07C1697C1D0D51ECA0773A1325A268781E67E5E63220C034CE93",
       "last_results_hash": "61B550E5981608C53933805C14C87F76E1E2879CCF7F6506BC6F57D3EE42B237",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
@@ -4507,6 +4873,10 @@
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "A7C2EC8EB40ED6CB2F3159F5D3468820D49CC1175011060FEED15C4957BBCDA2",
       "last_results_hash": "DCFB6FA525EB9CC6969CC6BE7C946B66A44BDF31F652EC3DD5E3B59CE0AEA9BD",
+=======
+      "app_hash": "732C5A8594FF99D88D8D8949D67C66E17CD8C5118C2F674EB5986C6939F27915",
+      "last_results_hash": "D15832916231C14212D7469305147720A6F5BEE6256FF59599CD2ABE20938437",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -4598,20 +4968,32 @@
         "type": "outbound"
       },
       {
+<<<<<<< HEAD
         "amount": "5375584rune",
         "mode": "EndBlock",
+=======
+        "amount": "1018917944rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
+<<<<<<< HEAD
         "amount": "5375584rune",
         "mode": "EndBlock",
+=======
+        "amount": "1018917944rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
+<<<<<<< HEAD
         "amount": "5375584rune",
         "mode": "EndBlock",
+=======
+        "amount": "1018917944rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -4622,20 +5004,32 @@
         "type": "message"
       },
       {
+<<<<<<< HEAD
         "amount": "6485752rune",
         "mode": "EndBlock",
+=======
+        "amount": "1020028105rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
+<<<<<<< HEAD
         "amount": "6485752rune",
         "mode": "EndBlock",
+=======
+        "amount": "1020028105rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
+<<<<<<< HEAD
         "amount": "6485752rune",
         "mode": "EndBlock",
+=======
+        "amount": "1020028105rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -4646,11 +5040,16 @@
         "type": "message"
       },
       {
+<<<<<<< HEAD
         "ETH.ETH": "-5375584",
         "bond_reward": "6485752",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+=======
+        "ETH.ETH": "-1018917944",
+        "bond_reward": "1020028105",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "type": "rewards"
       },
       {
@@ -5178,16 +5577,49 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+<<<<<<< HEAD
       "app_hash": "EEEED8B5B0D3A1ED5A1A8994AC2F5B00377C0E84FA1649CA51B81D5B47C85E79",
       "last_results_hash": "A710C2B02DDF016869057ECFD2C626BCBC1746E3C59EE9C02BC0F315C274ED0C",
+=======
+      "app_hash": "38542863AAA45346656F085F1D9A3B7B74360388DB90E2091566E41F347A38A1",
+      "last_results_hash": "7EB775A9F6E994BB0F7A0EB4F06FD95D741F04D020D9B542ADF90D161966EC92",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
     "begin_block_events": [],
     "end_block_events": [
       {
+<<<<<<< HEAD
         "amount": "6556873224rune",
         "mode": "EndBlock",
+=======
+        "chain": "THOR",
+        "coin": "47500000000 THOR.RUNE",
+        "emit_asset": "478747933 ETH.ETH",
+        "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+        "id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
+        "liquidity_fee": "315086760",
+        "liquidity_fee_in_rune": "11370263395",
+        "memo": "=:ETH.ETH:0x1b03d088612a00df0049634e9cc8684d622cada2::test:500",
+        "pool": "ETH.ETH",
+        "pool_slip": "3969",
+        "streaming_swap_count": "1",
+        "streaming_swap_quantity": "1",
+        "swap_slip": "3969",
+        "swap_target": "0",
+        "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "swap"
+      },
+      {
+        "coins": "1280000 ETH.ETH",
+        "pool_deduct": "100609051",
+        "tx_id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
+        "type": "fee"
+      },
+      {
+        "amount": "100609051rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
@@ -5210,12 +5642,54 @@
         "type": "message"
       },
       {
+<<<<<<< HEAD
         "amount": "588647rune",
         "mode": "EndBlock",
+=======
+        "chain": "ETH",
+        "coin_amount": "477467933",
+        "coin_asset": "ETH.ETH",
+        "coin_decimals": "0",
+        "gas_rate": "12",
+        "in_hash": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
+        "max_gas_amount_0": "960000",
+        "max_gas_asset_0": "ETH.ETH",
+        "max_gas_decimals_0": "8",
+        "memo": "OUT:DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
+        "module_name": "",
+        "out_hash": "",
+        "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+        "type": "scheduled_outbound",
+        "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+      },
+      {
+        "amount": "768290681rune",
+        "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "768290681rune",
+        "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_received"
+      },
+      {
+        "amount": "768290681rune",
+        "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "transfer"
+      },
+      {
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "message"
+      },
+      {
+        "amount": "769400845rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
+<<<<<<< HEAD
         "amount": "588647rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -5266,12 +5740,19 @@
       {
         "amount": "53762rune",
         "mode": "EndBlock",
+=======
+        "amount": "769400845rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
+<<<<<<< HEAD
         "amount": "53762rune",
         "mode": "EndBlock",
+=======
+        "amount": "769400845rune",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -5282,12 +5763,17 @@
         "type": "message"
       },
       {
+<<<<<<< HEAD
         "BTC.BTC": "588647",
         "ETH.ETH": "467754",
         "bond_reward": "53762",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+=======
+        "ETH.ETH": "-768290681",
+        "bond_reward": "769400845",
+>>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         "type": "rewards"
       }
     ],

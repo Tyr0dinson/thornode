@@ -72,13 +72,6 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "14",
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "pub_key": null,
-          "sequence": "0"
-        },
-        {
-          "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "10",
           "address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
           "pub_key": {
@@ -180,10 +173,6 @@
             {
               "amount": "5000000000000",
               "denom": "rune"
-            },
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
             }
           ]
         },
@@ -220,15 +209,6 @@
             {
               "amount": "200010920842",
               "denom": "rune"
-            }
-          ]
-        },
-        {
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "coins": [
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
             }
           ]
         },
@@ -290,7 +270,7 @@
           "denom": "rune"
         },
         {
-          "amount": "400000000000",
+          "amount": "200000000000",
           "denom": "thor.mimir"
         }
       ]
