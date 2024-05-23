@@ -135,9 +135,8 @@ func (GasManagerTestSuiteVCUR) TestGetAssetOutboundFee(c *C) {
 	// A trade asset with inRune true should return the fee in RUNE, not in the trade asset.
 	runeFee, err := gasMgr.GetAssetOutboundFee(ctx, tradeAsset, true)
 	c.Assert(err, IsNil)
-	c.Assert(runeFee.String(), Equals, "400000")
-	c.Assert(runeFee.Equal(tradeAssetFee), Equals, true)
-	// The returned fee for inRune true is the same as inRune false, though it shouldn't be.
+	c.Assert(runeFee.String(), Equals, "2000000")
+	c.Assert(runeFee.Equal(tradeAssetFee), Equals, false)
 
 	// when MinimumL1OutboundFeeUSD set to something higher, it should override the network fee
 	busdAsset, err := common.NewAsset("BNB.BUSD-BD1")
