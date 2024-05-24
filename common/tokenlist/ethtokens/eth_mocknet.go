@@ -31,5 +31,8 @@ var ETHTokenListRawV126 []byte
 //go:embed eth_mocknet_V128.json
 var ETHTokenListRawV128 []byte
 
-//go:embed eth_mocknet_latest.json
+//go:embed eth_mocknet_V133.json
 var ETHTokenListRawV133 []byte
+
+//go:embed eth_mocknet_latest.json
+var ETHTokenListRawV134 []byte
