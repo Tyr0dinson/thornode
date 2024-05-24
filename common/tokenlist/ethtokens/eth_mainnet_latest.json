@@ -8078,7 +8078,7 @@
       "symbol": "LENDS",
       "decimals": 18,
       "logoURI": "https://app.lends.so/tokens/eth.lends-0x2c06ba9e7f0daccbc1f6a33ea67e85bb68fbee3a.svg"
-    }
+    },
     {
       "address": "0x6c3ea9036406852006290770BEdFcAbA0e23A0e8",
       "chainId": 1, 
