@@ -45,10 +45,10 @@ func init() {
 	if err := json.Unmarshal(ethtokens.ETHTokenListRawV128, &ethTokenListV128); err != nil {
 		panic(err)
 	}
-	if err := json.Unmarshal(ethtokens.ETHTokenListRawV134, &ethTokenListV134); err != nil {
+	if err := json.Unmarshal(ethtokens.ETHTokenListRawV133, &ethTokenListV133); err != nil {
 		panic(err)
 	}
-	if err := json.Unmarshal(ethtokens.ETHTokenListRawV133, &ethTokenListV133); err != nil {
+	if err := json.Unmarshal(ethtokens.ETHTokenListRawV134, &ethTokenListV134); err != nil {
 		panic(err)
 	}
 }
