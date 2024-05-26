@@ -21,6 +21,27 @@ contract THORChain_Router {
         uint amount;
     }
 
+    // Used in V5 function implementation
+    struct TransferOutData {
+        address payable to;
+        address asset;
+        uint amount;
+        string memo;
+    }
+
+    // Used in V5 function implementation
+    struct TransferOutAndCallData {
+        address payable target;
+        address fromAsset;
+        uint256 fromAmount;
+        address toAsset;
+        address recipient;
+        uint256 amountOutMin;
+        string memo;
+        bytes payload;
+        string originAddress;
+    }
+
     // Vault allowance for each asset
     mapping(address => mapping(address => uint)) private _vaultAllowance;
 
@@ -97,29 +118,30 @@ contract THORChain_Router {
 
     // Any vault calls to transfer any asset to any recipient.
     // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
-    function transferOut(address payable to, address asset, uint amount, string calldata memo) public payable nonReentrant {
+    function transferOut(TransferOutData calldata transferOutPayload) public payable nonReentrant {
         uint safeAmount;
-        if(asset == address(0)){
+        if(transferOutPayload.asset == address(0)){
             safeAmount = msg.value;
-            bool success = to.send(safeAmount); // Send ETH. 
+            bool success = transferOutPayload.to.send(safeAmount); // Send ETH. 
             if (!success) {
                 payable(address(msg.sender)).transfer(safeAmount); // For failure, bounce back to Yggdrasil & continue.
             }
         } else {
-            _vaultAllowance[msg.sender][asset] -= amount; // Reduce allowance
-            (bool success, bytes memory data) = asset.call(abi.encodeWithSignature("transfer(address,uint256)" , to, amount));
+            _vaultAllowance[msg.sender][transferOutPayload.asset] -= transferOutPayload.amount; // Reduce allowance
+            (bool success, bytes memory data) = transferOutPayload.asset.call(abi.encodeWithSignature("transfer(address,uint256)" , transferOutPayload.to, transferOutPayload.amount));
             require(success && (data.length == 0 || abi.decode(data, (bool))));
-            safeAmount = amount;
+            safeAmount = transferOutPayload.amount;
         }
-        emit TransferOut(msg.sender, to, asset, safeAmount, memo);
+        emit TransferOut(msg.sender, transferOutPayload.to, transferOutPayload.asset, safeAmount, transferOutPayload.memo);
     }
 
     function batchTransferOut(address payable[] calldata to, address[] calldata asset, uint[] calldata amount, string[] calldata memo) external payable nonReentrant {
         require(to.length == asset.length && to.length == amount.length && to.length == memo.length, "THORChain_Router: invalid batch input");
         for(uint i = 0; i < to.length; i++){
-          try this.transferOut(to[i], asset[i], amount[i], memo[i]){
+          TransferOutData memory currentPayload = TransferOutData(to[i], asset[i], amount[i], memo[i]);
+          try this.transferOut(currentPayload){
           } catch{
-            emit BatchedTransferOutFailed(msg.sender, to[i], asset[i], amount[i], memo[i]);
+            emit BatchedTransferOutFailed(msg.sender, currentPayload.to, currentPayload.asset, currentPayload.amount, currentPayload.memo);
           }
         }
     }
@@ -132,46 +154,48 @@ contract THORChain_Router {
     // RouterV5: transferOutAndCall can be used with ERC20 tokens as well as Ether
     // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
     // RouterV5: originAddress field is what nodes observed + had consensus on
-    function transferOutAndCall(address payable target, address fromAsset, uint256 fromAmount, address toAsset, address recipient, uint256 amountOutMin, string calldata memo, bytes calldata payload, string calldata originAddress) external payable nonReentrant {
-        if(fromAsset == address(0)) {
+    // RouterV5: use struct TransferOutAndCallData to pass in the data to reduce local variables
+    function transferOutAndCall(TransferOutAndCallData calldata aggregationPayload) external payable nonReentrant {
+        if(aggregationPayload.fromAsset == address(0)) {
             // call swapOut with ether
-            (bool swapOutSuccess, ) = target.call{value:msg.value}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
+            (bool swapOutSuccess, ) = aggregationPayload.target.call{value:msg.value}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", aggregationPayload.fromAsset, aggregationPayload.fromAmount, aggregationPayload.toAsset, aggregationPayload.recipient, aggregationPayload.amountOutMin, aggregationPayload.payload, aggregationPayload.originAddress));
             if(!swapOutSuccess) {
-                bool sendSuccess = payable(recipient).send(msg.value); // If can't swap, just send the recipient the gas asset
+                bool sendSuccess = payable(aggregationPayload.recipient).send(msg.value); // If can't swap, just send the recipient the gas asset
                 if (!sendSuccess) {
                     payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to Yggdrasil & continue.
                 }
             }
             
-            emit TransferOutAndCall(msg.sender, target, msg.value, toAsset, recipient, amountOutMin, memo, payload, originAddress);
+            emit TransferOutAndCall(msg.sender, aggregationPayload.target, msg.value, aggregationPayload.toAsset, aggregationPayload.recipient, aggregationPayload.amountOutMin, aggregationPayload.memo, aggregationPayload.payload, aggregationPayload.originAddress);
         } else {
-            _vaultAllowance[msg.sender][fromAsset] -= fromAmount; // Reduce allowance
-            safeApprove(fromAsset, target, 0); // best practice
-            safeApprove(fromAsset, target, fromAmount); // Approve target to spend asset
+            _vaultAllowance[msg.sender][aggregationPayload.fromAsset] -= aggregationPayload.fromAmount; // Reduce allowance
+            safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // best practice
+            safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, aggregationPayload.fromAmount); // Approve target to spend asset
 
             // call swapOut with erc20
-            (bool swapOutSuccess, ) = target.call{value:0}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", fromAsset, fromAmount, toAsset, recipient, amountOutMin, payload, originAddress));
+            (bool swapOutSuccess, ) = aggregationPayload.target.call{value:0}(abi.encodeWithSignature("swapOut(address,uint256,address,address,uint256,bytes,string)", aggregationPayload.fromAsset, aggregationPayload.fromAmount, aggregationPayload.toAsset, aggregationPayload.recipient, aggregationPayload.amountOutMin, aggregationPayload.payload, aggregationPayload.originAddress));
             
             if(!swapOutSuccess) {
                 // call transfer with erc20
-                (bool transferSuccess, ) = fromAsset.call(abi.encodeWithSignature("transfer(address,uint256)" , recipient, fromAmount));
-                safeApprove(fromAsset, target, 0); // reset approval in all cases
+                (bool transferSuccess, ) = aggregationPayload.fromAsset.call(abi.encodeWithSignature("transfer(address,uint256)", aggregationPayload.recipient, aggregationPayload.fromAmount));
+                safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // reset approval in all cases
 
                 require(transferSuccess, "Failed to transfer token after failed dex agg call");
             } else {
-                safeApprove(fromAsset, target, 0); // reset approval on successful swapOut
+                safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // reset approval on successful swapOut
             }
 
-            emit TransferOutAndCall(msg.sender, target, fromAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress);
+            emit TransferOutAndCall(msg.sender, aggregationPayload.target, aggregationPayload.fromAmount, aggregationPayload.toAsset, aggregationPayload.recipient, aggregationPayload.amountOutMin, aggregationPayload.memo, aggregationPayload.payload, aggregationPayload.originAddress);
         }
     }
 
-    function batchTransferOutAndCall(address payable[] calldata target, address[] calldata fromAsset, uint256[] calldata fromAmount, address[] calldata toAsset, address[] calldata recipient, uint256[] calldata amountOutMin, string[] calldata memo, bytes[] calldata payload, string[] calldata originAddress) external payable nonReentrant {
-        require(target.length == fromAsset.length && target.length == fromAmount.length && target.length == toAsset.length && target.length == recipient.length && target.length == amountOutMin.length && target.length == memo.length && target.length == payload.length && target.length == originAddress.length, "THORChain_Router: invalid batch input");
-        for(uint i = 0; i < target.length; i++){
-          try this.transferOutAndCall(target[i], fromAsset[i], fromAmount[i], toAsset[i], recipient[i], amountOutMin[i], memo[i], payload[i], originAddress[i]){
+    function batchTransferOutAndCall(TransferOutAndCallData[] calldata aggregationPayloads) external payable nonReentrant {
+        for(uint i = 0; i < aggregationPayloads.length; i++){
+          TransferOutAndCallData memory currentPayload = aggregationPayloads[i];
+
+          try this.transferOutAndCall(currentPayload){
           } catch{
-            emit BatchedTransferOutAndCallFailed(msg.sender, target[i], fromAmount[i], toAsset[i], recipient[i], amountOutMin[i], memo[i], payload[i], originAddress[i]);
+            emit BatchedTransferOutAndCallFailed(msg.sender, currentPayload.target, currentPayload.fromAmount, currentPayload.toAsset, currentPayload.recipient, currentPayload.amountOutMin, currentPayload.memo, currentPayload.payload, currentPayload.originAddress);
           }
         }
     }
