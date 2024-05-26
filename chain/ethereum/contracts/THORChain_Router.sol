@@ -34,8 +34,14 @@ contract THORChain_Router {
     // Emitted for all outgoing transfers, the vault dictates who sent it, memo used to track.
     event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
 
+    // Emitted for failed transferOut calls in a batch of outbound transfers
+    event BatchedTransferOutFailed(address indexed vault, address indexed to, address asset, uint amount, string memo);
+
     // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
     event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
+
+    // Emitted for failed transferOutAndCall calls in a batch of outbound transfers
+    event BatchedTransferOutAndCallFailed(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
 
     // Changes the spend allowance between vaults
     event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
@@ -91,7 +97,7 @@ contract THORChain_Router {
 
     // Any vault calls to transfer any asset to any recipient.
     // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
-    function transferOut(address payable to, address asset, uint amount, string calldata memo) external payable nonReentrant {
+    function transferOut(address payable to, address asset, uint amount, string calldata memo) public payable nonReentrant {
         uint safeAmount;
         if(asset == address(0)){
             safeAmount = msg.value;
@@ -106,6 +112,16 @@ contract THORChain_Router {
             safeAmount = amount;
         }
         emit TransferOut(msg.sender, to, asset, safeAmount, memo);
+    }
+
+    function batchTransferOut(address payable[] calldata to, address[] calldata asset, uint[] calldata amount, string[] calldata memo) external payable nonReentrant {
+        require(to.length == asset.length && to.length == amount.length && to.length == memo.length, "THORChain_Router: invalid batch input");
+        for(uint i = 0; i < to.length; i++){
+          try this.transferOut(to[i], asset[i], amount[i], memo[i]){
+          } catch{
+            emit BatchedTransferOutFailed(msg.sender, to[i], asset[i], amount[i], memo[i]);
+          }
+        }
     }
 
     // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,bytes)"
@@ -150,6 +166,15 @@ contract THORChain_Router {
         }
     }
 
+    function batchTransferOutAndCall(address payable[] calldata target, address[] calldata fromAsset, uint256[] calldata fromAmount, address[] calldata toAsset, address[] calldata recipient, uint256[] calldata amountOutMin, string[] calldata memo, bytes[] calldata payload, string[] calldata originAddress) external payable nonReentrant {
+        require(target.length == fromAsset.length && target.length == fromAmount.length && target.length == toAsset.length && target.length == recipient.length && target.length == amountOutMin.length && target.length == memo.length && target.length == payload.length && target.length == originAddress.length, "THORChain_Router: invalid batch input");
+        for(uint i = 0; i < target.length; i++){
+          try this.transferOutAndCall(target[i], fromAsset[i], fromAmount[i], toAsset[i], recipient[i], amountOutMin[i], memo[i], payload[i], originAddress[i]){
+          } catch{
+            emit BatchedTransferOutAndCallFailed(msg.sender, target[i], fromAmount[i], toAsset[i], recipient[i], amountOutMin[i], memo[i], payload[i], originAddress[i]);
+          }
+        }
+    }
 
     //############################## VAULT MANAGEMENT ##############################
 
