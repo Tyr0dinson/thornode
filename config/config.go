@@ -619,11 +619,6 @@ type BifrostChainConfiguration struct {
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
-	// FixedOutboundGasRate will force signed transactions to use the specific rate in the
-	// outbound instead of adjusting based on current chain gas price. This is currently
-	// only used in mocknet to for smoke tests.
-	FixedOutboundGasRate bool `mapstructure:"fixed_outbound_gas_rate"`
-
 	// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
 	// dynamic fee EVM transactions.
 	MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
@@ -727,6 +722,9 @@ type BifrostBlockScannerConfiguration struct {
 	// block - e.g. transactions, receipts, logs, etc. Blocks are processed sequentially.
 	Concurrency int64 `mapstructure:"concurrency"`
 
+	// FixedGasRate will force the scanner to only report the defined gas rate.
+	FixedGasRate int64 `mapstructure:"fixed_gas_rate"`
+
 	// GasPriceResolution is the resolution of price per gas unit in the base asset of the
 	// chain (wei, tavax, uatom, satoshi, etc) and is transitively the floor price. The
 	// gas price will be rounded up to the nearest multiple of this value.
@@ -740,6 +738,10 @@ type BifrostBlockScannerConfiguration struct {
 	// as the limit in the estimate gas call, and the estimate gas (lower) is used in the
 	// final outbound.
 	MaxGasLimit uint64 `mapstructure:"max_gas_limit"`
+
+	// MaxContractTxLogs is the maximum logs allowed for an inbound EVM tx. This is used to prevent
+	// bifrost being bogged down during smart contract log parsing down by large txs.
+	MaxContractTxLogs int `mapstructure:"max_contract_tx_logs"`
 
 	// WhitelistTokens is the set of whitelisted token addresses. Inbounds for all other
 	// tokens are ignored.

@@ -46,9 +46,9 @@ type Manager interface {
 
 type TradeAccountManager interface {
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error
-	Deposit(_ cosmos.Context, _ common.Asset, _ cosmos.Uint, _ cosmos.AccAddress) (cosmos.Uint, error)
-	Withdrawal(_ cosmos.Context, _ common.Asset, _ cosmos.Uint, _ cosmos.AccAddress) (cosmos.Uint, error)
-	BalanceOf(_ cosmos.Context, _ common.Asset, _ cosmos.AccAddress) cosmos.Uint
+	Deposit(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, error)
+	Withdrawal(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, error)
+	BalanceOf(_ cosmos.Context, _ common.Asset, owner cosmos.AccAddress) cosmos.Uint
 }
 
 // GasManager define all the methods required to manage gas
@@ -84,6 +84,7 @@ type TxOutStore interface {
 	UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, height int64) error
 	GetOutboundItemByToAddress(cosmos.Context, common.Address) []TxOutItem
 	CalcTxOutHeight(cosmos.Context, semver.Version, TxOutItem) (int64, cosmos.Uint, error)
+	DiscoverOutbounds(ctx cosmos.Context, transactionFeeAsset cosmos.Uint, maxGasAsset common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint)
 }
 
 // ObserverManager define the method to manage observes
@@ -158,7 +159,7 @@ type Swapper interface {
 		dexAggTargetAsset string,
 		dexAggLimit *cosmos.Uint,
 		swp StreamingSwap,
-		transactionFee cosmos.Uint,
+		transactionFee cosmos.Uint, // TODO: Remove this argument on hard fork.
 		synthVirtualDepthMult int64,
 		mgr Manager,
 	) (cosmos.Uint, []*EventSwap, error)
@@ -307,7 +308,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	}
 
 	if v.GTE(semver.MustParse("1.128.0")) { // TODO: remove on hard fork
-		mgr.tradeManager, err = GetTradeAccountManager(v, mgr.K)
+		mgr.tradeManager, err = GetTradeAccountManager(v, mgr.K, mgr.eventMgr)
 		if err != nil {
 			return fmt.Errorf("fail to create trade manager: %w", err)
 		}
@@ -531,8 +532,10 @@ func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(version semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.128.0")):
+	case version.GTE(semver.MustParse("1.133.0")):
 		return newValidatorMgrVCUR(keeper, networkMgr, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.128.0")):
+		return newValidatorMgrV128(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.126.0")):
 		return newValidatorMgrV126(keeper, networkMgr, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.124.0")):
@@ -712,8 +715,10 @@ func GetYggManager(version semver.Version, keeper keeper.Keeper) (YggManager, er
 // GetSwapper return an implementation of Swapper
 func GetSwapper(version semver.Version) (Swapper, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.129.0")):
+	case version.GTE(semver.MustParse("1.133.0")):
 		return newSwapperVCUR(), nil
+	case version.GTE(semver.MustParse("1.129.0")):
+		return newSwapperV129(), nil
 	case version.GTE(semver.MustParse("1.128.0")):
 		return newSwapperV128(), nil
 	case version.GTE(semver.MustParse("1.125.0")):
@@ -753,12 +758,12 @@ func GetSwapper(version semver.Version) (Swapper, error) {
 	}
 }
 
-func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper) (TradeAccountManager, error) {
+func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (TradeAccountManager, error) {
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
-		return newTradeMgrVCUR(keeper), nil
+		return newTradeMgrVCUR(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.128.0")):
-		return newTradeMgrV128(keeper), nil
+		return newTradeMgrV128(keeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

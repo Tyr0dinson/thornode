@@ -51,7 +51,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	dexAggTargetAsset string,
 	dexAggLimit *cosmos.Uint,
 	swp StreamingSwap,
-	transactionFee cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
+	_ cosmos.Uint, synthVirtualDepthMult int64, mgr Manager,
 ) (cosmos.Uint, []*EventSwap, error) {
 	var swapEvents []*EventSwap
 
@@ -86,7 +86,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		var swapEvt *EventSwap
 		var amt cosmos.Uint
 		// Here we use a swapTarget of 0 because the target is for the next swap asset in a double swap
-		amt, swapEvt, swapErr = s.swapOne(ctx, mgr, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), transactionFee, synthVirtualDepthMult)
+		amt, swapEvt, swapErr = s.swapOne(ctx, mgr, tx, common.RuneAsset(), destination, cosmos.ZeroUint(), synthVirtualDepthMult)
 		if swapErr != nil {
 			return cosmos.ZeroUint(), swapEvents, swapErr
 		}
@@ -94,7 +94,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		tx.Gas = nil
 		swapEvents = append(swapEvents, swapEvt)
 	}
-	assetAmount, swapEvt, swapErr := s.swapOne(ctx, mgr, tx, target, destination, swapTarget, transactionFee, synthVirtualDepthMult)
+	assetAmount, swapEvt, swapErr := s.swapOne(ctx, mgr, tx, target, destination, swapTarget, synthVirtualDepthMult)
 	if swapErr != nil {
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
@@ -104,11 +104,6 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		// catch the error. DO NOT change this error string without updating
 		// the order book manager as well
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, swapTarget)
-	}
-	if target.IsRune() {
-		if assetAmount.LTE(transactionFee) {
-			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("output RUNE (%s) is not enough to pay transaction fee", assetAmount)
-		}
 	}
 	// emit asset is zero
 	if assetAmount.IsZero() {
@@ -185,21 +180,16 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 	target common.Asset,
 	destination common.Address,
 	swapTarget cosmos.Uint,
-	transactionFee cosmos.Uint,
 	synthVirtualDepthMult int64,
 ) (amt cosmos.Uint, evt *EventSwap, swapErr error) {
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
 
-	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination, "fee", transactionFee)
+	ctx.Logger().Info("swapping", "from", tx.FromAddress, "coins", tx.Coins[0], "target", target, "to", destination)
 
 	// Set asset to our pool asset
 	var poolAsset common.Asset
 	if source.IsRune() {
-		if amount.LTE(transactionFee) {
-			// stop swap , because the output will not enough to pay for transaction fee
-			return cosmos.ZeroUint(), evt, errSwapFailNotEnoughFee
-		}
 		poolAsset = target.GetLayer1Asset()
 	} else {
 		poolAsset = source.GetLayer1Asset()
@@ -213,7 +203,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse from address")
 		}
-		amount, err = mgr.TradeAccountManager().Withdrawal(ctx, source, amount, fromAcc)
+		amount, err = mgr.TradeAccountManager().Withdrawal(ctx, source, amount, fromAcc, common.NoAddress, tx.ID)
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to withdraw from trade")
 		}
@@ -381,7 +371,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse trade account address")
 		}
-		_, err = mgr.TradeAccountManager().Deposit(ctx, target, emitAssets, acc)
+		_, err = mgr.TradeAccountManager().Deposit(ctx, target, emitAssets, acc, common.NoAddress, tx.ID)
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to deposit to trade account")
 		}
@@ -500,20 +490,24 @@ func (s *SwapperVCUR) MinSlipBps(
 	ctx cosmos.Context,
 	k keeper.Keeper,
 	isSynth bool,
-	isTradeAccounts bool,
+	isTradeAccount bool,
 ) cosmos.Uint {
 	var ref string
 	switch {
 	case isSynth:
-		ref = constants.SynthSlipMinBps.String()
-	case isTradeAccounts:
-		ref = constants.TradeAccountsSlipMinBps.String()
+		ref = constants.MimirRefSynth
+	case isTradeAccount:
+		ref = constants.MimirRefTradeAccount
 	default:
-		ref = constants.L1SlipMinBps.String()
+		ref = constants.MimirRefL1
 	}
-	minFeeMimir, found := mimir.GetMimir(mimir.SwapSlipBasisPointsMin, ref)
-	if !found {
+	key := fmt.Sprintf(constants.MimirTemplateSwapSlipBasisPointsMin, ref)
+	minFeeMimir, err := k.GetMimir(ctx, key)
+	if minFeeMimir < 0 || err != nil {
+		if err != nil {
+			ctx.Logger().Error("fail to get mimir", "key", key, "error", err)
+		}
 		return cosmos.ZeroUint()
 	}
-	return cosmos.SafeUintFromInt64(minFeeMimir.FetchValue(ctx, k))
+	return cosmos.SafeUintFromInt64(minFeeMimir)
 }
