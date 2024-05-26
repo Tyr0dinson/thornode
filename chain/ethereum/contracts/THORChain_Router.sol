@@ -146,11 +146,11 @@ contract THORChain_Router {
     uint expiration
   ) external payable {
     require(block.timestamp < expiration, "THORChain_Router: expired");
-    deposit(vault, asset, amount, memo);
+    _deposit(vault, asset, amount, memo);
   }
 
   // Deposit an asset with a memo. ETH is forwarded, ERC-20 stays in ROUTER
-  function deposit(
+  function _deposit(
     address payable vault,
     address asset,
     uint amount,
