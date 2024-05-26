@@ -236,7 +236,7 @@ contract THORChain_Router {
         to.length == memo.length,
       "THORChain_Router: invalid batch input"
     );
-    for (uint i = 0; i < to.length; i++) {
+    for (uint16 i = 0; i < to.length; i++) {
       TransferOutData memory currentPayload = TransferOutData(
         to[i],
         asset[i],
