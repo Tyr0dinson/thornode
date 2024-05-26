@@ -47,6 +47,14 @@ Ygg can return assets by batch transferring back:
 Asgard can transfer allowance to spend across 5 iterations:
 `await VAULT.transferAllowance(newAsgard, asset, amount, memo)`
 
+### Batch outbounds
+
+RouterV5 re-introduces batch outbound transactions to optimize gas required for normal operations.
+
+`batchTransferOut` supports outbounds for gas assets and tokens in the same batch. Individual outbounds can succeed/fail independently and won't revert the whole transaction. `TransferOut` logs are emitted normally for each outbound. *to double validate*: failed outbound as part of a batch emit `BatchedTransferOutFailed` with the same fields.
+
+`batchTransferOutAndCall` works the same as `batchTransferOut` but with dex aggregation calldata and flow.
+
 ## Contract Design
 
 ### Public Getters
