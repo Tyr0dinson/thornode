@@ -22,7 +22,7 @@ Users query THORChain for the correct asgard, then call deposit with a memo:
 
 Bifrost should parse contract events to read the `memo` for asset transfers.
 
-_Note 1: ETHER uses asset `0x0000000000000000000000000000000000000000`_
+_Note 1: ETHER/Gas asset uses asset `0x0000000000000000000000000000000000000000`_
 _Note 2: expiration is in seconds_
 _Note 3: `deposit` method without expiry was deprecated in RouterV4.1 and removed in RouterV5_
 
@@ -70,7 +70,9 @@ mapping(address => mapping(address => uint)) public vaultAllowance;
 ```solidity
 event Deposit(address indexed to, address indexed asset, uint amount, string memo);
 event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
-event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress)
+event BatchedTransferOutFailed(address indexed vault, address indexed to, address asset, uint amount, string memo);
+event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
+event BatchedTransferOutAndCallFailed(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
 event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
 event VaultTransfer(address indexed oldVault, address indexed newVault, Coin[] coins, string memo);
 ```
