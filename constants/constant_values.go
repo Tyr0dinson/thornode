@@ -76,7 +76,7 @@ const (
 	MaxSynthPerAssetDepth // TODO: remove me on hard fork
 	MaxSynthPerPoolDepth
 	MaxSynthsForSaversYield
-	VirtualMultSynths
+	VirtualMultSynths // TODO: remove me on hard fork
 	VirtualMultSynthsBasisPoints
 	MinSlashPointsForBadValidator
 	FullImpLossProtectionBlocks // TODO: remove me on hard fork
