@@ -72,7 +72,7 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	if key == constants.SignerConcurrency.String() {
 		return 3, nil
 	}
-	if key == "MAXOUTBOUNDATTEMPTS" {
+	if key == constants.MaxOutboundAttempts.String() {
 		return 100, nil
 	}
 	panic("not implemented")

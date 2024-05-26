@@ -464,7 +464,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// if in round 7 retry, discard outbound if over the max outbound attempts
 	inactiveVaultRound7Retry := false
 	if item.Round7Retry {
-		mimirKey := "MAXOUTBOUNDATTEMPTS"
+		mimirKey := constants.MaxOutboundAttempts.String()
 		var maxOutboundAttemptsMimir int64
 		maxOutboundAttemptsMimir, err = s.thorchainBridge.GetMimir(mimirKey)
 		if err != nil {
