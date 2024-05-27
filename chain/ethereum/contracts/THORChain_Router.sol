@@ -416,21 +416,7 @@ contract THORChain_Router {
         )
       );
 
-      if (!swapOutSuccess) {
-        // call transfer with erc20
-        (bool lastResortTransferSuccess, ) = aggregationPayload.fromAsset.call(
-          abi.encodeWithSignature(
-            "transfer(address,uint256)",
-            aggregationPayload.recipient,
-            aggregationPayload.fromAmount
-          )
-        );
-
-        require(
-          lastResortTransferSuccess,
-          "Failed to transfer token after failed dex agg call"
-        );
-      }
+      require(swapOutSuccess, "Failed to call swapOutV5");
 
       emit TransferOutAndCallV5(
         msg.sender,

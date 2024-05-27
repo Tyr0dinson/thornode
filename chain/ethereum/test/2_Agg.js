@@ -79,7 +79,7 @@ describe("Aggregator contract", function () {
 
     it("Should Swap In Token using Aggregator", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998789202587952179",
+        "5620998789225805770196",
       ); // 1000 ETH
 
       // Approval - we are approving the AGG to spend all of USER1 funds
@@ -110,7 +110,7 @@ describe("Aggregator contract", function () {
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5621998789202587952179",
+        "5621998789225805770196",
       ); // Add 1 ETH
     });
 
@@ -143,7 +143,7 @@ describe("Aggregator contract", function () {
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5622998789202587952179",
+        "5622998789225805770196",
       ); // Add 1 ETH
     });
 
@@ -162,7 +162,7 @@ describe("Aggregator contract", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5621998547972349182274",
+        "5621998547995620836689",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
@@ -180,7 +180,7 @@ describe("Aggregator contract", function () {
 
     it("Should Fail Swap Out using Aggregator", async function () {
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8979925439047543275132",
+        "8979926076489619440096",
       ); // Start bal
       expect(BN2Str(await USDT.balanceOf(SUSHIROUTER.address))).to.equal(
         "20000000000000000000",
@@ -201,13 +201,13 @@ describe("Aggregator contract", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998360785997746541",
+        "5620998360809306010919",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8980925439047543275132",
+        "8980926076489619440096",
       ); // +1 ETH (from failed swap)
       expect(BN2Str(await WETH.balanceOf(SUSHIROUTER.address))).to.equal(
         "9000000000000000000",
@@ -225,7 +225,7 @@ describe("Aggregator contract", function () {
         "20000000000000000000",
       ); // Start bal
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998360785997746541",
+        "5620998360809306010919",
       ); // Start bal
 
       // Asgard transferOutAndCall() 1 ETH
@@ -244,7 +244,7 @@ describe("Aggregator contract", function () {
         BN2Str(await web3.eth.getBalance(REVERTINGCONTRACT.address)),
       ).to.equal("0"); // Zero
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998156275462980387",
+        "5620998156298806253881",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
@@ -259,7 +259,7 @@ describe("Aggregator contract", function () {
 
     it("Should Swap Out using AggregatorV5 with Ether", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998156275462980387",
+        "5620998156298806253881",
       ); // starting balance
 
       await ROUTER.transferOutAndCallV5([
@@ -277,7 +277,7 @@ describe("Aggregator contract", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5619997898740575302949",
+        "5619997898763957203693",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
@@ -295,7 +295,7 @@ describe("Aggregator contract", function () {
 
     it("Should Swap Out using AggregatorV5 with TOKEN", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5619997898740575302949",
+        "5619997898763957203693",
       ); // starting balance
 
       expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal(
@@ -303,7 +303,7 @@ describe("Aggregator contract", function () {
       ); // starting balance
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8980925439047543275132",
+        "8980926076489619440096",
       ); // starting user eth balance
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
@@ -321,7 +321,7 @@ describe("Aggregator contract", function () {
       });
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8980925089590880173947",
+        "8980925727032998345338",
       ); // user eth balance after router seeding
 
       expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal(
@@ -351,11 +351,11 @@ describe("Aggregator contract", function () {
       ); // Add 1 TOKEN
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5619997560735548082369",
+        "5619997560758963917058",
       ); // No change
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8981925089590880173947",
+        "8981925727032998345338",
       ); // Add 1 ETH
     });
   });
