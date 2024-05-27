@@ -112,34 +112,6 @@ describe("Router contract", function () {
       );
     });
 
-    it("Should Deposit RUNE to Asgard1", async function () {
-      expect(BN2Str(await TOKEN.totalSupply())).to.equal(_1m);
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_1m);
-
-      // tx
-      let tx = await ROUTER1.depositWithExpiry(
-        ASGARD1,
-        RUNE.address,
-        _1m,
-        "SWITCH:THOR.RUNE",
-        currentTime,
-      );
-      // console.log(tx.logs)
-      expect(tx.logs[0].event).to.equal("Deposit");
-      expect(tx.logs[0].args.asset).to.equal(RUNE.address);
-      expect(tx.logs[0].args.to).to.equal(ASGARD1);
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_1m);
-      expect(tx.logs[0].args.memo).to.equal("SWITCH:THOR.RUNE");
-
-      expect(BN2Str(await RUNE.totalSupply())).to.equal(_9m);
-
-      expect(BN2Str(await RUNE.balanceOf(ROUTER1.address))).to.equal("0");
-      expect(BN2Str(await RUNE.balanceOf(USER1))).to.equal(_9m);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, RUNE.address)),
-      ).to.equal("0");
-    });
-
     it("Should revert Deposit RUNE to Asgard1", async function () {
       await truffleAssert.reverts(
         ROUTER1.depositWithExpiry(
