@@ -356,7 +356,7 @@ contract THORChain_Router {
         value: msg.value
       }(
         abi.encodeWithSignature(
-          "swapOut(address,uint256,address,address,uint256,bytes,string)",
+          "swapOutV5(address,uint256,address,address,uint256,bytes,string)",
           aggregationPayload.fromAsset,
           aggregationPayload.fromAmount,
           aggregationPayload.toAsset,
