@@ -1,8 +1,10 @@
 # Eth Vault Contract
 
-Vault Contract for Bifrost.
+Vault Contract for Bifrost
 
-- Incoming deposits register a `memo` and either 1) forward funds to chosen vault 2) give vault allowance to spend for specified asset
+- Incoming deposits register a `memo` and either
+  - A. forward funds to chosen vault
+  - B. give vault allowance to spend for specified asset
 - Vaults can transfer allowance to spend to other vaults (asgard, yggdrasil)
 - Vaults can transferOut up to their allowance to spend
 
@@ -12,15 +14,17 @@ This mirrors how vaults behave on other chains.
 
 ### Bifrost - Observer
 
-**ETH & ERC-20 Deposits**
+### ETH & ERC-20 Deposits
+
 Users query THORChain for the correct asgard, then call deposit with a memo:
 
-- ETH: `await VAULT.depositETH(asgard, amount, memo)`
-- ERC20: `await VAULT.deposit(asgard, asset, amount, memo)`
+- ETH/ERC20: `await VAULT.depositWithExpiry(vault, asset, amount, memo, expiration)`
 
 Bifrost should parse contract events to read the `memo` for asset transfers.
 
-_Note: ETHER is `0x0000000000000000000000000000000000000000`_
+_Note 1: ETHER/Gas asset uses asset `0x0000000000000000000000000000000000000000`_
+_Note 2: expiration is in seconds_
+_Note 3: `deposit` method without expiry was deprecated in RouterV4.1 and removed in RouterV5_
 
 ### Bifrost - Signer
 
@@ -28,19 +32,28 @@ Asgard/Ygg vaults should compose the transactions:
 
 - ETH: `await web3.eth.sendTransaction({ from:0xself, value:value, to:to, data:memo })`
 - ERC20: `await VAULT.transferOut(to, asset, value, memo)`
+- Aggregation `await VAULT.transferOutAndCall(target, fromAsset, fromAmount, toAsset, recipient, amountOutMin, memo, payload, originAddress)`
 
 ### Funding Ygg (only ERC20)
 
 Ygg can be funded by transferring an allowance to spend:
-`await VAULT.transferAllance(vault, asset, amount, memo)`
+`await VAULT.TransferAllowance(vault, asset, amount, memo)`
 
 Ygg can return assets by batch transferring back:
-`await VAULT.batchTransferAllance(asgard[], assets[], amounts[], memos[])`
+`await VAULT.batchTransferAllowance(asgard[], assets[], amounts[], memos[])`
 
 ### Churning (only ERC20)
 
 Asgard can transfer allowance to spend across 5 iterations:
-`await VAULT.transferAllance(newAsgard, asset, amount, memo)`
+`await VAULT.transferAllowance(newAsgard, asset, amount, memo)`
+
+### Batch outbounds
+
+RouterV5 re-introduces batch outbound transactions to optimize gas required for normal operations.
+
+`batchTransferOut` supports outbounds for gas assets and tokens in the same batch. Individual outbounds can succeed/fail independently and won't revert the whole transaction. `TransferOut` logs are emitted normally for each outbound. *to double validate*: failed outbound as part of a batch emit `BatchedTransferOutFailed` with the same fields.
+
+`batchTransferOutAndCall` works the same as `batchTransferOut` but with dex aggregation calldata and flow.
 
 ## Contract Design
 
@@ -55,9 +68,13 @@ mapping(address => mapping(address => uint)) public vaultAllowance;
 ### Events
 
 ```solidity
-event Deposit(address asset, uint value, string memo);
-event TransferOut(address to, address asset, uint value, string memo);
-event TransferAllowance(address vault, address asset, uint value, string memo);
+event Deposit(address indexed to, address indexed asset, uint amount, string memo);
+event TransferOut(address indexed vault, address indexed to, address asset, uint amount, string memo);
+event BatchedTransferOutFailed(address indexed vault, address indexed to, address asset, uint amount, string memo);
+event TransferOutAndCall(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
+event BatchedTransferOutAndCallFailed(address indexed vault, address target, uint amount, address finalAsset, address indexed to, uint256 amountOutMin, string memo, bytes payload, string originAddress);
+event TransferAllowance(address indexed oldVault, address indexed newVault, address asset, uint amount, string memo);
+event VaultTransfer(address indexed oldVault, address indexed newVault, Coin[] coins, string memo);
 ```
 
 ### Testing

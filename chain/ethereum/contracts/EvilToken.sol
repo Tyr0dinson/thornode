@@ -138,5 +138,4 @@ contract EvilERC20Token is iERC20 {
         totalSupply = totalSupply.sub(amount);
         emit Transfer(account, address(0), amount);
     }
-
 }

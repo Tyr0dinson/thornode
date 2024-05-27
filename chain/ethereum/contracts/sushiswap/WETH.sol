@@ -1,6 +1,6 @@
 /**
  *Submitted for verification at Etherscan.io on 2017-12-12
-*/
+ */
 
 // Copyright (C) 2015, 2016, 2017 Dapphub
 
@@ -18,70 +18,72 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.13;
+pragma solidity 0.8.22;
 
 contract WETH {
-    string public name     = "Wrapped Ether";
-    string public symbol   = "WETH";
-    uint8  public decimals = 18;
+  string public name = "Wrapped Ether";
+  string public symbol = "WETH";
+  uint8 public decimals = 18;
 
-    event  Approval(address indexed src, address indexed guy, uint wad);
-    event  Transfer(address indexed src, address indexed dst, uint wad);
-    event  Deposit(address indexed dst, uint wad);
-    event  Withdrawal(address indexed src, uint wad);
+  event Approval(address indexed src, address indexed guy, uint wad);
+  event Transfer(address indexed src, address indexed dst, uint wad);
+  event Deposit(address indexed dst, uint wad);
+  event Withdrawal(address indexed src, uint wad);
 
-    mapping (address => uint)                       public  balanceOf;
-    mapping (address => mapping (address => uint))  public  allowance;
+  mapping(address => uint) public balanceOf;
+  mapping(address => mapping(address => uint)) public allowance;
 
-    receive() external payable {
-        deposit();
+  receive() external payable {
+    deposit();
+  }
+
+  function deposit() public payable {
+    balanceOf[msg.sender] += msg.value;
+    emit Deposit(msg.sender, msg.value);
+  }
+
+  function withdraw(uint wad) public {
+    require(balanceOf[msg.sender] >= wad);
+    balanceOf[msg.sender] -= wad;
+    address payable to = payable(msg.sender);
+    to.transfer(wad);
+    emit Withdrawal(msg.sender, wad);
+  }
+
+  function totalSupply() public view returns (uint) {
+    return address(this).balance;
+  }
+
+  function approve(address guy, uint wad) public returns (bool) {
+    allowance[msg.sender][guy] = wad;
+    emit Approval(msg.sender, guy, wad);
+    return true;
+  }
+
+  function transfer(address dst, uint wad) public returns (bool) {
+    return transferFrom(msg.sender, dst, wad);
+  }
+
+  function transferFrom(
+    address src,
+    address dst,
+    uint wad
+  ) public returns (bool) {
+    require(balanceOf[src] >= wad);
+
+    if (src != msg.sender && allowance[src][msg.sender] != type(uint).max) {
+      require(allowance[src][msg.sender] >= wad);
+      allowance[src][msg.sender] -= wad;
     }
-    function deposit() public payable {
-        balanceOf[msg.sender] += msg.value;
-        emit Deposit(msg.sender, msg.value);
-    }
-    function withdraw(uint wad) public {
-        require(balanceOf[msg.sender] >= wad);
-        balanceOf[msg.sender] -= wad;
-        address payable to = payable(msg.sender);
-        to.transfer(wad);
-        emit Withdrawal(msg.sender, wad);
-    }
 
-    function totalSupply() public view returns (uint) {
-        return address(this).balance;
-    }
+    balanceOf[src] -= wad;
+    balanceOf[dst] += wad;
 
-    function approve(address guy, uint wad) public returns (bool) {
-        allowance[msg.sender][guy] = wad;
-        emit Approval(msg.sender, guy, wad);
-        return true;
-    }
+    emit Transfer(src, dst, wad);
 
-    function transfer(address dst, uint wad) public returns (bool) {
-        return transferFrom(msg.sender, dst, wad);
-    }
-
-    function transferFrom(address src, address dst, uint wad)
-        public
-        returns (bool)
-    {
-        require(balanceOf[src] >= wad);
-
-        if (src != msg.sender && allowance[src][msg.sender] != type(uint).max) {
-            require(allowance[src][msg.sender] >= wad);
-            allowance[src][msg.sender] -= wad;
-        }
-
-        balanceOf[src] -= wad;
-        balanceOf[dst] += wad;
-
-        emit Transfer(src, dst, wad);
-
-        return true;
-    }
+    return true;
+  }
 }
-
 
 /*
                     GNU GENERAL PUBLIC LICENSE
