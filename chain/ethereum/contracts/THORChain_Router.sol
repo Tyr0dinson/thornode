@@ -236,13 +236,15 @@ contract THORChain_Router {
         to.length == memo.length,
       "THORChain_Router: invalid batch input"
     );
-    for (uint16 i = 0; i < to.length; i++) {
+
+    for (uint i = 0; i < to.length; ++i) {
       TransferOutData memory currentPayload = TransferOutData(
         to[i],
         asset[i],
         amount[i],
         memo[i]
       );
+
       try this.transferOut(currentPayload) {} catch {
         emit BatchedTransferOutFailed(
           msg.sender,
@@ -364,7 +366,7 @@ contract THORChain_Router {
   function batchTransferOutAndCall(
     TransferOutAndCallData[] calldata aggregationPayloads
   ) external payable nonReentrant {
-    for (uint i = 0; i < aggregationPayloads.length; i++) {
+    for (uint i = 0; i < aggregationPayloads.length; ++i) {
       TransferOutAndCallData memory currentPayload = aggregationPayloads[i];
 
       try this.transferOutAndCall(currentPayload) {} catch {
