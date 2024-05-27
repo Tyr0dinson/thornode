@@ -390,12 +390,17 @@ contract THORChain_Router {
       _vaultAllowance[msg.sender][
         aggregationPayload.fromAsset
       ] -= aggregationPayload.fromAmount; // Reduce allowance
-      safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // best practice
-      safeApprove(
-        aggregationPayload.fromAsset,
-        aggregationPayload.target,
-        aggregationPayload.fromAmount
-      ); // Approve target to spend asset
+
+      // send ERC20 to aggregator contract so it can do its thing
+      (bool transferSuccess, ) = aggregationPayload.fromAsset.call(
+        abi.encodeWithSignature(
+          "transfer(address,uint256)",
+          aggregationPayload.target,
+          aggregationPayload.fromAmount
+        )
+      );
+
+      require(transferSuccess, "Failed to transfer token before dex agg call");
 
       // call swapOutV5 with erc20
       (bool swapOutSuccess, ) = aggregationPayload.target.call{value: 0}(
@@ -413,21 +418,18 @@ contract THORChain_Router {
 
       if (!swapOutSuccess) {
         // call transfer with erc20
-        (bool transferSuccess, ) = aggregationPayload.fromAsset.call(
+        (bool lastResortTransferSuccess, ) = aggregationPayload.fromAsset.call(
           abi.encodeWithSignature(
             "transfer(address,uint256)",
             aggregationPayload.recipient,
             aggregationPayload.fromAmount
           )
         );
-        safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // reset approval in all cases
 
         require(
-          transferSuccess,
+          lastResortTransferSuccess,
           "Failed to transfer token after failed dex agg call"
         );
-      } else {
-        safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // reset approval on successful swapOut
       }
 
       emit TransferOutAndCallV5(
