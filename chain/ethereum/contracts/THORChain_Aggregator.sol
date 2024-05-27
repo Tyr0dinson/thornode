@@ -161,24 +161,34 @@ contract THORChain_Aggregator {
 
       if (payload.length == 0) {
         // no payload, process without wasting gas
-        swapRouter.swapExactTokensForETH(
-          fromAmount,
-          amountOutMin,
-          path,
-          address(this),
-          type(uint).max
+        // UniV2 transfers from 'msg.sender', so we need a low-level `.call` to change the msg.sender from the target's perspective
+        (bool aggSuccess, ) = address(swapRouter).call(
+          abi.encodeWithSignature(
+            "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
+            fromAmount,
+            amountOutMin,
+            path,
+            recipient,
+            type(uint).max // Assuming using the maximum uint256 value as the deadline
+          )
         );
+        require(aggSuccess, "swapExactTokensForETH failed");
         return;
       }
 
       // do something with your payload like parse to an aggregator specific structure
-      swapRouter.swapExactTokensForETH(
-        fromAmount,
-        amountOutMin,
-        path,
-        address(this),
-        type(uint).max
+      // UniV2 transfers from 'msg.sender', so we need a low-level `.call` to change the msg.sender from the target's perspective
+      (bool success, ) = address(swapRouter).call(
+        abi.encodeWithSignature(
+          "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
+          fromAmount,
+          amountOutMin,
+          path,
+          recipient,
+          type(uint).max // Assuming using the maximum uint256 value as the deadline
+        )
       );
+      require(success, "swapExactTokensForETH failed");
       return;
     }
   }
