@@ -83,8 +83,21 @@ contract THORChain_Router {
     string memo
   );
 
+  // Used in original V4 methods
   // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
   event TransferOutAndCall(
+    address indexed vault,
+    address target,
+    uint amount,
+    address finalAsset,
+    address to,
+    uint256 amountOutMin,
+    string memo
+  );
+
+  // Added in V5
+  // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
+  event TransferOutAndCallV5(
     address indexed vault,
     address target,
     uint amount,
@@ -96,6 +109,7 @@ contract THORChain_Router {
     string originAddress
   );
 
+  // Added in V5
   // Emitted for failed transferOutAndCall calls in a batch of outbound transfers
   event BatchedTransferOutAndCallFailed(
     address indexed vault,
@@ -191,7 +205,7 @@ contract THORChain_Router {
 
   // Any vault calls to transfer any asset to any recipient.
   // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
-  function transferOut(
+  function transferOutV5(
     TransferOutData calldata transferOutPayload
   ) public payable nonReentrant {
     uint safeAmount;
@@ -224,7 +238,7 @@ contract THORChain_Router {
     );
   }
 
-  function batchTransferOut(
+  function batchTransferOutV5(
     address payable[] calldata to,
     address[] calldata asset,
     uint[] calldata amount,
@@ -245,7 +259,7 @@ contract THORChain_Router {
         memo[i]
       );
 
-      try this.transferOut(currentPayload) {} catch {
+      try this.transferOutV5(currentPayload) {} catch {
         emit BatchedTransferOutFailed(
           msg.sender,
           currentPayload.to,
@@ -257,6 +271,46 @@ contract THORChain_Router {
     }
   }
 
+  // V4 transferOutAndCall kept intact in V5 for backwards compatibility with previous aggregator contracts
+  // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,address,uint256)"
+  // Example Memo: "~1b3:ETH.0xFinalToken:0xTo:"
+  // Aggregator is matched to the last three digits of whitelisted aggregators
+  // FinalToken, To, amountOutMin come from originating memo
+  // Memo passed in here is the "OUT:HASH" type
+  function transferOutAndCall(
+    address payable aggregator,
+    address finalToken,
+    address to,
+    uint256 amountOutMin,
+    string memory memo
+  ) public payable nonReentrant {
+    uint256 _safeAmount = msg.value;
+    (bool erc20Success, ) = aggregator.call{value: _safeAmount}(
+      abi.encodeWithSignature(
+        "swapOut(address,address,uint256)",
+        finalToken,
+        to,
+        amountOutMin
+      )
+    );
+    if (!erc20Success) {
+      bool ethSuccess = payable(to).send(_safeAmount); // If can't swap, just send the recipient the ETH
+      if (!ethSuccess) {
+        payable(address(msg.sender)).transfer(_safeAmount); // For failure, bounce back to vault & continue.
+      }
+    }
+
+    emit TransferOutAndCall(
+      msg.sender,
+      aggregator,
+      _safeAmount,
+      finalToken,
+      to,
+      amountOutMin,
+      memo
+    );
+  }
+
   // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,bytes)"
   // Example Memo: "~1b3:ETH.0xFinalToken:0xTo:"
   // Target is fuzzy-matched to the last three digits of whitelisted aggregators
@@ -266,7 +320,7 @@ contract THORChain_Router {
   // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
   // RouterV5: originAddress field is what nodes observed + had consensus on
   // RouterV5: use struct TransferOutAndCallData to pass in the data to reduce local variables
-  function transferOutAndCall(
+  function transferOutAndCallV5(
     TransferOutAndCallData calldata aggregationPayload
   ) external payable nonReentrant {
     if (aggregationPayload.fromAsset == address(0)) {
@@ -294,7 +348,7 @@ contract THORChain_Router {
         }
       }
 
-      emit TransferOutAndCall(
+      emit TransferOutAndCallV5(
         msg.sender,
         aggregationPayload.target,
         msg.value,
@@ -349,7 +403,7 @@ contract THORChain_Router {
         safeApprove(aggregationPayload.fromAsset, aggregationPayload.target, 0); // reset approval on successful swapOut
       }
 
-      emit TransferOutAndCall(
+      emit TransferOutAndCallV5(
         msg.sender,
         aggregationPayload.target,
         aggregationPayload.fromAmount,
@@ -363,13 +417,13 @@ contract THORChain_Router {
     }
   }
 
-  function batchTransferOutAndCall(
+  function batchTransferOutAndCallV5(
     TransferOutAndCallData[] calldata aggregationPayloads
   ) external payable nonReentrant {
     for (uint i = 0; i < aggregationPayloads.length; ++i) {
       TransferOutAndCallData memory currentPayload = aggregationPayloads[i];
 
-      try this.transferOutAndCall(currentPayload) {} catch {
+      try this.transferOutAndCallV5(currentPayload) {} catch {
         emit BatchedTransferOutAndCallFailed(
           msg.sender,
           currentPayload.target,
