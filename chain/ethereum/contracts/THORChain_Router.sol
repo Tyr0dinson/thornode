@@ -203,6 +203,33 @@ contract THORChain_Router {
 
   //############################## ASSET TRANSFERS ##############################
 
+  // V4 transferOut kept intact in V5 for backwards compatibility with previous code
+  // Any vault calls to transfer any asset to any recipient.
+  // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
+  function transferOut(
+    address payable to,
+    address asset,
+    uint amount,
+    string memory memo
+  ) public payable nonReentrant {
+    uint safeAmount;
+    if (asset == address(0)) {
+      safeAmount = msg.value;
+      bool success = to.send(safeAmount); // Send ETH.
+      if (!success) {
+        payable(address(msg.sender)).transfer(safeAmount); // For failure, bounce back to vault & continue.
+      }
+    } else {
+      _vaultAllowance[msg.sender][asset] -= amount; // Reduce allowance
+      (bool success, bytes memory data) = asset.call(
+        abi.encodeWithSignature("transfer(address,uint256)", to, amount)
+      );
+      require(success && (data.length == 0 || abi.decode(data, (bool))));
+      safeAmount = amount;
+    }
+    emit TransferOut(msg.sender, to, asset, safeAmount, memo);
+  }
+
   // Any vault calls to transfer any asset to any recipient.
   // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
   function transferOutV5(
