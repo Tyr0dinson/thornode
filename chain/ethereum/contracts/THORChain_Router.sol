@@ -351,7 +351,7 @@ contract THORChain_Router {
     TransferOutAndCallData calldata aggregationPayload
   ) external payable nonReentrant {
     if (aggregationPayload.fromAsset == address(0)) {
-      // call swapOut with ether
+      // call swapOutV5 with ether
       (bool swapOutSuccess, ) = aggregationPayload.target.call{
         value: msg.value
       }(
@@ -397,10 +397,10 @@ contract THORChain_Router {
         aggregationPayload.fromAmount
       ); // Approve target to spend asset
 
-      // call swapOut with erc20
+      // call swapOutV5 with erc20
       (bool swapOutSuccess, ) = aggregationPayload.target.call{value: 0}(
         abi.encodeWithSignature(
-          "swapOut(address,uint256,address,address,uint256,bytes,string)",
+          "swapOutV5(address,uint256,address,address,uint256,bytes,string)",
           aggregationPayload.fromAsset,
           aggregationPayload.fromAmount,
           aggregationPayload.toAsset,
