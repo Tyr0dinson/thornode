@@ -77,7 +77,7 @@ describe("Aggregator contract", function () {
 
     it("Should Swap In Token using Aggregator", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998785462424501219",
+        "5620998789199655264067",
       ); // 1000 ETH
 
       // Approval - we are approving the AGG to spend all of USER1 funds
@@ -108,7 +108,7 @@ describe("Aggregator contract", function () {
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5621998785462424501219",
+        "5621998789199655264067",
       ); // Add 1 ETH
     });
 
@@ -141,7 +141,7 @@ describe("Aggregator contract", function () {
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5622998785462424501219",
+        "5622998789199655264067",
       ); // Add 1 ETH
     });
 
@@ -152,19 +152,15 @@ describe("Aggregator contract", function () {
 
       await ROUTER.transferOutAndCall(
         AGG.address,
-        ETH,
-        _1,
         TOKEN.address,
         USER1,
         "0",
         "OUT:HASH",
-        "", // empty bytes
-        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5621998536343072874381",
+        "5621998547969420160440",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
@@ -182,7 +178,7 @@ describe("Aggregator contract", function () {
 
     it("Should Fail Swap Out using Aggregator", async function () {
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8979934839337990768873",
+        "8979925460602111814956",
       ); // Start bal
       expect(BN2Str(await USDT.balanceOf(SUSHIROUTER.address))).to.equal(
         "20000000000000000000",
@@ -195,25 +191,21 @@ describe("Aggregator contract", function () {
       // Fail due price check, send back to asgard, sent ETH to user
       await ROUTER.transferOutAndCall(
         AGG.address,
-        ETH,
-        _1,
         USDT.address,
         USER1,
         "99999999999999999999999999999999999",
         "OUT:HASH",
-        "", // empty bytes
-        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998341343878160759",
+        "5620998360783071270185",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
       ); // No change
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8980934839337990768873",
+        "8980925460602111814956",
       ); // +1 ETH (from failed swap)
       expect(BN2Str(await WETH.balanceOf(SUSHIROUTER.address))).to.equal(
         "9000000000000000000",
@@ -231,7 +223,7 @@ describe("Aggregator contract", function () {
         "20000000000000000000",
       ); // Start bal
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998341343878160759",
+        "5620998360783071270185",
       ); // Start bal
 
       // Asgard transferOutAndCall() 1 ETH
@@ -239,14 +231,10 @@ describe("Aggregator contract", function () {
       // Fail due price check. Try send ETH to user. Fails due to reverting contract. Send ETH back to Ygg.
       await ROUTER.transferOutAndCall(
         AGG.address,
-        ETH,
-        _1,
         USDT.address,
         REVERTINGCONTRACT.address,
         "99999999999999999999999999999999999",
         "OUT:HASH",
-        "", // empty bytes
-        "bc123", // dummy address
         { from: ASGARD, value: _1 },
       );
 
@@ -254,7 +242,7 @@ describe("Aggregator contract", function () {
         BN2Str(await web3.eth.getBalance(REVERTINGCONTRACT.address)),
       ).to.equal("0"); // Zero
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5620998129020460448408",
+        "5620998156272538957941",
       ); // Less 1 ETH
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
