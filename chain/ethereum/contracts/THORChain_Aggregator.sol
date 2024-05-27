@@ -98,7 +98,24 @@ contract THORChain_Aggregator {
 
   //############################## OUT ##############################
 
+  // V4 swapOut kept for backward compatibility
   function swapOut(
+    address token,
+    address to,
+    uint256 amountOutMin
+  ) public payable nonReentrant {
+    address[] memory path = new address[](2);
+    path[0] = WETH;
+    path[1] = token;
+    swapRouter.swapExactETHForTokens{value: msg.value}(
+      amountOutMin,
+      path,
+      to,
+      type(uint).max
+    );
+  }
+
+  function swapOutV5(
     address fromAsset,
     uint256 fromAmount,
     address toAsset,
