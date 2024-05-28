@@ -262,17 +262,18 @@ describe("Aggregator contract", function () {
         "5620998156450450192620",
       ); // starting balance
 
-      await ROUTER.transferOutAndCallV5([
-        AGG.address,
-        ETH,
-        _1,
-        TOKEN.address,
-        USER1,
-        "0",
-        "OUT:HASH",
-        "0x", // empty payload
-        "bc123" // dummy address
-      ],
+      await ROUTER.transferOutAndCallV5(
+        [
+          AGG.address,
+          ETH,
+          _1,
+          TOKEN.address,
+          USER1,
+          "0",
+          "OUT:HASH",
+          "0x", // empty payload
+          "bc123", // dummy address
+        ],
         { from: ASGARD, value: _1 },
       );
 
@@ -298,9 +299,7 @@ describe("Aggregator contract", function () {
         "5619997898873348727571",
       ); // starting balance
 
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal(
-        "0",
-      ); // starting balance
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal("0"); // starting balance
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
         "8980930230134501415136",
@@ -316,9 +315,16 @@ describe("Aggregator contract", function () {
 
       // allow router to spend user's TOKEN and deposit to see router balance and vault allowance
       await TOKEN.approve(ROUTER.address, _1m, { from: USER1 });
-      await ROUTER.depositWithExpiry(ASGARD, TOKEN.address, _20, "SWAP:THOR.RUNE", currentTime, {
-        from: USER1,
-      });
+      await ROUTER.depositWithExpiry(
+        ASGARD,
+        TOKEN.address,
+        _20,
+        "SWAP:THOR.RUNE",
+        currentTime,
+        {
+          from: USER1,
+        },
+      );
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
         "8980929880678153548750",
@@ -328,17 +334,18 @@ describe("Aggregator contract", function () {
         "20000000000000000000",
       ); // after TOKEN deposit (asgard vault gets allowance)
 
-      await ROUTER.transferOutAndCallV5([
-        AGG.address,
-        TOKEN.address,
-        _1,
-        ETH,
-        USER1,
-        "0",
-        "OUT:HASH",
-        "0x", // empty payload
-        "bc123" // dummy address
-      ],
+      await ROUTER.transferOutAndCallV5(
+        [
+          AGG.address,
+          TOKEN.address,
+          _1,
+          ETH,
+          USER1,
+          "0",
+          "OUT:HASH",
+          "0x", // empty payload
+          "bc123", // dummy address
+        ],
         { from: ASGARD, value: 0 },
       );
 
