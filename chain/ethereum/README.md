@@ -25,7 +25,7 @@ Bifrost should parse contract events to read the `memo` for asset transfers.
 _Note 1: ETHER/Gas asset uses asset `0x0000000000000000000000000000000000000000`_
 _Note 2: expiration is in seconds_
 _Note 3: `deposit` method without expiry was deprecated in RouterV4.1 and removed in RouterV5_
-_Note 4: V5 functions use structure to reduce local variables and prevent stack too deep errors
+_Note 4: V5 functions use structure to reduce local variables and prevent stack too deep errors_
 
 ### Bifrost - Signer
 

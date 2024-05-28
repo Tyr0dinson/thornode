@@ -74,9 +74,16 @@ describe("Batch Outbounds", function () {
       await WETH.transfer(SUSHIROUTER.address, _10);
 
       await TOKEN.approve(ROUTER.address, _1m, { from: USER1 });
-      await ROUTER.depositWithExpiry(ASGARD, TOKEN.address, _20, "SWAP:THOR.RUNE", currentTime, {
-        from: USER1,
-      });
+      await ROUTER.depositWithExpiry(
+        ASGARD,
+        TOKEN.address,
+        _20,
+        "SWAP:THOR.RUNE",
+        currentTime,
+        {
+          from: USER1,
+        },
+      );
 
       expect(BN2Str(await TOKEN.balanceOf(SUSHIROUTER.address))).to.equal(_10);
       expect(BN2Str(await USDT.balanceOf(SUSHIROUTER.address))).to.equal(_10);
@@ -97,16 +104,18 @@ describe("Batch Outbounds", function () {
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
         "10020000000000000000000",
       );
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal("999970000000000000000000");
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
+        "999970000000000000000000",
+      );
       expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal("0");
 
-
-      await ROUTER.batchTransferOutV5([
-        [USER1, ETH, _1, "OUT:ETH-USER1"],
-        [USER1, ETH, _1, "OUT:ETH-USER1-AGAIN"],
-        [USER2, ETH, _1, "OUT:ETH-USER2"],
-        [USER2, TOKEN.address, _1, "OUT:TOKEN-USER2"],
-      ],
+      await ROUTER.batchTransferOutV5(
+        [
+          [USER1, ETH, _1, "OUT:ETH-USER1"],
+          [USER1, ETH, _1, "OUT:ETH-USER1-AGAIN"],
+          [USER2, ETH, _1, "OUT:ETH-USER2"],
+          [USER2, TOKEN.address, _1, "OUT:TOKEN-USER2"],
+        ],
         { from: ASGARD, value: _3 },
       );
 
@@ -122,18 +131,23 @@ describe("Batch Outbounds", function () {
         "10021000000000000000000",
       ); // Add 1 eth
 
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal("999970000000000000000000"); // no change
-      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal("1000000000000000000"); // Add 1 TOKEN
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
+        "999970000000000000000000",
+      ); // no change
+      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal(
+        "1000000000000000000",
+      ); // Add 1 TOKEN
     });
 
     it("Should fail if not enough ether is sent", async function () {
       await truffleAssert.reverts(
-        ROUTER.batchTransferOutV5([
-          [USER1, ETH, _1, "OUT:ETH-USER1"],
-          [USER1, ETH, _1, "OUT:ETH-USER1-AGAIN"],
-          [USER2, ETH, _1, "OUT:ETH-USER2"],
-          [USER2, TOKEN.address, _1, "OUT:TOKEN-USER2"],
-        ],
+        ROUTER.batchTransferOutV5(
+          [
+            [USER1, ETH, _1, "OUT:ETH-USER1"],
+            [USER1, ETH, _1, "OUT:ETH-USER1-AGAIN"],
+            [USER2, ETH, _1, "OUT:ETH-USER2"],
+            [USER2, TOKEN.address, _1, "OUT:TOKEN-USER2"],
+          ],
           { from: ASGARD, value: _2 },
         ),
         "Transaction reverted: function call failed to execute",
@@ -148,37 +162,46 @@ describe("Batch Outbounds", function () {
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
         "8963904054893477354681",
       ); // user1 starting eth balance
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal("999970000000000000000000"); // user1 starting token balance
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
+        "999970000000000000000000",
+      ); // user1 starting token balance
 
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
         "10021000000000000000000",
       ); // user2 starting eth balance
-      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal("1000000000000000000"); // user2 starting token balance
+      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal(
+        "1000000000000000000",
+      ); // user2 starting token balance
 
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal("19000000000000000000"); // router starting token balance
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal(
+        "19000000000000000000",
+      ); // router starting token balance
 
-      await ROUTER.batchTransferOutAndCallV5([[
-        AGG.address,
-        TOKEN.address,
-        _1,
-        ETH,
-        USER1,
-        "0",
-        "OUT:HASH",
-        "0x", // empty payload
-        "bc123" // dummy address
-      ],
-      [
-        AGG.address,
-        ETH,
-        _1,
-        TOKEN.address,
-        USER2,
-        "0",
-        "OUT:HASH",
-        "0x", // empty payload
-        "bc123" // dummy address
-      ]],
+      await ROUTER.batchTransferOutAndCallV5(
+        [
+          [
+            AGG.address,
+            TOKEN.address,
+            _1,
+            ETH,
+            USER1,
+            "0",
+            "OUT:HASH",
+            "0x", // empty payload
+            "bc123", // dummy address
+          ],
+          [
+            AGG.address,
+            ETH,
+            _1,
+            TOKEN.address,
+            USER2,
+            "0",
+            "OUT:HASH",
+            "0x", // empty payload
+            "bc123", // dummy address
+          ],
+        ],
         { from: ASGARD, value: "0" },
       );
 
@@ -190,13 +213,17 @@ describe("Batch Outbounds", function () {
         "8964904054893477354681",
       ); // Add 1 eth
 
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal("999970000000000000000000"); // No change
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
+        "999970000000000000000000",
+      ); // No change
 
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
         "10021000000000000000000",
       ); // No change
 
-      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal("2000000000000000000"); // Add 1 TOKEN
+      expect(BN2Str(await TOKEN.balanceOf(USER2))).to.equal(
+        "2000000000000000000",
+      ); // Add 1 TOKEN
     });
   });
 });
