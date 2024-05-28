@@ -74,15 +74,6 @@ contract THORChain_Router {
     string memo
   );
 
-  // Emitted for failed transferOut calls in a batch of outbound transfers
-  event BatchedTransferOutFailed(
-    address indexed vault,
-    address indexed to,
-    address asset,
-    uint amount,
-    string memo
-  );
-
   // Used in original V4 methods
   // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
   event TransferOutAndCall(
@@ -95,23 +86,8 @@ contract THORChain_Router {
     string memo
   );
 
-  // Added in V5
   // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
   event TransferOutAndCallV5(
-    address indexed vault,
-    address target,
-    uint amount,
-    address finalAsset,
-    address indexed to,
-    uint256 amountOutMin,
-    string memo,
-    bytes payload,
-    string originAddress
-  );
-
-  // Added in V5
-  // Emitted for failed transferOutAndCall calls in a batch of outbound transfers
-  event BatchedTransferOutAndCallFailed(
     address indexed vault,
     address target,
     uint amount,
@@ -230,22 +206,17 @@ contract THORChain_Router {
     emit TransferOut(msg.sender, to, asset, safeAmount, memo);
   }
 
-  // Any vault calls to transfer any asset to any recipient.
-  // Note: Contract recipients of ETH are only given 2300 Gas to complete execution.
-  function transferOutV5(
-    TransferOutData calldata transferOutPayload
-  ) public payable nonReentrant {
-    uint safeAmount;
+  function _transferOutV5(TransferOutData memory transferOutPayload) private {
     if (transferOutPayload.asset == address(0)) {
-      safeAmount = msg.value;
-      bool success = transferOutPayload.to.send(safeAmount); // Send ETH.
+      bool success = transferOutPayload.to.send(transferOutPayload.amount); // Send ETH.
       if (!success) {
-        payable(address(msg.sender)).transfer(safeAmount); // For failure, bounce back to Yggdrasil & continue.
+        payable(address(msg.sender)).transfer(transferOutPayload.amount); // For failure, bounce back to Yggdrasil & continue.
       }
     } else {
       _vaultAllowance[msg.sender][
         transferOutPayload.asset
       ] -= transferOutPayload.amount; // Reduce allowance
+
       (bool success, bytes memory data) = transferOutPayload.asset.call(
         abi.encodeWithSignature(
           "transfer(address,uint256)",
@@ -253,48 +224,30 @@ contract THORChain_Router {
           transferOutPayload.amount
         )
       );
+
       require(success && (data.length == 0 || abi.decode(data, (bool))));
-      safeAmount = transferOutPayload.amount;
     }
+
     emit TransferOut(
       msg.sender,
       transferOutPayload.to,
       transferOutPayload.asset,
-      safeAmount,
+      transferOutPayload.amount,
       transferOutPayload.memo
     );
   }
 
+  function transferOutV5(
+    TransferOutData calldata transferOutPayload
+  ) public payable nonReentrant {
+    _transferOutV5(transferOutPayload);
+  }
+
   function batchTransferOutV5(
-    address payable[] calldata to,
-    address[] calldata asset,
-    uint[] calldata amount,
-    string[] calldata memo
+    TransferOutData[] calldata transferOutPayload
   ) external payable nonReentrant {
-    require(
-      to.length == asset.length &&
-        to.length == amount.length &&
-        to.length == memo.length,
-      "THORChain_Router: invalid batch input"
-    );
-
-    for (uint i = 0; i < to.length; ++i) {
-      TransferOutData memory currentPayload = TransferOutData(
-        to[i],
-        asset[i],
-        amount[i],
-        memo[i]
-      );
-
-      try this.transferOutV5(currentPayload) {} catch {
-        emit BatchedTransferOutFailed(
-          msg.sender,
-          currentPayload.to,
-          currentPayload.asset,
-          currentPayload.amount,
-          currentPayload.memo
-        );
-      }
+    for (uint i = 0; i < transferOutPayload.length; ++i) {
+      _transferOutV5(transferOutPayload[i]);
     }
   }
 
@@ -347,9 +300,9 @@ contract THORChain_Router {
   // RouterV5: payload field can be passed from the originating memo like this thorchainMemo|0xpayload
   // RouterV5: originAddress field is what nodes observed + had consensus on
   // RouterV5: use struct TransferOutAndCallData to pass in the data to reduce local variables
-  function transferOutAndCallV5(
+  function _transferOutAndCallV5(
     TransferOutAndCallData calldata aggregationPayload
-  ) external payable nonReentrant {
+  ) private {
     if (aggregationPayload.fromAsset == address(0)) {
       // call swapOutV5 with ether
       (bool swapOutSuccess, ) = aggregationPayload.target.call{
@@ -432,25 +385,17 @@ contract THORChain_Router {
     }
   }
 
+  function transferOutAndCallV5(
+    TransferOutAndCallData calldata aggregationPayload
+  ) external payable nonReentrant {
+    _transferOutAndCallV5(aggregationPayload);
+  }
+
   function batchTransferOutAndCallV5(
     TransferOutAndCallData[] calldata aggregationPayloads
   ) external payable nonReentrant {
     for (uint i = 0; i < aggregationPayloads.length; ++i) {
-      TransferOutAndCallData memory currentPayload = aggregationPayloads[i];
-
-      try this.transferOutAndCallV5(currentPayload) {} catch {
-        emit BatchedTransferOutAndCallFailed(
-          msg.sender,
-          currentPayload.target,
-          currentPayload.fromAmount,
-          currentPayload.toAsset,
-          currentPayload.recipient,
-          currentPayload.amountOutMin,
-          currentPayload.memo,
-          currentPayload.payload,
-          currentPayload.originAddress
-        );
-      }
+      _transferOutAndCallV5(aggregationPayloads[i]);
     }
   }
 
