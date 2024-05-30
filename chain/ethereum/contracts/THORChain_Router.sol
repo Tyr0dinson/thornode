@@ -210,7 +210,7 @@ contract THORChain_Router {
     if (transferOutPayload.asset == address(0)) {
       bool success = transferOutPayload.to.send(transferOutPayload.amount); // Send ETH.
       if (!success) {
-        payable(address(msg.sender)).transfer(transferOutPayload.amount); // For failure, bounce back to Yggdrasil & continue.
+        payable(address(msg.sender)).transfer(transferOutPayload.amount); // For failure, bounce back to vault & continue.
       }
     } else {
       _vaultAllowance[msg.sender][
@@ -324,7 +324,7 @@ contract THORChain_Router {
           msg.value
         ); // If can't swap, just send the recipient the gas asset
         if (!sendSuccess) {
-          payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to Yggdrasil & continue.
+          payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to vault & continue.
         }
       }
 
