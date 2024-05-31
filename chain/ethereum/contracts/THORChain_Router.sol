@@ -243,6 +243,7 @@ contract THORChain_Router {
     _transferOutV5(transferOutPayload);
   }
 
+  // bifrost to budget gas limits, no more than 50% than L1 gas limit
   function batchTransferOutV5(
     TransferOutData[] calldata transferOutPayload
   ) external payable nonReentrant {
@@ -355,8 +356,9 @@ contract THORChain_Router {
 
       require(transferSuccess, "Failed to transfer token before dex agg call");
 
-      // call swapOutV5 with erc20
-      (bool swapOutSuccess, ) = aggregationPayload.target.call{value: 0}(
+      // add test case if aggregator fails, it should not revert the whole transaction (transferOutAndCallV5 call succeeds)
+      // call swapOutV5 with erc20. if the aggregator fails, the transaction should not revert
+      (bool _dexAggSuccess, ) = aggregationPayload.target.call{value: 0}(
         abi.encodeWithSignature(
           "swapOutV5(address,uint256,address,address,uint256,bytes,string)",
           aggregationPayload.fromAsset,
@@ -369,8 +371,6 @@ contract THORChain_Router {
         )
       );
 
-      require(swapOutSuccess, "Failed to call swapOutV5");
-
       emit TransferOutAndCallV5(
         msg.sender,
         aggregationPayload.target,
@@ -382,6 +382,8 @@ contract THORChain_Router {
         aggregationPayload.payload,
         aggregationPayload.originAddress
       );
+
+      return;
     }
   }
 
