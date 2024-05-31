@@ -321,9 +321,7 @@ contract THORChain_Router {
         )
       );
       if (!swapOutSuccess) {
-        bool sendSuccess = payable(aggregationPayload.recipient).send(
-          msg.value
-        ); // If can't swap, just send the recipient the gas asset
+        bool sendSuccess = payable(aggregationPayload.target).send(msg.value); // If can't swap, just send the recipient the gas asset
         if (!sendSuccess) {
           payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to vault & continue.
         }
