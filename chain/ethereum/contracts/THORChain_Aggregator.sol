@@ -47,6 +47,7 @@ contract THORChain_Aggregator {
   address private ETH = address(0);
   address public WETH;
   iSWAPROUTER public swapRouter;
+  address public owner;
 
   modifier nonReentrant() {
     require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
@@ -55,13 +56,38 @@ contract THORChain_Aggregator {
     _status = _NOT_ENTERED;
   }
 
+  modifier onlyOwner() {
+    require(msg.sender == owner, "Caller is not the owner");
+    _;
+  }
+
   constructor(address _weth, address _swapRouter) {
     _status = _NOT_ENTERED;
     WETH = _weth;
     swapRouter = iSWAPROUTER(_swapRouter);
+    owner = msg.sender;
   }
 
   receive() external payable {}
+
+  function rescueFunds(
+    address asset,
+    uint256 amount,
+    address destination
+  ) public onlyOwner {
+    if (asset == address(0)) {
+      payable(destination).transfer(amount);
+    } else {
+      (bool success, ) = asset.call(
+        abi.encodeWithSignature(
+          "transfer(address,uint256)",
+          destination,
+          amount
+        )
+      );
+      require(success, "Transfer failed");
+    }
+  }
 
   //############################## IN ##############################
 
