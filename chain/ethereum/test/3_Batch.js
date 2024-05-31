@@ -96,10 +96,10 @@ describe("Batch Outbounds", function () {
 
     it("Should send 4 outbound transactions", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5619997560811067982087",
+        "5618997418429237272913",
       );
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8961904054717110909667",
+        "8961898041096950536490",
       );
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
         "10020000000000000000000",
@@ -120,11 +120,11 @@ describe("Batch Outbounds", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5616997278749188898367",
+        "5615997136368481464937",
       ); // Less 3 eth and some gas
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8963904054717110909667",
+        "8963898041096950536490",
       ); // Add 2 eth
 
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
@@ -156,11 +156,11 @@ describe("Batch Outbounds", function () {
 
     it("Should send 2 dex agg outbounds", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5616997091018093381179",
+        "5615996948638040825081",
       ); // asgard starting eth balance
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8963904054717110909667",
+        "8963898041096950536490",
       ); // user1 starting eth balance
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
         "999970000000000000000000",
@@ -206,11 +206,11 @@ describe("Batch Outbounds", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5616996673318458946954",
+        "5615996530407181111493",
       ); // less some gas
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8964904054717110909667",
+        "8964898041096950536490",
       ); // Add 1 eth
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
