@@ -8,6 +8,7 @@
 const Router = artifacts.require("THORChain_Router");
 const Token = artifacts.require("ERC20Token");
 const EvilToken = artifacts.require("EvilERC20Token");
+const StealToken = artifacts.require("StealERC20Token");
 const RevertingContract = artifacts.require("RevertingContract");
 const EvilCallback = artifacts.require("EvilCallback");
 const Rune = artifacts.require("ETH_RUNE");
@@ -27,7 +28,7 @@ function getBN(BN) {
 var ROUTER1;
 var ROUTER2;
 var ROUTER3;
-var RUNE, TOKEN, EVILTOKEN;
+var RUNE, TOKEN, EVILTOKEN, STEALTOKEN;
 var ETH = "0x0000000000000000000000000000000000000000";
 var usdt;
 var REVERTINGCONTRACT, EVILCALLBACK;
@@ -44,12 +45,12 @@ const _1000 = "1000000000000000000000";
 const _5000 = "5000000000000000000000";
 const _50k = "50000000000000000000000";
 const _100k = "100000000000000000000000";
+const _150k = "150000000000000000000000";
 const _250k = "250000000000000000000000";
+const _400k = "400000000000000000000000";
 const _500k = "500000000000000000000000";
+const _600k = "600000000000000000000000";
 const _1m = "1000000000000000000000000";
-const _9m = "9000000000000000000000000";
-
-const maxUint = require("ethers").constants.MaxUint256;
 
 const currentTime = Math.floor(Date.now() / 1000 + 15 * 60); // time plus 15 mins
 
@@ -67,6 +68,7 @@ describe("Router contract", function () {
     REVERTINGCONTRACT = await RevertingContract.new();
     EVILCALLBACK = await EvilCallback.new(ROUTER1.address);
     usdt = await USDT.new(_1m, "Tether", "USDT", 6);
+    STEALTOKEN = await StealToken.new(TOKEN.address);
     USER1 = accounts[0];
     USER2 = accounts[1];
     ASGARD1 = accounts[3];
@@ -154,6 +156,30 @@ describe("Router contract", function () {
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
       expect(
         BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
+      ).to.equal(_500k);
+    });
+
+    it("Should Deposit StealToken to Asgard1", async function () {
+      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_1m);
+
+      // Approval - we are approving the ROUTER1 to spend all of USER1 funds
+      await STEALTOKEN.approve(ROUTER1.address, _1m, { from: USER1 });
+      expect(BN2Str(await STEALTOKEN.allowance(USER1, ROUTER1.address))).to.equal(
+        _1m,
+      );
+
+      await ROUTER1.depositWithExpiry(
+        YGGDRASIL1,
+        STEALTOKEN.address,
+        _500k,
+        "SWAP:THOR.RUNE",
+        currentTime,
+      );
+
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
       ).to.equal(_500k);
     });
 
@@ -294,20 +320,21 @@ describe("Router contract", function () {
     });
 
     it("Should transfer tokens to USER2", async function () {
-      let tx = await ROUTER1.transferOut(USER2, TOKEN.address, _250k, "OUT:", {
+      let tx = await ROUTER1.transferOut(USER2, TOKEN.address, _100k, "OUT:", {
         from: YGGDRASIL1,
       });
       expect(tx.logs[0].event).to.equal("TransferOut");
       expect(tx.logs[0].args.to).to.equal(USER2);
       expect(tx.logs[0].args.asset).to.equal(TOKEN.address);
       expect(tx.logs[0].args.memo).to.equal("OUT:");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_250k);
+      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_100k);
 
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_250k);
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
       expect(
         BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_250k);
+      ).to.equal(_400k);
     });
+
     it("Should transfer USDT to USER2", async function () {
       let tx = await ROUTER1.transferOut(USER2, usdt.address, _500k, "OUT:", {
         from: ASGARD1,
@@ -323,6 +350,43 @@ describe("Router contract", function () {
         BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, usdt.address)),
       ).to.equal("0");
     });
+
+    it("Should not steal TOKEN from router", async function () {
+      // router has 400k token and 500k stealing token
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+
+      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address))).to.equal(_400k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address))).to.equal(_500k);
+
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
+
+      await ROUTER1.transferOut(USER1, STEALTOKEN.address, _100k, "OUT:", {
+        from: YGGDRASIL1,
+      });
+
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
+
+      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address))).to.equal(_400k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address))).to.equal(_400k);
+
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_600k);
+    });
+
+    it("Should spend more funds to prep balances for next tests", async function () {
+      await ROUTER1.transferOut(USER2, TOKEN.address, _150k, "OUT:", {
+        from: YGGDRASIL1,
+      });
+
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_250k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
+      ).to.equal(_250k);
+    });
+
   });
 
   describe("Yggdrasil Returns Funds, Asgard Churns, Old Vaults can't spend", function () {
@@ -595,6 +659,7 @@ describe("Router contract", function () {
         ),
       );
     });
+
     it("Test transferOut reverting contract", async function () {
       let startEvilBal = await web3.eth.getBalance(REVERTINGCONTRACT.address);
       let tx = await ROUTER1.transferOut(
@@ -614,6 +679,7 @@ describe("Router contract", function () {
       let endEvilBal = await web3.eth.getBalance(REVERTINGCONTRACT.address);
       expect(startEvilBal).to.equal(endEvilBal);
     });
+
     it("Test transferOut 'to' recipient tries re-entrancy", async function () {
       let startEvilBal = await web3.eth.getBalance(EVILCALLBACK.address);
       let tx = await ROUTER1.transferOut(
@@ -633,6 +699,7 @@ describe("Router contract", function () {
       let endEvilBal = await web3.eth.getBalance(EVILCALLBACK.address);
       expect(startEvilBal).to.equal(endEvilBal);
     });
+
     it("Test re-entrancy protection (generic)", async function () {
       await truffleAssert.fails(
         ROUTER1.transferAllowance(
