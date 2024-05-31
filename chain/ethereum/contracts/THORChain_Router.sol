@@ -346,15 +346,20 @@ contract THORChain_Router {
       ] -= aggregationPayload.fromAmount; // Reduce allowance
 
       // send ERC20 to aggregator contract so it can do its thing
-      (bool transferSuccess, ) = aggregationPayload.fromAsset.call(
-        abi.encodeWithSignature(
-          "transfer(address,uint256)",
-          aggregationPayload.target,
-          aggregationPayload.fromAmount
-        )
-      );
+      (bool transferSuccess, bytes memory data) = aggregationPayload
+        .fromAsset
+        .call(
+          abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            aggregationPayload.target,
+            aggregationPayload.fromAmount
+          )
+        );
 
-      require(transferSuccess, "Failed to transfer token before dex agg call");
+      require(
+        transferSuccess && (data.length == 0 || abi.decode(data, (bool))),
+        "Failed to transfer token before dex agg call"
+      );
 
       // add test case if aggregator fails, it should not revert the whole transaction (transferOutAndCallV5 call succeeds)
       // call swapOutV5 with erc20. if the aggregator fails, the transaction should not revert
