@@ -421,5 +421,25 @@ describe("Aggregator contract", function () {
         "999962000000000000000000",
       ); // No change
     });
+
+    it("Should rescue funds stuck in aggregator", async function () {
+      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(
+        _1,
+      ); // 1 stuck eth
+
+      expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
+        "8981924321565942069767",
+      ); // starting balance
+
+      await FAIL_AGG.rescueFunds(ETH, _1, USER1, { from: USER1 });
+
+      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(
+        "0",
+      );
+
+      expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
+        "8982924243269535077299",
+      ); // + 1 eth minus some gas
+    });
   });
 });

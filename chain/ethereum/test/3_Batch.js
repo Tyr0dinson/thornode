@@ -99,7 +99,7 @@ describe("Batch Outbounds", function () {
         "5618997418429237272913",
       );
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8961898041096950536490",
+        "8962897962844698362208",
       );
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
         "10020000000000000000000",
@@ -120,11 +120,11 @@ describe("Batch Outbounds", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5615997136368481464937",
+        "5615997136338575602609",
       ); // Less 3 eth and some gas
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8963898041096950536490",
+        "8964897962844698362208",
       ); // Add 2 eth
 
       expect(BN2Str(await web3.eth.getBalance(USER2))).to.equal(
@@ -156,11 +156,11 @@ describe("Batch Outbounds", function () {
 
     it("Should send 2 dex agg outbounds", async function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5615996948638040825081",
+        "5615996948578189793361",
       ); // asgard starting eth balance
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8963898041096950536490",
+        "8964897962844698362208",
       ); // user1 starting eth balance
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
         "999970000000000000000000",
@@ -206,11 +206,11 @@ describe("Batch Outbounds", function () {
       );
 
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
-        "5615996530407181111493",
+        "5615996530297437056673",
       ); // less some gas
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
-        "8964898041096950536490",
+        "8965897962844698362208",
       ); // Add 1 eth
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
