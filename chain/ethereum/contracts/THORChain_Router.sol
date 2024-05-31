@@ -475,10 +475,8 @@ contract THORChain_Router {
     string memory _memo
   ) internal {
     _vaultAllowance[msg.sender][_asset] -= _amount;
-    (bool success, ) = _asset.call(
-      abi.encodeWithSignature("approve(address,uint256)", _router, _amount)
-    ); // Approve to transfer
-    require(success);
+    safeApprove(_asset, _router, _amount);
+
     iROUTER(_router).depositWithExpiry(
       _vault,
       _asset,
