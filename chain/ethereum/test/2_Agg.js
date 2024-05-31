@@ -405,9 +405,7 @@ describe("Aggregator contract", function () {
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
         "5618997418429237272913",
       ); // Less 1 ETH and some gas
-      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(
-        _1,
-      ); // 1 stuck eth
+      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(_1); // 1 stuck eth
       expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
         _10,
       ); // No change
@@ -423,9 +421,7 @@ describe("Aggregator contract", function () {
     });
 
     it("Should rescue funds stuck in aggregator", async function () {
-      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(
-        _1,
-      ); // 1 stuck eth
+      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(_1); // 1 stuck eth
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
         "8981924321565942069767",
@@ -433,9 +429,7 @@ describe("Aggregator contract", function () {
 
       await FAIL_AGG.rescueFunds(ETH, _1, USER1, { from: USER1 });
 
-      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal(
-        "0",
-      );
+      expect(BN2Str(await web3.eth.getBalance(FAIL_AGG.address))).to.equal("0");
 
       expect(BN2Str(await web3.eth.getBalance(USER1))).to.equal(
         "8982924243269535077299",

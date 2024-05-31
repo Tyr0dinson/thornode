@@ -164,9 +164,9 @@ describe("Router contract", function () {
 
       // Approval - we are approving the ROUTER1 to spend all of USER1 funds
       await STEALTOKEN.approve(ROUTER1.address, _1m, { from: USER1 });
-      expect(BN2Str(await STEALTOKEN.allowance(USER1, ROUTER1.address))).to.equal(
-        _1m,
-      );
+      expect(
+        BN2Str(await STEALTOKEN.allowance(USER1, ROUTER1.address)),
+      ).to.equal(_1m);
 
       await ROUTER1.depositWithExpiry(
         YGGDRASIL1,
@@ -176,7 +176,9 @@ describe("Router contract", function () {
         currentTime,
       );
 
-      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(
+        _500k,
+      );
       expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
       expect(
         BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
@@ -354,10 +356,16 @@ describe("Router contract", function () {
     it("Should not steal TOKEN from router", async function () {
       // router has 400k token and 500k stealing token
       expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
-      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(
+        _500k,
+      );
 
-      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address))).to.equal(_400k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address))).to.equal(_500k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
+      ).to.equal(_400k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
+      ).to.equal(_500k);
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
       expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
@@ -366,11 +374,17 @@ describe("Router contract", function () {
         from: YGGDRASIL1,
       });
 
-      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
+      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(
+        _400k,
+      );
       expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
 
-      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address))).to.equal(_400k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address))).to.equal(_400k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
+      ).to.equal(_400k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
+      ).to.equal(_400k);
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
       expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_600k);
@@ -386,7 +400,6 @@ describe("Router contract", function () {
         BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
       ).to.equal(_250k);
     });
-
   });
 
   describe("Yggdrasil Returns Funds, Asgard Churns, Old Vaults can't spend", function () {
