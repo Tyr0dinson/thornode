@@ -387,8 +387,6 @@ contract THORChain_Router {
         aggregationPayload.payload,
         aggregationPayload.originAddress
       );
-
-      return;
     }
   }
 

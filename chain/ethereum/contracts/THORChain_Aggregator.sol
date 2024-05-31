@@ -167,17 +167,15 @@ contract THORChain_Aggregator {
           recipient,
           type(uint).max
         );
-        return;
+      } else {
+        // do something with your payload like parse to an aggregator specific structure
+        swapRouter.swapExactETHForTokens{value: msg.value}(
+          amountOutMin,
+          path,
+          recipient,
+          type(uint).max
+        );
       }
-
-      // do something with your payload like parse to an aggregator specific structure
-      swapRouter.swapExactETHForTokens{value: msg.value}(
-        amountOutMin,
-        path,
-        recipient,
-        type(uint).max
-      );
-      return;
     } else {
       // received an ERC20, swap to ETH or do as you please
       path[0] = fromAsset;
@@ -199,23 +197,21 @@ contract THORChain_Aggregator {
           )
         );
         require(aggSuccess, "swapExactTokensForETH failed");
-        return;
+      } else {
+        // do something with your payload like parse to an aggregator specific structure
+        // UniV2 transfers from 'msg.sender', so we need a low-level `.call` to change the msg.sender from the target's perspective
+        (bool success, ) = address(swapRouter).call(
+          abi.encodeWithSignature(
+            "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
+            fromAmount,
+            amountOutMin,
+            path,
+            recipient,
+            type(uint).max // Assuming using the maximum uint256 value as the deadline
+          )
+        );
+        require(success, "swapExactTokensForETH failed");
       }
-
-      // do something with your payload like parse to an aggregator specific structure
-      // UniV2 transfers from 'msg.sender', so we need a low-level `.call` to change the msg.sender from the target's perspective
-      (bool success, ) = address(swapRouter).call(
-        abi.encodeWithSignature(
-          "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
-          fromAmount,
-          amountOutMin,
-          path,
-          recipient,
-          type(uint).max // Assuming using the maximum uint256 value as the deadline
-        )
-      );
-      require(success, "swapExactTokensForETH failed");
-      return;
     }
   }
 
