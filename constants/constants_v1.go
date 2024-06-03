@@ -8,9 +8,9 @@ func NewConstantValue() *ConstantVals {
 			BlocksPerYear:                       5256000,
 			MaxRuneSupply:                       -1,                 // max supply of rune. Default set to -1 to avoid consensus failure
 			IncentiveCurve:                      100,                // configures incentive pendulum
-			OutboundTransactionFee:              2_000000,           // TODO: remove me on hard fork
+			OutboundTransactionFee:              2_000000,           // 0.02 rune fee on all swaps and withdrawals
 			NativeOutboundFeeUSD:                2_000000,           // $0.02 fee on all swaps and withdrawals
-			NativeTransactionFee:                2_000000,           // TODO: remove me on hard fork
+			NativeTransactionFee:                2_000000,           // 0.02 rune fee on all on chain txs
 			NativeTransactionFeeUSD:             2_000000,           // $0.02 fee on all on chain txs
 			PoolCycle:                           43200,              // Make a pool available every 3 days
 			StagedPoolCost:                      10_00000000,        // amount of rune to take from a staged pool on every pool cycle
@@ -81,10 +81,10 @@ func NewConstantValue() *ConstantVals {
 			TxOutDelayRate:                      25_00000000,        // outbound rune per block rate for scheduled transactions (excluding native assets)
 			TxOutDelayMax:                       17280,              // max number of blocks a transaction can be delayed
 			MaxTxOutOffset:                      720,                // max blocks to offset a txout into a future block
-			TNSRegisterFee:                      10_00000000,        // TODO: remove me on hard fork
+			TNSRegisterFee:                      10_00000000,        // registration fee for new THORName in rune
 			TNSRegisterFeeUSD:                   10_00000000,        // registration fee for new THORName in USD
 			TNSFeeOnSale:                        1000,               // fee for TNS sale in basis points
-			TNSFeePerBlock:                      20,                 // TODO: remove me on hard fork
+			TNSFeePerBlock:                      20,                 // per block cost for TNS in rune
 			TNSFeePerBlockUSD:                   20,                 // per block cost for TNS in USD
 			PermittedSolvencyGap:                100,                // the setting is in basis points
 			ValidatorMaxRewardRatio:             1,                  // the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond

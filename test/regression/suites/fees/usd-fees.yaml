@@ -1,0 +1,310 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# initialize tor
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+sequence: 0
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: DerivedDepthBasisPts
+value: 10000
+sequence: 1
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: MaxAnchorBlocks
+value: 4
+sequence: 2
+---
+type: create-blocks
+count: 2
+---
+########################################################################################
+# transfer rune and check native fee
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "100000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "2000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+########################################################################################
+# enable usd fees
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: EnableUSDFees
+value: 1
+sequence: 3
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: NativeTransactionFeeUSD
+value: 77777777
+sequence: 4
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: NativeOutboundFeeUSD
+value: 77777777
+sequence: 5
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: NativeTransactionFeeUSD
+value: 77777777
+sequence: 6
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TNSRegisterFeeUSD
+value: 777777777
+sequence: 7
+---
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: TNSFeePerBlockUSD
+value: 77
+sequence: 8
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .tor_price_in_rune == "100001739"
+  - .native_outbound_fee_rune == "77000000"
+  - .native_tx_fee_rune == "77000000"
+  - .tns_register_fee_rune == "770000000"
+  - .tns_fee_per_block_rune == "77"
+---
+########################################################################################
+# transfer rune and check native fee
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "100000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "77000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .tor_price_in_rune == "100002087"
+  - .native_outbound_fee_rune == "77000000"
+  - .native_tx_fee_rune == "77000000"
+  - .tns_register_fee_rune == "770000000"
+  - .tns_fee_per_block_rune == "77"
+---
+########################################################################################
+# register thorname and check native fee
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "780000000"
+    asset: "rune"
+memo: "NAME:test:THOR:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .owner == "{{ addr_thor_fox }}"
+  - .expire_block_height == 5385877
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "77000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .tor_price_in_rune == "100002435"
+  - .native_outbound_fee_rune == "77000000"
+  - .native_tx_fee_rune == "77000000"
+  - .tns_register_fee_rune == "770000000"
+  - .tns_fee_per_block_rune == "77"
+---
+########################################################################################
+# swap to synth and check native outbound fee
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:btc/btc"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "77000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+  - .end_block_events[]|select(.type=="fee")|.coins == "76921 BTC/BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .tor_price_in_rune == "100002435"
+  - .native_outbound_fee_rune == "77000000"
+  - .native_tx_fee_rune == "77000000"
+  - .tns_register_fee_rune == "770000000"
+  - .tns_fee_per_block_rune == "77"
+---
+########################################################################################
+# halt eth chain to disable tor
+########################################################################################
+type: tx-mimir
+signer: {{ addr_thor_dog }}
+key: HaltETHChain
+value: 1
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .tor_price_in_rune == "0"
+  - .native_outbound_fee_rune == "2000000"
+  - .native_tx_fee_rune == "2000000"
+  - .tns_register_fee_rune == "1000000000"
+  - .tns_fee_per_block_rune == "20"
+---
+########################################################################################
+# fallback to native fee
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "100000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "2000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+########################################################################################
+# transfer rune and check native fee (fallback to rune config)
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - denom: rune
+    amount: "100000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "2000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+########################################################################################
+# register thorname and check native fee (fallback to rune config)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "NAME:test2:THOR:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test2
+asserts:
+  - .owner == "{{ addr_thor_fox }}"
+  - .expire_block_height == 5256012
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "2000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+---
+########################################################################################
+# swap to synth and check native outbound fee (fallback to rune config)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:btc/btc"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[0].result.events[]|select(.type=="transfer")] | length == 2'
+  - first(.txs[0].result.events[]|select(.type=="transfer")).amount == "2000000rune"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).sender == "{{ addr_thor_fox }}"
+  - first(.txs[0].result.events[]|select(.type=="transfer")).recipient == "{{ addr_module_reserve }}"
+  - .end_block_events[]|select(.type=="fee")|.coins == "1997 BTC/BTC"

@@ -549,6 +549,9 @@ func (k KVStore) usdFeesEnabled(ctx cosmos.Context) bool {
 		return false
 	}
 	usdFees, _ := k.GetMimir(ctx, constants.EnableUSDFees.String())
+	if hasVersion && version.GTE(semver.MustParse("1.134.0")) {
+		return !k.DollarsPerRune(ctx).IsZero() && usdFees > 0
+	}
 	return usdFees > 0
 }
 
