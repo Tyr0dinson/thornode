@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/cosmos/cosmos-sdk/client"
-	clientrest "github.com/cosmos/cosmos-sdk/client/rest"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
+	clientrest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/rest"
