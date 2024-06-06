@@ -9,8 +9,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/cosmos/cosmos-sdk/x/auth/signing"
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 	clientrest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 )
 
@@ -35,7 +33,7 @@ func BroadcastTxRequest(clientCtx client.Context) http.HandlerFunc {
 		var req BroadcastReq
 
 		body, err := io.ReadAll(r.Body)
-		if rest.CheckBadRequestError(w, err) {
+		if CheckBadRequestError(w, err) {
 			return
 		}
 		// NOTE: amino is used intentionally here, don't migrate it!
@@ -45,23 +43,23 @@ func BroadcastTxRequest(clientCtx client.Context) http.HandlerFunc {
 				" Amino serialization. Please either use CLI, gRPC, gRPC-gateway, or directly query the Tendermint RPC"+
 				" endpoint to broadcast this transaction. The new REST endpoint (via gRPC-gateway) is POST /cosmos/tx/v1beta1/txs."+
 				" Please also see the REST endpoints migration guide at %s for more info", clientrest.DeprecationURL)
-			if rest.CheckBadRequestError(w, err) {
+			if CheckBadRequestError(w, err) {
 				return
 			}
 		}
 
 		txBytes, err := ConvertAndEncodeStdTx(clientCtx.TxConfig, req.Tx)
-		if rest.CheckInternalServerError(w, err) {
+		if CheckInternalServerError(w, err) {
 			return
 		}
 
 		clientCtx = clientCtx.WithBroadcastMode(req.Mode)
 
 		res, err := clientCtx.BroadcastTx(txBytes)
-		if rest.CheckInternalServerError(w, err) {
+		if CheckInternalServerError(w, err) {
 			return
 		}
-		rest.PostProcessResponseBare(w, clientCtx, res)
+		PostProcessResponseBare(w, clientCtx, res)
 	}
 }
 

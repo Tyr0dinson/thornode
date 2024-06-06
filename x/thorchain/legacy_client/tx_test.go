@@ -1,4 +1,4 @@
-package client_test
+package legacy_client_test
 
 import (
 	"fmt"

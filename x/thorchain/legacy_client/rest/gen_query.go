@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
 	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 )
 

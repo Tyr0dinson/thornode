@@ -2,9 +2,6 @@ package rest
 
 import (
 	"github.com/gorilla/mux"
-
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 )
 
 // REST query and parameter values
@@ -14,7 +11,7 @@ const (
 
 // RegisterRoutes registers the auth module REST routes.
 func RegisterRoutes(clientCtx client.Context, rtr *mux.Router, storeName string) {
-	r := rest.WithHTTPDeprecationHeaders(rtr)
+	r := WithHTTPDeprecationHeaders(rtr)
 	r.HandleFunc(
 		"/auth/accounts/{address}", QueryAccountRequestHandlerFn(storeName, clientCtx),
 	).Methods(MethodGet)
@@ -27,7 +24,7 @@ func RegisterRoutes(clientCtx client.Context, rtr *mux.Router, storeName string)
 
 // RegisterTxRoutes registers all transaction routes on the provided router.
 func RegisterTxRoutes(clientCtx client.Context, rtr *mux.Router) {
-	r := rest.WithHTTPDeprecationHeaders(rtr)
+	r := WithHTTPDeprecationHeaders(rtr)
 	r.HandleFunc("/txs/{hash}", QueryTxRequestHandlerFn(clientCtx)).Methods("GET")
 	r.HandleFunc("/txs", QueryTxsRequestHandlerFn(clientCtx)).Methods("GET")
 	r.HandleFunc("/txs/decode", DecodeTxRequestHandlerFn(clientCtx)).Methods("POST")
