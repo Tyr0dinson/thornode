@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client/input"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdkstore "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -33,20 +35,20 @@ var (
 	NewRoute                     = sdk.NewRoute
 	NewKVStoreKeys               = sdk.NewKVStoreKeys
 	NewUint                      = sdk.NewUint
-	ParseUint                    = sdk.ParseUint
+	ParseUint                    = sdkmath.ParseUint
 	NewInt                       = sdk.NewInt
 	NewDec                       = sdk.NewDec
 	ZeroInt                      = sdk.ZeroInt
-	ZeroUint                     = sdk.ZeroUint
+	ZeroUint                     = sdkmath.ZeroUint
 	ZeroDec                      = sdk.ZeroDec
-	OneUint                      = sdk.OneUint
+	OneUint                      = sdkmath.OneUint
 	NewCoin                      = sdk.NewCoin
 	NewCoins                     = sdk.NewCoins
 	ParseCoins                   = sdk.ParseCoinsNormalized
 	NewDecWithPrec               = sdk.NewDecWithPrec
 	NewDecFromBigInt             = sdk.NewDecFromBigInt
 	NewIntFromBigInt             = sdk.NewIntFromBigInt
-	NewUintFromBigInt            = sdk.NewUintFromBigInt
+	NewUintFromBigInt            = sdkmath.NewUintFromBigInt
 	AccAddressFromBech32         = sdk.AccAddressFromBech32
 	VerifyAddressFormat          = sdk.VerifyAddressFormat
 	GetFromBech32                = sdk.GetFromBech32
@@ -62,10 +64,10 @@ var (
 	KVStoreReversePrefixIterator = sdk.KVStoreReversePrefixIterator
 	NewKVStoreKey                = sdk.NewKVStoreKey
 	NewTransientStoreKey         = sdk.NewTransientStoreKey
-	StoreTypeTransient           = sdk.StoreTypeTransient
-	StoreTypeIAVL                = sdk.StoreTypeIAVL
+	StoreTypeTransient           = sdkstore.StoreTypeTransient
+	StoreTypeIAVL                = sdkstore.StoreTypeIAVL
 	NewContext                   = sdk.NewContext
-	NewUintFromString            = sdk.NewUintFromString
+	NewUintFromString            = sdkmath.NewUintFromString
 
 	GetPubKeyFromBech32     = legacybech32.UnmarshalPubKey // nolint SA1019 deprecated
 	Bech32ifyPubKey         = legacybech32.MarshalPubKey   // nolint SA1019 deprecated
@@ -93,7 +95,7 @@ type (
 	Msg        = sdk.Msg
 	Iterator   = sdk.Iterator
 	Handler    = sdk.Handler
-	StoreKey   = sdk.StoreKey
+	StoreKey   = sdkstore.StoreKey
 	Querier    = sdk.Querier
 	TxResponse = sdk.TxResponse
 	Account    = authtypes.AccountI
@@ -128,7 +130,7 @@ func RoundToDecimal(amt Uint, dec int64) Uint {
 		if prec == 0 { // sanity check
 			return amt
 		}
-		precisionAdjust := sdk.NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(prec), nil))
+		precisionAdjust := NewUintFromBigInt(big.NewInt(0).Exp(big.NewInt(10), big.NewInt(prec), nil))
 		amt = amt.Quo(precisionAdjust).Mul(precisionAdjust)
 	}
 	return amt
@@ -176,11 +178,17 @@ func GetKeybase(thorchainHome string) (KeybaseStore, error) {
 		cliDir = filepath.Join(usr.HomeDir, ".thornode")
 	}
 
-	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
+	// AKH HACK
+	// not enough arguments in call to ckeys.New
+	// have (string, string, string, *"bytes".Buffer)
+	// want (string, string, string, "io".Reader, "github.com/cosmos/cosmos-sdk/codec".Codec, ..."github.com/cosmos/cosmos-sdk/crypto/keyring".Option)
+	// kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf)
+	_ = cliDir
+	var err error
 	return KeybaseStore{
 		SignerName:   username,
 		SignerPasswd: password,
-		Keybase:      kb,
+		// Keybase:      kb,
 	}, err
 }
 
