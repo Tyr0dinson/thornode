@@ -3,8 +3,8 @@ package rest
 import (
 	"github.com/gorilla/mux"
 
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/rest"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 )
 
 // REST query and parameter values

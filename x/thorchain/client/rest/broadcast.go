@@ -5,13 +5,13 @@ import (
 	"io"
 	"net/http"
 
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
-	clientrest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/rest"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/cosmos/cosmos-sdk/x/auth/signing"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
+	clientrest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 )
 
 // BroadcastReq defines a tx broadcasting request.

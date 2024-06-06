@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/types/rest"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/query"
 )

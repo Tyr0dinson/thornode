@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
 	"github.com/didip/tollbooth"
 	"github.com/didip/tollbooth/limiter"
 	"github.com/gorilla/mux"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
 
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/openapi"

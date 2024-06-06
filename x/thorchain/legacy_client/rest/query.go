@@ -8,14 +8,12 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/cosmos/cosmos-sdk/client"
-	clientrest "github.com/cosmos/cosmos-sdk/client/rest"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/rest"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
-	genutilrest "github.com/cosmos/cosmos-sdk/x/genutil/client/rest"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client"
+	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 )
 
 // QueryAccountRequestHandlerFn is the query accountREST Handler.

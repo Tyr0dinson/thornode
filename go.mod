@@ -41,7 +41,7 @@ require (
 	github.com/tendermint/btcd v0.1.1
 	github.com/tendermint/go-amino v0.16.0
 	github.com/tendermint/tendermint v0.34.27
-	github.com/tendermint/tm-db v0.6.6
+	github.com/tendermint/tm-db v0.6.7
 	gitlab.com/thorchain/bifrost/bchd-txscript v0.0.0-20221030141659-2c0aa3290779
 	gitlab.com/thorchain/bifrost/dogd-txscript v0.0.0-20221115151937-74db6a9d3c92
 	gitlab.com/thorchain/bifrost/ltcd-txscript v0.0.0-20221030141522-6ec18ecc4447
