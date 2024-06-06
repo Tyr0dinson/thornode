@@ -103,7 +103,7 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 	return common.NoAddress, fmt.Errorf("no thorname alias for chain %s", chain)
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount sdk.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdk.Uint, err error) {
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amount cosmos.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt cosmos.Uint, err error) {
 	// parse affiliate
 	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
@@ -119,7 +119,7 @@ func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, params url.Values, amou
 	// parse affiliate fee
 	bps = sdk.NewUint(0)
 	if len(params[affiliateBpsParam]) > 0 {
-		bps, err = sdk.ParseUint(params[affiliateBpsParam][0])
+		bps, err = cosmos.ParseUint(params[affiliateBpsParam][0])
 		if err != nil {
 			err = fmt.Errorf("bad affiliate fee: %w", err)
 			return
@@ -169,12 +169,12 @@ func quoteConvertAsset(ctx cosmos.Context, mgr *Mgrs, fromAsset common.Asset, am
 		// get the fromPool for the from asset
 		fromPool, err := mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
 		if err != nil {
-			return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+			return cosmos.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
 		}
 
 		// ensure pool exists
 		if fromPool.IsEmpty() {
-			return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+			return cosmos.ZeroUint(), fmt.Errorf("pool does not exist")
 		}
 
 		amount = fromPool.AssetValueInRune(amount)
@@ -185,12 +185,12 @@ func quoteConvertAsset(ctx cosmos.Context, mgr *Mgrs, fromAsset common.Asset, am
 
 		toPool, err := mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
 		if err != nil {
-			return sdk.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
+			return cosmos.ZeroUint(), fmt.Errorf("failed to get pool: %w", err)
 		}
 
 		// ensure pool exists
 		if toPool.IsEmpty() {
-			return sdk.ZeroUint(), fmt.Errorf("pool does not exist")
+			return cosmos.ZeroUint(), fmt.Errorf("pool does not exist")
 		}
 
 		amount = toPool.RuneValueInAsset(amount)
@@ -251,7 +251,7 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 ) {
 	// should be unreachable
 	if streamingQuantity == 0 {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("streaming quantity must be greater than zero")
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("streaming quantity must be greater than zero")
 	}
 
 	msg.Tx.Coins[0].Amount = msg.Tx.Coins[0].Amount.QuoUint64(streamingQuantity)
@@ -259,20 +259,20 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	// if the generated memo is too long for the source chain send error
 	maxMemoLength := msg.Tx.Coins[0].Asset.Chain.MaxMemoLength()
 	if !msg.Tx.Coins[0].Asset.Synth && len(msg.Tx.Memo) > maxMemoLength {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("generated memo too long for source chain")
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("generated memo too long for source chain")
 	}
 
 	// use the first active node account as the signer
 	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("no active node accounts: %w", err)
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("no active node accounts: %w", err)
 	}
 	msg.Signer = nodeAccounts[0].NodeAddress
 
 	// simulate the swap
 	events, err := simulateInternal(ctx, mgr, msg)
 	if err != nil {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), err
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
 
 	// extract events
@@ -289,11 +289,11 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	finalSwap := swaps[len(swaps)-1]
 
 	// parse outbound fee from event (except on trade assets with no outbound fee)
-	outboundFeeAmount = sdk.ZeroUint()
+	outboundFeeAmount = cosmos.ZeroUint()
 	if !msg.TargetAsset.IsTradeAsset() {
 		outboundFeeCoin, err := common.ParseCoin(fee["coins"])
 		if err != nil {
-			return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
 		}
 		outboundFeeAmount = outboundFeeCoin.Amount
 	}
@@ -301,33 +301,33 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	// parse outbound amount from event
 	emitCoin, err := common.ParseCoin(finalSwap["emit_asset"])
 	if err != nil {
-		return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to parse emit coin: %w", err)
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("unable to parse emit coin: %w", err)
 	}
 	emitAmount = emitCoin.Amount.MulUint64(streamingQuantity)
 
 	// sum the liquidity fees and convert to target asset
-	liquidityFee := sdk.ZeroUint()
+	liquidityFee := cosmos.ZeroUint()
 	for _, s := range swaps {
-		liquidityFee = liquidityFee.Add(sdk.NewUintFromString(s["liquidity_fee_in_rune"]))
+		liquidityFee = liquidityFee.Add(cosmos.NewUintFromString(s["liquidity_fee_in_rune"]))
 	}
 	var targetPool types.Pool
 	if !msg.TargetAsset.IsNativeRune() {
 		targetPool, err = mgr.Keeper().GetPool(ctx, msg.TargetAsset.GetLayer1Asset())
 		if err != nil {
-			return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to get pool: %w", err)
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("unable to get pool: %w", err)
 		}
 		liquidityFee = targetPool.RuneValueInAsset(liquidityFee)
 	}
 	liquidityFee = liquidityFee.MulUint64(streamingQuantity)
 
 	// approximate the affiliate fee in the target asset
-	affiliateFee := sdk.ZeroUint()
+	affiliateFee := cosmos.ZeroUint()
 	if msg.AffiliateAddress != common.NoAddress && !msg.AffiliateBasisPoints.IsZero() {
 		inAsset := msg.Tx.Coins[0].Asset.GetLayer1Asset()
 		if !inAsset.IsNativeRune() {
 			pool, err := mgr.Keeper().GetPool(ctx, msg.Tx.Coins[0].Asset.GetLayer1Asset())
 			if err != nil {
-				return nil, sdk.ZeroUint(), sdk.ZeroUint(), fmt.Errorf("unable to get pool: %w", err)
+				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("unable to get pool: %w", err)
 			}
 			amount = pool.AssetValueInRune(amount)
 		}
@@ -598,7 +598,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// simulate/validate the affiliate swap
-	if affAmt.GT(sdk.ZeroUint()) {
+	if affAmt.GT(cosmos.ZeroUint()) {
 		if fromAsset.IsNativeRune() {
 			fee := mgr.Keeper().GetNativeTxFee(ctx)
 			if affAmt.LTE(fee) {
@@ -667,10 +667,10 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	}
 
 	// parse tolerance basis points
-	limit := sdk.ZeroUint()
+	limit := cosmos.ZeroUint()
 	if len(params[toleranceBasisPointsParam]) > 0 {
 		// validate tolerance basis points
-		toleranceBasisPoints, err := sdk.ParseUint(params[toleranceBasisPointsParam][0])
+		toleranceBasisPoints, err := cosmos.ParseUint(params[toleranceBasisPointsParam][0])
 		if err != nil {
 			return quoteErrorResponse(fmt.Errorf("bad tolerance basis points: %w", err))
 		}
@@ -970,8 +970,8 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		return quoteErrorResponse(fmt.Errorf("unable to unmarshal swapRes: %w", err))
 	}
 
-	expectedAmountOut, _ := sdk.ParseUint(swapRes.ExpectedAmountOut)
-	outboundFee, _ := sdk.ParseUint(*swapRes.Fees.Outbound)
+	expectedAmountOut, _ := cosmos.ParseUint(swapRes.ExpectedAmountOut)
+	outboundFee, _ := cosmos.ParseUint(*swapRes.Fees.Outbound)
 	depositAmount = expectedAmountOut.Add(outboundFee)
 
 	// use the swap result info to generate the deposit quote
@@ -1112,7 +1112,7 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	res.InboundAddress = inboundAddress.String()
 
 	// estimate the outbound info
-	expectedAmountOut, _ := sdk.ParseUint(swapRes.ExpectedAmountOut)
+	expectedAmountOut, _ := cosmos.ParseUint(swapRes.ExpectedAmountOut)
 	outboundCoin := common.Coin{Asset: asset.GetLayer1Asset(), Amount: expectedAmountOut}
 	outboundDelay, err := quoteOutboundInfo(ctx, mgr, outboundCoin)
 	if err != nil {
@@ -1187,7 +1187,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// parse min out
-	minOut := sdk.ZeroUint()
+	minOut := cosmos.ZeroUint()
 	if len(params[minOutParam]) > 0 {
 		minOut, err = cosmos.ParseUint(params[minOutParam][0])
 		if err != nil {
@@ -1196,7 +1196,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// Affiliate fee in RUNE
-	affiliateRuneAmt := sdk.ZeroUint()
+	affiliateRuneAmt := cosmos.ZeroUint()
 
 	// parse affiliate
 	affiliate, affiliateMemo, affiliateBps, amt, affiliateAmt, err := quoteHandleAffiliate(ctx, mgr, params, amount)
@@ -1215,7 +1215,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 			// skim fee off collateral amount
 			amount = amt
 		} else {
-			affiliateRuneAmt = sdk.ZeroUint()
+			affiliateRuneAmt = cosmos.ZeroUint()
 		}
 	}
 
@@ -1270,7 +1270,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 		// TODO: support aggregator
 		Aggregator:              "",
 		AggregatorTargetAddress: "",
-		AggregatorTargetLimit:   sdk.ZeroUint(),
+		AggregatorTargetLimit:   cosmos.ZeroUint(),
 	}
 
 	// simulate message handling
@@ -1309,11 +1309,11 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 	}
 
 	// sum liquidity fees in rune from all swap events
-	outboundFee := sdk.ZeroUint()
-	liquidityFee := sdk.ZeroUint()
+	outboundFee := cosmos.ZeroUint()
+	liquidityFee := cosmos.ZeroUint()
 	affiliateFee := affiliateRuneAmt
-	expectedAmountOut := sdk.ZeroUint()
-	finalEmitAmount := sdk.ZeroUint() // used to calculate slippage
+	expectedAmountOut := cosmos.ZeroUint()
+	finalEmitAmount := cosmos.ZeroUint() // used to calculate slippage
 	streamingSwapBlocks := int64(0)
 	streamingSwapSeconds := int64(0)
 
@@ -1328,13 +1328,13 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 		case "scheduled_outbound":
 			if res.ExpectedAmountOut == "" { // if not empty we already saw the last outbound event
 				res.ExpectedAmountOut = em["coin_amount"]
-				expectedAmountOut = sdk.NewUintFromString(em["coin_amount"])
+				expectedAmountOut = cosmos.NewUintFromString(em["coin_amount"])
 				if em["coin_asset"] != targetAsset.String() { // should be unreachable
 					return quoteErrorResponse(fmt.Errorf("unexpected outbound asset: %s", em["coin_asset"]))
 				}
 
 				// estimate the outbound info
-				outboundDelay, err := quoteOutboundInfo(ctx, mgr, common.NewCoin(targetAsset, sdk.NewUintFromString(res.ExpectedAmountOut)))
+				outboundDelay, err := quoteOutboundInfo(ctx, mgr, common.NewCoin(targetAsset, cosmos.NewUintFromString(res.ExpectedAmountOut)))
 				if err != nil {
 					return quoteErrorResponse(err)
 				}
@@ -1360,7 +1360,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 
 		// sum liquidity fee in rune for all swap events
 		case "swap":
-			liquidityFee = liquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
+			liquidityFee = liquidityFee.Add(cosmos.NewUintFromString(em["liquidity_fee_in_rune"]))
 			coin, err := common.ParseCoin(em["emit_asset"])
 			if err != nil {
 				return quoteErrorResponse(fmt.Errorf("failed to parse coin: %w", err))
@@ -1434,7 +1434,7 @@ func queryQuoteLoanOpen(ctx cosmos.Context, path []string, req abci.RequestQuery
 			MinOut:               minOut,
 			AffiliateAddress:     common.Address(affiliateMemo),
 			AffiliateBasisPoints: affiliateBps,
-			DexTargetLimit:       sdk.ZeroUint(),
+			DexTargetLimit:       cosmos.ZeroUint(),
 		}
 
 		// if from asset chain has memo length restrictions use a prefix
@@ -1529,11 +1529,11 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 
 	// sum liquidity fees in rune from all swap events
-	outboundFee := sdk.ZeroUint()
-	repaymentLiquidityFee := sdk.ZeroUint()
-	outboundLiquidityFee := sdk.ZeroUint()
-	affiliateFee := sdk.ZeroUint()
-	expectedAmountOut := sdk.ZeroUint()
+	outboundFee := cosmos.ZeroUint()
+	repaymentLiquidityFee := cosmos.ZeroUint()
+	outboundLiquidityFee := cosmos.ZeroUint()
+	affiliateFee := cosmos.ZeroUint()
+	expectedAmountOut := cosmos.ZeroUint()
 	streamingSwapBlocks := int64(0)
 	streamingSwapSeconds := int64(0)
 	var repaymentEmit, outboundEmit common.Coin
@@ -1549,14 +1549,14 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 		case "scheduled_outbound":
 			if res.ExpectedAmountOut == "" { // if not empty we already saw the last outbound event
 				res.ExpectedAmountOut = em["coin_amount"]
-				expectedAmountOut = sdk.NewUintFromString(em["coin_amount"])
+				expectedAmountOut = cosmos.NewUintFromString(em["coin_amount"])
 				if em["coin_asset"] != msg.CollateralAsset.String() { // should be unreachable
 					data, err = quoteErrorResponse(fmt.Errorf("unexpected outbound asset: %s", em["coin_asset"]))
 					return nil, data, err
 				}
 
 				// estimate the outbound info
-				outboundDelay, err := quoteOutboundInfo(ctx, mgr, common.NewCoin(msg.CollateralAsset, sdk.NewUintFromString(res.ExpectedAmountOut)))
+				outboundDelay, err := quoteOutboundInfo(ctx, mgr, common.NewCoin(msg.CollateralAsset, cosmos.NewUintFromString(res.ExpectedAmountOut)))
 				if err != nil {
 					data, err = quoteErrorResponse(err)
 					return nil, data, err
@@ -1600,10 +1600,10 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 			switch {
 			case coin.Asset.Equals(common.TOR):
 				repaymentEmit = coin
-				repaymentLiquidityFee = repaymentLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
+				repaymentLiquidityFee = repaymentLiquidityFee.Add(cosmos.NewUintFromString(em["liquidity_fee_in_rune"]))
 			case !coin.Asset.IsNativeRune():
 				outboundEmit = coin
-				outboundLiquidityFee = outboundLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
+				outboundLiquidityFee = outboundLiquidityFee.Add(cosmos.NewUintFromString(em["liquidity_fee_in_rune"]))
 			default:
 				inCoin, err := common.ParseCoin(em["coin"])
 				if err != nil {
@@ -1611,9 +1611,9 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 					return nil, data, err
 				}
 				if inCoin.Asset.IsDerivedAsset() {
-					outboundLiquidityFee = outboundLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
+					outboundLiquidityFee = outboundLiquidityFee.Add(cosmos.NewUintFromString(em["liquidity_fee_in_rune"]))
 				} else {
-					repaymentLiquidityFee = repaymentLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
+					repaymentLiquidityFee = repaymentLiquidityFee.Add(cosmos.NewUintFromString(em["liquidity_fee_in_rune"]))
 				}
 			}
 
@@ -1663,7 +1663,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	outboundEmitRune := outPool.RuneValueInAsset(outboundEmit.Amount)
 
 	// slippage calculation is weighted to repayment and outbound amounts
-	outboundSlip := sdk.ZeroUint()
+	outboundSlip := cosmos.ZeroUint()
 	if !outboundEmitRune.IsZero() {
 		outboundSlip = outboundLiquidityFee.MulUint64(10000).Quo(outboundEmitRune.Add(outboundLiquidityFee))
 	}
@@ -1773,7 +1773,7 @@ func queryQuoteLoanClose(ctx cosmos.Context, path []string, req abci.RequestQuer
 	}
 
 	// parse min out
-	minOut := sdk.ZeroUint()
+	minOut := cosmos.ZeroUint()
 	if len(params[minOutParam]) > 0 {
 		minOut, err = cosmos.ParseUint(params[minOutParam][0])
 		if err != nil {

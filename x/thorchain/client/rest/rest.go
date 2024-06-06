@@ -8,6 +8,7 @@ import (
 	"github.com/didip/tollbooth/limiter"
 	"github.com/gorilla/mux"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/openapi"
 	"gitlab.com/thorchain/thornode/x/thorchain/query"

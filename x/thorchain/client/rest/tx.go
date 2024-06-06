@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/tx"
+	// AKH HACK "github.com/cosmos/cosmos-sdk/client/tx"
 	"gitlab.com/thorchain/thornode/x/thorchain/legacy_client/types/rest"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -68,7 +68,7 @@ func newDepositHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
+		// AKH HACK tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -108,7 +108,7 @@ func newErrataTxHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
+		// AKH HACK tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -158,7 +158,7 @@ func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 			return
 		}
 
-		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
+		// AKH HACK tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msg)
 	}
 }
 
@@ -238,6 +238,6 @@ func postTxsHandler(cliCtx client.Context) http.HandlerFunc {
 			msgs = append(msgs, msg)
 		}
 
-		tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msgs...)
+		// AKH HACK tx.WriteGeneratedTxResponse(cliCtx, w, baseReq, msgs...)
 	}
 }

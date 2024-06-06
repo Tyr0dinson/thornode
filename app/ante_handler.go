@@ -53,13 +53,13 @@ func NewAnteHandler(options AnteHandlerOptions) (sdk.AnteHandler, error) {
 		// replace gas meter immediately after setting up ctx
 		thorchain.NewInfiniteGasDecorator(options.THORChainKeeper),
 
-		ante.NewRejectExtensionOptionsDecorator(),
-		ante.NewMempoolFeeDecorator(),
+		// AKH HACK ante.NewRejectExtensionOptionsDecorator(),
+		// AKH HACK ante.NewMempoolFeeDecorator(),
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
-		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper),
+		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, nil), // AKH HACK
 
 		// run thorchain-specific msg antes
 		thorchain.NewAnteDecorator(options.THORChainKeeper),

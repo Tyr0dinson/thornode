@@ -1637,7 +1637,7 @@ func queryDerivedPool(ctx cosmos.Context, path []string, req abci.RequestQuery, 
 	_ = mgr.NetworkMgr().BeginBlock(ctx.WithBlockHeight(ctx.BlockHeight()+1), mgr)
 
 	// sum rune depth of anchor pools
-	runeDepth := sdk.ZeroUint()
+	runeDepth := cosmos.ZeroUint()
 	for _, anchor := range mgr.Keeper().GetAnchors(ctx, asset) {
 		aPool, _ := mgr.Keeper().GetPool(ctx, anchor)
 		runeDepth = runeDepth.Add(aPool.BalanceRune)

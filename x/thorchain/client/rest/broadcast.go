@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
@@ -33,33 +34,32 @@ func BroadcastTxRequest(clientCtx client.Context) http.HandlerFunc {
 		var req BroadcastReq
 
 		body, err := io.ReadAll(r.Body)
-		if CheckBadRequestError(w, err) {
+		if clientrest.CheckBadRequestError(w, err) {
 			return
 		}
 		// NOTE: amino is used intentionally here, don't migrate it!
 		err = clientCtx.LegacyAmino.UnmarshalJSON(body, &req)
 		if err != nil {
-			err = fmt.Errorf("this transaction cannot be broadcasted via legacy REST endpoints, because it does not support"+
-				" Amino serialization. Please either use CLI, gRPC, gRPC-gateway, or directly query the Tendermint RPC"+
-				" endpoint to broadcast this transaction. The new REST endpoint (via gRPC-gateway) is POST /cosmos/tx/v1beta1/txs."+
-				" Please also see the REST endpoints migration guide at %s for more info", clientrest.DeprecationURL)
-			if CheckBadRequestError(w, err) {
+			err = fmt.Errorf("this transaction cannot be broadcasted via legacy REST endpoints, because it does not support" +
+				" Amino serialization. Please either use CLI, gRPC, gRPC-gateway, or directly query the Tendermint RPC" +
+				" endpoint to broadcast this transaction. The new REST endpoint (via gRPC-gateway) is POST /cosmos/tx/v1beta1/txs.")
+			if clientrest.CheckBadRequestError(w, err) {
 				return
 			}
 		}
 
 		txBytes, err := ConvertAndEncodeStdTx(clientCtx.TxConfig, req.Tx)
-		if CheckInternalServerError(w, err) {
+		if clientrest.CheckInternalServerError(w, err) {
 			return
 		}
 
 		clientCtx = clientCtx.WithBroadcastMode(req.Mode)
 
 		res, err := clientCtx.BroadcastTx(txBytes)
-		if CheckInternalServerError(w, err) {
+		if clientrest.CheckInternalServerError(w, err) {
 			return
 		}
-		PostProcessResponseBare(w, clientCtx, res)
+		clientrest.PostProcessResponseBare(w, clientCtx, res)
 	}
 }
 
@@ -73,10 +73,11 @@ func ConvertAndEncodeStdTx(txConfig client.TxConfig, stdTx StdTx) ([]byte, error
 	if _, ok := builder.GetTx().(legacytx.StdTx); ok {
 		theTx = stdTx
 	} else {
-		err := CopyTx(stdTx, builder, false)
-		if err != nil {
-			return nil, err
-		}
+		// AKH HACK
+		// err := CopyTx(stdTx, builder, false)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		theTx = builder.GetTx()
 	}

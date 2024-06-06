@@ -7,7 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
-	"github.com/cosmos/cosmos-sdk/client/rpc"
+	// AKH HACK "github.com/cosmos/cosmos-sdk/client/rpc"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/server/api"
@@ -43,10 +43,8 @@ import (
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/cosmos/cosmos-sdk/x/upgrade"
-	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	appparams "gitlab.com/thorchain/thornode/app/params"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
@@ -69,7 +67,6 @@ var (
 		capability.AppModuleBasic{},
 		mint.AppModuleBasic{},
 		params.AppModuleBasic{},
-		upgrade.AppModuleBasic{},
 		thorchain.AppModuleBasic{},
 	)
 
@@ -109,9 +106,9 @@ type THORChainApp struct {
 	interfaceRegistry types.InterfaceRegistry
 	invCheckPeriod    uint
 	// keys to access the substores
-	keys    map[string]*sdk.KVStoreKey
-	tkeys   map[string]*sdk.TransientStoreKey
-	memKeys map[string]*sdk.MemoryStoreKey
+	keys    map[string]*cosmos.KVStoreKey
+	tkeys   map[string]*cosmos.TransientStoreKey
+	memKeys map[string]*cosmos.MemoryStoreKey
 
 	// keepers
 	AccountKeeper    authkeeper.AccountKeeper
@@ -119,7 +116,6 @@ type THORChainApp struct {
 	CapabilityKeeper *capabilitykeeper.Keeper
 	StakingKeeper    stakingkeeper.Keeper
 	MintKeeper       mintkeeper.Keeper
-	UpgradeKeeper    upgradekeeper.Keeper
 	ParamsKeeper     paramskeeper.Keeper
 
 	thorchainKeeper thorchainkeeper.Keeper
@@ -146,7 +142,7 @@ func New(
 	keys := sdk.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
 		minttypes.StoreKey,
-		paramstypes.StoreKey, upgradetypes.StoreKey,
+		paramstypes.StoreKey,
 		capabilitytypes.StoreKey,
 		thorchaintypes.StoreKey,
 	)
@@ -168,14 +164,14 @@ func New(
 	app.ParamsKeeper = initParamsKeeper(appCodec, cdc, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
 
 	// set the BaseApp's parameter store
-	bApp.SetParamStore(app.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramskeeper.ConsensusParamsKeyTable()))
+	// AKH HACK bApp.SetParamStore(app.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramskeeper.ConsensusParamsKeyTable()))
 
 	// add capability keeper
 	app.CapabilityKeeper = capabilitykeeper.NewKeeper(appCodec, keys[capabilitytypes.StoreKey], memKeys[capabilitytypes.MemStoreKey])
 
 	// add keepers
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
-		appCodec, keys[authtypes.StoreKey], app.GetSubspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms,
+		appCodec, keys[authtypes.StoreKey], app.GetSubspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms, "", // AKH HACK
 	)
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
 		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.BlockedAddrs(),
@@ -189,8 +185,6 @@ func New(
 		appCodec, keys[minttypes.StoreKey], app.GetSubspace(minttypes.ModuleName), &stakingKeeper,
 		app.AccountKeeper, app.BankKeeper, authtypes.FeeCollectorName,
 	)
-
-	app.UpgradeKeeper = upgradekeeper.NewKeeper(skipUpgradeHeights, keys[upgradetypes.StoreKey], appCodec, homePath, app.BaseApp)
 
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
@@ -207,7 +201,6 @@ func New(
 		auth.NewAppModule(appCodec, app.AccountKeeper, nil),
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper),
 		capability.NewAppModule(appCodec, *app.CapabilityKeeper),
-		upgrade.NewAppModule(app.UpgradeKeeper),
 		params.NewAppModule(app.ParamsKeeper),
 		thorchain.NewAppModule(app.thorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled),
 	)
@@ -223,7 +216,6 @@ func New(
 		banktypes.ModuleName,
 		paramstypes.ModuleName,
 		genutiltypes.ModuleName,
-		upgradetypes.ModuleName,
 		thorchain.ModuleName,
 	)
 
@@ -322,21 +314,21 @@ func (app *THORChainApp) InterfaceRegistry() types.InterfaceRegistry {
 // GetKey returns the KVStoreKey for the provided store key.
 //
 // NOTE: This is solely to be used for testing purposes.
-func (app *THORChainApp) GetKey(storeKey string) *sdk.KVStoreKey {
+func (app *THORChainApp) GetKey(storeKey string) *cosmos.KVStoreKey {
 	return app.keys[storeKey]
 }
 
 // GetTKey returns the TransientStoreKey for the provided store key.
 //
 // NOTE: This is solely to be used for testing purposes.
-func (app *THORChainApp) GetTKey(storeKey string) *sdk.TransientStoreKey {
+func (app *THORChainApp) GetTKey(storeKey string) *cosmos.TransientStoreKey {
 	return app.tkeys[storeKey]
 }
 
 // GetMemKey returns the MemStoreKey for the provided mem key.
 //
 // NOTE: This is solely used for testing purposes.
-func (app *THORChainApp) GetMemKey(storeKey string) *sdk.MemoryStoreKey {
+func (app *THORChainApp) GetMemKey(storeKey string) *cosmos.MemoryStoreKey {
 	return app.memKeys[storeKey]
 }
 
@@ -352,7 +344,7 @@ func (app *THORChainApp) GetSubspace(moduleName string) paramstypes.Subspace {
 // API server.
 func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
 	clientCtx := apiSvr.ClientCtx
-	rpc.RegisterRoutes(clientCtx, apiSvr.Router)
+	// AKH HACK rpc.RegisterRoutes(clientCtx, apiSvr.Router)
 	authrest.RegisterTxRoutes(clientCtx, apiSvr.Router)
 
 	// Register new tx routes from grpc-gateway.
@@ -361,13 +353,13 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 	tmservice.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 
 	// Register legacy and grpc-gateway routes for all modules.
-	ModuleBasics.RegisterRESTRoutes(clientCtx, apiSvr.Router)
+	// AKH HACK ModuleBasics.RegisterRESTRoutes(clientCtx, apiSvr.Router)
 	ModuleBasics.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 }
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
 func (app *THORChainApp) RegisterTendermintService(ctx client.Context) {
-	tmservice.RegisterTendermintService(app.BaseApp.GRPCQueryRouter(), ctx, app.interfaceRegistry)
+	// AKH HACK tmservice.RegisterTendermintService(app.BaseApp.GRPCQueryRouter(), ctx, app.interfaceRegistry)
 }
 
 // RegisterTxService implements the Application.RegisterTxService method.
@@ -376,7 +368,7 @@ func (app *THORChainApp) RegisterTxService(ctx client.Context) {
 }
 
 // initParamsKeeper init params keeper and its subspaces
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey sdk.StoreKey) paramskeeper.Keeper {
+func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey cosmos.StoreKey) paramskeeper.Keeper {
 	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
 
 	paramsKeeper.Subspace(authtypes.ModuleName)

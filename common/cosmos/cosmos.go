@@ -80,25 +80,28 @@ var (
 )
 
 type (
-	Context    = sdk.Context
-	Route      = sdk.Route
-	Uint       = sdk.Uint
-	Int        = sdk.Int
-	Coin       = sdk.Coin
-	Coins      = sdk.Coins
-	AccAddress = sdk.AccAddress
-	Attribute  = sdk.Attribute
-	Result     = sdk.Result
-	Event      = sdk.Event
-	Events     = sdk.Events
-	Dec        = sdk.Dec
-	Msg        = sdk.Msg
-	Iterator   = sdk.Iterator
-	Handler    = sdk.Handler
-	StoreKey   = sdkstore.StoreKey
-	Querier    = sdk.Querier
-	TxResponse = sdk.TxResponse
-	Account    = authtypes.AccountI
+	Context           = sdk.Context
+	Route             = sdk.Route
+	Uint              = sdk.Uint
+	Int               = sdk.Int
+	Coin              = sdk.Coin
+	Coins             = sdk.Coins
+	AccAddress        = sdk.AccAddress
+	Attribute         = sdk.Attribute
+	Result            = sdk.Result
+	Event             = sdk.Event
+	Events            = sdk.Events
+	Dec               = sdk.Dec
+	Msg               = sdk.Msg
+	Iterator          = sdk.Iterator
+	Handler           = sdk.Handler
+	StoreKey          = sdkstore.StoreKey
+	Querier           = sdk.Querier
+	TxResponse        = sdk.TxResponse
+	Account           = authtypes.AccountI
+	KVStoreKey        = sdkstore.KVStoreKey
+	TransientStoreKey = sdkstore.TransientStoreKey
+	MemoryStoreKey    = sdkstore.MemoryStoreKey
 )
 
 var _ sdk.Address = AccAddress{}
