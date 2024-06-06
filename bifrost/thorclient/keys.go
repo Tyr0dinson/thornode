@@ -36,7 +36,7 @@ func NewKeysWithKeybase(kb ckeys.Keyring, name, password string) *Keys {
 }
 
 // GetKeyringKeybase return keyring and key info
-func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, ckeys.Info, error) {
+func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, *ckeys.Record, error) {
 	if len(signerName) == 0 {
 		return nil, nil, fmt.Errorf("signer name is empty")
 	}
@@ -76,11 +76,13 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
 	}
 
-	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader)
+	// AKH HACK return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader), 
+	_ = cliDir
+	return nil, nil
 }
 
 // GetSignerInfo return signer info
-func (k *Keys) GetSignerInfo() ckeys.Info {
+func (k *Keys) GetSignerInfo() *ckeys.Record {
 	info, err := k.kb.Key(k.signerName)
 	if err != nil {
 		panic(err)

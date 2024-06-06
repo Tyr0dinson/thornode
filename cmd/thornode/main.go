@@ -29,7 +29,7 @@ func main() {
 	})
 
 	rootCmd, _ := cmd.NewRootCmd()
-	if err := svrcmd.Execute(rootCmd, app.DefaultNodeHome()); err != nil {
+	if err := svrcmd.Execute(rootCmd, app.DefaultNodeHome(), ""); err != nil {  // AKH HACK
 		os.Exit(1)
 	}
 }

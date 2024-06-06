@@ -56,19 +56,23 @@ contain valid denominations. Accounts may optionally be supplied with vesting pa
 				}
 
 				// attempt to lookup address from Keybase if no address was provided
-				var kb keyring.Keyring
-				kb, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf)
+				var kr keyring.Keyring
+				// AKH HACK kr, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf)
+				_ = keyringBackend
+				_ = inBuf
 				if err != nil {
 					return err
 				}
 
-				var info keyring.Info
-				info, err = kb.Key(args[0])
-				if err != nil {
-					return fmt.Errorf("failed to get address from Keybase: %w", err)
-				}
+                k, err := kr.Key(args[0])
+                if err != nil {
+                    return fmt.Errorf("failed to get address from Keyring: %w", err)
+                }
 
-				addr = info.GetAddress()
+                addr, err = k.GetAddress()
+                if err != nil {
+                    return err
+                }
 			}
 
 			coins, err := cosmos.ParseCoins(args[1])
