@@ -27,9 +27,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/cosmos-sdk/x/capability"
-	capabilitykeeper "github.com/cosmos/cosmos-sdk/x/capability/keeper"
-	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/libs/log"
+	tmos "github.com/cometbft/cometbft/libs/os"
 	dbm "github.com/tendermint/tm-db"
 	authrest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 
@@ -66,10 +66,12 @@ var (
 		auth.AppModuleBasic{},
 		genutil.AppModuleBasic{},
 		bank.AppModuleBasic{},
-		capability.AppModuleBasic{},
 		mint.AppModuleBasic{},
 		params.AppModuleBasic{},
+<<<<<<< HEAD
 		upgrade.AppModuleBasic{},
+=======
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 		thorchain.AppModuleBasic{},
 	)
 
@@ -114,6 +116,7 @@ type THORChainApp struct {
 	memKeys map[string]*sdk.MemoryStoreKey
 
 	// keepers
+<<<<<<< HEAD
 	AccountKeeper    authkeeper.AccountKeeper
 	BankKeeper       bankkeeper.Keeper
 	CapabilityKeeper *capabilitykeeper.Keeper
@@ -121,6 +124,13 @@ type THORChainApp struct {
 	MintKeeper       mintkeeper.Keeper
 	UpgradeKeeper    upgradekeeper.Keeper
 	ParamsKeeper     paramskeeper.Keeper
+=======
+	AccountKeeper authkeeper.AccountKeeper
+	BankKeeper    bankkeeper.Keeper
+	StakingKeeper stakingkeeper.Keeper
+	MintKeeper    mintkeeper.Keeper
+	ParamsKeeper  paramskeeper.Keeper
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 
 	thorchainKeeper thorchainkeeper.Keeper
 
@@ -146,12 +156,16 @@ func New(
 	keys := sdk.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
 		minttypes.StoreKey,
+<<<<<<< HEAD
 		paramstypes.StoreKey, upgradetypes.StoreKey,
 		capabilitytypes.StoreKey,
+=======
+		paramstypes.StoreKey,
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 		thorchaintypes.StoreKey,
 	)
 	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
-	memKeys := sdk.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
+	memKeys := sdk.NewMemoryStoreKeys()
 
 	app := &THORChainApp{
 		BaseApp:           bApp,
@@ -170,9 +184,12 @@ func New(
 	// set the BaseApp's parameter store
 	bApp.SetParamStore(app.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramskeeper.ConsensusParamsKeyTable()))
 
+<<<<<<< HEAD
 	// add capability keeper
 	app.CapabilityKeeper = capabilitykeeper.NewKeeper(appCodec, keys[capabilitytypes.StoreKey], memKeys[capabilitytypes.MemStoreKey])
 
+=======
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 	// add keepers
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
 		appCodec, keys[authtypes.StoreKey], app.GetSubspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms,
@@ -190,8 +207,11 @@ func New(
 		app.AccountKeeper, app.BankKeeper, authtypes.FeeCollectorName,
 	)
 
+<<<<<<< HEAD
 	app.UpgradeKeeper = upgradekeeper.NewKeeper(skipUpgradeHeights, keys[upgradetypes.StoreKey], appCodec, homePath, app.BaseApp)
 
+=======
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
 	)
@@ -206,24 +226,26 @@ func New(
 		),
 		auth.NewAppModule(appCodec, app.AccountKeeper, nil),
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper),
+<<<<<<< HEAD
 		capability.NewAppModule(appCodec, *app.CapabilityKeeper),
 		upgrade.NewAppModule(app.UpgradeKeeper),
+=======
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 		params.NewAppModule(app.ParamsKeeper),
 		thorchain.NewAppModule(app.thorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled),
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
 	// properly initialized with tokens from genesis accounts.
-	// NOTE: Capability module must occur first so that it can initialize any capabilities
-	// so that other modules that want to create or claim capabilities afterwards in InitChain
-	// can do so safely.
 	app.mm.SetOrderInitGenesis(
-		capabilitytypes.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
 		paramstypes.ModuleName,
 		genutiltypes.ModuleName,
+<<<<<<< HEAD
 		upgradetypes.ModuleName,
+=======
+>>>>>>> 91aa8e0f0 (remove unnecessary modules from app)
 		thorchain.ModuleName,
 	)
 
