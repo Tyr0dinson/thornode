@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"cosmossdk.io/simapp"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/simapp"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"github.com/tendermint/tendermint/libs/log"
