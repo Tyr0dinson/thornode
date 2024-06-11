@@ -452,5 +452,63 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber > ${INITIAL_UNITS} # Swap from RUNE succeeds.
+  - .[0].units == "${UNITS=9360818}"
+  - ${UNITS} > ${INITIAL_UNITS} # Swap from RUNE succeeds.
   - .[0].owner == "{{ addr_thor_fox }}"
+---
+########################################################################################
+# Test a trade asset swap with afiliate fields
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+asserts:
+  - .units == "${UNITS}"
+  - .depth == "${UNITS}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fish }}
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result | length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${UNITS}"
+    asset: "BTC~BTC"
+memo: "=:ETH~ETH:{{ addr_thor_fox }}::{{ addr_thor_fish }}:1000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - length == 1
+  - .[0].asset != "ETH~ETH"
+  - .[0].asset == "BTC~BTC"
+  - .[0].units == "${UNITS}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.code?)] | length == 1
+  - ..|select(.code?).code != 0
+  - ..|select(.code?).log == "internal"
+  # The swap has entirely failed,
+  # from the deposit handler panicking and being recovered. 
+  # TODO: Update the code so that trade asset swap affiliates are permitted.
+---
+type: check
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+asserts:
+  - .result | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fish }}
+asserts:
+  - length == 0
