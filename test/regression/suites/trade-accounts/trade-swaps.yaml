@@ -480,7 +480,7 @@ signer: {{ addr_thor_fox }}
 coins:
   - amount: "${UNITS}"
     asset: "BTC~BTC"
-memo: "=:ETH~ETH:{{ addr_thor_fox }}::{{ addr_thor_fish }}:1000"
+memo: "=:ETH~ETH:{{ addr_thor_fox }}::{{ addr_thor_fish }}:${AFFILIATE_BPS=1000}"
 ---
 type: create-blocks
 count: 1
@@ -489,26 +489,14 @@ type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - length == 1
-  - .[0].asset != "ETH~ETH"
-  - .[0].asset == "BTC~BTC"
-  - .[0].units == "${UNITS}"
----
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
-  - .|[..|select(.code?)] | length == 1
-  - ..|select(.code?).code != 0
-  - ..|select(.code?).log == "internal"
-  # The swap has entirely failed,
-  # from the deposit handler panicking and being recovered. 
-  # TODO: Update the code so that trade asset swap affiliates are permitted.
----
-type: check
-endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
-asserts:
-  - .result | length == 0
+  - .[0].asset == "ETH~ETH"
+  # Successfully swapped to ETH~ETH, no BTC~BTC left over.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fish }}
 asserts:
-  - length == 0
+  - length == 1
+  - .[0].asset == "BTC~BTC"
+  - .[0].units|tonumber < ${UNITS} * (${AFFILIATE_BPS} + 1) / 10000
+  - .[0].units|tonumber > ${UNITS} * (${AFFILIATE_BPS} - 1) / 10000
+  # The intended affiliate fee has been received.
