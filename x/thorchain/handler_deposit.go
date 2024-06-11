@@ -323,9 +323,26 @@ func (h DepositHandler) addSwapDirectV134(ctx cosmos.Context, msg MsgSwap) {
 		}
 
 		// No PreferredAsset set, normal behavior
+		if coin.Asset.IsTradeAsset() {
+			// Overwritten 'amt' is the amount withdrawn, which according to units could be rounded down from the aimed-for amount.
+			amt, err = h.mgr.TradeAccountManager().Withdrawal(ctx, swapSourceAsset, amt, msg.Signer, common.NoAddress, msg.Tx.ID)
+			if err != nil {
+				ctx.Logger().Error("fail to send trade asset to affiliate", "affiliate", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
+				return
+			}
+			if amt.IsZero() {
+				// Successful withdrawal attempt, but rounded down to zero; return without error log.
+				return
+			}
+			if _, err := h.mgr.TradeAccountManager().Deposit(ctx, swapSourceAsset, amt, toAddress, common.NoAddress, msg.Tx.ID); err != nil {
+				ctx.Logger().Error("fail to send trade asset to affiliate", "affiliate", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
+			}
+			// Return without continuing to the non-Trade-Asset code.
+			return
+		}
 		sdkErr := h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
 		if sdkErr != nil {
-			ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
+			ctx.Logger().Error("fail to send native asset to affiliate", "affiliate", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
 		}
 	}
 }
