@@ -6546,6 +6546,8 @@ components:
           type: integer
         signer:
           type: string
+      required:
+      - value
       title: MimirVote
       type: object
     BlockResponse_id_parts:

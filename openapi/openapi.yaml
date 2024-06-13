@@ -3481,6 +3481,8 @@ components:
           items:
             type: object
             title: MimirVote
+            required:
+              - value
             properties:
               key:
                 type: string

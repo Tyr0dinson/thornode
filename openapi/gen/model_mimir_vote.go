@@ -17,7 +17,7 @@ import (
 // MimirVote struct for MimirVote
 type MimirVote struct {
 	Key *string `json:"key,omitempty"`
-	Value *int64 `json:"value,omitempty"`
+	Value int64 `json:"value"`
 	Signer *string `json:"signer,omitempty"`
 }
 
@@ -25,8 +25,9 @@ type MimirVote struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMimirVote() *MimirVote {
+func NewMimirVote(value int64) *MimirVote {
 	this := MimirVote{}
+	this.Value = value
 	return &this
 }
 
@@ -70,36 +71,28 @@ func (o *MimirVote) SetKey(v string) {
 	o.Key = &v
 }
 
-// GetValue returns the Value field value if set, zero value otherwise.
+// GetValue returns the Value field value
 func (o *MimirVote) GetValue() int64 {
-	if o == nil || o.Value == nil {
+	if o == nil {
 		var ret int64
 		return ret
 	}
-	return *o.Value
+
+	return o.Value
 }
 
-// GetValueOk returns a tuple with the Value field value if set, nil otherwise
+// GetValueOk returns a tuple with the Value field value
 // and a boolean to check if the value has been set.
 func (o *MimirVote) GetValueOk() (*int64, bool) {
-	if o == nil || o.Value == nil {
+	if o == nil {
 		return nil, false
 	}
-	return o.Value, true
+	return &o.Value, true
 }
 
-// HasValue returns a boolean if a field has been set.
-func (o *MimirVote) HasValue() bool {
-	if o != nil && o.Value != nil {
-		return true
-	}
-
-	return false
-}
-
-// SetValue gets a reference to the given int64 and assigns it to the Value field.
+// SetValue sets field value
 func (o *MimirVote) SetValue(v int64) {
-	o.Value = &v
+	o.Value = v
 }
 
 // GetSigner returns the Signer field value if set, zero value otherwise.
@@ -139,7 +132,7 @@ func (o MimirVote) MarshalJSON_deprecated() ([]byte, error) {
 	if o.Key != nil {
 		toSerialize["key"] = o.Key
 	}
-	if o.Value != nil {
+	if true {
 		toSerialize["value"] = o.Value
 	}
 	if o.Signer != nil {

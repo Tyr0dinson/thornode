@@ -5,14 +5,14 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Key** | Pointer to **string** |  | [optional] 
-**Value** | Pointer to **int64** |  | [optional] 
+**Value** | **int64** |  | 
 **Signer** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
 ### NewMimirVote
 
-`func NewMimirVote() *MimirVote`
+`func NewMimirVote(value int64, ) *MimirVote`
 
 NewMimirVote instantiates a new MimirVote object
 This constructor will assign default values to properties that have it defined,
@@ -71,11 +71,6 @@ and a boolean to check if the value has been set.
 
 SetValue sets Value field to given value.
 
-### HasValue
-
-`func (o *MimirVote) HasValue() bool`
-
-HasValue returns a boolean if a field has been set.
 
 ### GetSigner
 
