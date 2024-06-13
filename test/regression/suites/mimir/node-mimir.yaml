@@ -76,7 +76,5 @@ type: check
 endpoint: http://localhost:1317/thorchain/mimir/nodes_all
 asserts:
   - .mimirs[] | select(.signer == "{{ addr_thor_frog }}") | .value == 2
-  - .mimirs[] | select(.signer == "{{ addr_thor_fox }}") | .value != 0
-  - .mimirs[] | select(.signer == "{{ addr_thor_fox }}") | .value? | not
-  # Fox's vote has no 'value' field (omitted), but should display vote value 0.
-  # TODO: Make the OpenAPI MimirVote 'value' field required.
+  - .mimirs[] | select(.signer == "{{ addr_thor_fox }}") | .value == 0
+  # Non-0 and 0 votes are both displayed accurately without omission.
