@@ -60,3 +60,23 @@ type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
   - .REGRESSIONTEST == 2
+---
+########################################################################################
+# 0 votes should be visible in the node votes endpoint.
+########################################################################################
+type: tx-mimir
+key: RegressionTest
+value: 0
+signer: {{ addr_thor_fox }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/nodes_all
+asserts:
+  - .mimirs[] | select(.signer == "{{ addr_thor_frog }}") | .value == 2
+  - .mimirs[] | select(.signer == "{{ addr_thor_fox }}") | .value != 0
+  - .mimirs[] | select(.signer == "{{ addr_thor_fox }}") | .value? | not
+  # Fox's vote has no 'value' field (omitted), but should display vote value 0.
+  # TODO: Make the OpenAPI MimirVote 'value' field required.
