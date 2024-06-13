@@ -2640,7 +2640,7 @@ func queryMimirAdminValues(ctx cosmos.Context, path []string, req abci.RequestQu
 }
 
 func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	mimirs := NodeMimirs{}
+	mimirs := openapi.MimirNodesResponse{}
 	iter := mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2649,7 +2649,15 @@ func queryMimirNodesAllValues(ctx cosmos.Context, path []string, req abci.Reques
 			ctx.Logger().Error("fail to unmarshal node mimir value", "error", err)
 			return nil, fmt.Errorf("fail to unmarshal node mimir value: %w", err)
 		}
-		mimirs.Mimirs = append(mimirs.Mimirs, m.Mimirs...)
+
+		for i := range m.Mimirs {
+			vote := openapi.MimirVote{
+				Key:    wrapString(m.Mimirs[i].Key),
+				Value:  m.Mimirs[i].Value,
+				Signer: wrapString(m.Mimirs[i].Signer.String()),
+			}
+			mimirs.Mimirs = append(mimirs.Mimirs, vote)
+		}
 	}
 
 	return jsonify(ctx, mimirs)
