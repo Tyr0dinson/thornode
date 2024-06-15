@@ -14,13 +14,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
-	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
-
+	eth "github.com/ethereum/go-ethereum/crypto"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
-
-	eth "github.com/ethereum/go-ethereum/crypto"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 	"github.com/tendermint/tendermint/crypto"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
