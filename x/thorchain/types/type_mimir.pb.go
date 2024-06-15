@@ -5,21 +5,18 @@ package types
 
 import (
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	io "io"
+	math "math"
+	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var (
-	_ = proto.Marshal
-	_ = fmt.Errorf
-	_ = math.Inf
-)
+var _ = proto.Marshal
+var _ = fmt.Errorf
+var _ = math.Inf
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -39,11 +36,9 @@ func (*NodeMimir) ProtoMessage()    {}
 func (*NodeMimir) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0c7db1770d383588, []int{0}
 }
-
 func (m *NodeMimir) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *NodeMimir) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_NodeMimir.Marshal(b, m, deterministic)
@@ -56,15 +51,12 @@ func (m *NodeMimir) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-
 func (m *NodeMimir) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_NodeMimir.Merge(m, src)
 }
-
 func (m *NodeMimir) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *NodeMimir) XXX_DiscardUnknown() {
 	xxx_messageInfo_NodeMimir.DiscardUnknown(m)
 }
@@ -102,11 +94,9 @@ func (*NodeMimirs) ProtoMessage()    {}
 func (*NodeMimirs) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0c7db1770d383588, []int{1}
 }
-
 func (m *NodeMimirs) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *NodeMimirs) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_NodeMimirs.Marshal(b, m, deterministic)
@@ -119,15 +109,12 @@ func (m *NodeMimirs) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-
 func (m *NodeMimirs) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_NodeMimirs.Merge(m, src)
 }
-
 func (m *NodeMimirs) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *NodeMimirs) XXX_DiscardUnknown() {
 	xxx_messageInfo_NodeMimirs.DiscardUnknown(m)
 }
@@ -262,7 +249,6 @@ func encodeVarintTypeMimir(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-
 func (m *NodeMimir) Size() (n int) {
 	if m == nil {
 		return 0
@@ -301,11 +287,9 @@ func (m *NodeMimirs) Size() (n int) {
 func sovTypeMimir(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
-
 func sozTypeMimir(x uint64) (n int) {
 	return sovTypeMimir(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-
 func (m *NodeMimir) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -444,7 +428,6 @@ func (m *NodeMimir) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *NodeMimirs) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -532,7 +515,6 @@ func (m *NodeMimirs) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func skipTypeMimir(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
