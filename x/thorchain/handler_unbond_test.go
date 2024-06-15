@@ -110,7 +110,7 @@ func (HandlerUnBondSuite) TestUnBondHandler_Run(c *C) {
 	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
-	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
+	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{}, common.EmptyPubKey)
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
 	}
@@ -260,14 +260,14 @@ func (HandlerUnBondSuite) TestUnBondHanlder_retiringvault(c *C) {
 	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
 	c.Assert(k1.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(k1.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
-	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
+	vault := NewVault(12, ActiveVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{}, common.EmptyPubKey)
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
 	}
 	c.Assert(k1.SetVault(ctx, vault), IsNil)
 	retiringVault := NewVault(12, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
 		common.BNBChain.String(), common.BTCChain.String(), common.ETHChain.String(), common.LTCChain.String(), common.BCHChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 	retiringVault.Membership = []string{
 		activeNodeAccount.PubKeySet.Secp256k1.String(),
 		standbyNodeAccount.PubKeySet.Secp256k1.String(),

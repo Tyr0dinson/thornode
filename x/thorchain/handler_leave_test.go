@@ -314,7 +314,7 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				tx := GetRandomTx()
 				tx.FromAddress = nodeAccount.BondAddress
-				asgardVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{})
+				asgardVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 				c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
 				helper.failSetNodeAccount = true
 				return NewMsgLeave(tx, nodeAccount.NodeAddress, GetRandomBech32Addr())
@@ -354,10 +354,10 @@ func (HandlerLeaveSuite) TestLeaveDifferentValidations(c *C) {
 				c.Assert(helper.Keeper.SetNodeAccount(ctx, nodeAccount), IsNil)
 				tx := GetRandomTx()
 				tx.FromAddress = nodeAccount.BondAddress
-				asgardVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{})
+				asgardVault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 				c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
 
-				retiringVault := NewVault(1000, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{})
+				retiringVault := NewVault(1000, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain, common.BTCChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 				retiringVault.Membership = common.PubKeys{
 					nodeAccount.PubKeySet.Secp256k1,
 					GetRandomPubKey(),

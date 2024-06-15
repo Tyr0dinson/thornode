@@ -53,6 +53,12 @@ func MsgTssPoolValidateV134(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) er
 	if msg.KeygenType != AsgardKeygen {
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}
+	// add additional check after v1.135.0 for EdDSA pubkey
+	if !msg.PoolPubKeyEddsa.IsEmpty() {
+		if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
+			return cosmos.ErrUnknownRequest(err.Error())
+		}
+	}
 
 	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa)
 	if err != nil {
@@ -162,10 +168,11 @@ func MsgTssPoolHandleV134(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 	// have anything in it either, thus override it with msg.PubKeys as well
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
+		voter.PoolPubKeyEddsa = msg.PoolPubKeyEddsa
 		voter.PubKeys = msg.PubKeys
 	}
 	// voter's pool pubkey is the same as the one in message
-	if !voter.PoolPubKey.Equals(msg.PoolPubKey) {
+	if !voter.PoolPubKey.Equals(msg.PoolPubKey) || !voter.PoolPubKeyEddsa.Equals(msg.PoolPubKeyEddsa) {
 		return nil, fmt.Errorf("invalid pool pubkey")
 	}
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)

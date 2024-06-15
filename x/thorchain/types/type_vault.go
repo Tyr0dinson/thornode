@@ -15,7 +15,7 @@ import (
 type Vaults []Vault
 
 // NewVault create a new instance of vault
-func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKey, chains []string, routers []ChainContract) Vault {
+func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKey, chains []string, routers []ChainContract, pubKeyEddsa common.PubKey) Vault {
 	return Vault{
 		BlockHeight: height,
 		StatusSince: height,
@@ -25,6 +25,7 @@ func NewVault(height int64, status VaultStatus, vtype VaultType, pk common.PubKe
 		Status:      status,
 		Chains:      chains,
 		Routers:     routers,
+		PubKeyEddsa: pubKeyEddsa,
 	}
 }
 

@@ -415,7 +415,7 @@ func MsgTssPoolHandleV120(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -671,7 +671,7 @@ func MsgTssPoolHandleV117(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -814,7 +814,7 @@ func MsgTssPoolValidateV114(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) er
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, common.EmptyPubKey)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -953,7 +953,7 @@ func MsgTssPoolHandleV93(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cos
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -1150,7 +1150,7 @@ func MsgTssPoolHandleV92(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cos
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -1350,7 +1350,7 @@ func MsgTssPoolHandleV73(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cos
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
@@ -1486,7 +1486,7 @@ func MsgTssPoolValidateV71(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) err
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, common.EmptyPubKey)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -1550,7 +1550,7 @@ func MsgTssPoolValidateV121(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) er
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, common.EmptyPubKey)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -1689,7 +1689,7 @@ func MsgTssPoolHandleV123(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 				vaultType = AsgardVault
 			}
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), common.EmptyPubKey)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {

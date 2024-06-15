@@ -102,9 +102,9 @@ func newTssKeysignHandlerTestHelper(c *C) tssKeysignFailHandlerTestHelper {
 		FailReason: "whatever",
 		BlameNodes: []Node{members[0], members[1]},
 	}
-	asgardVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	asgardVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	c.Assert(keeperHelper.SetVault(ctx, asgardVault), IsNil)
-	retiringVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	retiringVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	for _, item := range members {
 		retiringVault.Membership = append(retiringVault.Membership, item.Pubkey)
 	}
@@ -335,7 +335,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_me
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
 	vault := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
 		common.BNBChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 	accounts := NodeAccounts{}
 	for i := 0; i < 8; i++ {
 		na := GetRandomValidatorNode(NodeActive)

@@ -68,7 +68,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
@@ -77,7 +77,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -86,7 +86,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -249,7 +249,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
@@ -258,7 +258,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -267,7 +267,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_OutboundHeightDoesNotGetOverride(c
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -351,7 +351,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
@@ -359,7 +359,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -367,7 +367,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemNotEnoughForFee(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -448,7 +448,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(11*common.One)),
@@ -456,7 +456,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -464,7 +464,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemDeductMaxGasFromYggdrasil(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -587,7 +587,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtT
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(40*common.One)),
@@ -596,7 +596,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtT
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(50*common.One)),
@@ -605,7 +605,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItem_MultipleOutboundWillBeScheduledAtT
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
@@ -767,7 +767,7 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemSendingFromRetiredVault(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg := NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	ygg.AddFunds(
 		common.Coins{
 			common.NewCoin(common.BNBAsset, cosmos.NewUint(10*common.One)),
@@ -775,10 +775,10 @@ func (s TxOutStoreV107Suite) TestAddOutTxItemSendingFromRetiredVault(c *C) {
 	)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc2.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
-	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	ygg = NewVault(w.ctx.BlockHeight(), ActiveVault, YggdrasilVault, acc3.PubKeySet.Secp256k1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	c.Assert(w.keeper.SetVault(w.ctx, ygg), IsNil)
 
 	w.keeper.SetMimir(w.ctx, constants.MinTxOutVolumeThreshold.String(), 10000000000000)

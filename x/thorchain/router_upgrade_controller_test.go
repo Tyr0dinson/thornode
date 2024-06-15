@@ -61,7 +61,7 @@ func (s *RouterUpgradeControllerTestSuite) TestUpgradeProcess(c *C) {
 	activeVault := NewVault(ctx.BlockHeight(), types.VaultStatus_ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(), common.BNBChain.String(), common.BTCChain.String(),
 		common.BCHChain.String(), common.LTCChain.String(), common.AVAXChain.String(),
-	}, []ChainContract{oldChainContract})
+	}, []ChainContract{oldChainContract}, common.EmptyPubKey)
 	activeVault.AddFunds(funds)
 	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
 	controller := NewRouterUpgradeController(mgr)

@@ -210,12 +210,12 @@ func GetRandomPubKeySet() common.PubKeySet {
 }
 
 func GetRandomVault() Vault {
-	return NewVault(32, VaultStatus_ActiveVault, VaultType_AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	return NewVault(32, VaultStatus_ActiveVault, VaultType_AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, GetRandomPubKey())
 }
 
 // TODO remove on hard fork
 func GetRandomYggVault() Vault {
-	return NewVault(32, VaultStatus_ActiveVault, VaultType_YggdrasilVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	return NewVault(32, VaultStatus_ActiveVault, VaultType_YggdrasilVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, GetRandomPubKey())
 }
 
 func GetRandomPubKey() common.PubKey {
