@@ -175,7 +175,7 @@ func (vm *NetworkMgrV94) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 				// get address of asgard pubkey
-				addr, err := target.PubKey.GetAddress(coin.Asset.GetChain())
+				addr, err := target.GetAddress(coin.Asset.GetChain())
 				if err != nil {
 					return err
 				}
@@ -515,7 +515,7 @@ func (vm *NetworkMgrV94) RecallChainFunds(ctx cosmos.Context, chain common.Chain
 	if vault.IsEmpty() {
 		return fmt.Errorf("unable to determine asgard vault")
 	}
-	toAddr, err := vault.PubKey.GetAddress(chain)
+	toAddr, err := vault.GetAddress(chain)
 	if err != nil {
 		return err
 	}

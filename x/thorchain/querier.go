@@ -20,6 +20,8 @@ import (
 	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
+	"gitlab.com/thorchain/tss/go-tss/conversion"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
@@ -29,7 +31,6 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	q "gitlab.com/thorchain/thornode/x/thorchain/query"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
-	"gitlab.com/thorchain/tss/go-tss/conversion"
 )
 
 var (
@@ -361,7 +362,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []openapi.VaultAddr
 	var result []openapi.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		addr, err := vault.GetAddress(c)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue

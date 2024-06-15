@@ -397,11 +397,11 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	vault := GetRandomVault()
-	addr, err := vault.PubKey.GetAddress(common.BNBChain)
+	addr, err := vault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	newVault := GetRandomVault()
 	txout := NewTxOut(12)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	txout.TxArray = append(txout.TxArray, TxOutItem{
