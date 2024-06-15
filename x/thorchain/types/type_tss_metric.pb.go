@@ -5,22 +5,19 @@ package types
 
 import (
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	gitlab_com_thorchain_thornode_common "gitlab.com/thorchain/thornode/common"
+	io "io"
+	math "math"
+	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var (
-	_ = proto.Marshal
-	_ = fmt.Errorf
-	_ = math.Inf
-)
+var _ = proto.Marshal
+var _ = fmt.Errorf
+var _ = math.Inf
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -39,11 +36,9 @@ func (*NodeTssTime) ProtoMessage()    {}
 func (*NodeTssTime) Descriptor() ([]byte, []int) {
 	return fileDescriptor_58044908907484f6, []int{0}
 }
-
 func (m *NodeTssTime) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *NodeTssTime) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_NodeTssTime.Marshal(b, m, deterministic)
@@ -56,15 +51,12 @@ func (m *NodeTssTime) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) 
 		return b[:n], nil
 	}
 }
-
 func (m *NodeTssTime) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_NodeTssTime.Merge(m, src)
 }
-
 func (m *NodeTssTime) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *NodeTssTime) XXX_DiscardUnknown() {
 	xxx_messageInfo_NodeTssTime.DiscardUnknown(m)
 }
@@ -96,11 +88,9 @@ func (*TssKeygenMetric) ProtoMessage()    {}
 func (*TssKeygenMetric) Descriptor() ([]byte, []int) {
 	return fileDescriptor_58044908907484f6, []int{1}
 }
-
 func (m *TssKeygenMetric) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *TssKeygenMetric) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_TssKeygenMetric.Marshal(b, m, deterministic)
@@ -113,15 +103,12 @@ func (m *TssKeygenMetric) XXX_Marshal(b []byte, deterministic bool) ([]byte, err
 		return b[:n], nil
 	}
 }
-
 func (m *TssKeygenMetric) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_TssKeygenMetric.Merge(m, src)
 }
-
 func (m *TssKeygenMetric) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *TssKeygenMetric) XXX_DiscardUnknown() {
 	xxx_messageInfo_TssKeygenMetric.DiscardUnknown(m)
 }
@@ -153,11 +140,9 @@ func (*TssKeysignMetric) ProtoMessage()    {}
 func (*TssKeysignMetric) Descriptor() ([]byte, []int) {
 	return fileDescriptor_58044908907484f6, []int{2}
 }
-
 func (m *TssKeysignMetric) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *TssKeysignMetric) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_TssKeysignMetric.Marshal(b, m, deterministic)
@@ -170,15 +155,12 @@ func (m *TssKeysignMetric) XXX_Marshal(b []byte, deterministic bool) ([]byte, er
 		return b[:n], nil
 	}
 }
-
 func (m *TssKeysignMetric) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_TssKeysignMetric.Merge(m, src)
 }
-
 func (m *TssKeysignMetric) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *TssKeysignMetric) XXX_DiscardUnknown() {
 	xxx_messageInfo_TssKeysignMetric.DiscardUnknown(m)
 }
@@ -370,7 +352,6 @@ func encodeVarintTypeTssMetric(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-
 func (m *NodeTssTime) Size() (n int) {
 	if m == nil {
 		return 0
@@ -428,11 +409,9 @@ func (m *TssKeysignMetric) Size() (n int) {
 func sovTypeTssMetric(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
-
 func sozTypeTssMetric(x uint64) (n int) {
 	return sovTypeTssMetric(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-
 func (m *NodeTssTime) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -539,7 +518,6 @@ func (m *NodeTssTime) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *TssKeygenMetric) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -659,7 +637,6 @@ func (m *TssKeygenMetric) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *TssKeysignMetric) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -779,7 +756,6 @@ func (m *TssKeysignMetric) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func skipTypeTssMetric(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0

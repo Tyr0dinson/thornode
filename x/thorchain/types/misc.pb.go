@@ -5,21 +5,18 @@ package types
 
 import (
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
+	io "io"
+	math "math"
+	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var (
-	_ = proto.Marshal
-	_ = fmt.Errorf
-	_ = math.Inf
-)
+var _ = proto.Marshal
+var _ = fmt.Errorf
+var _ = math.Inf
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -37,11 +34,9 @@ func (*ProtoInt64) ProtoMessage()    {}
 func (*ProtoInt64) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c378bc52ddf12251, []int{0}
 }
-
 func (m *ProtoInt64) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *ProtoInt64) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_ProtoInt64.Marshal(b, m, deterministic)
@@ -54,15 +49,12 @@ func (m *ProtoInt64) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-
 func (m *ProtoInt64) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_ProtoInt64.Merge(m, src)
 }
-
 func (m *ProtoInt64) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *ProtoInt64) XXX_DiscardUnknown() {
 	xxx_messageInfo_ProtoInt64.DiscardUnknown(m)
 }
@@ -86,11 +78,9 @@ func (*ProtoUint64) ProtoMessage()    {}
 func (*ProtoUint64) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c378bc52ddf12251, []int{1}
 }
-
 func (m *ProtoUint64) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *ProtoUint64) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_ProtoUint64.Marshal(b, m, deterministic)
@@ -103,15 +93,12 @@ func (m *ProtoUint64) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) 
 		return b[:n], nil
 	}
 }
-
 func (m *ProtoUint64) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_ProtoUint64.Merge(m, src)
 }
-
 func (m *ProtoUint64) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *ProtoUint64) XXX_DiscardUnknown() {
 	xxx_messageInfo_ProtoUint64.DiscardUnknown(m)
 }
@@ -135,11 +122,9 @@ func (*ProtoAccAddresses) ProtoMessage()    {}
 func (*ProtoAccAddresses) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c378bc52ddf12251, []int{2}
 }
-
 func (m *ProtoAccAddresses) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *ProtoAccAddresses) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_ProtoAccAddresses.Marshal(b, m, deterministic)
@@ -152,15 +137,12 @@ func (m *ProtoAccAddresses) XXX_Marshal(b []byte, deterministic bool) ([]byte, e
 		return b[:n], nil
 	}
 }
-
 func (m *ProtoAccAddresses) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_ProtoAccAddresses.Merge(m, src)
 }
-
 func (m *ProtoAccAddresses) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *ProtoAccAddresses) XXX_DiscardUnknown() {
 	xxx_messageInfo_ProtoAccAddresses.DiscardUnknown(m)
 }
@@ -184,11 +166,9 @@ func (*ProtoStrings) ProtoMessage()    {}
 func (*ProtoStrings) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c378bc52ddf12251, []int{3}
 }
-
 func (m *ProtoStrings) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *ProtoStrings) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_ProtoStrings.Marshal(b, m, deterministic)
@@ -201,15 +181,12 @@ func (m *ProtoStrings) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 		return b[:n], nil
 	}
 }
-
 func (m *ProtoStrings) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_ProtoStrings.Merge(m, src)
 }
-
 func (m *ProtoStrings) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *ProtoStrings) XXX_DiscardUnknown() {
 	xxx_messageInfo_ProtoStrings.DiscardUnknown(m)
 }
@@ -233,11 +210,9 @@ func (*ProtoBools) ProtoMessage()    {}
 func (*ProtoBools) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c378bc52ddf12251, []int{4}
 }
-
 func (m *ProtoBools) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-
 func (m *ProtoBools) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_ProtoBools.Marshal(b, m, deterministic)
@@ -250,15 +225,12 @@ func (m *ProtoBools) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-
 func (m *ProtoBools) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_ProtoBools.Merge(m, src)
 }
-
 func (m *ProtoBools) XXX_Size() int {
 	return m.Size()
 }
-
 func (m *ProtoBools) XXX_DiscardUnknown() {
 	xxx_messageInfo_ProtoBools.DiscardUnknown(m)
 }
@@ -472,7 +444,6 @@ func encodeVarintMisc(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-
 func (m *ProtoInt64) Size() (n int) {
 	if m == nil {
 		return 0
@@ -542,11 +513,9 @@ func (m *ProtoBools) Size() (n int) {
 func sovMisc(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
-
 func sozMisc(x uint64) (n int) {
 	return sovMisc(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-
 func (m *ProtoInt64) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -619,7 +588,6 @@ func (m *ProtoInt64) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *ProtoUint64) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -692,7 +660,6 @@ func (m *ProtoUint64) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *ProtoAccAddresses) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -778,7 +745,6 @@ func (m *ProtoAccAddresses) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *ProtoStrings) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -864,7 +830,6 @@ func (m *ProtoStrings) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func (m *ProtoBools) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -988,7 +953,6 @@ func (m *ProtoBools) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-
 func skipMisc(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
