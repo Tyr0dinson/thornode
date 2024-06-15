@@ -130,7 +130,7 @@ func newRefundTxHandlerTestHelper(c *C) refundTxHandlerTestHelper {
 	version := GetCurrentVersion()
 	asgardVault := GetRandomVault()
 	asgardVault.Membership = []string{asgardVault.PubKey.String()}
-	addr, err := asgardVault.PubKey.GetAddress(common.BNBChain)
+	addr, err := asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	yggVault := GetRandomVault()
@@ -254,7 +254,7 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerShouldUpdateTxOut(c *C) {
 	for _, tc := range testCases {
 		helper := newRefundTxHandlerTestHelper(c)
 		handler := NewRefundHandler(helper.mgr)
-		fromAddr, err := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+		fromAddr, err := helper.yggVault.GetAddress(common.BNBChain)
 		c.Assert(err, IsNil)
 		tx := NewObservedTx(common.Tx{
 			ID:    GetRandomTxHash(),
@@ -281,7 +281,7 @@ func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
 	handler := NewRefundHandler(helper.mgr)
 
-	fromAddr, err := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.yggVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -308,7 +308,7 @@ func (s *HandlerRefundSuite) TestRefundTxNormalCase(c *C) {
 func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
 	handler := NewRefundHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -339,7 +339,7 @@ func (s *HandlerRefundSuite) TestRefundTxHandlerSendExtraFundShouldBeSlashed(c *
 func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSlashed(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
 	handler := NewRefundHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -366,7 +366,7 @@ func (s *HandlerRefundSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSla
 func (s *HandlerRefundSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSlash(c *C) {
 	helper := newRefundTxHandlerTestHelper(c)
 	handler := NewRefundHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),

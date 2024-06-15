@@ -241,7 +241,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
-	vaultAddr, err := vault.PubKey.GetAddress(common.BNBChain)
+	vaultAddr, err := vault.GetAddress(common.BNBChain)
 
 	pool := NewPool()
 	pool.Asset = common.BNBAsset

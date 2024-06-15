@@ -230,7 +230,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "yggdrasil return fund to asgard but to address is not asgard should be slashed",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -260,7 +260,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "fail to get node accounts should return an error",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -288,7 +288,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "yggdrasil return fund to asgard should be slashed",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -312,7 +312,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "yggdrasil return fail to get txout item should return an error",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -338,7 +338,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "yggdrasil return fund to asgard should works fine",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -370,7 +370,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 		{
 			name: "yggdrasil return fund to retiring asgard should works fine",
 			messageCreator: func(helper yggdrasilHandlerTestHelper) cosmos.Msg {
-				fromAddr, _ := helper.yggVault.PubKey.GetAddress(common.BNBChain)
+				fromAddr, _ := helper.yggVault.GetAddress(common.BNBChain)
 				coins := common.Coins{
 					common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One)),
 					common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
@@ -379,7 +379,7 @@ func (s *HandlerYggdrasilSuite) TestYggdrasilHandler(c *C) {
 				asgardVault.Status = RetiringVault
 				asgardVault.Type = AsgardVault
 				c.Assert(helper.keeper.SetVault(helper.ctx, asgardVault), IsNil)
-				addr, _ := asgardVault.PubKey.GetAddress(common.BNBChain)
+				addr, _ := asgardVault.GetAddress(common.BNBChain)
 				tx := common.Tx{
 					ID:          GetRandomTxHash(),
 					Chain:       common.BNBChain,

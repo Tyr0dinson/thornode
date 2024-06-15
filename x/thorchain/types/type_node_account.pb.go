@@ -5,22 +5,25 @@ package types
 
 import (
 	fmt "fmt"
-	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	common "gitlab.com/thorchain/thornode/common"
-	gitlab_com_thorchain_thornode_common "gitlab.com/thorchain/thornode/common"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
+
+	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	common "gitlab.com/thorchain/thornode/common"
+	gitlab_com_thorchain_thornode_common "gitlab.com/thorchain/thornode/common"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto.Marshal
-var _ = fmt.Errorf
-var _ = math.Inf
+var (
+	_ = proto.Marshal
+	_ = fmt.Errorf
+	_ = math.Inf
+)
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -116,9 +119,11 @@ func (*NodeAccount) ProtoMessage() {}
 func (*NodeAccount) Descriptor() ([]byte, []int) {
 	return fileDescriptor_553b0a276f7a08b4, []int{0}
 }
+
 func (m *NodeAccount) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
+
 func (m *NodeAccount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_NodeAccount.Marshal(b, m, deterministic)
@@ -131,12 +136,15 @@ func (m *NodeAccount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) 
 		return b[:n], nil
 	}
 }
+
 func (m *NodeAccount) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_NodeAccount.Merge(m, src)
 }
+
 func (m *NodeAccount) XXX_Size() int {
 	return m.Size()
 }
+
 func (m *NodeAccount) XXX_DiscardUnknown() {
 	xxx_messageInfo_NodeAccount.DiscardUnknown(m)
 }
@@ -153,9 +161,11 @@ func (*BondProvider) ProtoMessage() {}
 func (*BondProvider) Descriptor() ([]byte, []int) {
 	return fileDescriptor_553b0a276f7a08b4, []int{1}
 }
+
 func (m *BondProvider) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
+
 func (m *BondProvider) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_BondProvider.Marshal(b, m, deterministic)
@@ -168,12 +178,15 @@ func (m *BondProvider) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 		return b[:n], nil
 	}
 }
+
 func (m *BondProvider) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_BondProvider.Merge(m, src)
 }
+
 func (m *BondProvider) XXX_Size() int {
 	return m.Size()
 }
+
 func (m *BondProvider) XXX_DiscardUnknown() {
 	xxx_messageInfo_BondProvider.DiscardUnknown(m)
 }
@@ -191,9 +204,11 @@ func (*BondProviders) ProtoMessage() {}
 func (*BondProviders) Descriptor() ([]byte, []int) {
 	return fileDescriptor_553b0a276f7a08b4, []int{2}
 }
+
 func (m *BondProviders) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
+
 func (m *BondProviders) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_BondProviders.Marshal(b, m, deterministic)
@@ -206,12 +221,15 @@ func (m *BondProviders) XXX_Marshal(b []byte, deterministic bool) ([]byte, error
 		return b[:n], nil
 	}
 }
+
 func (m *BondProviders) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_BondProviders.Merge(m, src)
 }
+
 func (m *BondProviders) XXX_Size() int {
 	return m.Size()
 }
+
 func (m *BondProviders) XXX_DiscardUnknown() {
 	xxx_messageInfo_BondProviders.DiscardUnknown(m)
 }
@@ -228,9 +246,11 @@ func (*MinJoinLast) ProtoMessage() {}
 func (*MinJoinLast) Descriptor() ([]byte, []int) {
 	return fileDescriptor_553b0a276f7a08b4, []int{3}
 }
+
 func (m *MinJoinLast) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
+
 func (m *MinJoinLast) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_MinJoinLast.Marshal(b, m, deterministic)
@@ -243,12 +263,15 @@ func (m *MinJoinLast) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) 
 		return b[:n], nil
 	}
 }
+
 func (m *MinJoinLast) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_MinJoinLast.Merge(m, src)
 }
+
 func (m *MinJoinLast) XXX_Size() int {
 	return m.Size()
 }
+
 func (m *MinJoinLast) XXX_DiscardUnknown() {
 	xxx_messageInfo_MinJoinLast.DiscardUnknown(m)
 }
@@ -598,6 +621,7 @@ func encodeVarintTypeNodeAccount(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+
 func (m *NodeAccount) Size() (n int) {
 	if m == nil {
 		return 0
@@ -713,20 +737,24 @@ func (m *MinJoinLast) Size() (n int) {
 func sovTypeNodeAccount(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
+
 func sozTypeNodeAccount(x uint64) (n int) {
 	return sovTypeNodeAccount(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+
 func (this *BondProvider) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&BondProvider{`,
+	s := strings.Join([]string{
+		`&BondProvider{`,
 		`BondAddress:` + fmt.Sprintf("%v", this.BondAddress) + `,`,
 		`Bond:` + fmt.Sprintf("%v", this.Bond) + `,`,
 		`}`,
 	}, "")
 	return s
 }
+
 func (this *BondProviders) String() string {
 	if this == nil {
 		return "nil"
@@ -736,7 +764,8 @@ func (this *BondProviders) String() string {
 		repeatedStringForProviders += strings.Replace(strings.Replace(f.String(), "BondProvider", "BondProvider", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForProviders += "}"
-	s := strings.Join([]string{`&BondProviders{`,
+	s := strings.Join([]string{
+		`&BondProviders{`,
 		`NodeAddress:` + fmt.Sprintf("%v", this.NodeAddress) + `,`,
 		`NodeOperatorFee:` + fmt.Sprintf("%v", this.NodeOperatorFee) + `,`,
 		`Providers:` + repeatedStringForProviders + `,`,
@@ -744,17 +773,20 @@ func (this *BondProviders) String() string {
 	}, "")
 	return s
 }
+
 func (this *MinJoinLast) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&MinJoinLast{`,
+	s := strings.Join([]string{
+		`&MinJoinLast{`,
 		`LastChangedHeight:` + fmt.Sprintf("%v", this.LastChangedHeight) + `,`,
 		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
 		`}`,
 	}, "")
 	return s
 }
+
 func valueToStringTypeNodeAccount(v interface{}) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -763,6 +795,7 @@ func valueToStringTypeNodeAccount(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
+
 func (m *NodeAccount) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1212,6 +1245,7 @@ func (m *NodeAccount) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func (m *BondProvider) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1333,6 +1367,7 @@ func (m *BondProvider) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func (m *BondProviders) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1488,6 +1523,7 @@ func (m *BondProviders) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func (m *MinJoinLast) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1592,6 +1628,7 @@ func (m *MinJoinLast) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func skipTypeNodeAccount(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0

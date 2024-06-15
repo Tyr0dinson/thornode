@@ -5,19 +5,22 @@ package types
 
 import (
 	fmt "fmt"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	gitlab_com_thorchain_thornode_common "gitlab.com/thorchain/thornode/common"
-	io "io"
-	math "math"
-	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
-var _ = proto.Marshal
-var _ = fmt.Errorf
-var _ = math.Inf
+var (
+	_ = proto.Marshal
+	_ = fmt.Errorf
+	_ = math.Inf
+)
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the proto package it is being compiled against.
@@ -40,9 +43,11 @@ func (*SwapperClout) ProtoMessage()    {}
 func (*SwapperClout) Descriptor() ([]byte, []int) {
 	return fileDescriptor_84975f584ab6f822, []int{0}
 }
+
 func (m *SwapperClout) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
+
 func (m *SwapperClout) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_SwapperClout.Marshal(b, m, deterministic)
@@ -55,12 +60,15 @@ func (m *SwapperClout) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 		return b[:n], nil
 	}
 }
+
 func (m *SwapperClout) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_SwapperClout.Merge(m, src)
 }
+
 func (m *SwapperClout) XXX_Size() int {
 	return m.Size()
 }
+
 func (m *SwapperClout) XXX_DiscardUnknown() {
 	xxx_messageInfo_SwapperClout.DiscardUnknown(m)
 }
@@ -202,6 +210,7 @@ func encodeVarintTypeClout(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
+
 func (m *SwapperClout) Size() (n int) {
 	if m == nil {
 		return 0
@@ -230,9 +239,11 @@ func (m *SwapperClout) Size() (n int) {
 func sovTypeClout(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
+
 func sozTypeClout(x uint64) (n int) {
 	return sovTypeClout(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
+
 func (m *SwapperClout) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -458,6 +469,7 @@ func (m *SwapperClout) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+
 func skipTypeClout(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0

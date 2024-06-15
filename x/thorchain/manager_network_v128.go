@@ -8,6 +8,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -498,7 +499,7 @@ func (vm *NetworkMgrV128) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// GetMostSecure also takes into account migration outbound items.
 				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
 				// get address of asgard pubkey
-				addr, err := target.PubKey.GetAddress(coin.Asset.GetChain())
+				addr, err := target.GetAddress(coin.Asset.GetChain())
 				if err != nil {
 					return err
 				}

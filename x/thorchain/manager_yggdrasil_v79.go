@@ -259,7 +259,7 @@ func (ymgr YggMgrV79) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coin
 				continue
 			}
 
-			to, err := ygg.PubKey.GetAddress(coin.Asset.GetChain())
+			to, err := ygg.GetAddress(coin.Asset.GetChain())
 			if err != nil {
 				ctx.Logger().Error("fail to get address from pub key", "pub key", ygg.PubKey, "chain", coin.Asset.GetChain(), "error", err)
 				continue
