@@ -50,7 +50,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 	storeMgr := newStoreMgr(mgr)
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	c.Assert(storeMgr.mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain: common.ETHChain, TransactionSize: 80000, TransactionFeeRate: 30,
@@ -171,7 +171,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV92(c *C) {
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	vault.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
 		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
@@ -181,7 +181,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV92(c *C) {
 	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	vault1.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
 		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
@@ -267,7 +267,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 	vault := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	vault.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
 		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
@@ -277,7 +277,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 	vault1 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	vault1.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
 		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
@@ -287,7 +287,7 @@ func (s *StoreManagerTestSuite) TestMigrateStoreV94(c *C) {
 	vaultYgg := NewVault(1024, ActiveVault, YggdrasilVault, GetRandomPubKey(), []string{
 		common.ETHChain.String(),
 		common.TERRAChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 
 	vaultYgg.Coins = common.NewCoins(common.NewCoin(common.LUNAAsset, cosmos.NewUint(100*common.One)),
 		common.NewCoin(ustAsset, cosmos.NewUint(1*common.One)),
