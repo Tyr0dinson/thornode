@@ -541,7 +541,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 		common.LTCChain.String(),
 		common.BTCChain.String(),
 		common.BNBChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
 	result, err = handler.processErrataOutboundTx(ctx, *msg)
 	c.Assert(err, IsNil)
@@ -597,7 +597,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 		common.BTCChain.String(),
 		common.LTCChain.String(),
 		common.ETHChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 	newActiveAsgardVault.AddFunds(common.Coins{
 		common.NewCoin(common.LTCAsset, cosmos.NewUint(1024*common.One)),
 	})
@@ -634,13 +634,13 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 		common.LTCChain.String(),
 		common.BTCChain.String(),
 		common.BNBChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 
 	activeVault := NewVault(1, types.VaultStatus_ActiveVault, AsgardVault, activePubKey, []string{
 		common.LTCChain.String(),
 		common.BTCChain.String(),
 		common.BNBChain.String(),
-	}, []ChainContract{})
+	}, []ChainContract{}, common.EmptyPubKey)
 	c.Assert(helper.Keeper.SetVault(ctx, inactiveVault), IsNil)
 	c.Assert(helper.Keeper.SetVault(ctx, activeVault), IsNil)
 	// migration , internal tx , should cause the vault to be set back to retiring

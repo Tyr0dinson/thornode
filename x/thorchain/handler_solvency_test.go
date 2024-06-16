@@ -4,9 +4,10 @@ import (
 	"errors"
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
-	. "gopkg.in/check.v1"
 )
 
 type HandlerSolvencyTestSuite struct{}
@@ -54,7 +55,7 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 		common.BNBChain.String(),
 		common.LTCChain.String(),
 		common.BCHChain.String(),
-	}, nil)
+	}, nil, common.EmptyPubKey)
 	asgard.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
