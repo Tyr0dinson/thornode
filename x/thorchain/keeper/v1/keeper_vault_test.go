@@ -20,12 +20,12 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	c.Check(existVault, Equals, false)
 
 	pubKey := GetRandomPubKey()
-	yggdrasil := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	yggdrasil := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	err = k.SetVault(ctx, yggdrasil)
 	c.Assert(err, IsNil)
 	c.Assert(k.VaultExists(ctx, pubKey), Equals, true)
 	pubKey1 := GetRandomPubKey()
-	yggdrasil1 := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pubKey1, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	yggdrasil1 := NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, pubKey1, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	yggdrasil1.PendingTxBlockHeights = []int64{35}
 	yggdrasil1.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, types.NewUint(100)),
@@ -44,9 +44,9 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(asgards, HasLen, 0)
 	pubKey = GetRandomPubKey()
-	asgard := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	asgard := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	c.Assert(k.SetVault(ctx, asgard), IsNil)
-	asgard2 := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	asgard2 := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	c.Assert(k.SetVault(ctx, asgard2), IsNil)
 	asgards, err = k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	c.Assert(err, IsNil)
@@ -59,7 +59,7 @@ func (s *KeeperVaultSuite) TestVault(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(asgards, HasLen, 0)
 
-	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	vault1.AddFunds(common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*100)),
 	})
@@ -98,7 +98,7 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	c.Assert(k.SetPool(ctx, pool1), IsNil)
 
 	// Create three vaults
-	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	vault1.AddFunds(common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One*200)),
 	})
@@ -108,7 +108,7 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	}
 	c.Check(k.SetVault(ctx, vault1), IsNil)
 
-	vault2 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	vault2 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	vault2.AddFunds(common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*1000)),
 	})
@@ -118,7 +118,7 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	}
 	c.Check(k.SetVault(ctx, vault2), IsNil)
 
-	vault3 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	vault3 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	vault3.AddFunds(common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*100)),
 	})
@@ -151,13 +151,13 @@ func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
 	na2.Bond = cosmos.NewUint(4 * common.One)
 	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
 
-	v0 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	v0 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	v0.Membership = []string{
 		na0.PubKeySet.Secp256k1.String(),
 		na1.PubKeySet.Secp256k1.String(),
 	}
 
-	v1 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
+	v1 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
 	v1.Membership = []string{
 		na2.PubKeySet.Secp256k1.String(),
 	}

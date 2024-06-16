@@ -120,7 +120,7 @@ func (ymgr YggMgrV112) Fund(ctx cosmos.Context, mgr Manager) error {
 		}
 		supportChains := asgards[0].GetChains()
 		// supported chain for yggdrasil vault will be set at the time when it get created
-		ygg = NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, supportChains.Strings(), ymgr.keeper.GetChainContracts(ctx, supportChains))
+		ygg = NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, supportChains.Strings(), ymgr.keeper.GetChainContracts(ctx, supportChains), common.EmptyPubKey)
 		ygg.Membership = append(ygg.Membership, na.PubKeySet.Secp256k1.String())
 
 		if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
