@@ -23,6 +23,7 @@ type tssHandlerTestHelper struct {
 	version       semver.Version
 	keeper        *tssKeeperHelper
 	poolPk        common.PubKey
+	poolPkEddsa   common.PubKey
 	constAccessor constants.ConstantValues
 	nodeAccount   NodeAccount
 	mgr           Manager
@@ -130,12 +131,13 @@ func newTssHandlerTestHelper(c *C) tssHandlerTestHelper {
 	keeperHelper.SetKeygenBlock(ctx, keygenBlock)
 	keygenTime := int64(1024)
 	poolPk := GetRandomPubKey()
-	msg, err := NewMsgTssPool(members.Strings(), poolPk, nil, AsgardKeygen, ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime, common.EmptyPubKey)
+	poolPkEddsa := GetRandomPubKey()
+	msg, err := NewMsgTssPool(members.Strings(), poolPk, nil, AsgardKeygen, ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime, poolPkEddsa)
 	c.Assert(err, IsNil)
-	voter := NewTssVoter(msg.ID, members.Strings(), poolPk)
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPk, poolPkEddsa)
 	keeperHelper.SetTssVoter(ctx, voter)
 
-	asgardVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	asgardVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.RuneAsset().Chain}.Strings(), []ChainContract{}, poolPkEddsa)
 	c.Assert(keeperHelper.SetVault(ctx, asgardVault), IsNil)
 
 	return tssHandlerTestHelper{
@@ -143,6 +145,7 @@ func newTssHandlerTestHelper(c *C) tssHandlerTestHelper {
 		version:       mgr.GetVersion(),
 		keeper:        keeperHelper,
 		poolPk:        poolPk,
+		poolPkEddsa:   poolPkEddsa,
 		constAccessor: constants.GetConstantValues(GetCurrentVersion()),
 		nodeAccount:   nodeAccount,
 		mgr:           mgr,
@@ -256,6 +259,18 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 			expectedResult: se.ErrUnknownRequest,
 		},
 		{
+			name: "success while pool pub key EdDSA is empty should return error",
+			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				c.Assert(err, IsNil)
+				return tssMsg
+			},
+			runner: func(handler TssHandler, msg cosmos.Msg, helper tssHandlerTestHelper) (*cosmos.Result, error) {
+				return handler.Run(helper.ctx, msg)
+			},
+			expectedResult: se.ErrUnknownRequest,
+		},
+		{
 			name: "invalid pool pub key should return error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
 				tssMsg, err := NewMsgTssPool(helper.members.Strings(), "whatever", nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
@@ -270,7 +285,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "fail to get tss voter should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				return tssMsg
 			},
@@ -283,7 +298,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "fail to save vault should return an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), helper.poolPk, nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), helper.poolPk, nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, helper.poolPkEddsa)
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -307,7 +322,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "not having consensus should not perform any actions",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				return tssMsg
 			},
@@ -323,11 +338,12 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "if signer already sign the voter, it should just return",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, _ := helper.keeper.Keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				if voter.PoolPubKey.IsEmpty() {
 					voter.PoolPubKey = tssMsg.PoolPubKey
+					voter.PoolPubKeyEddsa = tssMsg.PoolPubKeyEddsa
 					voter.PubKeys = tssMsg.PubKeys
 				}
 				voter.Sign(tssMsg.Signer, tssMsg.Chains)
@@ -342,7 +358,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "normal success",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				return tssMsg
 			},
@@ -354,7 +370,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 		{
 			name: "When tss message integrity compromised, it should result an error",
 			messageCreator: func(helper tssHandlerTestHelper) cosmos.Msg {
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				tssMsg.PoolPubKey = GetRandomPubKey()
 				return tssMsg
@@ -376,7 +392,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: "whatever"},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -411,7 +427,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -434,6 +450,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 				voter, _ := helper.keeper.GetTssVoter(helper.ctx, m.ID)
 				if voter.PoolPubKey.IsEmpty() {
 					voter.PoolPubKey = m.PoolPubKey
+					voter.PoolPubKeyEddsa = m.PoolPubKeyEddsa
 					voter.PubKeys = m.PubKeys
 				}
 				addr, _ := helper.members[3].GetThorAddress()
@@ -461,7 +478,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: helper.members[3].String()},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -491,7 +508,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: helper.members[3].String()},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -535,7 +552,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: helper.members[3].String()},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -570,7 +587,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: helper.members[3].String()},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -600,7 +617,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 						{Pubkey: helper.members[3].String()},
 					},
 				}
-				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(helper.members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), b, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
 				c.Assert(err, IsNil)
@@ -629,7 +646,7 @@ func (s *HandlerTssSuite) TestTssHandler(c *C) {
 					GetRandomPubKey(),
 					helper.members[0],
 				}
-				tssMsg, err := NewMsgTssPool(members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, common.EmptyPubKey)
+				tssMsg, err := NewMsgTssPool(members.Strings(), GetRandomPubKey(), nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer, keygenTime, GetRandomPubKey())
 				c.Assert(err, IsNil)
 				return tssMsg
 			},
@@ -664,11 +681,12 @@ func (s *HandlerTssSuite) TestKeygenSuccessHandler(c *C) {
 	c.Assert(ok, Equals, true)
 	keygenTime := int64(1024)
 	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
 	failKeyGenSlashPoints := helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints)
 	for idx, item := range helper.members {
 		thorAddr, err := item.GetThorAddress()
 		c.Assert(err, IsNil)
-		tssMsg, err := NewMsgTssPool(helper.members.Strings(), poolPubKey, nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, common.EmptyPubKey)
+		tssMsg, err := NewMsgTssPool(helper.members.Strings(), poolPubKey, nil, AsgardKeygen, helper.ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), thorAddr, keygenTime, poolEddsaPubKey)
 		c.Assert(err, IsNil)
 		result, err := handler.handle(helper.ctx, tssMsg)
 		c.Assert(err, IsNil)

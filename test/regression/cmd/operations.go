@@ -22,10 +22,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
+
 	"gitlab.com/thorchain/thornode/common"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
-	"gopkg.in/yaml.v3"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -755,10 +756,11 @@ type OpTxTssPool struct {
 	KeygenTime      int64            `json:"keygen_time"`
 	Sequence        *int64           `json:"sequence"`
 	Gas             *int64           `json:"gas"`
+	PoolPubKeyEddsa common.PubKey    `json:"pool_pub_key_eddsa"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPool(op.PubKeys, op.PoolPubKey, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime)
+	msg, err := types.NewMsgTssPool(op.PubKeys, op.PoolPubKey, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa)
 	if err != nil {
 		return err
 	}
