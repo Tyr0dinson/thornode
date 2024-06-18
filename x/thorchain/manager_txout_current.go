@@ -368,6 +368,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 		}
 
 		toi.VaultPubKey = vault.PubKey
+		toi.VaultPubKeyEddsa = vault.PubKeyEddsa
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()

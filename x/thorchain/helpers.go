@@ -22,6 +22,8 @@ import (
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.135.0")):
+		return refundTxV135(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.132.0")):
 		return refundTxV132(ctx, tx, mgr, refundCode, refundReason, sourceModuleName)
 	case version.GTE(semver.MustParse("1.124.0")):
@@ -39,7 +41,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 	}
 }
 
-func refundTxV132(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
+func refundTxV135(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
@@ -67,13 +69,14 @@ func refundTxV132(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uin
 			}
 
 			toi := TxOutItem{
-				Chain:       coin.Asset.GetChain(),
-				InHash:      tx.Tx.ID,
-				ToAddress:   toAddr,
-				VaultPubKey: tx.ObservedPubKey,
-				Coin:        coin,
-				Memo:        NewRefundMemo(tx.Tx.ID).String(),
-				ModuleName:  sourceModuleName,
+				Chain:            coin.Asset.GetChain(),
+				InHash:           tx.Tx.ID,
+				ToAddress:        toAddr,
+				VaultPubKey:      tx.ObservedPubKey,
+				Coin:             coin,
+				Memo:             NewRefundMemo(tx.Tx.ID).String(),
+				ModuleName:       sourceModuleName,
+				VaultPubKeyEddsa: tx.ObservedPubKeyEddsa,
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())

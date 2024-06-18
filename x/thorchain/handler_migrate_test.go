@@ -123,12 +123,13 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	txout.TxArray = append(txout.TxArray, TxOutItem{
-		Chain:       common.BNBChain,
-		InHash:      common.BlankTxID,
-		ToAddress:   newVaultAddr,
-		VaultPubKey: retireVault.PubKey,
-		Coin:        common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
-		Memo:        NewMigrateMemo(1).String(),
+		Chain:            common.BNBChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        newVaultAddr,
+		VaultPubKey:      retireVault.PubKey,
+		Coin:             common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
+		Memo:             NewMigrateMemo(1).String(),
+		VaultPubKeyEddsa: retireVault.PubKeyEddsa,
 	})
 	keeper := &TestMigrateKeeperHappyPath{
 		Keeper:            k,
