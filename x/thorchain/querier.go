@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"gitlab.com/thorchain/thornode/common"

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
-	abci "github.com/tendermint/tendermint/abci/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"

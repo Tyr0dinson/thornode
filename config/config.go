@@ -16,12 +16,12 @@ import (
 	"text/template"
 	"time"
 
+	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
-	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	"gitlab.com/thorchain/thornode/common"
 )

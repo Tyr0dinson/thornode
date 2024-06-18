@@ -10,11 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-	tmcli "github.com/tendermint/tendermint/libs/cli"
-
-	"cosmossdk.io/simapp"
+	tmcli "github.com/cometbft/cometbft/libs/cli"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -26,12 +22,15 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil/network"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	bankcli "github.com/cosmos/cosmos-sdk/x/bank/client/testutil"
+	bankcli "github.com/cosmos/cosmos-sdk/x/bank/testutil"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 type IntegrationTestSuite struct {
@@ -1093,7 +1092,7 @@ func (s *IntegrationTestSuite) TestGetAccountsCmd() {
 
 func TestGetBroadcastCommandOfflineFlag(t *testing.T) {
 	clientCtx := client.Context{}.WithOffline(true)
-	clientCtx = clientCtx.WithTxConfig(simapp.MakeTestEncodingConfig().TxConfig)
+	clientCtx = clientCtx.WithTxConfig(moduletestutil.MakeTestEncodingConfig().TxConfig)
 
 	cmd := authcli.GetBroadcastCommand()
 	_ = testutil.ApplyMockIODiscardOutErr(cmd)
@@ -1104,7 +1103,7 @@ func TestGetBroadcastCommandOfflineFlag(t *testing.T) {
 
 func TestGetBroadcastCommandWithoutOfflineFlag(t *testing.T) {
 	clientCtx := client.Context{}
-	txCfg := simapp.MakeTestEncodingConfig().TxConfig
+	txCfg := moduletestutil.MakeTestEncodingConfig().TxConfig
 	clientCtx = clientCtx.WithTxConfig(txCfg)
 
 	ctx := context.Background()

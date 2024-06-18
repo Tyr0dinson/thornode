@@ -5,9 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	"cosmossdk.io/simapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -15,9 +12,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -55,7 +54,7 @@ func TestDefaultTxEncoder(t *testing.T) {
 
 func TestReadTxFromFile(t *testing.T) {
 	t.Parallel()
-	encodingConfig := simapp.MakeTestEncodingConfig()
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
 
 	txCfg := encodingConfig.TxConfig
 	clientCtx := client.Context{}
@@ -89,7 +88,7 @@ func TestReadTxFromFile(t *testing.T) {
 
 func TestBatchScanner_Scan(t *testing.T) {
 	t.Parallel()
-	encodingConfig := simapp.MakeTestEncodingConfig()
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
 
 	txGen := encodingConfig.TxConfig
 	clientCtx := client.Context{}

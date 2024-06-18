@@ -1,9 +1,9 @@
 package tss
 
 import (
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	"github.com/tendermint/tendermint/crypto"
 )
 
 type EncryptedKeyJSON struct {

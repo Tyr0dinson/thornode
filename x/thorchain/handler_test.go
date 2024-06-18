@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"os"
 
-	"cosmossdk.io/simapp"
+	"cosmossdk.io/store"
+	"github.com/cometbft/cometbft/libs/log"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/store"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	"github.com/tendermint/tendermint/libs/log"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 	. "gopkg.in/check.v1"
 
@@ -83,7 +83,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := moduletestutil.MakeTestEncodingConfig().Marshaler
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -155,7 +155,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := moduletestutil.MakeTestEncodingConfig().Marshaler
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{

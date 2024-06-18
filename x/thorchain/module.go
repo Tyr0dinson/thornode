@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/blang/semver"
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -16,7 +17,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
 	sdkRest "gitlab.com/thorchain/thornode/x/thorchain/legacy_client/rest"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"

@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/rs/zerolog/log"
-	"github.com/tendermint/tendermint/crypto"
 	"gitlab.com/thorchain/tss/go-tss/blame"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 	tssMessages "gitlab.com/thorchain/tss/go-tss/messages"

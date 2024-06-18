@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -25,7 +26,6 @@ import (
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/tendermint/tendermint/crypto"
 	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"

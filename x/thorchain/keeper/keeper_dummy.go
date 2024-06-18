@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"cosmossdk.io/simapp"
 	"github.com/blang/semver"
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/codec"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/tendermint/tendermint/libs/log"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -23,7 +22,9 @@ var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
-func (k KVStoreDummy) Cdc() codec.BinaryCodec                  { return simapp.MakeTestEncodingConfig().Marshaler }
+func (k KVStoreDummy) Cdc() codec.BinaryCodec {
+	return moduletestutil.MakeTestEncodingConfig().Marshaler
+}
 func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ string)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
 func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }

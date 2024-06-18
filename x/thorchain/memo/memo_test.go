@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"testing"
 
-	"cosmossdk.io/simapp"
-	"github.com/cosmos/cosmos-sdk/store"
+	"cosmossdk.io/store"
+	"github.com/cometbft/cometbft/libs/log"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	"github.com/tendermint/tendermint/libs/log"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 	. "gopkg.in/check.v1"
 
@@ -56,7 +56,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 	s.ctx = ctx.WithBlockHeight(18)
 
 	legacyCodec := types.MakeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := moduletestutil.MakeTestEncodingConfig().Marshaler
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{

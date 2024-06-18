@@ -6,10 +6,10 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/tendermint/tendermint/crypto/secp256k1"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"

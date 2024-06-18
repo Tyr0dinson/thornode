@@ -10,10 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/viper"
-	"github.com/stretchr/testify/require"
-
-	simappparams "cosmossdk.io/simapp/params"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -21,7 +17,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	"github.com/cosmos/cosmos-sdk/types/rest"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBaseReq_Sanitize(t *testing.T) {
@@ -307,7 +306,7 @@ func TestParseQueryParamBool(t *testing.T) {
 func TestPostProcessResponseBare(t *testing.T) {
 	t.Parallel()
 
-	encodingConfig := simappparams.MakeTestEncodingConfig()
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
 	clientCtx := client.Context{}.
 		WithTxConfig(encodingConfig.TxConfig).
 		WithLegacyAmino(encodingConfig.Amino) // amino used intentionally here

@@ -3,11 +3,11 @@ package keeperv1
 import (
 	"testing"
 
-	. "gopkg.in/check.v1"
-
-	"cosmossdk.io/simapp"
+	"cosmossdk.io/store"
+	"github.com/cometbft/cometbft/libs/log"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/store"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
@@ -17,9 +17,8 @@ import (
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/tendermint/tendermint/libs/log"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
+	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -73,7 +72,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := moduletestutil.MakeTestEncodingConfig().Marshaler
 
 	maccPerms := map[string][]string{
 		authtypes.FeeCollectorName:     nil,

@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/blang/semver"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdkTypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
-	"github.com/tendermint/tendermint/crypto"
 	"gitlab.com/thorchain/binance-sdk/types/tx"
 	"gitlab.com/thorchain/tss/go-tss/keysign"
 

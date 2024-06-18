@@ -3,9 +3,9 @@ package tss
 import (
 	"encoding/base64"
 
+	"github.com/cometbft/cometbft/crypto"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	"github.com/tendermint/tendermint/crypto"
 )
 
 // MockThorchainKeymanager is to mock the TSS , so as we could test it

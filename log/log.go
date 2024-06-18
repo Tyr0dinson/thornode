@@ -3,8 +3,8 @@ package log
 import (
 	"strings"
 
+	tmlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/rs/zerolog"
-	tmlog "github.com/tendermint/tendermint/libs/log"
 	"gitlab.com/thorchain/thornode/config"
 )
 

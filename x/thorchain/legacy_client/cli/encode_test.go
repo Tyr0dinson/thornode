@@ -5,17 +5,16 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	simappparams "cosmossdk.io/simapp/params"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetCommandEncode(t *testing.T) {
-	encodingConfig := simappparams.MakeTestEncodingConfig()
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
 
 	cmd := GetEncodeCommand()
 	_ = testutil.ApplyMockIODiscardOutErr(cmd)
