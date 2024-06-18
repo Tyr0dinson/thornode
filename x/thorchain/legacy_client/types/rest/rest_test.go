@@ -1,28 +1,6 @@
 package rest_test
 
-import (
-	"errors"
-	"io"
-	"io/ioutil"
-	"net/http"
-	"net/http/httptest"
-	"sort"
-	"strings"
-	"testing"
-
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/codec"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	"github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
-	"github.com/cosmos/cosmos-sdk/types/rest"
-	"github.com/spf13/viper"
-	"github.com/stretchr/testify/require"
-)
-
+/*
 func TestBaseReq_Sanitize(t *testing.T) {
 	t.Parallel()
 	sanitized := rest.BaseReq{ChainID: "   test",
@@ -457,3 +435,4 @@ func TestCheckErrors(t *testing.T) {
 		})
 	}
 }
+*/

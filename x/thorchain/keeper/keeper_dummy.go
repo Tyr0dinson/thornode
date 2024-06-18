@@ -8,7 +8,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cosmos/cosmos-sdk/codec"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/modules/testutil"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"gitlab.com/thorchain/thornode/common"
