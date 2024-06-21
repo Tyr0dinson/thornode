@@ -14,15 +14,22 @@ type ChainPoolInfo struct {
 var EmptyChainPoolInfo ChainPoolInfo
 
 // NewChainPoolInfo create a new instance of ChainPoolInfo
-func NewChainPoolInfo(chain Chain, pubKey PubKey) (ChainPoolInfo, error) {
+func NewChainPoolInfo(chain Chain, pubKey PubKey, pubKeyEddsa PubKey) (ChainPoolInfo, error) {
 	if chain.IsEmpty() {
 		return EmptyChainPoolInfo, fmt.Errorf("chain is empty")
 	}
 	if pubKey.IsEmpty() {
 		return EmptyChainPoolInfo, fmt.Errorf("pubkey is empty")
 	}
-
-	addr, err := pubKey.GetAddress(chain)
+	var pubKeyForUse PubKey
+	if chain.GetSigningAlgo() == SigningAlgoSecp256k1 {
+		pubKeyForUse = pubKey
+	} else if chain.GetSigningAlgo() == SigningAlgoEd25519 {
+		pubKeyForUse = pubKeyEddsa
+	} else {
+		return EmptyChainPoolInfo, fmt.Errorf("unsupported signing algo: %s", chain.GetSigningAlgo())
+	}
+	addr, err := pubKeyForUse.GetAddress(chain)
 	if err != nil {
 		return EmptyChainPoolInfo, fmt.Errorf("fail to get address for chain %s,%w", chain, err)
 	}
@@ -31,6 +38,7 @@ func NewChainPoolInfo(chain Chain, pubKey PubKey) (ChainPoolInfo, error) {
 		Chain:       chain,
 		PubKey:      pubKey,
 		PoolAddress: addr,
+		PubKeyEddsa: pubKeyEddsa,
 	}, nil
 }
 

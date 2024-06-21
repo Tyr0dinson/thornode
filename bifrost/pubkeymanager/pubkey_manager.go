@@ -24,13 +24,14 @@ type OnNewPubKey func(pk common.PubKey) error
 type PubKeyValidator interface {
 	IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo)
 	HasPubKey(pk common.PubKey) bool
-	AddPubKey(pk common.PubKey, _ bool)
+	AddPubKey(pk common.PubKey, _ bool, pubKeyEddsa common.PubKey)
 	AddNodePubKey(pk common.PubKey)
 	RemovePubKey(pk common.PubKey)
 	GetSignPubKeys() common.PubKeys
 	GetNodePubKey() common.PubKey
 	GetPubKeys() common.PubKeys
 	RegisterCallback(callback OnNewPubKey)
+	RegisterEddsaCallback(callback OnNewPubKey)
 	GetContracts(chain common.Chain) []common.Address
 	GetContract(chain common.Chain, pk common.PubKey) common.Address
 }
@@ -41,19 +42,21 @@ type pubKeyInfo struct {
 	Contracts   map[common.Chain]common.Address
 	Signer      bool
 	NodeAccount bool
+	PubKeyEddsa common.PubKey
 }
 
 // PubKeyManager manager an always up to date pubkeys , which implement PubKeyValidator interface
 type PubKeyManager struct {
-	cdc        *codec.LegacyAmino
-	bridge     thorclient.ThorchainBridge
-	pubkeys    []pubKeyInfo
-	rwMutex    *sync.RWMutex
-	logger     zerolog.Logger
-	errCounter *prometheus.CounterVec
-	m          *metrics.Metrics
-	stopChan   chan struct{}
-	callback   []OnNewPubKey
+	cdc           *codec.LegacyAmino
+	bridge        thorclient.ThorchainBridge
+	pubkeys       []pubKeyInfo
+	rwMutex       *sync.RWMutex
+	logger        zerolog.Logger
+	errCounter    *prometheus.CounterVec
+	m             *metrics.Metrics
+	stopChan      chan struct{}
+	callback      []OnNewPubKey
+	eddsaCallback []OnNewPubKey
 }
 
 // NewPubKeyManager create a new instance of PubKeyManager
@@ -77,7 +80,7 @@ func (pkm *PubKeyManager) Start() error {
 		return fmt.Errorf("fail to get pubkeys from thorchain: %w", err)
 	}
 	for _, pk := range pubkeys {
-		pkm.AddPubKey(pk.PubKey, false)
+		pkm.AddPubKey(pk.PubKey, false, pk.PubKeyEddsa)
 	}
 
 	// get smart contract address from THORNode , and update it's internal
@@ -151,7 +154,7 @@ func (pkm *PubKeyManager) HasPubKey(pk common.PubKey) bool {
 // hasPubKeyNoLock internal used only
 func (pkm *PubKeyManager) hasPubKeyNoLock(pk common.PubKey) bool {
 	for _, pubkey := range pkm.pubkeys {
-		if pk.Equals(pubkey.PubKey) {
+		if pk.Equals(pubkey.PubKey) || pk.Equals(pubkey.PubKeyEddsa) {
 			return true
 		}
 	}
@@ -159,7 +162,7 @@ func (pkm *PubKeyManager) hasPubKeyNoLock(pk common.PubKey) bool {
 }
 
 // AddPubKey add the given public key to internal storage
-func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
+func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool, pubKeyEddsa common.PubKey) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
 
@@ -179,12 +182,16 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
 			Signer:      signer,
 			NodeAccount: false,
 			Contracts:   map[common.Chain]common.Address{},
+			PubKeyEddsa: pubKeyEddsa,
 		})
-		pkm.fireCallback(pk)
+		pkm.fireCallback(pk, false)
+		pkm.fireCallback(pubKeyEddsa, true)
 	}
 }
 
 // AddNodePubKey add the given public key as a node public key to internal storage
+// deprecated: This method was used to add local node's public key for yggdrasil monitoring
+// it is no longer needed as yggdrasil has been removed
 func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
@@ -203,9 +210,10 @@ func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 			Signer:      true,
 			NodeAccount: true,
 			Contracts:   map[common.Chain]common.Address{},
+			PubKeyEddsa: common.EmptyPubKey,
 		})
 		// a new pubkey get added , fire callback
-		pkm.fireCallback(pk)
+		pkm.fireCallback(pk, false)
 	}
 }
 
@@ -220,7 +228,7 @@ func (pkm *PubKeyManager) RemovePubKey(pk common.PubKey) {
 // caller need to lock pkm.pubkeys
 func (pkm *PubKeyManager) removePubKeyInternal(pk common.PubKey) {
 	for i, pubkey := range pkm.pubkeys {
-		if pk.Equals(pubkey.PubKey) {
+		if pk.Equals(pubkey.PubKey) || pk.Equals(pubkey.PubKeyEddsa) {
 			pkm.pubkeys[i] = pkm.pubkeys[len(pkm.pubkeys)-1] // Copy last element to index i.
 			pkm.pubkeys[len(pkm.pubkeys)-1] = pubKeyInfo{}   // Erase last element (write zero value).
 			pkm.pubkeys = pkm.pubkeys[:len(pkm.pubkeys)-1]   // Truncate slice.
@@ -237,7 +245,7 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 	}
 	var pubkeys common.PubKeys
 	for _, pk := range addressPairs {
-		pkm.AddPubKey(pk.PubKey, false)
+		pkm.AddPubKey(pk.PubKey, false, pk.PubKeyEddsa)
 		pubkeys = append(pubkeys, pk.PubKey)
 	}
 	pkm.updateContractAddresses(addressPairs)
@@ -248,7 +256,7 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 
 	for _, vault := range vaults {
 		if vault.GetMembership().Contains(pkm.GetNodePubKey()) {
-			pkm.AddPubKey(vault.PubKey, true)
+			pkm.AddPubKey(vault.PubKey, true, vault.PubKeyEddsa)
 			pubkeys = append(pubkeys, vault.PubKey)
 		}
 	}
@@ -284,8 +292,8 @@ func (pkm *PubKeyManager) updatePubKeys() {
 	}
 }
 
-func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, common.ChainPoolInfo) {
-	cpi, err := common.NewChainPoolInfo(chain, key)
+func matchAddress(addr string, chain common.Chain, key common.PubKey, keyEddsa common.PubKey) (bool, common.ChainPoolInfo) {
+	cpi, err := common.NewChainPoolInfo(chain, key, keyEddsa)
 	if err != nil {
 		return false, common.EmptyChainPoolInfo
 	}
@@ -301,7 +309,7 @@ func (pkm *PubKeyManager) IsValidPoolAddress(addr string, chain common.Chain) (b
 	defer pkm.rwMutex.RUnlock()
 
 	for _, pk := range pkm.pubkeys {
-		ok, cpi := matchAddress(addr, chain, pk.PubKey)
+		ok, cpi := matchAddress(addr, chain, pk.PubKey, pk.PubKeyEddsa)
 		if ok {
 			return ok, cpi
 		}
@@ -318,11 +326,18 @@ func (pkm *PubKeyManager) getPubkeys() ([]thorclient.PubKeyContractAddressPair, 
 func (pkm *PubKeyManager) RegisterCallback(callback OnNewPubKey) {
 	pkm.callback = append(pkm.callback, callback)
 }
+func (pkm *PubKeyManager) RegisterEddsaCallback(callback OnNewPubKey) {
+	pkm.eddsaCallback = append(pkm.eddsaCallback, callback)
+}
 
-func (pkm *PubKeyManager) fireCallback(pk common.PubKey) {
+func (pkm *PubKeyManager) fireCallback(pk common.PubKey, isEddsa bool) {
 	// fire callbacks in parallel and wait for all to complete
 	wg := sync.WaitGroup{}
-	for _, item := range pkm.callback {
+	target := pkm.callback
+	if isEddsa {
+		target = pkm.eddsaCallback
+	}
+	for _, item := range target {
 		wg.Add(1)
 		go func(item OnNewPubKey) {
 			if err := item(pk); err != nil {

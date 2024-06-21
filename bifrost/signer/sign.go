@@ -84,9 +84,9 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		time.Sleep(constants.ThorchainBlockTime)
 		log.Info().Msg("Waiting for node account to be registered...")
 	}
-	for _, item := range na.GetSignerMembership() {
-		pubkeyMgr.AddPubKey(item, true)
-	}
+	//for _, item := range na.GetSignerMembership() {
+	//	pubkeyMgr.AddPubKey(item, true)
+	//}
 	if na.PubKeySet.Secp256k1.IsEmpty() {
 		return nil, fmt.Errorf("unable to find pubkey for this node account. exiting... ")
 	}
@@ -383,10 +383,11 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 
 		// monitor the new pubkey and any new members
 		if !pubKey.Secp256k1.IsEmpty() {
-			s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
+			// TODO: once integtrate go-tss with EDDSA support , change the common.EmptyPubKey to correct poolPubKeyEddsa
+			s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true, common.EmptyPubKey)
 		}
 		for _, pk := range keygenReq.GetMembers() {
-			s.pubkeyMgr.AddPubKey(pk, false)
+			s.pubkeyMgr.AddPubKey(pk, false, common.EmptyPubKey)
 		}
 	}
 }
