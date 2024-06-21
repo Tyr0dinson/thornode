@@ -19,7 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// SlasherV131 is VCUR implementation of slasher
+// SlasherV131 is V131 implementation of slasher
 type SlasherV131 struct {
 	keeper   keeper.Keeper
 	eventMgr EventManager

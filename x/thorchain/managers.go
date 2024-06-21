@@ -367,8 +367,10 @@ func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkee
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
-	case version.GTE(semver.MustParse("1.132.0")):
+	case version.GTE(semver.MustParse("1.134.0")):
 		return newGasMgrVCUR(constAccessor, keeper), nil
+	case version.GTE(semver.MustParse("1.132.0")):
+		return newGasMgrV132(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newGasMgrV131(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.113.0")):
@@ -407,10 +409,8 @@ func GetEventManager(version semver.Version) (EventManager, error) {
 func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
-	case version.GTE(semver.MustParse("1.135.0")):
-		return newTxOutStorageVCUR(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.133.0")):
-		return newTxOutStorageV133(keeper, constAccessor, eventMgr, gasManager), nil
+		return newTxOutStorageVCUR(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.132.0")):
 		return newTxOutStorageV132(keeper, constAccessor, eventMgr, gasManager), nil
 	case version.GTE(semver.MustParse("1.131.0")):
@@ -473,10 +473,8 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.135.0")):
-		return newNetworkMgrVCUR(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.132.0")):
-		return newNetworkMgrV132(keeper, txOutStore, eventMgr), nil
+		return newNetworkMgrVCUR(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newNetworkMgrV131(keeper, txOutStore, eventMgr), nil
 	case version.GTE(semver.MustParse("1.129.0")):
@@ -664,6 +662,8 @@ func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventMana
 	switch {
 	case version.GTE(semver.MustParse("1.135.0")):
 		return newSlasherVCUR(keeper, eventMgr), nil
+	case version.GTE(semver.MustParse("1.134.0")):
+		return newSlasherV134(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newSlasherV131(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.129.0")):
