@@ -16,21 +16,22 @@ import (
 
 // Vault struct for Vault
 type Vault struct {
-	BlockHeight *int64 `json:"block_height,omitempty"`
-	PubKey *string `json:"pub_key,omitempty"`
-	Coins []Coin `json:"coins"`
-	Type *string `json:"type,omitempty"`
-	Status string `json:"status"`
-	StatusSince *int64 `json:"status_since,omitempty"`
+	BlockHeight *int64  `json:"block_height,omitempty"`
+	PubKey      *string `json:"pub_key,omitempty"`
+	Coins       []Coin  `json:"coins"`
+	Type        *string `json:"type,omitempty"`
+	Status      string  `json:"status"`
+	StatusSince *int64  `json:"status_since,omitempty"`
 	// the list of node public keys which are members of the vault
-	Membership []string `json:"membership,omitempty"`
-	Chains []string `json:"chains,omitempty"`
-	InboundTxCount *int64 `json:"inbound_tx_count,omitempty"`
-	OutboundTxCount *int64 `json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64 `json:"pending_tx_block_heights,omitempty"`
-	Routers []VaultRouter `json:"routers"`
-	Addresses []VaultAddress `json:"addresses"`
-	Frozen []string `json:"frozen,omitempty"`
+	Membership            []string       `json:"membership,omitempty"`
+	Chains                []string       `json:"chains,omitempty"`
+	InboundTxCount        *int64         `json:"inbound_tx_count,omitempty"`
+	OutboundTxCount       *int64         `json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights []int64        `json:"pending_tx_block_heights,omitempty"`
+	Routers               []VaultRouter  `json:"routers"`
+	Addresses             []VaultAddress `json:"addresses"`
+	Frozen                []string       `json:"frozen,omitempty"`
+	PubKeyEddsa           *string        `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewVault instantiates a new Vault object
@@ -470,6 +471,38 @@ func (o *Vault) SetFrozen(v []string) {
 	o.Frozen = v
 }
 
+// GetPubKeyEddsa returns the PubKeyEddsa field value if set, zero value otherwise.
+func (o *Vault) GetPubKeyEddsa() string {
+	if o == nil || o.PubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.PubKeyEddsa
+}
+
+// GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Vault) GetPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.PubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.PubKeyEddsa, true
+}
+
+// HasPubKeyEddsa returns a boolean if a field has been set.
+func (o *Vault) HasPubKeyEddsa() bool {
+	if o != nil && o.PubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPubKeyEddsa gets a reference to the given string and assigns it to the PubKeyEddsa field.
+func (o *Vault) SetPubKeyEddsa(v string) {
+	o.PubKeyEddsa = &v
+}
+
 func (o Vault) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.BlockHeight != nil {
@@ -514,6 +547,9 @@ func (o Vault) MarshalJSON_deprecated() ([]byte, error) {
 	if o.Frozen != nil {
 		toSerialize["frozen"] = o.Frozen
 	}
+	if o.PubKeyEddsa != nil {
+		toSerialize["pub_key_eddsa"] = o.PubKeyEddsa
+	}
 	return json.Marshal(toSerialize)
 }
 
@@ -552,5 +588,3 @@ func (v *NullableVault) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

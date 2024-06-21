@@ -1819,6 +1819,8 @@ components:
           type: array
           items:
             type: string
+        pub_key_eddsa:
+          type: string
 
     YggdrasilVault:
       type: object
@@ -1885,6 +1887,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VaultAddress"
+        pub_key_eddsa:
+          type: string
 
     VaultRouter:
       type: object
@@ -1922,6 +1926,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VaultRouter"
+        pub_key_eddsa:
+          type: string
 
     StreamingSwap:
       type: object
@@ -2074,6 +2080,9 @@ components:
           type: string
           example: "10000"
           description: Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+        pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepq2jqhv5rdqlkusfxy05stfzcgslhhz5qh8pxetw5ry2aa6awgdh3shq8s82"
 
     LastBlock:
       type: object
@@ -2145,6 +2154,9 @@ components:
           type: string
           enum: ["done", "incomplete"]
           example: "done"
+        observed_pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe"
 
     OutboundFee:
       type: object
@@ -2272,6 +2284,9 @@ components:
           type: string
           description: clout spent in RUNE for the outbound
           example: "1234"
+        vault_pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
 
     TssMetric:
       type: object

@@ -16,7 +16,7 @@ import (
 
 // ObservedTx struct for ObservedTx
 type ObservedTx struct {
-	Tx Tx `json:"tx"`
+	Tx             Tx      `json:"tx"`
 	ObservedPubKey *string `json:"observed_pub_key,omitempty"`
 	// the block height on the external source chain when the transaction was observed, not provided if chain is THOR
 	ExternalObservedHeight *int64 `json:"external_observed_height,omitempty"`
@@ -27,11 +27,12 @@ type ObservedTx struct {
 	// the aggregator target asset provided to transferOutAndCall
 	AggregatorTarget *string `json:"aggregator_target,omitempty"`
 	// the aggregator target asset limit provided to transferOutAndCall
-	AggregatorTargetLimit *string `json:"aggregator_target_limit,omitempty"`
-	Signers []string `json:"signers,omitempty"`
-	KeysignMs *int64 `json:"keysign_ms,omitempty"`
-	OutHashes []string `json:"out_hashes,omitempty"`
-	Status *string `json:"status,omitempty"`
+	AggregatorTargetLimit *string  `json:"aggregator_target_limit,omitempty"`
+	Signers               []string `json:"signers,omitempty"`
+	KeysignMs             *int64   `json:"keysign_ms,omitempty"`
+	OutHashes             []string `json:"out_hashes,omitempty"`
+	Status                *string  `json:"status,omitempty"`
+	ObservedPubKeyEddsa   *string  `json:"observed_pub_key_eddsa,omitempty"`
 }
 
 // NewObservedTx instantiates a new ObservedTx object
@@ -396,6 +397,38 @@ func (o *ObservedTx) SetStatus(v string) {
 	o.Status = &v
 }
 
+// GetObservedPubKeyEddsa returns the ObservedPubKeyEddsa field value if set, zero value otherwise.
+func (o *ObservedTx) GetObservedPubKeyEddsa() string {
+	if o == nil || o.ObservedPubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.ObservedPubKeyEddsa
+}
+
+// GetObservedPubKeyEddsaOk returns a tuple with the ObservedPubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ObservedTx) GetObservedPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.ObservedPubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.ObservedPubKeyEddsa, true
+}
+
+// HasObservedPubKeyEddsa returns a boolean if a field has been set.
+func (o *ObservedTx) HasObservedPubKeyEddsa() bool {
+	if o != nil && o.ObservedPubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetObservedPubKeyEddsa gets a reference to the given string and assigns it to the ObservedPubKeyEddsa field.
+func (o *ObservedTx) SetObservedPubKeyEddsa(v string) {
+	o.ObservedPubKeyEddsa = &v
+}
+
 func (o ObservedTx) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -430,6 +463,9 @@ func (o ObservedTx) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.Status != nil {
 		toSerialize["status"] = o.Status
+	}
+	if o.ObservedPubKeyEddsa != nil {
+		toSerialize["observed_pub_key_eddsa"] = o.ObservedPubKeyEddsa
 	}
 	return json.Marshal(toSerialize)
 }
@@ -469,5 +505,3 @@ func (v *NullableObservedTx) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

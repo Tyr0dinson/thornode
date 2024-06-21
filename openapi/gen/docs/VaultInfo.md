@@ -6,6 +6,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **PubKey** | **string** |  | 
 **Routers** | [**[]VaultRouter**](VaultRouter.md) |  | 
+**PubKeyEddsa** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -65,6 +66,31 @@ and a boolean to check if the value has been set.
 
 SetRouters sets Routers field to given value.
 
+
+### GetPubKeyEddsa
+
+`func (o *VaultInfo) GetPubKeyEddsa() string`
+
+GetPubKeyEddsa returns the PubKeyEddsa field if non-nil, zero value otherwise.
+
+### GetPubKeyEddsaOk
+
+`func (o *VaultInfo) GetPubKeyEddsaOk() (*string, bool)`
+
+GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPubKeyEddsa
+
+`func (o *VaultInfo) SetPubKeyEddsa(v string)`
+
+SetPubKeyEddsa sets PubKeyEddsa field to given value.
+
+### HasPubKeyEddsa
+
+`func (o *VaultInfo) HasPubKeyEddsa() bool`
+
+HasPubKeyEddsa returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

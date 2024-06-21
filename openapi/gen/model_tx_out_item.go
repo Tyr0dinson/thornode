@@ -16,18 +16,19 @@ import (
 
 // TxOutItem struct for TxOutItem
 type TxOutItem struct {
-	Chain string `json:"chain"`
-	ToAddress string `json:"to_address"`
+	Chain       string  `json:"chain"`
+	ToAddress   string  `json:"to_address"`
 	VaultPubKey *string `json:"vault_pub_key,omitempty"`
-	Coin Coin `json:"coin"`
-	Memo *string `json:"memo,omitempty"`
-	MaxGas []Coin `json:"max_gas"`
-	GasRate *int64 `json:"gas_rate,omitempty"`
-	InHash *string `json:"in_hash,omitempty"`
-	OutHash *string `json:"out_hash,omitempty"`
-	Height *int64 `json:"height,omitempty"`
+	Coin        Coin    `json:"coin"`
+	Memo        *string `json:"memo,omitempty"`
+	MaxGas      []Coin  `json:"max_gas"`
+	GasRate     *int64  `json:"gas_rate,omitempty"`
+	InHash      *string `json:"in_hash,omitempty"`
+	OutHash     *string `json:"out_hash,omitempty"`
+	Height      *int64  `json:"height,omitempty"`
 	// clout spent in RUNE for the outbound
-	CloutSpent *string `json:"clout_spent,omitempty"`
+	CloutSpent       *string `json:"clout_spent,omitempty"`
+	VaultPubKeyEddsa *string `json:"vault_pub_key_eddsa,omitempty"`
 }
 
 // NewTxOutItem instantiates a new TxOutItem object
@@ -371,6 +372,38 @@ func (o *TxOutItem) SetCloutSpent(v string) {
 	o.CloutSpent = &v
 }
 
+// GetVaultPubKeyEddsa returns the VaultPubKeyEddsa field value if set, zero value otherwise.
+func (o *TxOutItem) GetVaultPubKeyEddsa() string {
+	if o == nil || o.VaultPubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.VaultPubKeyEddsa
+}
+
+// GetVaultPubKeyEddsaOk returns a tuple with the VaultPubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *TxOutItem) GetVaultPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.VaultPubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.VaultPubKeyEddsa, true
+}
+
+// HasVaultPubKeyEddsa returns a boolean if a field has been set.
+func (o *TxOutItem) HasVaultPubKeyEddsa() bool {
+	if o != nil && o.VaultPubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetVaultPubKeyEddsa gets a reference to the given string and assigns it to the VaultPubKeyEddsa field.
+func (o *TxOutItem) SetVaultPubKeyEddsa(v string) {
+	o.VaultPubKeyEddsa = &v
+}
+
 func (o TxOutItem) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -405,6 +438,9 @@ func (o TxOutItem) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.CloutSpent != nil {
 		toSerialize["clout_spent"] = o.CloutSpent
+	}
+	if o.VaultPubKeyEddsa != nil {
+		toSerialize["vault_pub_key_eddsa"] = o.VaultPubKeyEddsa
 	}
 	return json.Marshal(toSerialize)
 }
@@ -444,5 +480,3 @@ func (v *NullableTxOutItem) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

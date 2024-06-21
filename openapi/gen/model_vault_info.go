@@ -16,8 +16,9 @@ import (
 
 // VaultInfo struct for VaultInfo
 type VaultInfo struct {
-	PubKey string `json:"pub_key"`
-	Routers []VaultRouter `json:"routers"`
+	PubKey      string        `json:"pub_key"`
+	Routers     []VaultRouter `json:"routers"`
+	PubKeyEddsa *string       `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewVaultInfo instantiates a new VaultInfo object
@@ -87,6 +88,38 @@ func (o *VaultInfo) SetRouters(v []VaultRouter) {
 	o.Routers = v
 }
 
+// GetPubKeyEddsa returns the PubKeyEddsa field value if set, zero value otherwise.
+func (o *VaultInfo) GetPubKeyEddsa() string {
+	if o == nil || o.PubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.PubKeyEddsa
+}
+
+// GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *VaultInfo) GetPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.PubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.PubKeyEddsa, true
+}
+
+// HasPubKeyEddsa returns a boolean if a field has been set.
+func (o *VaultInfo) HasPubKeyEddsa() bool {
+	if o != nil && o.PubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPubKeyEddsa gets a reference to the given string and assigns it to the PubKeyEddsa field.
+func (o *VaultInfo) SetPubKeyEddsa(v string) {
+	o.PubKeyEddsa = &v
+}
+
 func (o VaultInfo) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -94,6 +127,9 @@ func (o VaultInfo) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["routers"] = o.Routers
+	}
+	if o.PubKeyEddsa != nil {
+		toSerialize["pub_key_eddsa"] = o.PubKeyEddsa
 	}
 	return json.Marshal(toSerialize)
 }
@@ -133,5 +169,3 @@ func (v *NullableVaultInfo) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

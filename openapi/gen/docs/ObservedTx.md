@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **KeysignMs** | Pointer to **int64** |  | [optional] 
 **OutHashes** | Pointer to **[]string** |  | [optional] 
 **Status** | Pointer to **string** |  | [optional] 
+**ObservedPubKeyEddsa** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -304,6 +305,31 @@ SetStatus sets Status field to given value.
 `func (o *ObservedTx) HasStatus() bool`
 
 HasStatus returns a boolean if a field has been set.
+
+### GetObservedPubKeyEddsa
+
+`func (o *ObservedTx) GetObservedPubKeyEddsa() string`
+
+GetObservedPubKeyEddsa returns the ObservedPubKeyEddsa field if non-nil, zero value otherwise.
+
+### GetObservedPubKeyEddsaOk
+
+`func (o *ObservedTx) GetObservedPubKeyEddsaOk() (*string, bool)`
+
+GetObservedPubKeyEddsaOk returns a tuple with the ObservedPubKeyEddsa field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetObservedPubKeyEddsa
+
+`func (o *ObservedTx) SetObservedPubKeyEddsa(v string)`
+
+SetObservedPubKeyEddsa sets ObservedPubKeyEddsa field to given value.
+
+### HasObservedPubKeyEddsa
+
+`func (o *ObservedTx) HasObservedPubKeyEddsa() bool`
+
+HasObservedPubKeyEddsa returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

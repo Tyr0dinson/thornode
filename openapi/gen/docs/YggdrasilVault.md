@@ -19,6 +19,7 @@ Name | Type | Description | Notes
 **Bond** | **string** | current node bond | 
 **TotalValue** | **string** | value in rune of the vault&#39;s assets | 
 **Addresses** | [**[]VaultAddress**](VaultAddress.md) |  | 
+**PubKeyEddsa** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -383,6 +384,31 @@ and a boolean to check if the value has been set.
 
 SetAddresses sets Addresses field to given value.
 
+
+### GetPubKeyEddsa
+
+`func (o *YggdrasilVault) GetPubKeyEddsa() string`
+
+GetPubKeyEddsa returns the PubKeyEddsa field if non-nil, zero value otherwise.
+
+### GetPubKeyEddsaOk
+
+`func (o *YggdrasilVault) GetPubKeyEddsaOk() (*string, bool)`
+
+GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPubKeyEddsa
+
+`func (o *YggdrasilVault) SetPubKeyEddsa(v string)`
+
+SetPubKeyEddsa sets PubKeyEddsa field to given value.
+
+### HasPubKeyEddsa
+
+`func (o *YggdrasilVault) HasPubKeyEddsa() bool`
+
+HasPubKeyEddsa returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

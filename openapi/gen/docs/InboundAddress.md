@@ -17,6 +17,7 @@ Name | Type | Description | Notes
 **OutboundTxSize** | Pointer to **string** | Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts | [optional] 
 **OutboundFee** | Pointer to **string** | The total outbound fee charged to the user for outbound txs in the gas asset of the chain. | [optional] 
 **DustThreshold** | Pointer to **string** | Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored. | [optional] 
+**PubKeyEddsa** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -356,6 +357,31 @@ SetDustThreshold sets DustThreshold field to given value.
 `func (o *InboundAddress) HasDustThreshold() bool`
 
 HasDustThreshold returns a boolean if a field has been set.
+
+### GetPubKeyEddsa
+
+`func (o *InboundAddress) GetPubKeyEddsa() string`
+
+GetPubKeyEddsa returns the PubKeyEddsa field if non-nil, zero value otherwise.
+
+### GetPubKeyEddsaOk
+
+`func (o *InboundAddress) GetPubKeyEddsaOk() (*string, bool)`
+
+GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPubKeyEddsa
+
+`func (o *InboundAddress) SetPubKeyEddsa(v string)`
+
+SetPubKeyEddsa sets PubKeyEddsa field to given value.
+
+### HasPubKeyEddsa
+
+`func (o *InboundAddress) HasPubKeyEddsa() bool`
+
+HasPubKeyEddsa returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

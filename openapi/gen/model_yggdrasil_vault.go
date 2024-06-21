@@ -16,24 +16,25 @@ import (
 
 // YggdrasilVault struct for YggdrasilVault
 type YggdrasilVault struct {
-	BlockHeight *int64 `json:"block_height,omitempty"`
-	PubKey *string `json:"pub_key,omitempty"`
-	Coins []Coin `json:"coins"`
-	Type *string `json:"type,omitempty"`
-	StatusSince *int64 `json:"status_since,omitempty"`
+	BlockHeight *int64  `json:"block_height,omitempty"`
+	PubKey      *string `json:"pub_key,omitempty"`
+	Coins       []Coin  `json:"coins"`
+	Type        *string `json:"type,omitempty"`
+	StatusSince *int64  `json:"status_since,omitempty"`
 	// the list of node public keys which are members of the vault
-	Membership []string `json:"membership,omitempty"`
-	Chains []string `json:"chains,omitempty"`
-	InboundTxCount *int64 `json:"inbound_tx_count,omitempty"`
-	OutboundTxCount *int64 `json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64 `json:"pending_tx_block_heights,omitempty"`
-	Routers []VaultRouter `json:"routers"`
-	Status string `json:"status"`
+	Membership            []string      `json:"membership,omitempty"`
+	Chains                []string      `json:"chains,omitempty"`
+	InboundTxCount        *int64        `json:"inbound_tx_count,omitempty"`
+	OutboundTxCount       *int64        `json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights []int64       `json:"pending_tx_block_heights,omitempty"`
+	Routers               []VaultRouter `json:"routers"`
+	Status                string        `json:"status"`
 	// current node bond
 	Bond string `json:"bond"`
 	// value in rune of the vault's assets
-	TotalValue string `json:"total_value"`
-	Addresses []VaultAddress `json:"addresses"`
+	TotalValue  string         `json:"total_value"`
+	Addresses   []VaultAddress `json:"addresses"`
+	PubKeyEddsa *string        `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewYggdrasilVault instantiates a new YggdrasilVault object
@@ -491,6 +492,38 @@ func (o *YggdrasilVault) SetAddresses(v []VaultAddress) {
 	o.Addresses = v
 }
 
+// GetPubKeyEddsa returns the PubKeyEddsa field value if set, zero value otherwise.
+func (o *YggdrasilVault) GetPubKeyEddsa() string {
+	if o == nil || o.PubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.PubKeyEddsa
+}
+
+// GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *YggdrasilVault) GetPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.PubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.PubKeyEddsa, true
+}
+
+// HasPubKeyEddsa returns a boolean if a field has been set.
+func (o *YggdrasilVault) HasPubKeyEddsa() bool {
+	if o != nil && o.PubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPubKeyEddsa gets a reference to the given string and assigns it to the PubKeyEddsa field.
+func (o *YggdrasilVault) SetPubKeyEddsa(v string) {
+	o.PubKeyEddsa = &v
+}
+
 func (o YggdrasilVault) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.BlockHeight != nil {
@@ -538,6 +571,9 @@ func (o YggdrasilVault) MarshalJSON_deprecated() ([]byte, error) {
 	if true {
 		toSerialize["addresses"] = o.Addresses
 	}
+	if o.PubKeyEddsa != nil {
+		toSerialize["pub_key_eddsa"] = o.PubKeyEddsa
+	}
 	return json.Marshal(toSerialize)
 }
 
@@ -576,5 +612,3 @@ func (v *NullableYggdrasilVault) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

@@ -16,10 +16,10 @@ import (
 
 // InboundAddress struct for InboundAddress
 type InboundAddress struct {
-	Chain *string `json:"chain,omitempty"`
-	PubKey *string `json:"pub_key,omitempty"`
+	Chain   *string `json:"chain,omitempty"`
+	PubKey  *string `json:"pub_key,omitempty"`
 	Address *string `json:"address,omitempty"`
-	Router *string `json:"router,omitempty"`
+	Router  *string `json:"router,omitempty"`
 	// Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
 	Halted bool `json:"halted"`
 	// Returns true if trading is paused globally
@@ -38,6 +38,7 @@ type InboundAddress struct {
 	OutboundFee *string `json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
 	DustThreshold *string `json:"dust_threshold,omitempty"`
+	PubKeyEddsa   *string `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewInboundAddress instantiates a new InboundAddress object
@@ -466,6 +467,38 @@ func (o *InboundAddress) SetDustThreshold(v string) {
 	o.DustThreshold = &v
 }
 
+// GetPubKeyEddsa returns the PubKeyEddsa field value if set, zero value otherwise.
+func (o *InboundAddress) GetPubKeyEddsa() string {
+	if o == nil || o.PubKeyEddsa == nil {
+		var ret string
+		return ret
+	}
+	return *o.PubKeyEddsa
+}
+
+// GetPubKeyEddsaOk returns a tuple with the PubKeyEddsa field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetPubKeyEddsaOk() (*string, bool) {
+	if o == nil || o.PubKeyEddsa == nil {
+		return nil, false
+	}
+	return o.PubKeyEddsa, true
+}
+
+// HasPubKeyEddsa returns a boolean if a field has been set.
+func (o *InboundAddress) HasPubKeyEddsa() bool {
+	if o != nil && o.PubKeyEddsa != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPubKeyEddsa gets a reference to the given string and assigns it to the PubKeyEddsa field.
+func (o *InboundAddress) SetPubKeyEddsa(v string) {
+	o.PubKeyEddsa = &v
+}
+
 func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Chain != nil {
@@ -507,6 +540,9 @@ func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	if o.DustThreshold != nil {
 		toSerialize["dust_threshold"] = o.DustThreshold
 	}
+	if o.PubKeyEddsa != nil {
+		toSerialize["pub_key_eddsa"] = o.PubKeyEddsa
+	}
 	return json.Marshal(toSerialize)
 }
 
@@ -545,5 +581,3 @@ func (v *NullableInboundAddress) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

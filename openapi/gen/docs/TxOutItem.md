@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **OutHash** | Pointer to **string** |  | [optional] 
 **Height** | Pointer to **int64** |  | [optional] 
 **CloutSpent** | Pointer to **string** | clout spent in RUNE for the outbound | [optional] 
+**VaultPubKeyEddsa** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -289,6 +290,31 @@ SetCloutSpent sets CloutSpent field to given value.
 `func (o *TxOutItem) HasCloutSpent() bool`
 
 HasCloutSpent returns a boolean if a field has been set.
+
+### GetVaultPubKeyEddsa
+
+`func (o *TxOutItem) GetVaultPubKeyEddsa() string`
+
+GetVaultPubKeyEddsa returns the VaultPubKeyEddsa field if non-nil, zero value otherwise.
+
+### GetVaultPubKeyEddsaOk
+
+`func (o *TxOutItem) GetVaultPubKeyEddsaOk() (*string, bool)`
+
+GetVaultPubKeyEddsaOk returns a tuple with the VaultPubKeyEddsa field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetVaultPubKeyEddsa
+
+`func (o *TxOutItem) SetVaultPubKeyEddsa(v string)`
+
+SetVaultPubKeyEddsa sets VaultPubKeyEddsa field to given value.
+
+### HasVaultPubKeyEddsa
+
+`func (o *TxOutItem) HasVaultPubKeyEddsa() bool`
+
+HasVaultPubKeyEddsa returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
