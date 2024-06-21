@@ -367,8 +367,10 @@ func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkee
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
 	constAccessor := constants.GetConstantValues(version)
 	switch {
-	case version.GTE(semver.MustParse("1.132.0")):
+	case version.GTE(semver.MustParse("1.134.0")):
 		return newGasMgrVCUR(constAccessor, keeper), nil
+	case version.GTE(semver.MustParse("1.132.0")):
+		return newGasMgrV132(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newGasMgrV131(constAccessor, keeper), nil
 	case version.GTE(semver.MustParse("1.113.0")):
@@ -658,8 +660,10 @@ func GetOrderBook(version semver.Version, keeper keeper.Keeper) (OrderBook, erro
 // GetSlasher return an implementation of Slasher
 func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (Slasher, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.131.0")):
+	case version.GTE(semver.MustParse("1.134.0")):
 		return newSlasherVCUR(keeper, eventMgr), nil
+	case version.GTE(semver.MustParse("1.131.0")):
+		return newSlasherV131(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.129.0")):
 		return newSlasherV129(keeper, eventMgr), nil
 	case version.GTE(semver.MustParse("1.128.0")):
