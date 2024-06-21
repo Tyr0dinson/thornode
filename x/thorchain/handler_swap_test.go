@@ -337,7 +337,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 			"swap:BNB.BNB:"+signerBNBAddr.String()+":121893238",
 		),
 		1,
-		GetRandomPubKey(), 1,
+		GetRandomPubKey(), 1, GetRandomPubKey(),
 	)
 	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
 	c.Assert(err, IsNil)
@@ -480,7 +480,7 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 			"=:ETH/AAVE-0X7FC66:thor1x0jkvqdh2hlpeztd5zyyk70n3efx6mhudkmnn2::thor1a427q3v96psuj4fnughdw8glt5r7j38lj7rkp8:100",
 		),
 		1,
-		GetRandomPubKey(), 1,
+		GetRandomPubKey(), 1, GetRandomPubKey(),
 	)
 	observerAddr, err := GetRandomTHORAddress().AccAddress()
 	c.Assert(err, IsNil)
@@ -530,7 +530,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 			"swap:BNB.BNB:"+signerBNBAddr.String(),
 		),
 		1,
-		GetRandomPubKey(), 1,
+		GetRandomPubKey(), 1, GetRandomPubKey(),
 	)
 	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
 	c.Assert(err, IsNil)
@@ -558,7 +558,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 			"swap:BNB.BNB:"+testnetBNBAddr.String(),
 		),
 		1,
-		GetRandomPubKey(), 1,
+		GetRandomPubKey(), 1, GetRandomPubKey(),
 	)
 	msgSwapFromTxIn1, err := getMsgSwapFromMemo(m1.(SwapMemo), txIn1, observerAddr)
 	c.Assert(err, IsNil)
@@ -608,7 +608,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 			swapMemo,
 		),
 		1,
-		GetRandomPubKey(), 1,
+		GetRandomPubKey(), 1, GetRandomPubKey(),
 	)
 
 	observerAddr, err := GetRandomTHORAddress().AccAddress()

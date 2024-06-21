@@ -121,6 +121,7 @@ func (s *ThorchainSuite) TestGet(c *C) {
 
 func (s *ThorchainSuite) TestGetObservationStdTx_OutboundShouldHaveNotConfirmationCounting(c *C) {
 	pk := stypes.GetRandomPubKey()
+	pkEddsa := stypes.GetRandomPubKey()
 	vaultAddr, err := pk.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := stypes.NewObservedTx(
@@ -135,6 +136,7 @@ func (s *ThorchainSuite) TestGetObservationStdTx_OutboundShouldHaveNotConfirmati
 		1,
 		pk,
 		100,
+		pkEddsa,
 	)
 
 	signedMsg, err := s.bridge.GetObservationsStdTx(stypes.ObservedTxs{tx})
@@ -147,6 +149,7 @@ func (s *ThorchainSuite) TestGetObservationStdTx_OutboundShouldHaveNotConfirmati
 
 func (s *ThorchainSuite) TestSign(c *C) {
 	pk := stypes.GetRandomPubKey()
+	pkEddsa := stypes.GetRandomPubKey()
 	vaultAddr, err := pk.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := stypes.NewObservedTx(
@@ -161,6 +164,7 @@ func (s *ThorchainSuite) TestSign(c *C) {
 		1,
 		pk,
 		1,
+		pkEddsa,
 	)
 
 	signedMsg, err := s.bridge.GetObservationsStdTx(stypes.ObservedTxs{tx})

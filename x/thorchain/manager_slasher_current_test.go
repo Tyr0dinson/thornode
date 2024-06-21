@@ -606,9 +606,10 @@ func (s *SlashingVCURSuite) TestNeedsNewVault(c *C) {
 	sig2, _ := pk2.GetThorAddress()
 	sig3, _ := pk3.GetThorAddress()
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.ID = outhash
-	obs := NewObservedTx(tx, 0, pk, 0)
+	obs := NewObservedTx(tx, 0, pk, 0, pkEddsa)
 	obs.ObservedPubKey = pk
 	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
 
@@ -619,9 +620,10 @@ func (s *SlashingVCURSuite) TestNeedsNewVault(c *C) {
 
 	c.Assert(len(tx.Coins), Equals, 1)
 	toi := TxOutItem{
-		InHash:      inhash,
-		Coin:        tx.Coins[0],
-		VaultPubKey: pk,
+		InHash:           inhash,
+		Coin:             tx.Coins[0],
+		VaultPubKey:      pk,
+		VaultPubKeyEddsa: pkEddsa,
 	}
 
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)

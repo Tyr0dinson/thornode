@@ -11,6 +11,7 @@ import (
 
 	"github.com/cometbft/cometbft/crypto/tmhash"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -216,7 +217,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "5c4ad18723fe385946288574760b2d563f52a8917cdaf850d66958cd472db07a",
 			Chain:       common.BTCChain,
@@ -231,7 +232,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "96eca0eb4be36ac43fa2b2488fd3468aa2079ae02ae361ef5c08a4ace5070ed1",
 			Chain:       common.BTCChain,
@@ -246,7 +247,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "5338aa51f6a7ce8e7f7bc4c98ac06b47c50a3cf335d61e69cf06c0e11b945ea5",
 			Chain:       common.BTCChain,
@@ -261,7 +262,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "63d92b111b9dc1b09e030d5a853120917e6205ed43d536a25a335ae96930469d",
 			Chain:       common.BTCChain,
@@ -276,7 +277,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "6a747fdf782fa87693183b865b261f39b32790df4b6959482c4c8d16c54c1273",
 			Chain:       common.BTCChain,
@@ -291,7 +292,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "4209f36cb89ff216fcf6b02f6badf22d64f1596a876c9805a9d6978c4e09190a",
 			Chain:       common.BTCChain,
@@ -306,7 +307,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asg9lfPubKey, blockHeight),
+		}, blockHeight, asg9lfPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "f09faaec7d3f84e89ef184bcf568e44b39296b2ad55d464743dd2a656720e6c1",
 			Chain:       common.BTCChain,
@@ -321,7 +322,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asgQevPubKey, blockHeight),
+		}, blockHeight, asgQevPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "ec7e201eda9313a434313376881cb61676b8407960df2d7cc9d17e65cbc8ba82",
 			Chain:       common.BTCChain,
@@ -336,7 +337,7 @@ func createFakeTxInsAndMakeObservations(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asgQevPubKey, blockHeight),
+		}, blockHeight, asgQevPubKey, blockHeight, common.EmptyPubKey),
 	}
 
 	err = makeFakeTxInObservation(ctx, mgr, unobservedTxs)
@@ -728,7 +729,7 @@ func mainnetUnobservedTxsV122(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: "",
-		}, 807061, asgjh5hPubKey, 807061),
+		}, 807061, asgjh5hPubKey, 807061, common.EmptyPubKey),
 	)
 
 	// Refund bRUTE (Discord).
@@ -763,7 +764,7 @@ func mainnetUnobservedTxsV122(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: "",
-		}, 808099, asg5mzaPubKey, 808099),
+		}, 808099, asg5mzaPubKey, 808099, common.EmptyPubKey),
 	)
 
 	err = makeFakeTxInObservation(ctx, mgr, unobservedTxs)
@@ -1264,7 +1265,7 @@ func migrateStoreV129(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: badMemo,
-		}, externalHeight, vaultPubkey, externalHeight),
+		}, externalHeight, vaultPubkey, externalHeight, common.EmptyPubKey),
 	}
 
 	err = makeFakeTxInObservation(ctx, mgr, unobservedTxs)
@@ -1333,7 +1334,7 @@ func migrateStoreV131(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: "badMemo",
-		}, externalHeight, vaultPubKey, externalHeight),
+		}, externalHeight, vaultPubKey, externalHeight, common.EmptyPubKey),
 	}
 	if err := makeFakeTxInObservation(ctx, mgr, unobservedTxs); err != nil {
 		ctx.Logger().Error("fail to handle issue 1", "err", err)
@@ -1806,7 +1807,7 @@ func rescueTaprootBTC(ctx cosmos.Context, mgr *Mgrs, refundAddr, vaultAddr, vaul
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: badMemo,
-		}, externalHeight, vaultPubKey, externalHeight),
+		}, externalHeight, vaultPubKey, externalHeight, common.EmptyPubKey),
 	}
 
 	return makeFakeTxInObservation(ctx, mgr, unobservedTxs)

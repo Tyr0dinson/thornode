@@ -321,7 +321,7 @@ func (HandlerSuite) TestRefund(c *C) {
 			Gas:         BNBGasFeeSingleton,
 		},
 		1024,
-		vault.PubKey, 1024,
+		vault.PubKey, 1024, vault.PubKeyEddsa,
 	)
 	txOutStore := w.mgr.TxOutStore()
 	c.Assert(refundTx(w.ctx, txin, w.mgr, 0, "refund", ""), IsNil)
@@ -378,7 +378,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 			Gas:         BNBGasFeeSingleton,
 		},
 		1024,
-		common.EmptyPubKey, 1024,
+		common.EmptyPubKey, 1024, GetRandomPubKey(),
 	)
 
 	resultMsg1, err := getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr())
@@ -393,7 +393,7 @@ func (HandlerSuite) TestGetMsgWithdrawFromMemo(c *C) {
 	if common.RuneAsset().Equals(common.RuneNative) {
 		tx.FromAddress = GetRandomTHORAddress()
 	}
-	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
+	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight(), GetRandomPubKey())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(msg, NotNil)
@@ -405,7 +405,7 @@ func (HandlerSuite) TestGetMsgMigrationFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	tx := GetRandomTx()
 	tx.Memo = "migrate:10"
-	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
+	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight(), GetRandomPubKey())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(msg, NotNil)
@@ -420,7 +420,7 @@ func (HandlerSuite) TestGetMsgBondFromMemo(c *C) {
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 	}
 	tx.Memo = "bond:" + GetRandomBech32Addr().String()
-	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
+	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight(), GetRandomPubKey())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(msg, NotNil)
@@ -435,7 +435,7 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 	}
 	tx.Memo = "unbond:" + GetRandomTHORAddress().String() + ":1000"
-	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
+	obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight(), GetRandomPubKey())
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, obTx, w.activeNodeAccount.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(msg, NotNil)
@@ -472,6 +472,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 		},
 		1024,
 		common.EmptyPubKey, 1024,
+		common.EmptyPubKey,
 	)
 
 	msg, err := getMsgAddLiquidityFromMemo(w.ctx, lpMemo, txin, GetRandomBech32Addr())
@@ -537,7 +538,7 @@ func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 			Gas:         BNBGasFeeSingleton,
 		},
 		1024,
-		common.EmptyPubKey, 1024,
+		common.EmptyPubKey, 1024, common.EmptyPubKey,
 	)
 
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, txin, addr)
@@ -559,7 +560,7 @@ func (s *HandlerSuite) TestReserveContributor(c *C) {
 			Gas:         BNBGasFeeSingleton,
 		},
 		1024,
-		GetRandomPubKey(), 1024,
+		GetRandomPubKey(), 1024, GetRandomPubKey(),
 	)
 
 	msg, err := processOneTxIn(w.ctx, GetCurrentVersion(), w.keeper, txin, addr)

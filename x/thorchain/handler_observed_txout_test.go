@@ -42,7 +42,8 @@ func (s *HandlerObservedTxOutSuite) TestValidate(c *C) {
 
 	// happy path
 	pk := GetRandomPubKey()
-	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk, 12)}
+	pkEddsa := GetRandomPubKey()
+	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk, 12, pkEddsa)}
 	txs[0].Tx.FromAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
 	msg := NewMsgObservedTxOut(txs, activeNodeAccount.NodeAddress)
@@ -174,10 +175,11 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 
 	tx := GetRandomTx()
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
 	txInHash := GetRandomTxHash()
 	tx.Memo = fmt.Sprintf("OUT:%s", txInHash)
-	obTx := NewObservedTx(tx, 12, pk, 12)
+	obTx := NewObservedTx(tx, 12, pk, 12, pkEddsa)
 	txs := ObservedTxs{obTx}
 	c.Assert(err, IsNil)
 
@@ -271,10 +273,11 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	// while leaving the pending outbound.
 	tx := GetRandomTx()
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
 	txInHash := GetRandomTxHash()          // Used later for the pending outbound.
 	tx.Memo = fmt.Sprintf("OUT:%s", tx.ID) // Self-referential memo.
-	obTx := NewObservedTx(tx, 12, pk, 12)
+	obTx := NewObservedTx(tx, 12, pk, 12, pkEddsa)
 	txs := ObservedTxs{obTx}
 	c.Assert(err, IsNil)
 
@@ -303,12 +306,13 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	}
 	txOutStore := NewTxStoreDummy()
 	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
-		Chain:       tx.Chain,
-		InHash:      txInHash,
-		ToAddress:   tx.ToAddress,
-		VaultPubKey: vault.PubKey,
-		Coin:        common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)), // Different from the observed Amount.
-		Memo:        tx.Memo,
+		Chain:            tx.Chain,
+		InHash:           txInHash,
+		ToAddress:        tx.ToAddress,
+		VaultPubKey:      vault.PubKey,
+		Coin:             common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)), // Different from the observed Amount.
+		Memo:             tx.Memo,
+		VaultPubKeyEddsa: vault.PubKeyEddsa,
 	})
 	keeper.txOutStore = txOutStore
 
@@ -365,7 +369,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 
 	tx := GetRandomTx()
 	tx.Memo = "I AM A THIEF!" // bad memo
-	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 12)
+	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 12, GetRandomPubKey())
 	obTx.Tx.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(100*common.One)),
 	}
@@ -477,6 +481,7 @@ func (h *HandlerObservedTxOutTestHelper) SetVault(ctx cosmos.Context, vault Vaul
 func setupAnObservedTxOut(ctx cosmos.Context, helper *HandlerObservedTxOutTestHelper, c *C) *MsgObservedTxOut {
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*3)),
@@ -486,7 +491,7 @@ func setupAnObservedTxOut(ctx cosmos.Context, helper *HandlerObservedTxOutTestHe
 	c.Assert(err, IsNil)
 	tx.ToAddress = GetRandomBNBAddress()
 	tx.FromAddress = addr
-	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk, ctx.BlockHeight())
+	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk, ctx.BlockHeight(), pkEddsa)
 	txs := ObservedTxs{obTx}
 	c.Assert(err, IsNil)
 	vault := GetRandomVault()
@@ -524,7 +529,7 @@ func (HandlerObservedTxOutSuite) TestHandlerObservedTxOut_DifferentValidations(c
 			name: "message fail validation should return an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerObservedTxOutTestHelper) cosmos.Msg {
 				return NewMsgObservedTxOut(ObservedTxs{
-					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()),
+					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight(), GetRandomPubKey()),
 				}, GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *HandlerObservedTxOutTestHelper, name string) {

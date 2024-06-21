@@ -272,6 +272,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			"",
 			"",
 			nil,
+			tx.VaultPubKeyEddsa,
 		)
 	}
 

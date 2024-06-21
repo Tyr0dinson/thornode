@@ -624,7 +624,7 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 			continue
 		}
 
-		o.logger.Debug().Msgf("pool pubkey %s", item.ObservedVaultPubKey)
+		o.logger.Debug().Msgf("pool pubkey %s, pool pubkey eddsa: %s", item.ObservedVaultPubKey, item.ObservedVaultPubKeyEddsa)
 		chainAddr, err := item.ObservedVaultPubKey.GetAddress(txIn.Chain)
 		o.logger.Debug().Msgf("%s address %s", txIn.Chain.String(), chainAddr)
 		if err != nil {
@@ -641,7 +641,7 @@ func (o *Observer) getThorchainTxIns(txIn types.TxIn) (stypes.ObservedTxs, error
 			common.NewTx(txID, sender, to, item.Coins.NoneEmpty(), item.Gas.NoneEmpty(), item.Memo),
 			height,
 			item.ObservedVaultPubKey,
-			item.BlockHeight+txIn.ConfirmationRequired)
+			item.BlockHeight+txIn.ConfirmationRequired, item.ObservedVaultPubKeyEddsa)
 		tx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
 		tx.Aggregator = item.Aggregator
 		tx.AggregatorTarget = item.AggregatorTarget

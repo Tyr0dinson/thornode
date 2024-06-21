@@ -365,7 +365,7 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	result, err := s.querier(s.ctx, []string{query.QueryTxVoter.Key, tx.ID.String()}, req)
 	c.Assert(result, IsNil)
 	c.Assert(err, NotNil)
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight(), GetRandomPubKey())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	result, err = s.querier(s.ctx, []string{query.QueryTxVoter.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
@@ -400,7 +400,7 @@ func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	result, err := s.querier(s.ctx, []string{query.QueryTxStages.Key, tx.ID.String()}, req)
 	c.Assert(result, NotNil) // Expecting a not-started Observation stage.
 	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight(), GetRandomPubKey())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	result, err = s.querier(s.ctx, []string{query.QueryTxStages.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
@@ -419,7 +419,7 @@ func (s *QuerierSuite) TestQueryTxStatus(c *C) {
 	result, err := s.querier(s.ctx, []string{query.QueryTxStatus.Key, tx.ID.String()}, req)
 	c.Assert(result, NotNil) // Expecting a not-started Observation stage.
 	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight(), GetRandomPubKey())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	result, err = s.querier(s.ctx, []string{query.QueryTxStatus.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)
@@ -442,7 +442,7 @@ func (s *QuerierSuite) TestQueryTx(c *C) {
 	c.Assert(s.k.SetNodeAccount(s.ctx, nodeAccount), IsNil)
 	voter, err := s.k.GetObservedTxInVoter(s.ctx, tx.ID)
 	c.Assert(err, IsNil)
-	voter.Add(NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight()), nodeAccount.NodeAddress)
+	voter.Add(NewObservedTx(tx, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Secp256k1, s.ctx.BlockHeight(), nodeAccount.PubKeySet.Ed25519), nodeAccount.NodeAddress)
 	s.k.SetObservedTxInVoter(s.ctx, voter)
 	result, err = s.querier(s.ctx, []string{query.QueryTx.Key, tx.ID.String()}, req)
 	c.Assert(err, IsNil)

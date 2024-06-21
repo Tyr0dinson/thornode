@@ -22,17 +22,18 @@ type TxIn struct {
 }
 
 type TxInItem struct {
-	BlockHeight           int64         `json:"block_height"`
-	Tx                    string        `json:"tx"`
-	Memo                  string        `json:"memo"`
-	Sender                string        `json:"sender"`
-	To                    string        `json:"to"` // to address
-	Coins                 common.Coins  `json:"coins"`
-	Gas                   common.Gas    `json:"gas"`
-	ObservedVaultPubKey   common.PubKey `json:"observed_vault_pub_key"`
-	Aggregator            string        `json:"aggregator"`
-	AggregatorTarget      string        `json:"aggregator_target"`
-	AggregatorTargetLimit *cosmos.Uint  `json:"aggregator_target_limit"`
+	BlockHeight              int64         `json:"block_height"`
+	Tx                       string        `json:"tx"`
+	Memo                     string        `json:"memo"`
+	Sender                   string        `json:"sender"`
+	To                       string        `json:"to"` // to address
+	Coins                    common.Coins  `json:"coins"`
+	Gas                      common.Gas    `json:"gas"`
+	ObservedVaultPubKey      common.PubKey `json:"observed_vault_pub_key"`
+	Aggregator               string        `json:"aggregator"`
+	AggregatorTarget         string        `json:"aggregator_target"`
+	AggregatorTargetLimit    *cosmos.Uint  `json:"aggregator_target_limit"`
+	ObservedVaultPubKeyEddsa common.PubKey `json:"observed_vault_pub_key_eddsa,omitempty"`
 }
 type TxInStatus byte
 
@@ -48,19 +49,21 @@ func NewTxInItem(
 	aggregator string,
 	aggregatorTarget string,
 	aggregatorTargetLimit *cosmos.Uint,
+	observedVaultPubKeyEddsa common.PubKey,
 ) *TxInItem {
 	return &TxInItem{
-		BlockHeight:           blockHeight,
-		Tx:                    tx,
-		Memo:                  memo,
-		Sender:                sender,
-		To:                    to,
-		Coins:                 coins,
-		Gas:                   gas,
-		ObservedVaultPubKey:   observedVaultPubKey,
-		Aggregator:            aggregator,
-		AggregatorTarget:      aggregatorTarget,
-		AggregatorTargetLimit: aggregatorTargetLimit,
+		BlockHeight:              blockHeight,
+		Tx:                       tx,
+		Memo:                     memo,
+		Sender:                   sender,
+		To:                       to,
+		Coins:                    coins,
+		Gas:                      gas,
+		ObservedVaultPubKey:      observedVaultPubKey,
+		Aggregator:               aggregator,
+		AggregatorTarget:         aggregatorTarget,
+		AggregatorTargetLimit:    aggregatorTargetLimit,
+		ObservedVaultPubKeyEddsa: observedVaultPubKeyEddsa,
 	}
 }
 
@@ -78,7 +81,7 @@ func (t TxInItem) IsEmpty() bool {
 		t.To == "" &&
 		t.Coins.IsEmpty() &&
 		t.Gas.IsEmpty() &&
-		t.ObservedVaultPubKey.IsEmpty()
+		t.ObservedVaultPubKey.IsEmpty() && t.ObservedVaultPubKeyEddsa.IsEmpty()
 }
 
 // CacheHash calculate the has used for signer cache

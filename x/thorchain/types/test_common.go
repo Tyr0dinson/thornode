@@ -74,7 +74,7 @@ func GetRandomVaultNode(status NodeStatus) NodeAccount {
 }
 
 func GetRandomObservedTx() ObservedTx {
-	return NewObservedTx(GetRandomTx(), 33, GetRandomPubKey(), 33)
+	return NewObservedTx(GetRandomTx(), 33, GetRandomPubKey(), 33, GetRandomPubKey())
 }
 
 func GetRandomTxOutItem() TxOutItem {

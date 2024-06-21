@@ -14,7 +14,7 @@ func (s *KeeperTxInSuite) TestTxInVoter(c *C) {
 	tx := GetRandomTx()
 	voter := NewObservedTxVoter(
 		tx.ID,
-		ObservedTxs{NewObservedTx(tx, 12, GetRandomPubKey(), 12)},
+		ObservedTxs{NewObservedTx(tx, 12, GetRandomPubKey(), 12, GetRandomPubKey())},
 	)
 
 	k.SetObservedTxInVoter(ctx, voter)
@@ -30,7 +30,7 @@ func (s *KeeperTxInSuite) TestTxInVoter(c *C) {
 	voter1 := NewObservedTxVoter(
 		tx.ID,
 		ObservedTxs{
-			NewObservedTx(tx, 12, GetRandomPubKey(), 12),
+			NewObservedTx(tx, 12, GetRandomPubKey(), 12, GetRandomPubKey()),
 		},
 	)
 	k.SetObservedTxOutVoter(ctx, voter1)

@@ -54,7 +54,8 @@ func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
 
 	// happy path
 	pk := GetRandomPubKey()
-	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk, 12)}
+	pkEddsa := GetRandomPubKey()
+	txs := ObservedTxs{NewObservedTx(GetRandomTx(), 12, pk, 12, pkEddsa)}
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
 	msg := NewMsgObservedTxIn(txs, activeNodeAccount.NodeAddress)
@@ -97,7 +98,7 @@ func (s *HandlerObservedTxInSuite) TestFailure(c *C) {
 	}
 	mgr := NewDummyMgrWithKeeper(keeper)
 
-	tx := NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), 12)
+	tx := NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), 12, GetRandomPubKey())
 	err := refundTx(ctx, tx, mgr, CodeInvalidMemo, "Invalid memo", "")
 	c.Assert(err, IsNil)
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
@@ -214,7 +215,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	tx := GetRandomTx()
 	tx.Memo = "SWAP:BTC.BTC:" + GetRandomBTCAddress().String()
-	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 15)
+	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 15, GetRandomPubKey())
 	txs := ObservedTxs{obTx}
 	pk := GetRandomPubKey()
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
@@ -357,7 +358,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 
 	tx := GetRandomTx()
 	tx.Memo = "SWAP:BTC.BTC:" + GetRandomBTCAddress().String()
-	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 12)
+	obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 12, GetRandomPubKey())
 	txs := ObservedTxs{obTx}
 	pk := GetRandomPubKey()
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
@@ -422,7 +423,7 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 		FromAddress: addr,
 		ToAddress:   newVaultAddr,
 		Gas:         BNBGasFeeSingleton,
-	}, 13, vault.PubKey, 13)
+	}, 13, vault.PubKey, 13, vault.PubKeyEddsa)
 
 	txs := ObservedTxs{tx}
 	keeper := &TestObservedTxInHandleKeeper{
@@ -499,6 +500,7 @@ func (h *ObservedTxInHandlerTestHelper) SetVault(ctx cosmos.Context, vault Vault
 func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestHelper, c *C) *MsgObservedTxIn {
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{
 		common.NewCoin(common.BNBAsset, cosmos.NewUint(common.One*3)),
@@ -507,7 +509,7 @@ func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestH
 	addr, err := pk.GetAddress(tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
 	tx.ToAddress = addr
-	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk, ctx.BlockHeight())
+	obTx := NewObservedTx(tx, ctx.BlockHeight(), pk, ctx.BlockHeight(), pkEddsa)
 	txs := ObservedTxs{obTx}
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 	c.Assert(err, IsNil)
@@ -547,7 +549,7 @@ func (HandlerObservedTxInSuite) TestObservedTxHandler_validations(c *C) {
 			name: "message fail validation should return an error",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *ObservedTxInHandlerTestHelper) cosmos.Msg {
 				return NewMsgObservedTxIn(ObservedTxs{
-					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()),
+					NewObservedTx(GetRandomTx(), ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight(), GetRandomPubKey()),
 				}, GetRandomBech32Addr())
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ObservedTxInHandlerTestHelper, name string) {
@@ -772,7 +774,7 @@ func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {
 		ctx, mgr := setupManagerForTest(c)
 		tx := GetRandomTx()
 		tx.Memo = "SWAP:BTC.BTC:" + GetRandomBTCAddress().String()
-		obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 15)
+		obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 15, GetRandomPubKey())
 		txs := ObservedTxs{obTx}
 		vault := GetRandomVault()
 		vault.PubKey = obTx.ObservedPubKey

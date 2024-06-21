@@ -65,7 +65,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 		common.Gas{
 			common.NewCoin(common.RuneNative, cosmos.NewUint(2000000)),
 		}, "SWAP:ETH.AAVE-0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9")
-	observedTx := NewObservedTx(tx, 1281323, vault.PubKey, 1281323)
+	observedTx := NewObservedTx(tx, 1281323, vault.PubKey, 1281323, vault.PubKeyEddsa)
 	voter := NewObservedTxVoter(inTxID, []ObservedTx{
 		observedTx,
 	})
@@ -100,7 +100,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 		common.Gas{
 			common.NewCoin(common.RuneNative, cosmos.NewUint(2000000)),
 		}, "SWAP:ETH.HEGIC-0x584bC13c7D411c00c01A62e8019472dE68768430")
-	observedTx1 := NewObservedTx(tx1, 1281323, vault.PubKey, 1281323)
+	observedTx1 := NewObservedTx(tx1, 1281323, vault.PubKey, 1281323, vault.PubKeyEddsa)
 	voter1 := NewObservedTxVoter(inTxID1, []ObservedTx{
 		observedTx1,
 	})
@@ -134,7 +134,7 @@ func (s *StoreManagerTestSuite) TestRemoveTransactions(c *C) {
 		common.Gas{
 			common.NewCoin(common.RuneNative, cosmos.NewUint(2000000)),
 		}, "SWAP:ETH.ETH")
-	observedTx2 := NewObservedTx(tx2, 1281323, vault.PubKey, 1281323)
+	observedTx2 := NewObservedTx(tx2, 1281323, vault.PubKey, 1281323, vault.PubKeyEddsa)
 	voter2 := NewObservedTxVoter(inTxID2, []ObservedTx{
 		observedTx2,
 	})

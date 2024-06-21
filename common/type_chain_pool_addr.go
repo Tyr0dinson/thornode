@@ -7,6 +7,7 @@ type ChainPoolInfo struct {
 	Chain       Chain   `json:"chain"`
 	PubKey      PubKey  `json:"pub_key"`
 	PoolAddress Address `json:"pool_address"`
+	PubKeyEddsa PubKey  `json:"pub_key_eddsa,omitempty"`
 }
 
 // EmptyChainPoolInfo everything is empty

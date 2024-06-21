@@ -649,9 +649,10 @@ func (s *SlashingV112Suite) TestNeedsNewVault(c *C) {
 	sig2 := GetRandomBech32Addr()
 	sig3 := GetRandomBech32Addr()
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.ID = outhash
-	obs := NewObservedTx(tx, 0, pk, 0)
+	obs := NewObservedTx(tx, 0, pk, 0, pkEddsa)
 	obs.ObservedPubKey = pk
 	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
 

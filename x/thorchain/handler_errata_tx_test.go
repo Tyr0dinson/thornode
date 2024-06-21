@@ -499,6 +499,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	c.Assert(result, IsNil)
 
 	observedPubKey := GetRandomPubKey()
+	observedPubKeyEddsa := GetRandomPubKey()
 	tx := common.NewTx(txID, GetRandomLTCAddress(), GetRandomLTCAddress(),
 		common.Coins{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(102400000)),
@@ -509,7 +510,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	observedTx := []ObservedTx{
 		NewObservedTx(
 			tx,
-			1024, observedPubKey, 1024),
+			1024, observedPubKey, 1024, observedPubKeyEddsa),
 	}
 	txOutVoter := NewObservedTxVoter(txID, observedTx)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
@@ -579,7 +580,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx(c *C) {
 	observedTxInbound := []ObservedTx{
 		NewObservedTx(
 			txInbound,
-			1024, observedPubKey, 1024),
+			1024, observedPubKey, 1024, observedPubKeyEddsa),
 	}
 	txInVoter := NewObservedTxVoter(txInID, observedTxInbound)
 	txInVoter.Actions = []TxOutItem{
@@ -628,6 +629,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, node3), IsNil)
 
 	retiredPubKey := GetRandomPubKey()
+	retiredPubKeyEddsa := GetRandomPubKey()
 	activePubKey := GetRandomPubKey()
 	// inactive vault, TxInVoter not exist
 	inactiveVault := NewVault(1, types.VaultStatus_InactiveVault, AsgardVault, retiredPubKey, []string{
@@ -662,7 +664,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	observedTx := []ObservedTx{
 		NewObservedTx(
 			migrateTx,
-			1024, retiredPubKey, 1024),
+			1024, retiredPubKey, 1024, retiredPubKeyEddsa),
 	}
 	txOutVoter := NewObservedTxVoter(txID1, observedTx)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
@@ -674,7 +676,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	observedInboundTx := []ObservedTx{
 		NewObservedTx(
 			migrateTx,
-			1024, retiredPubKey, 1024),
+			1024, retiredPubKey, 1024, retiredPubKeyEddsa),
 	}
 	txInVoter := NewObservedTxVoter(txID1, observedTx)
 	txInVoter.Add(observedInboundTx[0], node2.NodeAddress)

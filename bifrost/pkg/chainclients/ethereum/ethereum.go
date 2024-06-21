@@ -714,6 +714,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 			"",
 			"",
 			nil,
+			tx.VaultPubKeyEddsa,
 		)
 	}
 

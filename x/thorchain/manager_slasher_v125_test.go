@@ -606,9 +606,10 @@ func (s *SlashingV125Suite) TestNeedsNewVault(c *C) {
 	sig2, _ := pk2.GetThorAddress()
 	sig3, _ := pk3.GetThorAddress()
 	pk := GetRandomPubKey()
+	pkEddsa := GetRandomPubKey()
 	tx := GetRandomTx()
 	tx.ID = outhash
-	obs := NewObservedTx(tx, 0, pk, 0)
+	obs := NewObservedTx(tx, 0, pk, 0, pkEddsa)
 	obs.ObservedPubKey = pk
 	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
 

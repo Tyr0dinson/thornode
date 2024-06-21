@@ -316,6 +316,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 		Routers:               castVaultRouters(v.Routers),
 		Addresses:             getVaultChainAddresses(ctx, v),
 		Frozen:                v.Frozen,
+		PubKeyEddsa:           wrapString(v.PubKeyEddsa.String()),
 	}
 	return jsonify(ctx, resp)
 }
@@ -351,6 +352,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				Routers:               castVaultRouters(vault.Routers),
 				Frozen:                vault.Frozen,
 				Addresses:             getVaultChainAddresses(ctx, vault),
+				PubKeyEddsa:           wrapString(vault.PubKeyEddsa.String()),
 			})
 		}
 	}
@@ -433,6 +435,7 @@ func queryYggdrasilVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Bond:                  na.Bond.String(),
 			TotalValue:            totalValue.String(),
 			Addresses:             getVaultChainAddresses(ctx, vault),
+			PubKeyEddsa:           wrapString(vault.PubKeyEddsa.String()),
 		}
 	}
 
@@ -466,16 +469,18 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			}
 			if !na.Bond.IsZero() {
 				resp.Yggdrasil = append(resp.Yggdrasil, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
+					PubKey:      vault.PubKey.String(),
+					Routers:     castVaultRouters(vault.Routers),
+					PubKeyEddsa: wrapString(vault.PubKeyEddsa.String()),
 				})
 			}
 		} else if vault.IsAsgard() {
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
 				resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
+					PubKey:      vault.PubKey.String(),
+					Routers:     castVaultRouters(vault.Routers),
+					PubKeyEddsa: wrapString(vault.PubKeyEddsa.String()),
 				})
 			case InactiveVault:
 				// skip inactive vaults that have never received an inbound
@@ -496,8 +501,9 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				allMembers := vault.Membership
 				if HasSuperMajority(len(activeMembers), len(allMembers)) {
 					resp.Inactive = append(resp.Inactive, openapi.VaultInfo{
-						PubKey:  vault.PubKey.String(),
-						Routers: castVaultRouters(vault.Routers),
+						PubKey:      vault.PubKey.String(),
+						Routers:     castVaultRouters(vault.Routers),
+						PubKeyEddsa: wrapString(vault.PubKeyEddsa.String()),
 					})
 				}
 			}
@@ -648,6 +654,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 			OutboundTxSize:       wrapString(cosmos.NewUint(networkFeeInfo.TransactionSize).String()),
 			OutboundFee:          wrapString(outboundFee.String()),
 			DustThreshold:        wrapString(chain.DustThreshold().String()),
+			PubKeyEddsa:          wrapString(vault.PubKeyEddsa.String()),
 		}
 
 		resp = append(resp, addr)
@@ -3123,17 +3130,18 @@ func castCoins(sourceCoins ...common.Coin) []openapi.Coin {
 
 func castTxOutItem(toi TxOutItem, height int64) openapi.TxOutItem {
 	return openapi.TxOutItem{
-		Chain:       toi.Chain.String(),
-		ToAddress:   toi.ToAddress.String(),
-		VaultPubKey: wrapString(toi.VaultPubKey.String()),
-		Coin:        castCoin(toi.Coin),
-		Memo:        wrapString(toi.Memo),
-		MaxGas:      castCoins(toi.MaxGas...),
-		GasRate:     wrapInt64(toi.GasRate),
-		InHash:      wrapString(toi.InHash.String()),
-		OutHash:     wrapString(toi.OutHash.String()),
-		Height:      wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
-		CloutSpent:  wrapUintPtr(toi.CloutSpent),
+		Chain:            toi.Chain.String(),
+		ToAddress:        toi.ToAddress.String(),
+		VaultPubKey:      wrapString(toi.VaultPubKey.String()),
+		Coin:             castCoin(toi.Coin),
+		Memo:             wrapString(toi.Memo),
+		MaxGas:           castCoins(toi.MaxGas...),
+		GasRate:          wrapInt64(toi.GasRate),
+		InHash:           wrapString(toi.InHash.String()),
+		OutHash:          wrapString(toi.OutHash.String()),
+		Height:           wrapInt64(height), // Omitted if 0, for use in openapi.TxDetailsResponse
+		CloutSpent:       wrapUintPtr(toi.CloutSpent),
+		VaultPubKeyEddsa: wrapString(toi.VaultPubKeyEddsa.String()),
 	}
 }
 
@@ -3168,6 +3176,7 @@ func castObservedTx(observedTx ObservedTx) openapi.ObservedTx {
 		KeysignMs:                       wrapInt64(observedTx.KeysignMs),
 		OutHashes:                       observedTx.OutHashes,
 		Status:                          status,
+		ObservedPubKeyEddsa:             wrapString(observedTx.ObservedPubKeyEddsa.String()),
 	}
 }
 

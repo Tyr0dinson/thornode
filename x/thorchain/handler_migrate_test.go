@@ -50,7 +50,7 @@ func (HandlerMigrateSuite) TestMigrate(c *C) {
 		FromAddress: GetRandomBNBAddress(),
 		ToAddress:   addr,
 		Gas:         BNBGasFeeSingleton,
-	}, 12, GetRandomPubKey(), 12)
+	}, 12, GetRandomPubKey(), 12, GetRandomPubKey())
 
 	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
 	err = handler.validate(ctx, *msgMigrate)
@@ -151,7 +151,7 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 		FromAddress: addr,
 		ToAddress:   newVaultAddr,
 		Gas:         BNBGasFeeSingleton,
-	}, 1, retireVault.PubKey, 1)
+	}, 1, retireVault.PubKey, 1, retireVault.PubKeyEddsa)
 
 	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(ctx, msgMigrate)
@@ -203,7 +203,7 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 		FromAddress: addr,
 		ToAddress:   newVaultAddr,
 		Gas:         BNBGasFeeSingleton,
-	}, 1, retireVault.PubKey, 1)
+	}, 1, retireVault.PubKey, 1, retireVault.PubKeyEddsa)
 
 	msgMigrate := NewMsgMigrate(tx, 1, keeper.activeNodeAccount.NodeAddress)
 	_, err = handler.handle(ctx, *msgMigrate)

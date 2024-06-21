@@ -16,13 +16,14 @@ import (
 type ObservedTxs []ObservedTx
 
 // NewObservedTx create a new instance of ObservedTx
-func NewObservedTx(tx common.Tx, height int64, pk common.PubKey, finalisedHeight int64) ObservedTx {
+func NewObservedTx(tx common.Tx, height int64, pk common.PubKey, finalisedHeight int64, observedPubKeyEddsa common.PubKey) ObservedTx {
 	return ObservedTx{
-		Tx:             tx,
-		Status:         Status_incomplete,
-		BlockHeight:    height,
-		ObservedPubKey: pk,
-		FinaliseHeight: finalisedHeight,
+		Tx:                  tx,
+		Status:              Status_incomplete,
+		BlockHeight:         height,
+		ObservedPubKey:      pk,
+		FinaliseHeight:      finalisedHeight,
+		ObservedPubKeyEddsa: observedPubKeyEddsa,
 	}
 }
 
@@ -79,6 +80,11 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 		tx2.AggregatorTargetLimit = &emptyAmt
 	}
 	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
+		return false
+	}
+	// TODO: this should be backward compatible , but need to confirm it
+	// ObservedPubKeyEddsa is optional, so it can be nil
+	if !m.ObservedPubKeyEddsa.Equals(tx2.ObservedPubKeyEddsa) {
 		return false
 	}
 	return true

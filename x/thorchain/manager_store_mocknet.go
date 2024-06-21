@@ -119,7 +119,7 @@ func migrateStoreV109(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asgPubKey, blockHeight),
+		}, blockHeight, asgPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "5c4ad18723fe385946288574760b2d563f52a8917cdaf850d66958cd472db07a",
 			Chain:       common.BTCChain,
@@ -134,7 +134,7 @@ func migrateStoreV109(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asgPubKey, blockHeight),
+		}, blockHeight, asgPubKey, blockHeight, common.EmptyPubKey),
 		NewObservedTx(common.Tx{
 			ID:          "96eca0eb4be36ac43fa2b2488fd3468aa2079ae02ae361ef5c08a4ace5070ed1",
 			Chain:       common.BTCChain,
@@ -149,7 +149,7 @@ func migrateStoreV109(ctx cosmos.Context, mgr *Mgrs) {
 				Amount: cosmos.NewUint(1),
 			}},
 			Memo: memo,
-		}, blockHeight, asgPubKey, blockHeight),
+		}, blockHeight, asgPubKey, blockHeight, common.EmptyPubKey),
 	}
 
 	err = makeFakeTxInObservation(ctx, mgr, unobservedTxs)
