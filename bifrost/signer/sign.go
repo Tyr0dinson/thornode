@@ -84,9 +84,7 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		time.Sleep(constants.ThorchainBlockTime)
 		log.Info().Msg("Waiting for node account to be registered...")
 	}
-	for _, item := range na.GetSignerMembership() {
-		pubkeyMgr.AddPubKey(item, true)
-	}
+
 	if na.PubKeySet.Secp256k1.IsEmpty() {
 		return nil, fmt.Errorf("unable to find pubkey for this node account. exiting... ")
 	}
