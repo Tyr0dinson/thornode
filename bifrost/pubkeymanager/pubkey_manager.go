@@ -192,7 +192,7 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool, pubKeyEddsa c
 }
 
 // AddNodePubKey add the given public key as a node public key to internal storage
-// deprecated: This method was used to add local node's public key for yggdrasil monitoring
+// Deprecated: This method was used to add local node's public key for yggdrasil monitoring
 // it is no longer needed as yggdrasil has been removed
 func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey, pkEddsa common.PubKey) {
 	pkm.rwMutex.Lock()

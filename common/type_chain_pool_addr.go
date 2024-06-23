@@ -22,11 +22,12 @@ func NewChainPoolInfo(chain Chain, pubKey PubKey, pubKeyEddsa PubKey) (ChainPool
 		return EmptyChainPoolInfo, fmt.Errorf("pubkey is empty")
 	}
 	var pubKeyForUse PubKey
-	if chain.GetSigningAlgo() == SigningAlgoSecp256k1 {
+	switch chain.GetSigningAlgo() {
+	case SigningAlgoSecp256k1:
 		pubKeyForUse = pubKey
-	} else if chain.GetSigningAlgo() == SigningAlgoEd25519 {
+	case SigningAlgoEd25519:
 		pubKeyForUse = pubKeyEddsa
-	} else {
+	default:
 		return EmptyChainPoolInfo, fmt.Errorf("unsupported signing algo: %s", chain.GetSigningAlgo())
 	}
 	addr, err := pubKeyForUse.GetAddress(chain)
