@@ -16,22 +16,22 @@ import (
 
 // Vault struct for Vault
 type Vault struct {
-	BlockHeight *int64  `json:"block_height,omitempty"`
-	PubKey      *string `json:"pub_key,omitempty"`
-	Coins       []Coin  `json:"coins"`
-	Type        *string `json:"type,omitempty"`
-	Status      string  `json:"status"`
-	StatusSince *int64  `json:"status_since,omitempty"`
+	BlockHeight *int64 `json:"block_height,omitempty"`
+	PubKey *string `json:"pub_key,omitempty"`
+	Coins []Coin `json:"coins"`
+	Type *string `json:"type,omitempty"`
+	Status string `json:"status"`
+	StatusSince *int64 `json:"status_since,omitempty"`
 	// the list of node public keys which are members of the vault
-	Membership            []string       `json:"membership,omitempty"`
-	Chains                []string       `json:"chains,omitempty"`
-	InboundTxCount        *int64         `json:"inbound_tx_count,omitempty"`
-	OutboundTxCount       *int64         `json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64        `json:"pending_tx_block_heights,omitempty"`
-	Routers               []VaultRouter  `json:"routers"`
-	Addresses             []VaultAddress `json:"addresses"`
-	Frozen                []string       `json:"frozen,omitempty"`
-	PubKeyEddsa           *string        `json:"pub_key_eddsa,omitempty"`
+	Membership []string `json:"membership,omitempty"`
+	Chains []string `json:"chains,omitempty"`
+	InboundTxCount *int64 `json:"inbound_tx_count,omitempty"`
+	OutboundTxCount *int64 `json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights []int64 `json:"pending_tx_block_heights,omitempty"`
+	Routers []VaultRouter `json:"routers"`
+	Addresses []VaultAddress `json:"addresses"`
+	Frozen []string `json:"frozen,omitempty"`
+	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewVault instantiates a new Vault object
@@ -588,3 +588,5 @@ func (v *NullableVault) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

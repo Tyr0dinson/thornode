@@ -16,25 +16,25 @@ import (
 
 // YggdrasilVault struct for YggdrasilVault
 type YggdrasilVault struct {
-	BlockHeight *int64  `json:"block_height,omitempty"`
-	PubKey      *string `json:"pub_key,omitempty"`
-	Coins       []Coin  `json:"coins"`
-	Type        *string `json:"type,omitempty"`
-	StatusSince *int64  `json:"status_since,omitempty"`
+	BlockHeight *int64 `json:"block_height,omitempty"`
+	PubKey *string `json:"pub_key,omitempty"`
+	Coins []Coin `json:"coins"`
+	Type *string `json:"type,omitempty"`
+	StatusSince *int64 `json:"status_since,omitempty"`
 	// the list of node public keys which are members of the vault
-	Membership            []string      `json:"membership,omitempty"`
-	Chains                []string      `json:"chains,omitempty"`
-	InboundTxCount        *int64        `json:"inbound_tx_count,omitempty"`
-	OutboundTxCount       *int64        `json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64       `json:"pending_tx_block_heights,omitempty"`
-	Routers               []VaultRouter `json:"routers"`
-	Status                string        `json:"status"`
+	Membership []string `json:"membership,omitempty"`
+	Chains []string `json:"chains,omitempty"`
+	InboundTxCount *int64 `json:"inbound_tx_count,omitempty"`
+	OutboundTxCount *int64 `json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights []int64 `json:"pending_tx_block_heights,omitempty"`
+	Routers []VaultRouter `json:"routers"`
+	Status string `json:"status"`
 	// current node bond
 	Bond string `json:"bond"`
 	// value in rune of the vault's assets
-	TotalValue  string         `json:"total_value"`
-	Addresses   []VaultAddress `json:"addresses"`
-	PubKeyEddsa *string        `json:"pub_key_eddsa,omitempty"`
+	TotalValue string `json:"total_value"`
+	Addresses []VaultAddress `json:"addresses"`
+	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewYggdrasilVault instantiates a new YggdrasilVault object
@@ -612,3 +612,5 @@ func (v *NullableYggdrasilVault) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

@@ -16,9 +16,9 @@ import (
 
 // VaultInfo struct for VaultInfo
 type VaultInfo struct {
-	PubKey      string        `json:"pub_key"`
-	Routers     []VaultRouter `json:"routers"`
-	PubKeyEddsa *string       `json:"pub_key_eddsa,omitempty"`
+	PubKey string `json:"pub_key"`
+	Routers []VaultRouter `json:"routers"`
+	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewVaultInfo instantiates a new VaultInfo object
@@ -169,3 +169,5 @@ func (v *NullableVaultInfo) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

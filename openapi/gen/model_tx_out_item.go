@@ -16,18 +16,18 @@ import (
 
 // TxOutItem struct for TxOutItem
 type TxOutItem struct {
-	Chain       string  `json:"chain"`
-	ToAddress   string  `json:"to_address"`
+	Chain string `json:"chain"`
+	ToAddress string `json:"to_address"`
 	VaultPubKey *string `json:"vault_pub_key,omitempty"`
-	Coin        Coin    `json:"coin"`
-	Memo        *string `json:"memo,omitempty"`
-	MaxGas      []Coin  `json:"max_gas"`
-	GasRate     *int64  `json:"gas_rate,omitempty"`
-	InHash      *string `json:"in_hash,omitempty"`
-	OutHash     *string `json:"out_hash,omitempty"`
-	Height      *int64  `json:"height,omitempty"`
+	Coin Coin `json:"coin"`
+	Memo *string `json:"memo,omitempty"`
+	MaxGas []Coin `json:"max_gas"`
+	GasRate *int64 `json:"gas_rate,omitempty"`
+	InHash *string `json:"in_hash,omitempty"`
+	OutHash *string `json:"out_hash,omitempty"`
+	Height *int64 `json:"height,omitempty"`
 	// clout spent in RUNE for the outbound
-	CloutSpent       *string `json:"clout_spent,omitempty"`
+	CloutSpent *string `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa *string `json:"vault_pub_key_eddsa,omitempty"`
 }
 
@@ -480,3 +480,5 @@ func (v *NullableTxOutItem) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

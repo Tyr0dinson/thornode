@@ -16,10 +16,10 @@ import (
 
 // InboundAddress struct for InboundAddress
 type InboundAddress struct {
-	Chain   *string `json:"chain,omitempty"`
-	PubKey  *string `json:"pub_key,omitempty"`
+	Chain *string `json:"chain,omitempty"`
+	PubKey *string `json:"pub_key,omitempty"`
 	Address *string `json:"address,omitempty"`
-	Router  *string `json:"router,omitempty"`
+	Router *string `json:"router,omitempty"`
 	// Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
 	Halted bool `json:"halted"`
 	// Returns true if trading is paused globally
@@ -38,7 +38,7 @@ type InboundAddress struct {
 	OutboundFee *string `json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
 	DustThreshold *string `json:"dust_threshold,omitempty"`
-	PubKeyEddsa   *string `json:"pub_key_eddsa,omitempty"`
+	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
 }
 
 // NewInboundAddress instantiates a new InboundAddress object
@@ -581,3 +581,5 @@ func (v *NullableInboundAddress) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+
