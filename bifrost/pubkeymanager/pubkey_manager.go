@@ -329,6 +329,7 @@ func (pkm *PubKeyManager) getPubkeys() ([]thorclient.PubKeyContractAddressPair, 
 func (pkm *PubKeyManager) RegisterCallback(callback OnNewPubKey) {
 	pkm.callback = append(pkm.callback, callback)
 }
+
 func (pkm *PubKeyManager) RegisterEddsaCallback(callback OnNewPubKey) {
 	pkm.eddsaCallback = append(pkm.eddsaCallback, callback)
 }

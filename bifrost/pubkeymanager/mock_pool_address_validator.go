@@ -74,6 +74,7 @@ func (mpa *MockPoolAddressValidator) IsValidPoolAddress(addr string, chain commo
 
 func (mpa *MockPoolAddressValidator) RegisterCallback(callback OnNewPubKey) {
 }
+
 func (mpa *MockPoolAddressValidator) RegisterEddsaCallback(callback OnNewPubKey) {
 }
 
