@@ -24,21 +24,28 @@ var _ = Suite(&PubKeyMgrSuite{})
 
 func (s *PubKeyMgrSuite) TestPubkeyMgr(c *C) {
 	pk1 := types.GetRandomPubKey()
+	pk1Eddsa := types.GetRandomPubKey()
 	pk2 := types.GetRandomPubKey()
+	pk2Eddsa := types.GetRandomPubKey()
 	pk3 := types.GetRandomPubKey()
 	pk4 := types.GetRandomPubKey()
+	pk4Eddsa := types.GetRandomPubKey()
 
 	pubkeyMgr, err := NewPubKeyManager(nil, nil)
 	c.Assert(err, IsNil)
 	c.Check(pubkeyMgr.HasPubKey(pk1), Equals, false)
-	pubkeyMgr.AddPubKey(pk1, true)
+	pubkeyMgr.AddPubKey(pk1, true, pk1Eddsa)
 	c.Check(pubkeyMgr.HasPubKey(pk1), Equals, true)
+	c.Check(pubkeyMgr.HasPubKey(pk1Eddsa), Equals, true)
 	c.Check(pubkeyMgr.pubkeys[0].PubKey.Equals(pk1), Equals, true)
 	c.Check(pubkeyMgr.pubkeys[0].Signer, Equals, true)
+	c.Check(pubkeyMgr.pubkeys[0].PubKeyEddsa.Equals(pk1Eddsa), Equals, true)
 
-	pubkeyMgr.AddPubKey(pk2, false)
+	pubkeyMgr.AddPubKey(pk2, false, pk2Eddsa)
 	c.Check(pubkeyMgr.HasPubKey(pk2), Equals, true)
+	c.Check(pubkeyMgr.HasPubKey(pk2Eddsa), Equals, true)
 	c.Check(pubkeyMgr.pubkeys[1].PubKey.Equals(pk2), Equals, true)
+	c.Check(pubkeyMgr.pubkeys[1].PubKeyEddsa.Equals(pk2Eddsa), Equals, true)
 	c.Check(pubkeyMgr.pubkeys[1].Signer, Equals, false)
 
 	pks := pubkeyMgr.GetPubKeys()
@@ -51,6 +58,7 @@ func (s *PubKeyMgrSuite) TestPubkeyMgr(c *C) {
 	// remove a pubkey
 	pubkeyMgr.RemovePubKey(pk2)
 	c.Check(pubkeyMgr.HasPubKey(pk2), Equals, false)
+	c.Check(pubkeyMgr.HasPubKey(pk2Eddsa), Equals, false)
 
 	addr, err := pk1.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
@@ -59,7 +67,7 @@ func (s *PubKeyMgrSuite) TestPubkeyMgr(c *C) {
 
 	addr, err = pk3.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
-	pubkeyMgr.AddNodePubKey(pk4)
+	pubkeyMgr.AddNodePubKey(pk4, pk4Eddsa)
 	c.Check(pubkeyMgr.GetNodePubKey().String(), Equals, pk4.String())
 	ok, _ = pubkeyMgr.IsValidPoolAddress(addr.String(), common.BNBChain)
 	c.Assert(ok, Equals, false)
@@ -67,8 +75,11 @@ func (s *PubKeyMgrSuite) TestPubkeyMgr(c *C) {
 
 func (s *PubKeyMgrSuite) TestFetchKeys(c *C) {
 	pk1 := types.GetRandomPubKey()
+	pk1Eddsa := types.GetRandomPubKey().String()
 	pk2 := types.GetRandomPubKey()
+	pk2Eddsa := types.GetRandomPubKey()
 	pk3 := types.GetRandomPubKey()
+	pk3Eddsa := types.GetRandomPubKey()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
@@ -85,6 +96,7 @@ func (s *PubKeyMgrSuite) TestFetchKeys(c *C) {
 						Router: &router,
 					},
 				},
+				PubKeyEddsa: &pk1Eddsa,
 			})
 			buf, err := json.MarshalIndent(result, "", "	")
 			c.Assert(err, IsNil)
@@ -112,7 +124,7 @@ func (s *PubKeyMgrSuite) TestFetchKeys(c *C) {
 		return nil
 	}
 	pubkeyMgr.RegisterCallback(callBack)
-	pubkeyMgr.AddPubKey(pk2, false)
+	pubkeyMgr.AddPubKey(pk2, false, pk2Eddsa)
 	c.Check(hasCallbackFired, Equals, true)
 	// add a key that is the node account, ensure it doesn't get removed
 	pubkeyMgr.pubkeys = append(pubkeyMgr.pubkeys, pubKeyInfo{
@@ -120,6 +132,7 @@ func (s *PubKeyMgrSuite) TestFetchKeys(c *C) {
 		Signer:      true,
 		NodeAccount: true,
 		Contracts:   map[common.Chain]common.Address{},
+		PubKeyEddsa: pk3Eddsa,
 	})
 	c.Check(len(pubkeyMgr.GetPubKeys()), Equals, 2)
 	err = pubkeyMgr.Start()

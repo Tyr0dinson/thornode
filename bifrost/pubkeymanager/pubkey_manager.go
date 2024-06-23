@@ -25,7 +25,7 @@ type PubKeyValidator interface {
 	IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo)
 	HasPubKey(pk common.PubKey) bool
 	AddPubKey(pk common.PubKey, _ bool, pubKeyEddsa common.PubKey)
-	AddNodePubKey(pk common.PubKey)
+	AddNodePubKey(pk common.PubKey, pkEddsa common.PubKey)
 	RemovePubKey(pk common.PubKey)
 	GetSignPubKeys() common.PubKeys
 	GetNodePubKey() common.PubKey
@@ -79,6 +79,7 @@ func (pkm *PubKeyManager) Start() error {
 	if err != nil {
 		return fmt.Errorf("fail to get pubkeys from thorchain: %w", err)
 	}
+	pkm.logger.Info().Msgf("pubkeys: %v", pubkeys)
 	for _, pk := range pubkeys {
 		pkm.AddPubKey(pk.PubKey, false, pk.PubKeyEddsa)
 	}
@@ -165,9 +166,10 @@ func (pkm *PubKeyManager) hasPubKeyNoLock(pk common.PubKey) bool {
 func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool, pubKeyEddsa common.PubKey) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
-
+	pkm.logger.Info().Msgf("adding pubkey: %s, pubkey eddsa: %s", pk, pubKeyEddsa)
 	if pkm.hasPubKeyNoLock(pk) {
 		// pubkey already exists, update the signer... but only if signer is true
+		pkm.logger.Info().Msgf("trying to add pubkey: %s , already exist", pk)
 		if signer {
 			for i, pubkey := range pkm.pubkeys {
 				if pk.Equals(pubkey.PubKey) {
@@ -192,7 +194,7 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool, pubKeyEddsa c
 // AddNodePubKey add the given public key as a node public key to internal storage
 // deprecated: This method was used to add local node's public key for yggdrasil monitoring
 // it is no longer needed as yggdrasil has been removed
-func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
+func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey, pkEddsa common.PubKey) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
 
@@ -210,10 +212,11 @@ func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 			Signer:      true,
 			NodeAccount: true,
 			Contracts:   map[common.Chain]common.Address{},
-			PubKeyEddsa: common.EmptyPubKey,
+			PubKeyEddsa: pkEddsa,
 		})
 		// a new pubkey get added , fire callback
 		pkm.fireCallback(pk, false)
+		pkm.fireCallback(pkEddsa, true)
 	}
 }
 

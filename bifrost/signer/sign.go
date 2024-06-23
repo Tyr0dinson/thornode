@@ -84,13 +84,14 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 		time.Sleep(constants.ThorchainBlockTime)
 		log.Info().Msg("Waiting for node account to be registered...")
 	}
-	//for _, item := range na.GetSignerMembership() {
-	//	pubkeyMgr.AddPubKey(item, true)
-	//}
+	log.Info().Msgf("adding node account signer membership:%+v", na.GetSignerMembership())
+	for _, item := range na.GetSignerMembership() {
+		pubkeyMgr.AddPubKey(item, true, common.EmptyPubKey)
+	}
 	if na.PubKeySet.Secp256k1.IsEmpty() {
 		return nil, fmt.Errorf("unable to find pubkey for this node account. exiting... ")
 	}
-	pubkeyMgr.AddNodePubKey(na.PubKeySet.Secp256k1)
+	pubkeyMgr.AddNodePubKey(na.PubKeySet.Secp256k1, na.PubKeySet.Ed25519)
 
 	cfg.BlockScanner.ChainID = common.THORChain // hard code to thorchain
 

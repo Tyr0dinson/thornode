@@ -320,6 +320,7 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 		// check if the from address is a valid pool
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, chain); ok {
 			txInItem.ObservedVaultPubKey = cpi.PubKey
+			txInItem.ObservedVaultPubKeyEddsa = cpi.PubKeyEddsa
 			isInternal = true
 
 			// skip the outbound observation if we signed and manually observed
@@ -332,6 +333,7 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 		// internal tx means both from & to addresses belongs to the network. for example migrate/consolidate
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.To, chain); ok && (!memPool || isInternal) {
 			txInItem.ObservedVaultPubKey = cpi.PubKey
+			txInItem.ObservedVaultPubKeyEddsa = cpi.PubKeyEddsa
 			txs = append(txs, txInItem)
 		}
 	}
