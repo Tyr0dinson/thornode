@@ -358,6 +358,15 @@ func (h AddLiquidityHandler) handleV134(ctx cosmos.Context, msg MsgAddLiquidity)
 			return nil
 		}
 
+		maxDeposit := fetchConfigInt64(ctx, h.mgr, constants.POLMaxNetworkDeposit)
+		pol, err := h.mgr.Keeper().GetPOL(ctx)
+		if err != nil {
+			return err
+		}
+		if maxDeposit <= pol.CurrentDeposit().Int64()+int64(runeAmt.Uint64()) {
+			return nil
+		}
+
 		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
 		bal := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 		if runeAmt.GT(bal) {
@@ -379,6 +388,7 @@ func (h AddLiquidityHandler) handleV134(ctx cosmos.Context, msg MsgAddLiquidity)
 			h.mgr.GetConstants(),
 		)
 		if err != nil {
+			ctx.Logger().Error("fail to add liquidity from pol to match savers", "address", msg.AssetAddress, "asset", l1Pool.Asset, "error", err)
 			return err
 		}
 	}
