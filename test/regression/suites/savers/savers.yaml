@@ -74,7 +74,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply|length == 3
-  - .supply[]|select(.denom == "btc/btc")|.amount|tonumber == 4763021
+  - .supply[]|select(.denom == "btc/btc")|.amount|tonumber == 4762859
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
@@ -113,7 +113,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514340649215
+  - .balances[]|select(.denom == "rune")|.amount|tonumber ==  2514990752059
 ---
 ########################################################################################
 # check growth and withdraw 50%
@@ -125,10 +125,10 @@ params:
   address: {{ addr_btc_pig }}
   withdraw_bps: 5000
 asserts:
-  - .expected_amount_out|tonumber == 2795511
+  - .expected_amount_out|tonumber == 2803461
   - .memo == "-:BTC/BTC:5000"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .fees.liquidity == "28241"
+  - .fees.liquidity == "19835"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 99
@@ -141,8 +141,8 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 4759341
-  - .[0].asset_redeem_value|tonumber == 5688981
-  - .[0].growth_pct|tonumber == 0.195329563483683981
+  - .[0].asset_redeem_value|tonumber == 5688056
+  - .[0].growth_pct|tonumber == 0.195135208845090108
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -211,10 +211,10 @@ params:
   address: {{ addr_btc_pig }}
   withdraw_bps: 10000
 asserts:
-  - .expected_amount_out|tonumber == 2795532
+  - .expected_amount_out|tonumber == 2803378
   - .memo == "-:BTC/BTC:10000"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .fees.liquidity == "28241"
+  - .fees.liquidity == "19927"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 99
@@ -239,7 +239,7 @@ txs:
       from_address: {{ addr_btc_pig }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "2800512"
+        - amount: "2803501"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -268,7 +268,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_pig }}
       coins:
-        - amount: "2795563"
+        - amount: "2803501"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -358,7 +358,7 @@ asserts:
   - .interval == 1
   - .quantity == 6
   - .in == "9999999"
-  - .out == "9922539"
+  - .out == "9945174"
 ---
 type: create-blocks
 count: 3
@@ -494,7 +494,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_pig }}
       coins:
-        - amount: "20797892"
+        - amount: "20882300"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -618,8 +618,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value|tonumber == 19839959
-  - .[0].asset_redeem_value|tonumber == 19840439
+  - .[0].asset_deposit_value|tonumber == 19880199
+  - .[0].asset_redeem_value|tonumber == 19880603
   - .[0].last_add_height == 24
 ---
 ########################################################################################
