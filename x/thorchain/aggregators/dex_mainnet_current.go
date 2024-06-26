@@ -139,11 +139,17 @@ func DexAggregatorsV134() []Aggregator {
 		{common.ETHChain, `0x34ba1f1753818d935d185e1abc9162e561b05d91`, 800_000},
 		// Corn - Uniswap 500
 		{common.ETHChain, `0x9E9b95b22bA7A1A875D3f93C2Ec54C015C14Aa9c`, 800_000},
-		// Unizen - ETH
+		// Unizen (Dev) - ETH
+		{common.ETHChain, `0x4432d5179E29FBBd1a91F5c6949a220999790AAC`, 600_000},
+		// Unizen (Dev) - BSC
+		{common.BSCChain, `0x41B2500aB719942A50EA52E75CbacDa5Ed2fE364`, 600_000},
+		// Unizen (Dev) - AVAX
+		{common.AVAXChain, `0x815FE87D66AeF59c10906B7Cf66142F0761cFddC`, 600_000},
+		// Unizen (Prod) - ETH
 		{common.ETHChain, `0xd3f64BAa732061F8B3626ee44bab354f854877AC`, 600_000},
-		// Unizen - BSC
+		// Unizen (Prod) - BSC
 		{common.BSCChain, `0x880E0cE34F48c0cbC68BF3E745F17175BA8c650e`, 600_000},
-		// Unizen - AVAX
+		// Unizen (Prod) - AVAX
 		{common.AVAXChain, `0x1C7F7e0258c81CF41bcEa31ea4bB5191914Bf7D7`, 600_000},
 	}
 }
