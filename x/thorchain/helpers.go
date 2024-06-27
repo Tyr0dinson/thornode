@@ -308,6 +308,8 @@ func getMaxSwapQuantityV121(ctx cosmos.Context, mgr Manager, sourceAsset, target
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("1.134.0")):
+		return refundBondV134(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return refundBondV124(ctx, tx, acc, amt, nodeAcc, mgr)
 	case version.GTE(semver.MustParse("1.103.0")):
@@ -323,7 +325,7 @@ func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cos
 	}
 }
 
-func refundBondV124(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
+func refundBondV134(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
 	if nodeAcc.Status == NodeActive {
 		ctx.Logger().Info("node still active, cannot refund bond", "node address", nodeAcc.NodeAddress, "node pub key", nodeAcc.PubKeySet.Secp256k1)
 		return nil
