@@ -770,7 +770,7 @@ func (s *HandlerTssSuite) TestObservingSlashing(c *C) {
 	keygenTime := int64(1024)
 	poolPk := GetRandomPubKey()
 
-	msg, err := NewMsgTssPool(members.Strings(), poolPk, nil, AsgardKeygen, ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), cosmos.AccAddress{}, keygenTime)
+	msg, err := NewMsgTssPool(members.Strings(), poolPk, nil, AsgardKeygen, ctx.BlockHeight(), Blame{}, common.Chains{common.RuneAsset().Chain}.Strings(), cosmos.AccAddress{}, keygenTime, common.EmptyPubKey)
 	c.Assert(err, IsNil)
 
 	handler := NewTssHandler(mgr)
