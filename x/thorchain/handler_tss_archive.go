@@ -267,6 +267,7 @@ func MsgTssPoolHandleV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 
 	return &cosmos.Result{}, nil
 }
+
 func MsgTssPoolValidateV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
