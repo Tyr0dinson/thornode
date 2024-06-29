@@ -63,6 +63,7 @@ func (h SwapHandler) validateV136(ctx cosmos.Context, msg MsgSwap) error {
 	// If unable to parse the memo, here assume it to be internal.
 	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	mem, isSwapMemo := memo.(SwapMemo)
+	target := msg.TargetAsset
 	if isSwapMemo {
 		destAccAddr, err := mem.Destination.AccAddress()
 		// A network module address would be resolvable,
@@ -70,9 +71,14 @@ func (h SwapHandler) validateV136(ctx cosmos.Context, msg MsgSwap) error {
 		if err == nil && IsModuleAccAddress(h.mgr.Keeper(), destAccAddr) {
 			return fmt.Errorf("a network module cannot be the final destination of a swap memo")
 		}
+
+		if target.IsSyntheticAsset() && h.mgr.Keeper().GetConfigInt64(ctx, constants.ManualSwapsToSynthDisabled) > 0 {
+			// Reject manual swap attempts for minting synths (encouraging Trade Assets for manual swaps),
+			// allowing synth minting only in other contexts like with add liquidity memos (Savers) or internal memos.
+			return fmt.Errorf("manual swaps to synths not supported, use trade assets instead")
+		}
 	}
 
-	target := msg.TargetAsset
 	if h.mgr.Keeper().IsTradingHalt(ctx, &msg) {
 		return errors.New("trading is halted, can't process swap")
 	}
