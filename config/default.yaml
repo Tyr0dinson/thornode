@@ -26,6 +26,7 @@ bifrost:
       - GAIA
       - LTC
       - BSC
+      - SOL
   thorchain:
     chain_id: thorchain
     chain_host: localhost:1317
@@ -272,6 +273,24 @@ bifrost:
         block_cache_count: 144
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         estimated_average_tx_size: 1500
+
+    sol:
+      <<: *default-chain
+      chain_id: SOL
+      rpc_host: https://api.mainnet-beta.solana.com/
+      block_scanner:
+        <<: *default-block-scanner
+        rpc_host: https://api.mainnet-beta.solana.com/
+        block_height_discover_back_off: 2s
+        max_reorg_rescan_blocks: 0 # solana has guaranteed finality
+        chain_id: SOL
+        observation_flexibility_blocks: 0
+        gas_cache_blocks: 0
+        gas_price_resolution: 0
+        max_gas_limit: 0
+        max_contract_tx_logs: 0
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
 
 ########################################################################################
 # Thor

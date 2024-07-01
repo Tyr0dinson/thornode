@@ -113,6 +113,10 @@ func Init() {
 		"BLOCK_SCANNER_BACKOFF",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.sol.block_scanner.block_height_discover_back_off",
+		"BLOCK_SCANNER_BACKOFF",
+	))
+	assert(viper.BindEnv(
 		"bifrost.signer.block_scanner.block_height_discover_back_off",
 		"THOR_BLOCK_TIME",
 	))
@@ -232,10 +236,19 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.rpc_host",
+		"SOL_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.block_scanner.rpc_host",
+		"SOL_HOST",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.SOL.disabled", "SOL_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
@@ -500,6 +513,7 @@ type Bifrost struct {
 		ETH  BifrostChainConfiguration `mapstructure:"eth"`
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
+		SOL  BifrostChainConfiguration `mapstructure:"sol"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
@@ -515,6 +529,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.ETHChain:  b.Chains.ETH,
 		common.GAIAChain: b.Chains.GAIA,
 		common.LTCChain:  b.Chains.LTC,
+		common.SOLChain:  b.Chains.SOL,
 	}
 }
 

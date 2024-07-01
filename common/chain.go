@@ -264,6 +264,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(100_000_000)
 	case ETHChain, AVAXChain, GAIAChain, BSCChain:
 		return cosmos.NewUint(0)
+	case SOLChain:
+		return cosmos.NewUint(10_000)
 	default:
 		return cosmos.NewUint(0)
 	}
@@ -319,6 +321,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 6_000
 	case THORChain:
 		return 6_000
+	case SOLChain:
+		return 400
 	default:
 		return 0
 	}
