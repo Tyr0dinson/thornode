@@ -661,6 +661,21 @@ asserts:
 ########################################################################################
 # Testing that ManualSwapsToSynthDisabled doesn't disable Savers
 ########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+asserts:
+  - .|length == 1
+  - .[0].asset_deposit_value == "${PRE_ADD_DEPOSIT=19839959}"
+  - .[0].asset_redeem_value == "${PRE_ADD_REDEEM=19840523}"
+  - .[0].last_add_height == 24
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="donate")] | length == 1
+  - ..|select(.type?=="donate").memo == "THOR-SAVERS-YIELD"
+  # Savers yield increases the redeem value, separately from further add liquidity.
+---
 type: tx-mimir
 key: ManualSwapsToSynthDisabled
 value: 1
@@ -678,7 +693,7 @@ txs:
       from_address: {{ addr_btc_pig }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "200000"
+        - amount: "${ADD=200000}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -696,6 +711,18 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.type?=="add_liquidity")] | length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+asserts:
+  - .|length == 1
+  - .[0].asset_deposit_value == "20037981"
+  - .[0].asset_deposit_value | tonumber > ${PRE_ADD_DEPOSIT} + (${ADD} * 0.99)
+  - .[0].asset_deposit_value | tonumber < ${PRE_ADD_DEPOSIT} + ${ADD}
+  - .[0].asset_redeem_value == "20038723"
+  - .[0].asset_redeem_value | tonumber > ${PRE_ADD_REDEEM} + (${ADD} * 0.99)
+  # Larger-than-add increase is hypothetically possible due to savers yield.
+  - .[0].last_add_height == 28
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
