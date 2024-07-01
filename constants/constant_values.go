@@ -135,6 +135,7 @@ const (
 	BondLockupPeriod
 	BurnSynths
 	DefaultPoolStatus
+	ManualSwapsToSynthDisabled
 	MaximumLiquidityRune
 	MintSynths
 	NumberOfNewNodesPerChurn
