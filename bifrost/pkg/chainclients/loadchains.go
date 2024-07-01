@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/gaia"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/types"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/utxo"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -49,6 +50,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
+		case common.SOLChain:
+			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

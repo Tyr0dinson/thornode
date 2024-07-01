@@ -1,0 +1,619 @@
+package solana
+
+import (
+	"encoding/base64"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"math/big"
+	"sync"
+
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/evm"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/runners"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/signercache"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/bifrost/tss"
+	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/config"
+	"gitlab.com/thorchain/thornode/constants"
+	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
+	tssp "gitlab.com/thorchain/tss/go-tss/tss"
+)
+
+// SOLClient is a client for the Solana blockchain
+type SOLClient struct {
+	logger                  zerolog.Logger
+	cfg                     config.BifrostChainConfiguration
+	localPubKey             common.PubKey
+	kw                      *evm.KeySignWrapper
+	solScanner              *SOLScanner
+	bridge                  thorclient.ThorchainBridge
+	blockScanner            *blockscanner.BlockScanner
+	pubkeyMgr               pubkeymanager.PubKeyValidator
+	poolMgr                 thorclient.PoolManager
+	tssKeySigner            *tss.KeySign
+	tssKeyManager           tss.ThorchainKeyManager
+	wg                      *sync.WaitGroup
+	stopchan                chan struct{}
+	globalSolvencyQueue     chan stypes.Solvency
+	signerCacheManager      *signercache.CacheManager
+	lastSolvencyCheckHeight int64
+}
+
+// NewSOLClient creates a new instance of a SOLClient
+func NewSOLClient(
+	thorKeys *thorclient.Keys,
+	cfg config.BifrostChainConfiguration,
+	server *tssp.TssServer,
+	bridge thorclient.ThorchainBridge,
+	m *metrics.Metrics,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
+	poolMgr thorclient.PoolManager,
+) (*SOLClient, error) {
+	// check required arguments
+	if thorKeys == nil {
+		return nil, fmt.Errorf("failed to create EVM client, thor keys empty")
+	}
+	if bridge == nil {
+		return nil, errors.New("thorchain bridge is nil")
+	}
+	if pubkeyMgr == nil {
+		return nil, errors.New("pubkey manager is nil")
+	}
+	if poolMgr == nil {
+		return nil, errors.New("pool manager is nil")
+	}
+
+	// create keys
+	tssKm, err := tss.NewKeySign(server, bridge)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tss signer: %w", err)
+	}
+	priv, err := thorKeys.GetPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get private key: %w", err)
+	}
+	temp, err := codec.ToTmPubKeyInterface(priv.PubKey())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tm pub key: %w", err)
+	}
+	pk, err := common.NewPubKeyFromCrypto(temp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pub key: %w", err)
+	}
+
+	// create rpc clients
+	rpcClient := rpc.NewSolRPC(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
+
+	c := &SOLClient{
+		logger:      log.With().Str("module", "sol").Stringer("chain", cfg.ChainID).Logger(),
+		cfg:         cfg,
+		localPubKey: pk,
+		// kw:           keysignWrapper,
+		bridge:       bridge,
+		pubkeyMgr:    pubkeyMgr,
+		poolMgr:      poolMgr,
+		tssKeySigner: tssKm,
+		wg:           &sync.WaitGroup{},
+		stopchan:     make(chan struct{}),
+	}
+
+	// initialize storage
+	var path string // if not set later, will in memory storage
+	if len(c.cfg.BlockScanner.DBPath) > 0 {
+		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
+	}
+	storage, err := blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
+	if err != nil {
+		return c, fmt.Errorf("fail to create blockscanner storage: %w", err)
+	}
+	signerCacheManager, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
+	if err != nil {
+		return nil, fmt.Errorf("fail to create signer cache manager")
+	}
+	c.signerCacheManager = signerCacheManager
+
+	// create block scanner
+	c.solScanner, err = NewSOLScanner(
+		c.cfg.BlockScanner,
+		storage,
+		bridge,
+		m,
+		rpcClient,
+		pubkeyMgr,
+		c.ReportSolvency,
+		signerCacheManager,
+	)
+	if err != nil {
+		return c, fmt.Errorf("fail to create evm block scanner: %w", err)
+	}
+
+	// initialize block scanner
+	c.blockScanner, err = blockscanner.NewBlockScanner(
+		c.cfg.BlockScanner, storage, m, c.bridge, c.solScanner,
+	)
+	if err != nil {
+		return c, fmt.Errorf("fail to create block scanner: %w", err)
+	}
+
+	return c, nil
+}
+
+// Start starts the chain client with the given queues.
+func (c *SOLClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
+	// c.solScanner.globalErrataQueue = globalErrataQueue
+	c.globalSolvencyQueue = globalSolvencyQueue
+	c.tssKeySigner.Start()
+	c.blockScanner.Start(globalTxsQueue)
+	c.wg.Add(1)
+	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+}
+
+// Stop stops the chain client.
+func (c *SOLClient) Stop() {
+	c.tssKeySigner.Stop()
+	c.blockScanner.Stop()
+	close(c.stopchan)
+	c.wg.Wait()
+}
+
+// IsBlockScannerHealthy returns true if the block scanner is healthy.
+func (c *SOLClient) IsBlockScannerHealthy() bool {
+	return c.blockScanner.IsHealthy()
+}
+
+// --------------------------------- config ---------------------------------
+
+// GetConfig returns the chain configuration.
+func (c *SOLClient) GetConfig() config.BifrostChainConfiguration {
+	return c.cfg
+}
+
+// GetChain returns the chain.
+func (c *SOLClient) GetChain() common.Chain {
+	return c.cfg.ChainID
+}
+
+// --------------------------------- status ---------------------------------
+
+// GetHeight returns the current height of the chain.
+func (c *SOLClient) GetHeight() (int64, error) {
+	return c.solScanner.GetHeight()
+}
+
+// GetBlockScannerHeight returns blockscanner height
+func (c *SOLClient) GetBlockScannerHeight() (int64, error) {
+	return c.blockScanner.PreviousHeight(), nil
+}
+
+func (c *SOLClient) GetLatestTxForVault(vault string) (string, string, error) {
+	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(stypes.InboundCacheKey(vault, c.GetChain().String()))
+	if err != nil {
+		return "", "", err
+	}
+	lastBroadCasted, err := c.signerCacheManager.GetLatestRecordedTx(stypes.BroadcastCacheKey(vault, c.GetChain().String()))
+	return lastObserved, lastBroadCasted, err
+}
+
+// --------------------------------- addresses ---------------------------------
+
+// GetAddress returns the address for the given public key.
+func (c *SOLClient) GetAddress(poolPubKey common.PubKey) string {
+	addr, err := poolPubKey.GetAddress(c.cfg.ChainID)
+	if err != nil {
+		c.logger.Error().Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get pool address")
+		return ""
+	}
+	return addr.String()
+}
+
+// GetAccount returns the account for the given public key.
+func (c *SOLClient) GetAccount(pk common.PubKey, height *big.Int) (common.Account, error) {
+	// TODO: Implement?
+	return common.Account{}, nil
+}
+
+// GetAccountByAddress returns the account for the given address.
+func (c *SOLClient) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
+	// TODO: Implement?
+	return common.Account{}, nil
+}
+
+// --------------------------------- balances ---------------------------------
+
+// GetBalance returns the balance of the provided address.
+func (c *SOLClient) GetBalance(addr, token string, height *big.Int) (*big.Int, error) {
+	// TODO: Implement
+	return big.NewInt(0), nil
+}
+
+// GetBalances returns the balances of the provided address.
+func (c *SOLClient) GetBalances(addr string, height *big.Int) (common.Coins, error) {
+	// TODO: Implement
+	return common.Coins{}, nil
+}
+
+// --------------------------------- solvency ---------------------------------
+
+// ReportSolvency reports solvency once per configured solvency blocks.
+func (c *SOLClient) ReportSolvency(height int64) error {
+
+	// TODO: Implement
+
+	if !c.ShouldReportSolvency(height) {
+		return nil
+	}
+	c.lastSolvencyCheckHeight = height
+	return nil
+}
+
+// ShouldReportSolvency returns true if the given height is a solvency report height.
+func (c *SOLClient) ShouldReportSolvency(height int64) bool {
+	return height%c.cfg.SolvencyBlocks == 0
+}
+
+// --------------------------------- sign ---------------------------------
+
+// SignTx returns the signed transaction.
+func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+	if tx.ToAddress.IsEmpty() {
+		return nil, nil, nil, fmt.Errorf("to address is empty")
+	}
+	// if tx.VaultPubKeyEddsa.IsEmpty() {
+	// 	return nil, nil, nil, fmt.Errorf("vault public key is empty")
+	// }
+
+	if len(tx.Memo) == 0 {
+		return nil, nil, nil, fmt.Errorf("can't sign tx when it doesn't have memo")
+	}
+
+	solTx, err := c.CreateTx(tx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
+	}
+
+	checkPointBytes, err := solTx.Serialize()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
+	}
+
+	c.logger.Info().Str("tx", jsonString(solTx)).Msg("signing tx")
+
+	signedTx, err := c.signTransaction(solTx, tx)
+	if err != nil {
+		return nil, checkPointBytes, nil, fmt.Errorf("fail to sign tx: %w", err)
+	}
+
+	signedBytes, err := signedTx.Serialize()
+	if err != nil {
+		return nil, checkPointBytes, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
+	}
+
+	return signedBytes, nil, nil, nil
+}
+
+// SignTransaction takes a rpc.Transaction and signs with the pubkey
+func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutItem) (rpc.Transaction, error) {
+	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKeyEddsa.String())
+	if err != nil {
+		return rpc.Transaction{}, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
+	}
+	message, err := solTx.Serialize()
+	if err != nil {
+		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+
+	c.logger.Info().Str("message", string(message)).Msg("signing message")
+
+	sig, _, err := c.tssKeyManager.RemoteSign(message, txOut.VaultPubKeyEddsa.String())
+	if err != nil {
+		return rpc.Transaction{}, err
+	}
+
+	if !cpk.VerifySignature(message, sig) {
+		return rpc.Transaction{}, fmt.Errorf("unable to verify signature with secpPubKey")
+	}
+
+	solTx.Transaction.Signatures = append(solTx.Transaction.Signatures, Base58Encode(sig))
+
+	return solTx, nil
+}
+
+// CreateTx takes a TxOutItem and returns a solana transaction
+func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
+
+	solTx := rpc.Transaction{}
+
+	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
+	if err != nil {
+		return solTx, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
+	}
+
+	if memo.IsInbound() {
+		return solTx, fmt.Errorf("inbound memo should not be used for outbound tx")
+	}
+
+	// vaultPubKeyEddsa, err := base58Decode(tx.VaultPubKeyEddsa.String())
+	// if err != nil {
+	// 	return nil, nil, nil, err
+	// }
+
+	if len(tx.Coins) != 1 {
+		return solTx, fmt.Errorf("only support one coin per transaction")
+	}
+
+	solValue, err := convertToLamports(tx.Coins[0].Amount)
+	if solValue.Int64() == 0 {
+		return solTx, fmt.Errorf("sol value is zero")
+	}
+
+	// Create instruction
+	systemProgramID := "11111111111111111111111111111111"
+	data := base64.StdEncoding.EncodeToString(createTransferInstructionData(solValue))
+
+	recentBlockhash, err := c.solScanner.GetLatestBlockHash()
+	if err != nil {
+		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
+	}
+
+	instruction := rpc.Instruction{
+		Accounts:       []int{0, 1},
+		Data:           data,
+		ProgramIdIndex: 2,
+	}
+
+	message := rpc.Message{
+		AccountKeys: []string{
+			tx.VaultPubKeyEddsa.String(),
+			tx.ToAddress.String(),
+			systemProgramID,
+		},
+		Header: rpc.Header{
+			NumReadonlySignedAccounts:   0,
+			NumReadonlyUnsignedAccounts: 1,
+			NumRequiredSignatures:       1,
+		},
+		Instructions:    []rpc.Instruction{instruction},
+		RecentBlockhash: recentBlockhash,
+	}
+
+	txnData := rpc.TxnData{
+		Message:    message,
+		Signatures: []string{},
+	}
+
+	return rpc.Transaction{
+		Meta:        rpc.Meta{},
+		Transaction: txnData,
+		Version:     rpc.Version{Value: "0"},
+	}, nil
+}
+
+// --------------------------------- sign ---------------------------------
+
+func convertToLamports(amount cosmos.Uint) (*big.Int, error) {
+	amountLamports := new(big.Int).Mul(amount.BigInt(), big.NewInt(1e9))
+	return amountLamports, nil
+}
+
+// Create transfer instruction data
+func createTransferInstructionData(amountLamports *big.Int) []byte {
+	var data []byte
+	// System program transfer instruction
+	transferInstruction := uint32(2)
+	transferInstructionBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(transferInstructionBytes, transferInstruction)
+	data = append(data, transferInstructionBytes...)
+
+	// Append amount
+	amountBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(amountBytes, amountLamports.Uint64())
+	data = append(data, amountBytes...)
+
+	return data
+}
+
+const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+// Base58Encode encodes a byte array to a base58 encoded string
+func Base58Encode(input []byte) string {
+	bi := new(big.Int).SetBytes(input)
+	base := big.NewInt(58)
+	zero := big.NewInt(0)
+	mod := &big.Int{}
+
+	var result []byte
+
+	for bi.Cmp(zero) != 0 {
+		bi.DivMod(bi, base, mod)
+		result = append(result, alphabet[mod.Int64()])
+	}
+
+	// Leading zero bytes
+	for _, b := range input {
+		if b == 0x00 {
+			result = append(result, alphabet[0])
+		} else {
+			break
+		}
+	}
+
+	// Reverse the result
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return string(result)
+}
+
+// // sign is design to sign a given message with keysign party and keysign wrapper
+// func (c *SOLClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
+// 	rawBytes, err := c.tssSign(tx, poolPubKey)
+// 	if err == nil && rawBytes != nil {
+// 		return rawBytes, nil
+// 	}
+// 	var keysignError tss.KeysignError
+// 	if errors.As(err, &keysignError) {
+// 		if len(keysignError.Blame.BlameNodes) == 0 {
+// 			// TSS doesn't know which node to blame
+// 			return nil, fmt.Errorf("fail to sign tx: %w", err)
+// 		}
+// 		// key sign error forward the keysign blame to thorchain
+// 		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+// 		if errPostKeysignFail != nil {
+// 			return nil, multierror.Append(err, errPostKeysignFail)
+// 		}
+// 		c.logger.Info().Str("tx_id", txID.String()).Msgf("post keysign failure to thorchain")
+// 	}
+// 	return nil, fmt.Errorf("fail to sign tx: %w", err)
+// }
+
+// // Sign the given transaction
+// func (c *SOLClient) tssSign(txn rpc.Transaction, pubKey common.PubKey) ([]byte, error) {
+// 	if tx == nil {
+// 		return nil, errors.New("tx is nil")
+// 	}
+// 	if pubKey.IsEmpty() {
+// 		return nil, errors.New("pool public key is empty")
+// 	}
+// 	var err error
+// 	var sig []byte
+
+// 	message, err := txn.serialize()
+// 	if err != nil {
+// 		return txn, fmt.Errorf("failed to serialize transaction: %w", err)
+// 	}
+
+// 	hash := w.signer.Hash(tx)
+// 	sig, recovery, err := w.tssKeyManager.RemoteSign(hash[:], poolPubKey)
+// 	if err != nil || sig == nil {
+// 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
+// 	}
+// 	secpPubKey, err := codec.ToTmPubKeyInterface(pk)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if ecrypto.VerifySignature(secpPubKey.Bytes(), hash[:], sig) {
+// 		w.logger.Info().Msg("we can successfully verify the bytes")
+// 	} else {
+// 		w.logger.Error().Msg("Oops! we cannot verify the bytes")
+// 	}
+// 	// add the recovery id at the end
+// 	result := make([]byte, 65)
+// 	copy(result, sig)
+// 	result[64] = recovery[0]
+// 	return result, nil
+
+// 	return txn, nil
+
+// 	if err != nil {
+// 		return nil, fmt.Errorf("fail to sign tx: %w", err)
+// 	}
+// 	newTx, err := tx.WithSignature(w.signer, sig)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("fail to apply signature to tx: %w", err)
+// 	}
+// 	enc, err := newTx.MarshalJSON()
+// 	if err != nil {
+// 		return nil, fmt.Errorf("fail to marshal tx to json: %w", err)
+// 	}
+// 	return enc, nil
+// }
+
+// // Serialize the transaction
+// func (tx SolanaTransaction) serialize() ([]byte, error) {
+// 	var serializedTx []byte
+
+// 	// Serialize signatures
+// 	signatureCount := uint8(len(tx.Signatures))
+// 	serializedTx = append(serializedTx, signatureCount)
+// 	for _, sig := range tx.Signatures {
+// 		serializedTx = append(serializedTx, sig...)
+// 	}
+
+// 	// Serialize recent blockhash
+// 	blockhashBytes, err := hex.DecodeString(tx.RecentBlockhash)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	serializedTx = append(serializedTx, blockhashBytes...)
+
+// 	// Serialize instructions
+// 	instructionCount := uint8(len(tx.Instructions))
+// 	serializedTx = append(serializedTx, instructionCount)
+// 	for _, instruction := range tx.Instructions {
+// 		serializedTx = append(serializedTx, instruction.ProgramID[:]...)
+
+// 		accountCount := uint8(len(instruction.Accounts))
+// 		serializedTx = append(serializedTx, accountCount)
+// 		for _, account := range instruction.Accounts {
+// 			serializedTx = append(serializedTx, account.PublicKey[:]...)
+// 			if account.IsSigner {
+// 				serializedTx = append(serializedTx, 1)
+// 			} else {
+// 				serializedTx = append(serializedTx, 0)
+// 			}
+// 			if account.IsWritable {
+// 				serializedTx = append(serializedTx, 1)
+// 			} else {
+// 				serializedTx = append(serializedTx, 0)
+// 			}
+// 		}
+
+// 		dataLength := uint16(len(instruction.Data))
+// 		dataLengthBytes := make([]byte, 2)
+// 		binary.LittleEndian.PutUint16(dataLengthBytes, dataLength)
+// 		serializedTx = append(serializedTx, dataLengthBytes...)
+// 		serializedTx = append(serializedTx, instruction.Data...)
+// 	}
+
+// 	return serializedTx, nil
+// }
+
+// --------------------------------- broadcast ---------------------------------
+
+// BroadcastTx broadcasts the transaction and returns the transaction hash.
+func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
+	// TODO: Implement
+	return "", nil
+}
+
+// --------------------------------- observe ---------------------------------
+
+// OnObservedTxIn is called when a new observed tx is received.
+func (c *SOLClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
+	// TODO: Implement
+}
+
+// GetConfirmationCount returns the confirmation count for the given tx.
+func (c *SOLClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
+	// TODO: Implement
+	return 0
+}
+
+// ConfirmationCountReady returns true if the confirmation count is ready.
+func (c *SOLClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
+	// TODO: Implement
+	return true
+}
+
+// Helpers
+
+func base58Decode(input string) ([32]byte, error) {
+	var output [32]byte
+	decoded, err := base64.StdEncoding.DecodeString(input)
+	if err != nil {
+		return output, err
+	}
+	copy(output[:], decoded)
+	return output, nil
+}
