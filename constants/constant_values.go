@@ -135,14 +135,12 @@ const (
 	BondLockupPeriod
 	BurnSynths
 	DefaultPoolStatus
-	LeaveProcessPerBlockHeight // TODO: Entirely unused, so remove.
 	MaximumLiquidityRune
 	MintSynths
 	NumberOfNewNodesPerChurn
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
-	ValidatorsChangeWindow // TODO: Entirely unused, so remove.
 )
 
 // ConstantValues define methods used to get constant values
