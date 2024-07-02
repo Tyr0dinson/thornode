@@ -261,6 +261,30 @@ paths:
           description: OK
       tags:
       - Liquidity Providers
+  /thorchain/rune_pool:
+    get:
+      description: Returns the pool information for the RUNE pool.
+      operationId: runePool
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RUNEPoolResponse'
+          description: OK
+      tags:
+      - RUNE Pool
   /thorchain/rune_providers/{address}:
     get:
       description: Returns the RUNE Provider information for an address.
@@ -292,7 +316,7 @@ paths:
                 $ref: '#/components/schemas/RUNEProviderResponse'
           description: OK
       tags:
-      - RUNE Providers
+      - RUNE Pool
   /thorchain/rune_providers:
     get:
       description: Returns all RUNE Providers.
@@ -316,7 +340,7 @@ paths:
                 $ref: '#/components/schemas/RUNEProvidersResponse'
           description: OK
       tags:
-      - RUNE Providers
+      - RUNE Pool
   /thorchain/pool/{asset}/saver/{address}:
     get:
       description: Returns the saver position given then savers pool and address.
@@ -862,30 +886,6 @@ paths:
           description: OK
       tags:
       - Network
-  /thorchain/pol:
-    get:
-      description: Returns protocol owned liquidity overview statistics.
-      operationId: pol
-      parameters:
-      - description: "optional block height, defaults to current tip"
-        explode: true
-        in: query
-        name: height
-        required: false
-        schema:
-          format: int64
-          minimum: 0
-          type: integer
-        style: form
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/POLResponse'
-          description: OK
-      tags:
-      - POL
   /thorchain/inbound_addresses:
     get:
       description: Returns the set of asgard addresses that should be used for inbound
@@ -2398,6 +2398,61 @@ components:
       - derived_depth_bps
       - status
       type: object
+    POL:
+      example:
+        current_deposit: "21999180112172346"
+        rune_deposited: "857134475040"
+        rune_withdrawn: "0"
+        value: "21999180112172346"
+        pnl: "21999180112172346"
+      properties:
+        rune_deposited:
+          description: total amount of RUNE deposited into the pools
+          example: "857134475040"
+          type: string
+        rune_withdrawn:
+          description: total amount of RUNE withdrawn from the pools
+          example: "0"
+          type: string
+        value:
+          description: total value of protocol's LP position in RUNE value
+          example: "21999180112172346"
+          type: string
+        pnl:
+          description: profit and loss of protocol owned liquidity
+          example: "21999180112172346"
+          type: string
+        current_deposit:
+          description: current amount of rune deposited
+          example: "21999180112172346"
+          type: string
+      required:
+      - current_deposit
+      - pnl
+      - rune_deposited
+      - rune_withdrawn
+      - value
+      type: object
+    RUNEPool:
+      example:
+        reserve_units: "123456"
+        pending_pool_units: "123456"
+        pool_units: "123456"
+      properties:
+        reserve_units:
+          example: "123456"
+          type: string
+        pool_units:
+          example: "123456"
+          type: string
+        pending_pool_units:
+          example: "123456"
+          type: string
+      required:
+      - pending_pool_units
+      - pool_units
+      - reserve_units
+      type: object
     RUNEProvider:
       example:
         deposit_amount: "6677"
@@ -3789,6 +3844,27 @@ components:
       items:
         $ref: '#/components/schemas/DerivedPool'
       type: array
+    RUNEPoolResponse:
+      example:
+        pol:
+          current_deposit: "21999180112172346"
+          rune_deposited: "857134475040"
+          rune_withdrawn: "0"
+          value: "21999180112172346"
+          pnl: "21999180112172346"
+        runepool:
+          reserve_units: "123456"
+          pending_pool_units: "123456"
+          pool_units: "123456"
+      properties:
+        runepool:
+          $ref: '#/components/schemas/RUNEPool'
+        pol:
+          $ref: '#/components/schemas/POL'
+      required:
+      - pol
+      - runepool
+      type: object
     RUNEProviderResponse:
       $ref: '#/components/schemas/RUNEProvider'
     RUNEProvidersResponse:
@@ -4718,41 +4794,6 @@ components:
       items:
         $ref: '#/components/schemas/OutboundFee'
       type: array
-    POLResponse:
-      example:
-        current_deposit: "21999180112172346"
-        rune_deposited: "857134475040"
-        rune_withdrawn: "0"
-        value: "21999180112172346"
-        pnl: "21999180112172346"
-      properties:
-        rune_deposited:
-          description: total amount of RUNE deposited into the pools
-          example: "857134475040"
-          type: string
-        rune_withdrawn:
-          description: total amount of RUNE withdrawn from the pools
-          example: "0"
-          type: string
-        value:
-          description: total value of protocol's LP position in RUNE value
-          example: "21999180112172346"
-          type: string
-        pnl:
-          description: profit and loss of protocol owned liquidity
-          example: "21999180112172346"
-          type: string
-        current_deposit:
-          description: current amount of rune deposited
-          example: "21999180112172346"
-          type: string
-      required:
-      - current_deposit
-      - pnl
-      - rune_deposited
-      - rune_withdrawn
-      - value
-      type: object
     InboundAddressesResponse:
       items:
         $ref: '#/components/schemas/InboundAddress'
