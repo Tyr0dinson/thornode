@@ -874,7 +874,7 @@ func (m *EventLoanRepayment) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// NewEventWithdraw create a new deposit event
+// NewEventTradeAccountDeposit creates a new trade account deposit event.
 func NewEventTradeAccountDeposit(
 	amt cosmos.Uint,
 	asset common.Asset,
@@ -907,7 +907,7 @@ func (m *EventTradeAccountDeposit) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// NewEventWithdraw create a new withdraw event
+// NewEventTradeAccountWithdraw creates a new trade account withdraw event.
 func NewEventTradeAccountWithdraw(
 	amt cosmos.Uint,
 	asset common.Asset,
@@ -946,7 +946,6 @@ func NewEventRUNEPoolWithdraw(
 	basisPts int64,
 	runeAmount cosmos.Uint,
 	units cosmos.Uint,
-	txID common.TxID,
 	affAddr common.Address,
 	affBps int64,
 	affAmt cosmos.Uint,
@@ -956,7 +955,6 @@ func NewEventRUNEPoolWithdraw(
 		BasisPoints:       basisPts,
 		RuneAmount:        runeAmount,
 		Units:             units,
-		TxId:              txID,
 		AffiliateAddress:  affAddr,
 		AffiliateBasisPts: affBps,
 		AffiliateAmount:   affAmt,
@@ -975,7 +973,6 @@ func (m *EventRUNEPoolWithdraw) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("basis_points", strconv.FormatInt(m.BasisPoints, 10)),
 		cosmos.NewAttribute("rune_amoumt", m.RuneAmount.String()),
 		cosmos.NewAttribute("units", m.Units.String()),
-		cosmos.NewAttribute("tx_id", m.TxId.String()),
 		cosmos.NewAttribute("affiliate_address", m.AffiliateAddress.String()),
 		cosmos.NewAttribute("affiliate_basis_points", strconv.FormatInt(m.AffiliateBasisPts, 10)),
 		cosmos.NewAttribute("affiliate_amount", m.AffiliateAmount.String()))
@@ -987,13 +984,11 @@ func NewEventRUNEPoolDeposit(
 	runeAddress cosmos.AccAddress,
 	runeAmount cosmos.Uint,
 	units cosmos.Uint,
-	txID common.TxID,
 ) *EventRUNEPoolDeposit {
 	return &EventRUNEPoolDeposit{
 		RuneAddress: runeAddress,
 		RuneAmount:  runeAmount,
 		Units:       units,
-		TxId:        txID,
 	}
 }
 
@@ -1008,7 +1003,6 @@ func (m *EventRUNEPoolDeposit) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
 		cosmos.NewAttribute("rune_amoumt", m.RuneAmount.String()),
 		cosmos.NewAttribute("units", m.Units.String()),
-		cosmos.NewAttribute("tx_id", m.TxId.String()),
 	)
 	return cosmos.Events{evt}, nil
 }

@@ -16,6 +16,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("affiliate_collector", AffilliateCollectorInvariant(k)),
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
+		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
 	}
 }
 
@@ -316,6 +317,28 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 				broken = true
 				msg = append(msg, fmt.Sprintf("swap not found for stream: %s", stream.TxID.String()))
 			}
+		}
+
+		return msg, broken
+	}
+}
+
+// RUNEPoolInvariant asserts that the RUNEPool units and provider units are consistent.
+func RUNEPoolInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		runePool, err := k.GetRUNEPool(ctx)
+		if err != nil {
+			ctx.Logger().Error("error getting rune pool", "error", err)
+		}
+		providerUnits, err := k.GetRUNEProviderUnitsTotal(ctx)
+		if err != nil {
+			ctx.Logger().Error("error getting rune provider units", "error", err)
+		}
+		poolUnits := runePool.PoolUnits.Add(runePool.PendingPoolUnits)
+
+		if !providerUnits.Equal(poolUnits) {
+			msg = []string{fmt.Sprintf("pool units %s != provider units %s", poolUnits, providerUnits)}
+			broken = true
 		}
 
 		return msg, broken

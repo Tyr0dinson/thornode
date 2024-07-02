@@ -6,6 +6,37 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+////////////////////////////////////////////////////////////////////////////////////////
+// RUNEPool
+////////////////////////////////////////////////////////////////////////////////////////
+
+func (k KVStore) GetRUNEPool(ctx cosmos.Context) (RUNEPool, error) {
+	record := NewRUNEPool()
+	key := k.GetKey(ctx, prefixRUNEPool, "")
+
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return record, nil
+	}
+
+	bz := store.Get([]byte(key))
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return record, nil
+}
+
+func (k KVStore) SetRUNEPool(ctx cosmos.Context, pool RUNEPool) {
+	store := ctx.KVStore(k.storeKey)
+	key := k.GetKey(ctx, prefixRUNEPool, "")
+	buf := k.cdc.MustMarshal(&pool)
+	store.Set([]byte(key), buf)
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// RUNEProviders
+////////////////////////////////////////////////////////////////////////////////////////
+
 func (k KVStore) setRUNEProvider(ctx cosmos.Context, key string, record RUNEProvider) {
 	store := ctx.KVStore(k.storeKey)
 	buf := k.cdc.MustMarshal(&record)
@@ -71,11 +102,7 @@ func (k KVStore) GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress) (RU
 	}
 
 	_, err := k.getRUNEProvider(ctx, k.GetKey(ctx, prefixRUNEProvider, record.Key()), &record)
-	if err != nil {
-		return record, err
-	}
-
-	return record, nil
+	return record, err
 }
 
 // SetRUNEProvider save the RUNE provider to kv store

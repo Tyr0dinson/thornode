@@ -82,6 +82,7 @@ var (
 	QueryOutboundFee         = Query{Key: "outboundfee", EndpointTemplate: "/%s/outbound_fee/{%s}"}
 	QueryBan                 = Query{Key: "ban", EndpointTemplate: "/%s/ban/{%s}"}
 	QueryRagnarok            = Query{Key: "ragnarok", EndpointTemplate: "/%s/ragnarok"}
+	QueryRUNEPool            = Query{Key: "runepool", EndpointTemplate: "/%s/runepool"}
 	QueryRUNEProviders       = Query{Key: "runeproviders", EndpointTemplate: "/%s/rune_providers"}
 	QueryRUNEProvider        = Query{Key: "runeprovider", EndpointTemplate: "/%s/rune_providers/{%s}"}
 	QueryPendingOutbound     = Query{Key: "pendingoutbound", EndpointTemplate: "/%s/queue/outbound"}
@@ -157,6 +158,7 @@ var Queries = []Query{
 	QueryOutboundFee,
 	QueryBan,
 	QueryRagnarok,
+	QueryRUNEPool,
 	QueryRUNEProvider,
 	QueryRUNEProviders,
 	QueryPendingOutbound,

@@ -143,6 +143,12 @@ func (k KVStoreDummy) GetTradeUnit(ctx cosmos.Context, asset common.Asset) (Trad
 func (k KVStoreDummy) SetTradeUnit(ctx cosmos.Context, unit TradeUnit)         {}
 func (k KVStoreDummy) GetTradeUnitIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 
+func (k KVStoreDummy) GetRUNEPool(ctx cosmos.Context) (RUNEPool, error) {
+	return RUNEPool{}, kaboom
+}
+
+func (k KVStoreDummy) SetRUNEPool(ctx cosmos.Context, rp RUNEPool) {}
+
 func (k KVStoreDummy) GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress) (RUNEProvider, error) {
 	return RUNEProvider{}, kaboom
 }
