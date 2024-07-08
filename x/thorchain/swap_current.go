@@ -109,6 +109,17 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		return cosmos.ZeroUint(), swapEvents, errors.New("zero emit asset")
 	}
 
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return cosmos.ZeroUint(), swapEvents, err
+	}
+	if tx.FromAddress != polAddress && source.GetSyntheticAsset().Equals(target) {
+		err := s.polInstantMatch(ctx, mgr, source, assetAmount, target.IsVaultAsset())
+		if err != nil {
+			return cosmos.ZeroUint(), swapEvents, err
+		}
+	}
+
 	// Thanks to CacheContext, the swap event can be emitted before handling outbounds,
 	// since if there's a later error the event emission will not take place.
 	for _, evt := range swapEvents {
@@ -488,4 +499,80 @@ func (s *SwapperVCUR) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emi
 		slip = slipBps
 	}
 	return
+}
+
+func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint, mint bool) error {
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return err
+	}
+	asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	if err != nil {
+		return err
+	}
+	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+	if len(nodeAccounts) == 0 {
+		return fmt.Errorf("dev err: no active node accounts")
+	}
+	signer := nodeAccounts[0].NodeAddress
+
+	synthSupply := mgr.Keeper().GetTotalSupply(ctx, asset.GetSyntheticAsset())
+	l1Pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	l1Pool.CalcUnits(synthSupply)
+	runeAmt := l1Pool.AssetValueInRune(amount)
+	if runeAmt.IsZero() {
+		return nil
+	}
+	maxDeposit := fetchConfigInt64(ctx, mgr, constants.POLMaxNetworkDeposit)
+	pol, err := mgr.Keeper().GetPOL(ctx)
+	if err != nil {
+		return err
+	}
+	if maxDeposit <= pol.CurrentDeposit().Int64()+int64(runeAmt.Uint64()) {
+		return nil
+	}
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
+	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	if runeAmt.GT(bal) {
+		return nil
+	}
+
+	var (
+		msg cosmos.Msg
+		tx  common.Tx
+	)
+	if mint {
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, coins); err != nil {
+			return err
+		}
+		tx = common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-INSTANT-ADD")
+		msg = NewMsgAddLiquidity(tx, l1Pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
+	} else {
+		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, l1Pool.Asset, polAddress)
+		if err != nil {
+			return err
+		}
+		lpRune := common.GetSafeShare(lp.Units, l1Pool.GetPoolUnits(), l1Pool.BalanceRune).MulUint64(2)
+		basisPts := common.GetSafeShare(runeAmt, lpRune, cosmos.NewUint(10_000))
+		tx = common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-INSTANT-REMOVE")
+		msg = NewMsgWithdrawLiquidity(
+			tx,
+			polAddress,
+			basisPts,
+			l1Pool.Asset,
+			common.RuneAsset(),
+			signer,
+		)
+	}
+
+	handler := NewInternalHandler(mgr)
+	_, err = handler(ctx, msg)
+	if err != nil {
+		ctx.Logger().Error("fail to add liquidity from pol to match savers", "asset", l1Pool.Asset, "error", err)
+		return err
+	}
+	return nil
 }

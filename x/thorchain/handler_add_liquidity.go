@@ -214,8 +214,6 @@ func (h AddLiquidityHandler) validateV131(ctx cosmos.Context, msg MsgAddLiquidit
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.134.0")):
-		return h.handleV134(ctx, msg)
 	case version.GTE(semver.MustParse("1.121.0")):
 		return h.handleV121(ctx, msg)
 	default:
@@ -223,7 +221,7 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 	}
 }
 
-func (h AddLiquidityHandler) handleV134(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+func (h AddLiquidityHandler) handleV121(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)
@@ -282,7 +280,7 @@ func (h AddLiquidityHandler) handleV134(ctx cosmos.Context, msg MsgAddLiquidity)
 	}
 
 	if msg.AffiliateBasisPoints.IsZero() {
-		err = h.addLiquidity(
+		return h.addLiquidity(
 			ctx,
 			msg.Asset,
 			msg.RuneAmount,
@@ -292,107 +290,52 @@ func (h AddLiquidityHandler) handleV134(ctx cosmos.Context, msg MsgAddLiquidity)
 			msg.Tx.ID,
 			stage,
 			h.mgr.GetConstants())
-		if err != nil {
-			return err
-		}
+	}
+
+	// add liquidity has an affiliate fee, add liquidity for both the user and their affiliate
+	affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.RuneAmount)
+	affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.AssetAmount)
+	userRune := common.SafeSub(msg.RuneAmount, affiliateRune)
+	userAsset := common.SafeSub(msg.AssetAmount, affiliateAsset)
+
+	err = h.addLiquidity(
+		ctx,
+		msg.Asset,
+		userRune,
+		userAsset,
+		msg.RuneAddress,
+		msg.AssetAddress,
+		msg.Tx.ID,
+		stage,
+		h.mgr.GetConstants(),
+	)
+	if err != nil {
+		return err
+	}
+
+	affiliateRuneAddress := common.NoAddress
+	affiliateAssetAddress := common.NoAddress
+	if msg.AffiliateAddress.IsChain(common.THORChain) {
+		affiliateRuneAddress = msg.AffiliateAddress
 	} else {
-		// add liquidity has an affiliate fee, add liquidity for both the user and their affiliate
-		affiliateRune := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.RuneAmount)
-		affiliateAsset := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), msg.AssetAmount)
-		userRune := common.SafeSub(msg.RuneAmount, affiliateRune)
-		userAsset := common.SafeSub(msg.AssetAmount, affiliateAsset)
-
-		err = h.addLiquidity(
-			ctx,
-			msg.Asset,
-			userRune,
-			userAsset,
-			msg.RuneAddress,
-			msg.AssetAddress,
-			msg.Tx.ID,
-			stage,
-			h.mgr.GetConstants(),
-		)
-		if err != nil {
-			return err
-		}
-
-		affiliateRuneAddress := common.NoAddress
-		affiliateAssetAddress := common.NoAddress
-		if msg.AffiliateAddress.IsChain(common.THORChain) {
-			affiliateRuneAddress = msg.AffiliateAddress
-		} else {
-			affiliateAssetAddress = msg.AffiliateAddress
-		}
-
-		err = h.addLiquidity(
-			ctx,
-			msg.Asset,
-			affiliateRune,
-			affiliateAsset,
-			affiliateRuneAddress,
-			affiliateAssetAddress,
-			msg.Tx.ID,
-			false,
-			h.mgr.GetConstants(),
-		)
-		if err != nil {
-			ctx.Logger().Error("fail to add liquidity for affiliate", "address", msg.AffiliateAddress, "error", err)
-			return err
-		}
+		affiliateAssetAddress = msg.AffiliateAddress
 	}
 
-	if msg.Asset.IsVaultAsset() {
-		// instant match with rune
-		// TODO: should manager network pol match change, or move this logic to endblocker?
-		polAddress, err := h.mgr.Keeper().GetModuleAddress(ReserveName)
-		if err != nil {
-			return err
-		}
-
-		synthSupply := h.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		l1Pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset.GetLayer1Asset())
-		l1Pool.CalcUnits(h.mgr.GetVersion(), synthSupply)
-		runeAmt := l1Pool.AssetValueInRune(msg.AssetAmount)
-		if runeAmt.IsZero() {
-			return nil
-		}
-
-		maxDeposit := fetchConfigInt64(ctx, h.mgr, constants.POLMaxNetworkDeposit)
-		pol, err := h.mgr.Keeper().GetPOL(ctx)
-		if err != nil {
-			return err
-		}
-		if maxDeposit <= pol.CurrentDeposit().Int64()+int64(runeAmt.Uint64()) {
-			return nil
-		}
-
-		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
-		bal := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
-		if runeAmt.GT(bal) {
-			return nil
-		}
-
-		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, coins); err != nil {
-			return err
-		}
-		err = h.addLiquidity(
-			ctx,
-			l1Pool.Asset,
-			runeAmt,
-			cosmos.ZeroUint(),
-			polAddress,
-			common.NoAddress,
-			common.BlankTxID,
-			false,
-			h.mgr.GetConstants(),
-		)
-		if err != nil {
-			ctx.Logger().Error("fail to add liquidity from pol to match savers", "address", msg.AssetAddress, "asset", l1Pool.Asset, "error", err)
-			return err
-		}
+	err = h.addLiquidity(
+		ctx,
+		msg.Asset,
+		affiliateRune,
+		affiliateAsset,
+		affiliateRuneAddress,
+		affiliateAssetAddress,
+		msg.Tx.ID,
+		false,
+		h.mgr.GetConstants(),
+	)
+	if err != nil {
+		ctx.Logger().Error("fail to add liquidity for affiliate", "address", msg.AffiliateAddress, "error", err)
+		return err
 	}
-
 	return nil
 }
 

@@ -131,8 +131,8 @@ asserts:
   - .fees.liquidity == "19835"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
-  - .fees.slippage_bps == 99
-  - .fees.total_bps == 148
+  - .fees.slippage_bps == 69
+  - .fees.total_bps == 118
   - .recommended_gas_rate == "10"
   - .gas_rate_units == "satsperbyte"
 ---
@@ -182,7 +182,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_pig }}
       coins:
-        - amount: "2795511"
+        - amount: "2803460"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -217,8 +217,8 @@ asserts:
   - .fees.liquidity == "19927"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
-  - .fees.slippage_bps == 99
-  - .fees.total_bps == 148
+  - .fees.slippage_bps == 70
+  - .fees.total_bps == 118
   - .recommended_gas_rate == "10"
   - .gas_rate_units == "satsperbyte"
 ---
@@ -227,8 +227,8 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 2379671
-  - .[0].asset_redeem_value|tonumber == 2844542
-  - .[0].growth_pct|tonumber == 0.195350953976411025
+  - .[0].asset_redeem_value|tonumber ==  2844069
+  - .[0].growth_pct|tonumber == 0.195152187004001814
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -292,7 +292,7 @@ endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - .|length == 1
   - .[0].savers_fill_bps|tonumber == 0
-  - .[0].savers_capacity_remaining|tonumber == 602198438
+  - .[0].savers_capacity_remaining|tonumber == 602181643
 ---
 ########################################################################################
 # turn on streaming swaps for savers adds (set interval to 1)
@@ -358,7 +358,7 @@ asserts:
   - .interval == 1
   - .quantity == 6
   - .in == "9999999"
-  - .out == "9945174"
+  - .out == "9945175"
 ---
 type: create-blocks
 count: 3
@@ -375,8 +375,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value|tonumber == 19845527
-  - .[0].asset_redeem_value|tonumber == 19845850
+  - .[0].asset_deposit_value|tonumber == 19891239
+  - .[0].asset_redeem_value|tonumber == 19891493
 ---
 ########################################################################################
 # swap btc to rune and back to generate yield
@@ -408,9 +408,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value|tonumber == 19845527
-  - .[0].asset_redeem_value|tonumber == 21114645
-  - .[0].growth_pct|tonumber == 0.063949826074157668
+  - .[0].asset_deposit_value|tonumber ==  19891239
+  - .[0].asset_redeem_value|tonumber == 21161692
+  - .[0].growth_pct|tonumber ==  0.063869978134594833
 ---
 ########################################################################################
 # withdraw savers should use streaming swaps
@@ -441,7 +441,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 9 }}
 asserts:
-  - .deposit == "21114645"
+  - .deposit == "21161692"
   - .count == 1
   - .tx_id == "{{ observe_txid 9 }}"
   - .interval == 1
@@ -456,12 +456,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 9 }}
 asserts:
-  - .deposit == "21114645"
+  - .deposit == "21161692"
   - .count == 2
   - .tx_id == "{{ observe_txid 9 }}"
   - .interval == 1
   - .quantity == 3
-  - .in == "14076430"
+  - .in == "14107794"
 ---
 type: create-blocks
 count: 1
@@ -561,7 +561,7 @@ asserts:
   - .interval == 1
   - .quantity == 3
   - .in == "13333332"
-  - .out == "13226518"
+  - .out == "13253226"
 ---
 ########################################################################################
 # pause swaps - streaming should pause
@@ -591,7 +591,7 @@ asserts:
   - .interval == 1
   - .quantity == 3
   - .in == "13333332"
-  - .out == "13226518"
+  - .out == "13253226"
 ---
 type: tx-mimir
 key: HaltTrading
