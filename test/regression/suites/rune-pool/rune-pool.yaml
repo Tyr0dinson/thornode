@@ -152,7 +152,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .txs[0].result.events[-1].type == "trade_account_withdraw"
+  - .txs[0].result.events[-1].type == "rune_pool_withdraw"
   - .txs[0].result.events[-1].rune_address == "{{ addr_thor_fox }}"
   - .txs[0].result.events[-1].rune_amoumt == "333850000000"
   - .txs[0].result.events[-1].basis_points == "10000"

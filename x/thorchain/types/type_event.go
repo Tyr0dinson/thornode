@@ -963,7 +963,7 @@ func NewEventRUNEPoolWithdraw(
 
 // Type return the withdraw event type
 func (m *EventRUNEPoolWithdraw) Type() string {
-	return TradeAccountWithdrawEventType
+	return RUNEPoolWithdrawEventType
 }
 
 // Events return the cosmos event
@@ -992,9 +992,9 @@ func NewEventRUNEPoolDeposit(
 	}
 }
 
-// Type return the withdraw event type
+// Type return the deposit event type
 func (m *EventRUNEPoolDeposit) Type() string {
-	return TradeAccountDepositEventType
+	return RUNEPoolDepositEventType
 }
 
 // Events return the cosmos event
