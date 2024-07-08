@@ -65,33 +65,6 @@ func (k KVStore) GetRUNEProviderIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixRUNEProvider)
 }
 
-func (k KVStore) getRUNEProviders(ctx cosmos.Context) ([]RUNEProvider, error) {
-	rps := make([]RUNEProvider, 0)
-	iterator := k.GetRUNEProviderIterator(ctx)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var rp RUNEProvider
-		k.Cdc().MustUnmarshal(iterator.Value(), &rp)
-		if rp.RuneAddress.Empty() {
-			continue
-		}
-		rps = append(rps, rp)
-	}
-	return rps, nil
-}
-
-func (k KVStore) GetRUNEProviderUnitsTotal(ctx cosmos.Context) (cosmos.Uint, error) {
-	rps, err := k.getRUNEProviders(ctx)
-	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("unable to getRUNEProviders: %s", err)
-	}
-	units := cosmos.ZeroUint()
-	for _, rp := range rps {
-		units = units.Add(rp.Units)
-	}
-	return units, nil
-}
-
 // GetRUNEProvider retrieve RUNE provider from the data store
 func (k KVStore) GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress) (RUNEProvider, error) {
 	record := RUNEProvider{

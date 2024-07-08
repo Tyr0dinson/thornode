@@ -251,7 +251,6 @@ type KeeperRUNEPool interface {
 	SetRUNEPool(ctx cosmos.Context, pool RUNEPool)
 	GetRUNEProviderIterator(ctx cosmos.Context) cosmos.Iterator
 	GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress) (RUNEProvider, error)
-	GetRUNEProviderUnitsTotal(ctx cosmos.Context) (cosmos.Uint, error)
 	SetRUNEProvider(ctx cosmos.Context, rp RUNEProvider)
 	RemoveRUNEProvider(ctx cosmos.Context, rp RUNEProvider)
 }

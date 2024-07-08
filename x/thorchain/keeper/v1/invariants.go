@@ -330,10 +330,19 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 		if err != nil {
 			ctx.Logger().Error("error getting rune pool", "error", err)
 		}
-		providerUnits, err := k.GetRUNEProviderUnitsTotal(ctx)
-		if err != nil {
-			ctx.Logger().Error("error getting rune provider units", "error", err)
+
+		providerUnits := cosmos.ZeroUint()
+		iterator := k.GetRUNEProviderIterator(ctx)
+		defer iterator.Close()
+		for ; iterator.Valid(); iterator.Next() {
+			var rp RUNEProvider
+			k.Cdc().MustUnmarshal(iterator.Value(), &rp)
+			if rp.RuneAddress.Empty() {
+				continue
+			}
+			providerUnits = providerUnits.Add(rp.Units)
 		}
+
 		poolUnits := runePool.PoolUnits.Add(runePool.PendingPoolUnits)
 
 		if !providerUnits.Equal(poolUnits) {

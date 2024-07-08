@@ -154,10 +154,7 @@ func (k KVStoreDummy) GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress
 }
 func (k KVStoreDummy) SetRUNEProvider(ctx cosmos.Context, rp RUNEProvider)        {}
 func (k KVStoreDummy) GetRUNEProviderIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) GetRUNEProviderUnitsTotal(ctx cosmos.Context) (cosmos.Uint, error) {
-	return cosmos.ZeroUint(), kaboom
-}
-func (k KVStoreDummy) RemoveRUNEProvider(ctx cosmos.Context, rp RUNEProvider) {}
+func (k KVStoreDummy) RemoveRUNEProvider(ctx cosmos.Context, rp RUNEProvider)     {}
 
 func (k KVStoreDummy) GetRagnarokBlockHeight(_ cosmos.Context) (int64, error) {
 	return 0, kaboom

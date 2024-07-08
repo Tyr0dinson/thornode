@@ -59,7 +59,7 @@ asserts:
   - .coins[0].amount == "667700000000"
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -79,7 +79,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -115,7 +115,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -223,7 +223,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_pig }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .deposit_amount == "10"
@@ -248,7 +248,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_pig }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .deposit_amount == "10" # no change
