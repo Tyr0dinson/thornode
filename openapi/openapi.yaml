@@ -1617,6 +1617,8 @@ components:
       required:
         - rune_address
         - units
+        - value
+        - pnl
         - deposit_amount
         - withdraw_amount
         - last_deposit_height
@@ -1628,6 +1630,12 @@ components:
         units:
           type: string
           example: "1234"
+        value:
+          type: string
+          example: "123456"
+        pnl:
+          type: string
+          example: "123456"
         deposit_amount:
           type: string
           example: "6677"

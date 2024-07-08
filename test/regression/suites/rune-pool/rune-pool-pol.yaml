@@ -126,12 +126,14 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
   - .last_deposit_height == 5
   - .units|tonumber == ${POL_DEPOSIT}
+  - .value|tonumber == ${POL_VALUE}
+  - .pnl|tonumber == 0 # provider entered after loss incurred
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
@@ -159,7 +161,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
@@ -167,6 +169,8 @@ asserts:
   - .units|tonumber == 0
   - .last_deposit_height == 5
   - .last_withdraw_height == 6
+  - .value|tonumber == 0
+  - .pnl|tonumber == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
@@ -204,11 +208,14 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
+  - .withdraw_amount|tonumber == ${POL_VALUE}
   - .last_deposit_height == 8
+  - .value|tonumber == 2*${POL_VALUE}
+  - .pnl|tonumber == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
@@ -234,12 +241,15 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
+  - .withdraw_amount|tonumber == ${POL_VALUE}
   - .units|tonumber == 2*${POL_DEPOSIT}
   - .last_deposit_height == 8
+  - .value|tonumber == 2*${POL_VALUE}-907291
+  - .pnl|tonumber == -907291 # incurred loss from POL deposit
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
@@ -267,14 +277,16 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
-  - .withdraw_amount|tonumber == 2*${POL_VALUE}-453645
+  - .withdraw_amount|tonumber == 2*${POL_VALUE}-907290/2
   - .units|tonumber == ${POL_DEPOSIT}
   - .last_deposit_height == 8
   - .last_withdraw_height == 10
+  - .value|tonumber == ${POL_VALUE}-907290/2 # half of loss realized on withdraw
+  - .pnl|tonumber == -907290
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
@@ -345,14 +357,16 @@ asserts:
   - .runepool.pending_pool_units|tonumber == ${POL_DEPOSIT}
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
-  - .withdraw_amount|tonumber == 2*${POL_VALUE}-453645
+  - .withdraw_amount|tonumber == 2*${POL_VALUE}-907290/2
   - .units|tonumber == ${POL_DEPOSIT}
   - .last_deposit_height == 8
   - .last_withdraw_height == 10
+  - .value|tonumber == ${POL_VALUE}-270719352
+  - .pnl|tonumber == -270719352-907290/2
 ---
 ########################################################################################
 # RUNEPool withdraw remaining from pending
@@ -377,7 +391,7 @@ asserts:
   - .runepool.pending_pool_units|tonumber == 0
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/rune_providers/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
@@ -385,3 +399,5 @@ asserts:
   - .units|tonumber == 0
   - .last_deposit_height == 8
   - .last_withdraw_height == 15
+  - .value|tonumber == 0
+  - .pnl|tonumber == -270719352-907290/2

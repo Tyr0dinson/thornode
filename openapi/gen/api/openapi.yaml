@@ -2461,12 +2461,20 @@ components:
         last_withdraw_height: 82745
         rune_address: THOR.RUNE
         units: "1234"
+        value: "123456"
+        pnl: "123456"
       properties:
         rune_address:
           example: THOR.RUNE
           type: string
         units:
           example: "1234"
+          type: string
+        value:
+          example: "123456"
+          type: string
+        pnl:
+          example: "123456"
           type: string
         deposit_amount:
           example: "6677"
@@ -2486,8 +2494,10 @@ components:
       - deposit_amount
       - last_deposit_height
       - last_withdraw_height
+      - pnl
       - rune_address
       - units
+      - value
       - withdraw_amount
       type: object
     LiquidityProviderSummary:

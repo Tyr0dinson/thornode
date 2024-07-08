@@ -551,13 +551,26 @@ func queryRUNEProvider(ctx cosmos.Context, path []string, req abci.RequestQuery,
 	if err != nil {
 		return nil, fmt.Errorf("unable to GetRUNEProvider: %s", err)
 	}
+
+	// get runepool value to determine current value and pnl
+	runePool, err := mgr.Keeper().GetRUNEPool(ctx)
 	if err != nil {
-		ctx.Logger().Error("unable to GetRUNEProvider", "error", err)
-		return nil, fmt.Errorf("unable to GetRUNEProvider: %w", err)
+		return nil, fmt.Errorf("fail to get RUNE pool: %w", err)
 	}
+	runePoolValue, err := runePoolValue(ctx, mgr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get rune pool value: %w", err)
+	}
+	providerValue := common.GetSafeShare(rp.Units, runePool.TotalUnits(), runePoolValue)
+	providerPnl := providerValue.BigInt()
+	providerPnl.Sub(providerPnl, rp.DepositAmount.BigInt())
+	providerPnl.Add(providerPnl, rp.WithdrawAmount.BigInt())
+
 	result := openapi.RUNEProvider{
 		RuneAddress:        rp.RuneAddress.String(),
 		Units:              rp.Units.String(),
+		Value:              providerValue.String(),
+		Pnl:                providerPnl.String(),
 		DepositAmount:      rp.DepositAmount.String(),
 		WithdrawAmount:     rp.WithdrawAmount.String(),
 		LastDepositHeight:  rp.LastDepositHeight,
@@ -568,15 +581,33 @@ func queryRUNEProvider(ctx cosmos.Context, path []string, req abci.RequestQuery,
 
 // queryRUNEProviders
 func queryRUNEProviders(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
+	// get runepool value to determine current value and pnl
+	runePool, err := mgr.Keeper().GetRUNEPool(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get RUNE pool: %w", err)
+	}
+	runePoolValue, err := runePoolValue(ctx, mgr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get rune pool value: %w", err)
+	}
+
 	var runeProviders []openapi.RUNEProvider
 	iterator := mgr.Keeper().GetRUNEProviderIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var rp types.RUNEProvider
 		mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &rp)
+
+		providerValue := common.GetSafeShare(rp.Units, runePool.TotalUnits(), runePoolValue)
+		providerPnl := providerValue.BigInt()
+		providerPnl.Sub(providerPnl, rp.DepositAmount.BigInt())
+		providerPnl.Add(providerPnl, rp.WithdrawAmount.BigInt())
+
 		runeProviders = append(runeProviders, openapi.RUNEProvider{
 			RuneAddress:        rp.RuneAddress.String(),
 			Units:              rp.Units.String(),
+			Value:              providerValue.String(),
+			Pnl:                providerPnl.String(),
 			DepositAmount:      rp.DepositAmount.String(),
 			WithdrawAmount:     rp.WithdrawAmount.String(),
 			LastDepositHeight:  rp.LastDepositHeight,
