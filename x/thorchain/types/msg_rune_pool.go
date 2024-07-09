@@ -71,20 +71,8 @@ func (m MsgRunePoolWithdraw) Type() string { return "rune_pool_withdraw" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgRunePoolWithdraw) ValidateBasic() error {
-	if !m.Tx.Chain.Equals(common.THORChain) {
-		return cosmos.ErrUnauthorized("chain must be THORChain")
-	}
-	if len(m.Tx.Coins) != 1 {
-		return cosmos.ErrInvalidCoins("coins must be length 1 (RUNE)")
-	}
-	if !m.Tx.Coins[0].Asset.Chain.IsTHORChain() {
-		return cosmos.ErrInvalidCoins("coin chain must be THORChain")
-	}
-	if !m.Tx.Coins[0].Asset.IsNativeRune() {
-		return cosmos.ErrInvalidCoins("coin must be RUNE")
-	}
-	if m.Tx.Coins[0].Amount.IsZero() {
-		return cosmos.ErrUnknownRequest("coins amount must be zero")
+	if len(m.Tx.Coins) != 0 {
+		return cosmos.ErrInvalidCoins("coins must be empty (no amount)")
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress("signer must not be empty")
