@@ -375,7 +375,6 @@
       ],
       "reserve_contributors": null,
       "rune_pool": {
-        "pending_pool_units": "0",
         "pool_units": "0",
         "reserve_units": "0"
       },
