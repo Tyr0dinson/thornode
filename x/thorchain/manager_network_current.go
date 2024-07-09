@@ -1100,6 +1100,9 @@ func (vm *NetworkMgrVCUR) removePOLLiquidity(
 		basisPts = cosmos.OneUint()
 	}
 
+	// adjust rune amount to reflect basis points of withdraw
+	runeAmt = common.GetSafeShare(basisPts, maxBps, lpRune)
+
 	// rune pool tracks the reserve and pooler unit shares of pol
 	runePool, err := mgr.Keeper().GetRUNEPool(ctx)
 	if err != nil {
@@ -1107,15 +1110,19 @@ func (vm *NetworkMgrVCUR) removePOLLiquidity(
 	}
 
 	// reserve acquires corresponding runepool units that will be withdrawn
-	deployedUnits := runePool.ReserveUnits.Add(runePool.PoolUnits)
-	withdrawUnits := common.GetSafeShare(basisPts, maxBps, deployedUnits)
-	reserveShortUnits := common.SafeSub(withdrawUnits, runePool.ReserveUnits)
-	if !reserveShortUnits.IsZero() {
-		err = reserveEnterRUNEPool(ctx, mgr, reserveShortUnits)
+	runePoolValue, err := runePoolValue(ctx, mgr)
+	if err != nil {
+		return fmt.Errorf("fail to get rune pool value: %s", err)
+	}
+	reserveRunePoolValue := common.GetSafeShare(runePool.ReserveUnits, runePool.TotalUnits(), runePoolValue)
+	if reserveRunePoolValue.LT(runeAmt) {
+		rebalanceRune := common.SafeSub(runeAmt, reserveRunePoolValue)
+		err = reserveEnterRUNEPool(ctx, mgr, rebalanceRune)
 		if err != nil {
 			return fmt.Errorf("fail to enter runepool: %s", err)
 		}
 	}
+	withdrawUnits := common.GetSafeShare(runeAmt, runePoolValue, runePool.TotalUnits())
 
 	// fetch updated runepool
 	runePool, err = mgr.Keeper().GetRUNEPool(ctx)
@@ -1140,7 +1147,7 @@ func (vm *NetworkMgrVCUR) removePOLLiquidity(
 	}
 
 	// withdraw was successful, update the runepool units accordingly
-	runePool.ReserveUnits = runePool.ReserveUnits.Sub(withdrawUnits)
+	runePool.ReserveUnits = common.SafeSub(runePool.ReserveUnits, withdrawUnits)
 	mgr.Keeper().SetRUNEPool(ctx, runePool)
 
 	return nil

@@ -2027,9 +2027,8 @@ func migrateStoreV134(ctx cosmos.Context, mgr *Mgrs) {
 		return
 	}
 	rp := RUNEPool{
-		ReserveUnits:     value,
-		PoolUnits:        cosmos.ZeroUint(),
-		PendingPoolUnits: cosmos.ZeroUint(),
+		ReserveUnits: value,
+		PoolUnits:    cosmos.ZeroUint(),
 	}
 	mgr.Keeper().SetRUNEPool(ctx, rp)
 }

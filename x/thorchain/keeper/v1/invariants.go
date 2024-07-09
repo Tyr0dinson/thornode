@@ -343,7 +343,7 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 			providerUnits = providerUnits.Add(rp.Units)
 		}
 
-		poolUnits := runePool.PoolUnits.Add(runePool.PendingPoolUnits)
+		poolUnits := runePool.PoolUnits
 
 		if !providerUnits.Equal(poolUnits) {
 			msg = []string{fmt.Sprintf("pool units %s != provider units %s", poolUnits, providerUnits)}

@@ -4,9 +4,9 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**ReserveUnits** | **string** |  | 
-**PoolUnits** | **string** |  | 
-**PendingPoolUnits** | **string** |  | 
+**ReserveUnits** | **string** | the units of RUNEPool owned by the reserve | 
+**PoolUnits** | **string** | the units of RUNEPool owned by providers (including pending) | 
+**PendingPoolUnits** | **string** | the units of RUNEPool owned by providers that remain pending | 
 
 ## Methods
 

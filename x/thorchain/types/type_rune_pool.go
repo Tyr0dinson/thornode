@@ -6,12 +6,11 @@ import (
 
 func NewRUNEPool() RUNEPool {
 	return RUNEPool{
-		ReserveUnits:     cosmos.ZeroUint(),
-		PoolUnits:        cosmos.ZeroUint(),
-		PendingPoolUnits: cosmos.ZeroUint(),
+		ReserveUnits: cosmos.ZeroUint(),
+		PoolUnits:    cosmos.ZeroUint(),
 	}
 }
 
 func (rp RUNEPool) TotalUnits() cosmos.Uint {
-	return rp.ReserveUnits.Add(rp.PoolUnits).Add(rp.PendingPoolUnits)
+	return rp.ReserveUnits.Add(rp.PoolUnits)
 }

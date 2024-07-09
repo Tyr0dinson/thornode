@@ -1605,12 +1605,15 @@ components:
         reserve_units:
           type: string
           example: "123456"
+          description: the units of RUNEPool owned by the reserve
         pool_units:
           type: string
           example: "123456"
+          description: the units of RUNEPool owned by providers (including pending)
         pending_pool_units:
           type: string
           example: "123456"
+          description: the units of RUNEPool owned by providers that remain pending
 
     RUNEProvider:
       type: object

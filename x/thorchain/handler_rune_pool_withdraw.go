@@ -127,10 +127,18 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 		affiliateAmount = common.GetSafeShare(msg.AffiliateBasisPoints, maxBps, withdrawYield)
 	}
 
+	// compute withdraw amount
+	runePoolValue, err := runePoolValue(ctx, h.mgr)
+	if err != nil {
+		return fmt.Errorf("fail to get rune pool value: %w", err)
+	}
+	withdrawAmount := common.GetSafeShare(withdrawUnits, runePool.TotalUnits(), runePoolValue)
+
 	// if insufficient pending units, reserve should enter to create space for withdraw
-	if withdrawUnits.GT(runePool.PendingPoolUnits) {
-		reserveShortUnits := common.SafeSub(withdrawUnits, runePool.PendingPoolUnits)
-		err = reserveEnterRUNEPool(ctx, h.mgr, reserveShortUnits)
+	pendingRune := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
+	if withdrawAmount.GT(pendingRune) {
+		reserveEnterRune := common.SafeSub(withdrawAmount, pendingRune)
+		err = reserveEnterRUNEPool(ctx, h.mgr, reserveEnterRune)
 		if err != nil {
 			return fmt.Errorf("fail to reserve enter rune pool: %w", err)
 		}
@@ -142,16 +150,12 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 		}
 	}
 
-	// compute withdraw amount
-	pendingRune := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
-	withdrawAmount := common.GetSafeShare(withdrawUnits, runePool.PendingPoolUnits, pendingRune)
-
 	// update provider and rune pool records
 	runeProvider.Units = common.SafeSub(runeProvider.Units, withdrawUnits)
 	runeProvider.WithdrawAmount = runeProvider.WithdrawAmount.Add(withdrawAmount)
 	runeProvider.LastWithdrawHeight = ctx.BlockHeight()
 	h.mgr.Keeper().SetRUNEProvider(ctx, runeProvider)
-	runePool.PendingPoolUnits = common.SafeSub(runePool.PendingPoolUnits, withdrawUnits)
+	runePool.PoolUnits = common.SafeSub(runePool.PoolUnits, withdrawUnits)
 	h.mgr.Keeper().SetRUNEPool(ctx, runePool)
 
 	// send the affiliate fee

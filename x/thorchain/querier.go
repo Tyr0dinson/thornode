@@ -520,6 +520,14 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("fail to get RUNE pool: %w", err)
 	}
 
+	// calculate pending units
+	runePoolValue, err := runePoolValue(ctx, mgr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get rune pool value: %w", err)
+	}
+	pendingRune := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
+	pendingUnits := common.GetSafeShare(pendingRune, runePoolValue, runePool.TotalUnits())
+
 	result := openapi.RUNEPoolResponse{
 		Pol: openapi.POL{
 			RuneDeposited:  pol.RuneDeposited.String(),
@@ -531,7 +539,7 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		Runepool: openapi.RUNEPool{
 			ReserveUnits:     runePool.ReserveUnits.String(),
 			PoolUnits:        runePool.PoolUnits.String(),
-			PendingPoolUnits: runePool.PendingPoolUnits.String(),
+			PendingPoolUnits: pendingUnits.String(),
 		},
 	}
 

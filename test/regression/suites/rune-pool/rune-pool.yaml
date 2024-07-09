@@ -234,7 +234,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
   - .runepool.reserve_units == "0"
-  - .runepool.pool_units == "0"
+  - .runepool.pool_units == "10"
   - .runepool.pending_pool_units == "10"
 ---
 type: tx-deposit

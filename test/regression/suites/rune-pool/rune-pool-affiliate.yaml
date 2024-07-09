@@ -141,22 +141,22 @@ asserts:
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 1 }}'
-    chain: BTC
-    from_address: {{ addr_btc_cat }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "1000000000" # 10 BTC
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:r:{{ addr_thor_dog }}"
-  block_height: 1
-  finalise_height: 1
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1000000000" # 10 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:r:{{ addr_thor_dog }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -170,13 +170,12 @@ asserts:
   - .pol.value|tonumber == 898826956
   - .pol.pnl|tonumber == ${POL_PNL=621022977}
   - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == 683775343
-  - .runepool.pending_pool_units|tonumber == 1291312303
+  - .runepool.pool_units|tonumber == 1975087646
+  - .runepool.pending_pool_units|tonumber == 1292388930
 ---
 ########################################################################################
 # Withdraw RUNEPool with affiliate
 ########################################################################################
----
 type: check # Check pooler balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
@@ -200,7 +199,7 @@ count: 1
 type: check # Check pooler balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE} + 2285685198
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE} + 2284267733
 ---
 type: check # Check affiliate balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}

@@ -82,7 +82,7 @@ func (h RunePoolDepositHandler) handle(ctx cosmos.Context, msg MsgRunePoolDeposi
 }
 
 func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDeposit) error {
-	// get runepool value before our deposit
+	// get rune pool value before deposit
 	runePoolValue, err := runePoolValue(ctx, h.mgr)
 	if err != nil {
 		return fmt.Errorf("fail to get rune pool value: %s", err)
@@ -126,7 +126,7 @@ func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDe
 	// if there are no units, this is the initial deposit
 	depositUnits := msg.Tx.Coins[0].Amount
 
-	// compute the new provider units
+	// compute deposit units
 	if !runePool.TotalUnits().IsZero() {
 		depositRune := msg.Tx.Coins[0].Amount
 		depositUnits = common.GetSafeShare(depositRune, runePoolValue, runePool.TotalUnits())
@@ -135,7 +135,7 @@ func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDe
 	// update the provider and rune pool records
 	runeProvider.Units = runeProvider.Units.Add(depositUnits)
 	h.mgr.Keeper().SetRUNEProvider(ctx, runeProvider)
-	runePool.PendingPoolUnits = runePool.PendingPoolUnits.Add(depositUnits)
+	runePool.PoolUnits = runePool.PoolUnits.Add(depositUnits)
 	h.mgr.Keeper().SetRUNEPool(ctx, runePool)
 
 	// rebalance ownership from reserve to poolers if able

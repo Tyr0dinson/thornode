@@ -16,8 +16,11 @@ import (
 
 // RUNEPool struct for RUNEPool
 type RUNEPool struct {
+	// the units of RUNEPool owned by the reserve
 	ReserveUnits string `json:"reserve_units"`
+	// the units of RUNEPool owned by providers (including pending)
 	PoolUnits string `json:"pool_units"`
+	// the units of RUNEPool owned by providers that remain pending
 	PendingPoolUnits string `json:"pending_pool_units"`
 }
 
