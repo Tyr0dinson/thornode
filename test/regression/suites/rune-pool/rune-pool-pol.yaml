@@ -94,6 +94,13 @@ asserts:
   - .pol.pnl|tonumber == -2911570
   - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  # show we are over 25% synth per pool target + 10% buffer
+  - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL=0.372443405}
+  - .balance_rune == "${RUNE_BALANCE=396992616858}"
+---
 ########################################################################################
 # Ensure Max Deposit is Respected
 ########################################################################################
@@ -111,6 +118,12 @@ asserts:
   - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
   - .runepool.pool_units|tonumber == 0
   - .runepool.pending_pool_units|tonumber == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL}
+  - .balance_rune == "${RUNE_BALANCE}"
 ---
 ########################################################################################
 # RUNEPool deposit acquires POL ownership from reserve
