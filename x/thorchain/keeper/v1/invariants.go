@@ -329,6 +329,7 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 		runePool, err := k.GetRUNEPool(ctx)
 		if err != nil {
 			ctx.Logger().Error("error getting rune pool", "error", err)
+			return []string{err.Error()}, true
 		}
 
 		providerUnits := cosmos.ZeroUint()
