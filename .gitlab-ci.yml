@@ -182,7 +182,7 @@ build-thorscan:
 
 build-events:
   rules:
-    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != "thorchain/thornode"
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
     - if: $CI_COMMIT_BRANCH == "develop"
       when: always
