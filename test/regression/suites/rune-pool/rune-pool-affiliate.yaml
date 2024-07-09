@@ -186,6 +186,12 @@ endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
   - .result|length == 0
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+asserts:
+  - .pnl|tonumber == ${POL_PNL=628183315}
+  - .value|tonumber == ${POL_VALUE}+${POL_PNL}
+---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
@@ -199,9 +205,9 @@ count: 1
 type: check # Check pooler balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE} + 2284267733
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}+${POL_PNL}/2-${GAS=2000000}-${ROUNDING=0.5}
 ---
 type: check # Check affiliate balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == 314091658 # 314091658 is not 2285685198 / 2???
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POL_PNL}/2+${ROUNDING=0.5} # 50% of PNL
