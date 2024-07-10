@@ -261,7 +261,7 @@ paths:
           description: OK
       tags:
       - Liquidity Providers
-  /thorchain/rune_pool:
+  /thorchain/runepool:
     get:
       description: Returns the pool information for the RUNE pool.
       operationId: runePool
@@ -285,7 +285,7 @@ paths:
           description: OK
       tags:
       - RUNE Pool
-  /thorchain/rune_providers/{address}:
+  /thorchain/rune_provider/{address}:
     get:
       description: Returns the RUNE Provider information for an address.
       operationId: runeProvider

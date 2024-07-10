@@ -69,7 +69,7 @@ func (a *RUNEPoolApiService) RunePoolExecute(r ApiRunePoolRequest) (*RUNEPoolRes
 		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
 	}
 
-	localVarPath := localBasePath + "/thorchain/rune_pool"
+	localVarPath := localBasePath + "/thorchain/runepool"
 
 	localVarHeaderParams := make(map[string]string)
 	localVarQueryParams := url.Values{}
@@ -181,7 +181,7 @@ func (a *RUNEPoolApiService) RuneProviderExecute(r ApiRuneProviderRequest) (*RUN
 		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
 	}
 
-	localVarPath := localBasePath + "/thorchain/rune_providers/{address}"
+	localVarPath := localBasePath + "/thorchain/rune_provider/{address}"
 	localVarPath = strings.Replace(localVarPath, "{"+"address"+"}", url.PathEscape(parameterToString(r.address, "")), -1)
 
 	localVarHeaderParams := make(map[string]string)

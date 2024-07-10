@@ -173,7 +173,7 @@ paths:
 
   # ------------------------------ rune pool ------------------------------
 
-  /thorchain/rune_pool:
+  /thorchain/runepool:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
     get:
@@ -191,7 +191,7 @@ paths:
 
   # ------------------------------ rune providers ------------------------------
 
-  /thorchain/rune_providers/{address}:
+  /thorchain/rune_provider/{address}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/address"

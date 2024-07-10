@@ -4,8 +4,8 @@ All URIs are relative to *http://localhost*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
-[**RunePool**](RUNEPoolApi.md#RunePool) | **Get** /thorchain/rune_pool | 
-[**RuneProvider**](RUNEPoolApi.md#RuneProvider) | **Get** /thorchain/rune_providers/{address} | 
+[**RunePool**](RUNEPoolApi.md#RunePool) | **Get** /thorchain/runepool | 
+[**RuneProvider**](RUNEPoolApi.md#RuneProvider) | **Get** /thorchain/rune_provider/{address} | 
 [**RuneProviders**](RUNEPoolApi.md#RuneProviders) | **Get** /thorchain/rune_providers | 
 
 

@@ -118,8 +118,8 @@ Class | Method | HTTP request | Description
 *QuoteApi* | [**Quotesaverdeposit**](docs/QuoteApi.md#quotesaverdeposit) | **Get** /thorchain/quote/saver/deposit | 
 *QuoteApi* | [**Quotesaverwithdraw**](docs/QuoteApi.md#quotesaverwithdraw) | **Get** /thorchain/quote/saver/withdraw | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
-*RUNEPoolApi* | [**RunePool**](docs/RUNEPoolApi.md#runepool) | **Get** /thorchain/rune_pool | 
-*RUNEPoolApi* | [**RuneProvider**](docs/RUNEPoolApi.md#runeprovider) | **Get** /thorchain/rune_providers/{address} | 
+*RUNEPoolApi* | [**RunePool**](docs/RUNEPoolApi.md#runepool) | **Get** /thorchain/runepool | 
+*RUNEPoolApi* | [**RuneProvider**](docs/RUNEPoolApi.md#runeprovider) | **Get** /thorchain/rune_provider/{address} | 
 *RUNEPoolApi* | [**RuneProviders**](docs/RUNEPoolApi.md#runeproviders) | **Get** /thorchain/rune_providers | 
 *SaversApi* | [**Saver**](docs/SaversApi.md#saver) | **Get** /thorchain/pool/{asset}/saver/{address} | 
 *SaversApi* | [**Savers**](docs/SaversApi.md#savers) | **Get** /thorchain/pool/{asset}/savers | 
