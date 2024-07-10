@@ -146,7 +146,7 @@ const (
 	EVMDisableContractWhitelist
 	OperationalVotesMin
 	RUNEPoolEnabled
-	RUNEPoolCooldown
+	RUNEPoolDepositMaturityBlocks
 	SaversEjectInterval
 )
 

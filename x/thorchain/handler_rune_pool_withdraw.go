@@ -96,10 +96,12 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 		return fmt.Errorf("unable to GetRUNEProvider: %s", err)
 	}
 
-	// check if the user has waited long enough since last withdraw or deposit
-	err = checkRUNEPoolCooldown(ctx, h.mgr, runeProvider)
-	if err != nil {
-		return err
+	// ensure the deposit has reached maturity
+	depositMaturity := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolDepositMaturityBlocks)
+	currentBlockHeight := ctx.BlockHeight()
+	blocksSinceLastDeposit := currentBlockHeight - runeProvider.LastDepositHeight
+	if blocksSinceLastDeposit < depositMaturity {
+		return fmt.Errorf("deposit reaches maturity in %d blocks", depositMaturity-blocksSinceLastDeposit)
 	}
 
 	// rune pool tracks the reserve and pooler unit shares of pol

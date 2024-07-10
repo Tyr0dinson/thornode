@@ -108,12 +108,6 @@ func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDe
 		return fmt.Errorf("unable to GetRUNEProvider: %s", err)
 	}
 
-	// check if the user has waited long enough since last withdraw or deposit
-	err = checkRUNEPoolCooldown(ctx, h.mgr, runeProvider)
-	if err != nil {
-		return err
-	}
-
 	runeProvider.LastDepositHeight = ctx.BlockHeight()
 	runeProvider.DepositAmount = runeProvider.DepositAmount.Add(msg.Tx.Coins[0].Amount)
 

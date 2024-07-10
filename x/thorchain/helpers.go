@@ -1440,35 +1440,3 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 
 	return total, nil
 }
-
-// checkRUNEPoolCooldown checks if the provider has waited long enough since the last
-// deposit or withdraw to the runepool.
-func checkRUNEPoolCooldown(ctx cosmos.Context, mgr Manager, runeProvider RUNEProvider) error {
-	runePoolCooldown := mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolCooldown)
-	currentBlockHeight := ctx.BlockHeight()
-
-	blocksSinceLastWithdraw := currentBlockHeight - runeProvider.LastWithdrawHeight
-	blocksSinceLastDeposit := currentBlockHeight - runeProvider.LastDepositHeight
-
-	if blocksSinceLastWithdraw < runePoolCooldown {
-		tryAgain := runePoolCooldown - blocksSinceLastWithdraw
-		return fmt.Errorf(
-			"last withdraw (%d blocks ago) sooner than RUNEPool cooldown (%d), please wait %d blocks and try again",
-			blocksSinceLastWithdraw,
-			runePoolCooldown,
-			tryAgain,
-		)
-	}
-
-	if blocksSinceLastDeposit < runePoolCooldown {
-		tryAgain := runePoolCooldown - blocksSinceLastDeposit
-		return fmt.Errorf(
-			"last deposit (%d blocks ago) sooner than RUNEPool cooldown (%d), please wait %d blocks and try again",
-			blocksSinceLastDeposit,
-			runePoolCooldown,
-			tryAgain,
-		)
-	}
-
-	return nil
-}

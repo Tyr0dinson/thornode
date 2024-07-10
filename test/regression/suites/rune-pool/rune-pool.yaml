@@ -197,11 +197,11 @@ asserts:
   - .runepool.pending_pool_units == "0"
 ---
 ########################################################################################
-# deposit rune with insufficient cooldown
+# attempt to withdraw rune with insufficient maturity
 ########################################################################################
 type: tx-mimir
-key: RUNEPoolCooldown
-value: 5
+key: RUNEPoolDepositMaturityBlocks
+value: 2
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
@@ -210,7 +210,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .RUNEPOOLCOOLDOWN == 5
+  - .RUNEPOOLDEPOSITMATURITYBLOCKS == 2
 ---
 type: tx-deposit
 signer: {{ addr_thor_pig }}
@@ -240,9 +240,9 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_pig }}
 coins:
-  - amount: "10"
+  - amount: "0"
     asset: "THOR.RUNE"
-memo: "pool+"
+memo: "pool-:10000"
 ---
 type: create-blocks
 count: 1
@@ -259,4 +259,27 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - >
-    select(.txs[].result.log | contains("last deposit (1 blocks ago) sooner than RUNEPool cooldown (5), please wait 4 blocks and try again"))
+    select(.txs[0].result.log | contains("deposit reaches maturity in 1 blocks"))
+---
+########################################################################################
+# withdraw after maturity
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "0"
+    asset: "THOR.RUNE"
+memo: "pool-:10000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
+asserts:
+  - .rune_address == "{{ addr_thor_pig }}"
+  - .value == "0"
+  - .withdraw_amount == "10" # no change
+  - .deposit_amount == "10" # no change
+  - .last_deposit_height == 8 # no change
+  - .last_withdraw_height == 10
