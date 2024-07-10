@@ -946,6 +946,7 @@ func NewEventRUNEPoolWithdraw(
 	basisPts int64,
 	runeAmount cosmos.Uint,
 	units cosmos.Uint,
+	txID common.TxID,
 	affAddr common.Address,
 	affBps int64,
 	affAmt cosmos.Uint,
@@ -955,6 +956,7 @@ func NewEventRUNEPoolWithdraw(
 		BasisPoints:       basisPts,
 		RuneAmount:        runeAmount,
 		Units:             units,
+		TxId:              txID,
 		AffiliateAddress:  affAddr,
 		AffiliateBasisPts: affBps,
 		AffiliateAmount:   affAmt,
@@ -973,6 +975,7 @@ func (m *EventRUNEPoolWithdraw) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("basis_points", strconv.FormatInt(m.BasisPoints, 10)),
 		cosmos.NewAttribute("rune_amoumt", m.RuneAmount.String()),
 		cosmos.NewAttribute("units", m.Units.String()),
+		cosmos.NewAttribute("tx_id", m.TxId.String()),
 		cosmos.NewAttribute("affiliate_address", m.AffiliateAddress.String()),
 		cosmos.NewAttribute("affiliate_basis_points", strconv.FormatInt(m.AffiliateBasisPts, 10)),
 		cosmos.NewAttribute("affiliate_amount", m.AffiliateAmount.String()))
@@ -984,11 +987,13 @@ func NewEventRUNEPoolDeposit(
 	runeAddress cosmos.AccAddress,
 	runeAmount cosmos.Uint,
 	units cosmos.Uint,
+	txid common.TxID,
 ) *EventRUNEPoolDeposit {
 	return &EventRUNEPoolDeposit{
 		RuneAddress: runeAddress,
 		RuneAmount:  runeAmount,
 		Units:       units,
+		TxId:        txid,
 	}
 }
 
@@ -1003,12 +1008,13 @@ func (m *EventRUNEPoolDeposit) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("rune_address", m.RuneAddress.String()),
 		cosmos.NewAttribute("rune_amoumt", m.RuneAmount.String()),
 		cosmos.NewAttribute("units", m.Units.String()),
+		cosmos.NewAttribute("tx_id", m.TxId.String()),
 	)
 	return cosmos.Events{evt}, nil
 }
 
-// NewEventSetMimir create a new instance of EventSetMimir
 func NewEventSetMimir(key, value string) *EventSetMimir {
+	// NewEventSetMimir create a new instance of EventSetMimir
 	return &EventSetMimir{
 		Key:   key,
 		Value: value,

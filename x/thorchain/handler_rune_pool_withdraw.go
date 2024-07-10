@@ -192,6 +192,7 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 		int64(msg.BasisPoints.Uint64()),
 		withdrawAmount,
 		withdrawUnits,
+		msg.Tx.ID,
 		msg.AffiliateAddress,
 		int64(msg.AffiliateBasisPoints.Uint64()),
 		affiliateAmount,

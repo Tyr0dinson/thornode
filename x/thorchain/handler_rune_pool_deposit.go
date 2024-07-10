@@ -155,6 +155,7 @@ func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDe
 		runeProvider.RuneAddress,
 		msg.Tx.Coins[0].Amount,
 		depositUnits,
+		msg.Tx.ID,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, depositEvent); err != nil {
 		ctx.Logger().Error("fail to emit rune pool deposit event", "error", err)

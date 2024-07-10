@@ -160,7 +160,7 @@ asserts:
   - .txs[0].result.events[-1].affiliate_address == "{{ addr_thor_cat }}"
   - .txs[0].result.events[-1].affiliate_amount == "0"
   - .txs[0].result.events[-1].affiliate_basis_points == "15"
-  - .txs[0].result.events[-1]|keys|length == 8
+  - .txs[0].result.events[-1]|keys|length == 9
 ########################################################################################
 # withdraw rune with invalid affiliate pts
 ########################################################################################
