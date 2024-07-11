@@ -72,7 +72,7 @@ func (m MsgRunePoolWithdraw) Type() string { return "rune_pool_withdraw" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgRunePoolWithdraw) ValidateBasic() error {
-	if !m.Tx.Coins[0].Amount.IsZero() {
+	if !m.Tx.Coins.IsEmpty() {
 		return cosmos.ErrInvalidCoins("coins must be empty (zero amount)")
 	}
 	if m.Signer.Empty() {
