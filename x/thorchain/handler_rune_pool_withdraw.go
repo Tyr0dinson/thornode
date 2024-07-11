@@ -140,6 +140,26 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 	pendingRune := h.mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
 	if withdrawAmount.GT(pendingRune) {
 		reserveEnterRune := common.SafeSub(withdrawAmount, pendingRune)
+
+		// There may be cases where providers are in a state of profit, and for the reserve
+		// to buy their share of POL it must exceed POLMaxNetworkDeposit to cover the profit
+		// of the provider. We allow exceeding this limit up to RUNEPoolMaxReserveBackstop
+		// beyond the POLMaxNetworkDeposit as a circuit breaker. If the circuit breaker is
+		// reached, withdraws will fail pending governance to increase the limit or extend
+		// logic to trigger POL withdraw and sacrifice pool depth to satisfy withdrawals.
+		maxReserveBackstop := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolMaxReserveBackstop)
+		polMaxNetworkDeposit := h.mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
+		maxReserveUsage := cosmos.NewInt(maxReserveBackstop + polMaxNetworkDeposit)
+		pol, err := h.mgr.Keeper().GetPOL(ctx)
+		if err != nil {
+			return fmt.Errorf("fail to get POL: %w", err)
+		}
+		currentReserveDeposit := pol.CurrentDeposit().Sub(runePool.CurrentDeposit())
+		newReserveDeposit := currentReserveDeposit.Add(cosmos.NewIntFromBigInt(reserveEnterRune.BigInt()))
+		if newReserveDeposit.GT(maxReserveUsage) {
+			return fmt.Errorf("reserve enter %d rune exceeds backstop", reserveEnterRune.Uint64())
+		}
+
 		err = reserveEnterRUNEPool(ctx, h.mgr, reserveEnterRune)
 		if err != nil {
 			return fmt.Errorf("fail to reserve enter rune pool: %w", err)
@@ -158,6 +178,7 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 	runeProvider.LastWithdrawHeight = ctx.BlockHeight()
 	h.mgr.Keeper().SetRUNEProvider(ctx, runeProvider)
 	runePool.PoolUnits = common.SafeSub(runePool.PoolUnits, withdrawUnits)
+	runePool.RuneWithdrawn = runePool.RuneWithdrawn.Add(withdrawAmount)
 	h.mgr.Keeper().SetRUNEPool(ctx, runePool)
 
 	// send the affiliate fee

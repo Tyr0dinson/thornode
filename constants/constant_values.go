@@ -147,6 +147,7 @@ const (
 	OperationalVotesMin
 	RUNEPoolEnabled
 	RUNEPoolDepositMaturityBlocks
+	RUNEPoolMaxReserveBackstop
 	SaversEjectInterval
 )
 

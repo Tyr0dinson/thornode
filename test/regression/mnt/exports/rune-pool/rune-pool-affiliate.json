@@ -453,7 +453,9 @@
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
-        "reserve_units": "0"
+        "reserve_units": "0",
+        "rune_deposited": "1972176076",
+        "rune_withdrawn": "2600359391"
       },
       "rune_providers": [
         {

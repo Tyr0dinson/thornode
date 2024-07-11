@@ -279,7 +279,7 @@ endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .value == "0"
-  - .withdraw_amount == "10" # no change
+  - .withdraw_amount == "10"
   - .deposit_amount == "10" # no change
   - .last_deposit_height == 8 # no change
   - .last_withdraw_height == 10

@@ -130,6 +130,7 @@ func (h RunePoolDepositHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolDe
 	runeProvider.Units = runeProvider.Units.Add(depositUnits)
 	h.mgr.Keeper().SetRUNEProvider(ctx, runeProvider)
 	runePool.PoolUnits = runePool.PoolUnits.Add(depositUnits)
+	runePool.RuneDeposited = runePool.RuneDeposited.Add(msg.Tx.Coins[0].Amount)
 	h.mgr.Keeper().SetRUNEPool(ctx, runePool)
 
 	// rebalance ownership from reserve to poolers if able

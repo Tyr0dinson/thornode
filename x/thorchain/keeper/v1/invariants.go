@@ -333,6 +333,8 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 		}
 
 		providerUnits := cosmos.ZeroUint()
+		providerDeposited := cosmos.ZeroUint()
+		providerWithdrawn := cosmos.ZeroUint()
 		iterator := k.GetRUNEProviderIterator(ctx)
 		defer iterator.Close()
 		for ; iterator.Valid(); iterator.Next() {
@@ -342,12 +344,34 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 				continue
 			}
 			providerUnits = providerUnits.Add(rp.Units)
+			providerDeposited = providerDeposited.Add(rp.DepositAmount)
+			providerWithdrawn = providerWithdrawn.Add(rp.WithdrawAmount)
 		}
 
-		poolUnits := runePool.PoolUnits
+		if !providerUnits.Equal(runePool.PoolUnits) {
+			m := fmt.Sprintf(
+				"pool units %s != provider units %s",
+				runePool.PoolUnits, providerUnits,
+			)
+			msg = append(msg, m)
+			broken = true
+		}
 
-		if !providerUnits.Equal(poolUnits) {
-			msg = []string{fmt.Sprintf("pool units %s != provider units %s", poolUnits, providerUnits)}
+		if !providerDeposited.Equal(runePool.RuneDeposited) {
+			m := fmt.Sprintf(
+				"rune deposited %s != provider rune deposited %s",
+				runePool.RuneDeposited, providerDeposited,
+			)
+			msg = append(msg, m)
+			broken = true
+		}
+
+		if !providerWithdrawn.Equal(runePool.RuneWithdrawn) {
+			m := fmt.Sprintf(
+				"rune withdrawn %s != provider rune withdrawn %s",
+				runePool.RuneWithdrawn, providerWithdrawn,
+			)
+			msg = append(msg, m)
 			broken = true
 		}
 

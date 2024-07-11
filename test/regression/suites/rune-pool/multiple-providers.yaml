@@ -26,41 +26,47 @@ signer: {{ addr_thor_dog }}
 sequence: 1
 ---
 type: tx-mimir
+key: RUNEPoolMaxReserveBackstop
+value: 1000000000
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
 key: POLTargetSynthPerPoolDepth
 value: 2500
 signer: {{ addr_thor_dog }}
-sequence: 2
+sequence: 3
 ---
 type: tx-mimir
 key: POLMaxPoolMovement
 value: 5000 # .5%
 signer: {{ addr_thor_dog }}
-sequence: 3
+sequence: 4
 ---
 type: tx-mimir
 key: POLBuffer
 value: 1000
 signer: {{ addr_thor_dog }}
-sequence: 4
+sequence: 5
 ---
 type: tx-mimir
 key: POL-BTC-BTC
 value: 1
 signer: {{ addr_thor_dog }}
-sequence: 5
+sequence: 6
 ---
 type: tx-mimir
 key: RUNEPoolEnabled
 value: 1
 signer: {{ addr_thor_dog }}
-sequence: 6
+sequence: 7
 ---
 # effectively disable emissions to avoid skew for math checks
 type: tx-mimir
 key: EmissionCurve
 value: 1000000000000
 signer: {{ addr_thor_dog }}
-sequence: 7
+sequence: 8
 ---
 type: create-blocks
 count: 1

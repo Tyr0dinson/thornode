@@ -49,6 +49,7 @@ func init() {
 		TradeAccountsEnabled:                1,
 		MaxAffiliateFeeBasisPoints:          10_000,
 		RUNEPoolDepositMaturityBlocks:       0,
+		RUNEPoolMaxReserveBackstop:          0,
 		SaversEjectInterval:                 60,
 	}
 	boolOverrides = map[ConstantName]bool{

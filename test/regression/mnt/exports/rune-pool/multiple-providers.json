@@ -11,7 +11,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "8"
+          "sequence": "9"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -386,6 +386,10 @@
         {
           "key": "RUNEPOOLENABLED",
           "value": "1"
+        },
+        {
+          "key": "RUNEPOOLMAXRESERVEBACKSTOP",
+          "value": "1000000000"
         }
       ],
       "network": {
@@ -438,7 +442,9 @@
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
-        "reserve_units": "1935800814"
+        "reserve_units": "1935800814",
+        "rune_deposited": "3944352152",
+        "rune_withdrawn": "3867424500"
       },
       "rune_providers": [
         {
