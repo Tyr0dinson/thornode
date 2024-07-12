@@ -1595,26 +1595,6 @@ components:
           example: "21999180112172346"
           description: current amount of rune deposited
 
-    RUNEPool:
-      type: object
-      required:
-        - reserve_units
-        - pool_units
-        - pending_pool_units
-      properties:
-        reserve_units:
-          type: string
-          example: "123456"
-          description: the units of RUNEPool owned by the reserve
-        pool_units:
-          type: string
-          example: "123456"
-          description: the units of RUNEPool owned by providers (including pending)
-        pending_pool_units:
-          type: string
-          example: "123456"
-          description: the units of RUNEPool owned by providers that remain pending
-
     RUNEProvider:
       type: object
       required:
@@ -2764,17 +2744,77 @@ components:
     RUNEPoolResponse:
       type: object
       required:
-        - runepool
         - pol
+        - providers
+        - reserve
       properties:
-        runepool:
-          $ref: "#/components/schemas/RUNEPool"
         pol:
           $ref: "#/components/schemas/POL"
+        providers:
+          type: object
+          required:
+            - units
+            - pending_units
+            - pending_rune
+            - value
+            - pnl
+            - rune_deposited
+            - rune_withdrawn
+            - current_deposit
+          properties:
+            units:
+              type: string
+              example: "123456"
+              description: the units of RUNEPool owned by providers (including pending)
+            pending_units:
+              type: string
+              example: "123456"
+              description: the units of RUNEPool owned by providers that remain pending
+            pending_rune:
+              type: string
+              example: "123456"
+              description: the amount of RUNE pending
+            value:
+              type: string
+              example: "123456"
+              description: the value of the provider share of the RUNEPool (includes pending RUNE)
+            pnl:
+              type: string
+              example: "123456"
+              description: the profit and loss of the provider share of the RUNEPool
+            current_deposit:
+              type: string
+              example: "123456"
+              description: the current RUNE deposited by providers
+        reserve:
+          type: object
+          required:
+            - units
+            - value
+            - pnl
+            - rune_deposited
+            - rune_withdrawn
+            - current_deposit
+          properties:
+            units:
+              type: string
+              example: "123456"
+              description: the units of RUNEPool owned by the reserve
+            value:
+              type: string
+              example: "123456"
+              description: the value of the reserve share of the RUNEPool
+            pnl:
+              type: string
+              example: "123456"
+              description: the profit and loss of the reserve share of the RUNEPool
+            current_deposit:
+              type: string
+              example: "123456"
+              description: the current RUNE deposited by the reserve
 
     RUNEProviderResponse:
       $ref: "#/components/schemas/RUNEProvider"
-
     RUNEProvidersResponse:
       type: array
       items:

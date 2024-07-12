@@ -16,18 +16,20 @@ import (
 
 // RUNEPoolResponse struct for RUNEPoolResponse
 type RUNEPoolResponse struct {
-	Runepool RUNEPool `json:"runepool"`
 	Pol POL `json:"pol"`
+	Providers RUNEPoolResponseProviders `json:"providers"`
+	Reserve RUNEPoolResponseReserve `json:"reserve"`
 }
 
 // NewRUNEPoolResponse instantiates a new RUNEPoolResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewRUNEPoolResponse(runepool RUNEPool, pol POL) *RUNEPoolResponse {
+func NewRUNEPoolResponse(pol POL, providers RUNEPoolResponseProviders, reserve RUNEPoolResponseReserve) *RUNEPoolResponse {
 	this := RUNEPoolResponse{}
-	this.Runepool = runepool
 	this.Pol = pol
+	this.Providers = providers
+	this.Reserve = reserve
 	return &this
 }
 
@@ -37,30 +39,6 @@ func NewRUNEPoolResponse(runepool RUNEPool, pol POL) *RUNEPoolResponse {
 func NewRUNEPoolResponseWithDefaults() *RUNEPoolResponse {
 	this := RUNEPoolResponse{}
 	return &this
-}
-
-// GetRunepool returns the Runepool field value
-func (o *RUNEPoolResponse) GetRunepool() RUNEPool {
-	if o == nil {
-		var ret RUNEPool
-		return ret
-	}
-
-	return o.Runepool
-}
-
-// GetRunepoolOk returns a tuple with the Runepool field value
-// and a boolean to check if the value has been set.
-func (o *RUNEPoolResponse) GetRunepoolOk() (*RUNEPool, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.Runepool, true
-}
-
-// SetRunepool sets field value
-func (o *RUNEPoolResponse) SetRunepool(v RUNEPool) {
-	o.Runepool = v
 }
 
 // GetPol returns the Pol field value
@@ -87,13 +65,64 @@ func (o *RUNEPoolResponse) SetPol(v POL) {
 	o.Pol = v
 }
 
+// GetProviders returns the Providers field value
+func (o *RUNEPoolResponse) GetProviders() RUNEPoolResponseProviders {
+	if o == nil {
+		var ret RUNEPoolResponseProviders
+		return ret
+	}
+
+	return o.Providers
+}
+
+// GetProvidersOk returns a tuple with the Providers field value
+// and a boolean to check if the value has been set.
+func (o *RUNEPoolResponse) GetProvidersOk() (*RUNEPoolResponseProviders, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Providers, true
+}
+
+// SetProviders sets field value
+func (o *RUNEPoolResponse) SetProviders(v RUNEPoolResponseProviders) {
+	o.Providers = v
+}
+
+// GetReserve returns the Reserve field value
+func (o *RUNEPoolResponse) GetReserve() RUNEPoolResponseReserve {
+	if o == nil {
+		var ret RUNEPoolResponseReserve
+		return ret
+	}
+
+	return o.Reserve
+}
+
+// GetReserveOk returns a tuple with the Reserve field value
+// and a boolean to check if the value has been set.
+func (o *RUNEPoolResponse) GetReserveOk() (*RUNEPoolResponseReserve, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Reserve, true
+}
+
+// SetReserve sets field value
+func (o *RUNEPoolResponse) SetReserve(v RUNEPoolResponseReserve) {
+	o.Reserve = v
+}
+
 func (o RUNEPoolResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
-		toSerialize["runepool"] = o.Runepool
+		toSerialize["pol"] = o.Pol
 	}
 	if true {
-		toSerialize["pol"] = o.Pol
+		toSerialize["providers"] = o.Providers
+	}
+	if true {
+		toSerialize["reserve"] = o.Reserve
 	}
 	return json.Marshal(toSerialize)
 }

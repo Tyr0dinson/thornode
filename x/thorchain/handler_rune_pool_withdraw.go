@@ -154,7 +154,9 @@ func (h RunePoolWithdrawHandler) handleV134(ctx cosmos.Context, msg MsgRunePoolW
 		if err != nil {
 			return fmt.Errorf("fail to get POL: %w", err)
 		}
-		currentReserveDeposit := pol.CurrentDeposit().Sub(runePool.CurrentDeposit())
+		currentReserveDeposit := pol.CurrentDeposit().
+			Sub(runePool.CurrentDeposit()).
+			Add(cosmos.NewIntFromBigInt(pendingRune.BigInt()))
 		newReserveDeposit := currentReserveDeposit.Add(cosmos.NewIntFromBigInt(reserveEnterRune.BigInt()))
 		if newReserveDeposit.GT(maxReserveUsage) {
 			return fmt.Errorf("reserve enter %d rune exceeds backstop", reserveEnterRune.Uint64())

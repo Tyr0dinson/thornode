@@ -4,14 +4,15 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**Runepool** | [**RUNEPool**](RUNEPool.md) |  | 
 **Pol** | [**POL**](POL.md) |  | 
+**Providers** | [**RUNEPoolResponseProviders**](RUNEPoolResponseProviders.md) |  | 
+**Reserve** | [**RUNEPoolResponseReserve**](RUNEPoolResponseReserve.md) |  | 
 
 ## Methods
 
 ### NewRUNEPoolResponse
 
-`func NewRUNEPoolResponse(runepool RUNEPool, pol POL, ) *RUNEPoolResponse`
+`func NewRUNEPoolResponse(pol POL, providers RUNEPoolResponseProviders, reserve RUNEPoolResponseReserve, ) *RUNEPoolResponse`
 
 NewRUNEPoolResponse instantiates a new RUNEPoolResponse object
 This constructor will assign default values to properties that have it defined,
@@ -25,26 +26,6 @@ will change when the set of required properties is changed
 NewRUNEPoolResponseWithDefaults instantiates a new RUNEPoolResponse object
 This constructor will only assign default values to properties that have it defined,
 but it doesn't guarantee that properties required by API are set
-
-### GetRunepool
-
-`func (o *RUNEPoolResponse) GetRunepool() RUNEPool`
-
-GetRunepool returns the Runepool field if non-nil, zero value otherwise.
-
-### GetRunepoolOk
-
-`func (o *RUNEPoolResponse) GetRunepoolOk() (*RUNEPool, bool)`
-
-GetRunepoolOk returns a tuple with the Runepool field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetRunepool
-
-`func (o *RUNEPoolResponse) SetRunepool(v RUNEPool)`
-
-SetRunepool sets Runepool field to given value.
-
 
 ### GetPol
 
@@ -64,6 +45,46 @@ and a boolean to check if the value has been set.
 `func (o *RUNEPoolResponse) SetPol(v POL)`
 
 SetPol sets Pol field to given value.
+
+
+### GetProviders
+
+`func (o *RUNEPoolResponse) GetProviders() RUNEPoolResponseProviders`
+
+GetProviders returns the Providers field if non-nil, zero value otherwise.
+
+### GetProvidersOk
+
+`func (o *RUNEPoolResponse) GetProvidersOk() (*RUNEPoolResponseProviders, bool)`
+
+GetProvidersOk returns a tuple with the Providers field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetProviders
+
+`func (o *RUNEPoolResponse) SetProviders(v RUNEPoolResponseProviders)`
+
+SetProviders sets Providers field to given value.
+
+
+### GetReserve
+
+`func (o *RUNEPoolResponse) GetReserve() RUNEPoolResponseReserve`
+
+GetReserve returns the Reserve field if non-nil, zero value otherwise.
+
+### GetReserveOk
+
+`func (o *RUNEPoolResponse) GetReserveOk() (*RUNEPoolResponseReserve, bool)`
+
+GetReserveOk returns a tuple with the Reserve field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetReserve
+
+`func (o *RUNEPoolResponse) SetReserve(v RUNEPoolResponseReserve)`
+
+SetReserve sets Reserve field to given value.
 
 
 

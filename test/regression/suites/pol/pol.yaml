@@ -78,7 +78,7 @@ asserts:
   - .pol.current_deposit|tonumber == 48350402323
   - .pol.rune_deposited|tonumber == 48350402323
   - .pol.rune_withdrawn|tonumber == 0
-  - .runepool.reserve_units|tonumber == 48350402323
+  - .reserve.units|tonumber == 48350402323
 ---
 type: create-blocks
 count: 1
@@ -89,7 +89,7 @@ asserts:
   - .pol.current_deposit|tonumber == 102619017519
   - .pol.rune_deposited|tonumber == 102619017519
   - .pol.rune_withdrawn|tonumber == 0
-  - .runepool.reserve_units|tonumber == 96700804646
+  - .reserve.units|tonumber == 96700804646
 ---
 ########################################################################################
 # Ensure Max Deposit is Respected
@@ -103,7 +103,7 @@ asserts:
   - .pol.current_deposit|tonumber == 102619017519
   - .pol.rune_deposited|tonumber == 102619017519
   - .pol.rune_withdrawn|tonumber == 0
-  - .runepool.reserve_units|tonumber == 96700804646
+  - .reserve.units|tonumber == 96700804646
 ---
 ########################################################################################
 # Burn Synth to Trigger Withdraw
@@ -138,7 +138,7 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 8707298
   - .pol.value|tonumber == 87064290494
   - .pol.pnl|tonumber == -15546019727
-  - .runepool.reserve_units|tonumber == 96700804646-9670080
+  - .reserve.units|tonumber == 96700804646-9670080
 ---
 type: tx-mimir
 key: POLMaxPoolMovement
@@ -156,7 +156,7 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 76316877188
   - .pol.value|tonumber == 0
   - .pol.pnl|tonumber == -26302140331
-  - .runepool.reserve_units|tonumber == 0
+  - .reserve.units|tonumber == 0
 ---
 ########################################################################################
 # Nothing else to withdraw
@@ -172,4 +172,4 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 76316877188
   - .pol.value|tonumber == 0
   - .pol.pnl|tonumber == -26302140331
-  - .runepool.reserve_units|tonumber == 0
+  - .reserve.units|tonumber == 0

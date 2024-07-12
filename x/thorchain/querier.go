@@ -528,6 +528,17 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 	pendingRune := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
 	pendingUnits := common.GetSafeShare(pendingRune, runePoolValue, runePool.TotalUnits())
 
+	// calculate provider shares
+	providerValue := common.GetSafeShare(runePool.PoolUnits, runePool.TotalUnits(), runePoolValue)
+	providerPnl := sdk.NewIntFromBigInt(providerValue.BigInt()).Sub(runePool.CurrentDeposit())
+
+	// calculate reserve shares
+	reserveValue := common.GetSafeShare(runePool.ReserveUnits, runePool.TotalUnits(), runePoolValue)
+	reserveCurrentDeposit := pol.CurrentDeposit().
+		Sub(runePool.CurrentDeposit()).
+		Add(cosmos.NewIntFromBigInt(pendingRune.BigInt()))
+	reservePnl := sdk.NewIntFromBigInt(reserveValue.BigInt()).Sub(reserveCurrentDeposit)
+
 	result := openapi.RUNEPoolResponse{
 		Pol: openapi.POL{
 			RuneDeposited:  pol.RuneDeposited.String(),
@@ -536,10 +547,19 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Pnl:            pnl.String(),
 			CurrentDeposit: pol.CurrentDeposit().String(),
 		},
-		Runepool: openapi.RUNEPool{
-			ReserveUnits:     runePool.ReserveUnits.String(),
-			PoolUnits:        runePool.PoolUnits.String(),
-			PendingPoolUnits: pendingUnits.String(),
+		Providers: openapi.RUNEPoolResponseProviders{
+			Units:          runePool.PoolUnits.String(),
+			PendingUnits:   pendingUnits.String(),
+			PendingRune:    pendingRune.String(),
+			Value:          providerValue.String(),
+			Pnl:            providerPnl.String(),
+			CurrentDeposit: runePool.CurrentDeposit().String(),
+		},
+		Reserve: openapi.RUNEPoolResponseReserve{
+			Units:          runePool.ReserveUnits.String(),
+			Value:          reserveValue.String(),
+			Pnl:            reservePnl.String(),
+			CurrentDeposit: reserveCurrentDeposit.String(),
 		},
 	}
 

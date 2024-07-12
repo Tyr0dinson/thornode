@@ -97,8 +97,13 @@ asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1975087646}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.pnl|tonumber == -2911570
-  - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
+  - .pol.value|tonumber == ${POL_VALUE=1972176076}
+  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
+  - .reserve.units|tonumber == ${POL_DEPOSIT}
+  - 'all(.providers|.[]; . == "0")'
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
@@ -119,11 +124,14 @@ asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE=1972176076}
-  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
-  - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pool_units|tonumber == 0
-  - .runepool.pending_pool_units|tonumber == 0
+  - .pol.value|tonumber == ${POL_VALUE}
+  - .pol.pnl|tonumber == ${POL_PNL}
+  - .reserve.units|tonumber == ${POL_DEPOSIT}
+  - .providers.units|tonumber == 0
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
@@ -162,9 +170,13 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE}
   - .pol.pnl|tonumber == ${POL_PNL}
-  - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - .providers.units|tonumber == ${POL_DEPOSIT}
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # RUNEPool withdraw releases POL ownership to reserve
@@ -199,9 +211,11 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE}
   - .pol.pnl|tonumber == ${POL_PNL}
-  - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pool_units|tonumber == 0
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == ${POL_DEPOSIT}
+  - 'all(.providers|.[]; . == "0")'
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # Excess RUNEPool deposit remains pending
@@ -244,9 +258,13 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE}
   - .pol.pnl|tonumber == ${POL_PNL}
-  - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == ${POL_DEPOSIT}*2
-  - .runepool.pending_pool_units|tonumber == ${POL_DEPOSIT}
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - .providers.units|tonumber == ${POL_DEPOSIT}*2
+  - .providers.pending_units|tonumber == ${POL_DEPOSIT}
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # Increasing POL deploys from RUNEPool
@@ -278,9 +296,12 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-910232
   - .pol.pnl|tonumber == ${POL_PNL}-910232
-  - .runepool.reserve_units|tonumber == ${RESERVE_UNITS=12502636} # reserve entered too
-  - .runepool.pool_units|tonumber == 2*${POL_DEPOSIT} # fully deployed all pending
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == ${RESERVE_UNITS=12502636} # reserve entered too
+  - .providers.units|tonumber == 2*${POL_DEPOSIT} # fully deployed all pending
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # RUNEPool withdraw releases POL ownership to reserve
@@ -315,9 +336,12 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-910232
   - .pol.pnl|tonumber == ${POL_PNL}-910232
-  - .runepool.reserve_units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}
-  - .runepool.pool_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}
+  - .providers.units|tonumber == ${POL_DEPOSIT}
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # Burn synth to trigger POL withdraw
@@ -347,9 +371,12 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 1081622244
   - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-910232-1619315894
   - .pol.pnl|tonumber == ${POL_PNL}-910232-537693650
-  - .runepool.reserve_units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}-1253791297
-  - .runepool.pool_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}-1253791297
+  - .providers.units|tonumber == ${POL_DEPOSIT}
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # Drain reserve POL first
@@ -360,7 +387,11 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units|tonumber == 0
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # Drain RUNEPool POL eventually
@@ -371,9 +402,13 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pending_pool_units|tonumber == ${POL_DEPOSIT}
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - .providers.units|tonumber == ${POL_DEPOSIT}
+  - .providers.pending_units|tonumber == ${POL_DEPOSIT}
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
@@ -405,9 +440,14 @@ endpoint: http://localhost:1317/thorchain/runepool
 asserts:
   - .pol.value|tonumber == 0
   - .pol.pnl|tonumber == -550554816
-  - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == 0
-  - .runepool.pending_pool_units|tonumber == 0
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - .providers.units|tonumber == 0
+  - .providers.value|tonumber == 0
+  - .providers.pending_units|tonumber == 0
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}

@@ -99,9 +99,10 @@ docs/QuoteLoanOpenResponse.md
 docs/QuoteSaverDepositResponse.md
 docs/QuoteSaverWithdrawResponse.md
 docs/QuoteSwapResponse.md
-docs/RUNEPool.md
 docs/RUNEPoolApi.md
 docs/RUNEPoolResponse.md
+docs/RUNEPoolResponseProviders.md
+docs/RUNEPoolResponseReserve.md
 docs/RUNEProvider.md
 docs/Saver.md
 docs/SaversApi.md
@@ -200,8 +201,9 @@ model_quote_loan_open_response.go
 model_quote_saver_deposit_response.go
 model_quote_saver_withdraw_response.go
 model_quote_swap_response.go
-model_rune_pool.go
 model_rune_pool_response.go
+model_rune_pool_response_providers.go
+model_rune_pool_response_reserve.go
 model_rune_provider.go
 model_saver.go
 model_streaming_status.go

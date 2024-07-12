@@ -91,8 +91,11 @@ asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1975087646}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.pnl|tonumber == -2911570
-  - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
+  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
+  - .reserve.units|tonumber == ${POL_DEPOSIT}
+  - .reserve.current_deposit|tonumber == ${POL_DEPOSIT}
+  - .reserve.pnl|tonumber == ${POL_PNL}
+  - 'all(.providers|.[]; . == "0")'
 ---
 ########################################################################################
 # Ensure Max Deposit is Respected
@@ -107,10 +110,11 @@ asserts:
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE=1972176076}
-  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
-  - .runepool.reserve_units|tonumber == ${POL_DEPOSIT}
-  - .runepool.pool_units|tonumber == 0
-  - .runepool.pending_pool_units|tonumber == 0
+  - .pol.pnl|tonumber == ${POL_PNL}
+  - .reserve.units|tonumber == ${POL_DEPOSIT}
+  - .providers.units|tonumber == 0
+  - .providers.pending_units|tonumber == 0
+  - 'all(.providers|.[]; . == "0")'
 ---
 ########################################################################################
 # RUNEPool deposit acquires POL ownership from reserve
@@ -169,9 +173,10 @@ asserts:
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.value|tonumber == 898826956
   - .pol.pnl|tonumber == ${POL_PNL=621022977}
-  - .runepool.reserve_units|tonumber == 0
-  - .runepool.pool_units|tonumber == 1975087646
-  - .runepool.pending_pool_units|tonumber == 1292388930
+  - .reserve.units|tonumber == 0
+  - .reserve.value|tonumber == 0
+  - .providers.units|tonumber == 1975087646
+  - .providers.pending_units|tonumber == 1292388930
 ---
 ########################################################################################
 # Withdraw RUNEPool with affiliate

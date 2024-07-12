@@ -92,7 +92,11 @@ asserts:
   - .pol.rune_deposited == "${POL_DEPOSIT}"
   - .pol.rune_withdrawn == "0"
   - .pol.pnl == "-2911570"
-  - .runepool.reserve_units == "${POL_DEPOSIT}"
+  - .reserve.units == "${POL_DEPOSIT}"
+  - 'all(.providers|.[]; . == "0")'
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # RUNEPool deposit acquires POL ownership from reserve
@@ -120,8 +124,16 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "0" # provider owns all pol
-  - .pol.pnl == "-2911570"
+  - .pol.pnl == "${RESERVE_PNL=-2911570}"
+  - .reserve.units == "0" # provider owns all pol
+  - .reserve.value == "0"
+  - .reserve.pnl == "${RESERVE_PNL}" # reserve still has loss
+  - .providers.pnl == "0"
+  - .providers.pending_units == "0"
+  - .providers.pending_rune == "0"
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # sell rune to cause POL profit to fox
@@ -139,9 +151,15 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "0" # provider owns all pol
   - .pol.pnl == "17092178"
   - .pol.rune_withdrawn == "0" # no rune withdrawn
+  - .reserve.units == "0" # provider owns all pol
+  - .reserve.value == "0"
+  - .reserve.pnl == "${RESERVE_PNL}" # reserve has same loss
+  - .providers.pnl == "${PROVIDER_PNL=20003748}" # provider has profit
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)
 ---
 ########################################################################################
 # withdraw requiring reserve to backstop fox profix
@@ -193,7 +211,13 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "${POL_DEPOSIT}"
-  - .runepool.pool_units == "0"
-  - .runepool.pending_pool_units == "0"
   - .pol.pnl == "17092178"
+  - .reserve.units == "${POL_DEPOSIT}"
+  - .reserve.pnl == "${RESERVE_PNL}" # reserve has same loss
+  - .providers.units == "0"
+  - .providers.pending_units == "0"
+  - .providers.value == "0"
+  - .providers.pnl == "${PROVIDER_PNL}" # provider has same profit
+  - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
+  - (.reserve.value|tonumber)+(.providers.value|tonumber)-(.providers.pending_rune|tonumber) == (.pol.value|tonumber)
+  - (.reserve.current_deposit|tonumber)+(.providers.current_deposit|tonumber)-(.providers.pending_rune|tonumber) == (.pol.current_deposit|tonumber)

@@ -145,9 +145,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "0"
-  - .runepool.pool_units == "0"
-  - .runepool.pending_pool_units == "0"
+  - 'all(.pol|.[]; . == "0")'
+  - 'all(.reserve|.[]; . == "0")'
+  - 'all(.providers|.[]; . == "0")'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
@@ -192,9 +192,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "0"
-  - .runepool.pool_units == "0"
-  - .runepool.pending_pool_units == "0"
+  - 'all(.pol|.[]; . == "0")'
+  - 'all(.reserve|.[]; . == "0")'
+  - 'all(.providers|.[]; . == "0")'
 ---
 ########################################################################################
 # attempt to withdraw rune with insufficient maturity
@@ -233,9 +233,16 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .runepool.reserve_units == "0"
-  - .runepool.pool_units == "10"
-  - .runepool.pending_pool_units == "10"
+  - 'all(.pol|.[]; . == "0")'
+  - 'all(.reserve|.[]; . == "0")'
+  - .reserve.units == "0"
+  - .reserve.value == "0"
+  - .reserve.pnl == "0"
+  - .reserve.current_deposit == "0"
+  - .providers.units == "10"
+  - .providers.value == "10"
+  - .providers.pnl == "0"
+  - .providers.pending_units == "10"
 ---
 type: tx-deposit
 signer: {{ addr_thor_pig }}
@@ -283,3 +290,10 @@ asserts:
   - .deposit_amount == "10" # no change
   - .last_deposit_height == 8 # no change
   - .last_withdraw_height == 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - 'all(.pol|.[]; . == "0")'
+  - 'all(.reserve|.[]; . == "0")'
+  - 'all(.providers|.[]; . == "0")'
