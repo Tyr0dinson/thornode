@@ -122,5 +122,4 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.code? and .code != 0)] | length == 1
-  - ..|select(.code? and .code != 0).log| contains("bond cannot be zero")
-  # Unintuitive error due to message-type-specific GetCoin(common.RuneAsset())
+  - ..|select(.code? and .code != 0).log| contains("(bond) memos are for the (bond) module, for which messages must only contain RUNE")

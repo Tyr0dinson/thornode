@@ -469,10 +469,10 @@
           ]
         },
         "result": {
-          "code": 6,
-          "log": "failed to execute message; message index: 0: bond cannot be zero: unknown request",
+          "code": 99,
+          "log": "failed to execute message; message index: 0: (bond) memos are for the (bond) module, for which messages must only contain RUNE: internal error",
           "gas_wanted": "-1",
-          "gas_used": "104114",
+          "gas_used": "68311",
           "events": [
             {
               "fee": "",
