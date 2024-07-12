@@ -923,7 +923,7 @@ func migrateStoreV123(ctx cosmos.Context, mgr *Mgrs) {
 	danglingInboundTxIDs := []common.TxID{
 		"15D60EDF026A662E5D8BF3A36A50EBF9C0BD7B169340F669C4816376FCF5605E",
 	}
-	requeueDanglingActionsV123(ctx, mgr, danglingInboundTxIDs)
+	requeueDanglingActionsV123_deprecated(ctx, mgr, danglingInboundTxIDs)
 
 	// Requeue dropped attempt to rescue funds sent to old vault
 	// Original tx: F9FA0745290D5EDB287F8641B390171B45BD84C7628A1A45DADB876F9359B4F8
