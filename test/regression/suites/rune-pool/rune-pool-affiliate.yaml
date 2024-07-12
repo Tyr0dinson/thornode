@@ -216,3 +216,61 @@ type: check # Check affiliate balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
   - .result[] | select(.denom == "rune")|.amount|tonumber == ${POL_PNL}/2+${ROUNDING=0.5} # 50% of PNL
+---
+########################################################################################
+# Re-deposit
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/runepool
+asserts:
+  - .pol.value|tonumber == 898826956
+  - .pol.pnl|tonumber == ${POL_PNL=621022977}
+  - .providers.value|tonumber == 1292388930
+  - .providers.pnl|tonumber == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${POL_VALUE}"
+    asset: "rune"
+memo: "pool+"
+---
+type: check # Check pooler balance after deposit
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2300308091657}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+asserts:
+  - .pnl|tonumber == 0
+  - .value|tonumber == ${POL_VALUE}+${POL_PNL}
+---
+########################################################################################
+# Wtihdraw with affiliate, but no positive PNL so no affiliate fee awarded
+########################################################################################
+type: check # Check pooler balance before withdraw
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2298023823924}
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "pool-:5000:{{ addr_thor_pig }}:5"
+---
+type: create-blocks
+count: 1
+---
+type: check # Check pooler balance after withdraw, 
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+asserts:
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2-${GAS=2000000}
+---
+type: check # Check affiliate balance after withdraw, should still be 0
+endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+asserts:
+  - .result|length == 0
+---
