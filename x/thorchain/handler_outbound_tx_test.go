@@ -47,7 +47,7 @@ func (s *HandlerOutboundTxSuite) TestValidate(c *C) {
 
 	handler := NewOutboundTxHandler(mgr)
 
-	addr, err := k.vault.PubKey.GetAddress(common.BNBChain)
+	addr, err := k.vault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
@@ -198,7 +198,7 @@ func newOutboundTxHandlerTestHelper(c *C) outboundTxHandlerTestHelper {
 	}
 	asgardVault.AddFunds(vaultCoins)
 	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-	addr, err := asgardVault.PubKey.GetAddress(common.RuneAsset().Chain)
+	addr, err := asgardVault.GetAddress(common.RuneAsset().Chain)
 	c.Check(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
@@ -312,7 +312,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerShouldUpdateTxOut(c *C) {
 	for _, tc := range testCases {
 		helper := newOutboundTxHandlerTestHelper(c)
 		handler := NewOutboundTxHandler(helper.mgr)
-		fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+		fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 		c.Assert(err, IsNil)
 		tx := NewObservedTx(common.Tx{
 			ID:    GetRandomTxHash(),
@@ -339,7 +339,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxNormalCase(c *C) {
 	helper := newOutboundTxHandlerTestHelper(c)
 	handler := NewOutboundTxHandler(helper.mgr)
 
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -366,7 +366,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxNormalCase(c *C) {
 func (s *HandlerOutboundTxSuite) TestOuboundTxHandlerSendExtraFundShouldBeSlashed(c *C) {
 	helper := newOutboundTxHandlerTestHelper(c)
 	handler := NewOutboundTxHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -396,7 +396,7 @@ func (s *HandlerOutboundTxSuite) TestOuboundTxHandlerSendExtraFundShouldBeSlashe
 func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldBeSlashed(c *C) {
 	helper := newOutboundTxHandlerTestHelper(c)
 	handler := NewOutboundTxHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -423,7 +423,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerSendAdditionalCoinsShouldB
 func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerInvalidObservedTxVoterShouldSlash(c *C) {
 	helper := newOutboundTxHandlerTestHelper(c)
 	handler := NewOutboundTxHandler(helper.mgr)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.BNBChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),
@@ -472,7 +472,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerETHChainSpendTooMuchGasSho
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
 	pool.LPUnits = pool.BalanceRune
 	c.Assert(helper.keeper.SetPool(helper.ctx, pool), IsNil)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.ETHChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 	usdtAsset, err := common.NewAsset("ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306")
 	c.Assert(err, IsNil)
@@ -522,7 +522,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerETHChainSpendTooMuchGasPer
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
 	pool.LPUnits = pool.BalanceRune
 	c.Assert(helper.keeper.SetPool(helper.ctx, pool), IsNil)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.ETHChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 	usdtAsset, err := common.NewAsset("ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306")
 	c.Assert(err, IsNil)
@@ -579,7 +579,7 @@ func (s *HandlerOutboundTxSuite) TestOutboundTxHandlerMismatchDecimalShouldNotSl
 	pool.Decimals = 6
 	pool.LPUnits = pool.BalanceRune
 	c.Assert(helper.keeper.SetPool(helper.ctx, pool), IsNil)
-	fromAddr, err := helper.asgardVault.PubKey.GetAddress(common.ETHChain)
+	fromAddr, err := helper.asgardVault.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 
 	txOutStorage := newTxOutStorageVCUR(helper.keeper, helper.constAccessor, NewDummyEventMgr(), newGasMgrVCUR(helper.constAccessor, helper.keeper))

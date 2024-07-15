@@ -146,7 +146,7 @@ func (s *VaultSuite) TestVaultSort(c *C) {
 
 	ethVault := vaults.SelectByMinCoin(common.ETHAsset)
 	c.Check(ethVault.PubKey.Equals(vault.PubKey), Equals, true)
-	addr, err := vault.PubKey.GetAddress(common.BNBChain)
+	addr, err := vault.GetAddress(common.BNBChain)
 	c.Check(err, IsNil)
 	result, err := vaults.HasAddress(common.BNBChain, addr)
 	c.Check(err, IsNil)

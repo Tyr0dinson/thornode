@@ -15,10 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
-	ethclient "github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -35,7 +37,6 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/aggregators"
 	mem "gitlab.com/thorchain/thornode/x/thorchain/memo"
-	tssp "gitlab.com/thorchain/tss/go-tss/tss"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -139,9 +140,6 @@ func NewEVMClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to get contract abi: %w", err)
 	}
-
-	// TODO: Do we need to call this?
-	pubkeyMgr.GetPubKeys()
 
 	c := &EVMClient{
 		logger:       log.With().Str("module", "evm").Stringer("chain", cfg.ChainID).Logger(),

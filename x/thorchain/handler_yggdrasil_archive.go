@@ -106,7 +106,7 @@ func (h YggdrasilHandler) handleV1(ctx cosmos.Context, msg MsgYggdrasil) (*cosmo
 				ctx.Logger().Error("fail to get vaults", "error", err)
 			}
 			for _, v := range append(active, retiring...) {
-				addr, err := v.PubKey.GetAddress(msg.Tx.Chain)
+				addr, err := v.GetAddress(msg.Tx.Chain)
 				if err != nil {
 					ctx.Logger().Error("fail to get address from pubkey", "error", err)
 				}
@@ -250,7 +250,7 @@ func (h YggdrasilHandler) handleV96(ctx cosmos.Context, msg MsgYggdrasil) (*cosm
 				ctx.Logger().Error("fail to get vaults", "error", err)
 			}
 			for _, v := range append(active, retiring...) {
-				addr, err := v.PubKey.GetAddress(msg.Tx.Chain)
+				addr, err := v.GetAddress(msg.Tx.Chain)
 				if err != nil {
 					ctx.Logger().Error("fail to get address from pubkey", "error", err)
 				}

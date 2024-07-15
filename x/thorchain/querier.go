@@ -358,7 +358,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []openapi.VaultAddr
 	var result []openapi.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		addr, err := vault.GetAddress(c)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue

@@ -42,7 +42,7 @@ func (HandlerRagnarokSuite) TestRagnarok(c *C) {
 	result, err := handler.Run(ctx, msg)
 	c.Check(result, IsNil, Commentf("invalid message should result an error"))
 	c.Check(err, NotNil, Commentf("invalid message should result an error"))
-	addr, err := keeper.vault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.vault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
@@ -129,7 +129,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 	retireVault.AddFunds(vaultCoins)
 	newVault := GetRandomVault()
 	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	txout.TxArray = append(txout.TxArray, TxOutItem{
 		Chain:       common.BNBChain,
@@ -146,7 +146,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 		retireVault:       retireVault,
 		txout:             txout,
 	}
-	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.retireVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	handler := NewRagnarokHandler(NewDummyMgrWithKeeper(keeper))
 	tx := NewObservedTx(common.Tx{
@@ -182,7 +182,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	retireVault.AddFunds(vaultCoins)
 	newVault := GetRandomVault()
 	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	pool := NewPool()
@@ -202,7 +202,7 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 		txout:             txout,
 		pool:              pool,
 	}
-	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.retireVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	mgr := NewDummyMgrWithKeeper(keeper)
