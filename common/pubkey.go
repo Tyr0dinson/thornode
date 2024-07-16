@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 	"sync"
@@ -14,13 +15,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
-	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
-
+	eth "github.com/ethereum/go-ethereum/crypto"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
-
-	eth "github.com/ethereum/go-ethereum/crypto"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 	"github.com/tendermint/tendermint/crypto"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -41,6 +40,52 @@ var (
 	pubkeyToAddressCache   = make(map[string]Address)
 	pubkeyToAddressCacheMu = &sync.Mutex{}
 )
+
+const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+// Base58Encode encodes a byte array to a base58 encoded string
+func base58Encode(input []byte) string {
+	bi := new(big.Int).SetBytes(input)
+	base := big.NewInt(58)
+	zero := big.NewInt(0)
+	mod := &big.Int{}
+
+	var result []byte
+
+	for bi.Cmp(zero) != 0 {
+		bi.DivMod(bi, base, mod)
+		result = append(result, alphabet[mod.Int64()])
+	}
+
+	// Leading zero bytes
+	for _, b := range input {
+		if b == 0x00 {
+			result = append(result, alphabet[0])
+		} else {
+			break
+		}
+	}
+
+	// Reverse the result
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return string(result)
+}
+
+// ConvertEdDSAPubKeyToSolAddress converts an EdDSA public key to a Solana address
+func convertEdDSAPubKeyToSolAddress(pubKey []byte) (string, error) {
+	// Check if the decoded public key is 32 bytes
+	if len(pubKey) != 32 {
+		return "", fmt.Errorf("invalid public key length: expected 32 bytes, got %d bytes", len(pubKey))
+	}
+
+	// Encode the public key to base58 to get the Solana address
+	solAddress := base58Encode(pubKey)
+
+	return solAddress, nil
+}
 
 // NewPubKey create a new instance of PubKey
 // key is bech32 encoded string
@@ -194,6 +239,15 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
+	case SOLChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(pubKey))
+		if err != nil {
+			return NoAddress, err
+		}
+		addressString, err = convertEdDSAPubKeyToSolAddress(pk.Bytes())
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

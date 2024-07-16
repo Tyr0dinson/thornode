@@ -9,6 +9,7 @@ import (
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/hashicorp/go-multierror"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
@@ -24,6 +25,7 @@ const (
 	THORChain  = Chain("THOR")
 	GAIAChain  = Chain("GAIA")
 	AVAXChain  = Chain("AVAX")
+	SOLChain   = Chain("SOL")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -39,6 +41,7 @@ var AllChains = [...]Chain{
 	THORChain,
 	GAIAChain,
 	AVAXChain,
+	SOLChain,
 }
 
 type SigningAlgo string
@@ -136,7 +139,9 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	// Only SigningAlgoSecp256k1 is supported for now
+	if c == SOLChain {
+		return SigningAlgoEd25519
+	}
 	return SigningAlgoSecp256k1
 }
 

@@ -298,6 +298,7 @@ func queryVault(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, error) {
 	resp := openapi.Vault{
 		BlockHeight:           wrapInt64(v.BlockHeight),
 		PubKey:                wrapString(v.PubKey.String()),
+		PubKeyEddsa:           wrapString(v.PubKeyEddsa.String()),
 		Coins:                 castCoins(v.Coins...),
 		Type:                  wrapString(v.Type.String()),
 		Status:                v.Status.String(),
@@ -333,6 +334,7 @@ func queryAsgardVaults(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			vaultsWithFunds = append(vaultsWithFunds, openapi.Vault{
 				BlockHeight:           wrapInt64(vault.BlockHeight),
 				PubKey:                wrapString(vault.PubKey.String()),
+				PubKeyEddsa:           wrapString(vault.PubKeyEddsa.String()),
 				Coins:                 castCoins(vault.Coins...),
 				Type:                  wrapString(vault.Type.String()),
 				Status:                vault.Status.String(),
@@ -356,7 +358,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []openapi.VaultAddr
 	var result []openapi.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		addr, err := vault.GetAddress(c)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue
@@ -392,8 +394,9 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
 				resp.Asgard = append(resp.Asgard, openapi.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
+					PubKey:      vault.PubKey.String(),
+					PubKeyEddsa: wrapString(vault.PubKeyEddsa.String()),
+					Routers:     castVaultRouters(vault.Routers),
 				})
 			case InactiveVault:
 				// skip inactive vaults that have never received an inbound
@@ -414,8 +417,9 @@ func queryVaultsPubkeys(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 				allMembers := vault.Membership
 				if HasSuperMajority(len(activeMembers), len(allMembers)) {
 					resp.Inactive = append(resp.Inactive, openapi.VaultInfo{
-						PubKey:  vault.PubKey.String(),
-						Routers: castVaultRouters(vault.Routers),
+						PubKey:      vault.PubKey.String(),
+						PubKeyEddsa: wrapString(vault.PubKeyEddsa.String()),
+						Routers:     castVaultRouters(vault.Routers),
 					})
 				}
 			}
@@ -648,7 +652,7 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		isChainTradingPaused := mgr.Keeper().IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := mgr.Keeper().IsLPPaused(ctx, chain)
 
-		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)

@@ -21,6 +21,7 @@ func (s *TypeTssSuite) TestVoter(c *C) {
 		"hello",
 		pks,
 		pk,
+		GetRandomPubKey(),
 	)
 	c.Check(tss.IsEmpty(), Equals, false)
 	c.Check(tss.String(), Equals, "hello")
@@ -42,7 +43,7 @@ func (s *TypeTssSuite) TestVoter(c *C) {
 	c.Assert(err, IsNil)
 	tss.Sign(addr, chains)
 	c.Check(tss.HasConsensus(), Equals, true)
-	v1 := NewTssVoter("", nil, common.EmptyPubKey)
+	v1 := NewTssVoter("", nil, common.EmptyPubKey, common.EmptyPubKey)
 	c.Check(v1.IsEmpty(), Equals, true)
 }
 

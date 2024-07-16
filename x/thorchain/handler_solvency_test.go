@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
-	. "gopkg.in/check.v1"
 )
 
 type HandlerSolvencyTestSuite struct{}

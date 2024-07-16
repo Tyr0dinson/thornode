@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
-	ethclient "github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -139,9 +139,6 @@ func NewEVMClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to get contract abi: %w", err)
 	}
-
-	// TODO: Do we need to call this?
-	pubkeyMgr.GetPubKeys()
 
 	c := &EVMClient{
 		logger:       log.With().Str("module", "evm").Stringer("chain", cfg.ChainID).Logger(),

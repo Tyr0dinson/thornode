@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
+	"github.com/cosmos/btcutil/base58"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/common"
@@ -107,6 +108,12 @@ func NewAddress(address string) (Address, error) {
 	// Check DOGE address formats with mocknet
 	_, err = dogutil.DecodeAddress(address, &dogchaincfg.RegressionNetParams)
 	if err == nil {
+		return Address(address), nil
+	}
+
+	// Check ED25519 (base58 encoded) addresses
+	_, _, err = base58.CheckDecode(address)
+	if err != nil {
 		return Address(address), nil
 	}
 
