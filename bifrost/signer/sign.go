@@ -375,7 +375,8 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			s.logger.Error().Interface("keygenBlock", keygenBlock).Msg("done with keygen retries")
 		}
 
-		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime); err != nil {
+		// TODO: once integtrate go-tss with EDDSA support , change the common.EmptyPubKey to correct poolPubKeyEddsa
+		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, common.EmptyPubKey); err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 			s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 		}
@@ -390,7 +391,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	}
 }
 
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64) error {
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
 		common.THORChain,
@@ -414,7 +415,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, blame
 		}
 	}
 
-	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, keyshares, blame, input, keygenType, chains, height, keygenTime)
+	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen id: %w", err)
 	}

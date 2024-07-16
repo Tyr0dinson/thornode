@@ -25,6 +25,7 @@ func NewTssHandler(mgr Manager) BaseHandler[*MsgTssPool] {
 		mgr:    mgr,
 		logger: MsgTssPoolLogger,
 		validators: NewValidators[*MsgTssPool]().
+			Register("1.134.0", MsgTssPoolValidateV134).
 			Register("1.124.0", MsgTssPoolValidateV124).
 			Register("1.121.0", MsgTssPoolValidateV121).
 			Register("1.114.0", MsgTssPoolValidateV114).
@@ -45,7 +46,7 @@ func MsgTssPoolLogger(ctx cosmos.Context, msg *MsgTssPool) {
 	ctx.Logger().Info("handleMsgTssPool request", "ID:", msg.ID)
 }
 
-func MsgTssPoolValidateV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) error {
+func MsgTssPoolValidateV134(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ func MsgTssPoolValidateV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) er
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}
 
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}

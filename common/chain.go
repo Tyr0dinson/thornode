@@ -9,23 +9,25 @@ import (
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/hashicorp/go-multierror"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
 const (
-	EmptyChain = Chain("")
-	BNBChain   = Chain("BNB")
-	BSCChain   = Chain("BSC")
-	ETHChain   = Chain("ETH")
-	BTCChain   = Chain("BTC")
-	LTCChain   = Chain("LTC")
-	BCHChain   = Chain("BCH")
-	DOGEChain  = Chain("DOGE")
-	THORChain  = Chain("THOR")
-	TERRAChain = Chain("TERRA")
-	GAIAChain  = Chain("GAIA")
-	AVAXChain  = Chain("AVAX")
+	EmptyChain  = Chain("")
+	BNBChain    = Chain("BNB")
+	BSCChain    = Chain("BSC")
+	ETHChain    = Chain("ETH")
+	BTCChain    = Chain("BTC")
+	LTCChain    = Chain("LTC")
+	BCHChain    = Chain("BCH")
+	DOGEChain   = Chain("DOGE")
+	THORChain   = Chain("THOR")
+	TERRAChain  = Chain("TERRA")
+	GAIAChain   = Chain("GAIA")
+	AVAXChain   = Chain("AVAX")
+	SolanaChain = Chain("SOL")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -145,7 +147,9 @@ func (c Chain) IsBNB() bool {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	// Only SigningAlgoSecp256k1 is supported for now
+	if c == SolanaChain {
+		return SigningAlgoEd25519
+	}
 	return SigningAlgoSecp256k1
 }
 

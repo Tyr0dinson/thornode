@@ -341,7 +341,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 
 	for _, vault := range vaults {
 		// Ensure THORNode are not sending from and to the same address
-		fromAddr, err := vault.PubKey.GetAddress(toi.Chain)
+		fromAddr, err := vault.GetAddress(toi.Chain)
 		if err != nil || fromAddr.IsEmpty() || toi.ToAddress.Equals(fromAddr) {
 			continue
 		}
@@ -367,6 +367,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 		}
 
 		toi.VaultPubKey = vault.PubKey
+		toi.VaultPubKeyEddsa = vault.PubKeyEddsa
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()

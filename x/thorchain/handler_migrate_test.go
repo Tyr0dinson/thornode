@@ -39,7 +39,7 @@ func (HandlerMigrateSuite) TestMigrate(c *C) {
 
 	handler := NewMigrateHandler(NewDummyMgrWithKeeper(keeper))
 
-	addr, err := keeper.vault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.vault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	tx := NewObservedTx(common.Tx{
@@ -120,15 +120,16 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 
 	newVault := GetRandomVault()
 	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	txout.TxArray = append(txout.TxArray, TxOutItem{
-		Chain:       common.BNBChain,
-		InHash:      common.BlankTxID,
-		ToAddress:   newVaultAddr,
-		VaultPubKey: retireVault.PubKey,
-		Coin:        common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
-		Memo:        NewMigrateMemo(1).String(),
+		Chain:            common.BNBChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        newVaultAddr,
+		VaultPubKey:      retireVault.PubKey,
+		Coin:             common.NewCoin(common.BNBAsset, cosmos.NewUint(1024)),
+		Memo:             NewMigrateMemo(1).String(),
+		VaultPubKeyEddsa: retireVault.PubKeyEddsa,
 	})
 	keeper := &TestMigrateKeeperHappyPath{
 		Keeper:            k,
@@ -137,7 +138,7 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 		retireVault:       retireVault,
 		txout:             txout,
 	}
-	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.retireVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	handler := NewMigrateHandler(NewDummyMgrWithKeeper(keeper))
 	tx := NewObservedTx(common.Tx{
@@ -167,7 +168,7 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 	}
 	retireVault.AddFunds(vaultCoins)
 	txout := NewTxOut(1)
-	newVaultAddr, err := newVault.PubKey.GetAddress(common.BNBChain)
+	newVaultAddr, err := newVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 
 	pool := NewPool()
@@ -187,7 +188,7 @@ func (HandlerMigrateSuite) TestSlash(c *C) {
 		txout:             txout,
 		pool:              pool,
 	}
-	addr, err := keeper.retireVault.PubKey.GetAddress(common.BNBChain)
+	addr, err := keeper.retireVault.GetAddress(common.BNBChain)
 	c.Assert(err, IsNil)
 	mgr := NewDummyMgrWithKeeper(keeper)
 	mgr.slasher = newSlasherVCUR(keeper, NewDummyEventMgr())

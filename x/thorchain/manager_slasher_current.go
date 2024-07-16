@@ -335,7 +335,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					for i, action := range voter.Actions {
 						if action.Equals(toi) {
 							voter.Actions[i].VaultPubKey = vault.PubKey
-
+							voter.Actions[i].VaultPubKeyEddsa = vault.PubKeyEddsa
 							if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
 								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
 
@@ -356,6 +356,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				}
 				// Save the toi to as a new toi, select Asgard to send it this time.
 				toi.VaultPubKey = vault.PubKey
+				toi.VaultPubKeyEddsa = vault.PubKeyEddsa
 
 				// update max gas
 				if !maxGasCoin.IsEmpty() {

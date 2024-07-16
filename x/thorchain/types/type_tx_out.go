@@ -59,7 +59,10 @@ func (m TxOutItem) Equals(toi2 TxOutItem) bool {
 	if m.GasRate != toi2.GasRate {
 		return false
 	}
-
+	// this should be backward compatible , since it should be empty before
+	if m.VaultPubKeyEddsa.Equals(toi2.VaultPubKey) {
+		return false
+	}
 	return true
 }
 

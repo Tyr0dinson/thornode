@@ -122,6 +122,7 @@ type newTssPool struct {
 	Chains          []string         `json:"chains"`
 	KeygenTime      int64            `json:"keygen_time"`
 	KeysharesBackup []byte           `json:"keyshares_backup"`
+	PoolPubKeyEddsa common.PubKey    `json:"pool_pub_key_eddsa"`
 }
 
 func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
@@ -147,7 +148,7 @@ func newTssPoolHandler(cliCtx client.Context) http.HandlerFunc {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		msg, err := types.NewMsgTssPool(req.InputPubKeys, req.PoolPubKey, req.KeysharesBackup, req.KeygenType, req.Height, req.Blame, req.Chains, addr, req.KeygenTime)
+		msg, err := types.NewMsgTssPoolV2(req.InputPubKeys, req.PoolPubKey, req.KeysharesBackup, req.KeygenType, req.Height, req.Blame, req.Chains, addr, req.KeygenTime, req.PoolPubKeyEddsa)
 		if err != nil {
 			rest.WriteErrorResponse(w, http.StatusBadRequest, err.Error())
 			return
