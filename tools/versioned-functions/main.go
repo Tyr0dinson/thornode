@@ -37,14 +37,15 @@ var (
 	reVersionedName        = regexp.MustCompile(`.*V([0-9]+)$`)
 	reNonMainnetBuildFlags = regexp.MustCompile(`([^!](test|mock|stage)net|[^!]regtest)`)
 	currentManagerVersions = map[string]string{}
-	skipRootPackages       = map[string]bool{
-		"bifrost": true,
-		"chain":   true,
-		"docs":    true,
-		"openapi": true,
-		"scripts": true,
-		"test":    true,
-		"tools":   true,
+	skipPackagePrefixes    = map[string]bool{
+		"bifrost":                 true,
+		"chain":                   true,
+		"docs":                    true,
+		"openapi":                 true,
+		"scripts":                 true,
+		"test":                    true,
+		"tools":                   true,
+		"x/thorchain/client/rest": true,
 	}
 )
 
@@ -266,8 +267,11 @@ func main() {
 		for _, file := range pkg.Files {
 
 			// skip packages with no versioned functions relevant for consensus
-			rootPackage := strings.Split(fset.File(file.Pos()).Name(), "/")[0]
-			if skipRootPackages[rootPackage] {
+			pkgPath := strings.Split(fset.File(file.Pos()).Name(), "/")
+			rootPackage := pkgPath[0]
+			if skipPackagePrefixes[rootPackage] {
+				continue
+			} else if len(pkgPath) >= 4 && skipPackagePrefixes[strings.Join(pkgPath[0:4], "/")] {
 				continue
 			}
 
