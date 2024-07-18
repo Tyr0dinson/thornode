@@ -30,3 +30,9 @@ asserts:
   - .[]|select(.chain == "BSC")|.address == "{{ addr_bsc_dog }}"
   # the pubkey on all inbound addresses should be the dog public key
   - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 10'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network?height=1000
+status: 503
+asserts:
+  - .error == "height is in the future"

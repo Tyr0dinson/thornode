@@ -70,6 +70,12 @@ func getHandlerWrapper(q query.Query, storeName string, cliCtx client.Context) h
 			w.Header().Set("X-Thorchain-Time", latest.Block.Time.Format(time.RFC3339))
 		}
 
+		// 503 if height is in the future
+		if cliCtx.Height > 0 && cliCtx.Height > latest.Block.Height {
+			rest.WriteErrorResponse(w, http.StatusServiceUnavailable, "height is in the future")
+			return
+		}
+
 		_, _ = w.Write(res)
 	}
 }
