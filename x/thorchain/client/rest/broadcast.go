@@ -1,16 +1,10 @@
 package rest
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-
 	"github.com/cosmos/cosmos-sdk/client"
-	clientrest "github.com/cosmos/cosmos-sdk/client/rest"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/rest"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
 
@@ -27,6 +21,7 @@ func (m BroadcastReq) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	return m.Tx.UnpackInterfaces(unpacker)
 }
 
+/*
 // BroadcastTxRequest implements a tx broadcasting handler that is responsible
 // for broadcasting a valid and signed tx to a full node. The tx can be
 // broadcasted via a sync|async|block mechanism.
@@ -64,6 +59,7 @@ func BroadcastTxRequest(clientCtx client.Context) http.HandlerFunc {
 		rest.PostProcessResponseBare(w, clientCtx, res)
 	}
 }
+*/
 
 // ConvertAndEncodeStdTx encodes the stdTx as a transaction in the format specified by txConfig
 func ConvertAndEncodeStdTx(txConfig client.TxConfig, stdTx StdTx) ([]byte, error) {

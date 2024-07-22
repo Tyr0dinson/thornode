@@ -3,16 +3,8 @@ package rest
 import (
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/types/rest"
-	"github.com/gorilla/mux"
-	"github.com/rs/zerolog/log"
-
-	"gitlab.com/thorchain/thornode/x/thorchain/query"
 )
 
 // Ping - endpoint to check that the API is up and available
@@ -22,6 +14,7 @@ func pingHandler(cliCtx client.Context, storeName string) http.HandlerFunc {
 	}
 }
 
+/*
 // Generic wrapper to generate GET handler
 func getHandlerWrapper(q query.Query, storeName string, cliCtx client.Context) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -73,3 +66,4 @@ func getHandlerWrapper(q query.Query, storeName string, cliCtx client.Context) h
 		_, _ = w.Write(res)
 	}
 }
+*/

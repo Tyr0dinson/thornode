@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 
 	ctypes "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
 	"github.com/tendermint/tendermint/crypto"
 )
 
