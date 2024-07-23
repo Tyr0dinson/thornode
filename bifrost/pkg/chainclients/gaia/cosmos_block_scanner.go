@@ -239,7 +239,7 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		}
 
 		// skip fee if less than 1 resolution away from the last
-		feeDelta := ctypes.MaxUint(c.lastFee, gasFee).Sub(ctypes.MinUint(c.lastFee, gasFee))
+		feeDelta := cosmos.MaxUint(c.lastFee, gasFee).Sub(cosmos.MinUint(c.lastFee, gasFee))
 		if feeDelta.LTE(ctypes.NewUint(uint64(c.cfg.GasPriceResolution))) {
 			return nil
 		}

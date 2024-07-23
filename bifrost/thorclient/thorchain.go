@@ -172,7 +172,11 @@ func (b *thorchainBridge) GetContext() client.Context {
 	ctx = ctx.WithChainID(string(b.cfg.ChainID))
 	ctx = ctx.WithHomeDir(b.cfg.ChainHomeFolder)
 	ctx = ctx.WithFromName(b.cfg.SignerName)
-	ctx = ctx.WithFromAddress(b.keys.GetSignerInfo().GetAddress())
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	ctx = ctx.WithFromAddress(addr)
 	ctx = ctx.WithBroadcastMode("sync")
 
 	encodingConfig := app.MakeEncodingConfig()
@@ -265,7 +269,11 @@ func (b *thorchainBridge) getThorChainURL(path string) string {
 
 // getAccountNumberAndSequenceNumber returns account and Sequence number required to post into thorchain
 func (b *thorchainBridge) getAccountNumberAndSequenceNumber() (uint64, uint64, error) {
-	path := fmt.Sprintf("%s/%s", AuthAccountEndpoint, b.keys.GetSignerInfo().GetAddress())
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get address: %w", err)
+	}
+	path := fmt.Sprintf("%s/%s", AuthAccountEndpoint, addr)
 
 	body, _, err := b.getWithPath(path)
 	if err != nil {
@@ -297,7 +305,11 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 		// MsgTssKeysignFail will fail validation if having no FailReason.
 		blame.FailReason = "no fail reason available"
 	}
-	msg, err := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, b.keys.GetSignerInfo().GetAddress(), pubkey)
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("fail to get address: %w", err)
+	}
+	msg, err := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, addr, pubkey)
 	if err != nil {
 		return common.BlankTxID, fmt.Errorf("fail to create keysign fail message: %w", err)
 	}
@@ -306,7 +318,12 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 
 // GetErrataMsg get errata tx from params
 func (b *thorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg {
-	return stypes.NewMsgErrataTx(txID, chain, b.keys.GetSignerInfo().GetAddress())
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		b.logger.Err(err).Msg("fail to create ErrataMsg")
+		return nil
+	}
+	return stypes.NewMsgErrataTx(txID, chain, addr)
 }
 
 // GetSolvencyMsg create MsgSolvency from the given parameters
@@ -314,7 +331,12 @@ func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 	// To prevent different MsgSolvency ID incompatibility between nodes with different coin-observation histories,
 	// only report coins for which the amounts are not currently 0.
 	coins = coins.NoneEmpty()
-	msg, err := stypes.NewMsgSolvency(chain, pubKey, coins, height, b.keys.GetSignerInfo().GetAddress())
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		b.logger.Err(err).Msg("fail to create MsgSolvency")
+		return nil
+	}
+	msg, err := stypes.NewMsgSolvency(chain, pubKey, coins, height, addr)
 	if err != nil {
 		b.logger.Err(err).Msg("fail to create MsgSolvency")
 		return nil
@@ -324,7 +346,12 @@ func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKe
 
 // GetKeygenStdTx get keygen tx from params
 func (b *thorchainBridge) GetKeygenStdTx(poolPubKey common.PubKey, keysharesBackup []byte, blame stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64) (sdk.Msg, error) {
-	return stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keysharesBackup, keygenType, height, blame, chains.Strings(), b.keys.GetSignerInfo().GetAddress(), keygenTime)
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		b.logger.Err(err).Msg("failed to get address in KeygenStdTx")
+		return nil, err
+	}
+	return stypes.NewMsgTssPool(inputPks.Strings(), poolPubKey, keysharesBackup, keygenType, height, blame, chains.Strings(), addr, keygenTime)
 }
 
 // GetObservationsStdTx get observations tx from txIns
@@ -383,12 +410,18 @@ func (b *thorchainBridge) GetObservationsStdTx(txIns stypes.ObservedTxs) ([]cosm
 		}
 	}
 
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		b.logger.Err(err).Msg("could not get address in GetObservationsStdTx")
+		return nil, err
+	}
+
 	var msgs []cosmos.Msg
 	if len(inbound) > 0 {
-		msgs = append(msgs, stypes.NewMsgObservedTxIn(inbound, b.keys.GetSignerInfo().GetAddress()))
+		msgs = append(msgs, stypes.NewMsgObservedTxIn(inbound, addr))
 	}
 	if len(outbound) > 0 {
-		msgs = append(msgs, stypes.NewMsgObservedTxOut(outbound, b.keys.GetSignerInfo().GetAddress()))
+		msgs = append(msgs, stypes.NewMsgObservedTxOut(outbound, addr))
 	}
 
 	return msgs, nil
@@ -426,11 +459,14 @@ func (b *thorchainBridge) EnsureNodeWhitelisted() error {
 
 // FetchNodeStatus get current node status from thorchain
 func (b *thorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
-	bepAddr := b.keys.GetSignerInfo().GetAddress().String()
+	bepAddr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return stypes.NodeStatus_Unknown, fmt.Errorf("failed to get address: %w", err)
+	}
 	if len(bepAddr) == 0 {
 		return stypes.NodeStatus_Unknown, errors.New("bep address is empty")
 	}
-	na, err := b.GetNodeAccount(bepAddr)
+	na, err := b.GetNodeAccount(bepAddr.String())
 	if err != nil {
 		return stypes.NodeStatus_Unknown, fmt.Errorf("failed to get node status: %w", err)
 	}
@@ -630,7 +666,11 @@ func (b *thorchainBridge) PostNetworkFee(height int64, chain common.Chain, trans
 	defer func() {
 		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
 	}()
-	msg := stypes.NewMsgNetworkFee(height, chain, transactionSize, transactionRate, b.keys.GetSignerInfo().GetAddress())
+	addr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("failed to get address: %w", err)
+	}
+	msg := stypes.NewMsgNetworkFee(height, chain, transactionSize, transactionRate, addr)
 	return b.Broadcast(msg)
 }
 

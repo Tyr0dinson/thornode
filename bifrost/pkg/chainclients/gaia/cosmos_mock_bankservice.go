@@ -26,6 +26,11 @@ type MockBankServiceClient interface {
 	DenomsMetadata(ctx context.Context, in *btypes.QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomsMetadataResponse, error)
 
 	SpendableBalances(ctx context.Context, in *btypes.QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalancesResponse, error)
+	// DenomOwners queries for all account addresses that own a particular token
+	// denomination.
+	//
+	// Since: cosmos-sdk 0.46
+	DenomOwners(ctx context.Context, in *btypes.QueryDenomOwnersRequest, opts ...grpc.CallOption) (*btypes.QueryDenomOwnersResponse, error)
 }
 
 type mockBankServiceClient struct{}
@@ -68,5 +73,9 @@ func (c *mockBankServiceClient) DenomsMetadata(ctx context.Context, in *btypes.Q
 }
 
 func (c *mockBankServiceClient) SpendableBalances(ctx context.Context, in *btypes.QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalancesResponse, error) {
+	return nil, nil
+}
+
+func (c *mockBankServiceClient) DenomOwners(ctx context.Context, in *btypes.QueryDenomOwnersRequest, opts ...grpc.CallOption) (*btypes.QueryDenomOwnersResponse, error) {
 	return nil, nil
 }

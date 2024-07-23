@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -36,7 +37,7 @@ func NewKeysWithKeybase(kb ckeys.Keyring, name, password string) *Keys {
 }
 
 // GetKeyringKeybase return keyring and key info
-func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, ckeys.Info, error) {
+func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, *ckeys.Record, error) {
 	if len(signerName) == 0 {
 		return nil, nil, fmt.Errorf("signer name is empty")
 	}
@@ -76,11 +77,11 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
 	}
 
-	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader)
+	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader, codec.NewAminoCodec(codec.NewLegacyAmino()))
 }
 
 // GetSignerInfo return signer info
-func (k *Keys) GetSignerInfo() ckeys.Info {
+func (k *Keys) GetSignerInfo() *ckeys.Record {
 	info, err := k.kb.Key(k.signerName)
 	if err != nil {
 		panic(err)

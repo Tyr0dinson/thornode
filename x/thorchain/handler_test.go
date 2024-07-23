@@ -20,6 +20,7 @@ import (
 	dbm "github.com/tendermint/tm-db"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -82,7 +83,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := simapp.MakeTestEncodingConfig().Codec
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -94,7 +95,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		AffiliateCollectorName: {},
 		TreasuryName:           {},
 		RUNEPoolName:           {},
-	})
+	}, cmd.Bech32PrefixAccAddr)
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
@@ -156,7 +157,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := simapp.MakeTestEncodingConfig().Codec
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -166,7 +167,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		ReserveName:            {},
 		LendingName:            {},
 		AffiliateCollectorName: {},
-	})
+	}, cmd.Bech32PrefixAccAddr)
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{

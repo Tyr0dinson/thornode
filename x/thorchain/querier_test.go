@@ -9,6 +9,7 @@ import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	. "gopkg.in/check.v1"
 
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	types2 "github.com/cosmos/cosmos-sdk/types"
@@ -42,7 +43,7 @@ func (k *TestQuerierKeeper) GetTxOut(_ cosmos.Context, _ int64) (*TxOut, error) 
 }
 
 func (s *QuerierSuite) SetUpTest(c *C) {
-	kb := ckeys.NewInMemory()
+	kb := ckeys.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
 	username := "thorchain"
 	password := "password"
 

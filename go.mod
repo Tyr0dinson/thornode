@@ -12,7 +12,6 @@ require (
 	github.com/cosmos/cosmos-sdk v0.46.16
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/edwards v1.0.0
-	github.com/didip/tollbooth v4.0.2+incompatible
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
 	github.com/eager7/dogutil v0.0.0-20200427040807-200e961ba4b5
 	github.com/ethereum/go-ethereum v1.14.0
@@ -29,7 +28,6 @@ require (
 	github.com/ltcsuite/ltcutil v1.0.2-beta
 	github.com/magiconair/properties v1.8.7
 	github.com/multiformats/go-multiaddr v0.3.1
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/prometheus/client_golang v1.14.0
 	github.com/rakyll/statik v0.1.7 // indirect
 	github.com/rs/zerolog v1.29.1
@@ -241,6 +239,7 @@ require (
 )
 
 require (
+	cosmossdk.io/math v1.0.0-rc.0
 	filippo.io/age v1.0.0-rc.3
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/cometbft/cometbft v0.38.6
@@ -258,7 +257,6 @@ require (
 	cloud.google.com/go/iam v1.1.5 // indirect
 	cloud.google.com/go/storage v1.35.1 // indirect
 	cosmossdk.io/errors v1.0.0-beta.7 // indirect
-	cosmossdk.io/math v1.0.0-rc.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/aws/aws-sdk-go v1.40.45 // indirect

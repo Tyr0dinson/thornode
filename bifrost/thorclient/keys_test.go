@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	. "gopkg.in/check.v1"
@@ -38,7 +39,7 @@ func (*KeysSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	buf.WriteString(signerPasswordForTest)
 	buf.WriteByte('\n')
-	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf)
+	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf, codec.NewAminoCodec(codec.NewLegacyAmino()))
 	c.Assert(err, IsNil)
 	_, _, err = kb.NewMnemonic(signerNameForTest, cKeys.English, cmd.THORChainHDPath, signerPasswordForTest, hd.Secp256k1)
 	c.Assert(err, IsNil)
@@ -57,14 +58,14 @@ func (ks *KeysSuite) TestNewKeys(c *C) {
 		c.Assert(err, IsNil)
 	}()
 
-	k, info, err := GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
+	k, record, err := GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
 	c.Assert(err, IsNil)
 	c.Assert(k, NotNil)
-	c.Assert(info, NotNil)
+	c.Assert(record, NotNil)
 	ki := NewKeysWithKeybase(k, signerNameForTest, signerPasswordForTest)
-	info = ki.GetSignerInfo()
-	c.Assert(info, NotNil)
-	c.Assert(info.GetName(), Equals, signerNameForTest)
+	record = ki.GetSignerInfo()
+	c.Assert(record, NotNil)
+	c.Assert(record.Name, Equals, signerNameForTest)
 	priKey, err := ki.GetPrivateKey()
 	c.Assert(err, IsNil)
 	c.Assert(priKey, NotNil)

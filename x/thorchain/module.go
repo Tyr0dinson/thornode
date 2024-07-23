@@ -22,7 +22,6 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
-	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -67,7 +66,7 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 
 // RegisterRESTRoutes register rest routes
 func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
-	rest.RegisterRoutes(ctx, rtr, StoreKey)
+	//rest.RegisterRoutes(ctx, rtr, StoreKey)
 	//sdkRest.RegisterTxRoutes(ctx, rtr)
 	//sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
 }

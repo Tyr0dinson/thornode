@@ -45,7 +45,9 @@ func (s *NodeAccountSuite) TearDownSuite(c *C) {
 
 func (s *NodeAccountSuite) TestGetNodeAccount(c *C) {
 	s.fixture = "../../test/fixtures/endpoints/nodeaccount/template.json"
-	na, err := s.bridge.GetNodeAccount(s.bridge.keys.GetSignerInfo().GetAddress().String())
+	addr, err := s.bridge.keys.GetSignerInfo().GetAddress()
+	c.Assert(err, NotNil)
+	na, err := s.bridge.GetNodeAccount(addr.String())
 	c.Assert(err, IsNil)
 	c.Assert(na, NotNil)
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/tendermint/tendermint/libs/log"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
+	prefix "gitlab.com/thorchain/thornode/cmd"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -68,7 +69,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := simapp.MakeTestEncodingConfig().Codec
 
 	maccPerms := map[string][]string{
 		authtypes.FeeCollectorName:     nil,
@@ -86,7 +87,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	}
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keys[paramstypes.StoreKey], tkeyParams)
-	ak := authkeeper.NewAccountKeeper(marshaler, keys[authtypes.StoreKey], pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms)
+	ak := authkeeper.NewAccountKeeper(marshaler, keys[authtypes.StoreKey], pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms, prefix.Bech32PrefixAccAddr)
 	bk := bankkeeper.NewBaseKeeper(marshaler, keys[banktypes.StoreKey], ak, pk.Subspace(banktypes.ModuleName), nil)
 
 	k := NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion())

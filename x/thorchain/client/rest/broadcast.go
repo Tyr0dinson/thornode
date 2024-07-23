@@ -1,11 +1,7 @@
 package rest
 
 import (
-	"github.com/cosmos/cosmos-sdk/client"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	"github.com/cosmos/cosmos-sdk/x/auth/signing"
 )
 
 // BroadcastReq defines a tx broadcasting request.
@@ -59,7 +55,6 @@ func BroadcastTxRequest(clientCtx client.Context) http.HandlerFunc {
 		rest.PostProcessResponseBare(w, clientCtx, res)
 	}
 }
-*/
 
 // ConvertAndEncodeStdTx encodes the stdTx as a transaction in the format specified by txConfig
 func ConvertAndEncodeStdTx(txConfig client.TxConfig, stdTx StdTx) ([]byte, error) {
@@ -114,3 +109,4 @@ func CopyTx(tx signing.Tx, builder client.TxBuilder, ignoreSignatureError bool) 
 
 	return nil
 }
+*/

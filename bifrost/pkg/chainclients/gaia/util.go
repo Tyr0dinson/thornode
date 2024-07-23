@@ -87,7 +87,7 @@ func fromCosmosToThorchain(c cosmos.Coin) (common.Coin, error) {
 	}
 	return common.Coin{
 		Asset:    thorAsset,
-		Amount:   ctypes.NewUintFromBigInt(amount),
+		Amount:   cosmos.NewUintFromBigInt(amount),
 		Decimals: int64(decimals),
 	}, nil
 }

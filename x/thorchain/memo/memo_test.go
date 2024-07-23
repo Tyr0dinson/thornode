@@ -18,6 +18,7 @@ import (
 	dbm "github.com/tendermint/tm-db"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -56,7 +57,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 	s.ctx = ctx.WithBlockHeight(18)
 
 	legacyCodec := types.MakeTestCodec()
-	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	marshaler := simapp.MakeTestEncodingConfig().Codec
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -65,7 +66,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		types.BondName:    {},
 		types.ReserveName: {},
 		types.LendingName: {},
-	})
+	}, cmd.Bech32PrefixAccAddr)
 
 	bk := bankkeeper.NewBaseKeeper(marshaler, keyBank, ak, pk.Subspace(banktypes.ModuleName), nil)
 	c.Assert(bk.MintCoins(ctx, types.ModuleName, cosmos.Coins{

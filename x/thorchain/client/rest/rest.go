@@ -1,19 +1,6 @@
 package rest
 
-import (
-	"fmt"
-	"net/http"
-
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/didip/tollbooth"
-	"github.com/didip/tollbooth/limiter"
-	"github.com/gorilla/mux"
-
-	"gitlab.com/thorchain/thornode/config"
-	"gitlab.com/thorchain/thornode/openapi"
-	"gitlab.com/thorchain/thornode/x/thorchain/query"
-)
-
+/*
 const (
 	restURLParam  = "param1"
 	restURLParam2 = "param2"
@@ -93,3 +80,4 @@ func customCORSHeader() mux.MiddlewareFunc {
 		})
 	}
 }
+*/

@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/server"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -57,18 +58,21 @@ contain valid denominations. Accounts may optionally be supplied with vesting pa
 
 				// attempt to lookup address from Keybase if no address was provided
 				var kb keyring.Keyring
-				kb, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf)
+				kb, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf, codec.NewAminoCodec(codec.NewLegacyAmino()))
 				if err != nil {
 					return err
 				}
 
-				var info keyring.Info
-				info, err = kb.Key(args[0])
+				var record *keyring.Record
+				record, err = kb.Key(args[0])
 				if err != nil {
 					return fmt.Errorf("failed to get address from Keybase: %w", err)
 				}
 
-				addr = info.GetAddress()
+				addr, err = record.GetAddress()
+				if err != nil {
+					return fmt.Errorf("failed to get address from record: %w", err)
+				}
 			}
 
 			coins, err := cosmos.ParseCoins(args[1])

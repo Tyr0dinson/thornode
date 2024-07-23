@@ -372,7 +372,7 @@ func (pm *PoolMgrVCUR) checkSaversUtilization(ctx cosmos.Context, mgr Manager) e
 
 	var (
 		synthPool           Pool
-		maxUtilizationRatio = types.ZeroUint()
+		maxUtilizationRatio = cosmos.ZeroUint()
 		handler             = NewInternalHandler(mgr)
 		signer              = nodeAccounts[0].NodeAddress
 		synthCap            = mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
