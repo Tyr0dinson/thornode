@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
@@ -56,7 +56,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 		SignerPasswd:    "password",
 		ChainHomeFolder: ".",
 	}
-	kb := ckeys.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
+	kb := ckeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	_, _, err = kb.NewMnemonic(cfg.SignerName, ckeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 

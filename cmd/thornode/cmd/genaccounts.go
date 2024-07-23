@@ -11,9 +11,9 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/server"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	authvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
@@ -58,7 +58,7 @@ contain valid denominations. Accounts may optionally be supplied with vesting pa
 
 				// attempt to lookup address from Keybase if no address was provided
 				var kb keyring.Keyring
-				kb, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf, codec.NewAminoCodec(codec.NewLegacyAmino()))
+				kb, err = keyring.New(sdk.KeyringServiceName(), keyringBackend, clientCtx.HomeDir, inBuf, simapp.MakeTestEncodingConfig().Codec)
 				if err != nil {
 					return err
 				}

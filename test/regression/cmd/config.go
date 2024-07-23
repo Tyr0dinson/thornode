@@ -11,8 +11,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
@@ -161,7 +161,7 @@ func init() {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 var (
-	keyRing            = keyring.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
+	keyRing            = keyring.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	addressToName      = map[string]string{} // thor...->dog, 0x...->dog
 	templateAddress    = map[string]string{} // addr_thor_dog->thor..., addr_eth_dog->0x...
 	templatePubKey     = map[string]string{} // pubkey_dog->thorpub...

@@ -15,10 +15,10 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
@@ -49,7 +49,7 @@ var _ = Suite(&BitcoinSignerSuite{})
 
 func (s *BitcoinSignerSuite) SetUpSuite(c *C) {
 	types2.SetupConfigForTest()
-	kb := cKeys.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
+	kb := cKeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	_, _, err := kb.NewMnemonic(bob, cKeys.English, cmd.THORChainHDPath, password, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.keys = thorclient.NewKeysWithKeybase(kb, bob, password)

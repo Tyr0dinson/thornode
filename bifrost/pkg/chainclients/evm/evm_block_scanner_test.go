@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	aminocodec "github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	ethclient "github.com/ethereum/go-ethereum/ethclient"
@@ -105,7 +105,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: "",
 	}
 
-	kb := cKeys.NewInMemory(aminocodec.NewAminoCodec(aminocodec.NewLegacyAmino()))
+	kb := cKeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)

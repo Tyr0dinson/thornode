@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	aminocodec "github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
@@ -208,7 +208,7 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
-	kb := cKeys.NewInMemory(aminocodec.NewAminoCodec(aminocodec.NewLegacyAmino()))
+	kb := cKeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)

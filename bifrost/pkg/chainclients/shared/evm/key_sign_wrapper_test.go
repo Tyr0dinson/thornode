@@ -3,10 +3,10 @@ package evm
 import (
 	"math/big"
 
-	aminocodec "github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	. "gopkg.in/check.v1"
@@ -38,7 +38,7 @@ func (s *KeysignWrapperTestSuite) SetUpSuite(c *C) {
 		SignerPasswd: "password",
 	}
 
-	kb := cKeys.NewInMemory(aminocodec.NewAminoCodec(aminocodec.NewLegacyAmino()))
+	kb := cKeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)

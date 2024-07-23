@@ -8,10 +8,10 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -77,7 +77,7 @@ func getKeybase(thorchainHome string, reader io.Reader) (ckeys.Keyring, error) {
 		cliDir = filepath.Join(usr.HomeDir, thorchainCliFolderName)
 	}
 
-	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader, codec.NewAminoCodec(codec.NewLegacyAmino()))
+	return ckeys.New(sdk.KeyringServiceName(), ckeys.BackendFile, cliDir, reader, simapp.MakeTestEncodingConfig().Codec)
 }
 
 // GetSignerInfo return signer info

@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/cmd"
@@ -172,7 +172,7 @@ func (s *ThorchainSuite) TestSign(c *C) {
 
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 	testFunc := func(cfg config.BifrostClientConfiguration, errChecker, sbChecker Checker) {
-		kb := keyring.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
+		kb := keyring.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 		_, _, err := kb.NewMnemonic(cfg.SignerName, keyring.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 		c.Assert(err, IsNil)
 		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))

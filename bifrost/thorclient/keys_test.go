@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/cmd"
@@ -39,7 +39,7 @@ func (*KeysSuite) setupKeysForTest(c *C) string {
 	buf.WriteByte('\n')
 	buf.WriteString(signerPasswordForTest)
 	buf.WriteByte('\n')
-	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf, codec.NewAminoCodec(codec.NewLegacyAmino()))
+	kb, err := cKeys.New(cosmos.KeyringServiceName(), cKeys.BackendFile, thorcliDir, buf, simapp.MakeTestEncodingConfig().Codec)
 	c.Assert(err, IsNil)
 	_, _, err = kb.NewMnemonic(signerNameForTest, cKeys.English, cmd.THORChainHDPath, signerPasswordForTest, hd.Secp256k1)
 	c.Assert(err, IsNil)

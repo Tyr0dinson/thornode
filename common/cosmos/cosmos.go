@@ -12,8 +12,8 @@ import (
 
 	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client/input"
-	"github.com/cosmos/cosmos-sdk/codec"
 	ckeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
@@ -180,7 +180,7 @@ func GetKeybase(thorchainHome string) (KeybaseStore, error) {
 		cliDir = filepath.Join(usr.HomeDir, ".thornode")
 	}
 
-	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf, codec.NewAminoCodec(codec.NewLegacyAmino()))
+	kb, err := ckeys.New(KeyringServiceName(), ckeys.BackendFile, cliDir, buf, simapp.MakeTestEncodingConfig().Codec)
 	return KeybaseStore{
 		SignerName:   username,
 		SignerPasswd: password,

@@ -3,9 +3,9 @@ package thorclient
 import (
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	hd "github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
@@ -27,7 +27,7 @@ func SetupThorchainForTest(c *C) (config.BifrostClientConfiguration, *cKeys.Reco
 		SignerPasswd:    "password",
 		ChainHomeFolder: "",
 	}
-	kb := cKeys.NewInMemory(codec.NewAminoCodec(codec.NewLegacyAmino()))
+	kb := cKeys.NewInMemory(simapp.MakeTestEncodingConfig().Codec)
 
 	params := *hd.NewFundraiserParams(0, sdk.CoinType, 0)
 	hdPath := params.String()
