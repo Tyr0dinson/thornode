@@ -295,10 +295,17 @@ func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 // LoadManagerIfNecessary detect whether there are new version available, if it is available then create a new version of Mgr
 func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
-	if v.Equals(mgr.GetVersion()) {
-		return nil
+
+	if !v.Equals(mgr.GetVersion()) {
+		// version is different , thus all the manager need to re-create
+		if err := mgr.recreateManagers(ctx, v); err != nil {
+			return err
+		}
 	}
-	// version is different , thus all the manager need to re-create
+	return nil
+}
+
+func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 	mgr.currentVersion = v
 	mgr.constAccessor = constants.GetConstantValues(v)
 	var err error
