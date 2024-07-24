@@ -176,6 +176,4 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/version
 asserts:
-  - .current == "2.135.0"
-  # This should be 2.136.0, but is 2.135.0
-  # due to the SetVersionWithContext happening in the querier's cache and not persisting.
+  - .current == "2.136.0"
