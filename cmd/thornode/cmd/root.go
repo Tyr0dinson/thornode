@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	tmcfg "github.com/tendermint/tendermint/config"
 	tmcli "github.com/tendermint/tendermint/libs/cli"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
@@ -62,7 +63,8 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 				return err
 			}
 
-			return server.InterceptConfigsPreRunHandler(cmd, "", nil, nil)
+			tmConfig := tmcfg.DefaultConfig()
+			return server.InterceptConfigsPreRunHandler(cmd, "", nil, tmConfig)
 		},
 	}
 
