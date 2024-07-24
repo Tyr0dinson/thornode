@@ -8,7 +8,6 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -64,7 +63,7 @@ func (vm *NetworkMgrV124) processGenesisSetup(ctx cosmos.Context) error {
 			common.GAIAChain,
 			common.BSCChain,
 		}
-		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains), common.EmptyPubKey)
+		vault := NewVault(0, ActiveVault, AsgardVault, active[0].PubKeySet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains))
 		vault.Membership = common.PubKeys{active[0].PubKeySet.Secp256k1}.Strings()
 		if err := vm.k.SetVault(ctx, vault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
@@ -485,7 +484,7 @@ func (vm *NetworkMgrV124) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// GetMostSecure also takes into account migration outbound items.
 				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
 				// get address of asgard pubkey
-				addr, err := target.GetAddress(coin.Asset.GetChain())
+				addr, err := target.PubKey.GetAddress(coin.Asset.GetChain())
 				if err != nil {
 					return err
 				}

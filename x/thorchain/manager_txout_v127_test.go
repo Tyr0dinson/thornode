@@ -65,7 +65,7 @@ func (s TxOutStoreV127Suite) TestAddGasFees(c *C) {
 	tx := GetRandomObservedTx()
 
 	// Set vault to satisfy VaultExists check.
-	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, tx.ObservedPubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, tx.ObservedPubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	version := GetCurrentVersion()

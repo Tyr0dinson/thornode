@@ -1035,7 +1035,7 @@ func (vm *ValidatorMgrV117) RequestYggReturn(ctx cosmos.Context, node NodeAccoun
 			ctx.Logger().Info("there is not fund for chain, no need for yggdrasil return", "chain", chain)
 			continue
 		}
-		toAddr, err := vault.GetAddress(chain)
+		toAddr, err := vault.PubKey.GetAddress(chain)
 		if err != nil {
 			return err
 		}

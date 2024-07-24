@@ -538,13 +538,13 @@ func (s *NetworkManagerV128TestSuite) TestRagnarokPool(c *C) {
 
 func (s *NetworkManagerV128TestSuite) TestCleanupAsgardIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault1), IsNil)
-	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault2), IsNil)
-	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault3), IsNil)
-	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault4), IsNil)
 	mgr := NewDummyMgrWithKeeper(k)
 	networkMgr := newNetworkMgrV128(k, mgr.TxOutStore(), mgr.EventMgr())
@@ -795,7 +795,7 @@ func (*NetworkManagerV128TestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(pol.RuneWithdrawn.String(), Equals, "0")
 
 	// there needs to be one vault or the withdraw handler fails
-	vault := NewVault(0, ActiveVault, types.VaultType_AsgardVault, GetRandomPubKey(), []string{"BNB", "BTC"}, nil, common.EmptyPubKey)
+	vault := NewVault(0, ActiveVault, types.VaultType_AsgardVault, GetRandomPubKey(), []string{"BNB", "BTC"}, nil)
 	err = mgr.Keeper().SetVault(ctx, vault)
 	c.Assert(err, IsNil)
 

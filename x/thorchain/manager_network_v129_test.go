@@ -49,7 +49,7 @@ func (s *NetworkManagerV129TestSuite) TestUpdateNetwork(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), IsNil)
 
 	// Vault for getVaultsLiquidityRune.
-	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{p.Asset.GetChain().String()}, []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{p.Asset.GetChain().String()}, []ChainContract{})
 	vault.Coins = common.NewCoins(common.NewCoin(p.Asset, p.BalanceAsset))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
@@ -409,7 +409,7 @@ func (s *NetworkManagerV129TestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// Vault for getVaultsLiquidityRune.
-	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{pool.Asset.GetChain().String()}, []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{pool.Asset.GetChain().String()}, []ChainContract{})
 	vault.Coins = common.NewCoins(common.NewCoin(pool.Asset, pool.BalanceAsset))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
@@ -565,13 +565,13 @@ func (s *NetworkManagerV129TestSuite) TestRagnarokPool(c *C) {
 
 func (s *NetworkManagerV129TestSuite) TestCleanupAsgardIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault1), IsNil)
-	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault2), IsNil)
-	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault3), IsNil)
-	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault4), IsNil)
 	mgr := NewDummyMgrWithKeeper(k)
 	networkMgr := newNetworkMgrV129(k, mgr.TxOutStore(), mgr.EventMgr())
@@ -822,7 +822,7 @@ func (*NetworkManagerV129TestSuite) TestFairMergePOLCycle(c *C) {
 	c.Assert(pol.RuneWithdrawn.String(), Equals, "0")
 
 	// there needs to be one vault or the withdraw handler fails
-	vault := NewVault(0, ActiveVault, types.VaultType_AsgardVault, GetRandomPubKey(), []string{"BNB", "BTC"}, nil, common.EmptyPubKey)
+	vault := NewVault(0, ActiveVault, types.VaultType_AsgardVault, GetRandomPubKey(), []string{"BNB", "BTC"}, nil)
 	err = mgr.Keeper().SetVault(ctx, vault)
 	c.Assert(err, IsNil)
 

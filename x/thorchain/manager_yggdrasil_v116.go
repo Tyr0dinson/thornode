@@ -118,7 +118,7 @@ func (ymgr YggMgrV116) Fund(ctx cosmos.Context, mgr Manager) error {
 		}
 		supportChains := asgards[0].GetChains()
 		// supported chain for yggdrasil vault will be set at the time when it get created
-		ygg = NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, supportChains.Strings(), ymgr.keeper.GetChainContracts(ctx, supportChains), common.EmptyPubKey)
+		ygg = NewVault(ctx.BlockHeight(), ActiveVault, YggdrasilVault, na.PubKeySet.Secp256k1, supportChains.Strings(), ymgr.keeper.GetChainContracts(ctx, supportChains))
 		ygg.Membership = append(ygg.Membership, na.PubKeySet.Secp256k1.String())
 
 		if err := ymgr.keeper.SetVault(ctx, ygg); err != nil {
@@ -259,7 +259,7 @@ func (ymgr YggMgrV116) sendCoinsToYggdrasil(ctx cosmos.Context, coins common.Coi
 				continue
 			}
 
-			to, err := ygg.GetAddress(coin.Asset.GetChain())
+			to, err := ygg.PubKey.GetAddress(coin.Asset.GetChain())
 			if err != nil {
 				ctx.Logger().Error("fail to get address from pub key", "pub key", ygg.PubKey, "chain", coin.Asset.GetChain(), "error", err)
 				continue

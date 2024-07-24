@@ -31,7 +31,7 @@ func (vts *ValidatorMgrV116TestSuite) TestChurnWithChainHalt(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
 
 	// 1 vault with btc
-	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
 	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
@@ -122,7 +122,7 @@ func (vts *ValidatorMgrV116TestSuite) TestRagnarokForChaosnet(c *C) {
 	// trigger ragnarok
 	ctx = ctx.WithBlockHeight(1024)
 	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
-	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	for _, item := range nodeAccounts {
 		vault.Membership = append(vault.Membership, item.PubKeySet.Secp256k1.String())
 	}
@@ -413,7 +413,7 @@ func (vts *ValidatorMgrV116TestSuite) TestGetChangedNodes(c *C) {
 	disabledNode.Bond = cosmos.ZeroUint()
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, disabledNode), IsNil)
 
-	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	vault.Membership = append(vault.Membership, activeNode.PubKeySet.Secp256k1.String())
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 

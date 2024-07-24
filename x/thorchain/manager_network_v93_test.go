@@ -550,13 +550,13 @@ func (s *NetworkManagerV93TestSuite) TestRagnarokPool(c *C) {
 
 func (s *NetworkManagerV93TestSuite) TestCleanupAsgardIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault1), IsNil)
-	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault2 := NewVault(1024, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault2), IsNil)
-	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault3 := NewVault(1024, InitVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault3), IsNil)
-	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{}, common.EmptyPubKey)
+	vault4 := NewVault(1024, InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BNBChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, vault4), IsNil)
 	mgr := NewDummyMgrWithKeeper(k)
 	networkMgr := newNetworkMgrV93(k, mgr.TxOutStore(), mgr.EventMgr())
