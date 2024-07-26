@@ -33,6 +33,8 @@ func NewTxID(hash string) (TxID, error) {
 			err := fmt.Errorf("txid error: must be 66 characters (got %d)", len(hash))
 			return TxID(""), err
 		}
+	case 87:
+		// SOL transaction hash, do nothing
 	default:
 		err := fmt.Errorf("txid error: must be 64 characters (got %d)", len(hash))
 		return TxID(""), err
