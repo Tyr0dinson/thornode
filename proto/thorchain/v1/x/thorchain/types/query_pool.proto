@@ -1,0 +1,39 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "google/api/annotations.proto";
+import "thorchain/v1/x/thorchain/types/type_pool.proto";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Returns the pool information for the provided asset.
+  rpc Pool(QueryPoolRequest) returns (QueryPoolResponse) {
+    option (google.api.http).get = "/thorchain/store/pool/{asset}";
+  }
+
+  // Pools returns all pools
+  rpc Pools(QueryPoolsRequest) returns (QueryPoolsResponse) {
+    option (google.api.http).get = "/thorchain/store/pools";
+  }
+}
+
+message QueryPoolRequest{
+  string asset = 1;
+}
+
+message QueryPoolResponse{
+  Pool pool = 1;
+}
+
+message QueryPoolsRequest{
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryPoolsResponse{
+  repeated Pool pools = 1;
+
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
