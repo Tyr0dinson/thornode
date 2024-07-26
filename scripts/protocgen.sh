@@ -6,6 +6,7 @@ set -euo pipefail
 find . -name "*.pb.go" -delete
 
 go install github.com/regen-network/cosmos-proto/protoc-gen-gocosmos
+go install github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway@v1.16.0
 
 # shellcheck disable=SC2038
 find proto/ -path -prune -o -name '*.proto' -printf '%h\n' | sort | uniq |
@@ -14,7 +15,9 @@ find proto/ -path -prune -o -name '*.proto' -printf '%h\n' | sort | uniq |
       xargs protoc \
         -I "proto" \
         -I "third_party/proto" \
-        --gocosmos_out=plugins=interfacetype+grpc,Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types:.
+        --gocosmos_out=plugins=interfacetype+grpc,Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types:. \
+        --grpc-gateway_out=logtostderr=true,allow_colon_final_segments=true:.
+
   done
 
 # Move proto files to the right places.
