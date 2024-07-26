@@ -356,6 +356,8 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdk.Uint, msg *MsgS
 	return &openapi.QuoteSwapResponse{
 		ExpectedAmountOut: emitAmount.String(),
 		Fees:              fees,
+		// TODO: notify clients to migrate to fees object and deprecate
+		SlippageBps: slippageBps.BigInt().Int64(),
 	}, emitAmount, outboundFeeAmount, nil
 }
 
@@ -790,6 +792,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	if streamingInterval > 0 && streamingQuantity == 0 {
 		streamingQuantity = maxSwapQuantity
 	}
+	res.StreamingSlippageBps = res.SlippageBps
 	if streamingInterval > 0 && streamingQuantity > 0 {
 		msg.TradeTarget = msg.TradeTarget.QuoUint64(streamingQuantity)
 		// simulate the swap
@@ -798,6 +801,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 		if err != nil {
 			return quoteErrorResponse(fmt.Errorf("failed to simulate swap: %w", err))
 		}
+		res.StreamingSlippageBps = streamRes.SlippageBps
 		res.Fees = streamRes.Fees
 	}
 
@@ -822,6 +826,11 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 
 	// the amount out will deduct the outbound fee
 	res.ExpectedAmountOut = emitAmount.Sub(outboundFeeAmount).String()
+
+	// TODO: temporary for transition to only use expected amount out.
+	if streamingInterval > 0 && streamingQuantity > 0 {
+		res.ExpectedAmountOutStreaming = res.ExpectedAmountOut
+	}
 
 	maxQ := int64(maxSwapQuantity)
 	res.MaxStreamingQuantity = &maxQ
@@ -980,6 +989,7 @@ func queryQuoteSaverDeposit(ctx cosmos.Context, path []string, req abci.RequestQ
 		ExpectedAmountOut:          wrapString(depositAmount.String()),
 		ExpectedAmountDeposit:      depositAmount.String(),
 		Fees:                       swapRes.Fees,
+		SlippageBps:                swapRes.SlippageBps,
 		InboundConfirmationBlocks:  swapRes.InboundConfirmationBlocks,
 		InboundConfirmationSeconds: swapRes.InboundConfirmationSeconds,
 		Memo:                       depositMemo,
@@ -1100,6 +1110,7 @@ func queryQuoteSaverWithdraw(ctx cosmos.Context, path []string, req abci.Request
 	res := &openapi.QuoteSaverWithdrawResponse{
 		ExpectedAmountOut: swapRes.ExpectedAmountOut,
 		Fees:              swapRes.Fees,
+		SlippageBps:       swapRes.SlippageBps,
 		Memo:              fmt.Sprintf("-:%s:%s", asset.String(), basisPoints.String()),
 		DustAmount:        asset.GetLayer1Asset().Chain.DustThreshold().Add(basisPoints).String(),
 	}
