@@ -1,7 +1,6 @@
 package solana
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,19 +124,16 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return stypes.TxIn{}, nil
 	}
 
-	// s.logger.Info().Int("height", int(height)).Int("tx_count", len(block.Transactions)).Msg("block fetched")
-
 	// time how long it takes to process the block
-
 	start := time.Now()
-
 	txIn, err := s.processBlock(block)
-
+	if err != nil {
+		return stypes.TxIn{}, err
+	}
 	duration := time.Since(start)
 	s.totalDuration += duration
 	s.blockCount++
 	s.avgDuration = s.totalDuration / time.Duration(s.blockCount)
-
 	s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("block processed")
 
 	return txIn, nil
@@ -205,13 +201,7 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		txIn.TxArray = append(txIn.TxArray, *txItem)
 	}
 
-	if len(txIn.TxArray) > 0 {
-		// print the first TxInItem
-		prettyPrint(txIn.TxArray[0])
-	}
-
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
-
 	return txIn
 }
 
@@ -307,12 +297,6 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 		return nil
 	}
 
-	s.logger.Info().Str("sender", netSender).Str("receiver", netReceiver).Str("hash", txn.Transaction.Signatures[0]).Int64("amount", netAmount).Msg("sol transfer")
-
-	// Convert netAmount from lamports to SOL
-	netAmountSOL := float64(netAmount) / 1_000_000_000
-	s.logger.Info().Float64("netAmountSOL", netAmountSOL).Msg("Net amount in SOL")
-
 	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(netAmount))
 	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(fee))
 
@@ -325,20 +309,6 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 		Coins:       []common.Coin{solCoin},
 		Gas:         common.Gas{gasCoin},
 	}
-}
-
-// Function to extract memo from a transaction
-func (s *SOLScanner) getMemo(txn rpc.Transaction) string {
-	for _, instruction := range txn.Transaction.Message.Instructions {
-		memoProgramID := "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
-		if txn.Transaction.Message.AccountKeys[instruction.ProgramIdIndex] == memoProgramID {
-			memoBytes, err := base64.StdEncoding.DecodeString(instruction.Data)
-			if err == nil {
-				return string(memoBytes)
-			}
-		}
-	}
-	return ""
 }
 
 // --------------------------------- helpers ---------------------------------
