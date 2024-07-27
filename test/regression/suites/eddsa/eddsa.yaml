@@ -15,3 +15,23 @@ endpoint: http://localhost:1317/thorchain/vaults/asgard
 asserts:
   - map(select(.status == "ActiveVault") | .chains | index("SOL"))
 ---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "=:SOL.SOL:{{ addr_sol_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .vault_pub_key == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
+  - .to_address == "{{ addr_sol_cat }}"
+  - .coin.asset == "SOL.SOL"
+  - .coin.amount == "977997"
+  - .max_gas.asset == "SOL.SOL"
+  - .max_gas.amount == "15000"
+  - .max_gas.decimals == "9"
