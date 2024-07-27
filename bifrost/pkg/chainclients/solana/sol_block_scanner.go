@@ -113,6 +113,12 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		s.logger.Info().Int64("height", height).Msg("fetching txs for height")
 	}
 
+	if chainHeight%10 == 0 {
+		if _, err := s.bridge.PostNetworkFee(height, common.SOLChain, 10000, 1); err != nil {
+			s.logger.Err(err).Msg("fail to post SOL chain single transfer fee to THORNode")
+		}
+	}
+
 	// process all transactions in the block
 	s.currentBlockHeight = height
 	block, err := s.solRpc.GetBlock(height)
