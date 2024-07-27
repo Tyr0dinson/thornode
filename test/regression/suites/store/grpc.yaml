@@ -1,0 +1,52 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pools
+asserts:
+  - .pools|length == 3
+  - .pools[0].asset == "BTC.BTC"
+  - .pools[1].asset == "ETH.ETH"
+  - .pools[2].asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .pagination.total == "3"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pools?pagination.limit=1
+asserts:
+  - .pools|length == 1
+  - .pools[0].asset == "BTC.BTC"
+  - .pagination.total == "0"
+  - .pagination.next_key == "L0VUSC5FVEg="
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pools?pagination.limit=1&pagination.offset=1
+asserts:
+  - .pools|length == 1
+  - .pools[0].asset == "ETH.ETH"
+  - .pagination.total == "0"
+  - .pagination.next_key == "L0VUSC5VU0RDLTBYOTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OQ=="
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pools?pagination.limit=2&pagination.key=L0VUSC5FVEg=
+asserts:
+  - .pools|length == 2
+  - .pools[0].asset == "ETH.ETH"
+  - .pools[1].asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .pagination.total == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pools?pagination.limit=1&pagination.count_total=true
+asserts:
+  - .pools|length == 1
+  - .pools[0].asset == "BTC.BTC"
+  - .pagination.total == "3"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/store/pool/BTC.BTC
+asserts:
+  - .pool.asset == "BTC.BTC"
+  - .pool.balance_asset = "100000000"
