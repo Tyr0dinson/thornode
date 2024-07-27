@@ -1,0 +1,17 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-sol-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - map(select(.status == "ActiveVault") | .chains | index("SOL"))
+---
