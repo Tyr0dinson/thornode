@@ -270,7 +270,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	if tx.ToAddress.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("to address is empty")
 	}
-	if tx.VaultPubKeyEddsa.IsEmpty() {
+	if tx.VaultPubKey.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
 
@@ -305,7 +305,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
 func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutItem) (rpc.Transaction, error) {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKeyEddsa.String())
+	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKey.String())
 	if err != nil {
 		return rpc.Transaction{}, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
 	}
@@ -316,7 +316,7 @@ func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutIte
 
 	c.logger.Info().Str("message", string(message)).Msg("signing message")
 
-	sig, _, err := c.tssKeyManager.RemoteSign(message, txOut.VaultPubKeyEddsa.String())
+	sig, _, err := c.tssKeyManager.RemoteSign(message, txOut.VaultPubKey.String())
 	if err != nil {
 		return rpc.Transaction{}, err
 	}
@@ -375,7 +375,7 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 
 	message := rpc.Message{
 		AccountKeys: []string{
-			tx.VaultPubKeyEddsa.String(),
+			tx.VaultPubKey.String(),
 			tx.ToAddress.String(),
 			systemProgramID,
 		},
