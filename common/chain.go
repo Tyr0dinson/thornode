@@ -166,6 +166,8 @@ func (c Chain) GetGasAsset() Asset {
 		return AVAXAsset
 	case GAIAChain:
 		return ATOMAsset
+	case SOLChain:
+		return SOLAsset
 	default:
 		return EmptyAsset
 	}
@@ -188,6 +190,8 @@ func (c Chain) GetGasUnits() string {
 		return "uatom"
 	case LTCChain:
 		return "satsperbyte"
+	case SOLChain:
+		return "lamport"
 	default:
 		return ""
 	}
