@@ -97,6 +97,7 @@ func NewAssetWithShortCodesV124(input string) (Asset, error) {
 	shorts[DOGEAsset.ShortCode()] = DOGEAsset.String()
 	shorts[ETHAsset.ShortCode()] = ETHAsset.String()
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
+	shorts[SOLAsset.ShortCode()] = SOLAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 
 	long, ok := shorts[input]
@@ -255,6 +256,8 @@ func (a Asset) ShortCode() string {
 		return "a"
 	case "BSC.BNB":
 		return "s"
+	case "SOL.SOL":
+		return "o"
 	default:
 		return ""
 	}
