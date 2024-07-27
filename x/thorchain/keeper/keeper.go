@@ -3,6 +3,7 @@ package keeper
 import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/store/prefix"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -97,6 +98,7 @@ type KeeperConfig interface {
 }
 
 type KeeperPool interface {
+	GetPoolStore(ctx cosmos.Context) prefix.Store
 	GetPoolIterator(ctx cosmos.Context) cosmos.Iterator
 	GetPool(ctx cosmos.Context, asset common.Asset) (Pool, error)
 	GetPools(ctx cosmos.Context) (Pools, error)

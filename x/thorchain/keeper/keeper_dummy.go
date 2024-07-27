@@ -8,6 +8,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/simapp"
+	"github.com/cosmos/cosmos-sdk/store/prefix"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"github.com/tendermint/tendermint/libs/log"
@@ -189,6 +190,10 @@ func (k KVStoreDummy) DeletePoolRagnarokStart(ctx cosmos.Context, asset common.A
 
 func (k KVStoreDummy) GetPoolBalances(_ cosmos.Context, _, _ common.Asset) (cosmos.Uint, cosmos.Uint) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint()
+}
+
+func (k KVStoreDummy) GetPoolStore(ctx cosmos.Context) prefix.Store {
+	return prefix.Store{}
 }
 
 func (k KVStoreDummy) GetPoolIterator(_ cosmos.Context) cosmos.Iterator {

@@ -4,9 +4,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/store/prefix"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
+
+func (k KVStore) GetPoolStore(ctx cosmos.Context) prefix.Store {
+	store := ctx.KVStore(k.storeKey)
+	return prefix.NewStore(store, []byte(prefixPool))
+}
 
 func (k KVStore) setPool(ctx cosmos.Context, key string, record Pool) {
 	store := ctx.KVStore(k.storeKey)
