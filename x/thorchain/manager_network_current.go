@@ -14,12 +14,6 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-// const values used to emit events
-const (
-	EventTypeActiveVault   = "ActiveVault"
-	EventTypeInactiveVault = "InactiveVault"
-)
-
 // NetworkMgrVCUR is going to manage the vaults
 type NetworkMgrVCUR struct {
 	k          keeper.Keeper
