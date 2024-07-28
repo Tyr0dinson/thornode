@@ -1028,20 +1028,20 @@ func (vm *NetworkMgrVCUR) addPOLLiquidity(
 	if runeAmt.GT(bal) {
 		return nil
 	}
-	if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, coins); err != nil {
+	// Cache the RUNE transfer so that not taking place if the add liquidity errors.
+	cacheCtx, commit := ctx.CacheContext()
+	if err := mgr.Keeper().SendFromModuleToModule(cacheCtx, ReserveName, AsgardName, coins); err != nil {
 		return err
 	}
 
 	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-ADD")
 	msg := NewMsgAddLiquidity(tx, pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
-	_, err = handler(ctx, msg)
+	_, err = handler(cacheCtx, msg)
 	if err != nil {
-		// revert the rune back to the reserve
-		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coins); err != nil {
-			return err
-		}
 		return err
 	}
+	commit()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 	// deposit was successful, update the rune pool units accordingly
 	runePool.ReserveUnits = runePool.ReserveUnits.Add(depositUnits)
