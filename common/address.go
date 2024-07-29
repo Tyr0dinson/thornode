@@ -8,7 +8,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
-	"github.com/cosmos/btcutil/base58"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/common"
@@ -111,9 +110,9 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
-	// Check ED25519 (base58 encoded) addresses
-	_, _, err = base58.CheckDecode(address)
-	if err != nil {
+	// Check ED25519 (base58 encoded) addresses - SOL addresses must be 32 bytes long
+	res, err := Base58Decode(address)
+	if err == nil && len(res) == 32 {
 		return Address(address), nil
 	}
 
@@ -269,6 +268,13 @@ func (addr Address) IsChain(chain Chain) bool {
 			return true
 		}
 		return false
+	case SOLChain:
+		res, err := Base58Decode(addr.String())
+		if err == nil && len(res) == 32 {
+			return true
+		}
+		return false
+
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -383,6 +389,8 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if err == nil {
 			return MockNet
 		}
+	case SOLChain:
+		return currentNetwork
 	}
 	return currentNetwork
 }

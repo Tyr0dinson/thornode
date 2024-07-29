@@ -20,6 +20,7 @@ import (
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/config"
 	types2 "gitlab.com/thorchain/thornode/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -139,4 +140,23 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
+
+	// Valid outbound
+	result, _, obs, err = e.SignTx(stypes.TxOutItem{
+		Chain:       common.SOLChain,
+		ToAddress:   addr,
+		VaultPubKey: pubkeys[len(pubkeys)-1],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}, 1)
+
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Assert(obs, NotNil)
 }
