@@ -282,14 +282,10 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
-	// prettyPrint(solTx)
-
 	checkPointBytes, err := solTx.Serialize()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
 	}
-
-	// c.logger.Info().Str("tx", jsonString(solTx)).Msg("signing tx")
 
 	signedTx, err := c.signTransaction(solTx, tx)
 	if err != nil {
@@ -352,11 +348,6 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 	if memo.IsInbound() {
 		return solTx, fmt.Errorf("inbound memo should not be used for outbound tx")
 	}
-
-	// vaultPubKeyEddsa, err := base58Decode(tx.VaultPubKeyEddsa.String())
-	// if err != nil {
-	// 	return nil, nil, nil, err
-	// }
 
 	if len(tx.Coins) != 1 {
 		return solTx, fmt.Errorf("only support one coin per transaction")
@@ -432,163 +423,6 @@ func createTransferInstructionData(amountLamports *big.Int) []byte {
 
 	return data
 }
-
-// const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-// // Base58Encode encodes a byte array to a base58 encoded string
-// func Base58Encode(input []byte) string {
-// 	bi := new(big.Int).SetBytes(input)
-// 	base := big.NewInt(58)
-// 	zero := big.NewInt(0)
-// 	mod := &big.Int{}
-
-// 	var result []byte
-
-// 	for bi.Cmp(zero) != 0 {
-// 		bi.DivMod(bi, base, mod)
-// 		result = append(result, alphabet[mod.Int64()])
-// 	}
-
-// 	// Leading zero bytes
-// 	for _, b := range input {
-// 		if b == 0x00 {
-// 			result = append(result, alphabet[0])
-// 		} else {
-// 			break
-// 		}
-// 	}
-
-// 	// Reverse the result
-// 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-// 		result[i], result[j] = result[j], result[i]
-// 	}
-
-// 	return string(result)
-// }
-
-// // sign is design to sign a given message with keysign party and keysign wrapper
-// func (c *SOLClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {
-// 	rawBytes, err := c.tssSign(tx, poolPubKey)
-// 	if err == nil && rawBytes != nil {
-// 		return rawBytes, nil
-// 	}
-// 	var keysignError tss.KeysignError
-// 	if errors.As(err, &keysignError) {
-// 		if len(keysignError.Blame.BlameNodes) == 0 {
-// 			// TSS doesn't know which node to blame
-// 			return nil, fmt.Errorf("fail to sign tx: %w", err)
-// 		}
-// 		// key sign error forward the keysign blame to thorchain
-// 		txID, errPostKeysignFail := c.bridge.PostKeysignFailure(keysignError.Blame, height, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
-// 		if errPostKeysignFail != nil {
-// 			return nil, multierror.Append(err, errPostKeysignFail)
-// 		}
-// 		c.logger.Info().Str("tx_id", txID.String()).Msgf("post keysign failure to thorchain")
-// 	}
-// 	return nil, fmt.Errorf("fail to sign tx: %w", err)
-// }
-
-// // Sign the given transaction
-// func (c *SOLClient) tssSign(txn rpc.Transaction, pubKey common.PubKey) ([]byte, error) {
-// 	if tx == nil {
-// 		return nil, errors.New("tx is nil")
-// 	}
-// 	if pubKey.IsEmpty() {
-// 		return nil, errors.New("pool public key is empty")
-// 	}
-// 	var err error
-// 	var sig []byte
-
-// 	message, err := txn.serialize()
-// 	if err != nil {
-// 		return txn, fmt.Errorf("failed to serialize transaction: %w", err)
-// 	}
-
-// 	hash := w.signer.Hash(tx)
-// 	sig, recovery, err := w.tssKeyManager.RemoteSign(hash[:], poolPubKey)
-// 	if err != nil || sig == nil {
-// 		return nil, fmt.Errorf("fail to TSS sign: %w", err)
-// 	}
-// 	secpPubKey, err := codec.ToTmPubKeyInterface(pk)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if ecrypto.VerifySignature(secpPubKey.Bytes(), hash[:], sig) {
-// 		w.logger.Info().Msg("we can successfully verify the bytes")
-// 	} else {
-// 		w.logger.Error().Msg("Oops! we cannot verify the bytes")
-// 	}
-// 	// add the recovery id at the end
-// 	result := make([]byte, 65)
-// 	copy(result, sig)
-// 	result[64] = recovery[0]
-// 	return result, nil
-
-// 	return txn, nil
-
-// 	if err != nil {
-// 		return nil, fmt.Errorf("fail to sign tx: %w", err)
-// 	}
-// 	newTx, err := tx.WithSignature(w.signer, sig)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("fail to apply signature to tx: %w", err)
-// 	}
-// 	enc, err := newTx.MarshalJSON()
-// 	if err != nil {
-// 		return nil, fmt.Errorf("fail to marshal tx to json: %w", err)
-// 	}
-// 	return enc, nil
-// }
-
-// // Serialize the transaction
-// func (tx SolanaTransaction) serialize() ([]byte, error) {
-// 	var serializedTx []byte
-
-// 	// Serialize signatures
-// 	signatureCount := uint8(len(tx.Signatures))
-// 	serializedTx = append(serializedTx, signatureCount)
-// 	for _, sig := range tx.Signatures {
-// 		serializedTx = append(serializedTx, sig...)
-// 	}
-
-// 	// Serialize recent blockhash
-// 	blockhashBytes, err := hex.DecodeString(tx.RecentBlockhash)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	serializedTx = append(serializedTx, blockhashBytes...)
-
-// 	// Serialize instructions
-// 	instructionCount := uint8(len(tx.Instructions))
-// 	serializedTx = append(serializedTx, instructionCount)
-// 	for _, instruction := range tx.Instructions {
-// 		serializedTx = append(serializedTx, instruction.ProgramID[:]...)
-
-// 		accountCount := uint8(len(instruction.Accounts))
-// 		serializedTx = append(serializedTx, accountCount)
-// 		for _, account := range instruction.Accounts {
-// 			serializedTx = append(serializedTx, account.PublicKey[:]...)
-// 			if account.IsSigner {
-// 				serializedTx = append(serializedTx, 1)
-// 			} else {
-// 				serializedTx = append(serializedTx, 0)
-// 			}
-// 			if account.IsWritable {
-// 				serializedTx = append(serializedTx, 1)
-// 			} else {
-// 				serializedTx = append(serializedTx, 0)
-// 			}
-// 		}
-
-// 		dataLength := uint16(len(instruction.Data))
-// 		dataLengthBytes := make([]byte, 2)
-// 		binary.LittleEndian.PutUint16(dataLengthBytes, dataLength)
-// 		serializedTx = append(serializedTx, dataLengthBytes...)
-// 		serializedTx = append(serializedTx, instruction.Data...)
-// 	}
-
-// 	return serializedTx, nil
-// }
 
 // --------------------------------- broadcast ---------------------------------
 
