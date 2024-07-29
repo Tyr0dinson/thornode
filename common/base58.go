@@ -37,19 +37,33 @@ func Base58Decode(input string) ([]byte, error) {
 	return append(make([]byte, leadingZeros), decoded...), nil
 }
 
-// func main() {
-// 	address := "BEcrPLugbAY1zEJGUNYgzcsxMi72rPeVwG6qKm96LK5g"
-// 	decoded, err := Base58Decode(address)
-// 	if err != nil {
-// 		fmt.Println("Error decoding address:", err)
-// 		return
-// 	}
+// Base58Encode encodes a byte array to a base58 encoded string
+func Base58Encode(input []byte) string {
+	bi := new(big.Int).SetBytes(input)
+	base := big.NewInt(58)
+	zero := big.NewInt(0)
+	mod := &big.Int{}
 
-// 	fmt.Println("Decoded address:", decoded)
+	var result []byte
 
-// 	if len(decoded) == 32 {
-// 		fmt.Println("Valid Solana address")
-// 	} else {
-// 		fmt.Println("Invalid Solana address")
-// 	}
-// }
+	for bi.Cmp(zero) != 0 {
+		bi.DivMod(bi, base, mod)
+		result = append(result, base58Alphabet[mod.Int64()])
+	}
+
+	// Leading zero bytes
+	for _, b := range input {
+		if b == 0x00 {
+			result = append(result, base58Alphabet[0])
+		} else {
+			break
+		}
+	}
+
+	// Reverse the result
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return string(result)
+}

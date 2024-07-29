@@ -115,14 +115,15 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
-	e, err := NewSOLClient(s.thorKeys, config.BifrostChainConfiguration{
-		RPCHost: "http://" + s.server.Listener.Addr().String(),
-		BlockScanner: config.BifrostBlockScannerConfiguration{
-			StartBlockHeight:   1, // avoids querying thorchain for block height
-			HTTPRequestTimeout: time.Second,
-			MaxGasLimit:        80000,
-		},
-	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight:   1, // avoids querying thorchain for block height
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 	c.Assert(pubkeyMgr.Start(), IsNil)

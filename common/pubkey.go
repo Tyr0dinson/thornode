@@ -3,7 +3,6 @@ package common
 import (
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"sort"
 	"strings"
 	"sync"
@@ -41,39 +40,6 @@ var (
 	pubkeyToAddressCacheMu = &sync.Mutex{}
 )
 
-const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-// Base58Encode encodes a byte array to a base58 encoded string
-func base58Encode(input []byte) string {
-	bi := new(big.Int).SetBytes(input)
-	base := big.NewInt(58)
-	zero := big.NewInt(0)
-	mod := &big.Int{}
-
-	var result []byte
-
-	for bi.Cmp(zero) != 0 {
-		bi.DivMod(bi, base, mod)
-		result = append(result, alphabet[mod.Int64()])
-	}
-
-	// Leading zero bytes
-	for _, b := range input {
-		if b == 0x00 {
-			result = append(result, alphabet[0])
-		} else {
-			break
-		}
-	}
-
-	// Reverse the result
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
-
-	return string(result)
-}
-
 // ConvertEdDSAPubKeyToSolAddress converts an EdDSA public key to a Solana address
 func convertEdDSAPubKeyToSolAddress(pubKey []byte) (string, error) {
 	// Check if the decoded public key is 32 bytes
@@ -82,7 +48,7 @@ func convertEdDSAPubKeyToSolAddress(pubKey []byte) (string, error) {
 	}
 
 	// Encode the public key to base58 to get the Solana address
-	solAddress := base58Encode(pubKey)
+	solAddress := Base58Encode(pubKey)
 
 	return solAddress, nil
 }
