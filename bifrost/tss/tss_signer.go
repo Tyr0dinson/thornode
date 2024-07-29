@@ -119,7 +119,7 @@ func (s *KeySign) RemoteSign(msg []byte, poolPubKey string) ([]byte, []byte, err
 			// this means the node tried to do keysign , however this node has not been chosen to take part in the keysign committee
 			return nil, nil, nil
 		}
-		s.logger.Debug().Str("R", resp.R).Str("S", resp.S).Str("recovery", resp.RecoveryID).Msg("tss result")
+		s.logger.Info().Str("R", resp.R).Str("S", resp.S).Str("recovery", resp.RecoveryID).Msg("tss result")
 		data, err := getSignature(resp.R, resp.S)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode tss signature: %w", err)

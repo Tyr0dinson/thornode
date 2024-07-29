@@ -148,7 +148,6 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 // GetHeight returns the current block height of Solana
 func (s *SOLScanner) GetHeight() (int64, error) {
 	height, err := s.solRpc.GetBlockHeight()
-	s.logger.Info().Int64("height", int64(height)).Msg("block height fetched")
 	if err != nil {
 		return -1, err
 	}
@@ -158,7 +157,6 @@ func (s *SOLScanner) GetHeight() (int64, error) {
 // GetLatestBlockHash returns the latest block hash
 func (s *SOLScanner) GetLatestBlockHash() (string, error) {
 	hash, err := s.solRpc.GetLatestBlockhash()
-	s.logger.Info().Str("hash", hash).Msg("latest block hash fetched")
 	if err != nil {
 		return "", err
 	}
@@ -211,7 +209,9 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 	return txIn
 }
 
-// Create a TxInItem for a SOL transfer transaction
+// Create a TxInItem for a SOL transfer transaction. This function will only return a
+// TxInItem if the transaction contains a transfer of SOL. Otherwise, it will return
+// nil.
 func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes.TxInItem {
 	memo := ""
 	netBalanceChange := make(map[string]int64)
@@ -224,7 +224,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 
 		// Check if this instruction is the memo
 		if programID == memoProgramID {
-			memoBytes, err := rpc.Base58Decode(instruction.Data)
+			memoBytes, err := common.Base58Decode(instruction.Data)
 			if err == nil {
 				memo = string(memoBytes)
 			} else {
@@ -232,16 +232,13 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 			}
 		}
 
-		// Check if this instruction is a sol transfer
+		// SOL transfers using the systemProgram, so skip if program is something else.
 		if programID != systemProgramID {
 			continue
 		}
 
-		// Log the data for debugging
-		// s.logger.Debug().Str("data", instruction.Data).Msg("Instruction data before decoding")
-
 		// Decode the data
-		data, err := rpc.Base58Decode(instruction.Data)
+		data, err := common.Base58Decode(instruction.Data)
 		if err != nil {
 			s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode instruction data")
 			continue

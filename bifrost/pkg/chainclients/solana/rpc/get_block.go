@@ -4,41 +4,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strconv"
+
+	"gitlab.com/thorchain/thornode/common"
 )
-
-const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-// Base58Decode decodes a base58 encoded string to a byte array
-func Base58Decode(input string) ([]byte, error) {
-	alphabetMap := make(map[rune]int)
-	for i, c := range alphabet {
-		alphabetMap[c] = i
-	}
-
-	result := big.NewInt(0)
-	base := big.NewInt(58)
-
-	for _, c := range input {
-		charIndex, ok := alphabetMap[c]
-		if !ok {
-			return nil, fmt.Errorf("invalid character in base58 string: %c", c)
-		}
-		result.Mul(result, base)
-		result.Add(result, big.NewInt(int64(charIndex)))
-	}
-
-	decoded := result.Bytes()
-
-	// Add leading zeros
-	leadingZeros := 0
-	for leadingZeros < len(input) && input[leadingZeros] == alphabet[0] {
-		leadingZeros++
-	}
-
-	return append(make([]byte, leadingZeros), decoded...), nil
-}
 
 // Response struct for getBlock
 type GetBlockResponse struct {
@@ -70,17 +39,17 @@ func (tx Transaction) Serialize() ([]byte, error) {
 	signatureCount := uint8(len(tx.Transaction.Signatures))
 	serializedTx = append(serializedTx, signatureCount)
 	for _, sig := range tx.Transaction.Signatures {
-		sigBytes, err := Base58Decode(sig)
+		sigBytes, err := common.Base58Decode(sig)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to decode transaction signature: %w %s", err, sig)
 		}
 		serializedTx = append(serializedTx, sigBytes...)
 	}
 
 	// Serialize recent blockhash
-	blockhashBytes, err := Base58Decode(tx.Transaction.Message.RecentBlockhash)
+	blockhashBytes, err := common.Base58Decode(tx.Transaction.Message.RecentBlockhash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode blockhash: %w", err)
 	}
 	serializedTx = append(serializedTx, blockhashBytes...)
 
@@ -103,9 +72,9 @@ func (tx Transaction) Serialize() ([]byte, error) {
 		binary.LittleEndian.PutUint16(dataLengthBytes, dataLength)
 		serializedTx = append(serializedTx, dataLengthBytes...)
 
-		dataBytes, err := Base58Decode(instruction.Data)
+		dataBytes, err := common.Base58Decode(instruction.Data)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to decode dataBytes: %w", err)
 		}
 		serializedTx = append(serializedTx, dataBytes...)
 	}

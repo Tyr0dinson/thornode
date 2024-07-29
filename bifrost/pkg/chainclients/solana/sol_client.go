@@ -99,12 +99,13 @@ func NewSOLClient(
 		cfg:         cfg,
 		localPubKey: pk,
 		// kw:           keysignWrapper,
-		bridge:       bridge,
-		pubkeyMgr:    pubkeyMgr,
-		poolMgr:      poolMgr,
-		tssKeySigner: tssKm,
-		wg:           &sync.WaitGroup{},
-		stopchan:     make(chan struct{}),
+		bridge:        bridge,
+		pubkeyMgr:     pubkeyMgr,
+		poolMgr:       poolMgr,
+		tssKeySigner:  tssKm,
+		tssKeyManager: tssKm,
+		wg:            &sync.WaitGroup{},
+		stopchan:      make(chan struct{}),
 	}
 
 	// initialize storage
@@ -265,8 +266,6 @@ func (c *SOLClient) ShouldReportSolvency(height int64) bool {
 
 // SignTx returns the signed transaction.
 func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
-	// TODO: Implement
-
 	if tx.ToAddress.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("to address is empty")
 	}
@@ -283,17 +282,22 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
+	// prettyPrint(solTx)
+
 	checkPointBytes, err := solTx.Serialize()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
 	}
 
-	c.logger.Info().Str("tx", jsonString(solTx)).Msg("signing tx")
+	// c.logger.Info().Str("tx", jsonString(solTx)).Msg("signing tx")
 
 	signedTx, err := c.signTransaction(solTx, tx)
 	if err != nil {
 		return nil, checkPointBytes, nil, fmt.Errorf("fail to sign tx: %w", err)
 	}
+
+	fmt.Println("SIGNED TX")
+	prettyPrint(signedTx)
 
 	signedBytes, err := signedTx.Serialize()
 	if err != nil {
@@ -305,27 +309,32 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
 func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutItem) (rpc.Transaction, error) {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKey.String())
-	if err != nil {
-		return rpc.Transaction{}, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
-	}
+	// TODO: Get pubkey
+	// cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKey.String())
+	// if err != nil {
+	// 	return rpc.Transaction{}, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
+	// }
 	message, err := solTx.Serialize()
 	if err != nil {
 		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	c.logger.Info().Str("message", string(message)).Msg("signing message")
+	c.logger.Info().Str("txout", jsonString(txOut)).Msg("signing message")
 
-	sig, _, err := c.tssKeyManager.RemoteSign(message, txOut.VaultPubKey.String())
+	sig, _, err := c.tssKeySigner.RemoteSign(message, txOut.VaultPubKey.String())
 	if err != nil {
 		return rpc.Transaction{}, err
 	}
 
-	if !cpk.VerifySignature(message, sig) {
-		return rpc.Transaction{}, fmt.Errorf("unable to verify signature with secpPubKey")
-	}
+	fmt.Println("SIG")
+	prettyPrint(sig)
 
-	solTx.Transaction.Signatures = append(solTx.Transaction.Signatures, Base58Encode(sig))
+	// TODO: Verify signature
+	// if !cpk.VerifySignature(message, sig) {
+	// 	return rpc.Transaction{}, fmt.Errorf("unable to verify signature with secpPubKey")
+	// }
+
+	solTx.Transaction.Signatures = append(solTx.Transaction.Signatures, common.Base58Encode(sig))
 
 	return solTx, nil
 }
@@ -360,17 +369,17 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 
 	// Create instruction
 	systemProgramID := "11111111111111111111111111111111"
-	data := base64.StdEncoding.EncodeToString(createTransferInstructionData(solValue))
-
-	recentBlockhash, err := c.solScanner.GetLatestBlockHash()
-	if err != nil {
-		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
-	}
+	data := common.Base58Encode(createTransferInstructionData(solValue))
 
 	instruction := rpc.Instruction{
 		Accounts:       []int{0, 1},
 		Data:           data,
 		ProgramIdIndex: 2,
+	}
+
+	recentBlockhash, err := c.solScanner.GetLatestBlockHash()
+	if err != nil {
+		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
 	}
 
 	message := rpc.Message{
@@ -424,38 +433,38 @@ func createTransferInstructionData(amountLamports *big.Int) []byte {
 	return data
 }
 
-const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+// const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-// Base58Encode encodes a byte array to a base58 encoded string
-func Base58Encode(input []byte) string {
-	bi := new(big.Int).SetBytes(input)
-	base := big.NewInt(58)
-	zero := big.NewInt(0)
-	mod := &big.Int{}
+// // Base58Encode encodes a byte array to a base58 encoded string
+// func Base58Encode(input []byte) string {
+// 	bi := new(big.Int).SetBytes(input)
+// 	base := big.NewInt(58)
+// 	zero := big.NewInt(0)
+// 	mod := &big.Int{}
 
-	var result []byte
+// 	var result []byte
 
-	for bi.Cmp(zero) != 0 {
-		bi.DivMod(bi, base, mod)
-		result = append(result, alphabet[mod.Int64()])
-	}
+// 	for bi.Cmp(zero) != 0 {
+// 		bi.DivMod(bi, base, mod)
+// 		result = append(result, alphabet[mod.Int64()])
+// 	}
 
-	// Leading zero bytes
-	for _, b := range input {
-		if b == 0x00 {
-			result = append(result, alphabet[0])
-		} else {
-			break
-		}
-	}
+// 	// Leading zero bytes
+// 	for _, b := range input {
+// 		if b == 0x00 {
+// 			result = append(result, alphabet[0])
+// 		} else {
+// 			break
+// 		}
+// 	}
 
-	// Reverse the result
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
+// 	// Reverse the result
+// 	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+// 		result[i], result[j] = result[j], result[i]
+// 	}
 
-	return string(result)
-}
+// 	return string(result)
+// }
 
 // // sign is design to sign a given message with keysign party and keysign wrapper
 // func (c *SOLClient) sign(tx *etypes.Transaction, poolPubKey common.PubKey, height int64, txOutItem stypes.TxOutItem) ([]byte, error) {

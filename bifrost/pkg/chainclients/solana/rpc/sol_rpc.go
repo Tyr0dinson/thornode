@@ -98,8 +98,6 @@ func (s *SolRPC) GetBlockHeight() (uint64, error) {
 		return 0, fmt.Errorf("failed to call getSlot: %w", err)
 	}
 
-	s.logger.Info().Str("response", string(respBody)).Msg("block height fetched")
-
 	var result struct {
 		Result uint64 `json:"result"`
 	}
@@ -116,8 +114,6 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to call getLatestBlockhash: %w", err)
 	}
-
-	s.logger.Info().Str("response", string(respBody)).Msg("recent getLatestBlockhash fetched")
 
 	var result struct {
 		Result struct {

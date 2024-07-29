@@ -58,8 +58,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mtzUk1zTJzTdyC8Pz6PPPyCHTEL5RLVyDJ",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "12345",
-				mocknet: "12345",
+				mainnet: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+				mocknet: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 			},
 		},
 		{
@@ -86,8 +86,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mhcdvpCBUL3RRNW2y8LuksADWfecEmkzju",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "12345",
-				mocknet: "12345",
+				mainnet: "9TfXPbVZBwv1BdUnFzyTyLpaDUCGgtDYY6LBurLfjTdQ",
+				mocknet: "9TfXPbVZBwv1BdUnFzyTyLpaDUCGgtDYY6LBurLfjTdQ",
 			},
 		},
 		{
@@ -114,8 +114,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mfXkrKKDupWZt2YC3YKKZDjrbAwrBFwj8W",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "12345",
-				mocknet: "12345",
+				mainnet: "Ho1cCMjNoZ7hG7ts1iQHPqBE5nGidJcjTmvaey56YFzk",
+				mocknet: "Ho1cCMjNoZ7hG7ts1iQHPqBE5nGidJcjTmvaey56YFzk",
 			},
 		},
 		{
@@ -142,8 +142,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mrqWSS33oi57uzwjVsGBiEeYi4ArRRWHV4",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "12345",
-				mocknet: "12345",
+				mainnet: "B2rEFJVP9xotaLy9rvqARYVtrZwNJyJHiE7KwBjFAXwH",
+				mocknet: "B2rEFJVP9xotaLy9rvqARYVtrZwNJyJHiE7KwBjFAXwH",
 			},
 		},
 		{
@@ -170,8 +170,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mtyBWSzMZaCxJ1xy9apJBZzXz648BZrpJg",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "12345",
-				mocknet: "12345",
+				mainnet: "4nTaMRurvKZG4H3DnsQUopMxgdUdGBaQpyT87FJ9deg1",
+				mocknet: "4nTaMRurvKZG4H3DnsQUopMxgdUdGBaQpyT87FJ9deg1",
 			},
 		},
 	}

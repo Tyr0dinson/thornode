@@ -42,13 +42,16 @@ var (
 
 // ConvertEdDSAPubKeyToSolAddress converts an EdDSA public key to a Solana address
 func convertEdDSAPubKeyToSolAddress(pubKey []byte) (string, error) {
-	// Check if the decoded public key is 32 bytes
-	if len(pubKey) != 32 {
-		return "", fmt.Errorf("invalid public key length: expected 32 bytes, got %d bytes", len(pubKey))
+	// Check if the decoded public key is 33 bytes
+	if len(pubKey) != 33 {
+		return "", fmt.Errorf("invalid public key length: expected 33 bytes, got %d bytes", len(pubKey))
 	}
 
+	// Remove the prefix byte to get the raw 32-byte EdDSA public key
+	rawPubKey := pubKey[1:]
+
 	// Encode the public key to base58 to get the Solana address
-	solAddress := Base58Encode(pubKey)
+	solAddress := Base58Encode(rawPubKey)
 
 	return solAddress, nil
 }

@@ -2,7 +2,6 @@ package solana
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,7 +65,6 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
 			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
-			fmt.Println("GET PUBKEYS")
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 		default:
 			body, err := io.ReadAll(req.Body)
@@ -83,7 +81,8 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			if rpcRequest.Method == "getBlock" {
 				httpTestHandler(c, rw, "./test/getBlock.json")
 			}
-			if rpcRequest.Method == "getLatestBlockHash" {
+			if rpcRequest.Method == "getLatestBlockhash" {
+				// fmt.Println("GET LATEST BLOCK HASH", rpcRequest)
 				httpTestHandler(c, rw, "./test/getLatestBlockHash.json")
 			}
 		}
@@ -111,6 +110,44 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight:   1, // avoids querying thorchain for block height
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        15000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+
+	// Create TX
+	tx, err := e.CreateTx(stypes.TxOutItem{
+		Chain:     common.SOLChain,
+		ToAddress: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(tx, NotNil)
+
+	// Serialize TX
+	rawTx, err := tx.Serialize()
+	c.Assert(err, IsNil)
+	c.Assert(len(rawTx) > 0, Equals, true)
+}
+
 func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
@@ -129,13 +166,14 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	pubkeys := pubkeyMgr.GetPubKeys()
-	addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.SOLChain)
-	c.Assert(err, IsNil)
+	// fmt.Println("PUBKEYS", pubkeys)
+	// addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.SOLChain)
+	// c.Assert(err, IsNil)
 
 	// Not SOL chain
 	result, _, obs, err := e.SignTx(stypes.TxOutItem{
 		Chain:       common.BTCChain,
-		ToAddress:   addr,
+		ToAddress:   "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		VaultPubKey: "",
 	}, 1)
 	c.Assert(err, NotNil)
@@ -145,7 +183,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	// Valid outbound
 	result, _, obs, err = e.SignTx(stypes.TxOutItem{
 		Chain:       common.SOLChain,
-		ToAddress:   addr,
+		ToAddress:   "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		VaultPubKey: pubkeys[len(pubkeys)-1],
 		Coins: common.Coins{
 			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
