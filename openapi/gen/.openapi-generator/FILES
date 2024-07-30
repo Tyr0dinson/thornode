@@ -104,6 +104,7 @@ docs/RUNEPoolResponse.md
 docs/RUNEPoolResponseProviders.md
 docs/RUNEPoolResponseReserve.md
 docs/RUNEProvider.md
+docs/RunePoolShare.md
 docs/Saver.md
 docs/SaversApi.md
 docs/StreamingStatus.md
@@ -204,6 +205,7 @@ model_quote_swap_response.go
 model_rune_pool_response.go
 model_rune_pool_response_providers.go
 model_rune_pool_response_reserve.go
+model_rune_pool_share.go
 model_rune_provider.go
 model_saver.go
 model_streaming_status.go

@@ -210,6 +210,7 @@ Class | Method | HTTP request | Description
  - [RUNEPoolResponseProviders](docs/RUNEPoolResponseProviders.md)
  - [RUNEPoolResponseReserve](docs/RUNEPoolResponseReserve.md)
  - [RUNEProvider](docs/RUNEProvider.md)
+ - [RunePoolShare](docs/RunePoolShare.md)
  - [Saver](docs/Saver.md)
  - [StreamingStatus](docs/StreamingStatus.md)
  - [StreamingSwap](docs/StreamingSwap.md)

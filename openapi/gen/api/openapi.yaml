@@ -2400,6 +2400,17 @@ components:
       type: object
     POL:
       example:
+        pool_shares:
+        - rune_value: "1234"
+          asset_value: "1234"
+          ownership_bps: 0
+          asset: BTC.BTC
+          tor_value: "1234"
+        - rune_value: "1234"
+          asset_value: "1234"
+          ownership_bps: 0
+          asset: BTC.BTC
+          tor_value: "1234"
         current_deposit: "21999180112172346"
         rune_deposited: "857134475040"
         rune_withdrawn: "0"
@@ -2426,9 +2437,14 @@ components:
           description: current amount of rune deposited
           example: "21999180112172346"
           type: string
+        pool_shares:
+          items:
+            $ref: '#/components/schemas/RunePoolShare'
+          type: array
       required:
       - current_deposit
       - pnl
+      - pool_shares
       - rune_deposited
       - rune_withdrawn
       - value
@@ -3817,6 +3833,40 @@ components:
       - result
       - tx
       type: object
+    RunePoolShare:
+      example:
+        rune_value: "1234"
+        asset_value: "1234"
+        ownership_bps: 0
+        asset: BTC.BTC
+        tor_value: "1234"
+      properties:
+        asset:
+          example: BTC.BTC
+          type: string
+        rune_value:
+          description: POL position value in rune
+          example: "1234"
+          type: string
+        asset_value:
+          description: POL position value in asset
+          example: "1234"
+          type: string
+        tor_value:
+          description: POL position value in tor
+          example: "1234"
+          type: string
+        ownership_bps:
+          description: POL share of the pool in basis points
+          format: int64
+          type: integer
+      required:
+      - asset
+      - asset_value
+      - ownership_bps
+      - rune_value
+      - tor_value
+      type: object
     PoolResponse:
       $ref: '#/components/schemas/Pool'
     PoolsResponse:
@@ -3842,6 +3892,17 @@ components:
           value: "123456"
           pnl: "123456"
         pol:
+          pool_shares:
+          - rune_value: "1234"
+            asset_value: "1234"
+            ownership_bps: 0
+            asset: BTC.BTC
+            tor_value: "1234"
+          - rune_value: "1234"
+            asset_value: "1234"
+            ownership_bps: 0
+            asset: BTC.BTC
+            tor_value: "1234"
           current_deposit: "21999180112172346"
           rune_deposited: "857134475040"
           rune_withdrawn: "0"

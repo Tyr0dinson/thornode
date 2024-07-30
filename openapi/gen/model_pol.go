@@ -26,19 +26,21 @@ type POL struct {
 	Pnl string `json:"pnl"`
 	// current amount of rune deposited
 	CurrentDeposit string `json:"current_deposit"`
+	PoolShares []RunePoolShare `json:"pool_shares"`
 }
 
 // NewPOL instantiates a new POL object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string) *POL {
+func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string, poolShares []RunePoolShare) *POL {
 	this := POL{}
 	this.RuneDeposited = runeDeposited
 	this.RuneWithdrawn = runeWithdrawn
 	this.Value = value
 	this.Pnl = pnl
 	this.CurrentDeposit = currentDeposit
+	this.PoolShares = poolShares
 	return &this
 }
 
@@ -170,6 +172,30 @@ func (o *POL) SetCurrentDeposit(v string) {
 	o.CurrentDeposit = v
 }
 
+// GetPoolShares returns the PoolShares field value
+func (o *POL) GetPoolShares() []RunePoolShare {
+	if o == nil {
+		var ret []RunePoolShare
+		return ret
+	}
+
+	return o.PoolShares
+}
+
+// GetPoolSharesOk returns a tuple with the PoolShares field value
+// and a boolean to check if the value has been set.
+func (o *POL) GetPoolSharesOk() ([]RunePoolShare, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.PoolShares, true
+}
+
+// SetPoolShares sets field value
+func (o *POL) SetPoolShares(v []RunePoolShare) {
+	o.PoolShares = v
+}
+
 func (o POL) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -186,6 +212,9 @@ func (o POL) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["current_deposit"] = o.CurrentDeposit
+	}
+	if true {
+		toSerialize["pool_shares"] = o.PoolShares
 	}
 	return json.Marshal(toSerialize)
 }

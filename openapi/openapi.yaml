@@ -1573,6 +1573,7 @@ components:
         - value
         - pnl
         - current_deposit
+        - pool_shares
       properties:
         rune_deposited:
           type: string
@@ -1594,6 +1595,10 @@ components:
           type: string
           example: "21999180112172346"
           description: current amount of rune deposited
+        pool_shares:
+          type: array
+          items:
+            $ref: "#/components/schemas/RunePoolShare"
 
     RUNEProvider:
       type: object
@@ -2681,6 +2686,35 @@ components:
             codespace:
               type: string
               example: "ibc"
+    
+    RunePoolShare:
+      type: object
+      required:
+        - asset
+        - rune_value
+        - asset_value
+        - tor_value
+        - ownership_bps
+      properties:
+        asset:
+          type: string
+          example: "BTC.BTC"
+        rune_value:
+          type: string
+          example: "1234"
+          description: POL position value in rune
+        asset_value:
+          type: string
+          example: "1234"
+          description: POL position value in asset
+        tor_value:
+          type: string
+          example: "1234"
+          description: POL position value in tor
+        ownership_bps:
+          type: integer
+          format: int64
+          description: POL share of the pool in basis points
 
     # ------------------------------ responses ------------------------------
 
