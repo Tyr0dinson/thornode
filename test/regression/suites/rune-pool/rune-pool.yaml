@@ -145,7 +145,11 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - 'all(.pol|.[]; . == "0")'
+  - .pol.rune_deposited == "0"
+  - .pol.rune_withdrawn == "0"
+  - .pol.value == "0"
+  - .pol.pnl == "0"
+  - .pol.current_deposit == "0"
   - 'all(.reserve|.[]; . == "0")'
   - 'all(.providers|.[]; . == "0")'
 ---
@@ -192,7 +196,11 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - 'all(.pol|.[]; . == "0")'
+  - .pol.rune_deposited == "0"
+  - .pol.rune_withdrawn == "0"
+  - .pol.value == "0"
+  - .pol.pnl == "0"
+  - .pol.current_deposit == "0"
   - 'all(.reserve|.[]; . == "0")'
   - 'all(.providers|.[]; . == "0")'
 ---
@@ -233,7 +241,11 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - 'all(.pol|.[]; . == "0")'
+  - .pol.rune_deposited == "0"
+  - .pol.rune_withdrawn == "0"
+  - .pol.value == "0"
+  - .pol.pnl == "0"
+  - .pol.current_deposit == "0"
   - 'all(.reserve|.[]; . == "0")'
   - .reserve.units == "0"
   - .reserve.value == "0"
@@ -294,6 +306,10 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - 'all(.pol|.[]; . == "0")'
+  - .pol.rune_deposited == "0"
+  - .pol.rune_withdrawn == "0"
+  - .pol.value == "0"
+  - .pol.pnl == "0"
+  - .pol.current_deposit == "0"
   - 'all(.reserve|.[]; . == "0")'
   - 'all(.providers|.[]; . == "0")'
