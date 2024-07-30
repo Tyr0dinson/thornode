@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -1244,4 +1245,51 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	}
 
 	return total, nil
+}
+
+// polPoolShare - calculate the POL ownership in the participated pools
+func polPoolShare(ctx cosmos.Context, mgr Manager) ([]openapi.RunePoolShare, error) {
+	var runePoolShares []openapi.RunePoolShare
+
+	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return runePoolShares, err
+	}
+
+	dollarsPerRune := mgr.Keeper().DollarsPerRune(ctx)
+
+	pools, err := mgr.Keeper().GetPools(ctx)
+	if err != nil {
+		return runePoolShares, err
+	}
+	for _, pool := range pools {
+		if pool.Asset.IsNative() {
+			continue
+		}
+		if pool.BalanceRune.IsZero() {
+			continue
+		}
+		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
+		if lp.Units.IsZero() {
+			continue
+		}
+		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+		if err != nil {
+			return runePoolShares, err
+		}
+		share := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), cosmos.NewUint(constants.MaxBasisPts))
+		runePosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune).MulUint64(2)
+		assetPosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceAsset).MulUint64(2)
+		torPosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune.MulUint64(dollarsPerRune.Uint64())).MulUint64(2)
+		runePoolShares = append(runePoolShares, openapi.RunePoolShare{
+			Asset:        pool.Asset.String(),
+			RuneValue:    runePosValue.String(),
+			AssetValue:   assetPosValue.String(),
+			TorValue:     torPosValue.String(),
+			OwnershipBps: share.BigInt().Int64(),
+		})
+	}
+
+	return runePoolShares, nil
 }

@@ -461,6 +461,12 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 		Add(cosmos.NewIntFromBigInt(pendingRune.BigInt()))
 	reservePnl := sdk.NewIntFromBigInt(reserveValue.BigInt()).Sub(reserveCurrentDeposit)
 
+	// calculate the POL pool share
+	poolShare, err := polPoolShare(ctx, mgr)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get the POL share in LP: %w", err)
+	}
+
 	result := openapi.RUNEPoolResponse{
 		Pol: openapi.POL{
 			RuneDeposited:  pol.RuneDeposited.String(),
@@ -468,6 +474,7 @@ func queryRUNEPool(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			Value:          polValue.String(),
 			Pnl:            pnl.String(),
 			CurrentDeposit: pol.CurrentDeposit().String(),
+			PoolShares:     poolShare,
 		},
 		Providers: openapi.RUNEPoolResponseProviders{
 			Units:          runePool.PoolUnits.String(),
