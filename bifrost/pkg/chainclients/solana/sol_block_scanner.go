@@ -303,6 +303,10 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(netAmount))
 	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(fee))
 
+	// set coin decimals
+	solCoin.Decimals = 9
+	gasCoin.Decimals = 9
+
 	return &stypes.TxInItem{
 		BlockHeight: blockHeight,
 		Tx:          txn.Transaction.Signatures[0],
