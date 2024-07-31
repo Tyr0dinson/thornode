@@ -40,22 +40,6 @@ var (
 	pubkeyToAddressCacheMu = &sync.Mutex{}
 )
 
-// ConvertEdDSAPubKeyToSolAddress converts an EdDSA public key to a Solana address
-func convertEdDSAPubKeyToSolAddress(pubKey []byte) (string, error) {
-	// Check if the decoded public key is 33 bytes
-	if len(pubKey) != 33 {
-		return "", fmt.Errorf("invalid public key length: expected 33 bytes, got %d bytes", len(pubKey))
-	}
-
-	// Remove the prefix byte to get the raw 32-byte EdDSA public key
-	rawPubKey := pubKey[1:]
-
-	// Encode the public key to base58 to get the Solana address
-	solAddress := Base58Encode(rawPubKey)
-
-	return solAddress, nil
-}
-
 // NewPubKey create a new instance of PubKey
 // key is bech32 encoded string
 func NewPubKey(key string) (PubKey, error) {
@@ -213,10 +197,9 @@ func (pubKey PubKey) GetAddress(chain Chain) (Address, error) {
 		if err != nil {
 			return NoAddress, err
 		}
-		addressString, err = convertEdDSAPubKeyToSolAddress(pk.Bytes())
-		if err != nil {
-			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
-		}
+
+		// Encode the public key to base58 to get the Solana address
+		addressString = Base58Encode(pk.Bytes())
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {
