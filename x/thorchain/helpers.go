@@ -1274,7 +1274,7 @@ func polPoolShare(ctx cosmos.Context, mgr Manager) ([]openapi.RUNEPoolShare, err
 			continue
 		}
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		pool.CalcUnits(mgr.GetVersion(), synthSupply)
+		pool.CalcUnits(synthSupply)
 		if err != nil {
 			return runePoolShares, err
 		}
