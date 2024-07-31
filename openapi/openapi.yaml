@@ -2686,7 +2686,7 @@ components:
             codespace:
               type: string
               example: "ibc"
-    
+
     RunePoolShare:
       type: object
       required:
