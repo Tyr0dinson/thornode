@@ -3,6 +3,7 @@ package keeper
 import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -19,7 +20,7 @@ type Keeper interface {
 	SetVersionWithCtx(ctx cosmos.Context, v semver.Version)
 	GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64)
 	SetMinJoinLast(ctx cosmos.Context)
-	GetKey(ctx cosmos.Context, prefix kvTypes.DbPrefix, key string) string
+	GetKey(prefix kvTypes.DbPrefix, key string) string
 	GetStoreVersion(ctx cosmos.Context) int64
 	SetStoreVersion(ctx cosmos.Context, ver int64)
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
@@ -60,6 +61,7 @@ type Keeper interface {
 	KeeperLiquidityProvider
 	KeeperLoan
 	KeeperNodeAccount
+	KeeperUpgrade
 	KeeperObserver
 	KeeperObservedTx
 	KeeperTxOut
@@ -162,6 +164,7 @@ type KeeperNodeAccount interface {
 	SetNodeAccount(ctx cosmos.Context, na NodeAccount) error
 	EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string, pubKeys common.PubKeySet) error
 	GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator
+	GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator
 	GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error)
 	SetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64)
 	IncNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error
@@ -174,6 +177,19 @@ type KeeperNodeAccount interface {
 	GetBondProviders(ctx cosmos.Context, add cosmos.AccAddress) (BondProviders, error)
 	DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cosmos.AccAddress) error
 	RemoveLowBondValidatorAccounts(ctx cosmos.Context) error
+}
+
+type KeeperUpgrade interface {
+	ProposeUpgrade(ctx cosmos.Context, name string, upgrade Upgrade) error
+	GetProposedUpgrade(ctx cosmos.Context, name string) (Upgrade, error)
+	ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error
+	RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error
+	RemoveExpiredUpgradeProposals(ctx cosmos.Context) error
+
+	// x/upgrade module methods
+	GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool)
+	ScheduleUpgrade(ctx cosmos.Context, plan upgradetypes.Plan) error
+	ClearUpgradePlan(ctx cosmos.Context)
 }
 
 type KeeperObserver interface {

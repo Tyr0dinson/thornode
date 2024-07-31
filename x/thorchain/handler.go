@@ -88,6 +88,9 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
 	m[MsgNodePauseChain{}.Type()] = NewNodePauseChainHandler(mgr)
+	m[MsgProposeUpgrade{}.Type()] = NewProposeUpgradeHandler(mgr)
+	m[MsgApproveUpgrade{}.Type()] = NewApproveUpgradeHandler(mgr)
+	m[MsgRejectUpgrade{}.Type()] = NewRejectUpgradeHandler(mgr)
 
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
