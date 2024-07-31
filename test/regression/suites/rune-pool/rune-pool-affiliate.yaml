@@ -111,6 +111,9 @@ asserts:
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE=1972176076}
   - .pol.pnl|tonumber == ${POL_PNL}
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").rune_value|tonumber == ${POL_VALUE}
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").asset_value|tonumber == 496780
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").ownership_bps == 25
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - .providers.units|tonumber == 0
   - .providers.pending_units|tonumber == 0
@@ -207,6 +210,9 @@ asserts:
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.value|tonumber == 898826956
   - .pol.pnl|tonumber == ${POL_PNL=621022977}
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").rune_value|tonumber == 898826956
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").asset_value|tonumber == 2920090
+  - .pol.pool_shares|.[]|select(.asset == "BTC.BTC").ownership_bps == 13
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
   - .providers.units|tonumber == 987543823
