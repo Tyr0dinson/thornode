@@ -61,8 +61,12 @@ require (
 	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+<<<<<<< HEAD
 	github.com/bgentry/speakeasy v0.1.1-0.20220910012023-760eaf8b6816 // indirect
 	github.com/binance-chain/tss-lib v0.0.0-20201118045712-70b2cb4bf916 // indirect
+=======
+	github.com/bgentry/speakeasy v0.1.0 // indirect
+>>>>>>> 4beecbfac (go mod tidy, make generate)
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
@@ -259,6 +263,11 @@ require (
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7 // indirect
 	github.com/zondax/hid v0.9.2 // indirect
 	github.com/zondax/ledger-go v0.14.3 // indirect
+<<<<<<< HEAD
+=======
+	gitlab.com/thorchain/binance-sdk v1.2.3 // indirect
+	gitlab.com/thorchain/tss/go-tss v1.6.6-0.20240725013839-8ea9297fb9cc // indirect
+>>>>>>> 4beecbfac (go mod tidy, make generate)
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect

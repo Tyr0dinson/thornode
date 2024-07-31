@@ -25,7 +25,7 @@ func NewTssHandler(mgr Manager) BaseHandler[*MsgTssPool] {
 		mgr:    mgr,
 		logger: MsgTssPoolLogger,
 		validators: NewValidators[*MsgTssPool]().
-			Register("1.134.0", MsgTssPoolValidateV124),
+			Register("1.134.0", MsgTssPoolValidateV134),
 		handlers: NewHandlers[*MsgTssPool]().
 			Register("1.134.0", MsgTssPoolHandleV134),
 	}
