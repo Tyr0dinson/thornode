@@ -14,25 +14,25 @@ import (
 	"encoding/json"
 )
 
-// RunePoolShare struct for RunePoolShare
-type RunePoolShare struct {
+// RUNEPoolShare struct for RUNEPoolShare
+type RUNEPoolShare struct {
 	Asset string `json:"asset"`
-	// POL position value in rune
+	// value of the total POL position (asset and rune) denominated in rune
 	RuneValue string `json:"rune_value"`
-	// POL position value in asset
+	// value of the total POL position (asset and rune) denominated in asset
 	AssetValue string `json:"asset_value"`
-	// POL position value in tor
+	// value of the total POL position (asset and rune) denominated in tor
 	TorValue string `json:"tor_value"`
 	// POL share of the pool in basis points
 	OwnershipBps int64 `json:"ownership_bps"`
 }
 
-// NewRunePoolShare instantiates a new RunePoolShare object
+// NewRUNEPoolShare instantiates a new RUNEPoolShare object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewRunePoolShare(asset string, runeValue string, assetValue string, torValue string, ownershipBps int64) *RunePoolShare {
-	this := RunePoolShare{}
+func NewRUNEPoolShare(asset string, runeValue string, assetValue string, torValue string, ownershipBps int64) *RUNEPoolShare {
+	this := RUNEPoolShare{}
 	this.Asset = asset
 	this.RuneValue = runeValue
 	this.AssetValue = assetValue
@@ -41,16 +41,16 @@ func NewRunePoolShare(asset string, runeValue string, assetValue string, torValu
 	return &this
 }
 
-// NewRunePoolShareWithDefaults instantiates a new RunePoolShare object
+// NewRUNEPoolShareWithDefaults instantiates a new RUNEPoolShare object
 // This constructor will only assign default values to properties that have it defined,
 // but it doesn't guarantee that properties required by API are set
-func NewRunePoolShareWithDefaults() *RunePoolShare {
-	this := RunePoolShare{}
+func NewRUNEPoolShareWithDefaults() *RUNEPoolShare {
+	this := RUNEPoolShare{}
 	return &this
 }
 
 // GetAsset returns the Asset field value
-func (o *RunePoolShare) GetAsset() string {
+func (o *RUNEPoolShare) GetAsset() string {
 	if o == nil {
 		var ret string
 		return ret
@@ -61,7 +61,7 @@ func (o *RunePoolShare) GetAsset() string {
 
 // GetAssetOk returns a tuple with the Asset field value
 // and a boolean to check if the value has been set.
-func (o *RunePoolShare) GetAssetOk() (*string, bool) {
+func (o *RUNEPoolShare) GetAssetOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -69,12 +69,12 @@ func (o *RunePoolShare) GetAssetOk() (*string, bool) {
 }
 
 // SetAsset sets field value
-func (o *RunePoolShare) SetAsset(v string) {
+func (o *RUNEPoolShare) SetAsset(v string) {
 	o.Asset = v
 }
 
 // GetRuneValue returns the RuneValue field value
-func (o *RunePoolShare) GetRuneValue() string {
+func (o *RUNEPoolShare) GetRuneValue() string {
 	if o == nil {
 		var ret string
 		return ret
@@ -85,7 +85,7 @@ func (o *RunePoolShare) GetRuneValue() string {
 
 // GetRuneValueOk returns a tuple with the RuneValue field value
 // and a boolean to check if the value has been set.
-func (o *RunePoolShare) GetRuneValueOk() (*string, bool) {
+func (o *RUNEPoolShare) GetRuneValueOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -93,12 +93,12 @@ func (o *RunePoolShare) GetRuneValueOk() (*string, bool) {
 }
 
 // SetRuneValue sets field value
-func (o *RunePoolShare) SetRuneValue(v string) {
+func (o *RUNEPoolShare) SetRuneValue(v string) {
 	o.RuneValue = v
 }
 
 // GetAssetValue returns the AssetValue field value
-func (o *RunePoolShare) GetAssetValue() string {
+func (o *RUNEPoolShare) GetAssetValue() string {
 	if o == nil {
 		var ret string
 		return ret
@@ -109,7 +109,7 @@ func (o *RunePoolShare) GetAssetValue() string {
 
 // GetAssetValueOk returns a tuple with the AssetValue field value
 // and a boolean to check if the value has been set.
-func (o *RunePoolShare) GetAssetValueOk() (*string, bool) {
+func (o *RUNEPoolShare) GetAssetValueOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -117,12 +117,12 @@ func (o *RunePoolShare) GetAssetValueOk() (*string, bool) {
 }
 
 // SetAssetValue sets field value
-func (o *RunePoolShare) SetAssetValue(v string) {
+func (o *RUNEPoolShare) SetAssetValue(v string) {
 	o.AssetValue = v
 }
 
 // GetTorValue returns the TorValue field value
-func (o *RunePoolShare) GetTorValue() string {
+func (o *RUNEPoolShare) GetTorValue() string {
 	if o == nil {
 		var ret string
 		return ret
@@ -133,7 +133,7 @@ func (o *RunePoolShare) GetTorValue() string {
 
 // GetTorValueOk returns a tuple with the TorValue field value
 // and a boolean to check if the value has been set.
-func (o *RunePoolShare) GetTorValueOk() (*string, bool) {
+func (o *RUNEPoolShare) GetTorValueOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -141,12 +141,12 @@ func (o *RunePoolShare) GetTorValueOk() (*string, bool) {
 }
 
 // SetTorValue sets field value
-func (o *RunePoolShare) SetTorValue(v string) {
+func (o *RUNEPoolShare) SetTorValue(v string) {
 	o.TorValue = v
 }
 
 // GetOwnershipBps returns the OwnershipBps field value
-func (o *RunePoolShare) GetOwnershipBps() int64 {
+func (o *RUNEPoolShare) GetOwnershipBps() int64 {
 	if o == nil {
 		var ret int64
 		return ret
@@ -157,7 +157,7 @@ func (o *RunePoolShare) GetOwnershipBps() int64 {
 
 // GetOwnershipBpsOk returns a tuple with the OwnershipBps field value
 // and a boolean to check if the value has been set.
-func (o *RunePoolShare) GetOwnershipBpsOk() (*int64, bool) {
+func (o *RUNEPoolShare) GetOwnershipBpsOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -165,11 +165,11 @@ func (o *RunePoolShare) GetOwnershipBpsOk() (*int64, bool) {
 }
 
 // SetOwnershipBps sets field value
-func (o *RunePoolShare) SetOwnershipBps(v int64) {
+func (o *RUNEPoolShare) SetOwnershipBps(v int64) {
 	o.OwnershipBps = v
 }
 
-func (o RunePoolShare) MarshalJSON_deprecated() ([]byte, error) {
+func (o RUNEPoolShare) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -189,38 +189,38 @@ func (o RunePoolShare) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(toSerialize)
 }
 
-type NullableRunePoolShare struct {
-	value *RunePoolShare
+type NullableRUNEPoolShare struct {
+	value *RUNEPoolShare
 	isSet bool
 }
 
-func (v NullableRunePoolShare) Get() *RunePoolShare {
+func (v NullableRUNEPoolShare) Get() *RUNEPoolShare {
 	return v.value
 }
 
-func (v *NullableRunePoolShare) Set(val *RunePoolShare) {
+func (v *NullableRUNEPoolShare) Set(val *RUNEPoolShare) {
 	v.value = val
 	v.isSet = true
 }
 
-func (v NullableRunePoolShare) IsSet() bool {
+func (v NullableRUNEPoolShare) IsSet() bool {
 	return v.isSet
 }
 
-func (v *NullableRunePoolShare) Unset() {
+func (v *NullableRUNEPoolShare) Unset() {
 	v.value = nil
 	v.isSet = false
 }
 
-func NewNullableRunePoolShare(val *RunePoolShare) *NullableRunePoolShare {
-	return &NullableRunePoolShare{value: val, isSet: true}
+func NewNullableRUNEPoolShare(val *RUNEPoolShare) *NullableRUNEPoolShare {
+	return &NullableRUNEPoolShare{value: val, isSet: true}
 }
 
-func (v NullableRunePoolShare) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableRUNEPoolShare) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 
-func (v *NullableRunePoolShare) UnmarshalJSON(src []byte) error {
+func (v *NullableRUNEPoolShare) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }

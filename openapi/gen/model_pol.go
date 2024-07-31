@@ -26,14 +26,14 @@ type POL struct {
 	Pnl string `json:"pnl"`
 	// current amount of rune deposited
 	CurrentDeposit string `json:"current_deposit"`
-	PoolShares []RunePoolShare `json:"pool_shares"`
+	PoolShares []RUNEPoolShare `json:"pool_shares"`
 }
 
 // NewPOL instantiates a new POL object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string, poolShares []RunePoolShare) *POL {
+func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string, poolShares []RUNEPoolShare) *POL {
 	this := POL{}
 	this.RuneDeposited = runeDeposited
 	this.RuneWithdrawn = runeWithdrawn
@@ -173,9 +173,9 @@ func (o *POL) SetCurrentDeposit(v string) {
 }
 
 // GetPoolShares returns the PoolShares field value
-func (o *POL) GetPoolShares() []RunePoolShare {
+func (o *POL) GetPoolShares() []RUNEPoolShare {
 	if o == nil {
-		var ret []RunePoolShare
+		var ret []RUNEPoolShare
 		return ret
 	}
 
@@ -184,7 +184,7 @@ func (o *POL) GetPoolShares() []RunePoolShare {
 
 // GetPoolSharesOk returns a tuple with the PoolShares field value
 // and a boolean to check if the value has been set.
-func (o *POL) GetPoolSharesOk() ([]RunePoolShare, bool) {
+func (o *POL) GetPoolSharesOk() ([]RUNEPoolShare, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -192,7 +192,7 @@ func (o *POL) GetPoolSharesOk() ([]RunePoolShare, bool) {
 }
 
 // SetPoolShares sets field value
-func (o *POL) SetPoolShares(v []RunePoolShare) {
+func (o *POL) SetPoolShares(v []RUNEPoolShare) {
 	o.PoolShares = v
 }
 

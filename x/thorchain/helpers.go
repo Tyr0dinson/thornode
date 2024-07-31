@@ -1248,8 +1248,8 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 }
 
 // polPoolShare - calculate the POL ownership in the participated pools
-func polPoolShare(ctx cosmos.Context, mgr Manager) ([]openapi.RunePoolShare, error) {
-	var runePoolShares []openapi.RunePoolShare
+func polPoolShare(ctx cosmos.Context, mgr Manager) ([]openapi.RUNEPoolShare, error) {
+	var runePoolShares []openapi.RUNEPoolShare
 
 	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
 	if err != nil {
@@ -1282,7 +1282,7 @@ func polPoolShare(ctx cosmos.Context, mgr Manager) ([]openapi.RunePoolShare, err
 		runePosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune).MulUint64(2)
 		assetPosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceAsset).MulUint64(2)
 		torPosValue := common.GetSafeShare(lp.Units, pool.GetPoolUnits(), pool.BalanceRune.MulUint64(dollarsPerRune.Uint64())).MulUint64(2)
-		runePoolShares = append(runePoolShares, openapi.RunePoolShare{
+		runePoolShares = append(runePoolShares, openapi.RUNEPoolShare{
 			Asset:        pool.Asset.String(),
 			RuneValue:    runePosValue.String(),
 			AssetValue:   assetPosValue.String(),

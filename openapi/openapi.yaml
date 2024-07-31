@@ -1598,7 +1598,7 @@ components:
         pool_shares:
           type: array
           items:
-            $ref: "#/components/schemas/RunePoolShare"
+            $ref: "#/components/schemas/RUNEPoolShare"
 
     RUNEProvider:
       type: object
@@ -2687,7 +2687,7 @@ components:
               type: string
               example: "ibc"
 
-    RunePoolShare:
+    RUNEPoolShare:
       type: object
       required:
         - asset
@@ -2702,15 +2702,15 @@ components:
         rune_value:
           type: string
           example: "1234"
-          description: POL position value in rune
+          description: value of the total POL position (asset and rune) denominated in rune
         asset_value:
           type: string
           example: "1234"
-          description: POL position value in asset
+          description: value of the total POL position (asset and rune) denominated in asset
         tor_value:
           type: string
           example: "1234"
-          description: POL position value in tor
+          description: value of the total POL position (asset and rune) denominated in tor
         ownership_bps:
           type: integer
           format: int64

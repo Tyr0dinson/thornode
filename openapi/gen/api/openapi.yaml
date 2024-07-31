@@ -2439,7 +2439,7 @@ components:
           type: string
         pool_shares:
           items:
-            $ref: '#/components/schemas/RunePoolShare'
+            $ref: '#/components/schemas/RUNEPoolShare'
           type: array
       required:
       - current_deposit
@@ -3833,7 +3833,7 @@ components:
       - result
       - tx
       type: object
-    RunePoolShare:
+    RUNEPoolShare:
       example:
         rune_value: "1234"
         asset_value: "1234"
@@ -3845,15 +3845,18 @@ components:
           example: BTC.BTC
           type: string
         rune_value:
-          description: POL position value in rune
+          description: value of the total POL position (asset and rune) denominated
+            in rune
           example: "1234"
           type: string
         asset_value:
-          description: POL position value in asset
+          description: value of the total POL position (asset and rune) denominated
+            in asset
           example: "1234"
           type: string
         tor_value:
-          description: POL position value in tor
+          description: value of the total POL position (asset and rune) denominated
+            in tor
           example: "1234"
           type: string
         ownership_bps:

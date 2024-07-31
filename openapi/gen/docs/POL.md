@@ -9,13 +9,13 @@ Name | Type | Description | Notes
 **Value** | **string** | total value of protocol&#39;s LP position in RUNE value | 
 **Pnl** | **string** | profit and loss of protocol owned liquidity | 
 **CurrentDeposit** | **string** | current amount of rune deposited | 
-**PoolShares** | [**[]RunePoolShare**](RunePoolShare.md) |  | 
+**PoolShares** | [**[]RUNEPoolShare**](RUNEPoolShare.md) |  | 
 
 ## Methods
 
 ### NewPOL
 
-`func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string, poolShares []RunePoolShare, ) *POL`
+`func NewPOL(runeDeposited string, runeWithdrawn string, value string, pnl string, currentDeposit string, poolShares []RUNEPoolShare, ) *POL`
 
 NewPOL instantiates a new POL object
 This constructor will assign default values to properties that have it defined,
@@ -132,20 +132,20 @@ SetCurrentDeposit sets CurrentDeposit field to given value.
 
 ### GetPoolShares
 
-`func (o *POL) GetPoolShares() []RunePoolShare`
+`func (o *POL) GetPoolShares() []RUNEPoolShare`
 
 GetPoolShares returns the PoolShares field if non-nil, zero value otherwise.
 
 ### GetPoolSharesOk
 
-`func (o *POL) GetPoolSharesOk() (*[]RunePoolShare, bool)`
+`func (o *POL) GetPoolSharesOk() (*[]RUNEPoolShare, bool)`
 
 GetPoolSharesOk returns a tuple with the PoolShares field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetPoolShares
 
-`func (o *POL) SetPoolShares(v []RunePoolShare)`
+`func (o *POL) SetPoolShares(v []RUNEPoolShare)`
 
 SetPoolShares sets PoolShares field to given value.
 
