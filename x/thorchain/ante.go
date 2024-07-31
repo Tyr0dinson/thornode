@@ -120,8 +120,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return NodePauseChainAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSetNodeKeys:
 		return SetNodeKeysAnteHandler(ctx, version, ad.keeper, *m)
-	case *types.MsgSetVersion:
-		return VersionAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgSetVersion, *types.MsgProposeUpgrade, *types.MsgApproveUpgrade:
+		return ActiveNodeAnteHandler(ctx, version, ad.keeper, m.GetSigners()[0])
 
 	// native handlers (non-consensus)
 	case *types.MsgDeposit:
