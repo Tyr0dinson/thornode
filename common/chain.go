@@ -204,6 +204,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case GAIAChain:
 		return 6
+	case SOLChain:
+		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
