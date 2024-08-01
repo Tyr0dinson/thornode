@@ -374,9 +374,14 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
 	}
 
+	vaultAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to get vault address: %w", err)
+	}
+
 	message := rpc.Message{
 		AccountKeys: []string{
-			tx.VaultPubKey.String(),
+			vaultAddr.String(),
 			tx.ToAddress.String(),
 			systemProgramID,
 		},
