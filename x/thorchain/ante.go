@@ -7,6 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/types/multisig"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -128,6 +129,10 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return DepositAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSend:
 		return SendAnteHandler(ctx, version, ad.keeper, *m)
+
+	// cosmos handlers
+	case *banktypes.MsgSend:
+		return BankSendAnteHandler(ctx, version, ad.keeper, *m)
 
 	default:
 		return cosmos.ErrUnknownRequest("invalid message type")

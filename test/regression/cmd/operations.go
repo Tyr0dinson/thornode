@@ -18,6 +18,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/hashicorp/go-multierror"
 	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog"
@@ -112,6 +113,8 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxTssPool{}
 	case "tx-version":
 		op = &OpTxVersion{}
+	case "tx-bank-send":
+		op = &OpTxBankSend{}
 	case "fail-export-invariants":
 		op = &OpFailExportInvariants{}
 	default:
@@ -146,7 +149,8 @@ func NewOperation(opMap map[string]any) Operation {
 		*OpTxSetNodeKeys,
 		*OpTxVersion,
 		*OpTxTssKeysign,
-		*OpTxTssPool:
+		*OpTxTssPool,
+		*OpTxBankSend:
 		// encode as json
 		buf := bytes.NewBuffer(nil)
 		enc := json.NewEncoder(buf)
@@ -815,6 +819,23 @@ type OpTxVersion struct {
 
 func (op *OpTxVersion) Execute(out io.Writer, _ string, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgSetVersion, op.Signer, op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxBankSend ------------------------------
+
+type OpTxBankSend struct {
+	OpBase            `yaml:",inline"`
+	banktypes.MsgSend `yaml:",inline"`
+	Sequence          *int64 `json:"sequence"`
+	Gas               *int64 `json:"gas"`
+}
+
+func (op *OpTxBankSend) Execute(out io.Writer, _ string, routine int, _ *os.Process, logs chan string) error {
+	accAddr, err := sdk.AccAddressFromBech32(op.FromAddress)
+	if err != nil {
+		return err
+	}
+	return sendMsg(out, routine, &op.MsgSend, accAddr, op.Sequence, op.Gas, op, logs)
 }
 
 // ------------------------------ OpFailExportInvariants ------------------------------

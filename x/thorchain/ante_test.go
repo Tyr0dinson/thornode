@@ -72,8 +72,15 @@ func (s *AnteTestSuite) TestAnteHandleMessage(c *C) {
 	err = ad.anteHandleMessage(ctx, version, &goodMsg)
 	c.Assert(err, IsNil)
 
-	// non-thorchain msgs should be rejected
-	badMsg := banktypes.MsgSend{}
+	// bank sends are allowed
+	bankSendMsg := banktypes.MsgSend{
+		FromAddress: fromAddr.String(),
+	}
+	err = ad.anteHandleMessage(ctx, version, &bankSendMsg)
+	c.Assert(err, IsNil)
+
+	// other non-thorchain msgs should be rejected
+	badMsg := banktypes.MsgMultiSend{}
 	err = ad.anteHandleMessage(ctx, version, &badMsg)
 	c.Assert(err, NotNil)
 }

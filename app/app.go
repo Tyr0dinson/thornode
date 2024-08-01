@@ -229,6 +229,7 @@ func New(
 	}
 
 	app.SetAnteHandler(anteHandler)
+	// app.SetPostHandler(postHandler) // TOOD needs v46
 	app.SetEndBlocker(app.EndBlocker)
 
 	if loadLatest {
