@@ -274,9 +274,6 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 					amountMoved -= fee
 				}
 
-				// Log the amount moved for debugging
-				// s.logger.Debug().Str("fromAccount", fromAccount).Str("toAccount", toAccount).Int64("amountMoved", amountMoved).Msg("Amount moved in lamports")
-
 				netBalanceChange[fromAccount] -= amountMoved
 				netBalanceChange[toAccount] += amountMoved
 			}
@@ -300,8 +297,8 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 		return nil
 	}
 
-	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(netAmount))
-	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToCosmosUint(fee))
+	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(netAmount))
+	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(fee))
 
 	// set coin decimals
 	solCoin.Decimals = 9
@@ -320,11 +317,10 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 
 // --------------------------------- helpers ---------------------------------
 
-// Function to convert amountMoved (lamports) to sdk.Uint with 8 decimal places
-func convertLamportsToCosmosUint(amountMoved int64) sdk.Uint {
+// Function to convert amountMoved (lamports) to sdk.Uintt
+func convertLamportsToTHORChain(amountMoved int64) sdk.Uint {
 	amountMovedBig := big.NewInt(amountMoved)
-	decimalMultiplier := big.NewInt(1) // 1 for lamports to SOL conversion
-	return sdk.NewUintFromBigInt(amountMovedBig.Mul(amountMovedBig, decimalMultiplier))
+	return sdk.NewUintFromBigInt(amountMovedBig.Quo(amountMovedBig, big.NewInt(10)))
 }
 
 func prettyPrint(data interface{}) {

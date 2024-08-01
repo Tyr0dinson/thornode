@@ -1,7 +1,6 @@
 package solana
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -353,7 +352,7 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 		return solTx, fmt.Errorf("only support one coin per transaction")
 	}
 
-	solValue, err := convertToLamports(tx.Coins[0].Amount)
+	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
 		return solTx, fmt.Errorf("sol value is zero")
 	}
@@ -402,9 +401,10 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 
 // --------------------------------- sign ---------------------------------
 
-func convertToLamports(amount cosmos.Uint) (*big.Int, error) {
-	amountLamports := new(big.Int).Mul(amount.BigInt(), big.NewInt(1e9))
-	return amountLamports, nil
+func convertToLamports(amount cosmos.Uint) *big.Int {
+	// thorchain amounts in 1e8
+	// multiply by 10 to get 1e9 (lamports)
+	return new(big.Int).Mul(amount.BigInt(), big.NewInt(10))
 }
 
 // Create transfer instruction data
@@ -449,16 +449,4 @@ func (c *SOLClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 func (c *SOLClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 	// TODO: Implement
 	return true
-}
-
-// Helpers
-
-func base58Decode(input string) ([32]byte, error) {
-	var output [32]byte
-	decoded, err := base64.StdEncoding.DecodeString(input)
-	if err != nil {
-		return output, err
-	}
-	copy(output[:], decoded)
-	return output, nil
 }
