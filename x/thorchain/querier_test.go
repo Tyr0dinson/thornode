@@ -139,7 +139,7 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *QuerierSuite) TestVaultss(c *C) {
+func (s *QuerierSuite) TestVaults(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	querier := NewQuerier(mgr, s.kb)
 	path := []string{"pools"}
@@ -721,6 +721,9 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 }
 
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	_, mgr := setupManagerForTest(c)
+
 	c.Assert(s.k.SetVault(s.ctx, GetRandomVault()), IsNil)
 	result, err := s.querier(s.ctx, []string{
 		query.QueryVaultsAsgard.Key,
@@ -729,6 +732,19 @@ func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	c.Assert(err, IsNil)
 	var r Vaults
 	c.Assert(json.Unmarshal(result, &r), IsNil)
+
+	// EdDSA Vault
+	pubKey := GetRandomPubKey()
+	eddsaPk := GetRandomPubKey()
+	asgard2 := NewVaultV2(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.ETHChain, common.SOLChain}.Strings(), nil, eddsaPk)
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard2), IsNil)
+
+	result, err = s.querier(ctx, []string{
+		query.QueryVaultsAsgard.Key,
+	}, abci.RequestQuery{})
+
+	c.Assert(result, NotNil)
+	c.Assert(err, IsNil)
 }
 
 func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {

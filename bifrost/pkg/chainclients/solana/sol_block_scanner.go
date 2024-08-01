@@ -119,6 +119,9 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		}
 	}
 
+	// time how long it takes to process the block
+	start := time.Now()
+
 	// process all transactions in the block
 	s.currentBlockHeight = height
 	block, err := s.solRpc.GetBlock(height)
@@ -130,8 +133,6 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return stypes.TxIn{}, nil
 	}
 
-	// time how long it takes to process the block
-	start := time.Now()
 	txIn, err := s.processBlock(block)
 	if err != nil {
 		return stypes.TxIn{}, err
@@ -140,7 +141,11 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	s.totalDuration += duration
 	s.blockCount++
 	s.avgDuration = s.totalDuration / time.Duration(s.blockCount)
-	s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("block processed")
+
+	if height%1000 == 0 {
+		// TODO: remove or make debug
+		s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("sol block processed")
+	}
 
 	return txIn, nil
 }
@@ -180,7 +185,7 @@ func (s *SOLScanner) processBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
 	txIn := s.getTxIn(block)
 	// prettyPrint(txIn)
 
-	s.logger.Info().Int64("block num", int64(block.ParentSlot)).Int64("total txs", int64(len(block.Transactions))).Int64("num tx ins", int64(len(txIn.TxArray))).Msg("sol block")
+	// s.logger.Info().Int64("block num", int64(block.ParentSlot)).Int64("total txs", int64(len(block.Transactions))).Int64("num tx ins", int64(len(txIn.TxArray))).Msg("sol block")
 
 	return txIn, nil
 }
@@ -247,24 +252,24 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 		// Check if the instruction is a transfer
 		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
 			if len(instruction.Accounts) < 2 {
-				s.logger.Error().Msg("Instruction does not contain enough accounts for transfer")
+				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
 				continue
 			}
 			for i := 0; i < len(instruction.Accounts)-1; i += 2 {
 				if i+1 >= len(instruction.Accounts) {
-					s.logger.Error().Msg("Index out of range when accessing instruction accounts")
+					s.logger.Debug().Msg("Index out of range when accessing instruction accounts")
 					continue
 				}
 				fromIdx := instruction.Accounts[i]
 				toIdx := instruction.Accounts[i+1]
 				if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
-					s.logger.Error().Msg("Account index out of range")
+					s.logger.Debug().Msg("Account index out of range")
 					continue
 				}
 				fromAccount := txn.Transaction.Message.AccountKeys[fromIdx]
 				toAccount := txn.Transaction.Message.AccountKeys[toIdx]
 				if fromIdx >= len(txn.Meta.PreBalances) || fromIdx >= len(txn.Meta.PostBalances) {
-					s.logger.Error().Msg("Balance index out of range")
+					s.logger.Debug().Msg("Balance index out of range")
 					continue
 				}
 				amountMoved := txn.Meta.PreBalances[fromIdx] - txn.Meta.PostBalances[fromIdx]

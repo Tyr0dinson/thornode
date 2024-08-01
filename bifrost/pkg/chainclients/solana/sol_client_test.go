@@ -166,9 +166,6 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	pubkeys := pubkeyMgr.GetPubKeys()
-	// fmt.Println("PUBKEYS", pubkeys)
-	// addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.SOLChain)
-	// c.Assert(err, IsNil)
 
 	// Not SOL chain
 	result, _, obs, err := e.SignTx(stypes.TxOutItem{
