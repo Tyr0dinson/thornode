@@ -281,7 +281,7 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         rpc_host: https://api.mainnet-beta.solana.com/
-        block_height_discover_back_off: 2s
+        block_height_discover_back_off: 0.2s
         max_reorg_rescan_blocks: 0 # solana has guaranteed finality
         chain_id: SOL
         observation_flexibility_blocks: 0

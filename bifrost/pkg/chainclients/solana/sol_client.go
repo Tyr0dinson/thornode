@@ -46,6 +46,7 @@ type SOLClient struct {
 	globalSolvencyQueue     chan stypes.Solvency
 	signerCacheManager      *signercache.CacheManager
 	lastSolvencyCheckHeight int64
+	rpcClient               *rpc.SolRPC
 }
 
 // NewSOLClient creates a new instance of a SOLClient
@@ -105,6 +106,7 @@ func NewSOLClient(
 		tssKeyManager: tssKm,
 		wg:            &sync.WaitGroup{},
 		stopchan:      make(chan struct{}),
+		rpcClient:     rpcClient,
 	}
 
 	// initialize storage
@@ -428,8 +430,28 @@ func createTransferInstructionData(amountLamports *big.Int) []byte {
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
 func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
-	// TODO: Implement
-	return "", nil
+	txSig, err := c.rpcClient.BroadcastTx(hexTx)
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast tx: %w", err)
+	}
+	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txSig).Msg("broadcast tx")
+
+	// update the signer cache
+	if err := c.signerCacheManager.SetSigned(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txSig); err != nil {
+		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
+	}
+
+	// TODO: update signed block height
+	// blockHeight, err := c.bridge.GetBlockHeight()
+	// if err != nil {
+	// 	c.logger.Err(err).Msg("fail to get current THORChain block height")
+	// 	// at this point , the tx already broadcast successfully , don't return an error
+	// 	// otherwise will cause the same tx to retry
+	// } else if err = c.AddSignedTxItem(txID, blockHeight, txOutItem.VaultPubKey.String(), &txOutItem); err != nil {
+	// 	c.logger.Err(err).Str("hash", txID).Msg("fail to add signed tx item")
+	// }
+
+	return txSig, nil
 }
 
 // --------------------------------- observe ---------------------------------

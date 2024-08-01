@@ -128,3 +128,20 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 
 	return result.Result.Value.Blockhash, nil
 }
+
+func (s *SolRPC) BroadcastTx(hexTx []byte) (string, error) {
+	params := []interface{}{hexTx}
+	respBody, err := s.post("sendTransaction", params)
+	if err != nil {
+		return "", fmt.Errorf("failed to sendTransaction: %w", err)
+	}
+
+	var result struct {
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to unmarshal sendTransaction response: %w", err)
+	}
+
+	return result.Result, nil
+}

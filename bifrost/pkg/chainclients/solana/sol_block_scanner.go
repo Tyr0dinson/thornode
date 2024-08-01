@@ -218,13 +218,29 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		ConfirmationRequired: 1,    // Assuming 1 confirmation is required
 	}
 
+	txFees := []int{}
+
 	for _, txn := range block.Transactions {
 		txItem := s.getTxInItem(txn, int64(block.ParentSlot))
 		if txItem == nil {
 			continue
 		}
+
 		txIn.TxArray = append(txIn.TxArray, *txItem)
+		txFees = append(txFees, int(txn.Meta.Fee))
 	}
+
+	// Calculate the average fees
+	avgFee := 0
+	if len(txFees) > 0 {
+		for _, fee := range txFees {
+			avgFee += fee
+		}
+		avgFee /= len(txFees)
+	}
+
+	// print average fee
+	// s.logger.Info().Int("avgFee", avgFee).Msg("average fee for block")
 
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn
