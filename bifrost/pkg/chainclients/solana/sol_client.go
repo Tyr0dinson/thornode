@@ -367,7 +367,7 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 		ProgramIdIndex: 2,
 	}
 
-	recentBlockhash, err := c.solScanner.GetLatestBlockHash()
+	recentBlockhash := c.solScanner.GetLatestBlockHash()
 	if err != nil {
 		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
 	}

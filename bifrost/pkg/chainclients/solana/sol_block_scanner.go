@@ -26,6 +26,10 @@ import (
 	"gitlab.com/thorchain/thornode/config"
 )
 
+const (
+	LatestHashUpdateInterval = 100 // update latest block hash every 100 blocks
+)
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // SOLScanner
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -52,6 +56,9 @@ type SOLScanner struct {
 	totalDuration time.Duration
 	blockCount    int
 	avgDuration   time.Duration
+
+	// local state
+	latestBlockHash string
 }
 
 // NewSOLScanner create a new instance of SOLScanner.
@@ -103,6 +110,7 @@ func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
 		gasCache:             make([]*big.Int, 0),
 		solvencyReporter:     solvencyReporter,
 		signerCacheManager:   signerCacheManager,
+		latestBlockHash:      "",
 	}, nil
 }
 
@@ -111,6 +119,13 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	// log height every 1000 blocks
 	if height%1000 == 0 {
 		s.logger.Info().Int64("height", height).Msg("fetching txs for height")
+	}
+
+	// Update latest block hash every LatestHashUpdateInterval blocks
+	if height%LatestHashUpdateInterval == 0 {
+		if err := s.updateLatestBlockHash(); err != nil {
+			s.logger.Err(err).Msg("failed to update latest block hash")
+		}
 	}
 
 	if chainHeight%10 == 0 {
@@ -160,12 +175,18 @@ func (s *SOLScanner) GetHeight() (int64, error) {
 }
 
 // GetLatestBlockHash returns the latest block hash
-func (s *SOLScanner) GetLatestBlockHash() (string, error) {
+func (s *SOLScanner) GetLatestBlockHash() string {
+	return s.latestBlockHash
+}
+
+// UpdateLatestBlockHash updates the local latest block hash to be used in tx signing
+func (s *SOLScanner) updateLatestBlockHash() error {
 	hash, err := s.solRpc.GetLatestBlockhash()
 	if err != nil {
-		return "", err
+		return err
 	}
-	return hash, nil
+	s.latestBlockHash = hash
+	return nil
 }
 
 // FetchMemPool returns all transactions in the mempool.
@@ -176,17 +197,12 @@ func (s *SOLScanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
 // --------------------------------- extraction ---------------------------------
 
 func (s *SOLScanner) processBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
-
 	// skip empty blocks
 	if len(block.Transactions) == 0 {
 		return stypes.TxIn{}, nil
 	}
 
 	txIn := s.getTxIn(block)
-	// prettyPrint(txIn)
-
-	// s.logger.Info().Int64("block num", int64(block.ParentSlot)).Int64("total txs", int64(len(block.Transactions))).Int64("num tx ins", int64(len(txIn.TxArray))).Msg("sol block")
-
 	return txIn, nil
 }
 
