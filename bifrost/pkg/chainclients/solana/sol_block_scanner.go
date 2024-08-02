@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,8 @@ import (
 )
 
 const (
-	LatestHashUpdateInterval = 100 // update latest block hash every 100 blocks
+	LatestHashUpdateInterval = 100  // update latest block hash every 100 blocks
+	BaseFeePerSigLamports    = 5000 // "Base" fee per signature of a transaction
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -35,22 +37,23 @@ const (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 type SOLScanner struct {
-	cfg                  config.BifrostBlockScannerConfiguration
-	logger               zerolog.Logger
-	db                   blockscanner.ScannerStorage
-	m                    *metrics.Metrics
-	errCounter           *prometheus.CounterVec
-	gasPriceChanged      bool
-	gasPrice             *big.Int
-	lastReportedGasPrice uint64
-	solRpc               *rpc.SolRPC
-	blockMetaAccessor    evm.BlockMetaAccessor
-	bridge               thorclient.ThorchainBridge
-	pubkeyMgr            pubkeymanager.PubKeyValidator
-	currentBlockHeight   int64
-	gasCache             []*big.Int
-	solvencyReporter     SolvencyReporter
-	signerCacheManager   *signercache.CacheManager
+	cfg                config.BifrostBlockScannerConfiguration
+	logger             zerolog.Logger
+	db                 blockscanner.ScannerStorage
+	m                  *metrics.Metrics
+	errCounter         *prometheus.CounterVec
+	solRpc             *rpc.SolRPC
+	blockMetaAccessor  evm.BlockMetaAccessor
+	bridge             thorclient.ThorchainBridge
+	pubkeyMgr          pubkeymanager.PubKeyValidator
+	currentBlockHeight int64
+	solvencyReporter   SolvencyReporter
+	signerCacheManager *signercache.CacheManager
+
+	// fee rate
+	feeRateCache        []uint64
+	feeRate             uint64
+	lastReportedFeeRate uint64
 
 	// metrics
 	totalDuration time.Duration
@@ -95,22 +98,21 @@ func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
 	}
 
 	return &SOLScanner{
-		cfg:                  cfg,
-		logger:               log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
-		errCounter:           m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
-		db:                   storage,
-		m:                    m,
-		solRpc:               rpc,
-		gasPrice:             big.NewInt(0),
-		lastReportedGasPrice: 0,
-		gasPriceChanged:      false,
-		blockMetaAccessor:    blockMetaAccessor,
-		bridge:               bridge,
-		pubkeyMgr:            pubkeyMgr,
-		gasCache:             make([]*big.Int, 0),
-		solvencyReporter:     solvencyReporter,
-		signerCacheManager:   signerCacheManager,
-		latestBlockHash:      "",
+		cfg:                 cfg,
+		logger:              log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
+		errCounter:          m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
+		db:                  storage,
+		m:                   m,
+		solRpc:              rpc,
+		blockMetaAccessor:   blockMetaAccessor,
+		bridge:              bridge,
+		pubkeyMgr:           pubkeyMgr,
+		solvencyReporter:    solvencyReporter,
+		signerCacheManager:  signerCacheManager,
+		latestBlockHash:     "",
+		feeRate:             0,
+		lastReportedFeeRate: 0,
+		feeRateCache:        []uint64{},
 	}, nil
 }
 
@@ -125,12 +127,6 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	if height%LatestHashUpdateInterval == 0 {
 		if err := s.updateLatestBlockHash(); err != nil {
 			s.logger.Err(err).Msg("failed to update latest block hash")
-		}
-	}
-
-	if chainHeight%10 == 0 {
-		if _, err := s.bridge.PostNetworkFee(height, common.SOLChain, 10000, 1); err != nil {
-			s.logger.Err(err).Msg("fail to post SOL chain single transfer fee to THORNode")
 		}
 	}
 
@@ -161,6 +157,8 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		// TODO: remove or make debug
 		s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("sol block processed")
 	}
+
+	s.updateNetworkFee(height)
 
 	return txIn, nil
 }
@@ -203,6 +201,7 @@ func (s *SOLScanner) processBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
 	}
 
 	txIn := s.getTxIn(block)
+
 	return txIn, nil
 }
 
@@ -218,32 +217,90 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		ConfirmationRequired: 1,    // Assuming 1 confirmation is required
 	}
 
-	txFees := []int{}
+	// Stores each transaction's fee rate (lamports per signature)
+	txFeeRates := []uint64{}
+
+	// Stores each transaction's priority fee (txn.Meta.Fee - baseFee)
+	priorityFees := []uint64{}
 
 	for _, txn := range block.Transactions {
+		// Skip transactions with no signatures or no fee
+		if len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
+			continue
+		}
+
 		txItem := s.getTxInItem(txn, int64(block.ParentSlot))
 		if txItem == nil {
 			continue
 		}
 
 		txIn.TxArray = append(txIn.TxArray, *txItem)
-		txFees = append(txFees, int(txn.Meta.Fee))
-	}
 
-	// Calculate the average fees
-	avgFee := 0
-	if len(txFees) > 0 {
-		for _, fee := range txFees {
-			avgFee += fee
+		// Calculate the fee rate (lamports per signature)
+		numSigs := uint64(len(txn.Transaction.Signatures))
+		baseFee := BaseFeePerSigLamports * numSigs
+		feeRate := txn.Meta.Fee / numSigs
+		if feeRate < BaseFeePerSigLamports {
+			feeRate = BaseFeePerSigLamports
 		}
-		avgFee /= len(txFees)
+
+		txFeeRates = append(txFeeRates, feeRate)
+
+		// Priority fee is any fee in excess of the base fee
+		var priorityFee uint64
+		if txn.Meta.Fee == baseFee || txn.Meta.Fee < baseFee {
+			priorityFee = 0
+		} else {
+			priorityFee = txn.Meta.Fee - baseFee
+		}
+
+		priorityFees = append(priorityFees, priorityFee)
 	}
 
-	// print average fee
-	// s.logger.Info().Int("avgFee", avgFee).Msg("average fee for block")
+	if len(txFeeRates) == 1 {
+		s.feeRateCache = append(s.feeRateCache, txFeeRates[0])
+	} else if len(txFeeRates) > 1 {
+		medianFeeRate := calculateMedian(txFeeRates)
+		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
+	}
 
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn
+}
+
+func (s *SOLScanner) updateNetworkFee(height int64) {
+	// Not enough blocks yet
+	if len(s.feeRateCache) < s.cfg.GasCacheBlocks {
+		return
+	}
+
+	// Calculate the median fee rate from the gas cache
+	medianFeeRate := calculateMedian(s.feeRateCache)
+
+	// round medianFeeRate to the nearest resolution
+	resolution := uint64(s.cfg.GasPriceResolution)
+	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
+
+	// Update the fee rate if it has changed
+	if roundedFeeRate != s.feeRate {
+		// post to thorchain
+		if _, err := s.bridge.PostNetworkFee(height, s.cfg.ChainID, 1, roundedFeeRate); err != nil {
+			s.logger.Err(err).Msg("failed to post SOL chain single transfer fee to THORNode")
+		} else {
+			s.feeRate = roundedFeeRate
+			s.logger.Info().Int("feeRate", int(s.feeRate)).Msg("Updated fee rate")
+		}
+	}
+}
+
+// Calculates the median of a slice of uint64
+func calculateMedian(arr []uint64) uint64 {
+	sort.Slice(arr, func(i, j int) bool { return arr[i] < arr[j] })
+	n := len(arr)
+	if n%2 == 0 {
+		return (arr[n/2-1] + arr[n/2]) / 2
+	}
+	return arr[n/2]
 }
 
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
@@ -254,7 +311,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 	netBalanceChange := make(map[string]int64)
 	systemProgramID := "11111111111111111111111111111111"
 	memoProgramID := "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
-	fee := int64(txn.Meta.Fee)
+	fee := txn.Meta.Fee
 
 	for _, instruction := range txn.Transaction.Message.Instructions {
 		programID := txn.Transaction.Message.AccountKeys[instruction.ProgramIdIndex]
@@ -311,8 +368,8 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 					amountMoved -= fee
 				}
 
-				netBalanceChange[fromAccount] -= amountMoved
-				netBalanceChange[toAccount] += amountMoved
+				netBalanceChange[fromAccount] -= int64(amountMoved)
+				netBalanceChange[toAccount] += int64(amountMoved)
 			}
 		}
 	}
@@ -335,7 +392,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes
 	}
 
 	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(netAmount))
-	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(fee))
+	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(int64(fee)))
 
 	// set coin decimals
 	solCoin.Decimals = 9

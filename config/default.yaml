@@ -285,8 +285,8 @@ bifrost:
         max_reorg_rescan_blocks: 0 # solana has guaranteed finality
         chain_id: SOL
         observation_flexibility_blocks: 0
-        gas_cache_blocks: 0
-        gas_price_resolution: 0
+        gas_cache_blocks: 100
+        gas_price_resolution: 100 # 100 lamports
         max_gas_limit: 0
         max_contract_tx_logs: 0
       mempool_tx_id_cache_size: 0

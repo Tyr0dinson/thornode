@@ -21,7 +21,7 @@ type GetBlockResponse struct {
 type BlockResult struct {
 	Blockhash         string        `json:"blockhash"`
 	PreviousBlockhash string        `json:"previousBlockhash"`
-	ParentSlot        int           `json:"parentSlot"`
+	ParentSlot        uint64        `json:"parentSlot"`
 	Transactions      []Transaction `json:"transactions"`
 }
 
@@ -100,15 +100,15 @@ func (v *Version) UnmarshalJSON(b []byte) error {
 }
 
 type Meta struct {
-	ComputeUnitsConsumed int           `json:"computeUnitsConsumed"`
+	ComputeUnitsConsumed uint64        `json:"computeUnitsConsumed"`
 	Err                  interface{}   `json:"err"`
-	Fee                  int           `json:"fee"`
+	Fee                  uint64        `json:"fee"`
 	InnerInstructions    []interface{} `json:"innerInstructions"`
 	LoadedAddresses      AddrList      `json:"loadedAddresses"`
 	LogMessages          []string      `json:"logMessages"`
-	PostBalances         []int64       `json:"postBalances"`
+	PostBalances         []uint64      `json:"postBalances"`
 	PostTokenBalances    []interface{} `json:"postTokenBalances"`
-	PreBalances          []int64       `json:"preBalances"`
+	PreBalances          []uint64      `json:"preBalances"`
 	PreTokenBalances     []interface{} `json:"preTokenBalances"`
 	Rewards              interface{}   `json:"rewards"`
 	Status               TxnStatus     `json:"status"`
