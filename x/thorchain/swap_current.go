@@ -521,12 +521,15 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 
 	synthSupply := mgr.Keeper().GetTotalSupply(ctx, asset.GetSyntheticAsset())
 	l1Pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	if err != nil {
+		return err
+	}
 	l1Pool.CalcUnits(synthSupply)
 	runeAmt := l1Pool.AssetValueInRune(amount)
 	if runeAmt.IsZero() {
 		return nil
 	}
-	maxDeposit := fetchConfigInt64(ctx, mgr, constants.POLMaxNetworkDeposit)
+	maxDeposit := mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
 	pol, err := mgr.Keeper().GetPOL(ctx)
 	if err != nil {
 		return err
@@ -557,7 +560,7 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 		}
 		lpRune := common.GetSafeShare(lp.Units, l1Pool.GetPoolUnits(), l1Pool.BalanceRune).MulUint64(2)
 		basisPts := common.GetSafeShare(runeAmt, lpRune, cosmos.NewUint(10_000))
-		tx = common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-INSTANT-REMOVE")
+		tx = common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-INSTANT-WITHDRAW")
 		msg = NewMsgWithdrawLiquidity(
 			tx,
 			polAddress,
