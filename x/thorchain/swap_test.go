@@ -20,6 +20,7 @@ func QuoUint(num, denom types.Uint) types.Dec {
 
 type TestSwapKeeper struct {
 	keeper.KVStoreDummy
+	polAddress common.Address
 }
 
 func (k *TestSwapKeeper) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
@@ -157,4 +158,8 @@ func (k *TestSwapKeeper) GetMimir(ctx cosmos.Context, key string) (int64, error)
 		return 1_00, nil
 	}
 	return 0, errKaboom
+}
+
+func (k *TestSwapKeeper) GetModuleAddress(mod string) (common.Address, error) {
+	return k.polAddress, nil
 }

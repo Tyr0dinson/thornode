@@ -470,6 +470,7 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	runeAddr := GetRandomRUNEAddress()
 	avaxAddr, err := common.NewAddress("0x29d33FCD30240d55b9280362599d5066c1a2cf10")
 	c.Assert(err, IsNil)
