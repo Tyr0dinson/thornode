@@ -113,8 +113,13 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	if err != nil {
 		return cosmos.ZeroUint(), swapEvents, err
 	}
-	if tx.FromAddress != polAddress && source.GetSyntheticAsset().Equals(target) {
-		err := s.polInstantMatch(ctx, mgr, source, assetAmount, target.IsVaultAsset())
+	if tx.FromAddress != polAddress {
+		switch {
+		case source.GetSyntheticAsset().Equals(target) || (source.IsRune() && target.IsSyntheticAsset()):
+			err = s.addPOLLiquidity(ctx, mgr, target.GetLayer1Asset(), assetAmount)
+		case source.IsSyntheticAsset():
+			err = s.removePOLLiquidity(ctx, mgr, source, assetAmount)
+		}
 		if err != nil {
 			return cosmos.ZeroUint(), swapEvents, err
 		}
@@ -529,6 +534,7 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 	if runeAmt.IsZero() {
 		return nil
 	}
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
 	maxDeposit := mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
 	pol, err := mgr.Keeper().GetPOL(ctx)
 	if err != nil {
@@ -537,7 +543,25 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 	if maxDeposit <= pol.CurrentDeposit().Int64()+int64(runeAmt.Uint64()) {
 		return nil
 	}
-	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))
+
+	runePool, err := mgr.Keeper().GetRUNEPool(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get rune pool: %s", err)
+	}
+
+	// if there are no units, this is the initial deposit
+	depositUnits := runeAmt
+
+	// compute the new provider units
+	if !runePool.TotalUnits().IsZero() {
+		runePoolValue, err := runePoolValue(ctx, mgr)
+		if err != nil {
+			return fmt.Errorf("fail to get rune pool value: %s", err)
+		}
+		depositUnits = common.GetSafeShare(runeAmt, runePoolValue, runePool.TotalUnits())
+	}
+
+	// check balance
 	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	if runeAmt.GT(bal) {
 		return nil
@@ -574,8 +598,13 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 	handler := NewInternalHandler(mgr)
 	_, err = handler(ctx, msg)
 	if err != nil {
-		ctx.Logger().Error("fail to add liquidity from pol to match savers", "asset", l1Pool.Asset, "error", err)
+		ctx.Logger().Error("fail to remove pol liquidity from l1 to match synth burn", "asset", l1Pool.Asset, "error", err)
 		return err
 	}
+
+	// withdraw was successful, update the runepool units accordingly
+	runePool.ReserveUnits = common.SafeSub(runePool.ReserveUnits, withdrawUnits)
+	mgr.Keeper().SetRUNEPool(ctx, runePool)
+
 	return nil
 }
