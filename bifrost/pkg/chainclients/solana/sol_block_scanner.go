@@ -263,6 +263,9 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 	} else if len(txFeeRates) > 1 {
 		medianFeeRate := calculateMedian(txFeeRates)
 		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
+	} else {
+		// If no transactions in the block, just add the base fee
+		s.feeRateCache = append(s.feeRateCache, BaseFeePerSigLamports)
 	}
 
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
