@@ -145,7 +145,7 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	// Serialize TX
 	rawTx, err := tx.Serialize()
 	c.Assert(err, IsNil)
-	c.Assert(len(rawTx) > 0, Equals, true)
+	c.Assert(len(rawTx), Equals, 223)
 }
 
 func (s *SolTestSuite) TestSignSOLTx(c *C) {

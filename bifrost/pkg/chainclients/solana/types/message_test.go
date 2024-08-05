@@ -35,10 +35,10 @@ func (s *MessageTestSuite) TestSerialize(c *C) {
 	// Header = 3 bytes
 	// Accounts = 4 * 32 = 128 bytes
 	// RecentBlockHash = 32 bytes
-	// Transfer Instruction - 17 bytes
+	// Transfer Instruction - 15 bytes
 	// - ProgramIDIndex = 1 byte
 	// - Accounts = 2 bytes
-	// - Data = 14 bytes
+	// - Data = 12 bytes
 	// Memo Instruction - 14 bytes
 	// - ProgramIDIndex = 1 byte
 	// - Accounts = 2 bytes

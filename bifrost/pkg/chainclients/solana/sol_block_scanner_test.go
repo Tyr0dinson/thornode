@@ -143,5 +143,5 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	for _, txIn := range txIns.TxArray {
 		fmt.Printf("tx: %s, coins: %+v", txIn.Tx, txIn.Coins[0].String())
 	}
-	c.Fatal()
+	// c.Fatal()
 }

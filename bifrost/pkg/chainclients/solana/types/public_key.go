@@ -20,6 +20,10 @@ func (p PublicKey) Bytes() []byte {
 	return p[:]
 }
 
+func (p PublicKey) EqualsString(s string) bool {
+	return p.ToBase58() == s
+}
+
 func MustPublicKeyFromString(s string) PublicKey {
 	d, _ := common.Base58Decode(s)
 	return PublicKeyFromBytes(d)

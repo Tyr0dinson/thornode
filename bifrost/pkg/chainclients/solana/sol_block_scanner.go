@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/signercache"
 	. "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -309,15 +310,15 @@ func calculateMedian(arr []uint64) uint64 {
 func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *stypes.TxInItem {
 	memo := ""
 	netBalanceChange := make(map[string]int64)
-	systemProgramID := "11111111111111111111111111111111"
-	memoProgramID := "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 	fee := txn.Meta.Fee
 
-	for _, instruction := range txn.Transaction.Message.Instructions {
-		programID := txn.Transaction.Message.AccountKeys[instruction.ProgramIdIndex]
+	instructions := txn.GetInstructions()
+
+	for _, instruction := range instructions {
+		programID := txn.GetAccountAtIndex(instruction.ProgramIdIndex)
 
 		// Check if this instruction is the memo
-		if programID == memoProgramID {
+		if types.MemoProgramID.EqualsString(programID) {
 			memoBytes, err := common.Base58Decode(instruction.Data)
 			if err == nil {
 				memo = string(memoBytes)
@@ -327,7 +328,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 		}
 
 		// SOL transfers using the systemProgram, so skip if program is something else.
-		if programID != systemProgramID {
+		if !types.SystemProgramID.EqualsString(programID) {
 			continue
 		}
 
@@ -352,13 +353,19 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 				fromIdx := instruction.Accounts[i]
 				toIdx := instruction.Accounts[i+1]
 				if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
-					s.logger.Debug().Msg("Account index out of range")
+					// Account index out of range, meaning the instruction references an account
+					// from an account lookup table. This instruction can be skipped since
+					// transfer instructions must reference accounts in the primary account keys
+					// array
 					continue
 				}
 				fromAccount := txn.Transaction.Message.AccountKeys[fromIdx]
 				toAccount := txn.Transaction.Message.AccountKeys[toIdx]
 				if fromIdx >= len(txn.Meta.PreBalances) || fromIdx >= len(txn.Meta.PostBalances) {
-					s.logger.Debug().Msg("Balance index out of range")
+					// Account index out of range, meaning the instruction references an account
+					// from an account lookup table. This instruction can be skipped since
+					// transfer instructions must reference accounts in the primary account keys
+					// array
 					continue
 				}
 				amountMoved := txn.Meta.PreBalances[fromIdx] - txn.Meta.PostBalances[fromIdx]

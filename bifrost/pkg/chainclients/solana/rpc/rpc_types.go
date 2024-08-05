@@ -45,10 +45,17 @@ type RPCTxnStatus struct {
 }
 
 type RPCMessage struct {
-	AccountKeys     []string         `json:"accountKeys"`
-	Header          RPCHeader        `json:"header"`
-	Instructions    []RPCInstruction `json:"instructions"`
-	RecentBlockhash string           `json:"recentBlockhash"`
+	AccountKeys         []string                 `json:"accountKeys"`
+	AddressLookupTables []RPCAddressLookupTables `json:"addressTableLookups"`
+	Header              RPCHeader                `json:"header"`
+	Instructions        []RPCInstruction         `json:"instructions"`
+	RecentBlockhash     string                   `json:"recentBlockhash"`
+}
+
+type RPCAddressLookupTables struct {
+	AccountKey      string `json:"accountKey"`
+	WritableIndexes []int  `json:"writableIndexes"`
+	ReadonlyIndexes []int  `json:"readonlyIndexes"`
 }
 
 type RPCHeader struct {
@@ -84,4 +91,19 @@ func (v *RPCVersion) UnmarshalJSON(b []byte) error {
 	}
 	v.Value = strconv.Itoa(num)
 	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Helpers
+////////////////////////////////////////////////////////////////////////////////////////
+
+func (r *RPCTransaction) GetInstructions() []RPCInstruction {
+	return r.Transaction.Message.Instructions
+}
+
+func (r *RPCTransaction) GetAccountAtIndex(i int) string {
+	if i >= len(r.Transaction.Message.AccountKeys) || len(r.Transaction.Message.AccountKeys) == 0 {
+		return ""
+	}
+	return r.Transaction.Message.AccountKeys[i]
 }
