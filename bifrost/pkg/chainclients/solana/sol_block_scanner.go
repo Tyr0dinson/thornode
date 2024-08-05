@@ -306,7 +306,7 @@ func calculateMedian(arr []uint64) uint64 {
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
 // TxInItem if the transaction contains a transfer of SOL. Otherwise, it will return
 // nil.
-func (s *SOLScanner) getTxInItem(txn rpc.Transaction, blockHeight int64) *stypes.TxInItem {
+func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *stypes.TxInItem {
 	memo := ""
 	netBalanceChange := make(map[string]int64)
 	systemProgramID := "11111111111111111111111111111111"

@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -305,7 +306,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
-func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutItem) (rpc.Transaction, error) {
+func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutItem) (types.Transaction, error) {
 	// TODO: Get pubkey
 	// cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKey.String())
 	// if err != nil {
@@ -320,7 +321,7 @@ func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutIte
 
 	sig, _, err := c.tssKeySigner.RemoteSign(message, txOut.VaultPubKey.String())
 	if err != nil {
-		return rpc.Transaction{}, err
+		return types.Transaction{}, err
 	}
 
 	fmt.Println("SIG")
@@ -331,42 +332,63 @@ func (c *SOLClient) signTransaction(solTx rpc.Transaction, txOut stypes.TxOutIte
 	// 	return rpc.Transaction{}, fmt.Errorf("unable to verify signature with secpPubKey")
 	// }
 
-	solTx.Transaction.Signatures = append(solTx.Transaction.Signatures, common.Base58Encode(sig))
+	solTx.Signatures = append(solTx.Signatures, common.Base58Encode(sig))
 
 	return solTx, nil
 }
 
-// CreateTx takes a TxOutItem and returns a solana transaction
-func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
-
-	solTx := rpc.Transaction{}
-
+// CreateTx builds a solana transfer function from a TxOutItem using the transaction
+// specification (https://solana.com/docs/core/transactions#manual-sol-transfer)
+func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
+	// Validation
 	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
 	if err != nil {
-		return solTx, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
+		return types.Transaction{}, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
 	}
-
 	if memo.IsInbound() {
-		return solTx, fmt.Errorf("inbound memo should not be used for outbound tx")
+		return types.Transaction{}, fmt.Errorf("inbound memo should not be used for outbound tx")
+	}
+	if len(tx.Coins) != 1 {
+		return types.Transaction{}, fmt.Errorf("only support one coin per transaction")
 	}
 
-	if len(tx.Coins) != 1 {
-		return solTx, fmt.Errorf("only support one coin per transaction")
+	solTx := types.Transaction{}
+
+	// Creae account pubkeys
+	vaultAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		return types.Transaction{}, fmt.Errorf("fail to get vault address: %w", err)
 	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create vault public key: %w", err)
+	}
+	toPubkey, err := types.PublicKeyFromString(tx.ToAddress.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create to public key: %w", err)
+	}
+
+	accountKeys := []types.PublicKey{vaultPubKey, toPubkey, types.SystemProgramID, types.MemoProgramID}
+
+	// Memo instruction
+	// Program index is 3 (referencing accountKeys) for the memo program
+	// Account index is 0 for the vault/signer
+	memoInstruction := types.NewCompiledInstruction(3, []int{0}, []byte(tx.Memo))
 
 	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
 		return solTx, fmt.Errorf("sol value is zero")
 	}
+	// Transfer instruction
+	// Program index is 2 (referencing accountKeys) for the system program
+	// Account index is 0 for the vault/signer
+	// Account index is 1 for the recipient
+	transferInstruction := types.NewCompiledTransferInstruction(2, 0, 1, solValue.Uint64())
 
-	// Create instruction
-	systemProgramID := "11111111111111111111111111111111"
-	data := common.Base58Encode(createTransferInstructionData(solValue))
-
-	instruction := rpc.Instruction{
-		Accounts:       []int{0, 1},
-		Data:           data,
-		ProgramIdIndex: 2,
+	header := types.MessageHeader{
+		NumRequireSignatures:        1,
+		NumReadonlySignedAccounts:   0,
+		NumReadonlyUnsignedAccounts: 2,
 	}
 
 	recentBlockhash := c.solScanner.GetLatestBlockHash()
@@ -374,36 +396,13 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (rpc.Transaction, error) {
 		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
 	}
 
-	vaultAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
-	if err != nil {
-		return solTx, fmt.Errorf("fail to get vault address: %w", err)
-	}
-
-	message := rpc.Message{
-		AccountKeys: []string{
-			vaultAddr.String(),
-			tx.ToAddress.String(),
-			systemProgramID,
-		},
-		Header: rpc.Header{
-			NumReadonlySignedAccounts:   0,
-			NumReadonlyUnsignedAccounts: 1,
-			NumRequiredSignatures:       1,
-		},
-		Instructions:    []rpc.Instruction{instruction},
-		RecentBlockhash: recentBlockhash,
-	}
-
-	txnData := rpc.TxnData{
+	message := types.NewMessage(types.MessageVersionV0, header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
+	transaction := types.Transaction{
 		Message:    message,
 		Signatures: []string{},
 	}
 
-	return rpc.Transaction{
-		Meta:        rpc.Meta{},
-		Transaction: txnData,
-		Version:     rpc.Version{Value: "0"},
-	}, nil
+	return transaction, nil
 }
 
 // --------------------------------- sign ---------------------------------
