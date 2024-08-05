@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -73,7 +73,7 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("received non-200 response status: %d", resp.StatusCode)
 	}
 
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -129,6 +129,11 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	return result.Result.Value.Blockhash, nil
 }
 
+type broadcastError struct {
+	Code    int32  `json:"code"`
+	Message string `json:"message"`
+}
+
 func (s *SolRPC) BroadcastTx(hexTx []byte) (string, error) {
 	params := []interface{}{hexTx}
 	respBody, err := s.post("sendTransaction", params)
@@ -136,11 +141,18 @@ func (s *SolRPC) BroadcastTx(hexTx []byte) (string, error) {
 		return "", fmt.Errorf("failed to sendTransaction: %w", err)
 	}
 
+	s.logger.Info().Str("respBody", string(respBody)).Msg("SOL BroadcastTx")
+
 	var result struct {
-		Result string `json:"result"`
+		Result string         `json:"result"`
+		Error  broadcastError `json:"error"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("failed to unmarshal sendTransaction response: %w", err)
+	}
+
+	if result.Error.Message != "" {
+		return "", fmt.Errorf(result.Error.Message)
 	}
 
 	return result.Result, nil
