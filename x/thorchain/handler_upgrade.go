@@ -34,7 +34,7 @@ func (h ProposeUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 	u := msg.Upgrade
 
 	ctx.Logger().Info(
-		"validator propose upgrade",
+		"Validator propose upgrade",
 		"thor_address", msg.Signer.String(),
 		"name", msg.Name,
 		"height", u.Height,
@@ -131,7 +131,7 @@ func (h ApproveUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 	}
 
 	ctx.Logger().Info(
-		"validator approving upgrade",
+		"Validator approving upgrade",
 		"thor_address", msg.Signer.String(),
 		"name", msg.Name,
 	)
@@ -207,7 +207,7 @@ func (h RejectUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info(
-		"validator approving upgrade",
+		"Validator rejecting upgrade",
 		"thor_address", msg.Signer.String(),
 		"name", msg.Name,
 	)
