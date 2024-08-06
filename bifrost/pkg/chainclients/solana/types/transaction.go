@@ -1,5 +1,7 @@
 package types
 
+import "gitlab.com/thorchain/thornode/common"
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // transaction.go contains the structs and functions to serialize and deserialize a solana transaction
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -25,7 +27,11 @@ func (tx *Transaction) Serialize() ([]byte, error) {
 	output := make([]byte, 0, len(signatureCount)+len(signatureCount)*64+len(messageData))
 	output = append(output, signatureCount...)
 	for _, sig := range tx.Signatures {
-		output = append(output, sig...)
+		sigBytes, err := common.Base58Decode(sig)
+		if err != nil {
+			return nil, err
+		}
+		output = append(output, sigBytes...)
 	}
 	output = append(output, messageData...)
 

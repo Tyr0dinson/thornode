@@ -1,6 +1,7 @@
 package solana
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -284,23 +285,25 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
-	checkPointBytes, err := solTx.Serialize()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
-	}
+	// TODO: correct this
+	// checkPointBytes, err := solTx.Serialize()
+	// if err != nil {
+	// 	return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
+	// }
 
 	signedTx, err := c.signTransaction(solTx, tx)
 	if err != nil {
-		return nil, checkPointBytes, nil, fmt.Errorf("fail to sign tx: %w", err)
+		return nil, nil, nil, fmt.Errorf("fail to sign tx: %w", err)
 	}
 
-	fmt.Println("SIGNED TX")
 	prettyPrint(signedTx)
 
 	signedBytes, err := signedTx.Serialize()
 	if err != nil {
-		return nil, checkPointBytes, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
+		return nil, nil, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
 	}
+
+	fmt.Println("SIGNED TX", string(signedBytes))
 
 	return signedBytes, nil, nil, nil
 }
@@ -317,15 +320,15 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	c.logger.Info().Str("txout", jsonString(txOut)).Msg("signing message")
+	prettyPrint(message)
 
 	sig, _, err := c.tssKeySigner.RemoteSign(message, txOut.VaultPubKey.String())
 	if err != nil {
 		return types.Transaction{}, err
 	}
 
-	fmt.Println("SIG")
-	prettyPrint(sig)
+	// fmt.Println("SIG")
+	// prettyPrint(sig)
 
 	// TODO: Verify signature
 	// if !cpk.VerifySignature(message, sig) {
@@ -433,8 +436,9 @@ func createTransferInstructionData(amountLamports *big.Int) []byte {
 // --------------------------------- broadcast ---------------------------------
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
-func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, error) {
-	txSig, err := c.rpcClient.BroadcastTx(hexTx)
+func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (string, error) {
+	base64Tx := base64.StdEncoding.EncodeToString(rawTx)
+	txSig, err := c.rpcClient.BroadcastTx(base64Tx)
 	if err != nil {
 		return "", fmt.Errorf("failed to broadcast tx: %w", err)
 	}

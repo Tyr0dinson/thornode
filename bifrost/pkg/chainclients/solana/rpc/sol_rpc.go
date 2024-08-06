@@ -129,31 +129,26 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	return result.Result.Value.Blockhash, nil
 }
 
-type broadcastError struct {
-	Code    int32  `json:"code"`
-	Message string `json:"message"`
-}
-
-func (s *SolRPC) BroadcastTx(hexTx []byte) (string, error) {
-	params := []interface{}{hexTx}
+func (s *SolRPC) BroadcastTx(rawTx string) (string, error) {
+	params := []interface{}{rawTx, map[string]interface{}{"encoding": "base64"}}
 	respBody, err := s.post("sendTransaction", params)
 	if err != nil {
 		return "", fmt.Errorf("failed to sendTransaction: %w", err)
 	}
 
-	s.logger.Info().Str("respBody", string(respBody)).Msg("SOL BroadcastTx")
-
-	var result struct {
-		Result string         `json:"result"`
-		Error  broadcastError `json:"error"`
+	var response struct {
+		Result string `json:"result"`
+		Error  struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err := json.Unmarshal(respBody, &response); err != nil {
 		return "", fmt.Errorf("failed to unmarshal sendTransaction response: %w", err)
 	}
-
-	if result.Error.Message != "" {
-		return "", fmt.Errorf(result.Error.Message)
+	if response.Error.Message != "" {
+		return "", fmt.Errorf("sendTransaction error: %s (code: %d)", response.Error.Message, response.Error.Code)
 	}
 
-	return result.Result, nil
+	return response.Result, nil
 }
