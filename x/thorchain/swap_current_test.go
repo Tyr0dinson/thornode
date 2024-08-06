@@ -268,6 +268,8 @@ func (s *SwapVCURSuite) TestSwap(c *C) {
 
 func (s *SwapVCURSuite) TestSynthSwap_RuneSynthRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	pool := NewPool()
 	pool.Asset = common.ETHAsset
 	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
