@@ -97,6 +97,17 @@ func (h ProposeUpgradeHandler) handle(ctx cosmos.Context, msg *MsgProposeUpgrade
 		),
 	)
 
+	if err := k.ApproveUpgrade(ctx, msg.Signer, name); err != nil {
+		return fmt.Errorf("failed to approve upgrade: %w", err)
+	}
+
+	ctx.EventManager().EmitEvent(
+		cosmos.NewEvent("approve_upgrade",
+			cosmos.NewAttribute("thor_address", msg.Signer.String()),
+			cosmos.NewAttribute("name", name),
+		),
+	)
+
 	return scheduleUpgradeIfNecessary(ctx, k, name)
 }
 
