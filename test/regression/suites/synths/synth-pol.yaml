@@ -43,4 +43,4 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.rune_deposited|tonumber == 9977325649
+  - .pol.rune_deposited|tonumber == 10000000000
