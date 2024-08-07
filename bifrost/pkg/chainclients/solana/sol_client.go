@@ -3,7 +3,6 @@ package solana
 import (
 	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -401,23 +400,6 @@ func convertToLamports(amount cosmos.Uint) *big.Int {
 	// thorchain amounts in 1e8
 	// multiply by 10 to get 1e9 (lamports)
 	return new(big.Int).Mul(amount.BigInt(), big.NewInt(10))
-}
-
-// Create transfer instruction data
-func createTransferInstructionData(amountLamports *big.Int) []byte {
-	var data []byte
-	// System program transfer instruction
-	transferInstruction := uint32(2)
-	transferInstructionBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(transferInstructionBytes, transferInstruction)
-	data = append(data, transferInstructionBytes...)
-
-	// Append amount
-	amountBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(amountBytes, amountLamports.Uint64())
-	data = append(data, amountBytes...)
-
-	return data
 }
 
 // --------------------------------- broadcast ---------------------------------
