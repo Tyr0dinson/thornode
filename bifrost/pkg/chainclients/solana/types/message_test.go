@@ -26,7 +26,7 @@ func (s *MessageTestSuite) TestSerialize(c *C) {
 	transferInstruction := NewCompiledTransferInstruction(2, 0, 1, 1000000000)
 	memoInstruction := NewCompiledInstruction(3, []int{0}, []byte("Hello World"))
 
-	m := NewMessage(MessageVersionLegacy, header, accounts, "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo", []CompiledInstruction{transferInstruction, memoInstruction})
+	m := NewMessage(header, accounts, "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo", []CompiledInstruction{transferInstruction, memoInstruction})
 	serialized, err := m.Serialize()
 	c.Assert(err, IsNil)
 
