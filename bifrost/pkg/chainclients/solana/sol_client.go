@@ -1,6 +1,7 @@
 package solana
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -285,22 +286,21 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
-	// TODO: correct this
-	// checkPointBytes, err := solTx.Serialize()
-	// if err != nil {
-	// 	return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
-	// }
+	checkPointBytes, err := solTx.Message.Serialize()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
+	}
 
 	signedTx, err := c.signTransaction(solTx, tx)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to sign tx: %w", err)
+		return checkPointBytes, nil, nil, fmt.Errorf("fail to sign tx: %w", err)
 	}
 
 	prettyPrint(signedTx)
 
 	signedBytes, err := signedTx.Serialize()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
+		return checkPointBytes, nil, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
 	}
 
 	fmt.Println("SIGNED TX", string(signedBytes))
@@ -310,33 +310,25 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
 func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutItem) (types.Transaction, error) {
-	// TODO: Get pubkey
-	// cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, txOut.VaultPubKey.String())
-	// if err != nil {
-	// 	return rpc.Transaction{}, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
-	// }
-	message, err := solTx.Serialize()
+	message, err := solTx.Message.Serialize()
 	if err != nil {
 		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
 	}
-
-	prettyPrint(message)
 
 	sig, _, err := c.tssKeySigner.RemoteSign(message, txOut.VaultPubKey.String())
 	if err != nil {
 		return types.Transaction{}, err
 	}
 
-	// fmt.Println("SIG")
-	// prettyPrint(sig)
+	fmt.Println("SIG")
+	prettyPrint(sig)
 
-	// TODO: Verify signature
-	// if !cpk.VerifySignature(message, sig) {
-	// 	return rpc.Transaction{}, fmt.Errorf("unable to verify signature with secpPubKey")
-	// }
+	vaultAccount := solTx.Message.Accounts[0]
+	if !ed25519.Verify(vaultAccount.Bytes(), message, sig) {
+		return types.Transaction{}, fmt.Errorf("signature verification failed")
+	}
 
-	solTx.Signatures = append(solTx.Signatures, common.Base58Encode(sig))
-
+	solTx.AddSignature(sig)
 	return solTx, nil
 }
 
@@ -399,13 +391,8 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
 		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
 	}
 
-	message := types.NewMessage(types.MessageVersionV0, header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
-	transaction := types.Transaction{
-		Message:    message,
-		Signatures: []string{},
-	}
-
-	return transaction, nil
+	message := types.NewMessage(header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
+	return types.NewTransaction(message), nil
 }
 
 // --------------------------------- sign ---------------------------------

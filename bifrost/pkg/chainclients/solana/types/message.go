@@ -40,9 +40,8 @@ type CompiledAddressLookupTable struct {
 	ReadonlyIndexes []uint8
 }
 
-func NewMessage(version MessageVersion, header MessageHeader, accounts []PublicKey, recentBlockHash string, instructions []CompiledInstruction) Message {
+func NewMessage(header MessageHeader, accounts []PublicKey, recentBlockHash string, instructions []CompiledInstruction) Message {
 	return Message{
-		Version:         version,
 		Header:          header,
 		Accounts:        accounts,
 		RecentBlockHash: recentBlockHash,

@@ -150,5 +150,7 @@ func (s *SolRPC) BroadcastTx(rawTx string) (string, error) {
 		return "", fmt.Errorf("sendTransaction error: %s (code: %d)", response.Error.Message, response.Error.Code)
 	}
 
+	fmt.Println("response", response)
+
 	return response.Result, nil
 }
