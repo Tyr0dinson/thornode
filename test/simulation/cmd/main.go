@@ -22,6 +22,7 @@ import (
 	pkgcosmos "gitlab.com/thorchain/thornode/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/test/simulation/pkg/dag"
 	"gitlab.com/thorchain/thornode/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/test/simulation/pkg/solana"
 	. "gitlab.com/thorchain/thornode/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/test/simulation/pkg/utxo"
 	"gitlab.com/thorchain/thornode/test/simulation/watchers"
@@ -44,6 +45,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.BSCChain:  evm.NewConstructor(chainRPCs[common.BSCChain]),
 	common.AVAXChain: evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain: pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
+	common.SOLChain:  solana.NewConstructor(chainRPCs[common.SOLChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

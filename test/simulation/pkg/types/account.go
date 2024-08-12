@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -25,9 +26,10 @@ type User struct {
 	// ChainClients is a map of chain to the corresponding client for the account.
 	ChainClients map[common.Chain]LiteChainClient
 
-	lock     chan struct{}
-	pubkey   common.PubKey
-	mnemonic string
+	lock        chan struct{}
+	pubkey      common.PubKey
+	eddsaPubkey common.PubKey
+	mnemonic    string
 }
 
 // NewUser returns a new client using the private key from the given mnemonic.
@@ -44,10 +46,37 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	}
 	pubkey := common.PubKey(s)
 
-	// add key to keyring
-	kr := keyring.NewInMemory()
+	// EdDSA pubkey
+	edPriv, err := Ed25519.Derive()(mnemonic, "", cmd.FullPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to derive ed25519 private key")
+	}
+	edPrivKey := Ed25519.Generate()(edPriv)
+	edS, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, edPrivKey.PubKey())
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to bech32ify eddsa pubkey")
+	}
+	edPubkey := common.PubKey(edS)
+
+	krOps := keyring.Options{
+		SupportedAlgos: keyring.SigningAlgoList{
+			hd.Secp256k1,
+			Ed25519,
+		},
+	}
+
+	// Add Secp256k1 key to keyring
+	kr := keyring.NewInMemory(WithOptions(krOps))
 	name := strings.Split(mnemonic, " ")[0]
 	_, err = kr.NewAccount(name, mnemonic, "", cmd.THORChainHDPath, hd.Secp256k1)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to add account to keyring")
+	}
+
+	// Add Ed25519 key to keyring
+	edName := fmt.Sprintf("ed-%s", name)
+	// fmt.Println("edName: ", edName)
+	_, err = kr.NewAccount(edName, mnemonic, "", cmd.FullPath, Ed25519)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to add account to keyring")
 	}
@@ -55,13 +84,21 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	// create thorclient.Keys for chain client construction
 	keys := thorclient.NewKeysWithKeybase(kr, name, "")
 
+	// TODO: can probably just use the same keys object, but need to change GetPrivateKey
+	// function to get appropriate signing key
+	edKeys := thorclient.NewKeysWithKeybase(kr, edName, "")
+
 	// bifrost config for chain client construction
 	cfg := config.GetBifrost()
 
 	// create chain clients
 	chainClients := make(map[common.Chain]LiteChainClient)
 	for chain := range constructors {
-		chainClients[chain], err = constructors[chain](chain, keys)
+		pKeys := keys
+		if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			pKeys = edKeys
+		}
+		chainClients[chain], err = constructors[chain](chain, pKeys)
 		if err != nil {
 			log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to create chain client")
 		}
@@ -80,6 +117,7 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 		Thorchain:    thorchain,
 		lock:         make(chan struct{}, 1),
 		pubkey:       pubkey,
+		eddsaPubkey:  edPubkey,
 		mnemonic:     mnemonic,
 	}
 }

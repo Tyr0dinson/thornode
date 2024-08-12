@@ -53,8 +53,6 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
 	}
 
-	// s.logger.Info().Str("host", s.host).Str("method", method).Msg("making request")
-
 	req, err := http.NewRequestWithContext(ctx, "POST", s.host, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -127,6 +125,32 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	}
 
 	return result.Result.Value.Blockhash, nil
+}
+
+func (s *SolRPC) GetBalance(address, commitment string, minSlot uint64) (uint64, error) {
+	additionalParams := map[string]interface{}{"commitment": commitment}
+	if minSlot > 0 {
+		additionalParams["minContextSlot"] = minSlot
+	}
+	params := []interface{}{
+		address,
+		additionalParams,
+	}
+	respBody, err := s.post("getBalance", params)
+	if err != nil {
+		return 0, fmt.Errorf("failed to call getBalance: %w", err)
+	}
+
+	var result struct {
+		Result struct {
+			Value uint64 `json:"value"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return result.Result.Value, nil
 }
 
 func (s *SolRPC) BroadcastTx(rawTx string) (string, error) {

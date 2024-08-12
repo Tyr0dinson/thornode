@@ -16,6 +16,33 @@ type Transaction struct {
 	Message    Message
 }
 
+func NewTransferTransaction(from, to PublicKey, amount uint64, memo, recentBlockHash string) Transaction {
+	accountKeys := []PublicKey{from, to, SystemProgramID, MemoProgramID}
+
+	// Memo instruction
+	// Program index is 3 (referencing accountKeys) for the memo program
+	// Account index is 0 for the vault/signer
+	memoInstruction := NewCompiledInstruction(3, []int{0}, []byte(memo))
+
+	// 1e8 --> 1e9
+	solValue := amount * 10
+
+	// Transfer instruction
+	// Program index is 2 (referencing accountKeys) for the system program
+	// Account index is 0 for the vault/signer
+	// Account index is 1 for the recipient
+	transferInstruction := NewCompiledTransferInstruction(2, 0, 1, solValue)
+
+	header := MessageHeader{
+		NumRequireSignatures:        1,
+		NumReadonlySignedAccounts:   0,
+		NumReadonlyUnsignedAccounts: 2,
+	}
+
+	message := NewMessage(header, accountKeys, recentBlockHash, []CompiledInstruction{memoInstruction, transferInstruction})
+	return NewTransaction(message)
+}
+
 func NewTransaction(message Message) Transaction {
 	signatures := make([]Signature, 0, message.Header.NumRequireSignatures)
 	for i := uint8(0); i < message.Header.NumRequireSignatures; i++ {
