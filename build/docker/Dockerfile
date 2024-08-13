@@ -26,7 +26,12 @@ RUN make protob install
 #
 # Main
 #
-FROM registry.gitlab.com/thorchain/thornode:runner-base-v1@sha256:8fc433efa3e853b59cafe920654705e37c94228ae99cba6892933a61594c11f3
+FROM alpine:3
+
+# Add utilities used by scripts around thornode
+# trunk-ignore(hadolint/DL3018)
+RUN apk --no-cache add bash curl jq gcc musl-dev openssl-dev python3-dev py3-requests py3-retry py3-pip \
+    && pip install --break-system-packages web3
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/

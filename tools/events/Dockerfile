@@ -21,7 +21,7 @@ RUN make protob && go install -tags $TAG ./tools/events
 # Deploy
 ########################################################################################
 
-FROM registry.gitlab.com/thorchain/thornode:runner-base-v1@sha256:8fc433efa3e853b59cafe920654705e37c94228ae99cba6892933a61594c11f3
+FROM alpine:3
 
 COPY --from=build /go/bin/events /usr/bin/
 
