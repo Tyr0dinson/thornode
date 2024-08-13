@@ -34,15 +34,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 3
     done
 
-    # create a binance wallet and bond/register
-    gen_bnb_address
-    ADDRESS=$(cat ~/.bond/address.txt)
-
-    # switch the BNB bond to native RUNE
-    "$(dirname "$0")/mock/switch.sh" "$BINANCE" "$ADDRESS" "$NODE_ADDRESS" "$PEER"
-
-    sleep 30 # wait for thorchain to register the new node account
-
     printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes
 
     # send bond
@@ -71,10 +62,6 @@ if [ ! -f ~/.thornode/config/genesis.json ]; then
       sleep 5
     done
 
-  elif [ "$NET" = "mocknet" ]; then
-    # create a binance wallet
-    gen_bnb_address
-    ADDRESS=$(cat ~/.bond/address.txt)
   else
     echo "Your THORNode address: $NODE_ADDRESS"
     echo "Send your bond to that address"
