@@ -131,7 +131,7 @@ func refundDroppedSwapOutFromRUNE(ctx cosmos.Context, mgr *Mgrs, droppedTx Dropp
 	}
 
 	inboundCoins := inboundTx.Coins
-	if len(inboundCoins) != 1 || !inboundCoins[0].Asset.IsRune() {
+	if len(inboundCoins) != 1 || !inboundCoins[0].IsRune() {
 		return fmt.Errorf("Inbound coin is not native RUNE")
 	}
 

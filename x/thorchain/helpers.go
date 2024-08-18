@@ -23,7 +23,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 
 	refundCoins := make(common.Coins, 0)
 	for _, coin := range tx.Tx.Coins {
-		if coin.Asset.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
+		if coin.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
 			continue
 		}
 		pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
@@ -32,7 +32,7 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 		}
 
 		// Only attempt an outbound if a fee can be taken from the coin.
-		if coin.Asset.IsRune() || !pool.BalanceRune.IsZero() {
+		if coin.IsRune() || !pool.BalanceRune.IsZero() {
 			toAddr := tx.Tx.FromAddress
 			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
 			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
@@ -624,7 +624,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		// calculate the total value of this vault
 		totalValue := cosmos.ZeroUint()
 		for _, coin := range vault.Coins {
-			if coin.Asset.IsRune() {
+			if coin.IsRune() {
 				totalValue = totalValue.Add(coin.Amount)
 			} else {
 				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
@@ -1076,7 +1076,7 @@ func willSwapOutputExceedLimitAndFees(ctx cosmos.Context, mgr Manager, msg MsgSw
 
 	var emit cosmos.Uint
 	switch {
-	case !source.Asset.IsRune() && !target.Asset.IsRune():
+	case !source.IsRune() && !target.IsRune():
 		sourcePool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
@@ -1087,13 +1087,13 @@ func willSwapOutputExceedLimitAndFees(ctx cosmos.Context, mgr Manager, msg MsgSw
 		}
 		emit = swapper.CalcAssetEmission(sourcePool.BalanceAsset, source.Amount, sourcePool.BalanceRune)
 		emit = swapper.CalcAssetEmission(targetPool.BalanceRune, emit, targetPool.BalanceAsset)
-	case source.Asset.IsRune():
+	case source.IsRune():
 		pool, err := mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
 		}
 		emit = swapper.CalcAssetEmission(pool.BalanceRune, source.Amount, pool.BalanceAsset)
-	case target.Asset.IsRune():
+	case target.IsRune():
 		pool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
 		if err != nil {
 			return false

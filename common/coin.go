@@ -87,6 +87,11 @@ func (c Coin) IsNative() bool {
 	return c.Asset.GetChain().Equals(THORChain)
 }
 
+// IsRune checks whether the coin's Asset is RUNE.
+func (c Coin) IsRune() bool {
+	return c.Asset.IsRune()
+}
+
 // Native create a new instance of cosmos.Coin
 func (c Coin) Native() (cosmos.Coin, error) {
 	if !c.IsNative() {

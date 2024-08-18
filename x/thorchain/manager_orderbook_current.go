@@ -334,7 +334,7 @@ func (ob *OrderBookVCUR) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg M
 	target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
 	var emit cosmos.Uint
 	switch {
-	case !source.Asset.IsRune() && !target.Asset.IsRune():
+	case !source.IsRune() && !target.IsRune():
 		sourcePool, ok := pools.Get(source.Asset.GetLayer1Asset())
 		if !ok {
 			return false
@@ -345,13 +345,13 @@ func (ob *OrderBookVCUR) checkWithFeeSwap(ctx cosmos.Context, pools Pools, msg M
 		}
 		emit = swapper.CalcAssetEmission(sourcePool.BalanceAsset, source.Amount, sourcePool.BalanceRune)
 		emit = swapper.CalcAssetEmission(targetPool.BalanceRune, emit, targetPool.BalanceAsset)
-	case source.Asset.IsRune():
+	case source.IsRune():
 		pool, ok := pools.Get(target.Asset.GetLayer1Asset())
 		if !ok {
 			return false
 		}
 		emit = swapper.CalcAssetEmission(pool.BalanceRune, source.Amount, pool.BalanceAsset)
-	case target.Asset.IsRune():
+	case target.IsRune():
 		pool, ok := pools.Get(source.Asset.GetLayer1Asset())
 		if !ok {
 			return false
@@ -573,7 +573,7 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			todo = todo.findMatchingTrades(genTradePair(msg.Tx.Coins[0].Asset, msg.TargetAsset), pairs)
 			if !affiliateSwap.Tx.IsEmpty() {
 				// if asset sent in is native rune, no need
-				if affiliateSwap.Tx.Coins[0].Asset.IsRune() {
+				if affiliateSwap.Tx.Coins[0].IsRune() {
 					toAddress, err := msg.AffiliateAddress.AccAddress()
 					if err != nil {
 						ctx.Logger().Error("fail to convert address into AccAddress", "msg", msg.AffiliateAddress, "error", err)
@@ -687,7 +687,7 @@ func (ob *OrderBookVCUR) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, s
 	// Get our X, x, Y values
 	var X, x, Y cosmos.Uint
 	x = sourceCoin.Amount
-	if sourceCoin.Asset.IsRune() {
+	if sourceCoin.IsRune() {
 		X = pool.BalanceRune
 		Y = pool.BalanceAsset
 	} else {
@@ -703,7 +703,7 @@ func (ob *OrderBookVCUR) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, s
 		panic(err)
 	}
 	fee := swapper.CalcLiquidityFee(X, x, Y)
-	if sourceCoin.Asset.IsRune() {
+	if sourceCoin.IsRune() {
 		fee = pool.AssetValueInRune(fee)
 	}
 	slip := swapper.CalcSwapSlip(X, x)

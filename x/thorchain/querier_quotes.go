@@ -1601,7 +1601,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 			case coin.Asset.Equals(common.TOR):
 				repaymentEmit = coin
 				repaymentLiquidityFee = repaymentLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
-			case !coin.Asset.IsRune():
+			case !coin.IsRune():
 				outboundEmit = coin
 				outboundLiquidityFee = outboundLiquidityFee.Add(sdk.NewUintFromString(em["liquidity_fee_in_rune"]))
 			default:
