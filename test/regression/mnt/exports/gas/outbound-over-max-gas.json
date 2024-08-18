@@ -372,7 +372,7 @@
                 "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
               },
               "gas_rate": "12",
-              "in_hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "in_hash": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
               "max_gas": [
                 {
                   "amount": "960000",
@@ -380,7 +380,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "memo": "OUT:8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
               "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
@@ -400,12 +400,12 @@
               ],
               "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "gas": null,
-              "id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "id": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
               "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+          "tx_id": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
           "txs": [
             {
               "tx": {
@@ -418,7 +418,7 @@
                 ],
                 "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
                 "gas": null,
-                "id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+                "id": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
                 "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
@@ -522,7 +522,7 @@
                 "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
               },
               "gas_rate": "12",
-              "in_hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "in_hash": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
               "max_gas": [
                 {
                   "amount": "960000",
@@ -530,7 +530,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "memo": "OUT:8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
               "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }

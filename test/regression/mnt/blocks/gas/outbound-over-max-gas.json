@@ -190,11 +190,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "5C72E6905E856E09FC1163365602E3B09CA3BE5C53DD98F342C70A6D994B4476",
+      "data_hash": "4A1124B852FF33C9958335B8C41A2C6E1676ED08007A565CFA6260238956E772",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "62C7A051B218EC9EF356F8A88D67115FF8CD18E7654B3BD67E431FB6AB779459",
+      "app_hash": "98D37B78A43DFF8692A64B6BF5B7487ED1E1FD0C20608E1EE9A971F679656464",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -206,7 +206,7 @@
         "coin": "15000000000 THOR.RUNE",
         "emit_asset": "11342138200 ETH.USDX-0X9999999999999999999999999999999999999999",
         "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-        "id": "69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+        "id": "9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
         "liquidity_fee": "1701317340",
         "liquidity_fee_in_rune": "1701320739",
         "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
@@ -222,7 +222,7 @@
       {
         "coins": "98680000 ETH.USDX-0X9999999999999999999999999999999999999999",
         "pool_deduct": "127857840",
-        "tx_id": "69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+        "tx_id": "9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
         "type": "fee"
       },
       {
@@ -251,11 +251,11 @@
         "coin_asset": "ETH.USDX-0X9999999999999999999999999999999999999999",
         "coin_decimals": "0",
         "gas_rate": "12",
-        "in_hash": "69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+        "in_hash": "9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
         "max_gas_amount_0": "960000",
         "max_gas_asset_0": "ETH.ETH",
         "max_gas_decimals_0": "8",
-        "memo": "OUT:69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+        "memo": "OUT:9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
         "module_name": "",
         "out_hash": "",
         "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
@@ -310,7 +310,7 @@
     ],
     "txs": [
       {
-        "hash": "69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+        "hash": "9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
         "tx": {
           "auth_info": {
             "fee": {
@@ -355,7 +355,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "ax/4l0z7lZN11edNkf2ozJXaKghgwJu3Wip2/VzUGGRQeyqkcjwg8yhZ/UdifQ6VOmIeUXc/tc2abfcI3N5nDA=="
+            "o4mI4i+Co1NAkL6dnYgMIc1j70aJiVVdRc7+SF8GcEs/DjqO1DslBDoTMkauM6UhuSx6Ok8rnSrcv9SvHehqYw=="
           ]
         },
         "result": {
@@ -363,7 +363,7 @@
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
           "log": "[{\"events\":[{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "145494",
+          "gas_used": "144696",
           "events": [
             {
               "fee": "",
@@ -395,7 +395,7 @@
               "type": "tx"
             },
             {
-              "signature": "ax/4l0z7lZN11edNkf2ozJXaKghgwJu3Wip2/VzUGGRQeyqkcjwg8yhZ/UdifQ6VOmIeUXc/tc2abfcI3N5nDA==",
+              "signature": "o4mI4i+Co1NAkL6dnYgMIc1j70aJiVVdRc7+SF8GcEs/DjqO1DslBDoTMkauM6UhuSx6Ok8rnSrcv9SvHehqYw==",
               "type": "tx"
             },
             {
@@ -451,12 +451,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "F438148935543AF5A8AE3E012BBB6524E7AAD43A3B5D4FE759629A1C1DE32632",
+      "data_hash": "FADC61DEBA30368D4CF02C1DBC319EEE531CCB7F7FFE874958B44FDA5834BEEF",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "57D321FD40AF1FFDF4679EC44C50C070B3525D85F52EA84F24D505AABCC175BF",
-      "last_results_hash": "95CBA7BF74CA4C9E54FFC48C5239E453B0531E67A79A77ABF30D1019CACF0704",
+      "app_hash": "562D8999D418534BAA7912FC5DC20E9DE699EF76EC2DCF8B3554E9F35590FD40",
+      "last_results_hash": "366410442ABB03DDCB30F105A6FF0AF1B69F55213F1D3DAC38F4EE47F3AA30F5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -621,7 +621,7 @@
     ],
     "txs": [
       {
-        "hash": "277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70",
+        "hash": "9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5",
         "tx": {
           "auth_info": {
             "fee": {
@@ -682,7 +682,7 @@
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
-                      "memo": "OUT:69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+                      "memo": "OUT:9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
                       "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
                     }
                   }
@@ -693,15 +693,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "GHnufeJriVCXurfK9Vpn4IUn7Z10u2yC91jmWeau7EACMi+t1CAN/qdIPc1gdksRBcsvS3bCFiNGaMIRYHuiNA=="
+            "xGbJwtgkP2UF71wver7MWwgdew2NI/yf07BBEy4dO5kVnOWBIqssv0bhwqjfYpyTNQ6UtJNpsm0S7yy3PBzhxQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"11243458200 ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"memo\",\"value\":\"OUT:69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"11243458200 ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"memo\",\"value\":\"OUT:9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "288754",
+          "gas_used": "284024",
           "events": [
             {
               "fee": "",
@@ -713,7 +713,7 @@
               "type": "tx"
             },
             {
-              "signature": "GHnufeJriVCXurfK9Vpn4IUn7Z10u2yC91jmWeau7EACMi+t1CAN/qdIPc1gdksRBcsvS3bCFiNGaMIRYHuiNA==",
+              "signature": "xGbJwtgkP2UF71wver7MWwgdew2NI/yf07BBEy4dO5kVnOWBIqssv0bhwqjfYpyTNQ6UtJNpsm0S7yy3PBzhxQ==",
               "type": "tx"
             },
             {
@@ -725,8 +725,8 @@
               "coin": "11243458200 ETH.USDX-0X9999999999999999999999999999999999999999",
               "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
               "id": "0000000000000000000000000000000000000000000000000000000000000001",
-              "in_tx_id": "69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
-              "memo": "OUT:69A1E2025E1E45D051F31CB5B770F31A169907AD040BFD1C2A2D2F409EFCF11F",
+              "in_tx_id": "9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
+              "memo": "OUT:9E7FD9AD55574A9DF52A92D3F5768A3450AD00E87129705474FF02D6B336722F",
               "to": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "type": "outbound"
             }
@@ -759,12 +759,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "145A6C02B09F433B52DD418F2459E640E41584EE4B8BD1443E93345A5132D084",
+      "data_hash": "E12B80DCEB9F8A1D89E80309F8C8634F25B30DDDBE0FAE1BEE60CC4471A0CA53",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "5643D1F479FA6BBE1FB6C0AD7C63B5A184F58FB0C298751C591BF3AF3AED3E67",
-      "last_results_hash": "F5F59F298713C67D28477AF33D642996ACA7A11CC2E1F116EF7161E1BCCE8DA5",
+      "app_hash": "F45EC16C9F3C41E773B561878490167DDEEA20A214A4F0A6C9E1EF5DA9D0857B",
+      "last_results_hash": "00FE4E660AAA320273E3202EF35BFDEC507903884826C4664FA12BCB3B504641",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -775,7 +775,7 @@
         "coin": "15000000000 THOR.RUNE",
         "emit_asset": "9078361900 ETH.USDX-0X9999999999999999999999999999999999999999",
         "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-        "id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+        "id": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
         "liquidity_fee": "1187346497",
         "liquidity_fee_in_rune": "1534257935",
         "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
@@ -791,7 +791,7 @@
       {
         "coins": "86918800 ETH.USDX-0X9999999999999999999999999999999999999999",
         "pool_deduct": "141319965",
-        "tx_id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+        "tx_id": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
         "type": "fee"
       },
       {
@@ -820,11 +820,11 @@
         "coin_asset": "ETH.USDX-0X9999999999999999999999999999999999999999",
         "coin_decimals": "0",
         "gas_rate": "12",
-        "in_hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+        "in_hash": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
         "max_gas_amount_0": "960000",
         "max_gas_asset_0": "ETH.ETH",
         "max_gas_decimals_0": "8",
-        "memo": "OUT:FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+        "memo": "OUT:8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
         "module_name": "",
         "out_hash": "",
         "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
@@ -879,7 +879,7 @@
     ],
     "txs": [
       {
-        "hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+        "hash": "8EE31BC948D58CB284B944835F6774F9F720DDC2180C0C5D101FC485609792DD",
         "tx": {
           "auth_info": {
             "fee": {
@@ -924,7 +924,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "mUI32W3ax/Fn94KseNkcX097So1/rAsv/28ngwKj0f8GLM2gPg10q+fIT7GD0RhSX1aR0sxPqqjbTd8MIJX9gQ=="
+            "8JdmU2sgx0z+k0v1ldrktGa/T5Do2w+FQIDkDEqfzJlbiU+1eayHzf39zmeNQ+RR1mlWmGDtSGDI+36bXs2BvQ=="
           ]
         },
         "result": {
@@ -932,7 +932,7 @@
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
           "log": "[{\"events\":[{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"15000000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "138885",
+          "gas_used": "138087",
           "events": [
             {
               "fee": "",
@@ -964,7 +964,7 @@
               "type": "tx"
             },
             {
-              "signature": "mUI32W3ax/Fn94KseNkcX097So1/rAsv/28ngwKj0f8GLM2gPg10q+fIT7GD0RhSX1aR0sxPqqjbTd8MIJX9gQ==",
+              "signature": "8JdmU2sgx0z+k0v1ldrktGa/T5Do2w+FQIDkDEqfzJlbiU+1eayHzf39zmeNQ+RR1mlWmGDtSGDI+36bXs2BvQ==",
               "type": "tx"
             },
             {
@@ -1020,12 +1020,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "1E49F4AF7EE3332818A1951A066256453B52ED496454A960B01F7ED9AB9CB0DD",
+      "data_hash": "3EA27B7E1756982BE06E24CA4BD3B5C84874A6EAC4AD2937A1BA61B21D1D2E60",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "517F23CB4B005543CA7F3F446DB4FC28554F57202CEBE78EC54F6CBAE822A94C",
-      "last_results_hash": "A02CD805DFC3DE38ABD17B221FB29458157DDE46227FA0A79403975B175FFD03",
+      "app_hash": "D617EC85E5A76B1A8D9656E5D95D83540059429E9126CA51E605C7590721541C",
+      "last_results_hash": "7164DCE69E28A2B350DAA1B10131F0E43D4FE639C94C53566A8922CB6FDA7C9E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1190,7 +1190,7 @@
     ],
     "txs": [
       {
-        "hash": "A13E6B7EE06EADDE42D52D74F044FD06E95AED079BECCEFAAD495066FE0ECEE9",
+        "hash": "FF7F8C59978BFC1FC7CE00B237C632B4006854C4F8C0DDD985233F47941C3156",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1251,7 +1251,7 @@
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
-                      "memo": "OUT:277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70",
+                      "memo": "OUT:9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5",
                       "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2"
                     }
                   }
@@ -1262,15 +1262,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "8kh4iC+XWM9PJnXbHq8n50I7Vj05t25S4j6AMK2nGE8ZkqvAEBLjkc/3JWyMAVih0X4t4nI+X1zZv5Rjm/9G8w=="
+            "Si6HIgepA1oDChFons4bKK4iMlZJqK/Nvs4Brn3hCnNp8NwUvqeotNadeM/WdhLQhL6jRYURLixdwN/Hg0oGVA=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"bond\",\"attributes\":[{\"key\":\"amount\",\"value\":\"21874273701\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"},{\"key\":\"to\"},{\"key\":\"coin\"},{\"key\":\"memo\"},{\"key\":\"amount\",\"value\":\"8253241059\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"},{\"key\":\"to\"},{\"key\":\"coin\"},{\"key\":\"memo\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"}]},{\"type\":\"security\",\"attributes\":[{\"key\":\"msg\",\"value\":\"missing tx out in=277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"8990871000 ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"memo\",\"value\":\"OUT:277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"HALTETHCHAIN\"},{\"key\":\"value\",\"value\":\"5\"}]},{\"type\":\"slash\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"ETH.USDX-0X9999999999999999999999999999999999999999\",\"value\":\"-8990871000\"},{\"key\":\"THOR.RUNE\",\"value\":\"14582849134\"},{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"ETH.ETH\",\"value\":\"-50000001\"},{\"key\":\"THOR.RUNE\",\"value\":\"5526337631\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"bond\",\"attributes\":[{\"key\":\"amount\",\"value\":\"21874273701\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"},{\"key\":\"to\"},{\"key\":\"coin\"},{\"key\":\"memo\"},{\"key\":\"amount\",\"value\":\"8253241059\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"},{\"key\":\"to\"},{\"key\":\"coin\"},{\"key\":\"memo\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"}]},{\"type\":\"security\",\"attributes\":[{\"key\":\"msg\",\"value\":\"missing tx out in=9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"8990871000 ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"memo\",\"value\":\"OUT:9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"HALTETHCHAIN\"},{\"key\":\"value\",\"value\":\"5\"}]},{\"type\":\"slash\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.USDX-0X9999999999999999999999999999999999999999\"},{\"key\":\"ETH.USDX-0X9999999999999999999999999999999999999999\",\"value\":\"-8990871000\"},{\"key\":\"THOR.RUNE\",\"value\":\"14582849134\"},{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"ETH.ETH\",\"value\":\"-50000001\"},{\"key\":\"THOR.RUNE\",\"value\":\"5526337631\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"7291424567rune\"},{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"14582849134rune\"},{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2726903428rune\"},{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"5526337631rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "340793",
+          "gas_used": "337002",
           "events": [
             {
               "fee": "",
@@ -1282,7 +1282,7 @@
               "type": "tx"
             },
             {
-              "signature": "8kh4iC+XWM9PJnXbHq8n50I7Vj05t25S4j6AMK2nGE8ZkqvAEBLjkc/3JWyMAVih0X4t4nI+X1zZv5Rjm/9G8w==",
+              "signature": "Si6HIgepA1oDChFons4bKK4iMlZJqK/Nvs4Brn3hCnNp8NwUvqeotNadeM/WdhLQhL6jRYURLixdwN/Hg0oGVA==",
               "type": "tx"
             },
             {
@@ -1294,8 +1294,8 @@
               "coin": "8990871000 ETH.USDX-0X9999999999999999999999999999999999999999",
               "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
               "id": "0000000000000000000000000000000000000000000000000000000000000002",
-              "memo": "OUT:277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70",
-              "msg": "missing tx out in=277B669B3CADEE32F77B9CB26D2E71F668C28FF249E1011EB0035AED0F88CF70",
+              "memo": "OUT:9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5",
+              "msg": "missing tx out in=9CE6B0FEFB76B0686EEAE53151AD6F3E1AE7DB4170D0833B22CB1B65BF63A8C5",
               "to": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "type": "security"
             },
