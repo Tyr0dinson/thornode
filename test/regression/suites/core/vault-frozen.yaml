@@ -22,7 +22,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].in_hash == "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
+  - .[0].in_hash == "{{ native_txid -1 }}"
 ---
 type: create-blocks
 count: 1
@@ -33,8 +33,8 @@ count: 1
 type: tx-tss-keysign
 signer: {{ addr_thor_dog }}
 pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-id: "43919a6ec98353bac5030b4db64e36abe299f91ab26c2c8442a42595a772c280"
-memo: "OUT:D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
+id: "f735ebdc04427acf60a35b2cfa411446b85f58cd3aef2314851ac3f9e69f700f"
+memo: "OUT:{{ native_txid -1 }}"
 coins:
   - amount: "8250426"
     asset: "BTC.BTC"
@@ -63,13 +63,13 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].in_hash == "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
+  - .[0].in_hash == "{{ native_txid -2 }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
   - tx:
-      id: "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
+      id: "{{ observe_txid 1 }}"
       chain: BTC
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
@@ -80,7 +80,7 @@ txs:
       gas:
         - amount: "10500"
           asset: "BTC.BTC"
-      memo: "OUT:D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
+      memo: "OUT:{{ native_txid -2 }}"
     block_height: 2
     finalise_height: 2
     observed_pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
