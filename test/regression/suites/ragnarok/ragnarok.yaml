@@ -523,7 +523,7 @@ txs:
       gas:
         - amount: "15000"
           asset: "ETH.ETH"
-      memo: "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038"
+      memo: "OUT:764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71"
     block_height: 2
     finalise_height: 2
     observed_pub_key: {{ pubkey_dog }}
