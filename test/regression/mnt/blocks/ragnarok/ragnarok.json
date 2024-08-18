@@ -320,7 +320,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "AAA7C238192CE1B3B09F820F02243E56741D896127535B6F486AE720A3A3FB18",
+      "data_hash": "C71F4C55D18AB82ED1C2020FCAC0C9EE1686833A9353F955629DE827884F64B7",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -379,7 +379,7 @@
     ],
     "txs": [
       {
-        "hash": "F1B550873C1EB0269B55BB22E34D2D8DDEF59261AD1B88EBEE8C0A30057CF9F5",
+        "hash": "B28B6360A8518D697E286B8E0409533D25D39B3A8927432220D9E2E59CF7EE41",
         "tx": {
           "auth_info": {
             "fee": {
@@ -484,7 +484,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "heAczyHzhBRNcpnjWvl7OqowJ/MWNuWGOkm4twqFEUckRTMBT1qKj/AAcpMY/UWpGvriPcjt7dTcuqroMvV2VQ=="
+            "EP/6GgqOxf2uDTGpy0dFy0lyU/3KAKb5j2HPy05HAVIJdS+hpewX8ubFKl2C3gPv2OFRHtXcMwFo/blEBAHh+w=="
           ]
         },
         "result": {
@@ -492,7 +492,7 @@
           "data": "\n\u0018\n\u0016/types.MsgObservedTxIn",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txin\"}]},{\"type\":\"pending_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"type\",\"value\":\"add\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"0\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"},{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"type\",\"value\":\"add\"},{\"key\":\"rune_address\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"rune_amount\",\"value\":\"0\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "428118",
+          "gas_used": "422848",
           "events": [
             {
               "fee": "",
@@ -504,7 +504,7 @@
               "type": "tx"
             },
             {
-              "signature": "heAczyHzhBRNcpnjWvl7OqowJ/MWNuWGOkm4twqFEUckRTMBT1qKj/AAcpMY/UWpGvriPcjt7dTcuqroMvV2VQ==",
+              "signature": "EP/6GgqOxf2uDTGpy0dFy0lyU/3KAKb5j2HPy05HAVIJdS+hpewX8ubFKl2C3gPv2OFRHtXcMwFo/blEBAHh+w==",
               "type": "tx"
             },
             {
@@ -533,7 +533,7 @@
         }
       },
       {
-        "hash": "E81AFE797ADA5CEFA54E479B9C465EE06ED029BD8BF66ABCA23229B83D645CB7",
+        "hash": "77B32E023929A15BFF4EF319325C098592BA89F4E541A4EF9FA612EBA4116203",
         "tx": {
           "auth_info": {
             "fee": {
@@ -578,15 +578,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "I0lhjJ38zpmbf5nMXRp+P0XKwgN43G87iXMU6xHBu0xBRnq9H5rqZqngYWkDmJpbWujHmFfMNYkIB9FMWBJkoA=="
+            "VLUUNxHoj1PG3tOOfw9GoUxp3h55BAjLyIk9cBdH6/NQ003pjefcRoZtgbsIg7mwQrUte/cr+BoiNMjSifHrAQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
-          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"liquidity_provider_units\",\"value\":\"200000000\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"200000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"THOR_txid\",\"value\":\"E81AFE797ADA5CEFA54E479B9C465EE06ED029BD8BF66ABCA23229B83D645CB7\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"pool\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"pool_status\",\"value\":\"Available\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"liquidity_provider_units\",\"value\":\"200000000\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"200000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"THOR_txid\",\"value\":\"77B32E023929A15BFF4EF319325C098592BA89F4E541A4EF9FA612EBA4116203\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"pool\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"pool_status\",\"value\":\"Available\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "175010",
+          "gas_used": "173754",
           "events": [
             {
               "fee": "",
@@ -618,7 +618,7 @@
               "type": "tx"
             },
             {
-              "signature": "I0lhjJ38zpmbf5nMXRp+P0XKwgN43G87iXMU6xHBu0xBRnq9H5rqZqngYWkDmJpbWujHmFfMNYkIB9FMWBJkoA==",
+              "signature": "VLUUNxHoj1PG3tOOfw9GoUxp3h55BAjLyIk9cBdH6/NQ003pjefcRoZtgbsIg7mwQrUte/cr+BoiNMjSifHrAQ==",
               "type": "tx"
             },
             {
@@ -652,7 +652,7 @@
             },
             {
               "ETH_txid": "0000000000000000000000000000000000000000000000000000000000000001",
-              "THOR_txid": "E81AFE797ADA5CEFA54E479B9C465EE06ED029BD8BF66ABCA23229B83D645CB7",
+              "THOR_txid": "77B32E023929A15BFF4EF319325C098592BA89F4E541A4EF9FA612EBA4116203",
               "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "asset_amount": "100000000",
               "liquidity_provider_units": "200000000",
@@ -665,7 +665,7 @@
         }
       },
       {
-        "hash": "7E9C2271CF5425EE858AB55935DA321254BF6FF7CC1817A183C58CDAC02FFC0E",
+        "hash": "07D0387E2A95C35AF277FDFE93776DB24F94BCE317BE8E9072F5077F9D2C6EF9",
         "tx": {
           "auth_info": {
             "fee": {
@@ -710,15 +710,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "2My1c1QsdBZH6gacd7Auz6ENb0R0zvgvYjZPfxDyxthKUWBCHsZ5pore9XNXy+Hchf7UhY7nypodVuiHgnak4w=="
+            "FnZfIFLuNNZ0a8kd/G6JGak0z0PAup5TGEfXA+/CQPkHOFbSYW6jhEn7rJxen2/OCB12Qnc7tVB5B1mIyy2GTQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
-          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"liquidity_provider_units\",\"value\":\"200000000\"},{\"key\":\"rune_address\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"rune_amount\",\"value\":\"200000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"THOR_txid\",\"value\":\"7E9C2271CF5425EE858AB55935DA321254BF6FF7CC1817A183C58CDAC02FFC0E\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.ETH\"},{\"key\":\"liquidity_provider_units\",\"value\":\"200000000\"},{\"key\":\"rune_address\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"rune_amount\",\"value\":\"200000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"THOR_txid\",\"value\":\"07D0387E2A95C35AF277FDFE93776DB24F94BCE317BE8E9072F5077F9D2C6EF9\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"200000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "174761",
+          "gas_used": "173535",
           "events": [
             {
               "fee": "",
@@ -750,7 +750,7 @@
               "type": "tx"
             },
             {
-              "signature": "2My1c1QsdBZH6gacd7Auz6ENb0R0zvgvYjZPfxDyxthKUWBCHsZ5pore9XNXy+Hchf7UhY7nypodVuiHgnak4w==",
+              "signature": "FnZfIFLuNNZ0a8kd/G6JGak0z0PAup5TGEfXA+/CQPkHOFbSYW6jhEn7rJxen2/OCB12Qnc7tVB5B1mIyy2GTQ==",
               "type": "tx"
             },
             {
@@ -779,7 +779,7 @@
             },
             {
               "ETH_txid": "0000000000000000000000000000000000000000000000000000000000000002",
-              "THOR_txid": "7E9C2271CF5425EE858AB55935DA321254BF6FF7CC1817A183C58CDAC02FFC0E",
+              "THOR_txid": "07D0387E2A95C35AF277FDFE93776DB24F94BCE317BE8E9072F5077F9D2C6EF9",
               "asset_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "asset_amount": "100000000",
               "liquidity_provider_units": "200000000",
@@ -817,12 +817,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "1700B0F4B5D1BA6654FBBB4D9229394EFDFD96A3040CDBA7DA878248B4244570",
+      "data_hash": "3DEC3B71ECDA4348D203CD927B46929DB72CF4025C2F1241811B10A28DD21FAB",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "43D6BFCDE9BEE44714EC3919F98476D63C3844AFF7FB4B6D589EFB66D4024EE7",
-      "last_results_hash": "B8A2815FDE80A5AA3963661676196B7D0BE0638716DC0C04E6D9466B3E66AFA0",
+      "app_hash": "A962E0C70EA293FB9EB814435179B8E48CA2FD63E39E2DDA37AEB72EE8ED29D2",
+      "last_results_hash": "1C8621F6C50E1C4E09E1302999ECFB5755D6EE84F1E8B23B2AA709775A0348B7",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -897,7 +897,7 @@
     ],
     "txs": [
       {
-        "hash": "402D2470813D512BAA4036154A184841668280B43EFCC1CD1EB65B561980A819",
+        "hash": "583B84666AF3A2C0F77BB802C41D801C26E04C2A0006A048A9EA1153B0BC5AC2",
         "tx": {
           "auth_info": {
             "fee": {
@@ -969,7 +969,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "IEmpH40vD0TsOn5zpOfV5LtnTVy7Onm2ANIrTZpTHfMgPTAtm6KRswScbnAsmJM72ArmEBvIyOvORYpQ8UfTfA=="
+            "qT/XSYnq/maqxfNPCVdhzIAFat9DCGU26vr5hMy9RnViR1t5JtS9Ki5n4gX7E1Y+XZQrt6Cgx/Gb05Yuu724HQ=="
           ]
         },
         "result": {
@@ -977,7 +977,7 @@
           "data": "\n\u0018\n\u0016/types.MsgObservedTxIn",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txin\"}]},{\"type\":\"pending_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.FOO\"},{\"key\":\"type\",\"value\":\"add\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"0\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "247282",
+          "gas_used": "244332",
           "events": [
             {
               "fee": "",
@@ -989,7 +989,7 @@
               "type": "tx"
             },
             {
-              "signature": "IEmpH40vD0TsOn5zpOfV5LtnTVy7Onm2ANIrTZpTHfMgPTAtm6KRswScbnAsmJM72ArmEBvIyOvORYpQ8UfTfA==",
+              "signature": "qT/XSYnq/maqxfNPCVdhzIAFat9DCGU26vr5hMy9RnViR1t5JtS9Ki5n4gX7E1Y+XZQrt6Cgx/Gb05Yuu724HQ==",
               "type": "tx"
             },
             {
@@ -1009,7 +1009,7 @@
         }
       },
       {
-        "hash": "467910FCCF538BA23EE3F803299CA3FCD9E478D62D63406212D524F0BBBB35C7",
+        "hash": "4A473F73ACF5BFF72DCF460B239F013035B4AE26ED8B988B9372F9D2A0872FD0",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1054,15 +1054,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "BD05DmnSsCHN9s2a/NqS1JM2DGGRFFaHIHCs2C22J1wy77my52knAWjDltelM2RdByQK0jcYDf2Kq85IX7Wx9Q=="
+            "XkxxBmpAOoQ+97TAPw4X8f9xUdigdFqm4AuDvdEUwmkml0vC052hwZXVfF8r+730n5hS+A3s1/jqz7Yo3uQi+A=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
-          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.FOO\"},{\"key\":\"liquidity_provider_units\",\"value\":\"100000000\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"100000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"THOR_txid\",\"value\":\"467910FCCF538BA23EE3F803299CA3FCD9E478D62D63406212D524F0BBBB35C7\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"pool\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.FOO\"},{\"key\":\"pool_status\",\"value\":\"Available\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.FOO\"},{\"key\":\"liquidity_provider_units\",\"value\":\"100000000\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"100000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"THOR_txid\",\"value\":\"4A473F73ACF5BFF72DCF460B239F013035B4AE26ED8B988B9372F9D2A0872FD0\"},{\"key\":\"ETH_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"}]},{\"type\":\"pool\",\"attributes\":[{\"key\":\"pool\",\"value\":\"ETH.FOO\"},{\"key\":\"pool_status\",\"value\":\"Available\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "172749",
+          "gas_used": "171463",
           "events": [
             {
               "fee": "",
@@ -1094,7 +1094,7 @@
               "type": "tx"
             },
             {
-              "signature": "BD05DmnSsCHN9s2a/NqS1JM2DGGRFFaHIHCs2C22J1wy77my52knAWjDltelM2RdByQK0jcYDf2Kq85IX7Wx9Q==",
+              "signature": "XkxxBmpAOoQ+97TAPw4X8f9xUdigdFqm4AuDvdEUwmkml0vC052hwZXVfF8r+730n5hS+A3s1/jqz7Yo3uQi+A==",
               "type": "tx"
             },
             {
@@ -1128,7 +1128,7 @@
             },
             {
               "ETH_txid": "0000000000000000000000000000000000000000000000000000000000000003",
-              "THOR_txid": "467910FCCF538BA23EE3F803299CA3FCD9E478D62D63406212D524F0BBBB35C7",
+              "THOR_txid": "4A473F73ACF5BFF72DCF460B239F013035B4AE26ED8B988B9372F9D2A0872FD0",
               "asset_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "asset_amount": "100000000",
               "liquidity_provider_units": "100000000",
@@ -1166,12 +1166,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "D113ABACFBD37B8EB36243BC001B09A7405ED5D5DB0EBE063AE3104675A2B0F7",
+      "data_hash": "28832D67795CA92E3B23408020C821DD8E49D0D3DE6AEE47FBED4DCEDDD198CE",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "2985D76AFD96F4A88CAB9BC641AB806D64DEE4059C3DF31BAFA7ECA2DEB78711",
-      "last_results_hash": "A14AB9A1F6DE3B8E086EBE0DA3649977AC67C0EE9A506E42C39EED5CC269E1EF",
+      "app_hash": "6DA3F5E33E0CB8BB478D6ADF5262ED90BBF082172D34F151C13D7D1BAC13621A",
+      "last_results_hash": "53F749DA4329DE6AD8E861FA0D21A27F49B82AF15E3326DD9963DE8794B8AB01",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1519,7 +1519,7 @@
     ],
     "txs": [
       {
-        "hash": "CE07D47BE3078158F4968D528F563E6F9A243D92053BBDABEAD5314C6BFC5D8E",
+        "hash": "2309FE79F6B480EC843C23577D6E055B1EDEAFCB6D594703892EFFEEEA8E6470",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1657,7 +1657,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "iMNgzQ7Di2oB3xlaT3dL0xl481wR0J+qN3U1DZkMKmgdH9Koix4iPiHLE+5NLkZu5oEl9mqGrDDupZGK0YogKw=="
+            "+Zu3RxUzNjVHLTw9w9pnWh+6Rz06co7EYZDm9xG5UfJQewVDYKPsYKgVh1SxKzpy/KnQchCqg64ZQ/6vDM56wg=="
           ]
         },
         "result": {
@@ -1665,7 +1665,7 @@
           "data": "\n\u0018\n\u0016/types.MsgObservedTxIn",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txin\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "673638",
+          "gas_used": "664878",
           "events": [
             {
               "fee": "",
@@ -1677,7 +1677,7 @@
               "type": "tx"
             },
             {
-              "signature": "iMNgzQ7Di2oB3xlaT3dL0xl481wR0J+qN3U1DZkMKmgdH9Koix4iPiHLE+5NLkZu5oEl9mqGrDDupZGK0YogKw==",
+              "signature": "+Zu3RxUzNjVHLTw9w9pnWh+6Rz06co7EYZDm9xG5UfJQewVDYKPsYKgVh1SxKzpy/KnQchCqg64ZQ/6vDM56wg==",
               "type": "tx"
             },
             {
@@ -1713,12 +1713,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "E0694B975E61829B5A02288EDC19988B9FF26786407D10ACBA39FC4A59B36041",
+      "data_hash": "C5010AF2D152A25097046470C7FD79D34B241F6FF4977DA53E8E4C00E5336C0C",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "E0444E43F2CC42E2FF81A42F578C4D3C5A8867F032F175BB1AB449D8DD3AF3CB",
-      "last_results_hash": "7A5168128C124295F818C59123EFDFF83FC79B1CB35990938B68ED6D25FE1733",
+      "app_hash": "CFC4B3A32C6F1F6FCFC2EC19F819917A9DAFB5A36DB68DBBF007B58F00E03662",
+      "last_results_hash": "5345CB1B6C74717010A503FFB5D0596B065A4D5819A1E3EFD6D7FF4CB0FEA052",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1766,7 +1766,7 @@
         "coin": "50000000 THOR.RUNE",
         "emit_asset": "25293745 ETH/ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "id": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "liquidity_fee": "1568672",
         "liquidity_fee_in_rune": "2749319",
         "memo": "=:ETH/ETH:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/2",
@@ -1942,7 +1942,7 @@
         }
       },
       {
-        "hash": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "hash": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1987,7 +1987,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "Gek4SdP08YcGksz382tI+OYOJWK1Ao+O792N7vpXgOx4PWkNRH3jLzbG7afRFrJJ3PtKgB5XrqcDC75k8RlYxQ=="
+            "asSO6Xl9xooR3gyr5eIJbtm4nZCS0RMpEnC+9mUe3md/3GWCjK+JVUr0UHLe6gPCic+6RVFfDVOYn7CeEfgVxA=="
           ]
         },
         "result": {
@@ -1995,7 +1995,7 @@
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
           "log": "[{\"events\":[{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"100000000rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "133596",
+          "gas_used": "132831",
           "events": [
             {
               "fee": "",
@@ -2027,7 +2027,7 @@
               "type": "tx"
             },
             {
-              "signature": "Gek4SdP08YcGksz382tI+OYOJWK1Ao+O792N7vpXgOx4PWkNRH3jLzbG7afRFrJJ3PtKgB5XrqcDC75k8RlYxQ==",
+              "signature": "asSO6Xl9xooR3gyr5eIJbtm4nZCS0RMpEnC+9mUe3md/3GWCjK+JVUr0UHLe6gPCic+6RVFfDVOYn7CeEfgVxA==",
               "type": "tx"
             },
             {
@@ -2087,8 +2087,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "4B2ED4E307C05CB7D94ED36F3B7CCB0739D54F7C3895ED9E84E21FD22FBC767E",
-      "last_results_hash": "54C5EC607965168B83CBFFF49516F45DE4371FE545E689C033AB0C6C1B963F9A",
+      "app_hash": "007E933DFA209776AE55832574AEBCC1D632C02734508C95B238A15843902154",
+      "last_results_hash": "5FD7EB442482550E1C263A1DF291EC2492BF3FAAD83FFB4235590A607CCBFFE1",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2136,7 +2136,7 @@
         "coin": "50000000 THOR.RUNE",
         "emit_asset": "22745576 ETH/ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "id": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "liquidity_fee": "1251911",
         "liquidity_fee_in_rune": "2472344",
         "memo": "=:ETH/ETH:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/2",
@@ -2189,7 +2189,7 @@
       {
         "coins": "912306 ETH/ETH",
         "pool_deduct": "1992098",
-        "tx_id": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "tx_id": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "type": "fee"
       },
       {
@@ -2237,8 +2237,8 @@
         "coin": "47127015 ETH/ETH",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
-        "memo": "OUT:EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "in_tx_id": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
+        "memo": "OUT:62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "to": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "outbound"
       },
@@ -2252,7 +2252,7 @@
         "last_height": "7",
         "out": "48039321 ETH/ETH",
         "quantity": "2",
-        "tx_id": "EE9644E9C326223CF55333D8B582449B30255A5761428777D81850818AC3016B",
+        "tx_id": "62724B33495D4AAF015EDB3069412C44E37D73E7748AA23EFB37B26C2D21A55C",
         "type": "streaming_swap"
       },
       {
@@ -2371,7 +2371,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "BD93BA3AF176E7FF3609E3368FBA7D884991A115E3C1011E4C20936513DFF6B8",
+      "app_hash": "CE710D19E042116791C456C8F7B9FFA4A8AFAB53949F313C00FD8684951D165A",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2655,11 +2655,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "14480D6C00A12B8DADABE83B8506747611ED9AF48B07379FC035ED9A76F20E16",
+      "data_hash": "5A655AE470EA8B2C95F1B719AF1697394C202CF62C3ABF6CEDB34942A2B8B0A1",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "5B50BF60B65EC03E6DEA277B17F86985393D7C1C58D9A54E376F2F1CECBEA17B",
+      "app_hash": "CA6FB4E88B1083668F249B880CD7C79451D02D2115CE0CBCD84080D3AEE13EE9",
       "last_results_hash": "1273260DE62FE4F956D58F24800B670593B2DD3C03148A4E8675A020A16026EE",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2813,7 +2813,7 @@
     ],
     "txs": [
       {
-        "hash": "2953D3E8E7601F5C6DDBEE427D6DA4C37114704AA3508728E5B051937CAB5B28",
+        "hash": "BC3E6C5947AD65982A8AEA373DAC432BC2A7C183B368B63C49497D6A844D5EF5",
         "tx": {
           "auth_info": {
             "fee": {
@@ -2885,7 +2885,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "HkvcIU489WQbnne9OcZxEibQ38WcCX2MOjCb4V76Ma1aA+z6Xw0GmIawrYoDllkPzcL44HdEWZ/nDxgvXUqhTQ=="
+            "J/50N51aZpijKi0KeIKHWfJxNZPbxJHaqHp7yuT0MZ8hSwno6T6q0mNBhiFwpcthoREBkvYRb+Clc3nvxxQpPA=="
           ]
         },
         "result": {
@@ -2893,7 +2893,7 @@
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "191065",
+          "gas_used": "188775",
           "events": [
             {
               "fee": "",
@@ -2905,7 +2905,7 @@
               "type": "tx"
             },
             {
-              "signature": "HkvcIU489WQbnne9OcZxEibQ38WcCX2MOjCb4V76Ma1aA+z6Xw0GmIawrYoDllkPzcL44HdEWZ/nDxgvXUqhTQ==",
+              "signature": "J/50N51aZpijKi0KeIKHWfJxNZPbxJHaqHp7yuT0MZ8hSwno6T6q0mNBhiFwpcthoREBkvYRb+Clc3nvxxQpPA==",
               "type": "tx"
             },
             {
@@ -2941,12 +2941,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "34B81920AD1E9B7DDED84E41810278426042421935078D14DE5094EA65CE797D",
+      "data_hash": "9798DD5CA3BAE8BA192CB906315BCAFDB0C19F39B30C852BE13F04465B03F7E7",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "045BF0DED99831BA6AADA0345533B90D3221D6AADE196725250F010E59DF563D",
-      "last_results_hash": "BDAA376A75023D01E449E850B782720E3FE9A13E69037C46BCB9F059DAA28DC0",
+      "app_hash": "F26ECB0D1A07AA4B9F1F8153721C71F1A49E41BFD07A30E65DD8184A127B257E",
+      "last_results_hash": "DF739F20E37419777942F40BF9048A1FA33E049EEAD3001C560BD0A0B288B1AE",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2992,7 +2992,7 @@
       {
         "coins": "910107 ETH/ETH",
         "pool_deduct": "1992117",
-        "tx_id": "5D3F5B257230960166CD63702B15E5D5EF73F0E52D6D2E82379DF527B2A3990B",
+        "tx_id": "C7324872F65FC63A44A39B9367AE42BE55478846C57354DC7A89C891D35260D6",
         "type": "fee"
       },
       {
@@ -3040,8 +3040,8 @@
         "coin": "46216908 ETH/ETH",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "5D3F5B257230960166CD63702B15E5D5EF73F0E52D6D2E82379DF527B2A3990B",
-        "memo": "REFUND:5D3F5B257230960166CD63702B15E5D5EF73F0E52D6D2E82379DF527B2A3990B",
+        "in_tx_id": "C7324872F65FC63A44A39B9367AE42BE55478846C57354DC7A89C891D35260D6",
+        "memo": "REFUND:C7324872F65FC63A44A39B9367AE42BE55478846C57354DC7A89C891D35260D6",
         "to": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "outbound"
       },
@@ -3050,7 +3050,7 @@
         "code": "108",
         "coin": "47127015 ETH/ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "5D3F5B257230960166CD63702B15E5D5EF73F0E52D6D2E82379DF527B2A3990B",
+        "id": "C7324872F65FC63A44A39B9367AE42BE55478846C57354DC7A89C891D35260D6",
         "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:0/1/0",
         "reason": "streaming swaps disabled on ragnarok asset ETH/ETH",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -3392,7 +3392,7 @@
     ],
     "txs": [
       {
-        "hash": "D93DEA4CDA26B183FEE87D9447D97F14FA96F96F2F26F01CD8049B96F52BA0A5",
+        "hash": "29878E6A2C923FD91F5C90E6BB223E6BAE5F6D17F46FFDCB78FE253FA3656EB8",
         "tx": {
           "auth_info": {
             "fee": {
@@ -3437,14 +3437,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "4qtzaJogb5WXEXUxCFkgQKfcmKYYOJ+LP4ZDQocLlClBpzkeaMv9boPScTJgjuXA/qL7dT81E4u5WFB/zP+qpw=="
+            "KzG+H18qKoc38Q5nNWDBCl5utdjRNCiAlyVd1tL3yyUClJA/rwG6UgVbKal4msFomunOODOkdMQGZ7PnBPi8Zg=="
           ]
         },
         "result": {
           "code": 99,
           "log": "failed to execute message; message index: 0: trading is halted: internal error",
           "gas_wanted": "0",
-          "gas_used": "104061",
+          "gas_used": "103606",
           "events": [
             {
               "fee": "",
@@ -3476,14 +3476,14 @@
               "type": "tx"
             },
             {
-              "signature": "4qtzaJogb5WXEXUxCFkgQKfcmKYYOJ+LP4ZDQocLlClBpzkeaMv9boPScTJgjuXA/qL7dT81E4u5WFB/zP+qpw==",
+              "signature": "KzG+H18qKoc38Q5nNWDBCl5utdjRNCiAlyVd1tL3yyUClJA/rwG6UgVbKal4msFomunOODOkdMQGZ7PnBPi8Zg==",
               "type": "tx"
             }
           ]
         }
       },
       {
-        "hash": "5D3F5B257230960166CD63702B15E5D5EF73F0E52D6D2E82379DF527B2A3990B",
+        "hash": "C7324872F65FC63A44A39B9367AE42BE55478846C57354DC7A89C891D35260D6",
         "tx": {
           "auth_info": {
             "fee": {
@@ -3528,7 +3528,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "NyX1PIBnG484VvvTR6qZxJJ2owtcgyq5oukurnpz1N9Qo44fz5j4PkNwb0WrQq4UKvBvFJ081+1wNVxABbG1JQ=="
+            "jCWJWwACf6jUxlWf3LC2b2jKjqtpBA2yDXJOjlozDDg20qkbkFhDjpwaGhI1oROn6WPhEQAuy0aeu/ZFk4wJ/Q=="
           ]
         },
         "result": {
@@ -3536,7 +3536,7 @@
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
           "log": "[{\"events\":[{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"47127015eth/eth\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"47127015eth/eth\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"47127015eth/eth\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "127951",
+          "gas_used": "127286",
           "events": [
             {
               "fee": "",
@@ -3568,7 +3568,7 @@
               "type": "tx"
             },
             {
-              "signature": "NyX1PIBnG484VvvTR6qZxJJ2owtcgyq5oukurnpz1N9Qo44fz5j4PkNwb0WrQq4UKvBvFJ081+1wNVxABbG1JQ==",
+              "signature": "jCWJWwACf6jUxlWf3LC2b2jKjqtpBA2yDXJOjlozDDg20qkbkFhDjpwaGhI1oROn6WPhEQAuy0aeu/ZFk4wJ/Q==",
               "type": "tx"
             },
             {
@@ -3624,12 +3624,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "2A4074BEDEC1BE7E5D8EA78D36EEFDB76ECB7E88C0909DE754AFA8F985803B04",
+      "data_hash": "74BD96EDCCBB92A106C3F1A55E05D5EA4542B60639E9A1A9001213668F04560B",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "ECA0D5375188E83129C467D07B3813AA54074F3164CEF4DA194FAFE5EC5F1294",
-      "last_results_hash": "14EA24FE27A1583AE52854B6349DBF4B50922E52ADB3F65666FA3F67FE623679",
+      "app_hash": "DC054925301AEC06849073CAB934D844A900E48E6A83181039FD2A6C4F86107A",
+      "last_results_hash": "CDF194C14966CC8B6EE5A4BD93A12B3ED9F7BFD912C063F85433730C9F65EFF1",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -3677,7 +3677,7 @@
         "coin": "46216908 ETH/ETH",
         "emit_asset": "89286717 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "id": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "liquidity_fee": "9715407",
         "liquidity_fee_in_rune": "9715407",
         "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
@@ -3695,7 +3695,7 @@
         "coin": "89286717 THOR.RUNE",
         "emit_asset": "30937274 ETH.ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "id": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "liquidity_fee": "6653871",
         "liquidity_fee_in_rune": "13006851",
         "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
@@ -3711,7 +3711,7 @@
       {
         "coins": "20000 ETH.ETH",
         "pool_deduct": "55598",
-        "tx_id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "tx_id": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "type": "fee"
       },
       {
@@ -3740,11 +3740,11 @@
         "coin_asset": "ETH.ETH",
         "coin_decimals": "0",
         "gas_rate": "15",
-        "in_hash": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "in_hash": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "max_gas_amount_0": "15000",
         "max_gas_asset_0": "ETH.ETH",
         "max_gas_decimals_0": "8",
-        "memo": "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "memo": "OUT:764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "module_name": "",
         "out_hash": "",
         "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
@@ -4048,7 +4048,7 @@
         }
       },
       {
-        "hash": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+        "hash": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
         "tx": {
           "auth_info": {
             "fee": {
@@ -4093,7 +4093,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "bKXY8Wt4NmGaKxTvT6qIn1lRi/TwrF8XNAt27IqY6J5fk3qu6QKSTR7eMeTIGDr1RCKfPrOpfqW+p7GrHEhngQ=="
+            "/jd3ZInYP1Bs+HjbugbsOvhIUsG03w5e2LhcC8pwuepVD8eLCZpGmv59jiVx+QHANraIQG5XkeThsaiwK6ZOgw=="
           ]
         },
         "result": {
@@ -4101,7 +4101,7 @@
           "data": "\n\u0013\n\u0011/types.MsgDeposit",
           "log": "[{\"events\":[{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"46216908eth/eth\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"46216908eth/eth\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"deposit\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"amount\",\"value\":\"46216908eth/eth\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "127288",
+          "gas_used": "126603",
           "events": [
             {
               "fee": "",
@@ -4133,7 +4133,7 @@
               "type": "tx"
             },
             {
-              "signature": "bKXY8Wt4NmGaKxTvT6qIn1lRi/TwrF8XNAt27IqY6J5fk3qu6QKSTR7eMeTIGDr1RCKfPrOpfqW+p7GrHEhngQ==",
+              "signature": "/jd3ZInYP1Bs+HjbugbsOvhIUsG03w5e2LhcC8pwuepVD8eLCZpGmv59jiVx+QHANraIQG5XkeThsaiwK6ZOgw==",
               "type": "tx"
             },
             {
@@ -4189,12 +4189,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "74BAA81FFBDDE75B5D6ABD57CA416D4051B9261AF2B917E691553B6E552F2FC6",
+      "data_hash": "E2A91449D29A35DA9B289426700CF167FC16A33FA987D792D740B311EE604978",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "553D4E0C405CD2C6824FD85076A116F7D11F7B37025E71E7C6191F56D5C3D5C2",
-      "last_results_hash": "C668F67B1A692495EC154B690094E72CCB9B58517F3BB0F0669C6F2D8883AD65",
+      "app_hash": "CB6F8CB399A06A91241C64677B7DD3DDDC498A20CAF011B46B9329BF052A5BBB",
+      "last_results_hash": "42286A661D3DD86EAF1266927656A5BD2DFAB6CB27C01F38D5FF0FCCAC96130E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -4230,7 +4230,7 @@
     ],
     "txs": [
       {
-        "hash": "0F56CDD9AFF18E301D9301B7B1D12D82FC9DE80B687FFB8FE794B515388576A0",
+        "hash": "CA5B11966BB9AD7D674E17338C85A70353C2448A5721A5DC3412CC532B06D472",
         "tx": {
           "auth_info": {
             "fee": {
@@ -4390,7 +4390,7 @@
                         }
                       ],
                       "id": "000000000000000000000000000000000000000000000000000000000000000b",
-                      "memo": "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+                      "memo": "OUT:764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
                     }
                   }
@@ -4401,15 +4401,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "NwsVDWtReGSL0HM9PZ+Lh5AZvhiIob4/WhNE1ZxhpVcRnJ79znlYonOtEPdXn7QloAqRjoYm1qstLkrJB32hTw=="
+            "7MwZyV3qTL/togIN3Co6TYJkHb8BikiCxnasAjL/5Yl7Fq9gcnLAaKJDOuYNE4EmefqlBlczH2gvnvV3ZJZ9QQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"59F3B49705FEE999EE4B944FB3ABD8458FE284A98BAF17A9A5136E64DB5BA81A\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000008\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xdd99304abf262d653e2eb6722d874c2b86efdcea\"},{\"key\":\"coin\",\"value\":\"8838815 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:59F3B49705FEE999EE4B944FB3ABD8458FE284A98BAF17A9A5136E64DB5BA81A\"},{\"key\":\"in_tx_id\",\"value\":\"03BA38020AF6B8AB2CB571104F6B6B04F3947588A707C26B5A63E1253A6A88EA\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000009\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"8774453 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:03BA38020AF6B8AB2CB571104F6B6B04F3947588A707C26B5A63E1253A6A88EA\"},{\"key\":\"in_tx_id\",\"value\":\"E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC\"},{\"key\":\"id\",\"value\":\"000000000000000000000000000000000000000000000000000000000000000a\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"coin\",\"value\":\"8643424 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC\"},{\"key\":\"in_tx_id\",\"value\":\"1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038\"},{\"key\":\"id\",\"value\":\"000000000000000000000000000000000000000000000000000000000000000b\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"coin\",\"value\":\"30917274 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"59F3B49705FEE999EE4B944FB3ABD8458FE284A98BAF17A9A5136E64DB5BA81A\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000008\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xdd99304abf262d653e2eb6722d874c2b86efdcea\"},{\"key\":\"coin\",\"value\":\"8838815 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:59F3B49705FEE999EE4B944FB3ABD8458FE284A98BAF17A9A5136E64DB5BA81A\"},{\"key\":\"in_tx_id\",\"value\":\"03BA38020AF6B8AB2CB571104F6B6B04F3947588A707C26B5A63E1253A6A88EA\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000009\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0x1b03d088612a00df0049634e9cc8684d622cada2\"},{\"key\":\"coin\",\"value\":\"8774453 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:03BA38020AF6B8AB2CB571104F6B6B04F3947588A707C26B5A63E1253A6A88EA\"},{\"key\":\"in_tx_id\",\"value\":\"E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC\"},{\"key\":\"id\",\"value\":\"000000000000000000000000000000000000000000000000000000000000000a\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"coin\",\"value\":\"8643424 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC\"},{\"key\":\"in_tx_id\",\"value\":\"764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71\"},{\"key\":\"id\",\"value\":\"000000000000000000000000000000000000000000000000000000000000000b\"},{\"key\":\"chain\",\"value\":\"ETH\"},{\"key\":\"from\",\"value\":\"0xd58610f89265a2fb637ac40edf59141ff873b266\"},{\"key\":\"to\",\"value\":\"0xe3c64974c78f5693bd2bc68b3221d58df5c6e877\"},{\"key\":\"coin\",\"value\":\"30917274 ETH.ETH\"},{\"key\":\"memo\",\"value\":\"OUT:764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "882494",
+          "gas_used": "868324",
           "events": [
             {
               "fee": "",
@@ -4421,7 +4421,7 @@
               "type": "tx"
             },
             {
-              "signature": "NwsVDWtReGSL0HM9PZ+Lh5AZvhiIob4/WhNE1ZxhpVcRnJ79znlYonOtEPdXn7QloAqRjoYm1qstLkrJB32hTw==",
+              "signature": "7MwZyV3qTL/togIN3Co6TYJkHb8BikiCxnasAjL/5Yl7Fq9gcnLAaKJDOuYNE4EmefqlBlczH2gvnvV3ZJZ9QQ==",
               "type": "tx"
             },
             {
@@ -4463,8 +4463,8 @@
               "coin": "30917274 ETH.ETH",
               "from": "0xd58610f89265a2fb637ac40edf59141ff873b266",
               "id": "000000000000000000000000000000000000000000000000000000000000000b",
-              "in_tx_id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "memo": "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
+              "in_tx_id": "764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
+              "memo": "OUT:764F3F06153BB428FD4712F6F4FEE422413D6E651CB0AC85E935A2E1683E7B71",
               "to": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "type": "outbound"
             }
@@ -4497,12 +4497,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "56B482BD86CE13BC080FFB307797CC4D0BC463D64AECA1B5E73BAD3998614B7E",
+      "data_hash": "493AE5575C3009D994C189BE578145D20990991504BA2861AB309C51DBD43E0E",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "4CF8FD6580C8FCA42CA1DAB239C691311A756BF08542E42A3E4DB36C9069DB7D",
-      "last_results_hash": "93FE3728A42D46E010A5C9083C82190A5718D87245B90C77CD8418988CDA9DDC",
+      "app_hash": "E4579A3B63744C5210F600E2D2A6EEEF54CD361A783F15CF50FFEAF2931A5A12",
+      "last_results_hash": "66098CF199DE5DD0D364EB108AD2B8D11B4C3E95688D74931CD4FF672776AF89",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -4536,7 +4536,7 @@
     ],
     "txs": [
       {
-        "hash": "5F50076521BFFC9F9D78E986609EAD424601AF02B42EBE5D6328D261A9114A99",
+        "hash": "CEEAFF1A69BAD577102A95DCDEDE5E61639E726156ABDB975CC87BE499A7C8F0",
         "tx": {
           "auth_info": {
             "fee": {
@@ -4608,7 +4608,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "BdQQRBXKfLMxlkVwakAVJSB3sIEk76G9YcYn6MJHb4sP7dv+P7rR3QcZzfzIulu1p4BtYTjeqIqIDOLngTB/SA=="
+            "qFg/NDwn/YNkwKaLF5XqeStXGZ+bHAMKuNGiaR15aPMZjyYCpjZnBv1nyzDnKowO/8nsCknRK1NUKvhLdZESLw=="
           ]
         },
         "result": {
@@ -4616,7 +4616,7 @@
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "218973",
+          "gas_used": "216023",
           "events": [
             {
               "fee": "",
@@ -4628,7 +4628,7 @@
               "type": "tx"
             },
             {
-              "signature": "BdQQRBXKfLMxlkVwakAVJSB3sIEk76G9YcYn6MJHb4sP7dv+P7rR3QcZzfzIulu1p4BtYTjeqIqIDOLngTB/SA==",
+              "signature": "qFg/NDwn/YNkwKaLF5XqeStXGZ+bHAMKuNGiaR15aPMZjyYCpjZnBv1nyzDnKowO/8nsCknRK1NUKvhLdZESLw==",
               "type": "tx"
             },
             {
