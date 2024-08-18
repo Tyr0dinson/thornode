@@ -487,7 +487,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "${INPUT_AMOUNT}"
   - .count == ${COUNT=1}
@@ -498,7 +498,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "${INPUT_AMOUNT}"
   - .count == ${COUNT=2}
@@ -509,7 +509,7 @@ type: create-blocks
 count: 8
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "0" # The streaming swap has completed and so is no longer ongoing.
   - .in == "0"
@@ -528,7 +528,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "${INPUT_AMOUNT}"
   - .count == ${COUNT=1}
@@ -539,7 +539,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "${INPUT_AMOUNT}"
   - .count == ${COUNT=2}
@@ -560,7 +560,7 @@ type: create-blocks
 count: 8
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/swap/streaming/{{ native_txid -1 }}
 asserts:
   - .deposit == "0" # The streaming swap has completed and so is no longer ongoing.
   - .in == "0"
