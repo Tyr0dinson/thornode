@@ -265,10 +265,6 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynthsBasisPoints)
 	}
 
-	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsRune() {
-		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
-	}
-
 	dexAgg := ""
 	dexAggTargetAsset := ""
 	if len(msg.Aggregator) > 0 {
