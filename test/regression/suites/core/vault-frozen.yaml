@@ -33,7 +33,7 @@ count: 1
 type: tx-tss-keysign
 signer: {{ addr_thor_dog }}
 pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-id: "f735ebdc04427acf60a35b2cfa411446b85f58cd3aef2314851ac3f9e69f700f"
+id: "11b518fb3a0df562273ca76fe4d0ad5e70a6fcde01ba224d18e88c938d2cefc3"
 memo: "OUT:{{ native_txid -1 }}"
 coins:
   - amount: "8250426"

@@ -737,6 +737,14 @@ type OpTxTssKeysign struct {
 }
 
 func (op *OpTxTssKeysign) Execute(out io.Writer, _ string, routine int, _ *os.Process, logs chan string) error {
+	memoTmpl := template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(op.MsgTssKeysignFail.Memo))
+	memo := bytes.NewBuffer(nil)
+	err := memoTmpl.Execute(memo, nil)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to render memo")
+	}
+	op.MsgTssKeysignFail.Memo = memo.String()
+
 	return sendMsg(out, routine, &op.MsgTssKeysignFail, op.MsgTssKeysignFail.Signer, op.Sequence, op.Gas, op, logs)
 }
 
