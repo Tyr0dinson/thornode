@@ -682,7 +682,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		}
 	}
 	if !finalRuneFee.IsZero() {
-		if toi.Coin.Asset.IsNativeRune() {
+		if toi.Coin.Asset.IsRune() {
 			// If the source module is the Reserve, leave the fee in the Reserve without a transfer.
 			if toi.ModuleName != ReserveName {
 				sourceModule := toi.GetModuleName() // Ensure that non-"".

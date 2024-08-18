@@ -272,11 +272,6 @@ func (a Asset) IsRune() bool {
 	return RuneAsset().Equals(a)
 }
 
-// IsNativeRune is a helper function, return true only when the asset represent NATIVE RUNE
-func (a Asset) IsNativeRune() bool {
-	return a.IsRune() && a.Chain.IsTHORChain()
-}
-
 // IsNative is a helper function, returns true when the asset is a native
 // asset to THORChain (ie rune, a synth, etc)
 func (a Asset) IsNative() bool {

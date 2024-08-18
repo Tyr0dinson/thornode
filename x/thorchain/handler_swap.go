@@ -265,7 +265,7 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		synthVirtualDepthMult = h.mgr.GetConstants().GetInt64Value(constants.VirtualMultSynthsBasisPoints)
 	}
 
-	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsNativeRune() {
+	if msg.TargetAsset.IsRune() && !msg.TargetAsset.IsRune() {
 		return nil, fmt.Errorf("target asset can't be %s", msg.TargetAsset.String())
 	}
 
@@ -351,7 +351,7 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 		affThorname = mem.GetAffiliateTHORName()
 	}
 
-	if affThorname != nil && msg.Destination.Equals(affColAddress) && !msg.AffiliateAddress.IsEmpty() && msg.TargetAsset.IsNativeRune() {
+	if affThorname != nil && msg.Destination.Equals(affColAddress) && !msg.AffiliateAddress.IsEmpty() && msg.TargetAsset.IsRune() {
 		// Add accrued RUNE for this affiliate
 		affCol, err = h.mgr.Keeper().GetAffiliateCollector(ctx, affThorname.Owner)
 		if err != nil {
@@ -481,7 +481,7 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 // amount from AffiliateCollector module accounting and send appropriate amount of RUNE
 // from AffiliateCollector module to Asgard
 func (h SwapHandler) processPreferredAssetSwap(ctx cosmos.Context, msg MsgSwap) error {
-	if msg.Tx.Coins.IsEmpty() || !msg.Tx.Coins[0].Asset.IsNativeRune() {
+	if msg.Tx.Coins.IsEmpty() || !msg.Tx.Coins[0].Asset.IsRune() {
 		return fmt.Errorf("native RUNE not in coins: %s", msg.Tx.Coins)
 	}
 	// For preferred asset swaps, the signer of the Msg is the THORName owner
