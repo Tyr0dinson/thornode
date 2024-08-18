@@ -21,7 +21,6 @@ type ERC20Token struct {
 func (t ERC20Token) Asset(chain common.Chain) common.Asset {
 	return common.Asset{
 		Chain:  chain,
-		Ticker: common.Ticker(t.Symbol),
 		Symbol: common.Symbol(strings.ToUpper(fmt.Sprintf("%s-%s", t.Symbol, t.Address))),
 	}
 }

@@ -23,11 +23,11 @@ type TestSwapKeeper struct {
 }
 
 func (k *TestSwapKeeper) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
-	return !asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"})
+	return !asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"})
 }
 
 func (k *TestSwapKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (thorchaintypes.Pool, error) {
-	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"}) {
+	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"}) {
 		return thorchaintypes.Pool{}, nil
 	}
 	if asset.Equals(common.BCHAsset) {
@@ -53,7 +53,7 @@ func (k *TestSwapKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (thorch
 func (k *TestSwapKeeper) SetPool(ctx cosmos.Context, ps thorchaintypes.Pool) error { return nil }
 
 func (k *TestSwapKeeper) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, addr common.Address) (thorchaintypes.LiquidityProvider, error) {
-	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXISTSTICKER", Ticker: "NOTEXISTSTICKER"}) {
+	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"}) {
 		return thorchaintypes.LiquidityProvider{}, errors.New("you asked for it")
 	}
 	return LiquidityProvider{

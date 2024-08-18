@@ -32,30 +32,30 @@ func (mas *MsgDonateSuite) TestMsgDonate(c *C) {
 	c.Check(len(signer) > 0, Equals, true)
 
 	inputs := []struct {
-		ticker common.Asset
+		asset  common.Asset
 		rune   cosmos.Uint
-		asset  cosmos.Uint
+		asAmt  cosmos.Uint
 		txHash common.TxID
 		signer cosmos.AccAddress
 	}{
 		{
-			ticker: common.Asset{},
+			asset:  common.Asset{},
 			rune:   cosmos.NewUint(100000000),
-			asset:  cosmos.NewUint(100000000),
+			asAmt:  cosmos.NewUint(100000000),
 			txHash: tx.ID,
 			signer: addr,
 		},
 		{
-			ticker: common.ETHAsset,
+			asset:  common.ETHAsset,
 			rune:   cosmos.NewUint(100000000),
-			asset:  cosmos.NewUint(100000000),
+			asAmt:  cosmos.NewUint(100000000),
 			txHash: common.TxID(""),
 			signer: addr,
 		},
 		{
-			ticker: common.ETHAsset,
+			asset:  common.ETHAsset,
 			rune:   cosmos.NewUint(100000000),
-			asset:  cosmos.NewUint(100000000),
+			asAmt:  cosmos.NewUint(100000000),
 			txHash: tx.ID,
 			signer: cosmos.AccAddress{},
 		},
@@ -63,7 +63,7 @@ func (mas *MsgDonateSuite) TestMsgDonate(c *C) {
 	for _, item := range inputs {
 		tx = GetRandomTx()
 		tx.ID = item.txHash
-		msgDonate := NewMsgDonate(tx, item.ticker, item.rune, item.asset, item.signer)
+		msgDonate := NewMsgDonate(tx, item.asset, item.rune, item.asAmt, item.signer)
 		err = msgDonate.ValidateBasic()
 		c.Assert(err, NotNil)
 	}

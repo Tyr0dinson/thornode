@@ -14,7 +14,6 @@ func (s SymbolSuite) TestSymbol(c *C) {
 	c.Check(sym.Valid(), IsNil)
 	c.Check(sym.IsEmpty(), Equals, false)
 	c.Check(sym.String(), Equals, "RUNE-67C")
-	c.Check(sym.Ticker().Equals(Ticker("RUNE")), Equals, true)
 	c.Check(sym.IsMiniToken(), Equals, false)
 
 	sym, err = NewSymbol("MINIA-7A2M")

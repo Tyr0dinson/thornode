@@ -33,7 +33,6 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Check(asset.String(), Equals, "ETH.SWIPE.B-DC0")
 	c.Check(asset.Chain.Equals(ETHChain), Equals, true)
 	c.Check(asset.Symbol.Equals(Symbol("SWIPE.B-DC0")), Equals, true)
-	c.Check(asset.Ticker.Equals(Ticker("SWIPE.B")), Equals, true)
 
 	// parse without chain
 	asset, err = NewAsset("rune")
@@ -47,7 +46,6 @@ func (s AssetSuite) TestAsset(c *C) {
 	c.Check(asset.Valid(), IsNil)
 	c.Check(asset.Chain.Equals(ETHChain), Equals, true)
 	c.Check(asset.Symbol.Equals(Symbol("KNC")), Equals, true)
-	c.Check(asset.Ticker.Equals(Ticker("KNC")), Equals, true)
 	asset, err = NewAsset("ETH.RUNE-0x3155ba85d5f96b2d030a4966af206230e46849cb")
 	c.Assert(err, IsNil)
 

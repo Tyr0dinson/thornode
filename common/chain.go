@@ -130,7 +130,7 @@ func (c Chain) IsEmpty() bool {
 
 // String implement fmt.Stringer
 func (c Chain) String() string {
-	// convert it to upper case again just in case someone created a ticker via Chain("rune")
+	// convert it to upper case again just in case for example made with Chain("thor")
 	return strings.ToUpper(string(c))
 }
 

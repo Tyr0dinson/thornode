@@ -11,27 +11,27 @@ import (
 
 var (
 	// EmptyAsset empty asset, not valid
-	EmptyAsset = Asset{Chain: EmptyChain, Symbol: "", Ticker: "", Synth: false}
+	EmptyAsset = Asset{Chain: EmptyChain, Symbol: "", Synth: false}
 	// ATOMAsset ATOM
-	ATOMAsset = Asset{Chain: GAIAChain, Symbol: "ATOM", Ticker: "ATOM", Synth: false}
+	ATOMAsset = Asset{Chain: GAIAChain, Symbol: "ATOM", Synth: false}
 	// BNBBEP20Asset BNB
-	BNBBEP20Asset = Asset{Chain: BSCChain, Symbol: "BNB", Ticker: "BNB", Synth: false}
+	BNBBEP20Asset = Asset{Chain: BSCChain, Symbol: "BNB", Synth: false}
 	// BTCAsset BTC
-	BTCAsset = Asset{Chain: BTCChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
+	BTCAsset = Asset{Chain: BTCChain, Symbol: "BTC", Synth: false}
 	// LTCAsset BTC
-	LTCAsset = Asset{Chain: LTCChain, Symbol: "LTC", Ticker: "LTC", Synth: false}
+	LTCAsset = Asset{Chain: LTCChain, Symbol: "LTC", Synth: false}
 	// BCHAsset BCH
-	BCHAsset = Asset{Chain: BCHChain, Symbol: "BCH", Ticker: "BCH", Synth: false}
+	BCHAsset = Asset{Chain: BCHChain, Symbol: "BCH", Synth: false}
 	// DOGEAsset DOGE
-	DOGEAsset = Asset{Chain: DOGEChain, Symbol: "DOGE", Ticker: "DOGE", Synth: false}
+	DOGEAsset = Asset{Chain: DOGEChain, Symbol: "DOGE", Synth: false}
 	// ETHAsset ETH
-	ETHAsset = Asset{Chain: ETHChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
+	ETHAsset = Asset{Chain: ETHChain, Symbol: "ETH", Synth: false}
 	// AVAXAsset AVAX
-	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
+	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Synth: false}
 	// RuneNative RUNE on thorchain
-	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
-	TOR        = Asset{Chain: THORChain, Symbol: "TOR", Ticker: "TOR", Synth: false}
-	THORBTC    = Asset{Chain: THORChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
+	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Synth: false}
+	TOR        = Asset{Chain: THORChain, Symbol: "TOR", Synth: false}
+	THORBTC    = Asset{Chain: THORChain, Symbol: "BTC", Synth: false}
 )
 
 // NewAsset parse the given input into Asset object
@@ -62,12 +62,6 @@ func NewAsset(input string) (Asset, error) {
 	}
 
 	asset.Symbol, err = NewSymbol(sym)
-	if err != nil {
-		return EmptyAsset, err
-	}
-
-	parts = strings.SplitN(sym, "-", 2)
-	asset.Ticker, err = NewTicker(parts[0])
 	if err != nil {
 		return EmptyAsset, err
 	}
@@ -126,7 +120,7 @@ func (a Asset) Valid() error {
 
 // Equals determinate whether two assets are equivalent
 func (a Asset) Equals(a2 Asset) bool {
-	return a.Chain.Equals(a2.Chain) && a.Symbol.Equals(a2.Symbol) && a.Ticker.Equals(a2.Ticker) && a.Synth == a2.Synth && a.Trade == a2.Trade
+	return a.Chain.Equals(a2.Chain) && a.Symbol.Equals(a2.Symbol) && a.Synth == a2.Synth && a.Trade == a2.Trade
 }
 
 func (a Asset) GetChain() Chain {
@@ -144,7 +138,6 @@ func (a Asset) GetLayer1Asset() Asset {
 	return Asset{
 		Chain:  a.Chain,
 		Symbol: a.Symbol,
-		Ticker: a.Ticker,
 		Synth:  false,
 		Trade:  false,
 	}
@@ -158,7 +151,6 @@ func (a Asset) GetSyntheticAsset() Asset {
 	return Asset{
 		Chain:  a.Chain,
 		Symbol: a.Symbol,
-		Ticker: a.Ticker,
 		Synth:  true,
 	}
 }
@@ -171,7 +163,6 @@ func (a Asset) GetTradeAsset() Asset {
 	return Asset{
 		Chain:  a.Chain,
 		Symbol: a.Symbol,
-		Ticker: a.Ticker,
 		Trade:  true,
 	}
 }
@@ -181,7 +172,6 @@ func (a Asset) GetDerivedAsset() Asset {
 	return Asset{
 		Chain:  THORChain,
 		Symbol: a.Symbol,
-		Ticker: a.Ticker,
 		Synth:  false,
 	}
 }
@@ -215,9 +205,9 @@ func (a Asset) Native() string {
 	return strings.ToLower(a.String())
 }
 
-// IsEmpty will be true when any of the field is empty, chain,symbol or ticker
+// IsEmpty will be true when chain or symbol is empty
 func (a Asset) IsEmpty() bool {
-	return a.Chain.IsEmpty() || a.Symbol.IsEmpty() || a.Ticker.IsEmpty()
+	return a.Chain.IsEmpty() || a.Symbol.IsEmpty()
 }
 
 // String implement fmt.Stringer , return the string representation of Asset

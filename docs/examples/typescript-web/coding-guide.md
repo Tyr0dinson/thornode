@@ -9,7 +9,7 @@ The foundation of xchainjs is defined in the [xchain-util](https://github.com/xc
 - `Address`: a crypto address as a string.
 - `BaseAmount`: a bigNumber in 1e8 format. E.g. 1 BTC = 100,000,000 in BaseAmount
 - `AssetAmount`: a BaseAmount\*10^8. E.g. 1 BTC = 1 in Asset Amount.
-- `Asset`: Asset details {Chain, symbol, ticker, isSynth}
+- `Asset`: Asset details {Chain, symbol, isSynth}
 
 ```admonish info
 All `Assets` must conform to the [Asset Notation](../../concepts/memos.md#asset-notation)

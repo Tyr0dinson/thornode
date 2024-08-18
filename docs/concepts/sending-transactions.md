@@ -151,7 +151,6 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
            asset: {
              chain: "THOR",
              symbol: "RUNE",
-             ticker: "RUNE",
            },
            amount: "100000000", // Value in 1e8 (100000000 = 1 RUNE)
          },

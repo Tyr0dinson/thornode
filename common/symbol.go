@@ -27,11 +27,18 @@ func (s Symbol) Valid() error {
 	return nil
 }
 
-// Ticker return the ticker part of symbol
-func (s Symbol) Ticker() Ticker {
+// Ticker code reference kept only for ticker-equal fuzzy matching.
+func (s Symbol) Ticker() string {
 	parts := strings.Split(s.String(), "-")
-	ticker, _ := NewTicker(parts[0])
-	return ticker
+	return strings.ToUpper(parts[0])
+}
+
+func (s Symbol) ID() string {
+	parts := strings.Split(s.String(), "-")
+	if len(parts) < 2 {
+		return "" // No ID.
+	}
+	return strings.ToUpper(parts[1])
 }
 
 // Equals check whether two symbol are the same
@@ -46,7 +53,7 @@ func (s Symbol) IsEmpty() bool {
 
 // String implement fmt.Stringer
 func (s Symbol) String() string {
-	// uppercasing again just in case someone created a ticker via Chain("rune")
+	// convert it to upper case again just in case for example made with Symbol("rune")
 	return strings.ToUpper(string(s))
 }
 

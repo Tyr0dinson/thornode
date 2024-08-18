@@ -90,7 +90,6 @@ func GetRagnarokTx(chain Chain, fromAddr, toAddr Address) Tx {
 	blankAsset := Asset{
 		Chain:  chain,
 		Symbol: "BLANK",
-		Ticker: "BLANK",
 	}
 	return Tx{
 		Chain:       chain,

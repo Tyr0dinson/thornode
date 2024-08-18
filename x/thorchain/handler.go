@@ -330,12 +330,8 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.
 		return origAsset
 	}
 
-	parts := strings.Split(asset.Symbol.String(), "-")
-	hasNoSymbol := len(parts) < 2 || len(parts[1]) == 0
-	var symbol string
-	if !hasNoSymbol {
-		symbol = strings.ToLower(parts[1])
-	}
+	assetTicker := asset.Symbol.Ticker()
+	assetID := asset.Symbol.ID()
 	winner := NewPool()
 	// if no asset found, return original asset
 	winner.Asset = origAsset
@@ -352,13 +348,13 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.
 			continue
 		}
 
-		// check ticker match
-		if !asset.Ticker.Equals(pool.Asset.Ticker) {
+		// check ticker matches
+		if assetTicker != pool.Asset.Symbol.Ticker() {
 			continue
 		}
 
-		// check if no symbol given (ie "USDT" or "USDT-")
-		if hasNoSymbol {
+		// check if no ID given (ie "USDT" or "USDT-")
+		if len(assetID) == 0 {
 			// Use LTE rather than LT so this function can only return origAsset or a match
 			if winner.BalanceRune.LTE(pool.BalanceRune) {
 				winner = pool
@@ -366,7 +362,7 @@ func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.
 			continue
 		}
 
-		if strings.HasSuffix(strings.ToLower(pool.Asset.Symbol.String()), symbol) {
+		if strings.HasSuffix(pool.Asset.Symbol.String(), assetID) {
 			// Use LTE rather than LT so this function can only return origAsset or a match
 			if winner.BalanceRune.LTE(pool.BalanceRune) {
 				winner = pool

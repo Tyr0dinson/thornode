@@ -104,7 +104,7 @@ func (s *SwapVCURSuite) TestSwap(c *C) {
 		{
 			name:          "pool-not-exist",
 			requestTxHash: "hash",
-			source:        common.Asset{Chain: common.ETHChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
+			source:        common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"},
 			target:        common.RuneAsset(),
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     GetRandomETHAddress(),
@@ -117,7 +117,7 @@ func (s *SwapVCURSuite) TestSwap(c *C) {
 			name:          "pool-not-exist-1",
 			requestTxHash: "hash",
 			source:        common.RuneAsset(),
-			target:        common.Asset{Chain: common.ETHChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
+			target:        common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"},
 			amount:        cosmos.NewUint(100 * common.One),
 			requester:     GetRandomTHORAddress(),
 			destination:   GetRandomETHAddress(),
@@ -192,7 +192,7 @@ func (s *SwapVCURSuite) TestSwap(c *C) {
 		{
 			name:          "double-swap",
 			requestTxHash: "hash",
-			source:        common.Asset{Chain: common.BTCChain, Ticker: "BTC", Symbol: "BTC"},
+			source:        common.Asset{Chain: common.BTCChain, Symbol: "BTC"},
 			target:        common.ETHAsset,
 			amount:        cosmos.NewUint(5 * common.One),
 			requester:     GetRandomTHORAddress(),

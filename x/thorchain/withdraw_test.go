@@ -58,11 +58,11 @@ func getWithdrawTestKeeper2(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddre
 }
 
 func (k *WithdrawTestKeeper) PoolExist(ctx cosmos.Context, asset common.Asset) bool {
-	return !asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"})
+	return !asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"})
 }
 
 func (k *WithdrawTestKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (types.Pool, error) {
-	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST", Ticker: "NOTEXIST"}) {
+	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"}) {
 		return types.Pool{}, nil
 	}
 	if val, ok := k.store[asset.String()]; ok {
@@ -89,7 +89,7 @@ func (k *WithdrawTestKeeper) GetGas(ctx cosmos.Context, asset common.Asset) ([]c
 }
 
 func (k *WithdrawTestKeeper) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, addr common.Address) (LiquidityProvider, error) {
-	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXISTSTICKER", Ticker: "NOTEXISTSTICKER"}) {
+	if asset.Equals(common.Asset{Chain: common.ETHChain, Symbol: "NOTEXISTS"}) {
 		return types.LiquidityProvider{}, errors.New("you asked for it")
 	}
 	if notExistLiquidityProviderAsset.Equals(asset) {
@@ -187,7 +187,7 @@ func (s WithdrawSuite) TestValidateWithdraw(c *C) {
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
 				BasisPoints:     cosmos.NewUint(10000),
-				Asset:           common.Asset{Chain: common.ETHChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
+				Asset:           common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
 			},
@@ -414,7 +414,7 @@ func (WithdrawSuite) TestWithdraw(c *C) {
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
 				BasisPoints:     cosmos.NewUint(10000),
-				Asset:           common.Asset{Chain: common.ETHChain, Ticker: "NOTEXIST", Symbol: "NOTEXIST"},
+				Asset:           common.Asset{Chain: common.ETHChain, Symbol: "NOTEXIST"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
 			},
@@ -428,7 +428,7 @@ func (WithdrawSuite) TestWithdraw(c *C) {
 			msg: MsgWithdrawLiquidity{
 				WithdrawAddress: runeAddress,
 				BasisPoints:     cosmos.NewUint(10000),
-				Asset:           common.Asset{Chain: common.ETHChain, Ticker: "NOTEXISTSTICKER", Symbol: "NOTEXISTSTICKER"},
+				Asset:           common.Asset{Chain: common.ETHChain, Symbol: "NOTEXISTS"},
 				Tx:              common.Tx{ID: "28B40BF105A112389A339A64BD1A042E6140DC9082C679586C6CF493A9FDE3FE"},
 				Signer:          accountAddr,
 			},

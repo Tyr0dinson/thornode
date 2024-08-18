@@ -214,11 +214,12 @@ func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (
 
 	// find all other assets that match the chain and ticker
 	// (without exactly matching the symbol)
+	assetTicker := asset.Symbol.Ticker()
 	addressMatches := []string{}
 	for _, p := range pools {
 		if p.IsAvailable() && !p.IsEmpty() && !p.Asset.IsVaultAsset() &&
 			!p.Asset.Symbol.Equals(asset.Symbol) &&
-			p.Asset.Chain.Equals(asset.Chain) && p.Asset.Ticker.Equals(asset.Ticker) {
+			p.Asset.Chain.Equals(asset.Chain) && p.Asset.Symbol.Ticker() == assetTicker {
 			pSplit := strings.Split(p.Asset.Symbol.String(), "-")
 			if len(pSplit) != 2 {
 				return asset, fmt.Errorf("ambiguous match: %s", p.Asset.Symbol)
@@ -228,14 +229,14 @@ func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (
 	}
 
 	if len(addressMatches) == 0 { // if only one match, drop the address
-		asset.Symbol = common.Symbol(asset.Ticker)
+		asset.Symbol = common.Symbol(assetTicker)
 	} else { // find the shortest unique suffix of the asset symbol
 		address := aSplit[1]
 
 		for i := len(address) - 1; i > 0; i-- {
 			if !hasSuffixMatch(address[i:], addressMatches) {
 				asset.Symbol = common.Symbol(
-					fmt.Sprintf("%s-%s", asset.Ticker, address[i:]),
+					fmt.Sprintf("%s-%s", assetTicker, address[i:]),
 				)
 				break
 			}
