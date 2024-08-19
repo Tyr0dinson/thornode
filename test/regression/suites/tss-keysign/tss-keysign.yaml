@@ -6,7 +6,6 @@ count: 1
 ---
 type: tx-tss-keysign
 signer: {{ addr_thor_dog }}
-id: "{{ observe_txid 1 }}"
 pub_key: "{{ pubkey_dog }}"
 height: 1
 coins:
@@ -29,7 +28,6 @@ asserts:
 ---
 type: tx-tss-keysign
 signer: {{ addr_thor_fox }}
-id: "{{ observe_txid 1 }}"
 pub_key: "{{ pubkey_dog }}"
 height: 1
 coins:

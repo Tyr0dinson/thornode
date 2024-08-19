@@ -745,7 +745,13 @@ func (op *OpTxTssKeysign) Execute(out io.Writer, _ string, routine int, _ *os.Pr
 	}
 	op.MsgTssKeysignFail.Memo = memo.String()
 
-	return sendMsg(out, routine, &op.MsgTssKeysignFail, op.MsgTssKeysignFail.Signer, op.Sequence, op.Gas, op, logs)
+	// Generate ID field to not have to update manually.
+	msg, err := types.NewMsgTssKeysignFail(op.MsgTssKeysignFail.Height, op.MsgTssKeysignFail.Blame, op.MsgTssKeysignFail.Memo, op.MsgTssKeysignFail.Coins, op.MsgTssKeysignFail.Signer, op.MsgTssKeysignFail.PubKey)
+	if err != nil {
+		return err
+	}
+
+	return sendMsg(out, routine, msg, op.MsgTssKeysignFail.Signer, op.Sequence, op.Gas, op, logs)
 }
 
 // ------------------------------ OpTxTssPool ------------------------------
