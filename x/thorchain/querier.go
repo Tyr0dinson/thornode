@@ -655,7 +655,8 @@ func queryInboundAddresses(ctx cosmos.Context, path []string, req abci.RequestQu
 		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
-			return nil, fmt.Errorf("fail to get address for chain: %w", err)
+			continue // TODO: revert this, just for testing
+			// return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
 		cc := vault.GetContract(chain)
 		gasRate := mgr.GasMgr().GetGasRate(ctx, chain)

@@ -262,3 +262,13 @@ func (s *PubKeyTestSuite) TestEquals(c *C) {
 		pk1, pk2, pk3, pk4,
 	}), Equals, true)
 }
+
+func (s *PubKeyTestSuite) TestSOLPubKey(c *C) {
+	_, pubKey1, _ := testdata.KeyTestPubAddr()
+	tpk1, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey1)
+	c.Assert(err, IsNil)
+	pk1 := PubKey(tpk1)
+	solAddr, err := pk1.GetAddress(Chain("SOL"))
+	c.Assert(err, IsNil)
+	c.Check(solAddr.String(), Equals, "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSM")
+}

@@ -23,4 +23,9 @@ func (s Base58Suite) TestBase58(c *C) {
 	decoded, err = Base58Decode("Ldpz!")
 	c.Check(err, NotNil)
 	c.Check(decoded, IsNil)
+
+	// SOL Addr
+	decoded, err = Base58Decode("278148FmwtNfYmfJAu2qYkZ38VZix46ky5oNWUVUbJnst")
+	c.Assert(err, IsNil)
+	c.Check(len(decoded), Equals, 32)
 }

@@ -11,5 +11,8 @@ COPY . /mocknet
 EXPOSE 8899
 EXPOSE 8900
 
+COPY airdrop.sh /mocknet/airdrop.sh
+RUN chmod +x /mocknet/airdrop.sh
+
 # Define default command
-CMD ["solana-test-validator", "--no-bpf-jit", "--log", "-", "--limit-ledger-size", "--url", "http://localhost:8899"]
+CMD ["/bin/bash", "-c", "solana-test-validator --no-bpf-jit --log - --limit-ledger-size --url http://localhost:8899"]

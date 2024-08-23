@@ -46,7 +46,7 @@ func NewRagnarokPoolActor(asset common.Asset) *Actor {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *RagnarokPoolActor) sendMimir(config *OpConfig) OpResult {
-	accAddr, err := config.AdminUser.PubKey().GetThorAddress()
+	accAddr, err := config.AdminUser.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get thor address")
 		return OpResult{

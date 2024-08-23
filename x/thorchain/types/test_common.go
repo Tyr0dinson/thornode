@@ -11,6 +11,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -200,6 +201,21 @@ func GetRandomPubKey() common.PubKey {
 	bech32PubKey, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, accts[0].PubKey)
 	pk, _ := common.NewPubKey(bech32PubKey)
 	return pk
+}
+
+func GetRandomEd25519PubKey() common.PubKey {
+	privKey := ed25519.GenPrivKey()
+	bech32PubKey, _ := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
+	pk, _ := common.NewPubKey(bech32PubKey)
+	return pk
+}
+
+func GetRandomPubkeyForChain(chain common.Chain) common.PubKey {
+	if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+		return GetRandomEd25519PubKey()
+	}
+
+	return GetRandomPubKey()
 }
 
 // SetupConfigForTest used for test purpose

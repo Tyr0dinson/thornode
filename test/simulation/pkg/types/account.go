@@ -47,7 +47,7 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	pubkey := common.PubKey(s)
 
 	// EdDSA pubkey
-	edPriv, err := Ed25519.Derive()(mnemonic, "", cmd.FullPath)
+	edPriv, err := Ed25519.Derive()(mnemonic, "", `m/44'/931'/0'/0'/0'`)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to derive ed25519 private key")
 	}
@@ -76,7 +76,7 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	// Add Ed25519 key to keyring
 	edName := fmt.Sprintf("ed-%s", name)
 	// fmt.Println("edName: ", edName)
-	_, err = kr.NewAccount(edName, mnemonic, "", cmd.FullPath, Ed25519)
+	_, err = kr.NewAccount(edName, mnemonic, "", cmd.EDPath, Ed25519)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to add account to keyring")
 	}
@@ -155,12 +155,22 @@ func (u *User) Release() {
 }
 
 // PubKey returns the public key of the client.
-func (u *User) PubKey() common.PubKey {
+func (u *User) PubKey(chain common.Chain) common.PubKey {
+	if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+		return u.eddsaPubkey
+	}
 	return u.pubkey
 }
 
 // Address returns the address of the client for the given chain.
 func (u *User) Address(chain common.Chain) common.Address {
+	if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+		address, err := u.eddsaPubkey.GetAddress(chain)
+		if err != nil {
+			log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to get address")
+		}
+		return address
+	}
 	address, err := u.pubkey.GetAddress(chain)
 	if err != nil {
 		log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to get address")

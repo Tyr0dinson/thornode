@@ -2,14 +2,13 @@ package solana
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
 	"time"
 
+	btypes "github.com/blocto/solana-go-sdk/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/decred/dcrd/dcrec/edwards"
 	"gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/rpc"
 	stypes "gitlab.com/thorchain/thornode/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -35,7 +34,7 @@ type Client struct {
 	rpc   *rpc.SolRPC
 
 	keys    *thorclient.Keys
-	privKey *edwards.PrivateKey
+	signer  btypes.Account
 	pubKey  common.PubKey
 	address common.Address
 }
@@ -49,20 +48,17 @@ func NewConstructor(host string) LiteChainClientConstructor {
 }
 
 func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
-	// extract the private key
-	privateKey, err := keys.GetPrivateKey()
+	pkStruct, err := keys.GetPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
-	fmt.Println("SOL NewClient privateKey:", privateKey.Bytes())
-
-	privKey, _, err := edwards.PrivKeyFromScalar(edwards.Edwards(), privateKey.Bytes())
+	account, err := btypes.AccountFromBytes(pkStruct.Bytes())
 	if err != nil {
-		return nil, fmt.Errorf("fail to parse private key: %w", err)
+		return nil, fmt.Errorf("fail to get account: %w", err)
 	}
 
-	pk, err := cryptocodec.ToTmPubKeyInterface(privateKey.PubKey())
+	pk, err := cryptocodec.ToTmPubKeyInterface(pkStruct.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tm pub key: %w", err)
 	}
@@ -77,28 +73,23 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pk, err)
 	}
 
-	// dial the rpc host
 	rpc := rpc.NewSolRPC(host, time.Second*30)
 
 	return &Client{
 		chain:   chain,
 		rpc:     rpc,
 		keys:    keys,
-		privKey: privKey,
 		pubKey:  pubKey,
 		address: address,
+		signer:  account,
 	}, nil
 }
 
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
-	fmt.Println("SOL GetAccount")
-
-	lamportsBalance, err := c.rpc.GetBalance(pk.String(), "finalized", 0)
+	lamportsBalance, err := c.rpc.GetBalance(c.address.String(), "finalized", 0)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get balance: %w", err)
 	}
-
-	fmt.Println("SOL GetAccount balance:", lamportsBalance)
 
 	// get amount
 	amount := sdk.NewUint(lamportsBalance)
@@ -114,8 +105,6 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
-	fmt.Println("SOL SignTx")
-
 	// get latest blockhash
 	blockhash, err := c.rpc.GetLatestBlockhash()
 	if err != nil {
@@ -123,23 +112,25 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 
 	// public keys
-	fromPubKey := stypes.MustPublicKeyFromString(c.pubKey.String())
+	fromPubKey := stypes.MustPublicKeyFromString(c.address.String())
 	toPubKey := stypes.MustPublicKeyFromString(tx.ToAddress.String())
 
 	// create transaction
 	transaction := stypes.NewTransferTransaction(fromPubKey, toPubKey, tx.Coin.Amount.Uint64(), tx.Memo, blockhash)
-	rawTx, err := transaction.Serialize()
+	rawMessage, err := transaction.Message.Serialize()
 	if err != nil {
 		return nil, fmt.Errorf("fail to serialize transaction: %w", err)
 	}
 
 	// Sign rawTx
-	signature, err := c.sign(rawTx)
+	signature, err := c.sign(rawMessage)
 	if err != nil {
 		return nil, fmt.Errorf("fail to sign transaction: %w", err)
 	}
-
-	transaction.AddSignature(signature)
+	err = transaction.AddSignature(signature)
+	if err != nil {
+		return nil, fmt.Errorf("fail to add signature: %w", err)
+	}
 	signedTx, err := transaction.Serialize()
 	if err != nil {
 		return nil, fmt.Errorf("fail to serialize signed transaction: %w", err)
@@ -149,14 +140,10 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 }
 
 func (c *Client) sign(msg []byte) ([]byte, error) {
-	privKey := ed25519.PrivateKey(c.privKey.Serialize())
-	signatureBytes := ed25519.Sign(ed25519.PrivateKey(privKey), msg)
-	return signatureBytes, nil
+	return c.signer.Sign(msg), nil
 }
 
 func (c *Client) BroadcastTx(signed []byte) (string, error) {
-	fmt.Println("SOL BroadcastTx")
-
 	base64Tx := base64.StdEncoding.EncodeToString(signed)
 	txSig, err := c.rpc.BroadcastTx(base64Tx)
 	if err != nil {

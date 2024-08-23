@@ -530,12 +530,6 @@ services:
       dockerfile: Dockerfile
     volumes:
       - "./mocknet/solana:/mocknet"
-    command:
-      - solana-test-validator
-      - --no-bpf-jit
-      - --log - 
-      - --limit-ledger-size
-      - --url http://localhost:8899
     ports:
       - 8899:8899
       - 8900:8900

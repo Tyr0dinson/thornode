@@ -28,13 +28,21 @@ func Base58Decode(input string) ([]byte, error) {
 
 	decoded := result.Bytes()
 
-	// Add leading zeros
+	// Handling leading zeros by ensuring proper byte length
 	leadingZeros := 0
-	for leadingZeros < len(input) && input[leadingZeros] == base58Alphabet[0] {
-		leadingZeros++
+	for i := 0; i < len(input); i++ {
+		if input[i] == base58Alphabet[0] {
+			leadingZeros++
+		} else {
+			break
+		}
 	}
 
-	return append(make([]byte, leadingZeros), decoded...), nil
+	// Create a byte array with leading zeros and decoded bytes
+	fullDecoded := make([]byte, leadingZeros+len(decoded))
+	copy(fullDecoded[leadingZeros:], decoded)
+
+	return fullDecoded, nil
 }
 
 // Base58Encode encodes a byte array to a base58 encoded string

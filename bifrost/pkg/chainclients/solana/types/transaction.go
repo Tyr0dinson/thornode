@@ -39,7 +39,7 @@ func NewTransferTransaction(from, to PublicKey, amount uint64, memo, recentBlock
 		NumReadonlyUnsignedAccounts: 2,
 	}
 
-	message := NewMessage(header, accountKeys, recentBlockHash, []CompiledInstruction{memoInstruction, transferInstruction})
+	message := NewMessage(header, accountKeys, recentBlockHash, []CompiledInstruction{transferInstruction, memoInstruction})
 	return NewTransaction(message)
 }
 
@@ -76,16 +76,21 @@ func (tx *Transaction) Serialize() ([]byte, error) {
 }
 
 func (tx *Transaction) AddSignature(sig []byte) error {
-	data, err := tx.Message.Serialize()
-	if err != nil {
-		return fmt.Errorf("failed to serialize message, err: %v", err)
-	}
-	for i := uint8(0); i < tx.Message.Header.NumRequireSignatures; i++ {
-		a := tx.Message.Accounts[i]
-		if ed25519.Verify(a.Bytes(), data, sig) {
+	for i := 0; i < int(tx.Message.Header.NumRequireSignatures); i++ {
+		if tx.verifySignature(i, sig) {
 			tx.Signatures[i] = sig
 			return nil
 		}
 	}
 	return fmt.Errorf("no matching signer")
+}
+
+func (tx *Transaction) verifySignature(acctIdx int, sig []byte) bool {
+	data, err := tx.Message.Serialize()
+	if err != nil {
+		return false
+	}
+	a := tx.Message.Accounts[acctIdx]
+
+	return ed25519.Verify(a.Bytes(), data, sig)
 }

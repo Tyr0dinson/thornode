@@ -116,7 +116,7 @@ func (a *SaverEjectActor) acquireUser(config *OpConfig) OpResult {
 		}
 
 		// get l1 address to store in state context
-		l1Address, err := user.PubKey().GetAddress(a.asset.Chain)
+		l1Address, err := user.PubKey(a.asset.Chain).GetAddress(a.asset.Chain)
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get L1 address")
 			user.Release()
@@ -228,7 +228,7 @@ func (a *SaverEjectActor) setMimir(config *OpConfig, key string, value int64) bo
 	}
 
 	// set mimirs to trigger eject
-	accAddr, err := config.AdminUser.PubKey().GetThorAddress()
+	accAddr, err := config.AdminUser.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get thor address")
 		return false

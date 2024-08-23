@@ -735,7 +735,7 @@ func queryQuoteSwap(ctx cosmos.Context, path []string, req abci.RequestQuery, mg
 	if fromAsset.IsSyntheticAsset() || fromAsset.IsDerivedAsset() || fromAsset.IsTradeAsset() {
 		fromChain = common.THORChain
 	}
-	fromPubkey := types.GetRandomPubKey()
+	fromPubkey := types.GetRandomPubkeyForChain(fromChain)
 	fromAddress, err := fromPubkey.GetAddress(fromChain)
 	if err != nil {
 		return quoteErrorResponse(fmt.Errorf("bad from address: %w", err))
