@@ -136,5 +136,5 @@ func ActiveNodeAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper
 		return err
 	}
 
-	return k.DeductNativeTxFeeFromBond(ctx, msg.Signer)
+	return k.DeductNativeTxFeeFromBond(ctx, signer)
 }

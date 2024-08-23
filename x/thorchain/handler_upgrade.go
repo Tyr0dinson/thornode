@@ -57,13 +57,13 @@ func (h ProposeUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 func (h ProposeUpgradeHandler) validate(ctx cosmos.Context, msg *MsgProposeUpgrade) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.135.0")):
-		return h.validateV135(ctx, msg)
+	case version.GTE(semver.MustParse("2.136.0")):
+		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h ProposeUpgradeHandler) validateV135(ctx cosmos.Context, msg *MsgProposeUpgrade) error {
+func (h ProposeUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgProposeUpgrade) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -152,13 +152,13 @@ func (h ApproveUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 func (h ApproveUpgradeHandler) validate(ctx cosmos.Context, msg *MsgApproveUpgrade) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.135.0")):
-		return h.validateV135(ctx, msg)
+	case version.GTE(semver.MustParse("2.136.0")):
+		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h ApproveUpgradeHandler) validateV135(ctx cosmos.Context, msg *MsgApproveUpgrade) error {
+func (h ApproveUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgApproveUpgrade) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -226,13 +226,13 @@ func (h RejectUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 func (h RejectUpgradeHandler) validate(ctx cosmos.Context, msg *MsgRejectUpgrade) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.135.0")):
-		return h.validateV135(ctx, msg)
+	case version.GTE(semver.MustParse("2.136.0")):
+		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
 }
 
-func (h RejectUpgradeHandler) validateV135(ctx cosmos.Context, msg *MsgRejectUpgrade) error {
+func (h RejectUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgRejectUpgrade) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
