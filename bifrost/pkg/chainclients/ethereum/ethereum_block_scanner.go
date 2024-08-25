@@ -818,8 +818,10 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		txGasPrice = tx.GasPrice()
 	}
 	e.logger.Debug().Msgf("tx: %s, gas price: %s, gas used: %d,receipt status:%d", txInItem.Tx, txGasPrice.String(), receipt.GasUsed, receipt.Status)
-	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
-		txGasPrice = big.NewInt(tenGwei)
+	if version.LT(semver.MustParse("2.137.0")) && err == nil {
+		if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
+			txGasPrice = big.NewInt(tenGwei)
+		}
 	}
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed)
 	if txInItem.Coins.IsEmpty() {
@@ -859,9 +861,9 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	version, err := e.bridge.GetThorchainVersion()
 	if version.LT(semver.MustParse("2.137.0")) && err == nil {
 		txGasPrice = tx.GasPrice()
-	}
-	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
-		txGasPrice = big.NewInt(tenGwei)
+		if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
+			txGasPrice = big.NewInt(tenGwei)
+		}
 	}
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed)
 	if txInItem.Coins.IsEmpty() {
@@ -960,9 +962,9 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 	version, err := e.bridge.GetThorchainVersion()
 	if version.LT(semver.MustParse("2.137.0")) && err == nil {
 		txGasPrice = tx.GasPrice()
-	}
-	if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
-		txGasPrice = big.NewInt(tenGwei)
+		if txGasPrice.Cmp(big.NewInt(tenGwei)) < 0 {
+			txGasPrice = big.NewInt(tenGwei)
+		}
 	}
 	txHash := tx.Hash().Hex()[2:]
 	return &stypes.TxInItem{
