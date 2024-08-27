@@ -37,3 +37,18 @@ func calculateWithdrawV129(poolUnits, poolRune, poolAsset, lpUnits, withdrawBasi
 	}
 	return cosmos.ZeroUint(), calcAsymWithdrawal(unitsToClaim, poolUnits, poolAsset), unitAfter, nil
 }
+
+func calcAsymWithdrawal(s, t, a cosmos.Uint) cosmos.Uint {
+	// share = (s * A * (2 * T^2 - 2 * T * s + s^2))/T^3
+	// s = liquidity provider units for member (after factoring in withdrawBasisPoints)
+	// T = totalPoolUnits for pool
+	// A = assetDepth to be withdrawn
+	// (part1 * (part2 - part3 + part4)) / part5
+	part1 := s.Mul(a)
+	part2 := t.Mul(t).MulUint64(2)
+	part3 := t.Mul(s).MulUint64(2)
+	part4 := s.Mul(s)
+	numerator := part1.Mul(common.SafeSub(part2, part3).Add(part4))
+	part5 := t.Mul(t).Mul(t)
+	return numerator.Quo(part5)
+}

@@ -322,10 +322,11 @@ func (s WithdrawSuite) TestCalculateUnsake(c *C) {
 		},
 	}
 
-	ctx, mgr := setupManagerForTest(c)
+	ctx, keeper := setupKeeperForTest(c)
 	for _, item := range inputs {
 		c.Logf("name:%s", item.name)
-		withDrawRune, withDrawAsset, unitAfter, err := calculateWithdraw(ctx, mgr, common.EmptyAsset, item.poolUnit, item.poolRune, item.poolAsset, item.lpUnit, item.percentage, common.EmptyAsset)
+		withDrawRune, withDrawAsset, unitAfter, err := calculateWithdraw(ctx, keeper, common.EmptyAsset, item.poolUnit, item.poolRune, item.poolAsset, item.lpUnit, item.percentage, common.EmptyAsset)
+		// Empty context, manager, poolAsset due to only being needed for asymmetric withdraws (and this being symmetric).
 		if item.expectedErr == nil {
 			c.Assert(err, IsNil)
 		} else {

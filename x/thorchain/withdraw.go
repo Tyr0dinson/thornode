@@ -187,14 +187,15 @@ func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset commo
 	}
 }
 
-func calculateWithdrawV137(_ cosmos.Context, _ keeper.Keeper, _ common.Asset, poolUnits, poolRune, poolAsset, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+
+func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if poolUnits.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
 	}
-	if poolRune.IsZero() {
+	if poolRuneDepth.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("pool rune balance can't be zero")
 	}
-	if poolAsset.IsZero() {
+	if poolAssetDepth.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("pool asset balance can't be zero")
 	}
 	if lpUnits.IsZero() {
@@ -206,15 +207,46 @@ func calculateWithdrawV137(_ cosmos.Context, _ keeper.Keeper, _ common.Asset, po
 
 	unitsToClaim := common.GetSafeShare(withdrawBasisPoints, cosmos.NewUint(10000), lpUnits)
 	unitAfter := common.SafeSub(lpUnits, unitsToClaim)
+
+	withdrawRune := common.GetSafeShare(unitsToClaim, poolUnits, poolRuneDepth)
+	withdrawAsset := common.GetSafeShare(unitsToClaim, poolUnits, poolAssetDepth)
 	if withdrawalAsset.IsEmpty() {
-		withdrawRune := common.GetSafeShare(unitsToClaim, poolUnits, poolRune)
-		withdrawAsset := common.GetSafeShare(unitsToClaim, poolUnits, poolAsset)
 		return withdrawRune, withdrawAsset, unitAfter, nil
 	}
-	if withdrawalAsset.IsRune() {
-		return calcAsymWithdrawal(unitsToClaim, poolUnits, poolRune), cosmos.ZeroUint(), unitAfter, nil
+
+	// Past this point is asymmetric withdrawal only,
+	// the withdrawn half from one side being swapped to the other side.
+
+	swapper, err := GetSwapper(keeper.GetVersion())
+	if err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
-	return cosmos.ZeroUint(), calcAsymWithdrawal(unitsToClaim, poolUnits, poolAsset), unitAfter, nil
+
+	remainingAsset := common.SafeSub(poolAssetDepth, withdrawAsset)
+	remainingRune := common.SafeSub(poolRuneDepth, withdrawRune)
+	var x, X, Y, yAdd cosmos.Uint
+	if withdrawalAsset.IsRune() {
+		x = withdrawAsset
+		X = remainingAsset
+		Y = remainingRune
+		yAdd = withdrawRune
+	} else {
+		x = withdrawRune
+		X = remainingRune
+		Y = remainingAsset
+		yAdd = withdrawAsset
+	}
+
+	swapSlipBps := swapper.CalcSwapSlip(X, x)
+	minSlipBps := getMinSlipBps(ctx, keeper, poolAsset)
+	// Being for a non-Savers asymmetric liquidity action, MinSlipBps should always be for an L1 swap.
+	y, _, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
+	y = y.Add(yAdd)
+
+	if withdrawalAsset.IsRune() {
+		return y, cosmos.ZeroUint(), unitAfter, nil
+	}
+	return cosmos.ZeroUint(), y, unitAfter, nil
 }
 
 func calculateVaultWithdraw(vaultUnits, assetAmt, lpUnits, withdrawBasisPoints cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
@@ -249,19 +281,4 @@ func validateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, msg MsgWithdrawL
 		return fmt.Errorf("pool-%s doesn't exist", msg.Asset)
 	}
 	return nil
-}
-
-func calcAsymWithdrawal(s, t, a cosmos.Uint) cosmos.Uint {
-	// share = (s * A * (2 * T^2 - 2 * T * s + s^2))/T^3
-	// s = liquidity provider units for member (after factoring in withdrawBasisPoints)
-	// T = totalPoolUnits for pool
-	// A = assetDepth to be withdrawn
-	// (part1 * (part2 - part3 + part4)) / part5
-	part1 := s.Mul(a)
-	part2 := t.Mul(t).MulUint64(2)
-	part3 := t.Mul(s).MulUint64(2)
-	part4 := s.Mul(s)
-	numerator := part1.Mul(common.SafeSub(part2, part3).Add(part4))
-	part5 := t.Mul(t).Mul(t)
-	return numerator.Quo(part5)
 }
