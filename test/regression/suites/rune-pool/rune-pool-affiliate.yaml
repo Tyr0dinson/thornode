@@ -201,11 +201,11 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1697283667}
+  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1697283756}
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT} - ${POL_WITHDRAWN}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.value|tonumber == 898826956
-  - .pol.pnl|tonumber == ${POL_PNL=621022977}
+  - .pol.pnl|tonumber == ${POL_PNL=621023066}
   - .providers.pnl|tonumber == ${PROVIDERS_PNL=313007637}
   - .reserve.pnl|tonumber + ${PROVIDERS_PNL} == ${POL_PNL}
   - .reserve.units|tonumber == 0

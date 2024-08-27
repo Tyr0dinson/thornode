@@ -199,7 +199,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "337691187137",
+              "amount": "337691186967",
               "denom": "rune"
             }
           ]
@@ -217,7 +217,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000321714243",
+              "amount": "35000321714413",
               "denom": "rune"
             }
           ]
@@ -285,7 +285,7 @@
     "thorchain": {
       "POL": {
         "rune_deposited": "1975087646",
-        "rune_withdrawn": "2594918390"
+        "rune_withdrawn": "2594918560"
       },
       "THORNames": [],
       "affiliate_collectors": null,
@@ -390,7 +390,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "1100000000",
-          "balance_rune": "337691187137",
+          "balance_rune": "337691186967",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
