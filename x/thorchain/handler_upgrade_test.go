@@ -72,8 +72,8 @@ func (s *HandlerUpgradeSuite) TestUpgrade(c *C) {
 	// invalid height
 	msg := NewMsgProposeUpgrade(upgradeName, chainHeight, upgradeInfo, keeper.na.NodeAddress)
 	result, err := handler.Run(ctx, msg)
-	c.Assert(err, IsNil)
-	c.Assert(result, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err, NotNil)
 
 	// invalid msg
 	msg = &MsgProposeUpgrade{}
