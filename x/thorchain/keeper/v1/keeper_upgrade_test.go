@@ -9,6 +9,5 @@ type KeeperUpgradeSuite struct{}
 var _ = Suite(&KeeperUpgradeSuite{})
 
 func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
-	//ctx, k := setupKeeperForTest(c)
-
+	// ctx, k := setupKeeperForTest(c)
 }
