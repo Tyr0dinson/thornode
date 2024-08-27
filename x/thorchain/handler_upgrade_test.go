@@ -106,5 +106,4 @@ func (s *HandlerUpgradeSuite) TestUpgrade(c *C) {
 	result, err = handler.Run(ctx, msg)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-
 }
