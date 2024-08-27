@@ -6,6 +6,8 @@ import (
 
 	"github.com/blang/semver"
 
+	bank "github.com/cosmos/cosmos-sdk/x/bank/types"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -63,5 +65,10 @@ func MsgSendHandleV116(ctx cosmos.Context, mgr Manager, msg *MsgSend) (*cosmos.R
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgSend) error {
+	return k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
+}
+
+// TODO this should probably live in handler_bank_send.go
+func BankSendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg bank.MsgSend) error {
 	return k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
 }
