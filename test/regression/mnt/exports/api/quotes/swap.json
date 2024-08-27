@@ -203,6 +203,15 @@
           ]
         },
         {
+          "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
+          "coins": [
+            {
+              "amount": "2500000000000",
+              "denom": "btc.btc"
+            }
+          ]
+        },
+        {
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
@@ -245,10 +254,14 @@
       ],
       "denom_metadata": [],
       "params": {
-        "default_send_enabled": false,
+        "default_send_enabled": true,
         "send_enabled": []
       },
       "supply": [
+        {
+          "amount": "2500000000000",
+          "denom": "btc.btc"
+        },
         {
           "amount": "1170766",
           "denom": "btc/btc"

@@ -12,7 +12,10 @@ import (
 	"sync"
 	"text/template"
 
+	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
+
+	prefix "gitlab.com/thorchain/thornode/cmd"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -20,6 +23,11 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func main() {
+	// Set the THORChain denom regex for bank send ValidateBasic.
+	types.SetCoinDenomRegex(func() string {
+		return prefix.DenomRegex
+	})
+
 	// parse the regex in the RUN environment variable to determine which tests to run
 	runRegex := regexp.MustCompile(".*")
 	if len(os.Getenv("RUN")) > 0 {

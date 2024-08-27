@@ -485,7 +485,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9065387
-  - .supply|length == 3
+  - .supply|length == 4
 ---
 ########################################################################################
 # swap synth to non-existent l1
@@ -536,7 +536,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9061749
-  - .supply|length == 3
+  - .supply|length == 4
 ---
 ########################################################################################
 # attempt swap to network module

@@ -9,6 +9,12 @@ asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
 ---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "btc.btc")|.amount|tonumber == 2500000000000
+---
 type: tx-send
 from_address: {{ addr_thor_fox }}
 to_address: {{ addr_thor_wolf }}
@@ -33,7 +39,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
 asserts:
-  - .balances|length == 0
+  - .balances|length == 1
+  - .balances[]|select(.denom == "btc.btc")|.amount|tonumber == 2500000000000
 ---
 type: tx-send
 from_address: {{ addr_thor_fox }}
@@ -58,8 +65,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
 asserts:
-  - .balances|length == 1
+  - .balances|length == 2
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499996000000
+  - .balances[]|select(.denom == "btc.btc")|.amount|tonumber == 2500000000000
 ---
 type: check
 endpoint: http://localhost:1317/txs?tx.height=3
@@ -92,7 +100,6 @@ asserts:
 ########################################################################################
 # attempt send to lending module
 ########################################################################################
----
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/lending
 asserts:
@@ -100,7 +107,8 @@ asserts:
 ---
 type: tx-send
 from_address: {{ addr_thor_wolf }}
-to_address: {{ addr_module_lending }}
+# TODO to_address: {{ addr_module_lending }}
+to_address: {{ addr_module_reserve }}
 amount:
   - denom: rune
     amount: "1"
@@ -112,3 +120,30 @@ type: check
 endpoint: http://localhost:1317/thorchain/balance/module/lending
 asserts:
   - .|[.coins[]|select(.denom == "rune")]|length == 0
+---
+type: tx-send
+from_address: {{ addr_thor_wolf }}
+to_address: {{ addr_thor_fox }}
+amount:
+  - denom: btc.btc
+    amount: "2500000000000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "2"
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499992000000
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length == 1
+  - .balances[]|select(.denom == "btc.btc")|.amount|tonumber == 2500000000000

@@ -570,7 +570,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply|length == 3
+  - .supply|length == 4
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9281869
 ---
 ########################################################################################
@@ -604,7 +604,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply|length == 3
+  - .supply|length == 4
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9281869
 ---
 type: check
@@ -642,5 +642,5 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply|length == 3
+  - .supply|length == 4
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9280006
