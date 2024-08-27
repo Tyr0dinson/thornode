@@ -87,7 +87,7 @@ func withdrawV129(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 	if pool.Asset.IsSyntheticAsset() {
 		withdrawRune, withDrawAsset, unitAfter = calculateVaultWithdraw(pool.GetPoolUnits(), poolAsset, originalLiquidityProviderUnits, msg.BasisPoints)
 	} else {
-		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, msg.BasisPoints, assetToWithdraw)
+		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(ctx, mgr.Keeper(), pool.Asset, pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, msg.BasisPoints, assetToWithdraw)
 		if err != nil {
 			ctx.Logger().Error("fail to withdraw", "error", err)
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
@@ -177,7 +177,17 @@ func assetToWithdraw(msg MsgWithdrawLiquidity, lp LiquidityProvider, pauseAsym i
 	return msg.WithdrawalAsset
 }
 
-func calculateWithdraw(poolUnits, poolRune, poolAsset, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+	version := keeper.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return calculateWithdrawV137(ctx, keeper, poolAsset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset)
+	default:
+		return calculateWithdrawV129(poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset)
+	}
+}
+
+func calculateWithdrawV137(_ cosmos.Context, _ keeper.Keeper, _ common.Asset, poolUnits, poolRune, poolAsset, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if poolUnits.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
 	}
