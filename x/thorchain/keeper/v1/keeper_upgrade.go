@@ -61,19 +61,17 @@ func (k KVStore) GetProposedUpgrade(ctx cosmos.Context, name string) (types.Upgr
 
 // ApproveUpgrade approves an upgrade as a validator
 func (k KVStore) ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error {
-	key := fmt.Sprintf("%s%s", VotePrefix(name), addr.String())
 	store := ctx.KVStore(k.storeKey)
 
-	store.Set(append([]byte(key), addr...), []byte{0x1})
+	store.Set(append([]byte(VotePrefix(name)), addr...), []byte{0x1})
 	return nil
 }
 
 // RejectUpgrade rejects an upgrade as a validator
 func (k KVStore) RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error {
-	key := fmt.Sprintf("%s%s", VotePrefix(name), addr.String())
 	store := ctx.KVStore(k.storeKey)
 
-	store.Set(append([]byte(key), addr...), []byte{0xFF})
+	store.Set(append([]byte(VotePrefix(name)), addr...), []byte{0xFF})
 	return nil
 }
 
