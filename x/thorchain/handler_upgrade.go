@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
 	"github.com/blang/semver"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -327,7 +328,14 @@ func upgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 		bonds[na.NodeAddress.String()] = na.Bond
 	}
 
-	bondThreshold := totalActiveBond.MulUint64(2).QuoUint64(3)
+	scalingFactor := cosmos.OneUint()
+	if totalActiveBond.LTE(cosmos.NewUint(1000000000000000)) {
+		// scale for precision with small bond amounts
+		scalingFactor = cosmos.NewUint(10000)
+	}
+
+	// 2/3 of active validators
+	bondThreshold := totalActiveBond.Mul(scalingFactor).MulUint64(2).QuoUint64(3)
 
 	iterV := k.GetUpgradeVoteIterator(ctx, name)
 	defer iterV.Close()
@@ -340,8 +348,8 @@ func upgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 			continue
 		}
 
-		addrSplit := bytes.Split(key, []byte("/"))
-		addr := cosmos.AccAddress(addrSplit[len(addrSplit)-1])
+		prefix := []byte(keeperv1.VotePrefix(name))
+		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
 
 		bond, ok := bonds[addr.String()]
 		if !ok {
@@ -349,7 +357,7 @@ func upgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 			continue
 		}
 
-		totalApprovedBond = totalApprovedBond.Add(bond)
+		totalApprovedBond = totalApprovedBond.Add(bond.Mul(scalingFactor))
 
 		if totalApprovedBond.GTE(bondThreshold) {
 			return true, nil
