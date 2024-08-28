@@ -2554,7 +2554,7 @@ func queryVersion(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr 
 }
 
 func queryUpgradeProposals(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
-	res := make([]map[string]any, 0)
+	res := make([]openapi.UpgradeProposal, 0)
 
 	k := mgr.Keeper()
 	iter := k.GetUpgradeProposalIterator(ctx)
@@ -2570,10 +2570,10 @@ func queryUpgradeProposals(ctx cosmos.Context, mgr *Mgrs) ([]byte, error) {
 			return nil, fmt.Errorf("failed to unmarshal proposed upgrade: %w", err)
 		}
 
-		p := map[string]any{
-			"name":   name,
-			"height": upgrade.Height,
-			"info":   upgrade.Info,
+		p := openapi.UpgradeProposal{
+			Name:   name,
+			Height: upgrade.Height,
+			Info:   upgrade.Info,
 		}
 
 		res = append(res, p)
@@ -2597,14 +2597,19 @@ func queryUpgradeProposal(ctx cosmos.Context, path []string, _ abci.RequestQuery
 	}
 
 	approved, approvedPct, bondToQuorum, err := k.UpgradeApprovedByMajority(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("fail to check upgrade approval: %w", err)
+	}
 
-	res := map[string]any{
-		"name":             name,
-		"height":           proposal.Height,
-		"info":             proposal.Info,
-		"approved":         approved,
-		"approved_percent": approvedPct,
-		"bond_to_quorum":   bondToQuorum,
+	btq := int64(bondToQuorum.Uint64()) // TODO might want string for this field.
+
+	res := openapi.UpgradeProposal{
+		Name:            name,
+		Height:          proposal.Height,
+		Info:            proposal.Info,
+		Approved:        &approved,
+		ApprovedPercent: &approvedPct,
+		BondToQuorum:    &btq,
 	}
 
 	return jsonify(ctx, res)
@@ -2617,7 +2622,7 @@ func queryUpgradeVotes(ctx cosmos.Context, path []string, _ abci.RequestQuery, m
 
 	name := path[0]
 	prefix := []byte(keeperv1.VotePrefix(name))
-	res := make([]map[string]any, 0)
+	res := make([]openapi.UpgradeVote, 0)
 
 	iter := mgr.Keeper().GetUpgradeVoteIterator(ctx, name)
 	defer iter.Close()
@@ -2633,9 +2638,9 @@ func queryUpgradeVotes(ctx cosmos.Context, path []string, _ abci.RequestQuery, m
 			vote = "reject"
 		}
 
-		v := map[string]any{
-			"node_address": addr.String(),
-			"vote":         vote,
+		v := openapi.UpgradeVote{
+			NodeAddress: addr.String(),
+			Vote:        vote,
 		}
 
 		res = append(res, v)
