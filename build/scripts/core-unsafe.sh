@@ -2,48 +2,6 @@
 
 set -o pipefail
 
-add_account() {
-  jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '.app_state.auth.accounts += [{
-        "@type": "/cosmos.auth.v1beta1.BaseAccount",
-        "address": $ADDRESS,
-        "pub_key": null,
-        "account_number": "0",
-        "sequence": "0"
-    }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thornode/config/genesis.json
-
-  jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '.app_state.bank.balances += [{
-        "address": $ADDRESS,
-        "coins": [ { "denom": $ASSET, "amount": $AMOUNT } ],
-    }]' <~/.thornode/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thornode/config/genesis.json
-}
-
-set_mocknet_bond_module() {
-  jq '.app_state.state.accounts += [
-    {
-      "@type": "/cosmos.auth.v1beta1.ModuleAccount",
-      "base_account": {
-        "account_number": "0",
-        "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
-        "pub_key": null,
-        "sequence": "0"
-      },
-      "name": "bond",
-      "permissions": []
-    }
-  ]' <~/.thornode/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thornode/config/genesis.json
-
-  jq '.app_state.bank.balances += [
-    {
-      "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
-      "coins": [ { "denom": "rune", "amount": "100000000" } ]
-    }
-  ]' <~/.thornode/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thornode/config/genesis.json
-}
-
 deploy_evm_contracts() {
   for CHAIN in ETH AVAX BSC; do
     (
@@ -66,41 +24,47 @@ deploy_evm_contracts() {
   wait
 }
 
-set_eth_contract() {
-  jq --arg CONTRACT "$1" '.app_state.thorchain.chain_contracts = [{"chain": "ETH", "address": $CONTRACT}]' ~/.thord/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thord/config/genesis.json
-}
+init_mocknet() {
+  NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 
-set_avax_contract() {
-  jq --arg CONTRACT "$1" '.app_state.thorchain.chain_contracts = [{"chain": "AVAX", "address": $CONTRACT}]' ~/.thord/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thord/config/genesis.json
-}
-
-set_bsc_contract() {
-  jq --arg CONTRACT "$1" '.app_state.thorchain.chain_contracts = [{"chain": "BSC", "address": $CONTRACT}]' ~/.thord/config/genesis.json >/tmp/genesis.json
-  mv /tmp/genesis.json ~/.thord/config/genesis.json
-}
-
-gen_bnb_address() {
-  if [ ! -f ~/.bond/private_key.txt ]; then
-    echo "Generating BNB address"
-    mkdir -p ~/.bond
-    # because the generate command can get API rate limited, THORNode may need to retry
-    n=0
-    until [ $n -ge 60 ]; do
-      generate >/tmp/bnb && break
-      n=$((n + 1))
-      sleep 1
-    done
-    ADDRESS=$(grep </tmp/bnb MASTER= | awk -F= '{print $NF}')
-    echo "$ADDRESS" >~/.bond/address.txt
-    BINANCE_PRIVATE_KEY=$(grep </tmp/bnb MASTER_KEY= | awk -F= '{print $NF}')
-    echo "$BINANCE_PRIVATE_KEY" >/root/.bond/private_key.txt
-    PUBKEY=$(grep </tmp/bnb MASTER_PUBKEY= | awk -F= '{print $NF}')
-    echo "$PUBKEY" >/root/.bond/pubkey.txt
-    MNEMONIC=$(grep </tmp/bnb MASTER_MNEMONIC= | awk -F= '{print $NF}')
-    echo "$MNEMONIC" >/root/.bond/mnemonic.txt
+  if [ "$PEER" = "none" ]; then
+    echo "Missing PEER"
+    exit 1
   fi
+
+  # wait for peer
+  until curl -s "$PEER:$PORT_RPC" 1>/dev/null 2>&1; do
+    echo "Waiting for peer: $PEER:$PORT_RPC"
+    sleep 3
+  done
+
+  printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes
+
+  # send bond
+
+  sleep 10 # wait for thorchain to commit a block , otherwise it get the wrong sequence number
+
+  NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend=file | thornode pubkey)
+  VALIDATOR=$(thornode tendermint show-validator | thornode pubkey --bech cons)
+
+  # set node keys
+  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
+    sleep 5
+  done
+
+  # add IP address
+  sleep 10 # wait for thorchain to commit a block
+
+  NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
+  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-ip-address "$NODE_IP_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
+    sleep 5
+  done
+
+  sleep 10 # wait for thorchain to commit a block
+  # set node version
+  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-version --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
+    sleep 5
+  done
 }
 
 # set external ip to localhost in mocknet

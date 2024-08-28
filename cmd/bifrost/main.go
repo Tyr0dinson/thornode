@@ -113,7 +113,7 @@ func main() {
 
 	bootstrapPeers, err := cfg.TSS.GetBootstrapPeers()
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
+		log.Error().Err(err).Msg("fail to get bootstrap peers")
 	}
 	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
 
