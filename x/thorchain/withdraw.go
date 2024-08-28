@@ -89,7 +89,9 @@ func withdrawV137(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (co
 	if pool.Asset.IsSyntheticAsset() {
 		withdrawRune, withDrawAsset, unitAfter = calculateVaultWithdraw(pool.GetPoolUnits(), poolAsset, originalLiquidityProviderUnits, msg.BasisPoints)
 	} else {
-		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(ctx, mgr.Keeper(), pool.Asset, pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, msg.BasisPoints, assetToWithdraw)
+		// Note, have to use msg.WithdrawAddress rather than msg.Signer,
+		// because the POL removePOLLiquidity signer is nodeAccounts[0].NodeAddress, not the ReserveName address.
+		withdrawRune, withDrawAsset, unitAfter, err = calculateWithdraw(ctx, mgr.Keeper(), pool.Asset, pool.GetPoolUnits(), poolRune, poolAsset, originalLiquidityProviderUnits, msg.BasisPoints, assetToWithdraw, msg.WithdrawAddress)
 		if err != nil {
 			ctx.Logger().Error("fail to withdraw", "error", err)
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
@@ -179,18 +181,17 @@ func assetToWithdraw(msg MsgWithdrawLiquidity, lp LiquidityProvider, pauseAsym i
 	return msg.WithdrawalAsset
 }
 
-func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset, withdrawAddress common.Address) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	version := keeper.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
-		return calculateWithdrawV137(ctx, keeper, poolAsset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset)
+		return calculateWithdrawV137(ctx, keeper, poolAsset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset, withdrawAddress)
 	default:
 		return calculateWithdrawV129(poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset)
 	}
 }
 
-
-func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset, withdrawAddress common.Address) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if poolUnits.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
 	}
@@ -227,7 +228,16 @@ func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset c
 	remainingAsset := common.SafeSub(poolAssetDepth, withdrawAsset)
 	remainingRune := common.SafeSub(poolRuneDepth, withdrawRune)
 	var x, X, Y, yAdd cosmos.Uint
+	var isPOL bool
 	if withdrawalAsset.IsRune() {
+		// POL withdraws are RUNE-only, so only needing to check for RUNE asymmetric withdraws.
+		polAddress, err := keeper.GetModuleAddress(ReserveName)
+		if err != nil {
+			ctx.Logger().Error("failed to get reserve module address", "error", err)
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		}
+		isPOL = withdrawAddress.Equals(polAddress)
+
 		x = withdrawAsset
 		X = remainingAsset
 		Y = remainingRune
@@ -242,8 +252,12 @@ func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset c
 	swapSlipBps := swapper.CalcSwapSlip(X, x)
 	minSlipBps := getMinSlipBps(ctx, keeper, poolAsset)
 	// Being for a non-Savers asymmetric liquidity action, MinSlipBps should always be for an L1 swap.
-	y, _, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
+	y, liqFee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
 	y = y.Add(yAdd)
+	// Waive any implicit slip fee for POL withdrawals, effectively an XYK constant-depths half-swap.
+	if isPOL {
+		y = y.Add(liqFee)
+	}
 
 	if withdrawalAsset.IsRune() {
 		return y, cosmos.ZeroUint(), unitAfter, nil
