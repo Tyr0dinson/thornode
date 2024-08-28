@@ -179,6 +179,7 @@ var (
 	NewMsgSetVersion               = types.NewMsgSetVersion
 	NewMsgProposeUpgrade           = types.NewMsgProposeUpgrade
 	NewMsgApproveUpgrade           = types.NewMsgApproveUpgrade
+	NewMsgRejectUpgrade            = types.NewMsgRejectUpgrade
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
 	NewNetworkFee                  = types.NewNetworkFee

@@ -64,13 +64,10 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 }
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("2.136.0")):
+	if mgr.GetVersion().GTE(semver.MustParse("2.136.0")) {
 		return getHandlerMappingV136(mgr)
-	default:
-		return getHandlerMappingV65(mgr)
 	}
+	return getHandlerMappingV65(mgr)
 }
 
 func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
