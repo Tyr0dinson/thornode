@@ -64,7 +64,13 @@ func NewExternalHandler(mgr Manager) cosmos.Handler {
 }
 
 func getHandlerMapping(mgr Manager) map[string]MsgHandler {
-	return getHandlerMappingV65(mgr)
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return getHandlerMappingV136(mgr)
+	default:
+		return getHandlerMappingV65(mgr)
+	}
 }
 
 func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
@@ -88,13 +94,19 @@ func getHandlerMappingV65(mgr Manager) map[string]MsgHandler {
 	m[MsgSetVersion{}.Type()] = NewVersionHandler(mgr)
 	m[MsgSetIPAddress{}.Type()] = NewIPAddressHandler(mgr)
 	m[MsgNodePauseChain{}.Type()] = NewNodePauseChainHandler(mgr)
-	m[MsgProposeUpgrade{}.Type()] = NewProposeUpgradeHandler(mgr)
-	m[MsgApproveUpgrade{}.Type()] = NewApproveUpgradeHandler(mgr)
-	m[MsgRejectUpgrade{}.Type()] = NewRejectUpgradeHandler(mgr)
 
 	// native handlers (non-consensus)
 	m[MsgSend{}.Type()] = NewSendHandler(mgr)
 	m[MsgDeposit{}.Type()] = NewDepositHandler(mgr)
+	return m
+}
+
+func getHandlerMappingV136(mgr Manager) map[string]MsgHandler {
+	m := getHandlerMappingV65(mgr)
+	m[MsgProposeUpgrade{}.Type()] = NewProposeUpgradeHandler(mgr)
+	m[MsgApproveUpgrade{}.Type()] = NewApproveUpgradeHandler(mgr)
+	m[MsgRejectUpgrade{}.Type()] = NewRejectUpgradeHandler(mgr)
+
 	return m
 }
 
