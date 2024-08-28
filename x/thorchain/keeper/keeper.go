@@ -180,11 +180,17 @@ type KeeperNodeAccount interface {
 }
 
 type KeeperUpgrade interface {
+	// mutative methods
 	ProposeUpgrade(ctx cosmos.Context, name string, upgrade Upgrade) error
-	GetProposedUpgrade(ctx cosmos.Context, name string) (Upgrade, error)
 	ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error
 	RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error
 	RemoveExpiredUpgradeProposals(ctx cosmos.Context) error
+
+	// query methods
+	GetProposedUpgrade(ctx cosmos.Context, name string) (Upgrade, error)
+	GetUpgradeProposalIterator(ctx cosmos.Context) cosmos.Iterator
+	GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator
+	UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, cosmos.Uint, error)
 
 	// x/upgrade module methods
 	GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool)

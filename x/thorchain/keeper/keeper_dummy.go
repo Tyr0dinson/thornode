@@ -66,12 +66,20 @@ func (k KVStoreDummy) ScheduleUpgrade(ctx cosmos.Context, plan upgradetypes.Plan
 	return kaboom
 }
 
+func (k KVStoreDummy) GetUpgradeProposalIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
 func (k KVStoreDummy) GetUpgradeVoteIterator(_ cosmos.Context, _ string) cosmos.Iterator {
 	return nil
 }
 
 func (k KVStoreDummy) RemoveExpiredUpgradeProposals(_ cosmos.Context) error {
 	return nil
+}
+
+func (k KVStoreDummy) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, cosmos.Uint, error) {
+	return false, "", cosmos.ZeroUint(), kaboom
 }
 
 func (k KVStoreDummy) ClearUpgradePlan(ctx cosmos.Context) {}

@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -120,4 +121,70 @@ func (k KVStore) removeExpiredUpgradeProposalVotes(ctx cosmos.Context, name stri
 	for ; iter.Valid(); iter.Next() {
 		store.Delete(iter.Key())
 	}
+}
+
+// UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
+// it additionally returns the current approval percentage and the bond needed to reach quorum, if not approved.
+func (k KVStore) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, cosmos.Uint, error) {
+	iterA := k.GetNodeAccountIterator(ctx)
+	defer iterA.Close()
+
+	totalActiveBond := cosmos.ZeroUint()
+	bonds := make(map[string]cosmos.Uint)
+
+	for ; iterA.Valid(); iterA.Next() {
+		var na NodeAccount
+		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
+			return false, "", cosmos.Uint{}, fmt.Errorf("failed to unmarshal: %w", err)
+		}
+
+		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
+			continue
+		}
+
+		totalActiveBond = totalActiveBond.Add(na.Bond)
+		bonds[na.NodeAddress.String()] = na.Bond
+	}
+
+	scalingFactor := cosmos.OneUint()
+	if totalActiveBond.LTE(cosmos.NewUint(1000000000000000)) {
+		// scale for precision with small bond amounts
+		scalingFactor = cosmos.NewUint(10000)
+	}
+
+	// 2/3 of active validators
+	bondThreshold := totalActiveBond.Mul(scalingFactor).MulUint64(2).QuoUint64(3)
+
+	iterV := k.GetUpgradeVoteIterator(ctx, name)
+	defer iterV.Close()
+
+	totalApprovedBond := cosmos.ZeroUint()
+
+	for ; iterV.Valid(); iterV.Next() {
+		key, vote := iterV.Key(), iterV.Value()
+		if !bytes.Equal(vote, []byte{0x1}) {
+			continue
+		}
+
+		prefix := []byte(VotePrefix(name))
+		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
+
+		bond, ok := bonds[addr.String()]
+		if !ok {
+			// this could happen if a validator votes and then becomes inactive
+			continue
+		}
+
+		totalApprovedBond = totalApprovedBond.Add(bond.Mul(scalingFactor))
+	}
+
+	currentApproval := cosmos.NewDecFromBigInt(totalApprovedBond.BigInt()).Quo(cosmos.NewDecFromBigInt(totalActiveBond.BigInt())).Quo(cosmos.NewDecFromBigInt(scalingFactor.BigInt())).String()
+
+	if totalApprovedBond.GTE(bondThreshold) {
+		return true, currentApproval, cosmos.ZeroUint(), nil
+	}
+
+	bondToQuorum := bondThreshold.Sub(totalApprovedBond).Quo(scalingFactor)
+
+	return false, currentApproval, bondToQuorum, nil
 }

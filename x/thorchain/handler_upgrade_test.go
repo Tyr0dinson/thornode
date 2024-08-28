@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -11,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -103,6 +105,73 @@ func (k *TestUpgradeKeeper) GetUpgradePlan(_ cosmos.Context) (upgradetypes.Plan,
 		return upgradetypes.Plan{Name: "berserk"}, true
 	}
 	return upgradetypes.Plan{}, false
+}
+
+// UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
+// it additionally returns the current approval percentage and the bond needed to reach quorum, if not approved.
+// TODO: this is currently copy/paste of the KVStore implementation.
+func (k *TestUpgradeKeeper) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, cosmos.Uint, error) {
+	iterA := k.GetNodeAccountIterator(ctx)
+	defer iterA.Close()
+
+	totalActiveBond := cosmos.ZeroUint()
+	bonds := make(map[string]cosmos.Uint)
+
+	for ; iterA.Valid(); iterA.Next() {
+		var na NodeAccount
+		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
+			return false, "", cosmos.Uint{}, fmt.Errorf("failed to unmarshal: %w", err)
+		}
+
+		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
+			continue
+		}
+
+		totalActiveBond = totalActiveBond.Add(na.Bond)
+		bonds[na.NodeAddress.String()] = na.Bond
+	}
+
+	scalingFactor := cosmos.OneUint()
+	if totalActiveBond.LTE(cosmos.NewUint(1000000000000000)) {
+		// scale for precision with small bond amounts
+		scalingFactor = cosmos.NewUint(10000)
+	}
+
+	// 2/3 of active validators
+	bondThreshold := totalActiveBond.Mul(scalingFactor).MulUint64(2).QuoUint64(3)
+
+	iterV := k.GetUpgradeVoteIterator(ctx, name)
+	defer iterV.Close()
+
+	totalApprovedBond := cosmos.ZeroUint()
+
+	for ; iterV.Valid(); iterV.Next() {
+		key, vote := iterV.Key(), iterV.Value()
+		if !bytes.Equal(vote, []byte{0x1}) {
+			continue
+		}
+
+		prefix := []byte(keeperv1.VotePrefix(name))
+		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
+
+		bond, ok := bonds[addr.String()]
+		if !ok {
+			// this could happen if a validator votes and then becomes inactive
+			continue
+		}
+
+		totalApprovedBond = totalApprovedBond.Add(bond.Mul(scalingFactor))
+	}
+
+	currentApproval := cosmos.NewDecFromBigInt(totalApprovedBond.BigInt()).Quo(cosmos.NewDecFromBigInt(totalActiveBond.BigInt())).Quo(cosmos.NewDecFromBigInt(scalingFactor.BigInt())).String()
+
+	if totalApprovedBond.GTE(bondThreshold) {
+		return true, currentApproval, cosmos.ZeroUint(), nil
+	}
+
+	bondToQuorum := bondThreshold.Sub(totalApprovedBond).Quo(scalingFactor)
+
+	return false, currentApproval, bondToQuorum, nil
 }
 
 var _ = Suite(&HandlerUpgradeSuite{})
