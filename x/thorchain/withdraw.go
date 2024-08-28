@@ -15,6 +15,8 @@ import (
 func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	version := mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return withdrawV137(ctx, msg, mgr)
 	case version.GTE(semver.MustParse("1.129.0")):
 		return withdrawV129(ctx, msg, mgr)
 	default:
@@ -25,7 +27,7 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 
 // Performs the withdraw for the provided MsgWithdrawLiquidity message.
 // Returns: runeAmt, assetAmount, units, lastWithdraw, err
-func withdrawV129(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func withdrawV137(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if err := validateWithdraw(ctx, mgr.Keeper(), msg); err != nil {
 		ctx.Logger().Error("msg withdraw failed validation", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
