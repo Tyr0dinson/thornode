@@ -1,13 +1,11 @@
 package thorchain
 
 import (
-	"bytes"
 	"fmt"
 	"strconv"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
 	"github.com/blang/semver"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -269,7 +267,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 		return fmt.Errorf("failed to get proposed upgrade: %w", err)
 	}
 
-	upgradeApproved, err := upgradeApprovedByMajority(ctx, k, name)
+	upgradeApproved, _, _, err := k.UpgradeApprovedByMajority(ctx, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}
@@ -293,7 +291,7 @@ func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) e
 		return nil
 	}
 
-	upgradeApproved, err := upgradeApprovedByMajority(ctx, k, name)
+	upgradeApproved, _, _, err := k.UpgradeApprovedByMajority(ctx, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}
@@ -304,65 +302,4 @@ func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) e
 	}
 
 	return nil
-}
-
-// upgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators
-func upgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string) (bool, error) {
-	iterA := k.GetNodeAccountIterator(ctx)
-	defer iterA.Close()
-
-	totalActiveBond := cosmos.ZeroUint()
-	bonds := make(map[string]cosmos.Uint)
-
-	for ; iterA.Valid(); iterA.Next() {
-		var na NodeAccount
-		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
-			return false, fmt.Errorf("failed to unmarshal: %w", err)
-		}
-
-		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
-			continue
-		}
-
-		totalActiveBond = totalActiveBond.Add(na.Bond)
-		bonds[na.NodeAddress.String()] = na.Bond
-	}
-
-	scalingFactor := cosmos.OneUint()
-	if totalActiveBond.LTE(cosmos.NewUint(1000000000000000)) {
-		// scale for precision with small bond amounts
-		scalingFactor = cosmos.NewUint(10000)
-	}
-
-	// 2/3 of active validators
-	bondThreshold := totalActiveBond.Mul(scalingFactor).MulUint64(2).QuoUint64(3)
-
-	iterV := k.GetUpgradeVoteIterator(ctx, name)
-	defer iterV.Close()
-
-	totalApprovedBond := cosmos.ZeroUint()
-
-	for ; iterV.Valid(); iterV.Next() {
-		key, vote := iterV.Key(), iterV.Value()
-		if !bytes.Equal(vote, []byte{0x1}) {
-			continue
-		}
-
-		prefix := []byte(keeperv1.VotePrefix(name))
-		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
-
-		bond, ok := bonds[addr.String()]
-		if !ok {
-			// this could happen if a validator votes and then becomes inactive
-			continue
-		}
-
-		totalApprovedBond = totalApprovedBond.Add(bond.Mul(scalingFactor))
-
-		if totalApprovedBond.GTE(bondThreshold) {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
