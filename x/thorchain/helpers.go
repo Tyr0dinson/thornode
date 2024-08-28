@@ -416,18 +416,6 @@ func signedByActiveNodeAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmo
 	return nil
 }
 
-// TODO remove after hard fork
-func fetchConfigInt64(ctx cosmos.Context, mgr Manager, key constants.ConstantName) int64 {
-	val, err := mgr.Keeper().GetMimir(ctx, key.String())
-	if val < 0 || err != nil {
-		val = mgr.GetConstants().GetInt64Value(key)
-		if err != nil {
-			ctx.Logger().Error("fail to fetch mimir value", "key", key.String(), "error", err)
-		}
-	}
-	return val
-}
-
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
 	err = fmt.Errorf("%s: %w", wrap, err)
 	ctx.Logger().Error(err.Error())

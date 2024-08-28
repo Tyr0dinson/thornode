@@ -307,7 +307,7 @@ func (k KVStore) GetUpgradeProposalIterator(ctx cosmos.Context) cosmos.Iterator 
 
 // GetUpgradeVoteIterator to iterate upgrade votes for a named proposal.
 func (k KVStore) GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator {
-	return k.getIterator(ctx, types.DbPrefix(fmt.Sprintf("%s/%s", prefixUpgradeVotes, name)))
+	return k.getIterator(ctx, types.DbPrefix(fmt.Sprintf("%s%s/", prefixUpgradeVotes, name)))
 }
 
 // GetNodeAccountSlashPoints - get the slash points associated with the given

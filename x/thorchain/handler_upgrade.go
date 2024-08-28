@@ -55,9 +55,7 @@ func (h ProposeUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 }
 
 func (h ProposeUpgradeHandler) validate(ctx cosmos.Context, msg *MsgProposeUpgrade) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("2.136.0")):
+	if h.mgr.GetVersion().GTE(semver.MustParse("2.136.0")) {
 		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
@@ -72,8 +70,8 @@ func (h ProposeUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgProposeU
 		return cosmos.ErrUnauthorized(err.Error())
 	}
 
-	if ctx.BlockHeight() <= msg.Upgrade.Height {
-		return cosmos.ErrUnknownRequest("upgrade height must be in the future")
+	if ctx.BlockHeight() >= msg.Upgrade.Height {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("upgrade height %d must be in the future, current: %d", msg.Upgrade.Height, ctx.BlockHeight()))
 	}
 
 	return nil
@@ -150,9 +148,7 @@ func (h ApproveUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 }
 
 func (h ApproveUpgradeHandler) validate(ctx cosmos.Context, msg *MsgApproveUpgrade) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("2.136.0")):
+	if h.mgr.GetVersion().GTE(semver.MustParse("2.136.0")) {
 		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
@@ -224,9 +220,7 @@ func (h RejectUpgradeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 }
 
 func (h RejectUpgradeHandler) validate(ctx cosmos.Context, msg *MsgRejectUpgrade) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("2.136.0")):
+	if h.mgr.GetVersion().GTE(semver.MustParse("2.136.0")) {
 		return h.validateV136(ctx, msg)
 	}
 	return errBadVersion
@@ -281,7 +275,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 
 	if upgradeApproved {
 		// upgrade approval is now over the majority threshold
-		k.ScheduleUpgrade(ctx, upgradetypes.Plan{
+		return k.ScheduleUpgrade(ctx, upgradetypes.Plan{
 			Name:   name,
 			Height: u.Height,
 			Info:   u.Info,
