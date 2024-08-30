@@ -11,8 +11,9 @@ import "gogoproto/gogo.proto";
 message Asset {
     string chain = 1 [(gogoproto.casttype) = "Chain"];
     string symbol = 2 [(gogoproto.casttype) = "Symbol"];
-    bool synth = 3;
-    bool trade = 4;
+    string ticker = 3 [(gogoproto.casttype) = "Ticker"]; // Legacy field, do not use.
+    bool synth = 4;
+    bool trade = 5;
 }
 
 message Coin {
