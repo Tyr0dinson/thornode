@@ -7,6 +7,14 @@ ifneq ($(CHECK_ENV),)
 $(error Check environment dependencies.)
 endif
 
+ifneq ($(SKIP_DOCKER_TEST),true)
+CHECK_DOCKER=$(shell ./scripts/check-docker.sh)
+endif
+
+ifneq ($(CHECK_DOCKER),)
+$(error Check docker installation.)
+endif
+
 ########################################################################################
 # Config
 ########################################################################################
@@ -103,8 +111,14 @@ docs-dev: docs-init
 build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
+build-thornode:
+	go build ${BUILD_FLAGS} ./cmd/thornode
+
 install:
 	go install ${BUILD_FLAGS} ${BINARIES}
+
+install-thornode:
+	go install ${BUILD_FLAGS} ./cmd/thornode
 
 tools:
 	go install -tags ${TAG} ./tools/pubkey2address
