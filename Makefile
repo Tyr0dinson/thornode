@@ -51,7 +51,7 @@ TEST_DIR?=${TEST_PATHS}
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 GOBIN?=${GOPATH}/bin
-BINARIES=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
+BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 
 # docker tty args are disabled in CI
 ifndef CI
@@ -111,14 +111,8 @@ docs-dev: docs-init
 build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
-build-thornode:
-	go build ${BUILD_FLAGS} ./cmd/thornode
-
 install:
 	go install ${BUILD_FLAGS} ${BINARIES}
-
-install-thornode:
-	go install ${BUILD_FLAGS} ./cmd/thornode
 
 tools:
 	go install -tags ${TAG} ./tools/pubkey2address
