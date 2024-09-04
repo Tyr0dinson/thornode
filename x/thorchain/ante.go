@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
 	"github.com/blang/semver"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256r1"
@@ -133,7 +132,6 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 
 	// cosmos handlers
 	case *banktypes.MsgSend:
-		fmt.Println("Bank send ante handler")
 		return BankSendAnteHandler(ctx, version, ad.keeper, *m)
 
 	default:
