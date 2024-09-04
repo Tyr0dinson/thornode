@@ -1,6 +1,6 @@
 module gitlab.com/thorchain/thornode
 
-go 1.22
+go 1.22.2
 
 require (
 	github.com/99designs/keyring v1.1.6
@@ -300,6 +300,7 @@ require (
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
+	//	github.com/cosmos/cosmos-sdk => ./cosmos-sdk
 	github.com/cosmos/ledger-cosmos-go => gitlab.com/thorchain/ledger-thorchain-go v1.0.3
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.2-alpha.regen.4
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1

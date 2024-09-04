@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -127,6 +129,13 @@ func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeepe
 	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version)
 }
 
+func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
+	fmt.Println("In bank's Send in thorchain module")
+	return &banktypes.MsgSendResponse{}, nil
+}
+func (k KVStore) MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (*banktypes.MsgMultiSendResponse, error) {
+	return &banktypes.MsgMultiSendResponse{}, nil
+}
 // Cdc return the amino codec
 func (k KVStore) Cdc() codec.BinaryCodec {
 	return k.cdc

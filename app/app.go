@@ -3,6 +3,10 @@ package app
 import (
 	"io"
 	"os"
+	"fmt"
+	"strings"
+	"time"
+	_ "unsafe"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -45,7 +49,22 @@ import (
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"
+
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/gogo/protobuf/proto"
+	"github.com/tendermint/tendermint/crypto/tmhash"
 )
+
+const (
+	runTxModeCheck    runTxMode = iota // Check a transaction
+	runTxModeReCheck                   // Recheck a (pending) transaction after a commit
+	runTxModeSimulate                  // Simulate a transaction
+	runTxModeDeliver                   // Deliver a transaction
+)
+
+type runTxMode uint8
 
 var (
 	// DefaultNodeHome default home directories for the application daemon
@@ -115,6 +134,11 @@ type THORChainApp struct {
 
 	thorchainKeeper thorchainkeeper.Keeper
 
+	msgServiceRouter  *MsgServiceRouter    // router for redirecting Msg service messages
+	anteHandler    sdk.AnteHandler  // ante handler for fee and auth
+	router            sdk.Router           // handle any kind of message
+	txDecoder         sdk.TxDecoder // unmarshal []byte into sdk.Tx
+	runTxRecoveryMiddleware recoveryMiddleware
 	// the module manager
 	mm *module.Manager
 }
@@ -127,11 +151,18 @@ func New(
 	appCodec := encodingConfig.Marshaler
 	cdc := encodingConfig.Amino
 	interfaceRegistry := encodingConfig.InterfaceRegistry
-
-	bApp := baseapp.NewBaseApp(appName, logger, db, encodingConfig.TxConfig.TxDecoder(), baseAppOptions...)
+	
+	fmt.Println("NewBaseApp")
+	txDecoder := encodingConfig.TxConfig.TxDecoder()
+	bApp := baseapp.NewBaseApp(appName, logger, db, txDecoder, baseAppOptions...)
+	fmt.Println("Finished NewBaseApp")
+	//bApp.MsgServiceRouter()
 	bApp.SetCommitMultiStoreTracer(traceStore)
+	fmt.Println("Finished NewBaseApp2")
 	bApp.SetVersion(version.Version)
+	fmt.Println("Finished NewBaseApp3")
 	bApp.SetInterfaceRegistry(interfaceRegistry)
+	fmt.Println("Finished NewBaseApp4")
 	// bApp.GRPCQueryRouter().RegisterSimulateService(bApp.Simulate, interfaceRegistry)
 
 	keys := sdk.NewKVStoreKeys(
@@ -153,7 +184,9 @@ func New(
 		keys:              keys,
 		tkeys:             tkeys,
 		memKeys:           memKeys,
+		txDecoder:         txDecoder,
 	}
+	app.runTxRecoveryMiddleware = newDefaultRecoveryMiddleware()
 
 	app.ParamsKeeper = initParamsKeeper(appCodec, cdc, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
 
@@ -180,6 +213,8 @@ func New(
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
 	)
+	app.msgServiceRouter = NewMsgServiceRouter(app.thorchainKeeper)
+	app.SetInterfaceRegistry(interfaceRegistry)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -206,7 +241,10 @@ func New(
 	)
 
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter(), encodingConfig.Amino)
+	app.router = app.Router()
 	app.mm.RegisterServices(module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter()))
+	//bappMsgServiceRouter := bApp.MsgServiceRouter()
+	//bappMsgServiceRouter = app.MsgServiceRouter().MsgServiceRouter
 
 	// initialize stores
 	app.MountKVStores(keys)
@@ -228,6 +266,7 @@ func New(
 		tmos.Exit(err.Error())
 	}
 
+	app.anteHandler = anteHandler
 	app.SetAnteHandler(anteHandler)
 	// app.SetPostHandler(postHandler) // TOOD needs v46
 	app.SetEndBlocker(app.EndBlocker)
@@ -237,6 +276,7 @@ func New(
 			tmos.Exit(err.Error())
 		}
 	}
+	fmt.Println("Returning app")
 
 	return app
 }
@@ -354,6 +394,15 @@ func (app *THORChainApp) RegisterTxService(ctx client.Context) {
 	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), ctx, app.BaseApp.Simulate, app.interfaceRegistry)
 }
 
+// MsgServiceRouter returns the MsgServiceRouter of a BaseApp.
+func (app *THORChainApp) MsgServiceRouter() *MsgServiceRouter { return app.msgServiceRouter }
+
+// SetInterfaceRegistry sets the InterfaceRegistry.
+func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) {
+	app.interfaceRegistry = registry
+	app.msgServiceRouter.SetInterfaceRegistry(registry)
+}
+
 // initParamsKeeper init params keeper and its subspaces
 func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey sdk.StoreKey) paramskeeper.Keeper {
 	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
@@ -365,3 +414,300 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 
 	return paramsKeeper
 }
+
+// DeliverTx implements the ABCI interface and executes a tx in DeliverTx mode.
+// State only gets persisted if all messages are valid and get executed successfully.
+// Otherwise, the ResponseDeliverTx will contain releveant error information.
+// Regardless of tx execution outcome, the ResponseDeliverTx will contain relevant
+// gas execution context.
+func (app *THORChainApp) DeliverTx(req abci.RequestDeliverTx) abci.ResponseDeliverTx {
+	defer telemetry.MeasureSince(time.Now(), "abci", "deliver_tx")
+
+	gInfo := sdk.GasInfo{}
+	resultStr := "successful"
+
+	defer func() {
+		telemetry.IncrCounter(1, "tx", "count")
+		telemetry.IncrCounter(1, "tx", resultStr)
+		telemetry.SetGauge(float32(gInfo.GasUsed), "tx", "gas", "used")
+		telemetry.SetGauge(float32(gInfo.GasWanted), "tx", "gas", "wanted")
+	}()
+
+	gInfo, result, anteEvents, err := app.runTx(runTxModeDeliver, req.Tx)
+	if err != nil {
+		resultStr = "failed"
+		return sdkerrors.ResponseDeliverTxWithEvents(err, gInfo.GasWanted, gInfo.GasUsed, anteEvents, app.Trace())
+	}
+
+	return abci.ResponseDeliverTx{
+		GasWanted: int64(gInfo.GasWanted), // TODO: Should type accept unsigned ints?
+		GasUsed:   int64(gInfo.GasUsed),   // TODO: Should type accept unsigned ints?
+		Log:       result.Log,
+		Data:      result.Data,
+		Events:    sdk.MarkEventsToIndex(result.Events, nil),
+		//Events:    sdk.MarkEventsToIndex(result.Events, app.indexEvents),
+	}
+}
+
+//go:linkname validateBasicTxMsgs github.com/cosmos/cosmos-sdk/baseapp.validateBasicTxMsgs
+func validateBasicTxMsgs([]sdk.Msg) error
+
+//go:linkname getContextForTx github.com/cosmos/cosmos-sdk/baseapp.(*BaseApp).getContextForTx
+func getContextForTx(*baseapp.BaseApp, runTxMode, []byte) sdk.Context
+
+// runTx processes a transaction within a given execution mode, encoded transaction
+// bytes, and the decoded transaction itself. All state transitions occur through
+// a cached Context depending on the mode provided. State only gets persisted
+// if all messages get executed successfully and the execution mode is DeliverTx.
+// Note, gas execution info is always returned. A reference to a Result is
+// returned if the tx does not run out of gas and if all the messages are valid
+// and execute successfully. An error is returned otherwise.
+func (app *THORChainApp) runTx(mode runTxMode, txBytes []byte) (gInfo sdk.GasInfo, result *sdk.Result, anteEvents []abci.Event, err error) {
+	fmt.Println("thor runTx")
+	// NOTE: GasWanted should be returned by the AnteHandler. GasUsed is
+	// determined by the GasMeter. We need access to the context to get the gas
+	// meter so we initialize upfront.
+	var gasWanted uint64
+
+	ctx := getContextForTx(app.BaseApp, mode, txBytes)
+	ms := ctx.MultiStore()
+
+	// only run the tx if there is block gas remaining
+	if mode == runTxModeDeliver && ctx.BlockGasMeter().IsOutOfGas() {
+		return gInfo, nil, nil, sdkerrors.Wrap(sdkerrors.ErrOutOfGas, "no block gas left to run tx")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			recoveryMW := newOutOfGasRecoveryMiddleware(gasWanted, ctx, app.runTxRecoveryMiddleware)
+			err, result = processRecovery(r, recoveryMW), nil
+		}
+
+		gInfo = sdk.GasInfo{GasWanted: gasWanted, GasUsed: ctx.GasMeter().GasConsumed()}
+	}()
+
+	blockGasConsumed := false
+	// consumeBlockGas makes sure block gas is consumed at most once. It must happen after
+	// tx processing, and must be execute even if tx processing fails. Hence we use trick with `defer`
+	consumeBlockGas := func() {
+		if !blockGasConsumed {
+			blockGasConsumed = true
+			ctx.BlockGasMeter().ConsumeGas(
+				ctx.GasMeter().GasConsumedToLimit(), "block gas meter",
+			)
+		}
+	}
+
+	// If BlockGasMeter() panics it will be caught by the above recover and will
+	// return an error - in any case BlockGasMeter will consume gas past the limit.
+	//
+	// NOTE: This must exist in a separate defer function for the above recovery
+	// to recover from this one.
+	if mode == runTxModeDeliver {
+		defer consumeBlockGas()
+	}
+
+	tx, err := app.txDecoder(txBytes)
+	if err != nil {
+		return sdk.GasInfo{}, nil, nil, err
+	}
+
+	msgs := tx.GetMsgs()
+	if err := validateBasicTxMsgs(msgs); err != nil {
+		return sdk.GasInfo{}, nil, nil, err
+	}
+
+	if app.anteHandler != nil {
+		var (
+			anteCtx sdk.Context
+			msCache sdk.CacheMultiStore
+		)
+
+		// Branch context before AnteHandler call in case it aborts.
+		// This is required for both CheckTx and DeliverTx.
+		// Ref: https://github.com/cosmos/cosmos-sdk/issues/2772
+		//
+		// NOTE: Alternatively, we could require that AnteHandler ensures that
+		// writes do not happen if aborted/failed.  This may have some
+		// performance benefits, but it'll be more difficult to get right.
+		anteCtx, msCache = app.cacheTxContext(ctx, txBytes)
+		anteCtx = anteCtx.WithEventManager(sdk.NewEventManager())
+		newCtx, err := app.anteHandler(anteCtx, tx, mode == runTxModeSimulate)
+
+		if !newCtx.IsZero() {
+			// At this point, newCtx.MultiStore() is a store branch, or something else
+			// replaced by the AnteHandler. We want the original multistore.
+			//
+			// Also, in the case of the tx aborting, we need to track gas consumed via
+			// the instantiated gas meter in the AnteHandler, so we update the context
+			// prior to returning.
+			ctx = newCtx.WithMultiStore(ms)
+		}
+
+		events := ctx.EventManager().Events()
+
+		// GasMeter expected to be set in AnteHandler
+		gasWanted = ctx.GasMeter().Limit()
+
+		if err != nil {
+			return gInfo, nil, nil, err
+		}
+
+		msCache.Write()
+		anteEvents = events.ToABCIEvents()
+	}
+
+	// Create a new Context based off of the existing Context with a MultiStore branch
+	// in case message processing fails. At this point, the MultiStore
+	// is a branch of a branch.
+	runMsgCtx, msCache := app.cacheTxContext(ctx, txBytes)
+
+	// Attempt to execute all messages and only update state if all messages pass
+	// and we're in DeliverTx. Note, runMsgs will never return a reference to a
+	// Result if any single message fails or does not have a registered Handler.
+	result, err = app.runMsgs(runMsgCtx, msgs, mode)
+	if err == nil && mode == runTxModeDeliver {
+		// When block gas exceeds, it'll panic and won't commit the cached store.
+		consumeBlockGas()
+
+		msCache.Write()
+
+		if len(anteEvents) > 0 {
+			// append the events in the order of occurrence
+			result.Events = append(anteEvents, result.Events...)
+		}
+	}
+
+	return gInfo, result, anteEvents, err
+}
+
+// runMsgs iterates through a list of messages and executes them with the provided
+// Context and execution mode. Messages will only be executed during simulation
+// and DeliverTx. An error is returned if any single message fails or if a
+// Handler does not exist for a given message route. Otherwise, a reference to a
+// Result is returned. The caller must not commit state if an error is returned.
+func (app *THORChainApp) runMsgs(ctx sdk.Context, msgs []sdk.Msg, mode runTxMode) (*sdk.Result, error) {
+	fmt.Println("thor runMsgs() start")
+	msgLogs := make(sdk.ABCIMessageLogs, 0, len(msgs))
+	events := sdk.EmptyEvents()
+	txMsgData := &sdk.TxMsgData{
+		Data: make([]*sdk.MsgData, 0, len(msgs)),
+	}
+
+	// NOTE: GasWanted is determined by the AnteHandler and GasUsed by the GasMeter.
+	for i, msg := range msgs {
+		// skip actual execution for (Re)CheckTx mode
+		if mode == runTxModeCheck || mode == runTxModeReCheck {
+			break
+		}
+
+		var (
+			msgResult    *sdk.Result
+			eventMsgName string // name to use as value in event `message.action`
+			err          error
+		)
+
+		fmt.Println("thor runMsgs() about to look up handler", sdk.MsgTypeURL(msg))
+		if handler := app.msgServiceRouter.Handler(msg); handler != nil {
+			fmt.Println("runMsgs() msgServiceRouter:", sdk.MsgTypeURL(msg))
+			// ADR 031 request type routing
+			msgResult, err = handler(ctx, msg)
+			fmt.Println("runMsgs() handler executed")
+			eventMsgName = sdk.MsgTypeURL(msg)
+		} else if legacyMsg, ok := msg.(legacytx.LegacyMsg); ok {
+			fmt.Println("runMsgs() legacyMsg:", sdk.MsgTypeURL(msg))
+			// legacy sdk.Msg routing
+			// Assuming that the app developer has migrated all their Msgs to
+			// proto messages and has registered all `Msg services`, then this
+			// path should never be called, because all those Msgs should be
+			// registered within the `msgServiceRouter` already.
+			msgRoute := legacyMsg.Route()
+			eventMsgName = legacyMsg.Type()
+			handler := app.router.Route(ctx, msgRoute)
+			if handler == nil {
+				return nil, sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "unrecognized message route: %s; message index: %d", msgRoute, i)
+			}
+
+			msgResult, err = handler(ctx, msg)
+		} else {
+			return nil, sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "can't route message %+v", msg)
+		}
+
+		if err != nil {
+			return nil, sdkerrors.Wrapf(err, "failed to execute message; message index: %d", i)
+		}
+
+		msgEvents := sdk.Events{
+			sdk.NewEvent(sdk.EventTypeMessage, sdk.NewAttribute(sdk.AttributeKeyAction, eventMsgName)),
+		}
+		msgEvents = msgEvents.AppendEvents(msgResult.GetEvents())
+
+		// append message events, data and logs
+		//
+		// Note: Each message result's data must be length-prefixed in order to
+		// separate each result.
+		events = events.AppendEvents(msgEvents)
+
+		txMsgData.Data = append(txMsgData.Data, &sdk.MsgData{MsgType: sdk.MsgTypeURL(msg), Data: msgResult.Data})
+		msgLogs = append(msgLogs, sdk.NewABCIMessageLog(uint32(i), msgResult.Log, msgEvents))
+	}
+
+	data, err := proto.Marshal(txMsgData)
+	if err != nil {
+		return nil, sdkerrors.Wrap(err, "failed to marshal tx data")
+	}
+
+	return &sdk.Result{
+		Data:   data,
+		Log:    strings.TrimSpace(msgLogs.String()),
+		Events: events.ToABCIEvents(),
+	}, nil
+}
+
+// cacheTxContext returns a new context based off of the provided context with
+// a branched multi-store.
+func (app *THORChainApp) cacheTxContext(ctx sdk.Context, txBytes []byte) (sdk.Context, sdk.CacheMultiStore) {
+	ms := ctx.MultiStore()
+	// TODO: https://github.com/cosmos/cosmos-sdk/issues/2824
+	msCache := ms.CacheMultiStore()
+	if msCache.TracingEnabled() {
+		msCache = msCache.SetTracingContext(
+			sdk.TraceContext(
+				map[string]interface{}{
+					"txHash": fmt.Sprintf("%X", tmhash.Sum(txBytes)),
+				},
+			),
+		).(sdk.CacheMultiStore)
+	}
+
+	return ctx.WithMultiStore(msCache), msCache
+}
+
+// // retrieve the context for the tx w/ txBytes and other memoized values.
+// func (app *THORChainApp) getContextForTx(mode runTxMode, txBytes []byte) sdk.Context {
+// 	ctx := app.getState(mode).ctx.
+// 		WithTxBytes(txBytes).
+// 		WithVoteInfos(app.voteInfos)
+
+// 	ctx = ctx.WithConsensusParams(app.GetConsensusParams(ctx))
+
+// 	if mode == runTxModeReCheck {
+// 		ctx = ctx.WithIsReCheckTx(true)
+// 	}
+
+// 	if mode == runTxModeSimulate {
+// 		ctx, _ = ctx.CacheContext()
+// 	}
+
+// 	return ctx
+// }
+
+// // Returns the applications's deliverState if app is in runTxModeDeliver,
+// // otherwise it returns the application's checkstate.
+// func (app *BaseApp) getState(mode runTxMode) *state {
+// 	if mode == runTxModeDeliver {
+// 		return app.deliverState
+// 	}
+
+// 	return app.checkState
+// }

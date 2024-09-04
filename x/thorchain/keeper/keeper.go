@@ -1,8 +1,10 @@
 package keeper
 
 import (
+	"context"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -52,7 +54,8 @@ type Keeper interface {
 	GetTHORNamePerBlockFee(ctx cosmos.Context) cosmos.Uint
 
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
-
+	Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error)
+	MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (*banktypes.MsgMultiSendResponse, error)
 	// Keeper Interfaces
 	KeeperConfig
 	KeeperPool

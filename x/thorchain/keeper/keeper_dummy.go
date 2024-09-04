@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,12 +18,19 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
+func (k KVStoreDummy) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
+	return &banktypes.MsgSendResponse{}, nil
+}
+func (k KVStoreDummy) MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (*banktypes.MsgMultiSendResponse, error) {
+	return &banktypes.MsgMultiSendResponse{}, nil
+}
 func (k KVStoreDummy) Cdc() codec.BinaryCodec                  { return simapp.MakeTestEncodingConfig().Marshaler }
 func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ string)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
