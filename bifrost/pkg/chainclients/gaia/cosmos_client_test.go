@@ -19,7 +19,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
-	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	//btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/bifrost/thorclient/types"
@@ -196,7 +197,7 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 	}
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	interfaceRegistry.RegisterImplementations((*types.Msg)(nil), &btypes.MsgSend{})
+	//interfaceRegistry.RegisterImplementations((*types.Msg)(nil), &btypes.MsgSend{})
 	marshaler := codec.NewProtoCodec(interfaceRegistry)
 
 	clientConfig := config.BifrostChainConfiguration{ChainID: common.GAIAChain}

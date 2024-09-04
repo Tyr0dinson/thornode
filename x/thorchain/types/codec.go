@@ -44,6 +44,7 @@ func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgRagnarok{}, "thorchain/MsgRagnarok", nil)
 	cdc.RegisterConcrete(&MsgRefundTx{}, "thorchain/MsgRefundTx", nil)
 	cdc.RegisterConcrete(&MsgSend{}, "thorchain/MsgSend", nil)
+
 	cdc.RegisterConcrete(&MsgNodePauseChain{}, "thorchain/MsgNodePauseChain", nil)
 	cdc.RegisterConcrete(&MsgSolvency{}, "thorchain/MsgSolvency", nil)
 	cdc.RegisterConcrete(&MsgManageTHORName{}, "thorchain/MsgManageTHORName", nil)
