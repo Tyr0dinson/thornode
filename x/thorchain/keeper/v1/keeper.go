@@ -134,6 +134,7 @@ func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes
 	return &banktypes.MsgSendResponse{}, nil
 }
 func (k KVStore) MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (*banktypes.MsgMultiSendResponse, error) {
+	// Entry here should not be possible until allowed by antehandler
 	return &banktypes.MsgMultiSendResponse{}, nil
 }
 // Cdc return the amino codec

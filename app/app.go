@@ -3,8 +3,6 @@ package app
 import (
 	"io"
 	"os"
-	"fmt"
-	_ "unsafe"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -134,7 +132,6 @@ func New(
 	bApp := baseapp.NewBaseApp(appName, logger, db, encodingConfig.TxConfig.TxDecoder(), baseAppOptions...)
 	bApp.SetCommitMultiStoreTracer(traceStore)
 	bApp.SetVersion(version.Version)
-	bApp.SetInterfaceRegistry(interfaceRegistry)
 	// bApp.GRPCQueryRouter().RegisterSimulateService(bApp.Simulate, interfaceRegistry)
 
 	keys := sdk.NewKVStoreKeys(
@@ -157,6 +154,8 @@ func New(
 		tkeys:             tkeys,
 		memKeys:           memKeys,
 	}
+	app.msgServiceRouter = NewMsgServiceRouter(bApp.MsgServiceRouter())
+	app.SetInterfaceRegistry(interfaceRegistry)
 
 	app.ParamsKeeper = initParamsKeeper(appCodec, cdc, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
 
@@ -183,8 +182,7 @@ func New(
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
 	)
-	app.msgServiceRouter = NewMsgServiceRouter(app.thorchainKeeper)
-	app.SetInterfaceRegistry(interfaceRegistry)
+	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", app.thorchainKeeper)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -212,8 +210,6 @@ func New(
 
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter(), encodingConfig.Amino)
 	app.mm.RegisterServices(module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter()))
-	//bappMsgServiceRouter := bApp.MsgServiceRouter()
-	//bappMsgServiceRouter = app.MsgServiceRouter().MsgServiceRouter
 
 	// initialize stores
 	app.MountKVStores(keys)
@@ -236,7 +232,6 @@ func New(
 	}
 
 	app.SetAnteHandler(anteHandler)
-	// app.SetPostHandler(postHandler) // TOOD needs v46
 	app.SetEndBlocker(app.EndBlocker)
 
 	if loadLatest {
@@ -361,13 +356,14 @@ func (app *THORChainApp) RegisterTxService(ctx client.Context) {
 	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), ctx, app.BaseApp.Simulate, app.interfaceRegistry)
 }
 
-// MsgServiceRouter returns the MsgServiceRouter of a BaseApp.
+// MsgServiceRouter returns the MsgServiceRouter of THORChainApp.
 func (app *THORChainApp) MsgServiceRouter() *MsgServiceRouter { return app.msgServiceRouter }
 
 // SetInterfaceRegistry sets the InterfaceRegistry.
 func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) {
 	app.interfaceRegistry = registry
 	app.msgServiceRouter.SetInterfaceRegistry(registry)
+	app.BaseApp.SetInterfaceRegistry(registry)
 }
 
 // initParamsKeeper init params keeper and its subspaces
