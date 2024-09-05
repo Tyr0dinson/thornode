@@ -18,9 +18,38 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 	// #2054, clean up Affiliate Collector Module and Pool Module oversolvencies after v2 hardfork.
 
 	// https://thornode-v2.ninerealms.com/thorchain/invariant/affiliate_collector?height=17562001
-	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(97862126317))
-	if err := mgr.Keeper().SendFromModuleToModule(ctx, AffiliateCollectorName, ReserveName, common.NewCoins(coin)); err != nil {
-		ctx.Logger().Error("failed to migrate affiliate collector rune oversolvency to reserve", "error", err)
+	affCols := []struct {
+		address string
+		amount  uint64
+	}{
+		{"thor14lkndecaw0zkzu0yq4a0qq869hrs8hh7uqjwf3", 6789165444},
+		{"thor1a6l03m03qf6z0j7mwnzx2f9zryxzgf2dqcqdwe", 20821864426},
+		{"thor1cz7wx9m85mzsyaaqmjd5903txudv68mdacmdtd", 2000000},
+		{"thor1dw0ts754jaxn44y455aq97svgcaf69lnrmqyuq", 97488204},
+		{"thor1h9phyj0rqgng3hft8pctj050ykmgawurctx5z8", 8710931612},
+		{"thor1qf0ujhl4qfap5nde6r5kgys4877hc77myvjdw3", 38751978},
+		{"thor1ssrm9cu7yctz3wlm63f87jveuag7tn5vzp3wal", 15069726185},
+		{"thor1svfwxevnxtm4ltnw92hrqpqk4vzuzw9a4jzy04", 9720239600},
+		{"thor1y8yryaf3ju5hkh6puh25ktwajstsz3exmqzhur", 62546040},
+		{"thor1yknea055suzu0xhqyvq48t9uks7hsdcf4l35mr", 9716450000},
+		{"thor1ymkrqd4klk2sjdqk7exufa4rlm89rp0h8n7hr2", 26832962828},
+	}
+	// These eleven values, obtained from GetAffiliateCollectors in an archive node at the end of thorchain-mainnet-v1,
+	// sum to exactly the oversolvent 97862126317.
+
+	for i := range affCols {
+		accAddr, err := cosmos.AccAddressFromBech32(affCols[i].address)
+		if err != nil {
+			ctx.Logger().Error("failed to convert to acc address", "error", err, "addr", affCols[i].address)
+			continue
+		}
+		affCol, err := mgr.Keeper().GetAffiliateCollector(ctx, accAddr)
+		if err != nil {
+			ctx.Logger().Error("failed to get affiliate collector", "error", err, "addr", affCols[i].address)
+			continue
+		}
+		affCol.RuneAmount = cosmos.NewUint(affCols[i].amount).Add(affCol.RuneAmount)
+		mgr.Keeper().SetAffiliateCollector(ctx, affCol)
 	}
 
 	// https://thornode-v2.ninerealms.com/thorchain/invariant/asgard?height=17562001
@@ -48,7 +77,7 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("failed to create asset", "error", err, "asset", poolOversol[i].asset)
 			continue
 		}
-		coin = common.NewCoin(asset, amount)
+		coin := common.NewCoin(asset, amount)
 
 		// Attempt to burn Ragnaroked (worthless) BNB assets directly, rather than transferring them.
 		if asset.Chain.String() != "BNB" {
