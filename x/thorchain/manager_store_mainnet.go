@@ -69,7 +69,7 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 		{1381124490000, "tor"},
 	}
 
-	var coinsToSend common.Coins
+	var coinsToSend, coinsToBurn common.Coins
 	for i := range poolOversol {
 		amount := cosmos.NewUint(poolOversol[i].amount)
 		asset, err := common.NewAsset(poolOversol[i].asset)
@@ -80,15 +80,30 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 		coin := common.NewCoin(asset, amount)
 
 		// Attempt to burn Ragnaroked (worthless) BNB assets directly, rather than transferring them.
-		if asset.Chain.String() != "BNB" {
+		if asset.Chain.String() == "BNB" {
+			coinsToBurn = append(coinsToBurn, coin)
+		} else {
 			coinsToSend = append(coinsToSend, coin)
-			continue
-		}
-		if err := mgr.Keeper().BurnFromModule(ctx, AsgardName, coin); err != nil {
-			ctx.Logger().Error("failed to burn bnb coin from pool module", "error", err, "coin", coin.String())
 		}
 	}
-	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coinsToSend); err != nil {
-		ctx.Logger().Error("failed to migrate pool module oversolvencies to reserve", "error", err)
+
+	// Send the non-BNB coins to the Reserve Module.
+	if len(coinsToSend) > 0 {
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coinsToSend); err != nil {
+			ctx.Logger().Error("failed to migrate pool module oversolvencies to reserve", "error", err)
+		}
+	}
+
+	// Send the non-BNB coins to the Minter Module for burning, then if successful burn them.
+	if len(coinsToBurn) > 0 {
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ModuleName, coinsToBurn); err != nil {
+			ctx.Logger().Error("failed to migrate bnb coins to minter for burning", "error", err)
+		} else {
+			for i := range coinsToBurn {
+				if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, coinsToBurn[i]); err != nil {
+					ctx.Logger().Error("failed to burn bnb coin from minter module", "error", err, "coin", coinsToBurn[i].String())
+				}
+			}
+		}
 	}
 }
