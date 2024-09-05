@@ -315,6 +315,7 @@
           "transaction_size": "1000"
         }
       ],
+      "nodeMimirs": [],
       "node_accounts": [
         {
           "active_block_height": "1",
@@ -370,10 +371,8 @@
             "BTC",
             "LTC",
             "BCH",
-            "BNB",
             "ETH",
             "DOGE",
-            "TERRA",
             "AVAX",
             "GAIA"
           ],
