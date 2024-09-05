@@ -83,6 +83,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	txDecoder := simapp.MakeTestEncodingConfig().TxConfig.TxDecoder()
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -100,7 +101,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	k := kv1.NewKeeper(marshaler, bk, ak, keyThorchain)
+	k := kv1.NewKeeper(marshaler, bk, ak, keyThorchain, txDecoder)
 	FundModule(c, ctx, k, ModuleName, 10000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
@@ -157,6 +158,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	txDecoder := simapp.MakeTestEncodingConfig().TxConfig.TxDecoder()
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -172,7 +174,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	k := kv1.NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion())
+	k := kv1.NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion(), txDecoder)
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)

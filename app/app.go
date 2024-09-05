@@ -129,7 +129,8 @@ func New(
 	cdc := encodingConfig.Amino
 	interfaceRegistry := encodingConfig.InterfaceRegistry
 	
-	bApp := baseapp.NewBaseApp(appName, logger, db, encodingConfig.TxConfig.TxDecoder(), baseAppOptions...)
+	txDecoder := encodingConfig.TxConfig.TxDecoder()
+	bApp := baseapp.NewBaseApp(appName, logger, db, txDecoder, baseAppOptions...)
 	bApp.SetCommitMultiStoreTracer(traceStore)
 	bApp.SetVersion(version.Version)
 	// bApp.GRPCQueryRouter().RegisterSimulateService(bApp.Simulate, interfaceRegistry)
@@ -180,7 +181,7 @@ func New(
 	)
 
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
-		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
+		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], txDecoder,
 	)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", app.thorchainKeeper)
 

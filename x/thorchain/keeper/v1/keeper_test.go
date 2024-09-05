@@ -70,6 +70,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	ctx = ctx.WithBlockHeight(18)
 	legacyCodec := makeTestCodec()
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	txDecoder := simapp.MakeTestEncodingConfig().TxConfig.TxDecoder()
 
 	maccPerms := map[string][]string{
 		authtypes.FeeCollectorName:     nil,
@@ -90,7 +91,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	ak := authkeeper.NewAccountKeeper(marshaler, keys[authtypes.StoreKey], pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms)
 	bk := bankkeeper.NewBaseKeeper(marshaler, keys[banktypes.StoreKey], ak, pk.Subspace(banktypes.ModuleName), nil)
 
-	k := NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion())
+	k := NewKVStore(marshaler, bk, ak, keyThorchain, GetCurrentVersion(), txDecoder)
 
 	FundModule(c, ctx, k, AsgardName, common.One)
 

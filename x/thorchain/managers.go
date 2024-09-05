@@ -330,7 +330,7 @@ func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeMan
 // GetKeeper return Keeper
 func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version), nil
+		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version, nil), nil
 	}
 	return nil, errInvalidVersion
 }

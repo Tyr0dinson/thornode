@@ -57,6 +57,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 
 	legacyCodec := types.MakeTestCodec()
 	marshaler := simapp.MakeTestEncodingConfig().Marshaler
+	txDecoder := simapp.MakeTestEncodingConfig().TxConfig.TxDecoder()
 
 	pk := paramskeeper.NewKeeper(marshaler, legacyCodec, keyParams, tkeyParams)
 	ak := authkeeper.NewAccountKeeper(marshaler, keyAcc, pk.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, map[string][]string{
@@ -71,7 +72,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 	c.Assert(bk.MintCoins(ctx, types.ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	s.k = kv1.NewKVStore(marshaler, bk, ak, keyThorchain, types.GetCurrentVersion())
+	s.k = kv1.NewKVStore(marshaler, bk, ak, keyThorchain, types.GetCurrentVersion(), txDecoder)
 }
 
 func (s *MemoSuite) TestTxType(c *C) {

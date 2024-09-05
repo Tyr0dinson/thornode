@@ -10,6 +10,7 @@ import (
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -109,10 +110,11 @@ type KVStore struct {
 	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
 	version       semver.Version
 	constAccessor constants.ConstantValues
+	txDecoder     sdk.TxDecoder
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, version semver.Version, txDecoder sdk.TxDecoder) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
@@ -120,17 +122,32 @@ func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeep
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
+		txDecoder:     txDecoder,
 	}
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, txDecoder sdk.TxDecoder) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version)
+	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version, txDecoder)
 }
 
 func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
 	fmt.Println("In bank's Send in thorchain module")
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	tx, err := k.txDecoder(ctx.TxBytes())
+	if err != nil {
+		return nil, err
+	}
+
+	memo := ""
+	txMemo, ok := tx.(sdk.TxWithMemo)
+	if ok {
+		memo = txMemo.GetMemo()
+	}
+
+	fmt.Println("Tx memo:", memo)
+
 	return &banktypes.MsgSendResponse{}, nil
 }
 func (k KVStore) MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (*banktypes.MsgMultiSendResponse, error) {
