@@ -32,7 +32,6 @@ import (
 )
 
 var (
-	initManager   = func(mgr *Mgrs, ctx cosmos.Context) {}
 	optionalQuery = func(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
 		return nil, cosmos.ErrUnknownRequest(
 			fmt.Sprintf("unknown thorchain query endpoint: %s", path[0]),
@@ -53,6 +52,10 @@ func initTendermint() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create tendermint client")
 	}
+}
+
+func initManager(mgr *Mgrs, ctx cosmos.Context) {
+	_ = mgr.BeginBlock(ctx)
 }
 
 // NewQuerier is the module level router for state queries
