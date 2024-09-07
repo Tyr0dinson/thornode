@@ -44,7 +44,7 @@ txs:
     from_address: {{ addr_btc_dog }}
     to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "7909069"
+      - amount: "7867663"
         asset: "BTC.BTC"
         decimals: 8
     gas:
@@ -93,10 +93,10 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1965401314
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1968117234
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514570329713
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514502918888
