@@ -7,10 +7,10 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -140,13 +140,31 @@ func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes
 		return nil, err
 	}
 
-	memo := ""
-	txMemo, ok := tx.(sdk.TxWithMemo)
-	if ok {
-		memo = txMemo.GetMemo()
+	thorModuleAddr := k.GetModuleAccAddress(ModuleName)
+	fromAddr, err := sdk.AccAddressFromBech32(msg.FromAddress)
+	if err != nil {
+		return nil, err
+	}
+	toAddr, err := sdk.AccAddressFromBech32(msg.ToAddress)
+	if err != nil {
+		return nil, err
 	}
 
-	fmt.Println("Tx memo:", memo)
+	// This should be treated as a Deposit
+	if toAddr.Equals(thorModuleAddr) {
+		memo := ""
+		txMemo, ok := tx.(sdk.TxWithMemo)
+		if ok {
+			memo = txMemo.GetMemo()
+		}
+
+		fmt.Println("Tx memo:", memo)
+	} else { // This is a normal bank send
+		err = k.SendCoins(ctx, fromAddr, toAddr, msg.Amount)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &banktypes.MsgSendResponse{}, nil
 }
@@ -154,6 +172,7 @@ func (k KVStore) MultiSend(goCtx context.Context, msg *banktypes.MsgMultiSend) (
 	// Entry here should not be possible until allowed by antehandler
 	return &banktypes.MsgMultiSendResponse{}, nil
 }
+
 // Cdc return the amino codec
 func (k KVStore) Cdc() codec.BinaryCodec {
 	return k.cdc
