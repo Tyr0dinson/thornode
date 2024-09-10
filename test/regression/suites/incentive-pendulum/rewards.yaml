@@ -1,0 +1,156 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_thor_dog }}
+          coins:
+            - denom: rune
+              amount: "500000000000"
+        - address: {{ addr_thor_cat }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_thor_fox }}
+          coins:
+            - denom: rune
+              amount: "250000000000"
+        - address: {{ addr_module_reserve }}
+          coins:
+            - amount: "3500000000000"
+              denom: rune
+        - address: {{ addr_module_bond }}
+          coins:
+            - amount: "500000000000"
+              denom: rune  
+    thorchain:
+      store_version: "{{ store_version }}"  # avoid store migrations
+      node_accounts:
+        - active_block_height: "0"
+          bond: "500000000000" # reduced by factor of 10 from default
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: {{ pubkey_dog }}
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: {{ version }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# swap to rune
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 1
+  finalise_height: 1
+  observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# pool and bond reward calculations
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block?height=1
+asserts:
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 47564
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 63419
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: IncentiveCurveAdjustmentBasisPoints
+value: ${INCENTIVECURVEADJUSTMENTBASISPOINTS=5000}
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# swap to rune after mimir adjustment
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+########################################################################################
+# Check total bonded RUNE  
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - reduce .[] as $item (0; . + ($item.total_bond | tonumber)) == ${TOTAL_ACTIVE_BOND_RUNE=500000000000}
+---
+########################################################################################
+# Check total pooled RUNE
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - reduce .[] as $item (0; . + ($item.balance_rune | tonumber)) == ${TOTAL_POOLED_RUNE=195337512809}
+---
+########################################################################################
+# Check share factor
+# ShareFactor = ((bond + pool) / (bond - pool)) * IncentiveCurveAdjustmentBasisPoints / 10_000
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/ping
+asserts:
+  - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
+  - ${TOTAL_POOLED_RUNE} == 195337512809
+  - ${INCENTIVECURVEADJUSTMENTBASISPOINTS} == 5000
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${INCENTIVECURVEADJUSTMENTBASISPOINTS}) | floor == 11411
+---
+########################################################################################
+# pool and bond reward calculations
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block?height=3
+asserts:
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 24314
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 86670
