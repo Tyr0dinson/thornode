@@ -271,6 +271,22 @@ func (*NetworkManagerVCURTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
+func (*NetworkManagerVCURTestSuite) TestGetTotalActiveBond(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	mgr.K = helper
+	networkMgr := newNetworkMgrVCUR(helper, mgr.TxOutStore(), mgr.EventMgr())
+	helper.failToListActiveAccounts = true
+	bond, err := networkMgr.getTotalActiveBond(ctx)
+	c.Assert(err, NotNil)
+	c.Assert(bond.Equal(cosmos.ZeroUint()), Equals, true)
+	helper.failToListActiveAccounts = false
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	bond, err = networkMgr.getTotalActiveBond(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(bond.Uint64() > 0, Equals, true)
+}
+
 func (*NetworkManagerVCURTestSuite) TestGetAvailablePoolsRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
