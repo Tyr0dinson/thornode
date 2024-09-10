@@ -3,6 +3,8 @@ package keeperv1
 import (
 	"fmt"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -55,6 +57,16 @@ func (k KVStore) IsTradingHalt(ctx cosmos.Context, msg cosmos.Msg) bool {
 }
 
 func (k KVStore) IsGlobalTradingHalted(ctx cosmos.Context) bool {
+	version := k.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return k.IsGlobalTradingHaltedV136(ctx)
+	default:
+		return k.IsGlobalTradingHaltedV1(ctx)
+	}
+}
+
+func (k KVStore) IsGlobalTradingHaltedV136(ctx cosmos.Context) bool {
 	haltTrading, err := k.GetMimir(ctx, "HaltTrading")
 	if err == nil && ((haltTrading > 0 && haltTrading < ctx.BlockHeight()) || k.RagnarokInProgress(ctx)) {
 		return true
@@ -63,6 +75,16 @@ func (k KVStore) IsGlobalTradingHalted(ctx cosmos.Context) bool {
 }
 
 func (k KVStore) IsChainTradingHalted(ctx cosmos.Context, chain common.Chain) bool {
+	version := k.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return k.IsChainTradingHaltedV136(ctx, chain)
+	default:
+		return k.IsChainTradingHaltedV1(ctx, chain)
+	}
+}
+
+func (k KVStore) IsChainTradingHaltedV136(ctx cosmos.Context, chain common.Chain) bool {
 	mimirKey := fmt.Sprintf("Halt%sTrading", chain)
 	haltChainTrading, err := k.GetMimir(ctx, mimirKey)
 	if err == nil && (haltChainTrading > 0 && haltChainTrading < ctx.BlockHeight()) {
@@ -74,6 +96,16 @@ func (k KVStore) IsChainTradingHalted(ctx cosmos.Context, chain common.Chain) bo
 }
 
 func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
+	version := k.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return k.IsChainHaltedV136(ctx, chain)
+	default:
+		return k.IsChainHaltedV1(ctx, chain)
+	}
+}
+
+func (k KVStore) IsChainHaltedV136(ctx cosmos.Context, chain common.Chain) bool {
 	haltChain, err := k.GetMimir(ctx, "HaltChainGlobal")
 	if err == nil && (haltChain > 0 && haltChain < ctx.BlockHeight()) {
 		ctx.Logger().Debug("global is halt")
@@ -103,6 +135,16 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 }
 
 func (k KVStore) IsLPPaused(ctx cosmos.Context, chain common.Chain) bool {
+	version := k.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return k.IsLPPausedV136(ctx, chain)
+	default:
+		return k.IsLPPausedV1(ctx, chain)
+	}
+}
+
+func (k KVStore) IsLPPausedV136(ctx cosmos.Context, chain common.Chain) bool {
 	// check if global LP is paused
 	pauseLPGlobal, err := k.GetMimir(ctx, "PauseLP")
 	if err == nil && pauseLPGlobal > 0 && pauseLPGlobal < ctx.BlockHeight() {
