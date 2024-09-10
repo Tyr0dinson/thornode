@@ -12,8 +12,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
-	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
@@ -24,7 +22,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
-	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 // type check to ensure the interface is properly implemented
@@ -100,14 +97,14 @@ type AppModule struct {
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
+func NewAppModule(mgrs *Mgrs, telemetryEnabled bool) AppModule {
 	kb, err := cosmos.GetKeybase(os.Getenv(cosmos.EnvChainHome))
 	if err != nil {
 		panic(err)
 	}
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
-		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey),
+		mgr:              mgrs,
 		keybaseStore:     kb,
 		telemetryEnabled: telemetryEnabled,
 	}

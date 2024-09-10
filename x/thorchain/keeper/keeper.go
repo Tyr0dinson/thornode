@@ -2,10 +2,10 @@ package keeper
 
 import (
 	"context"
+
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"

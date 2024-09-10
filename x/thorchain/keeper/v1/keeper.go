@@ -17,6 +17,7 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
+	thortypes "gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // NOTE: Always end a dbPrefix with a slash ("/"). This is to ensure that there
@@ -104,13 +105,14 @@ func dbError(ctx cosmos.Context, wrapper string, err error) error {
 
 // KVStore Keeper maintains the link to data storage and exposes getter/setter methods for the various parts of the state machine
 type KVStore struct {
-	cdc           codec.BinaryCodec
-	coinKeeper    bankkeeper.Keeper
-	accountKeeper authkeeper.AccountKeeper
-	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
-	version       semver.Version
-	constAccessor constants.ConstantValues
-	txDecoder     sdk.TxDecoder
+	cdc             codec.BinaryCodec
+	coinKeeper      bankkeeper.Keeper
+	accountKeeper   authkeeper.AccountKeeper
+	storeKey        cosmos.StoreKey // Unexposed key to access store from cosmos.Context
+	version         semver.Version
+	constAccessor   constants.ConstantValues
+	txDecoder       sdk.TxDecoder
+	externalHandler sdk.Handler
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
@@ -130,6 +132,10 @@ func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeep
 func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, txDecoder sdk.TxDecoder) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
 	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version, txDecoder)
+}
+
+func (k *KVStore) SetExternalHandler(externalHandler sdk.Handler) {
+	k.externalHandler = externalHandler
 }
 
 func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
@@ -160,7 +166,10 @@ func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes
 
 		fmt.Println("Tx memo:", memo)
 	} else { // This is a normal bank send
-		err = k.SendCoins(ctx, fromAddr, toAddr, msg.Amount)
+		// err = k.SendCoins(ctx, fromAddr, toAddr, msg.Amount)
+
+		thorMsgSend := thortypes.NewMsgSend(fromAddr, toAddr, msg.Amount)
+		_, err := k.externalHandler(ctx, thorMsgSend)
 		if err != nil {
 			return nil, err
 		}

@@ -115,7 +115,7 @@ type THORChainApp struct {
 
 	thorchainKeeper thorchainkeeper.Keeper
 
-	msgServiceRouter  *MsgServiceRouter    // router for redirecting Msg service messages
+	msgServiceRouter *MsgServiceRouter // router for redirecting Msg service messages
 	// the module manager
 	mm *module.Manager
 }
@@ -128,7 +128,7 @@ func New(
 	appCodec := encodingConfig.Marshaler
 	cdc := encodingConfig.Amino
 	interfaceRegistry := encodingConfig.InterfaceRegistry
-	
+
 	txDecoder := encodingConfig.TxConfig.TxDecoder()
 	bApp := baseapp.NewBaseApp(appName, logger, db, txDecoder, baseAppOptions...)
 	bApp.SetCommitMultiStoreTracer(traceStore)
@@ -184,9 +184,15 @@ func New(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], txDecoder,
 	)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", app.thorchainKeeper)
+	tck := app.thorchainKeeper.(thorchainkeeperv1.KVStore)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
+	mgrs := thorchain.NewManagers(&tck, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey])
+	externalHandler := thorchain.NewExternalHandler(mgrs)
+	tck.SetExternalHandler(externalHandler)
+
+	thorchainApp := thorchain.NewAppModule(mgrs, telemetryEnabled)
 
 	app.mm = module.NewManager(
 		genutil.NewAppModule(
@@ -196,7 +202,7 @@ func New(
 		auth.NewAppModule(appCodec, app.AccountKeeper, nil),
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper),
 		params.NewAppModule(app.ParamsKeeper),
-		thorchain.NewAppModule(app.thorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled),
+		thorchainApp,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
