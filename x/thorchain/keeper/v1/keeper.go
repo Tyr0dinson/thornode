@@ -138,15 +138,17 @@ func (k *KVStore) SetExternalHandler(externalHandler sdk.Handler) {
 	k.externalHandler = externalHandler
 }
 
-func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
-	fmt.Println("In bank's Send in thorchain module")
-	ctx := sdk.UnwrapSDKContext(goCtx)
-	tx, err := k.txDecoder(ctx.TxBytes())
-	if err != nil {
-		return nil, err
-	}
+func (k KVStore) GetExternalHandler() sdk.Handler {
+	return k.externalHandler
+}
 
-	thorModuleAddr := k.GetModuleAccAddress(ModuleName)
+func (k KVStore) GetTxDecoder() sdk.TxDecoder {
+	return k.txDecoder
+}
+
+func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes.MsgSendResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
 	fromAddr, err := sdk.AccAddressFromBech32(msg.FromAddress)
 	if err != nil {
 		return nil, err
@@ -156,23 +158,10 @@ func (k KVStore) Send(goCtx context.Context, msg *banktypes.MsgSend) (*banktypes
 		return nil, err
 	}
 
-	// This should be treated as a Deposit
-	if toAddr.Equals(thorModuleAddr) {
-		memo := ""
-		txMemo, ok := tx.(sdk.TxWithMemo)
-		if ok {
-			memo = txMemo.GetMemo()
-		}
-
-		fmt.Println("Tx memo:", memo)
-	} else { // This is a normal bank send
-		// err = k.SendCoins(ctx, fromAddr, toAddr, msg.Amount)
-
-		thorMsgSend := thortypes.NewMsgSend(fromAddr, toAddr, msg.Amount)
-		_, err := k.externalHandler(ctx, thorMsgSend)
-		if err != nil {
-			return nil, err
-		}
+	thorMsgSend := thortypes.NewMsgSend(fromAddr, toAddr, msg.Amount)
+	_, err = k.externalHandler(ctx, thorMsgSend)
+	if err != nil {
+		return nil, err
 	}
 
 	return &banktypes.MsgSendResponse{}, nil

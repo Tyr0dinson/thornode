@@ -117,7 +117,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		TransactionFeeRate: 6423600,
 	}), IsNil)
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, marshaler, bk, ak, keyThorchain)
+	mgr := NewManagers(k, marshaler, nil, bk, ak, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)

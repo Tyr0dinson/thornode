@@ -6,6 +6,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -174,19 +175,21 @@ type Mgrs struct {
 
 	K             keeper.Keeper
 	cdc           codec.Codec
+	txDecoder     sdk.TxDecoder
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	storeKey      cosmos.StoreKey
 }
 
 // NewManagers  create a new Manager
-func NewManagers(keeper keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
+func NewManagers(keeper keeper.Keeper, cdc codec.Codec, txDecoder sdk.TxDecoder, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
 		cdc:           cdc,
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		storeKey:      storeKey,
+		txDecoder:     txDecoder,
 	}
 }
 
@@ -209,7 +212,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	mgr.constAccessor = constants.GetConstantValues(v)
 	var err error
 
-	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
+	mgr.K, err = GetKeeper(v, mgr, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
 	if err != nil {
 		return fmt.Errorf("fail to create keeper: %w", err)
 	}
@@ -328,9 +331,16 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
 
 // GetKeeper return Keeper
-func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
+func GetKeeper(version semver.Version, mgr Manager, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version, nil), nil
+		var txDecoder sdk.TxDecoder
+		mgrThor, ok := mgr.(*Mgrs)
+		if ok {
+			txDecoder = mgrThor.txDecoder
+		}
+		kvs := kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version, txDecoder)
+		kvs.SetExternalHandler(NewExternalHandler(mgr))
+		return &kvs, nil
 	}
 	return nil, errInvalidVersion
 }

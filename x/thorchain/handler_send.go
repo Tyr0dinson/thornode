@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
-
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	bank "github.com/cosmos/cosmos-sdk/x/bank/types"
+	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -49,11 +50,42 @@ func MsgSendLogger(ctx cosmos.Context, msg *MsgSend) {
 }
 
 func MsgSendHandleV116(ctx cosmos.Context, mgr Manager, msg *MsgSend) (*cosmos.Result, error) {
-	if mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
+	k := mgr.Keeper()
+
+	if k.IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgSend while THORChain is halted")
 	}
 
-	err := mgr.Keeper().SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount)
+	fmt.Println("In MsgSendHandleV116!")
+	tck := k.(*thorchainkeeperv1.KVStore)
+	fmt.Println("Unwrapped keeper in MsgSendHandleV116!")
+
+	txDecoder := tck.GetTxDecoder()
+	msgSendTx, err := txDecoder(ctx.TxBytes())
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("Unmarshalled TX in MsgSendHandleV116!")
+	thorModuleAddr := k.GetModuleAccAddress(ModuleName)
+
+	memo := ""
+	txMemo, ok := msgSendTx.(sdk.TxWithMemo)
+	if ok {
+		fmt.Println("MsgSendHandleV116 is TxWithMemo:", memo)
+		memo = txMemo.GetMemo()
+	}
+
+	fmt.Println("MsgSendHandleV116 Tx memo:", memo)
+
+	// This should be treated as a Deposit
+	if msg.ToAddress.Equals(thorModuleAddr) {
+		fmt.Println("This should be a MsgDeposit!")
+	} else {
+		fmt.Println("This should be a MsgSend!")
+	}
+
+	err = mgr.Keeper().SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount)
 	if err != nil {
 		return nil, err
 	}

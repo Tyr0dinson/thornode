@@ -183,15 +183,13 @@ func New(
 	app.thorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], txDecoder,
 	)
-	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", app.thorchainKeeper)
 	tck := app.thorchainKeeper.(thorchainkeeperv1.KVStore)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
-	mgrs := thorchain.NewManagers(&tck, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey])
-	externalHandler := thorchain.NewExternalHandler(mgrs)
-	tck.SetExternalHandler(externalHandler)
-
+	mgrs := thorchain.NewManagers(&tck, appCodec, txDecoder, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey])
+	tck.SetExternalHandler(thorchain.NewExternalHandler(mgrs))
+	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", &tck)
 	thorchainApp := thorchain.NewAppModule(mgrs, telemetryEnabled)
 
 	app.mm = module.NewManager(
