@@ -96,7 +96,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 3
+  - .pools|length == 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC

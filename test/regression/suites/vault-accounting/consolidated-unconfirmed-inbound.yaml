@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 2
+  - .pools|length == 2
 ---
 ########################################################################################
 # swap to rune with conf counting

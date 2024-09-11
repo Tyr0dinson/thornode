@@ -8,8 +8,8 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].asset == "BTC.BTC"
+  - .pools|length == 1
+  - .pools[0].asset == "BTC.BTC"
 ---
 ########################################################################################
 # allow THOR.BTC derived asset pool
@@ -30,8 +30,8 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].asset == "BTC.BTC"
+  - .pools|length == 1
+  - .pools[0].asset == "BTC.BTC"
 ---
 ########################################################################################
 # expect the THOR.BTC pool to exist and emit only one Available status event

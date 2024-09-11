@@ -8,9 +8,9 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].savers_fill_bps|tonumber == 0
-  - .[0].savers_capacity_remaining|tonumber == 100000000
+  - .pools|length == 1
+  - .pools[0].savers_fill_bps|tonumber == 0
+  - .pools[0].savers_capacity_remaining|tonumber == 100000000
 ---
 ########################################################################################
 # deposit btc
@@ -71,9 +71,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].savers_fill_bps|tonumber == 454
-  - .[0].savers_capacity_remaining|tonumber == 100236979
+  - .pools|length == 1
+  - .pools[0].savers_fill_bps|tonumber == 454
+  - .pools[0].savers_capacity_remaining|tonumber == 100236979
 ---
 ########################################################################################
 # swap btc to rune and back to generate yield
@@ -282,9 +282,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].savers_fill_bps|tonumber == 0
-  - .[0].savers_capacity_remaining|tonumber == 602181643
+  - .pools|length == 1
+  - .pools[0].savers_fill_bps|tonumber == 0
+  - .pools[0].savers_capacity_remaining|tonumber == 602181643
 ---
 ########################################################################################
 # turn on streaming swaps for savers adds (set interval to 1)

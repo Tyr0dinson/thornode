@@ -11,7 +11,7 @@ signer: {{ addr_thor_dog }}
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 2
+  - .pools|length == 2
 ---
 ########################################################################################
 # check balances before deposit

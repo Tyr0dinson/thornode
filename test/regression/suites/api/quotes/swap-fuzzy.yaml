@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 ########################################################################################
 # quote with short codes and fuzzy assets

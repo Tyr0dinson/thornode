@@ -6,7 +6,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 0
+  - .pools|length == 0
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -51,10 +51,10 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].LP_units == "200000000"
-  - .[0].pending_inbound_asset == "0"
-  - .[0].pending_inbound_rune == "0"
+  - .pools|length == 1
+  - .pools[0].LP_units == "200000000"
+  - .pools[0].pending_inbound_asset == "0"
+  - .pools[0].pending_inbound_rune == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers

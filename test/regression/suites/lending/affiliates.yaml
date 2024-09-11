@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 ########################################################################################
 # enable lending
@@ -29,7 +29,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 type: tx-mimir
 signer: {{ addr_thor_dog }}
@@ -47,7 +47,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 type: create-blocks
 count: 1
@@ -55,12 +55,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
-  - .[0].derived_depth_bps|tonumber == 10000
-  - .[1].derived_depth_bps|tonumber == 10000
-  - .[2].derived_depth_bps|tonumber == 0
-  - .[3].derived_depth_bps|tonumber == 0
-  - .[4].derived_depth_bps|tonumber == 0
+  - .pools|length == 5
+  - .pools[0].derived_depth_bps|tonumber == 10000
+  - .pools[1].derived_depth_bps|tonumber == 10000
+  - .pools[2].derived_depth_bps|tonumber == 0
+  - .pools[3].derived_depth_bps|tonumber == 0
+  - .pools[4].derived_depth_bps|tonumber == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpools

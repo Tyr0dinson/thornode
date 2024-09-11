@@ -6,7 +6,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 0
+  - .pools|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply

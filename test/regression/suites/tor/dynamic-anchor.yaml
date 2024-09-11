@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 ########################################################################################
 # enable lending
@@ -57,7 +57,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
@@ -69,7 +69,7 @@ asserts:
 # thor.tor should not be available in the pool querier
 type: check
 endpoint: http://localhost:1317/thorchain/pool/thor.tor
-status: 404
+status: 400
 ---
 # layer 1 assets should not be available in the dpool querier
 type: check

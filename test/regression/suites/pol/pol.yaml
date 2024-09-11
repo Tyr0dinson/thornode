@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
+  - .pools|length == 1
 ---
 ########################################################################################
 # Enable POL

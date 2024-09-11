@@ -6,7 +6,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 0
+  - .pools|length == 0
 ---
 type: tx-mimir
 key: "RagnarokProcessNumOfLPPerIteration"
@@ -100,10 +100,10 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 1
-  - .[0].LP_units == "400000000"
-  - .[0].pending_inbound_asset == "0"
-  - .[0].pending_inbound_rune == "0"
+  - .pools|length == 1
+  - .pools[0].LP_units == "400000000"
+  - .pools[0].pending_inbound_asset == "0"
+  - .pools[0].pending_inbound_rune == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
@@ -153,7 +153,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 2
+  - .pools|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.FOO/liquidity_providers

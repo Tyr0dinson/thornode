@@ -8,7 +8,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - .|length == 5
+  - .pools|length == 5
 # /pool/THOR.ETH can't be checked for .status == null
 # because of ERR cmd/run.go:275 > operation failed error="unexpected status code: 404"
 ---
