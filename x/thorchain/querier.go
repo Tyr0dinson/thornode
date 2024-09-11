@@ -62,10 +62,6 @@ func NewQuerier(mgr *Mgrs, kbs cosmos.KeybaseStore) cosmos.Querier {
 
 		defer telemetry.MeasureSince(time.Now(), path[0])
 		switch path[0] {
-		case q.QueryPool.Key:
-			return queryPool(ctx, path[1:], req, mgr)
-		case q.QueryPools.Key:
-			return queryPools(ctx, req, mgr)
 		case q.QueryDerivedPool.Key:
 			return queryDerivedPool(ctx, path[1:], req, mgr)
 		case q.QueryDerivedPools.Key:
@@ -1395,18 +1391,18 @@ func queryStreamingSwap(ctx cosmos.Context, path []string, mgr *Mgrs) ([]byte, e
 	return jsonify(ctx, result)
 }
 
-func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
-	if len(path) == 0 {
+func queryPool(ctx cosmos.Context, req *types.QueryPoolRequest, mgr Manager) (*types.QueryPoolResponse, error) {
+	if len(req.Asset) == 0 {
 		return nil, errors.New("asset not provided")
 	}
-	asset, err := common.NewAsset(path[0])
+	asset, err := common.NewAsset(req.Asset)
 	if err != nil {
 		ctx.Logger().Error("fail to parse asset", "error", err)
 		return nil, fmt.Errorf("could not parse asset: %w", err)
 	}
 
 	if asset.IsDerivedAsset() {
-		return nil, fmt.Errorf("asset: %s is a derived asset", path[0])
+		return nil, fmt.Errorf("asset: %s is a derived asset", req.Asset)
 	}
 
 	pool, err := mgr.Keeper().GetPool(ctx, asset)
@@ -1415,7 +1411,7 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		return nil, fmt.Errorf("could not get pool: %w", err)
 	}
 	if pool.IsEmpty() {
-		return nil, fmt.Errorf("pool: %s doesn't exist", path[0])
+		return nil, fmt.Errorf("pool: %s doesn't exist", req.Asset)
 	}
 
 	// Get Savers Vault for this L1 pool if it's a gas asset
@@ -1460,11 +1456,11 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		dbps = cosmos.ZeroUint()
 	}
 
-	p := openapi.Pool{
+	p := types.QueryPoolResponse{
 		Asset:               pool.Asset.String(),
-		ShortCode:           wrapString(pool.Asset.ShortCode()),
+		ShortCode:           pool.Asset.ShortCode(),
 		Status:              pool.Status.String(),
-		Decimals:            wrapInt64(pool.Decimals),
+		Decimals:            pool.Decimals,
 		PendingInboundAsset: pool.PendingInboundAsset.String(),
 		PendingInboundRune:  pool.PendingInboundRune.String(),
 		BalanceAsset:        pool.BalanceAsset.String(),
@@ -1490,12 +1486,12 @@ func queryPool(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mg
 		p.AssetTorPrice = dollarsPerRune.Mul(pool.BalanceRune).Quo(pool.BalanceAsset).String()
 	}
 
-	return jsonify(ctx, p)
+	return &p, nil
 }
 
-func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {
+func queryPools(ctx cosmos.Context, req *types.QueryPoolsRequest, mgr Manager) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := mgr.Keeper().DollarsPerRune(ctx)
-	pools := make([]openapi.Pool, 0)
+	pools := make([]*types.QueryPoolResponse, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
@@ -1560,11 +1556,11 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			dbps = cosmos.ZeroUint()
 		}
 
-		p := openapi.Pool{
+		p := types.QueryPoolResponse{
 			Asset:               pool.Asset.String(),
-			ShortCode:           wrapString(pool.Asset.ShortCode()),
+			ShortCode:           pool.Asset.ShortCode(), // TODO wrap
 			Status:              pool.Status.String(),
-			Decimals:            wrapInt64(pool.Decimals),
+			Decimals:            pool.Decimals, // TODO wrap
 			PendingInboundAsset: pool.PendingInboundAsset.String(),
 			PendingInboundRune:  pool.PendingInboundRune.String(),
 			BalanceAsset:        pool.BalanceAsset.String(),
@@ -1590,9 +1586,10 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			p.AssetTorPrice = dollarsPerRune.Mul(pool.BalanceRune).Quo(pool.BalanceAsset).String()
 		}
 
-		pools = append(pools, p)
+		pools = append(pools, &p)
 	}
-	return jsonify(ctx, pools)
+
+	return &types.QueryPoolsResponse{Pools: pools}, nil
 }
 
 func queryPoolSlips(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *Mgrs) ([]byte, error) {

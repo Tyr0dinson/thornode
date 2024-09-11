@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // type check to ensure the interface is properly implemented
@@ -73,10 +75,12 @@ func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
 	sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
 }
 
-// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the mint module.
-// thornode current doesn't have grpc endpoint yet
+// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	if err != nil {
+		panic(err)
+	}
 }
 
 // GetQueryCmd get the root query command of this module
@@ -97,6 +101,7 @@ type AppModule struct {
 	mgr              *Mgrs
 	keybaseStore     cosmos.KeybaseStore
 	telemetryEnabled bool
+	queryServer      types.QueryServer
 }
 
 // NewAppModule creates a new AppModule Object
@@ -105,11 +110,13 @@ func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper
 	if err != nil {
 		panic(err)
 	}
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
-		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey),
+		mgr:              mgr,
 		keybaseStore:     kb,
 		telemetryEnabled: telemetryEnabled,
+		queryServer:      NewQueryServer(mgr),
 	}
 }
 
@@ -143,7 +150,7 @@ func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sd
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
-	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 }
 
 func (am AppModule) NewQuerierHandler() sdk.Querier {
