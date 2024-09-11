@@ -336,6 +336,26 @@ func (op *OpCheck) Execute(out io.Writer, _ string, routine int, _ *os.Process, 
 		return fmt.Errorf("empty response")
 	}
 
+	// HACK flatten rpc responses, one option is wrapping legacy query responses
+	// with a grpc_result field, then returning the nested value instead for
+	// backwards compatibility
+	/***
+	{
+		cmd := exec.Command("jq", "-e", ".grpc_result")
+		cmd.Stdin = bytes.NewReader(buf)
+		var cmdOut []byte
+		cmdOut, err := cmd.CombinedOutput()
+		if err == nil {
+			cmd = exec.Command("jq", ".grpc_result")
+			cmd.Stdin = bytes.NewReader(buf)
+			cmdOut, err = cmd.CombinedOutput()
+			if err == nil {
+				buf = cmdOut
+			}
+		}
+	}
+	***/
+
 	// pipe response to jq for assertions
 	for _, a := range op.Asserts {
 		// render the assert expression (used for native_txid)
