@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
 	"github.com/blang/semver"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -267,7 +268,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 		return fmt.Errorf("failed to get proposed upgrade: %w", err)
 	}
 
-	upgradeApproved, _, _, err := k.UpgradeApprovedByMajority(ctx, name)
+	upgradeApproved, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}
@@ -291,7 +292,7 @@ func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) e
 		return nil
 	}
 
-	upgradeApproved, _, _, err := k.UpgradeApprovedByMajority(ctx, name)
+	upgradeApproved, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}

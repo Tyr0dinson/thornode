@@ -11,6 +11,7 @@ import (
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -127,7 +128,7 @@ func (k KVStore) removeExpiredUpgradeProposalVotes(ctx cosmos.Context, name stri
 // UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
 // it additionally returns the current approval percentage and the
 // additional active validators needed to reach quorum, if not already approved.
-func (k KVStore) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, uint64, error) {
+func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string) (bool, string, uint64, error) {
 	iterA := k.GetNodeAccountIterator(ctx)
 	defer iterA.Close()
 

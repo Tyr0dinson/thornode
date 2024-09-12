@@ -2596,7 +2596,7 @@ func queryUpgradeProposal(ctx cosmos.Context, path []string, _ abci.RequestQuery
 		return nil, fmt.Errorf("fail to get upgrade proposal: %w", err)
 	}
 
-	approved, approvedPct, valsToQuorum, err := k.UpgradeApprovedByMajority(ctx, name)
+	approved, approvedPct, valsToQuorum, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return nil, fmt.Errorf("fail to check upgrade approval: %w", err)
 	}

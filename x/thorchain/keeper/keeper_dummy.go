@@ -78,10 +78,6 @@ func (k KVStoreDummy) RemoveExpiredUpgradeProposals(_ cosmos.Context) error {
 	return nil
 }
 
-func (k KVStoreDummy) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, uint64, error) {
-	return false, "", 0, kaboom
-}
-
 func (k KVStoreDummy) ClearUpgradePlan(ctx cosmos.Context) {}
 
 func (k KVStoreDummy) GetKey(prefix kvTypes.DbPrefix, key string) string {
