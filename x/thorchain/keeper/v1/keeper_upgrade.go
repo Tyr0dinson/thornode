@@ -3,6 +3,9 @@ package keeperv1
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"math/big"
+	"strconv"
 	"strings"
 
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -122,41 +125,31 @@ func (k KVStore) removeExpiredUpgradeProposalVotes(ctx cosmos.Context, name stri
 }
 
 // UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
-// it additionally returns the current approval percentage and the bond needed to reach quorum, if not approved.
-func (k KVStore) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, cosmos.Uint, error) {
+// it additionally returns the current approval percentage and the
+// additional active validators needed to reach quorum, if not already approved.
+func (k KVStore) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, uint64, error) {
 	iterA := k.GetNodeAccountIterator(ctx)
 	defer iterA.Close()
 
-	totalActiveBond := cosmos.ZeroUint()
-	bonds := make(map[string]cosmos.Uint)
+	active := make(map[string]bool)
 
 	for ; iterA.Valid(); iterA.Next() {
 		var na NodeAccount
 		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
-			return false, "", cosmos.Uint{}, fmt.Errorf("failed to unmarshal: %w", err)
+			return false, "", 0, fmt.Errorf("failed to unmarshal: %w", err)
 		}
 
 		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
 			continue
 		}
 
-		totalActiveBond = totalActiveBond.Add(na.Bond)
-		bonds[na.NodeAddress.String()] = na.Bond
+		active[na.NodeAddress.String()] = true
 	}
-
-	scalingFactor := cosmos.OneUint()
-	if totalActiveBond.LTE(cosmos.NewUint(1000000000000000)) {
-		// scale for precision with small bond amounts
-		scalingFactor = cosmos.NewUint(10000)
-	}
-
-	// 2/3 of active validators
-	bondThreshold := totalActiveBond.Mul(scalingFactor).MulUint64(2).QuoUint64(3)
 
 	iterV := k.GetUpgradeVoteIterator(ctx, name)
 	defer iterV.Close()
 
-	totalApprovedBond := cosmos.ZeroUint()
+	var approvingVals int64
 
 	for ; iterV.Valid(); iterV.Next() {
 		key, vote := iterV.Key(), iterV.Value()
@@ -167,22 +160,30 @@ func (k KVStore) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (boo
 		prefix := []byte(VotePrefix(name))
 		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
 
-		bond, ok := bonds[addr.String()]
+		_, ok := active[addr.String()]
 		if !ok {
 			// this could happen if a validator votes and then becomes inactive
 			continue
 		}
 
-		totalApprovedBond = totalApprovedBond.Add(bond.Mul(scalingFactor))
+		approvingVals++
 	}
 
-	currentApproval := cosmos.NewDecFromBigInt(totalApprovedBond.BigInt()).Quo(cosmos.NewDecFromBigInt(totalActiveBond.BigInt())).Quo(cosmos.NewDecFromBigInt(scalingFactor.BigInt())).String()
+	valThreshold := big.NewRat(int64(len(active))*2, 3)
 
-	if totalApprovedBond.GTE(bondThreshold) {
-		return true, currentApproval, cosmos.ZeroUint(), nil
+	approval := big.NewRat(int64(approvingVals), int64(len(active)))
+	approvalFlt, _ := approval.Float64()
+	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
+
+	t, _ := valThreshold.Float64()
+
+	if float64(approvingVals) >= t {
+		return true, approvalStr, 0, nil
 	}
 
-	bondToQuorum := bondThreshold.Sub(totalApprovedBond).Quo(scalingFactor)
+	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(int64(approvingVals), 1))
+	nfq, _ := neededForQuorum.Float64()
+	valsToQuorum := math.Ceil(nfq)
 
-	return false, currentApproval, bondToQuorum, nil
+	return false, approvalStr, uint64(valsToQuorum), nil
 }

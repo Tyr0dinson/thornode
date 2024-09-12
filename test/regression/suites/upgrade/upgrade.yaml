@@ -35,8 +35,8 @@ asserts:
   - .height == 100
   - .info == "upgrade to version 0.1.2"
   - .approved == false
-  - .approved_percent == "0.199999871999979520"
-  - .bond_to_quorum == 5833334000000
+  - .approved_percent == "0.2"
+  - .validators_to_quorum == 3
 ---
 type: tx-approve-upgrade
 signer: {{ addr_thor_cat }}
@@ -49,8 +49,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
 asserts:
   - .approved == false
-  - .approved_percent == "0.399999807999938560"
-  - .bond_to_quorum == 3333334666666
+  - .approved_percent == "0.4"
+  - .validators_to_quorum == 2
 ---
 type: tx-approve-upgrade
 signer: {{ addr_thor_pig }}
@@ -67,8 +67,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
 asserts:
   - .approved == true
-  - .approved_percent == "0.799999871999918080"
-  - .bond_to_quorum == 0
+  - .approved_percent == "0.8"
+  - .validators_to_quorum == 0
 ---
 type: tx-reject-upgrade
 signer: {{ addr_thor_frog }}
@@ -81,5 +81,5 @@ type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
 asserts:
   - .approved == false
-  - .approved_percent == "0.600000000000000000"
-  - .bond_to_quorum == 833332666666
+  - .approved_percent == "0.6"
+  - .validators_to_quorum == 1

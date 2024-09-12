@@ -8,8 +8,8 @@ Name | Type | Description | Notes
 **Height** | **int64** | the block height at which the upgrade will occur | 
 **Info** | **string** | the description of the upgrade, typically json with URLs to binaries for use with automation tools | 
 **Approved** | Pointer to **bool** | whether the upgrade has been approved by the active validators | [optional] 
-**ApprovedPercent** | Pointer to **string** | the percentage of bond by active validators that have approved the upgrade | [optional] 
-**BondToQuorum** | Pointer to **int64** | the amount of additional bond required to reach quorum for the upgrade | [optional] 
+**ApprovedPercent** | Pointer to **string** | the percentage of active validators that have approved the upgrade | [optional] 
+**ValidatorsToQuorum** | Pointer to **int64** | the amount of additional active validators required to reach quorum for the upgrade | [optional] 
 
 ## Methods
 
@@ -140,30 +140,30 @@ SetApprovedPercent sets ApprovedPercent field to given value.
 
 HasApprovedPercent returns a boolean if a field has been set.
 
-### GetBondToQuorum
+### GetValidatorsToQuorum
 
-`func (o *UpgradeProposal) GetBondToQuorum() int64`
+`func (o *UpgradeProposal) GetValidatorsToQuorum() int64`
 
-GetBondToQuorum returns the BondToQuorum field if non-nil, zero value otherwise.
+GetValidatorsToQuorum returns the ValidatorsToQuorum field if non-nil, zero value otherwise.
 
-### GetBondToQuorumOk
+### GetValidatorsToQuorumOk
 
-`func (o *UpgradeProposal) GetBondToQuorumOk() (*int64, bool)`
+`func (o *UpgradeProposal) GetValidatorsToQuorumOk() (*int64, bool)`
 
-GetBondToQuorumOk returns a tuple with the BondToQuorum field if it's non-nil, zero value otherwise
+GetValidatorsToQuorumOk returns a tuple with the ValidatorsToQuorum field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetBondToQuorum
+### SetValidatorsToQuorum
 
-`func (o *UpgradeProposal) SetBondToQuorum(v int64)`
+`func (o *UpgradeProposal) SetValidatorsToQuorum(v int64)`
 
-SetBondToQuorum sets BondToQuorum field to given value.
+SetValidatorsToQuorum sets ValidatorsToQuorum field to given value.
 
-### HasBondToQuorum
+### HasValidatorsToQuorum
 
-`func (o *UpgradeProposal) HasBondToQuorum() bool`
+`func (o *UpgradeProposal) HasValidatorsToQuorum() bool`
 
-HasBondToQuorum returns a boolean if a field has been set.
+HasValidatorsToQuorum returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

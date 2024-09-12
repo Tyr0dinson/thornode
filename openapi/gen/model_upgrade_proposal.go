@@ -24,10 +24,10 @@ type UpgradeProposal struct {
 	Info string `json:"info"`
 	// whether the upgrade has been approved by the active validators
 	Approved *bool `json:"approved,omitempty"`
-	// the percentage of bond by active validators that have approved the upgrade
+	// the percentage of active validators that have approved the upgrade
 	ApprovedPercent *string `json:"approved_percent,omitempty"`
-	// the amount of additional bond required to reach quorum for the upgrade
-	BondToQuorum *int64 `json:"bond_to_quorum,omitempty"`
+	// the amount of additional active validators required to reach quorum for the upgrade
+	ValidatorsToQuorum *int64 `json:"validators_to_quorum,omitempty"`
 }
 
 // NewUpgradeProposal instantiates a new UpgradeProposal object
@@ -186,36 +186,36 @@ func (o *UpgradeProposal) SetApprovedPercent(v string) {
 	o.ApprovedPercent = &v
 }
 
-// GetBondToQuorum returns the BondToQuorum field value if set, zero value otherwise.
-func (o *UpgradeProposal) GetBondToQuorum() int64 {
-	if o == nil || o.BondToQuorum == nil {
+// GetValidatorsToQuorum returns the ValidatorsToQuorum field value if set, zero value otherwise.
+func (o *UpgradeProposal) GetValidatorsToQuorum() int64 {
+	if o == nil || o.ValidatorsToQuorum == nil {
 		var ret int64
 		return ret
 	}
-	return *o.BondToQuorum
+	return *o.ValidatorsToQuorum
 }
 
-// GetBondToQuorumOk returns a tuple with the BondToQuorum field value if set, nil otherwise
+// GetValidatorsToQuorumOk returns a tuple with the ValidatorsToQuorum field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *UpgradeProposal) GetBondToQuorumOk() (*int64, bool) {
-	if o == nil || o.BondToQuorum == nil {
+func (o *UpgradeProposal) GetValidatorsToQuorumOk() (*int64, bool) {
+	if o == nil || o.ValidatorsToQuorum == nil {
 		return nil, false
 	}
-	return o.BondToQuorum, true
+	return o.ValidatorsToQuorum, true
 }
 
-// HasBondToQuorum returns a boolean if a field has been set.
-func (o *UpgradeProposal) HasBondToQuorum() bool {
-	if o != nil && o.BondToQuorum != nil {
+// HasValidatorsToQuorum returns a boolean if a field has been set.
+func (o *UpgradeProposal) HasValidatorsToQuorum() bool {
+	if o != nil && o.ValidatorsToQuorum != nil {
 		return true
 	}
 
 	return false
 }
 
-// SetBondToQuorum gets a reference to the given int64 and assigns it to the BondToQuorum field.
-func (o *UpgradeProposal) SetBondToQuorum(v int64) {
-	o.BondToQuorum = &v
+// SetValidatorsToQuorum gets a reference to the given int64 and assigns it to the ValidatorsToQuorum field.
+func (o *UpgradeProposal) SetValidatorsToQuorum(v int64) {
+	o.ValidatorsToQuorum = &v
 }
 
 func (o UpgradeProposal) MarshalJSON_deprecated() ([]byte, error) {
@@ -235,8 +235,8 @@ func (o UpgradeProposal) MarshalJSON_deprecated() ([]byte, error) {
 	if o.ApprovedPercent != nil {
 		toSerialize["approved_percent"] = o.ApprovedPercent
 	}
-	if o.BondToQuorum != nil {
-		toSerialize["bond_to_quorum"] = o.BondToQuorum
+	if o.ValidatorsToQuorum != nil {
+		toSerialize["validators_to_quorum"] = o.ValidatorsToQuorum
 	}
 	return json.Marshal(toSerialize)
 }

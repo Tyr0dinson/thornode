@@ -2596,20 +2596,20 @@ func queryUpgradeProposal(ctx cosmos.Context, path []string, _ abci.RequestQuery
 		return nil, fmt.Errorf("fail to get upgrade proposal: %w", err)
 	}
 
-	approved, approvedPct, bondToQuorum, err := k.UpgradeApprovedByMajority(ctx, name)
+	approved, approvedPct, valsToQuorum, err := k.UpgradeApprovedByMajority(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("fail to check upgrade approval: %w", err)
 	}
 
-	btq := int64(bondToQuorum.Uint64()) // TODO might want string for this field.
+	vtq := int64(valsToQuorum)
 
 	res := openapi.UpgradeProposal{
-		Name:            name,
-		Height:          proposal.Height,
-		Info:            proposal.Info,
-		Approved:        &approved,
-		ApprovedPercent: &approvedPct,
-		BondToQuorum:    &btq,
+		Name:               name,
+		Height:             proposal.Height,
+		Info:               proposal.Info,
+		Approved:           &approved,
+		ApprovedPercent:    &approvedPct,
+		ValidatorsToQuorum: &vtq,
 	}
 
 	return jsonify(ctx, res)
