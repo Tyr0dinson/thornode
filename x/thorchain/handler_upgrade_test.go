@@ -1,12 +1,8 @@
 package thorchain
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	math "math"
-	"math/big"
-	"strconv"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
@@ -15,7 +11,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -108,70 +103,6 @@ func (k *TestUpgradeKeeper) GetUpgradePlan(_ cosmos.Context) (upgradetypes.Plan,
 		return upgradetypes.Plan{Name: "berserk"}, true
 	}
 	return upgradetypes.Plan{}, false
-}
-
-// UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
-// it additionally returns the current approval percentage and the bond needed to reach quorum, if not approved.
-// TODO: this is currently copy/paste of the KVStore implementation.
-func (k *TestUpgradeKeeper) UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, uint64, error) {
-	iterA := k.GetNodeAccountIterator(ctx)
-	defer iterA.Close()
-
-	active := make(map[string]bool)
-
-	for ; iterA.Valid(); iterA.Next() {
-		var na NodeAccount
-		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
-			return false, "", 0, fmt.Errorf("failed to unmarshal: %w", err)
-		}
-
-		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
-			continue
-		}
-
-		active[na.NodeAddress.String()] = true
-	}
-
-	iterV := k.GetUpgradeVoteIterator(ctx, name)
-	defer iterV.Close()
-
-	var approvingVals int64
-
-	for ; iterV.Valid(); iterV.Next() {
-		key, vote := iterV.Key(), iterV.Value()
-		if !bytes.Equal(vote, []byte{0x1}) {
-			continue
-		}
-
-		prefix := []byte(keeperv1.VotePrefix(name))
-		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
-
-		_, ok := active[addr.String()]
-		if !ok {
-			// this could happen if a validator votes and then becomes inactive
-			continue
-		}
-
-		approvingVals++
-	}
-
-	valThreshold := big.NewRat(int64(len(active))*2, 3)
-
-	approval := big.NewRat(int64(approvingVals), int64(len(active)))
-	approvalFlt, _ := approval.Float64()
-	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
-
-	t, _ := valThreshold.Float64()
-
-	if float64(approvingVals) >= t {
-		return true, approvalStr, 0, nil
-	}
-
-	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(int64(approvingVals), 1))
-	nfq, _ := neededForQuorum.Float64()
-	valsToQuorum := math.Ceil(nfq)
-
-	return false, approvalStr, uint64(valsToQuorum), nil
 }
 
 var _ = Suite(&HandlerUpgradeSuite{})

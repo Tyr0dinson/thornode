@@ -190,7 +190,6 @@ type KeeperUpgrade interface {
 	GetProposedUpgrade(ctx cosmos.Context, name string) (Upgrade, error)
 	GetUpgradeProposalIterator(ctx cosmos.Context) cosmos.Iterator
 	GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator
-	UpgradeApprovedByMajority(ctx cosmos.Context, name string) (bool, string, uint64, error)
 
 	// x/upgrade module methods
 	GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool)

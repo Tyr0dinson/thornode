@@ -95,7 +95,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(plan.Height, Equals, upgradeHeight)
 	c.Assert(plan.Info, Equals, upgradeInfo)
 
-	approved, approvedPct, valsToQuorum, err := k.UpgradeApprovedByMajority(ctx, upgradeName)
+	approved, approvedPct, valsToQuorum, err := UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, true)
 	c.Assert(approvedPct, Equals, "0.8333333333333334")
@@ -103,7 +103,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 
 	c.Assert(k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
 
-	approved, approvedPct, valsToQuorum, err = k.UpgradeApprovedByMajority(ctx, upgradeName)
+	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, true)
 	c.Assert(approvedPct, Equals, "0.6666666666666666")
@@ -115,7 +115,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	_, ok = k.GetUpgradePlan(ctx)
 	c.Assert(ok, Equals, false)
 
-	approved, approvedPct, valsToQuorum, err = k.UpgradeApprovedByMajority(ctx, upgradeName)
+	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, false)
 	c.Assert(approvedPct, Equals, "0.5")
@@ -126,7 +126,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(k.RejectUpgrade(ctx, na5.NodeAddress, upgradeName), IsNil)
 	c.Assert(k.RejectUpgrade(ctx, na6.NodeAddress, upgradeName), IsNil)
 
-	approved, approvedPct, valsToQuorum, err = k.UpgradeApprovedByMajority(ctx, upgradeName)
+	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, false)
 	c.Assert(approvedPct, Equals, "0")
