@@ -197,8 +197,8 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 	}
 
 	cloutsLength := len(clouts)
-	if cloutsLength != 1897 {
-		ctx.Logger().Error("clouts not the expected number of 1897", "length", cloutsLength)
+	if cloutsLength != 1895 {
+		ctx.Logger().Error("clouts not the expected number of 1895", "length", cloutsLength)
 		return
 	}
 

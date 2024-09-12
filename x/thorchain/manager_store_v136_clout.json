@@ -22,12 +22,6 @@
     "last_reclaim_height": 17552185
   },
   {
-    "address": "0x3a196410a0f5facd08fd7880a4b8551cd085c031",
-    "score": "66130986637346",
-    "reclaimed": "0",
-    "spent": "0"
-  },
-  {
     "address": "thor15cl4m94khtlt20p4s6k5vkfhrqxasl2r7rgsv6",
     "score": "55948580717983",
     "reclaimed": "18218703394959",
@@ -9436,12 +9430,6 @@
   {
     "address": "0xa36ec55999cb89fa8c7b6890f69c961dbeda9ff0",
     "score": "129794738324",
-    "reclaimed": "0",
-    "spent": "0"
-  },
-  {
-    "address": "0xa282ba3825fa1cf0690edeeeb72b4098d9115538",
-    "score": "129736942328",
     "reclaimed": "0",
     "spent": "0"
   },
