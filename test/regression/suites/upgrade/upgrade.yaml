@@ -1,0 +1,85 @@
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposals
+asserts:
+  - .|length == 0
+---
+type: tx-propose-upgrade
+signer: {{ addr_thor_fox }}
+name: v0.1.2
+upgrade:
+  height: 100
+  info: "upgrade to version 0.1.2"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+asserts:
+  - .result.value.sequence == "1"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposals
+asserts:
+  - .|length == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .name == "v0.1.2"
+  - .height == 100
+  - .info == "upgrade to version 0.1.2"
+  - .approved == false
+  - .approved_percent == "0.199999871999979520"
+  - .bond_to_quorum == 5833334000000
+---
+type: tx-approve-upgrade
+signer: {{ addr_thor_cat }}
+name: v0.1.2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .approved == false
+  - .approved_percent == "0.399999807999938560"
+  - .bond_to_quorum == 3333334666666
+---
+type: tx-approve-upgrade
+signer: {{ addr_thor_pig }}
+name: v0.1.2
+---
+type: tx-approve-upgrade
+signer: {{ addr_thor_frog }}
+name: v0.1.2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .approved == true
+  - .approved_percent == "0.799999871999918080"
+  - .bond_to_quorum == 0
+---
+type: tx-reject-upgrade
+signer: {{ addr_thor_frog }}
+name: v0.1.2
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .approved == false
+  - .approved_percent == "0.600000000000000000"
+  - .bond_to_quorum == 833332666666
