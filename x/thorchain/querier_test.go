@@ -330,7 +330,6 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(k.ApproveUpgrade(ctx, na1.NodeAddress, upgradeName), IsNil)
 	c.Assert(k.ApproveUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
 	c.Assert(k.ApproveUpgrade(ctx, na3.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName), IsNil)
 
 	res, err := querier(ctx, []string{query.QueryUpgradeProposals.Key}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -354,10 +353,10 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(p.Info, Equals, upgradeInfo)
 	c.Assert(p.Height, Equals, upgradeHeight)
 	c.Assert(*p.Approved, Equals, false)
-	c.Assert(*p.BondToQuorum, Equals, int64(40000000000))
-	c.Assert(*p.ApprovedPercent, Equals, "0.476190476190476190")
+	c.Assert(*p.ValidatorsToQuorum, Equals, int64(1))
+	c.Assert(*p.ApprovedPercent, Equals, "0.5")
 
-	c.Assert(k.ApproveUpgrade(ctx, na5.NodeAddress, upgradeName), IsNil)
+	c.Assert(k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName), IsNil)
 
 	res, err = querier(ctx, []string{query.QueryUpgradeProposal.Key, upgradeName}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -365,8 +364,8 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(*p.Approved, Equals, true)
-	c.Assert(*p.BondToQuorum, Equals, int64(0))
-	c.Assert(*p.ApprovedPercent, Equals, "0.714285714285714286")
+	c.Assert(*p.ValidatorsToQuorum, Equals, int64(0))
+	c.Assert(*p.ApprovedPercent, Equals, "0.6666666666666666")
 
 	c.Assert(k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
 
@@ -376,15 +375,15 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(*p.Approved, Equals, false)
-	c.Assert(*p.BondToQuorum, Equals, int64(10000000000))
-	c.Assert(*p.ApprovedPercent, Equals, "0.619047619047619048")
+	c.Assert(*p.ValidatorsToQuorum, Equals, int64(1))
+	c.Assert(*p.ApprovedPercent, Equals, "0.5")
 
 	var votes []openapi.UpgradeVote
 	res, err = querier(ctx, []string{query.QueryUpgradeVotes.Key, upgradeName}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
 	err = json.Unmarshal(res, &votes)
 	c.Assert(err, IsNil)
-	c.Assert(len(votes), Equals, 5)
+	c.Assert(len(votes), Equals, 4)
 
 	foundVote := make(map[string]bool)
 	for _, v := range votes {

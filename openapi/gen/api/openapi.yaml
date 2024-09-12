@@ -3917,7 +3917,7 @@ components:
     UpgradeProposal:
       example:
         approved: true
-        bond_to_quorum: 100000000000
+        validators_to_quorum: 20
         name: scheduled upgrade 1
         height: 1234
         info: "{\"binaries\":{\"linux/amd64\":\"https://link.to.binary.amd64\",\"\
@@ -3944,14 +3944,14 @@ components:
           example: true
           type: boolean
         approved_percent:
-          description: the percentage of bond by active validators that have approved
-            the upgrade
+          description: the percentage of active validators that have approved the
+            upgrade
           example: "0.8"
           type: string
-        bond_to_quorum:
-          description: the amount of additional bond required to reach quorum for
-            the upgrade
-          example: 100000000000
+        validators_to_quorum:
+          description: the amount of additional active validators required to reach
+            quorum for the upgrade
+          example: 20
           format: int64
           type: integer
       required:

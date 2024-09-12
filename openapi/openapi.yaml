@@ -2767,12 +2767,12 @@ components:
         approved_percent:
           type: string
           example: "0.8"
-          description: the percentage of bond by active validators that have approved the upgrade
-        bond_to_quorum:
+          description: the percentage of active validators that have approved the upgrade
+        validators_to_quorum:
           type: integer
           format: int64
-          example: 100000000000
-          description: the amount of additional bond required to reach quorum for the upgrade
+          example: 20
+          description: the amount of additional active validators required to reach quorum for the upgrade
 
     UpgradeVote:
       type: object
