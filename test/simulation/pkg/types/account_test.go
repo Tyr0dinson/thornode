@@ -14,7 +14,6 @@ type AccountSuite struct{}
 var _ = Suite(&AccountSuite{})
 
 func (s *ActorSuite) TestNewUser(c *C) {
-
 	testMnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
 	constructors := make(map[common.Chain]LiteChainClientConstructor)
 	user := NewUser(testMnemonic, constructors)

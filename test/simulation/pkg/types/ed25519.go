@@ -10,8 +10,7 @@ import (
 	"github.com/cosmos/go-bip39"
 )
 
-type Ed25519Algo struct {
-}
+type Ed25519Algo struct{}
 
 var Ed25519 = Ed25519Algo{}
 
@@ -25,7 +24,7 @@ func (s Ed25519Algo) Derive() hd.DeriveFn {
 		}
 		account, _ := types.AccountFromSeed(derivedKey.PrivateKey)
 
-		var pkArr = make([]byte, 64)
+		pkArr := make([]byte, 64)
 		copy(pkArr, account.PrivateKey[:])
 		return pkArr, nil
 	}
@@ -34,7 +33,7 @@ func (s Ed25519Algo) Derive() hd.DeriveFn {
 // Generate generates a ed25519 private key from the given bytes.
 func (s Ed25519Algo) Generate() hd.GenerateFn {
 	return func(bz []byte) ctypes.PrivKey {
-		var bzArr = make([]byte, edKeys.PrivKeySize)
+		bzArr := make([]byte, edKeys.PrivKeySize)
 		copy(bzArr, bz)
 		return &edKeys.PrivKey{Key: bzArr}
 	}

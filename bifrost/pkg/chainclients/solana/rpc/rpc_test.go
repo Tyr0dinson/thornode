@@ -3,7 +3,6 @@ package rpc
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -16,7 +15,6 @@ type RpcTestSuite struct{}
 var _ = Suite(&RpcTestSuite{})
 
 func (s *RpcTestSuite) TestTransaction(c *C) {
-
 	jsonTransaction := `{
 		"message": {
 				"accountKeys": [
@@ -47,9 +45,6 @@ func (s *RpcTestSuite) TestTransaction(c *C) {
 	var transaction RPCTransaction
 	err := json.Unmarshal([]byte(jsonTransaction), &transaction)
 	c.Check(err, IsNil)
-
-	// Print the transaction
-	fmt.Printf("Decoded Transaction: %+v\n", transaction)
 
 	// Further steps to deserialize the base64 data
 	decodedData, err := base64.StdEncoding.DecodeString(transaction.Transaction.Message.Instructions[0].Data)

@@ -10,7 +10,6 @@ type VaultSuiteV2 struct{}
 var _ = Suite(&VaultSuiteV2{})
 
 func (s *VaultSuiteV2) TestVaultV2(c *C) {
-
 	vault := Vault{}
 	c.Check(vault.IsEmpty(), Equals, true)
 	c.Check(vault.Valid(), NotNil)

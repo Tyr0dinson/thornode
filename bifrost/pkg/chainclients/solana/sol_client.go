@@ -250,9 +250,7 @@ func (c *SOLClient) GetBalances(addr string, height *big.Int) (common.Coins, err
 
 // ReportSolvency reports solvency once per configured solvency blocks.
 func (c *SOLClient) ReportSolvency(height int64) error {
-
 	// TODO: Implement
-
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
