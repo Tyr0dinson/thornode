@@ -1,6 +1,8 @@
 module gitlab.com/thorchain/thornode/test/simulation
 
-go 1.22
+go 1.22.2
+
+toolchain go1.22.6
 
 require (
 	github.com/btcsuite/btcd v0.22.1

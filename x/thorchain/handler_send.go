@@ -31,8 +31,12 @@ func MsgSendValidateV130(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
 		return err
 	}
 
-	// disallow sends to modules, they should only be interacted with via deposit messages
-	if IsModuleAccAddress(mgr.Keeper(), msg.ToAddress) {
+	k := mgr.Keeper()
+	isThorModAddr := msg.ToAddress.Equals(k.GetModuleAccAddress(ModuleName))
+
+	// disallow sends to modules, they should only be interacted with via deposit messages.
+	// the exception is a MsgSend with memo-based MsgDeposit is allowed to the thor module address
+	if !isThorModAddr && IsModuleAccAddress(k, msg.ToAddress) {
 		return fmt.Errorf("cannot use MsgSend for Module transactions, use MsgDeposit instead")
 	}
 
@@ -56,38 +60,47 @@ func MsgSendHandleV116(ctx cosmos.Context, mgr Manager, msg *MsgSend) (*cosmos.R
 		return nil, fmt.Errorf("unable to use MsgSend while THORChain is halted")
 	}
 
-	fmt.Println("In MsgSendHandleV116!")
-	tck := k.(*thorchainkeeperv1.KVStore)
-	fmt.Println("Unwrapped keeper in MsgSendHandleV116!")
+	tck, ok := k.(*thorchainkeeperv1.KVStore)
+	if !ok {
+		return nil, fmt.Errorf("keeper error - handler MsgSend")
+	}
 
 	txDecoder := tck.GetTxDecoder()
-	msgSendTx, err := txDecoder(ctx.TxBytes())
+	msgSendOrDepositTx, err := txDecoder(ctx.TxBytes())
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Unmarshalled TX in MsgSendHandleV116!")
 	thorModuleAddr := k.GetModuleAccAddress(ModuleName)
 
-	memo := ""
-	txMemo, ok := msgSendTx.(sdk.TxWithMemo)
-	if ok {
-		fmt.Println("MsgSendHandleV116 is TxWithMemo:", memo)
-		memo = txMemo.GetMemo()
-	}
-
-	fmt.Println("MsgSendHandleV116 Tx memo:", memo)
-
-	// This should be treated as a Deposit
+	// MsgSend to the thorchain module address is treated as a MsgDeposit for client compatibility reasons.
+	// In this case, the memo will be used like in any other MsgDeposit.
 	if msg.ToAddress.Equals(thorModuleAddr) {
-		fmt.Println("This should be a MsgDeposit!")
-	} else {
-		fmt.Println("This should be a MsgSend!")
-	}
+		memo := ""
+		txMemo, ok := msgSendOrDepositTx.(sdk.TxWithMemo)
+		if ok {
+			memo = txMemo.GetMemo()
+		}
 
-	err = mgr.Keeper().SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount)
-	if err != nil {
-		return nil, err
+		coinSdk := msg.Amount[0]
+		// TODO: Is this the correct logic for converting sdk Coin to common.Asset?
+		thorAssetDenom, err := common.NewAsset(coinSdk.Denom)
+		if err != nil {
+			return nil, err
+		}
+
+		coin := common.NewCoin(thorAssetDenom, sdk.NewUintFromBigInt(coinSdk.Amount.BigInt()))
+		msgDeposit := NewMsgDeposit(common.Coins{coin}, memo, msg.GetSigners()[0])
+		externalHandler := tck.GetExternalHandler()
+		_, err = externalHandler(ctx, msgDeposit)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = mgr.Keeper().SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &cosmos.Result{}, nil
