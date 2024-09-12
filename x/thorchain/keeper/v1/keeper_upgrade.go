@@ -147,6 +147,8 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 		active[na.NodeAddress.String()] = true
 	}
 
+	totalActive := len(active)
+
 	iterV := k.GetUpgradeVoteIterator(ctx, name)
 	defer iterV.Close()
 
@@ -170,9 +172,9 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 		approvingVals++
 	}
 
-	valThreshold := big.NewRat(int64(len(active))*2, 3)
+	valThreshold := big.NewRat(int64(totalActive)*2, 3)
 
-	approval := big.NewRat(int64(approvingVals), int64(len(active)))
+	approval := big.NewRat(approvingVals, int64(totalActive))
 	approvalFlt, _ := approval.Float64()
 	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
 
@@ -182,7 +184,7 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 		return true, approvalStr, 0, nil
 	}
 
-	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(int64(approvingVals), 1))
+	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(approvingVals, 1))
 	nfq, _ := neededForQuorum.Float64()
 	valsToQuorum := math.Ceil(nfq)
 
