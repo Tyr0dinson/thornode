@@ -1,0 +1,46 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# validate default constant is set
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/constants
+asserts:
+  - .int_64_values.IncentiveCurveAdjustmentBasisPoints == 10000
+---
+########################################################################################
+# no mimir value currently set to override defaults
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .INCENTIVECURVEADJUSTMENTBASISPOINTS|length == 0
+---
+type: tx-mimir
+key: IncentiveCurveAdjustmentBasisPoints
+value: 5000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+asserts:
+  - .result.value.sequence == "1"
+---
+########################################################################################
+# mimir value set to override constant
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .INCENTIVECURVEADJUSTMENTBASISPOINTS == 5000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/key/INCENTIVECURVEADJUSTMENTBASISPOINTS
+asserts:
+  - . == 5000

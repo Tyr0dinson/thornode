@@ -51,6 +51,7 @@ func init() {
 		SaversEjectInterval:                 60,
 		SystemIncomeBurnRateBps:             0,
 		DevFundSystemIncomeBps:              0,
+		IncentiveCurveAdjustmentBasisPoints: 10_000,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,
