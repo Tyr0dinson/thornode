@@ -223,19 +223,7 @@ func (h DepositHandler) handleV131(ctx cosmos.Context, msg MsgDeposit) (*cosmos.
 }
 
 func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
-	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
-		source := msg.Tx.Coins[0]
-		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
-		evt := NewEventLimitOrder(source, target, msg.Tx.ID)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit limit order event", "error", err)
-		}
-		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
-			ctx.Logger().Error("fail to add swap to queue", "error", err)
-		}
-	} else {
-		h.addSwapDirect(ctx, msg)
-	}
+	h.addSwapDirect(ctx, msg)
 }
 
 // addSwapDirect adds the swap directly to the swap queue (no order book) - segmented

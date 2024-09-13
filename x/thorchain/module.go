@@ -199,10 +199,6 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 	}
 
-	if err := am.mgr.OrderBookMgr().EndBlock(ctx, am.mgr); err != nil {
-		ctx.Logger().Error("fail to process order books", "error", err)
-	}
-
 	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
 	}

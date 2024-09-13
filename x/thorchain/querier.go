@@ -1958,7 +1958,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		return
 	}
 
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0)
 
 	// Only look for streaming information when a swap is pending.
 	if pending {
@@ -1985,7 +1985,6 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		// This will also check the KVStore when an inbound transaction has no output,
 		// such as the output being not enough to cover a fee.
 		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
-			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
 			isPending = pending
 		}
 	}
@@ -2412,17 +2411,6 @@ func queryQueue(ctx cosmos.Context, path []string, req abci.RequestQuery, mgr *M
 	for ; iterator.Valid(); iterator.Next() {
 		var msg MsgSwap
 		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
-			continue
-		}
-		query.Swap++
-	}
-
-	iter2 := mgr.Keeper().GetOrderBookItemIterator(ctx)
-	defer iter2.Close()
-	for ; iter2.Valid(); iter2.Next() {
-		var msg MsgSwap
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
-			ctx.Logger().Error("failed to load MsgSwap", "error", err)
 			continue
 		}
 		query.Swap++

@@ -64,7 +64,6 @@ const (
 	EnableDerivedAssets
 	MinSwapsPerBlock
 	MaxSwapsPerBlock
-	EnableOrderBooks
 	MintSynths
 	BurnSynths
 	MaxSynthPerPoolDepth

@@ -8,7 +8,6 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
-	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 type Keeper interface {
@@ -76,7 +75,6 @@ type Keeper interface {
 	KeeperErrataTx
 	KeeperBanVoter
 	KeeperSwapQueue
-	KeeperOrderBooks
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
@@ -343,22 +341,6 @@ type KeeperSwapQueue interface {
 	GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) (MsgSwap, error)
 	HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) bool
 	RemoveSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int)
-}
-
-type KeeperOrderBooks interface {
-	OrderBooksEnabled(ctx cosmos.Context) bool
-	SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error
-	GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator
-	GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error)
-	HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool
-	RemoveOrderBookItem(ctx cosmos.Context, txID common.TxID) error
-	GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator
-	SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
-	GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error)
-	HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
-	RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
-	SetOrderBookProcessor(_ cosmos.Context, _ []bool) error
-	GetOrderBookProcessor(_ cosmos.Context) ([]bool, error)
 }
 
 type KeeperMimir interface {
