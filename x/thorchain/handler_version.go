@@ -72,6 +72,8 @@ func (h VersionHandler) handle(ctx cosmos.Context, msg MsgSetVersion) error {
 	ctx.Logger().Info("handleMsgSetVersion request", "Version:", msg.Version)
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("2.136.0")):
+		return h.handleV136(ctx, msg)
 	case version.GTE(semver.MustParse("1.115.0")):
 		return h.handleV115(ctx, msg)
 	default:
@@ -79,7 +81,7 @@ func (h VersionHandler) handle(ctx cosmos.Context, msg MsgSetVersion) error {
 	}
 }
 
-func (h VersionHandler) handleV115(ctx cosmos.Context, msg MsgSetVersion) error {
+func (h VersionHandler) handleV136(ctx cosmos.Context, msg MsgSetVersion) error {
 	nodeAccount, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)
 	if err != nil {
 		return cosmos.ErrUnauthorized(fmt.Errorf("unable to find account(%s):%w", msg.Signer, err).Error())
