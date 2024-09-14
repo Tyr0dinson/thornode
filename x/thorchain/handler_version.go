@@ -92,7 +92,10 @@ func (h VersionHandler) handleV136(ctx cosmos.Context, msg MsgSetVersion) error 
 		return fmt.Errorf("fail to parse version: %w", err)
 	}
 
-	if nodeAccount.GetVersion().LT(version) {
+	// Allow only Standby (not Active or Ready) nodes to set their version lower
+	// to signal keygen unreadiness (avoiding bond cost and churn delay)
+	// without needing to coordinate unbonding and rebonding of bond providers.
+	if nodeAccount.GetVersion().LT(version) || nodeAccount.Status == NodeStandby {
 		nodeAccount.Version = version.String()
 	}
 
