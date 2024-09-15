@@ -48,13 +48,13 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.134.0")):
-		return h.validateVCUR(ctx, msg)
+		return h.validateV134(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h DepositHandler) validateVCUR(ctx cosmos.Context, msg MsgDeposit) error {
+func (h DepositHandler) validateV134(ctx cosmos.Context, msg MsgDeposit) error {
 	err := msg.ValidateBasic()
 	if err != nil {
 		return err
@@ -80,7 +80,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
-		return h.handleVCUR(ctx, msg)
+		return h.handleV131(ctx, msg)
 	default:
 		return nil, errInvalidVersion
 	}
@@ -90,13 +90,13 @@ func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.136.0")):
-		h.addSwapDirectVCUR(ctx, msg)
+		h.addSwapDirectV136(ctx, msg)
 	case version.GTE(semver.MustParse("1.131.0")):
 		h.addSwapDirectV131(ctx, msg)
 	}
 }
 
-func (h DepositHandler) handleVCUR(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handleV131(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgDeposit while THORChain is halted")
 	}
@@ -251,7 +251,7 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 // addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
 // out into its own function to allow easier maintenance of original behavior vs order
 // book behavior.
-func (h DepositHandler) addSwapDirectVCUR(ctx cosmos.Context, msg MsgSwap) {
+func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 	if msg.Tx.Coins.IsEmpty() {
 		return
 	}
