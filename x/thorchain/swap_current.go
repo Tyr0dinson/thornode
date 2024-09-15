@@ -510,7 +510,8 @@ func (s *SwapperVCUR) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emi
 	return
 }
 
-func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint, mint bool) error {
+// addPOLLiquidity similar to manager_network_current, deposits rune in pool based on minted synth amount
+func (s *SwapperVCUR) addPOLLiquidity(ctx cosmos.Context, mgr Manager, asset common.Asset, runeAmt cosmos.Uint) error {
 	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
 	if err != nil {
 		return err
@@ -566,13 +567,18 @@ func (s *SwapperVCUR) polInstantMatch(ctx cosmos.Context, mgr Manager, asset com
 	if runeAmt.GT(bal) {
 		return nil
 	}
+	if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, coins); err != nil {
+		return err
+	}
 
-	var (
-		msg cosmos.Msg
-		tx  common.Tx
-	)
-	if mint {
-		if err := mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, coins); err != nil {
+	tx := common.NewTx(common.BlankTxID, polAddress, asgardAddress, coins, nil, "THOR-POL-INSTANT-ADD")
+	msg := NewMsgAddLiquidity(tx, l1Pool.Asset, runeAmt, cosmos.ZeroUint(), polAddress, common.NoAddress, common.NoAddress, cosmos.ZeroUint(), signer)
+	handler := NewInternalHandler(mgr)
+	_, err = handler(ctx, msg)
+	if err != nil {
+		ctx.Logger().Error("fail to add pol liquidity to l1 for synth mint", "asset", l1Pool.Asset, "error", err)
+		// revert the rune back to the reserve
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coins); err != nil {
 			return err
 		}
 		return err
