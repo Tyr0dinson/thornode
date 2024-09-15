@@ -73,7 +73,7 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
-		return h.handleVCUR(ctx, msg)
+		return h.handleV131(ctx, msg)
 	default:
 		return nil, errBadVersion
 	}
@@ -83,7 +83,7 @@ func (h ObservedTxInHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.136.0")):
-		h.addSwapDirectVCUR(ctx, msg)
+		h.addSwapDirectV136(ctx, msg)
 	case version.GTE(semver.MustParse("1.131.0")):
 		h.addSwapDirectV131(ctx, msg)
 	}
@@ -158,7 +158,7 @@ func (h ObservedTxInHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter
 	return voter, ok
 }
 
-func (h ObservedTxInHandler) handleVCUR(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+func (h ObservedTxInHandler) handleV131(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -344,7 +344,7 @@ func (h ObservedTxInHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 // addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
 // out into its own function to allow easier maintenance of original behavior vs order
 // book behavior.
-func (h ObservedTxInHandler) addSwapDirectVCUR(ctx cosmos.Context, msg MsgSwap) {
+func (h ObservedTxInHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 	if msg.Tx.Coins.IsEmpty() {
 		return
 	}

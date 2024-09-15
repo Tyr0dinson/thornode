@@ -254,7 +254,7 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.136.0")):
-		return h.handleVCUR(ctx, msg)
+		return h.handleV136(ctx, msg)
 	case version.GTE(semver.MustParse("1.133.0")):
 		return h.handleV133(ctx, msg)
 	default:
@@ -262,7 +262,7 @@ func (h SwapHandler) handle(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, er
 	}
 }
 
-func (h SwapHandler) handleVCUR(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
+func (h SwapHandler) handleV136(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
 	// Don't change msg.Destination here; this line was introduced to avoid people from swapping mainnet asset,
 	// but using mocknet address.

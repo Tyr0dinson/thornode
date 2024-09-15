@@ -748,9 +748,10 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	handler.addSwap(ctx, *msg)
 	swaps, err := queue.FetchQueue(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(swaps, HasLen, 2, Commentf("%d", len(swaps)))
-	c.Check(swaps[0].msg.Tx.Coins[0].Amount.Uint64(), Equals, uint64(180000000))
+	c.Assert(swaps, HasLen, 3, Commentf("%d", len(swaps)))
+	c.Check(swaps[0].msg.Tx.Coins[0].Amount.Uint64(), Equals, uint64(177600000))
 	c.Check(swaps[1].msg.Tx.Coins[0].Amount.Uint64(), Equals, uint64(20000000))
+	c.Check(swaps[2].msg.Tx.Coins[0].Amount.Uint64(), Equals, uint64(2400000))
 }
 
 func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {

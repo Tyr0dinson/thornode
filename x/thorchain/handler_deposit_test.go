@@ -223,7 +223,8 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx.ID, 0)
 	c.Assert(err, IsNil)
 	c.Assert(swap.Tx.Coins[0].Amount.IsZero(), Equals, false)
-	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/10*9)), Equals, true)
+	// 1000+120 bps
+	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/1000*888)), Equals, true)
 
 	affiliateFeeAddr2, err := msg2.GetAffiliateAddress().AccAddress()
 	c.Assert(err, IsNil)
@@ -254,7 +255,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx1.ID, 0)
 	c.Assert(err, IsNil)
 	c.Assert(swap.Tx.Coins[0].Amount.IsZero(), Equals, false)
-	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/10*9)), Equals, true)
+	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/1000*888)), Equals, true)
 
 	affiliateFeeAddr3, err := msg3.GetAffiliateAddress().AccAddress()
 	c.Assert(err, IsNil)
