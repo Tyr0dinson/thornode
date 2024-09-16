@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -44,6 +45,7 @@ import (
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	appparams "gitlab.com/thorchain/thornode/app/params"
+	v3 "gitlab.com/thorchain/thornode/app/upgrades/v3"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
@@ -122,6 +124,8 @@ type THORChainApp struct {
 
 	// the module manager
 	mm *module.Manager
+
+	configurator module.Configurator
 }
 
 // New returns a reference to an initialized thornode application.
@@ -233,7 +237,9 @@ func New(
 	)
 
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter(), encodingConfig.Amino)
-	app.mm.RegisterServices(module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter()))
+
+	app.configurator = module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter())
+	app.mm.RegisterServices(app.configurator)
 
 	// initialize stores
 	app.MountKVStores(keys)
@@ -257,6 +263,7 @@ func New(
 
 	app.SetAnteHandler(anteHandler)
 	app.SetEndBlocker(app.EndBlocker)
+	app.setupUpgradeHandlers()
 
 	if loadLatest {
 		if err = app.LoadLatestVersion(); err != nil {
@@ -390,4 +397,34 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(minttypes.ModuleName)
 
 	return paramsKeeper
+}
+
+func (app *THORChainApp) setupUpgradeHandlers() {
+	app.UpgradeKeeper.SetUpgradeHandler(
+		v3.UpgradeName,
+		v3.CreateUpgradeHandler(
+			app.mm,
+			app.configurator,
+		),
+	)
+
+	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
+	if err != nil {
+		panic(fmt.Errorf("failed to read upgrade info from disk: %w", err))
+	}
+	if app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
+		return
+	}
+
+	var storeLoader baseapp.StoreLoader
+
+	switch upgradeInfo.Name {
+	case v3.UpgradeName:
+		storeLoader = v3.CreateStoreLoader(upgradeInfo.Height)
+	}
+
+	if storeLoader != nil {
+		// configure store loader that checks if version == upgradeHeight and applies store upgrades
+		app.SetStoreLoader(storeLoader)
+	}
 }
