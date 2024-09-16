@@ -201,17 +201,17 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1697283756}
+  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1699405481}
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT} - ${POL_WITHDRAWN}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
-  - .pol.value|tonumber == 898826956
-  - .pol.pnl|tonumber == ${POL_PNL=621023066}
-  - .providers.pnl|tonumber == ${PROVIDERS_PNL=313007637}
+  - .pol.value|tonumber == 898821324
+  - .pol.pnl|tonumber == ${POL_PNL=623139159}
+  - .providers.pnl|tonumber == ${PROVIDERS_PNL=313002005}
   - .reserve.pnl|tonumber + ${PROVIDERS_PNL} == ${POL_PNL}
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
   - .providers.units|tonumber == 987543823
-  - .providers.pending_units|tonumber == 304275435
+  - .providers.pending_units|tonumber == 304276754
   - (.providers.value|tonumber) > (.pol.value|tonumber)
   # Because the .pol.value value is 0 and so the .providers.value is the .pol.value plus the undeposited RUNEPool balance.
 ---
