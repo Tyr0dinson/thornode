@@ -445,7 +445,7 @@ func (s OrderBookVCURSuite) TestEndBlock(c *C) {
 	tx.Memo = fmt.Sprintf("swap:ETH.ETH:%s", ethAddr)
 	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
 	limit1 := NewMsgSwap(
-		tx, common.ETHAsset, ethAddr, cosmos.NewUint(856815149),
+		tx, common.ETHAsset, ethAddr, cosmos.NewUint(102910671),
 		affilAddr, cosmos.NewUint(1_000),
 		"", "", nil,
 		LimitOrder,
