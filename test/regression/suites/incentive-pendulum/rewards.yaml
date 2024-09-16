@@ -144,6 +144,9 @@ asserts:
   - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
   - ${TOTAL_POOLED_RUNE} == 195337512809
   - ${INCENTIVECURVEADJUSTMENTBASISPOINTS} == 5000
+  # ShareFactor Check (s)
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22823
+  # PoolShareFactor Check (f/s)
   - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${INCENTIVECURVEADJUSTMENTBASISPOINTS}) | floor == 11411
 ---
 ########################################################################################
