@@ -522,17 +522,31 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	for i := int64(0); i < ob.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock); i++ {
 		pick := swaps[i]
-		var msg, affiliateSwap MsgSwap
+		var msg, affiliateSwap, protocolSwap MsgSwap
 		if err := copier.Copy(&msg, &pick.msg); err != nil {
 			ctx.Logger().Error("fail copy msg", "msg", msg.Tx.String(), "error", err)
 			continue
 		}
 		if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
+			protocolBps := mgr.Keeper().GetConfigInt64(ctx, constants.ProtocolAffiliateFeeBps)
+			protocolAffilateBps := common.GetSafeShare(
+				cosmos.NewUint(uint64(protocolBps)),
+				cosmos.NewUint(10000),
+				msg.AffiliateBasisPoints,
+			)
+
 			affiliateAmt := common.GetSafeShare(
 				msg.AffiliateBasisPoints,
 				cosmos.NewUint(10000),
 				msg.Tx.Coins[0].Amount,
 			)
+
+			protocolAmt := common.GetSafeShare(
+				protocolAffilateBps,
+				cosmos.NewUint(10000),
+				msg.Tx.Coins[0].Amount,
+			)
+
 			msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, affiliateAmt)
 
 			affiliateSwap = *NewMsgSwap(
@@ -549,6 +563,32 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			)
 			if affiliateSwap.Tx.Coins[0].Amount.GTE(affiliateAmt) {
 				affiliateSwap.Tx.Coins[0].Amount = affiliateAmt
+			}
+
+			if !protocolAmt.IsZero() {
+				reserveAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+				if err != nil {
+					ctx.Logger().Error("failed to retrieve the reserve module address", "error", err)
+					continue
+				}
+				protocolSwap = *NewMsgSwap(
+					msg.Tx,
+					common.RuneAsset(),
+					reserveAddress,
+					cosmos.ZeroUint(),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					"",
+					"",
+					nil,
+					MarketOrder,
+					0,
+					0,
+					msg.Signer,
+				)
+				if protocolSwap.Tx.Coins[0].Amount.GTE(protocolAmt) {
+					protocolSwap.Tx.Coins[0].Amount = protocolAmt
+				}
 			}
 		}
 
@@ -590,6 +630,24 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					_, err := handler(ctx, &affiliateSwap)
 					if err != nil {
 						ctx.Logger().Error("fail to execute affiliate swap", "msg", affiliateSwap.Tx.String(), "error", err)
+					}
+				}
+			}
+			if !protocolSwap.Tx.IsEmpty() {
+				// if asset sent in is native rune, no need
+				if protocolSwap.Tx.Coins[0].IsRune() {
+					//since native transaction fee has been charged to inbound from address, thus for affiliated fee , the network doesn't need to charge it again
+					coin := common.NewCoin(common.RuneAsset(), protocolSwap.Tx.Coins[0].Amount)
+					sdkErr := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(coin))
+					if sdkErr != nil {
+						ctx.Logger().Error("fail to send native asset to reserve", "error", err, "asset", coin.Asset)
+					}
+				} else {
+					// make the affiliate fee swap
+					protocolSwap.Tx.Memo = "THOR-PROTOCOL-AFFILIATE"
+					_, err := handler(ctx, &protocolSwap)
+					if err != nil {
+						ctx.Logger().Error("fail to execute protocol swap", "msg", protocolSwap.Tx.String(), "error", err)
 					}
 				}
 			}

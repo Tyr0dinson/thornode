@@ -288,6 +288,16 @@ func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 	}
 
+	if !protocolAmt.IsZero() && swapSourceAsset.IsRune() {
+		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), protocolAmt))); err != nil {
+			ctx.Logger().Error("fail to send protocol affiliate fee to reserve", "error", err)
+		}
+
+		if err := h.mgr.Keeper().AddToLiquidityFees(ctx, msg.TargetAsset.GetLayer1Asset(), protocolAmt); err != nil {
+			ctx.Logger().Error("fail to add to liquidity fees", "error", err)
+		}
+	}
+
 	// Affiliate fee flow
 	if !amt.IsZero() {
 		toAddress, err := msg.AffiliateAddress.AccAddress()
@@ -315,16 +325,6 @@ func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 		sdkErr := h.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, toAddress, common.NewCoins(coin))
 		if sdkErr != nil {
 			ctx.Logger().Error("fail to send native asset to affiliate", "msg", msg.AffiliateAddress, "error", err, "asset", swapSourceAsset)
-		}
-	}
-
-	if !protocolAmt.IsZero() && swapSourceAsset.IsRune() {
-		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), protocolAmt))); err != nil {
-			ctx.Logger().Error("fail to send protocol affiliate fee to reserve", "error", err)
-		}
-
-		if err := h.mgr.Keeper().AddToLiquidityFees(ctx, msg.TargetAsset.GetLayer1Asset(), protocolAmt); err != nil {
-			ctx.Logger().Error("fail to add to liquidity fees", "error", err)
 		}
 	}
 }
