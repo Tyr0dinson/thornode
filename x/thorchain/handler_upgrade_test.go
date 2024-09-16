@@ -170,6 +170,13 @@ func (s *HandlerUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(keeper.scheduled, Equals, false)
 
+	// proposed upgrade with same name should fail
+	msg5 := NewMsgProposeUpgrade(upgradeName, upgradeHeight, upgradeInfo, keeper.activeAccounts[1].NodeAddress)
+	result, err = handler.Run(ctx, msg5)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+
 	approveHandler := NewApproveUpgradeHandler(mgr)
 
 	// vote for upgrade by 1 less than 2/3 of active accounts
@@ -192,8 +199,8 @@ func (s *HandlerUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(keeper.scheduled, Equals, false)
 
 	// vote for upgrade by one more active account
-	msg5 := NewMsgApproveUpgrade(upgradeName, keeper.activeAccounts[8].NodeAddress)
-	result, err = approveHandler.Run(ctx, msg5)
+	msg6 := NewMsgApproveUpgrade(upgradeName, keeper.activeAccounts[8].NodeAddress)
+	result, err = approveHandler.Run(ctx, msg6)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
@@ -203,8 +210,8 @@ func (s *HandlerUpgradeSuite) TestUpgrade(c *C) {
 	rejectHandler := NewRejectUpgradeHandler(mgr)
 
 	// reject upgrade by one of the active accounts to drop below 2/3
-	msg6 := NewMsgRejectUpgrade(upgradeName, keeper.activeAccounts[4].NodeAddress)
-	result, err = rejectHandler.Run(ctx, msg6)
+	msg7 := NewMsgRejectUpgrade(upgradeName, keeper.activeAccounts[4].NodeAddress)
+	result, err = rejectHandler.Run(ctx, msg7)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
