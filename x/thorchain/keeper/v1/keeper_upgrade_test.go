@@ -48,11 +48,11 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 		Info:   upgradeInfo,
 	}), IsNil)
 
-	c.Assert(k.ApproveUpgrade(ctx, na1.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na3.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na5.NodeAddress, upgradeName), IsNil)
+	k.ApproveUpgrade(ctx, na1.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na2.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na3.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na5.NodeAddress, upgradeName)
 
 	var proposals int
 	var proposal types.Upgrade
@@ -101,7 +101,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(approvedPct, Equals, "0.8333333333333334")
 	c.Assert(valsToQuorum, Equals, uint64(0))
 
-	c.Assert(k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
+	k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName)
 
 	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
@@ -109,7 +109,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(approvedPct, Equals, "0.6666666666666666")
 	c.Assert(valsToQuorum, Equals, uint64(0))
 
-	c.Assert(k.RejectUpgrade(ctx, na1.NodeAddress, upgradeName), IsNil)
+	k.RejectUpgrade(ctx, na1.NodeAddress, upgradeName)
 
 	k.ClearUpgradePlan(ctx)
 	_, ok = k.GetUpgradePlan(ctx)
@@ -121,10 +121,10 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(approvedPct, Equals, "0.5")
 	c.Assert(valsToQuorum, Equals, uint64(1))
 
-	c.Assert(k.RejectUpgrade(ctx, na3.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.RejectUpgrade(ctx, na4.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.RejectUpgrade(ctx, na5.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.RejectUpgrade(ctx, na6.NodeAddress, upgradeName), IsNil)
+	k.RejectUpgrade(ctx, na3.NodeAddress, upgradeName)
+	k.RejectUpgrade(ctx, na4.NodeAddress, upgradeName)
+	k.RejectUpgrade(ctx, na5.NodeAddress, upgradeName)
+	k.RejectUpgrade(ctx, na6.NodeAddress, upgradeName)
 
 	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)

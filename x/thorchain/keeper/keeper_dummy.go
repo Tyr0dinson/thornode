@@ -50,12 +50,12 @@ func (k KVStoreDummy) GetProposedUpgrade(ctx cosmos.Context, name string) (Upgra
 	return Upgrade{}, kaboom
 }
 
-func (k KVStoreDummy) ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error {
-	return kaboom
+func (k KVStoreDummy) ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) {
+	panic(kaboom)
 }
 
-func (k KVStoreDummy) RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) error {
-	return kaboom
+func (k KVStoreDummy) RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) {
+	panic(kaboom)
 }
 
 func (k KVStoreDummy) GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool) {

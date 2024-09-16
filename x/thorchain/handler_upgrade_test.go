@@ -60,14 +60,12 @@ func (k *TestUpgradeKeeper) GetProposedUpgrade(_ cosmos.Context, name string) (t
 	return *k.proposedUpgrade, nil
 }
 
-func (k *TestUpgradeKeeper) ApproveUpgrade(_ cosmos.Context, addr cosmos.AccAddress, name string) error {
+func (k *TestUpgradeKeeper) ApproveUpgrade(_ cosmos.Context, addr cosmos.AccAddress, name string) {
 	k.votes[addr.String()] = true
-	return nil
 }
 
-func (k *TestUpgradeKeeper) RejectUpgrade(_ cosmos.Context, addr cosmos.AccAddress, name string) error {
+func (k *TestUpgradeKeeper) RejectUpgrade(_ cosmos.Context, addr cosmos.AccAddress, name string) {
 	k.votes[addr.String()] = false
-	return nil
 }
 
 func (k *TestUpgradeKeeper) GetNodeAccountIterator(_ cosmos.Context) cosmos.Iterator {
