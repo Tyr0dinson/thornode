@@ -83,8 +83,6 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 
 	// calcBlockRewards arguments: availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, blocksPerYear int64, incentiveCurveBasisPoints int64
 
-	availablePoolsRune := cosmos.NewUint(1000 * common.One)
-	totalBonded := cosmos.NewUint(2000 * common.One)
 	incentiveCurveBasisPoints := constAccessor.GetInt64Value(constants.IncentiveCurveAdjustmentBasisPoints)
 
 	totalReserve := cosmos.NewUint(1000 * common.One)
@@ -98,8 +96,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 
 	// Inefficient case
 	// Bonded 100%, Pooled 0%
-	availablePoolsRune = cosmos.NewUint(0 * common.One)
-	totalBonded = cosmos.NewUint(2000 * common.One)
+	availablePoolsRune := cosmos.NewUint(0 * common.One)
+	totalBonded := cosmos.NewUint(2000 * common.One)
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 1 = 10000
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 1.000 = 3171
 	// Bond share = rewards - (pool share) = 3171 - 3171 = 0
