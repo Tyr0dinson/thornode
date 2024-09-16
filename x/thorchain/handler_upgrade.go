@@ -74,6 +74,12 @@ func (h ProposeUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgProposeU
 		return cosmos.ErrUnknownRequest(fmt.Sprintf("upgrade height %d must be in the future, current: %d", msg.Upgrade.Height, ctx.BlockHeight()))
 	}
 
+	k := h.mgr.Keeper()
+	_, err := k.GetProposedUpgrade(ctx, msg.Name)
+	if err == nil {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("upgrade with name %s already proposed", msg.Name))
+	}
+
 	return nil
 }
 
