@@ -634,16 +634,13 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				}
 			}
 			if !protocolSwap.Tx.IsEmpty() {
-				// if asset sent in is native rune, no need
 				if protocolSwap.Tx.Coins[0].IsRune() {
-					//since native transaction fee has been charged to inbound from address, thus for affiliated fee , the network doesn't need to charge it again
 					coin := common.NewCoin(common.RuneAsset(), protocolSwap.Tx.Coins[0].Amount)
 					sdkErr := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(coin))
 					if sdkErr != nil {
 						ctx.Logger().Error("fail to send native asset to reserve", "error", err, "asset", coin.Asset)
 					}
 				} else {
-					// make the affiliate fee swap
 					protocolSwap.Tx.Memo = "THOR-PROTOCOL-AFFILIATE"
 					_, err := handler(ctx, &protocolSwap)
 					if err != nil {
