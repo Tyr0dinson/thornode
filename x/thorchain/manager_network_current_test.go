@@ -84,7 +84,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// calcBlockRewards arguments: availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, blocksPerYear int64, incentiveCurveBasisPoints int64
 
 	incentiveCurveBasisPoints := constAccessor.GetInt64Value(constants.IncentiveCurveAdjustmentBasisPoints)
-
+	devFundDeduct := int64(0)
+	systemIncomeBurnDeduct := int64(0)
 	totalReserve := cosmos.NewUint(1000 * common.One)
 	totalLiquidityFees := cosmos.ZeroUint() // No liquidity fees unless explicitly specified.
 	emissionCurve := constAccessor.GetInt64Value(constants.EmissionCurve)
@@ -98,10 +99,11 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Bonded 100%, Pooled 0%
 	availablePoolsRune := cosmos.NewUint(0 * common.One)
 	totalBonded := cosmos.NewUint(2000 * common.One)
+
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 1 = 10000
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 1.000 = 3171
 	// Bond share = rewards - (pool share) = 3171 - 3171 = 0
-	bondR, poolR, lpD, lpShare, _, _ := networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ := networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(0), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(3171), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -114,7 +116,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 2 = 5000
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.5000 = 1586
 	// Bond share = rewards - (pool share) = 3171 - 1586 = 1585
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(1585), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1586), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -127,7 +129,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 3 = 3333
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.3333 = 1057
 	// Bond share = rewards - (pool share) = 3171 - 1057 = 2114
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -140,7 +142,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 5 = 2000
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.2000 = 634
 	// Bond share = rewards - (pool share) = 3171 - 634 = 2537
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(2537), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(634), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -153,7 +155,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 10_000 / ((b + p) / (b - p)) = 10_000 / 1500 = 6.667
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.0007 = 2
 	// Bond share = rewards - (pool share) = 3171 - 2 = 3169
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(3169), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(2), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -168,7 +170,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 9_000 / ((b + p) / (b - p)) = 9_000 / 3 = 3000
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.3000 = 951
 	// Bond share = rewards - (pool share) = 3171 - 1057 = 2114
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(2220), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(951), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
@@ -179,7 +181,7 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share factor = 5_000 / ((b + p) / (b - p)) = 5_000 / 3 = 1667
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.1667 = 528
 	// Bond share = rewards - (pool share) = 3171 - 528 = 2643
-	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints)
+	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, incentiveCurveBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
 	c.Check(bondR.Uint64(), Equals, uint64(2643), Commentf("%d", bondR.Uint64()))
 	c.Check(poolR.Uint64(), Equals, uint64(528), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
