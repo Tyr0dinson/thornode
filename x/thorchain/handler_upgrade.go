@@ -95,9 +95,7 @@ func (h ProposeUpgradeHandler) handle(ctx cosmos.Context, msg *MsgProposeUpgrade
 		),
 	)
 
-	if err := k.ApproveUpgrade(ctx, msg.Signer, name); err != nil {
-		return fmt.Errorf("failed to approve upgrade: %w", err)
-	}
+	k.ApproveUpgrade(ctx, msg.Signer, name)
 
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("approve_upgrade",
@@ -170,9 +168,7 @@ func (h ApproveUpgradeHandler) handle(ctx cosmos.Context, msg *MsgApproveUpgrade
 	k := h.mgr.Keeper()
 	name := msg.Name
 
-	if err := k.ApproveUpgrade(ctx, msg.Signer, name); err != nil {
-		return fmt.Errorf("failed to approve upgrade: %w", err)
-	}
+	k.ApproveUpgrade(ctx, msg.Signer, name)
 
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("approve_upgrade",
@@ -242,9 +238,7 @@ func (h RejectUpgradeHandler) handle(ctx cosmos.Context, msg *MsgRejectUpgrade) 
 	k := h.mgr.Keeper()
 	name := msg.Name
 
-	if err := k.RejectUpgrade(ctx, msg.Signer, name); err != nil {
-		return fmt.Errorf("failed to reject upgrade: %w", err)
-	}
+	k.RejectUpgrade(ctx, msg.Signer, name)
 
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent("reject_upgrade",

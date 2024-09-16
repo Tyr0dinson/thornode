@@ -327,9 +327,9 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 		Info:   upgradeInfo,
 	}), IsNil)
 
-	c.Assert(k.ApproveUpgrade(ctx, na1.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
-	c.Assert(k.ApproveUpgrade(ctx, na3.NodeAddress, upgradeName), IsNil)
+	k.ApproveUpgrade(ctx, na1.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na2.NodeAddress, upgradeName)
+	k.ApproveUpgrade(ctx, na3.NodeAddress, upgradeName)
 
 	res, err := querier(ctx, []string{query.QueryUpgradeProposals.Key}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -356,7 +356,7 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(*p.ValidatorsToQuorum, Equals, int64(1))
 	c.Assert(*p.ApprovedPercent, Equals, "0.5")
 
-	c.Assert(k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName), IsNil)
+	k.ApproveUpgrade(ctx, na4.NodeAddress, upgradeName)
 
 	res, err = querier(ctx, []string{query.QueryUpgradeProposal.Key, upgradeName}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
@@ -367,7 +367,7 @@ func (s *QuerierSuite) TestQueryUpgradeProposals(c *C) {
 	c.Assert(*p.ValidatorsToQuorum, Equals, int64(0))
 	c.Assert(*p.ApprovedPercent, Equals, "0.6666666666666666")
 
-	c.Assert(k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName), IsNil)
+	k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName)
 
 	res, err = querier(ctx, []string{query.QueryUpgradeProposal.Key, upgradeName}, abci.RequestQuery{})
 	c.Assert(err, IsNil)
