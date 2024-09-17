@@ -189,7 +189,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 20750890
 asserts:
-  - .expected_amount_out|tonumber == 2280072
+  - .expected_amount_out|tonumber == 2280078
   - .fees|.total_bps == 433
 ---
 type: tx-deposit

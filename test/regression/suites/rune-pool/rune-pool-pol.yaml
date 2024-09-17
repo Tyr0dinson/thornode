@@ -98,7 +98,7 @@ asserts:
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
   - .pol.value|tonumber == ${POL_VALUE=1972176076}
-  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
+  - .pol.pnl|tonumber == ${POL_PNL=-2880310}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - 'all(.providers|.[]; . == "0")'
   - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)

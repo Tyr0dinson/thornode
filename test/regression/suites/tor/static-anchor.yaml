@@ -64,7 +64,7 @@ endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 10000
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001797948
+  - .balance_rune|tonumber == 300001634526
 ---
 # thor.tor should not be available in the pool querier
 type: check
@@ -98,8 +98,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 8913
-  - .balance_asset|tonumber == 271722793810 # median still ~1:1
-  - .balance_rune|tonumber == 271724422289
+  - .balance_asset|tonumber == 271706429350 # median still ~1:1
+  - .balance_rune|tonumber == 271707909721
 ---
 ########################################################################################
 # swap to USDY should reduce depth

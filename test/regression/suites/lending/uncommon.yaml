@@ -198,7 +198,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - '[.end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")]|length == 1'
-  - .end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")|.coin == "469124529 THOR.RUNE"
+  - .end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")|.coin == "469124158 THOR.RUNE"
   - .end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")|.memo == "OUT:{{ observe_txid 4 }}"
 ---
 type: check
@@ -226,7 +226,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_pig }}
       coins:
-        - amount: "3348701"
+        - amount: "3348713"
           asset: "ETH.ETH"
           decimals: 8
       gas:

@@ -138,7 +138,7 @@ asserts:
   - .fees.total_bps|tonumber == 2878
   - .fees.outbound|tonumber == 126781200
   - .fees.liquidity|tonumber == 9437600
-  - .fees.affiliate|tonumber == 4999400
+  - .fees.affiliate|tonumber == 4999500
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .recommended_gas_rate == "10"
   - .gas_rate_units == "satsperbyte"
@@ -188,7 +188,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "10000950552"
+  - .result[]|select(.denom == "rune")|.amount == "10000950547"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

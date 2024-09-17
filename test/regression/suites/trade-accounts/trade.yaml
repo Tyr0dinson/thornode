@@ -152,7 +152,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
 asserts:
   - .asset == "BTC~BTC"
-  - .units|tonumber == ${REMAINING_UNITS=9520528}
+  - .units|tonumber == ${REMAINING_UNITS=9520613}
   - .depth|tonumber == ${REMAINING_UNITS}
 ---
 type: check

@@ -101,7 +101,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43741070}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43741061}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

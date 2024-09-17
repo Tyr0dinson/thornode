@@ -21,7 +21,7 @@ params:
   amount: 1000000000
   destination: {{ addr_btc_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 966290
+  - .expected_amount_out|tonumber == 966291
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
   - .inbound_address == null
   - .recommended_min_amount_in == "56000300"
@@ -64,7 +64,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "966290"
+        - amount: "966291"
           asset: "BTC.BTC"
           decimals: 8
       gas:

@@ -271,7 +271,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom=="eth/eth")|.amount|tonumber == 47127015
+  - .balances[]|select(.denom=="eth/eth")|.amount|tonumber == 47127087
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
@@ -300,7 +300,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499696000000+100405724
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499796405688
 ---
 # observe token pool outbound
 type: tx-observed-out
