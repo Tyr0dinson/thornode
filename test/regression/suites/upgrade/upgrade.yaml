@@ -56,6 +56,46 @@ type: tx-approve-upgrade
 signer: {{ addr_thor_pig }}
 name: v0.1.2
 ---
+type: create-blocks
+count: 1
+---
+# try to upsert the tx proposal with new info
+type: tx-propose-upgrade
+signer: {{ addr_thor_fox }}
+name: v0.1.2
+upgrade:
+  height: 100
+  info: "upgrade to version malware"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .info == "upgrade to version 0.1.2" # upgrade info has not changed
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.log | contains("upgrade with name v0.1.2 already proposed")
+---
+# try to upsert the tx proposal with new height
+type: tx-propose-upgrade
+signer: {{ addr_thor_fox }}
+name: v0.1.2
+upgrade:
+  height: 101
+  info: "upgrade to version 0.1.2"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.2
+asserts:
+  - .height == 100 # upgrade height has not changed
+---
 type: tx-approve-upgrade
 signer: {{ addr_thor_frog }}
 name: v0.1.2
@@ -83,3 +123,23 @@ asserts:
   - .approved == false
   - .approved_percent == "0.6"
   - .validators_to_quorum == 1
+---
+# create a 2nd proposal, different name, same block height
+type: tx-propose-upgrade
+signer: {{ addr_thor_fox }}
+name: v0.1.3
+upgrade:
+  height: 100
+  info: "upgrade to version 0.1.3"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/upgrade_proposal/v0.1.3
+asserts:
+  - .approved == false
+  - .height == 100
+  - .info == "upgrade to version 0.1.3"
+  - .approved_percent == "0.2"
+  - .validators_to_quorum == 3
