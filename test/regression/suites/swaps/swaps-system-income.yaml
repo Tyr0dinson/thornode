@@ -45,15 +45,15 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533171552
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533170623
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .end_block_events[4].type == "transfer" and .end_block_events[4].amount == "2000000rune" # 0.02 RUNE network fee from Asgard to Reserve
-  - .end_block_events[8].type == "transfer" and .end_block_events[8].amount == "4533171552rune" # Proceeds of 0.05 BTC swap to 45.3 RUNE
-  - .end_block_events[13].type == "transfer" and .end_block_events[13].amount == "7798258rune" # 0.077 RUNE system income to pools
-  - .end_block_events[17].type == "transfer" and .end_block_events[17].amount == "8908101rune" # 0.089 RUNE system income to nodes
+  - .end_block_events[8].type == "transfer" and .end_block_events[8].amount == "4533170623rune" # Proceeds of 0.05 BTC swap to 45.3 RUNE
+  - .end_block_events[13].type == "transfer" and .end_block_events[13].amount == "16022959rune" # 0.077 RUNE system income to pools
+  - .end_block_events[17].type == "transfer" and .end_block_events[17].amount == "17132802rune" # 0.089 RUNE system income to nodes
 ---
 ########################################################################################
 # enabled ${INCOME_BURN_BPS=1} bps system burn income & ${DEV_FUND_BPS=500} bps dev fund allocation, then swap
@@ -110,7 +110,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .end_block_events[4].type == "transfer" and .end_block_events[4].amount == "2000000rune" # 0.02 RUNE network fee from Asgard to Reserve
-  - .end_block_events[8].type == "transfer" and .end_block_events[8].amount == "493042454rune" # Proceeds of 0.05 ETH to 4.93 RUNE swap
+  - .end_block_events[8].type == "transfer" and .end_block_events[8].amount == "493042256rune" # Proceeds of 0.05 ETH to 4.93 RUNE swap
   - .end_block_events[13].type == "transfer" and .end_block_events[13].amount == "${DEV_ALLO=179253}rune" # 0.001 RUNE to dev fund
   - .end_block_events[17].type == "transfer" and .end_block_events[17].amount == "${RUNE_BURNT=359}rune" # Roughly the same as DEV_ALLO / 500
   - .end_block_events[20].type == "burn" and .end_block_events[20].amount == "${RUNE_BURNT}rune" # RUNE burnt from supply

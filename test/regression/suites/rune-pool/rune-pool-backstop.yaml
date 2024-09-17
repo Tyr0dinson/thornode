@@ -88,10 +88,10 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit == "${POL_DEPOSIT=1975087646}"
+  - .pol.current_deposit == "${POL_DEPOSIT=1953880922}"
   - .pol.rune_deposited == "${POL_DEPOSIT}"
   - .pol.rune_withdrawn == "0"
-  - .pol.pnl == "-2911570"
+  - .pol.pnl == "-2880310"
   - .reserve.units == "${POL_DEPOSIT}"
   - 'all(.providers|.[]; . == "0")'
   - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
@@ -104,7 +104,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "${POL_VALUE=1972176076}"
+  - amount: "${POL_VALUE=1961588344}"
     asset: "rune"
 memo: "pool+"
 ---
@@ -124,7 +124,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.pnl == "${RESERVE_PNL=-2911570}"
+  - .pol.pnl == "${RESERVE_PNL=-2880310}"
   - .reserve.units == "0" # provider owns all pol
   - .reserve.value == "0"
   - .reserve.pnl == "${RESERVE_PNL}" # reserve still has loss

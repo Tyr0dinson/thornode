@@ -88,10 +88,10 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1975087646}
+  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1953880922}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.pnl|tonumber == ${POL_PNL=-2911570}
+  - .pol.pnl|tonumber == ${POL_PNL=-2880310}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - .reserve.current_deposit|tonumber == ${POL_DEPOSIT}
   - .reserve.pnl|tonumber == ${POL_PNL}
@@ -109,7 +109,7 @@ asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE=1972176076}
+  - .pol.value|tonumber == ${POL_VALUE=1951000612}
   - .pol.pnl|tonumber == ${POL_PNL}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - .providers.units|tonumber == 0

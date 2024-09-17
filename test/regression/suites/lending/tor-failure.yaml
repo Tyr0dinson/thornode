@@ -67,7 +67,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001797948
+  - .balance_rune|tonumber == 300001634526
 ---
 ########################################################################################
 # 1/3 of tor anchor pools depeg (no significant effect)

@@ -65,9 +65,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
 asserts:
   - .address == "{{ addr_btc_fox }}"
-  - .score|tonumber == 207489194
+  - .score|tonumber == 207489110
   - .reclaimed|tonumber == 0
-  - .spent|tonumber == 207489194
+  - .spent|tonumber == 207489110
   - .last_spent_height == 3
 ---
 type: check
@@ -112,9 +112,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
 asserts:
   - .address == "{{ addr_btc_fox }}"
-  - .score|tonumber == 207489194
-  - .reclaimed|tonumber == 207489194
-  - .spent|tonumber == 207489194
+  - .score|tonumber == 207489110
+  - .reclaimed|tonumber == 207489110
+  - .spent|tonumber == 207489110
   - .last_spent_height == 3
   - .last_reclaim_height == 4
 ---
@@ -167,7 +167,7 @@ endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
 asserts:
   - .address == "{{ addr_btc_fox }}"
   - .score|tonumber == 382045227
-  - .reclaimed|tonumber == 207489194
+  - .reclaimed|tonumber == 207489110
   - .spent|tonumber == 589534421
   - .last_spent_height == 6
   - .last_reclaim_height == 4
