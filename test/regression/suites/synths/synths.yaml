@@ -26,7 +26,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9068389
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9068418
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489998000000
 ---
 ########################################################################################
@@ -46,7 +46,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499121031445
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108833652
 ---
 ########################################################################################
 # swap btc to btc synth
@@ -78,7 +78,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 4757259
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 4757284
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499121031445
 ---
 ########################################################################################
@@ -98,7 +98,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499119824395
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108833652
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

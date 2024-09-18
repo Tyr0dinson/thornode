@@ -64,7 +64,7 @@ endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 10000
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001634526
+  - .balance_rune|tonumber == 300001083690
 ---
 # thor.tor should not be available in the pool querier
 type: check
@@ -98,8 +98,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 8913
-  - .balance_asset|tonumber == 271706429350 # median still ~1:1
-  - .balance_rune|tonumber == 271707909721
+  - .balance_asset|tonumber == 271650544741 # median still ~1:1
+  - .balance_rune|tonumber == 271651526025
 ---
 ########################################################################################
 # swap to USDY should reduce depth
@@ -128,8 +128,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 7853
-  - .balance_asset|tonumber == 221718304247 # price shift with affected median
-  - .balance_rune|tonumber == 243218380245
+  - .balance_asset|tonumber == 221773092635 # price shift with affected median
+  - .balance_rune|tonumber == 243090811236
 ---
 ########################################################################################
 # enable the dynamic anchor to target 95% and compute every block
@@ -203,7 +203,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .derived_depth_bps|tonumber == 9837
+  - .derived_depth_bps|tonumber == 9836
 ---
 type: create-blocks
 count: 1
@@ -225,7 +225,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "4418756300"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -241,7 +241,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "4418756300"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -257,7 +257,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "4418756300"
           asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -273,7 +273,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4045967800"
+        - amount: "4048821100"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -289,7 +289,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4045990400"
+        - amount: "4048829200"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:

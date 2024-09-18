@@ -189,7 +189,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 20750890
 asserts:
-  - .expected_amount_out|tonumber == 2280491
+  - .expected_amount_out|tonumber == 2280488
   - .fees|.total_bps == 433
 ---
 type: tx-deposit
@@ -207,7 +207,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 7280491
+  - .[0].units|tonumber == 7280488
   - .[0].owner == "{{ addr_thor_fox }}"
   - .[1].asset == "ETH~ETH"
   - .[1].units|tonumber == 20750890 # 0.2 ETH
@@ -222,7 +222,7 @@ params:
   amount: 20750890
   streaming_interval: 1
 asserts:
-  - .expected_amount_out|tonumber == 2234080
+  - .expected_amount_out|tonumber == 2234076
   - .fees|.total_bps == 107
 ---
 type: tx-deposit
@@ -254,7 +254,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 9445578
+  - .[0].units|tonumber == 9445571
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 ########################################################################################
@@ -303,8 +303,8 @@ params:
   amount: 10000
 asserts:
   - .expected_amount_out|tonumber == 80114
-  - .fees.slippage_bps == 1899
-  - .fees.total_bps == 1899
+  - .fees.slippage_bps == 1900
+  - .fees.total_bps == 1900
 ---
 ########################################################################################
 # try obtaining THOR.BTC with EnabledDerivedAssets 0
@@ -377,7 +377,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=9445578}
+  - .[0].units|tonumber == ${INITIAL_UNITS=9445571}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: check
@@ -432,7 +432,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=8445578}
+  - .[0].units|tonumber == ${INITIAL_UNITS=8445571}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: tx-deposit
