@@ -55,12 +55,12 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	k.ApproveUpgrade(ctx, na5.NodeAddress, upgradeName)
 
 	var proposals int
-	var proposal *types.Upgrade
+	var proposal types.Upgrade
 	var proposalKey []byte
 	pIter := k.GetUpgradeProposalIterator(ctx)
 	for ; pIter.Valid(); pIter.Next() {
 		proposals++
-		k.cdc.MustUnmarshal(pIter.Value(), proposal)
+		k.cdc.MustUnmarshal(pIter.Value(), &proposal)
 		proposalKey = pIter.Key()
 	}
 
@@ -69,10 +69,10 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(proposal.Height, Equals, upgradeHeight)
 	c.Assert(proposal.Info, Equals, upgradeInfo)
 
-	proposal, err := k.GetProposedUpgrade(ctx, upgradeName)
+	p, err := k.GetProposedUpgrade(ctx, upgradeName)
 	c.Assert(err, IsNil)
-	c.Assert(proposal.Height, Equals, upgradeHeight)
-	c.Assert(proposal.Info, Equals, upgradeInfo)
+	c.Assert(p.Height, Equals, upgradeHeight)
+	c.Assert(p.Info, Equals, upgradeInfo)
 
 	var approves int
 	vIter := k.GetUpgradeVoteIterator(ctx, upgradeName)
@@ -145,8 +145,9 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 
 	c.Assert(k.RemoveExpiredUpgradeProposals(ctx), IsNil)
 
-	_, err = k.GetProposedUpgrade(ctx, upgradeName)
-	c.Assert(err, NotNil)
+	u, err := k.GetProposedUpgrade(ctx, upgradeName)
+	c.Assert(err, IsNil)
+	c.Assert(u, IsNil)
 
 	proposals = 0
 	pIter = k.GetUpgradeProposalIterator(ctx)

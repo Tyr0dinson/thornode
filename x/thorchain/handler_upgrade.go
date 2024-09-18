@@ -81,7 +81,7 @@ func (h ProposeUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgProposeU
 	}
 
 	if u != nil {
-		return fmt.Errorf("upgrade proposal already exists: %s", msg.Name)
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("upgrade proposal already exists: %s", msg.Name))
 	}
 
 	return nil
