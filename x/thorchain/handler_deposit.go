@@ -258,6 +258,7 @@ func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 	amt := cosmos.ZeroUint()
 	protocolAmt := cosmos.ZeroUint()
 	swapSourceAsset := msg.Tx.Coins[0].Asset
+	chargeProtocolFee := swapSourceAsset.IsRune() && h.mgr.Keeper().PoolExist(ctx, msg.TargetAsset.GetLayer1Asset())
 
 	// Check if affiliate fee should be paid out
 	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
@@ -280,6 +281,11 @@ func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 			msg.Tx.Coins[0].Amount,
 		)
 
+		if !chargeProtocolFee {
+			// if target asset is not a pool, don't charge protocol affiliate fee
+			protocolAmt = cosmos.ZeroUint()
+		}
+
 		msg.Tx.Coins[0].Amount = common.SafeSub(msg.Tx.Coins[0].Amount, amt.Add(protocolAmt))
 	}
 
@@ -288,9 +294,10 @@ func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 	}
 
-	if !protocolAmt.IsZero() && swapSourceAsset.IsRune() {
-		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), protocolAmt))); err != nil {
-			ctx.Logger().Error("fail to send protocol affiliate fee to reserve", "error", err)
+	if !protocolAmt.IsZero() && chargeProtocolFee {
+		// TODO: support swap for non rune asset
+		if sdkErr := h.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(swapSourceAsset, protocolAmt))); sdkErr != nil {
+			ctx.Logger().Error("fail to send protocol affiliate fee to reserve", "error", sdkErr)
 		}
 
 		if err := h.mgr.Keeper().AddToLiquidityFees(ctx, msg.TargetAsset.GetLayer1Asset(), protocolAmt); err != nil {

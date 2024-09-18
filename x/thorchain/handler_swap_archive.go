@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -197,7 +198,6 @@ func (h SwapHandler) validateV129(ctx cosmos.Context, msg MsgSwap) error {
 
 	return nil
 }
-
 
 func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result, error) {
 	// test that the network we are running matches the destination network
@@ -419,4 +419,3 @@ func (h SwapHandler) handleV133(ctx cosmos.Context, msg MsgSwap) (*cosmos.Result
 	}
 	return &cosmos.Result{}, nil
 }
-

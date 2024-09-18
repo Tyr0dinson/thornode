@@ -121,6 +121,7 @@ func NewConstantValue() *ConstantVals {
 			SystemIncomeBurnRateBps:             1,                  // burn 1bps (0.01%) RUNE of all system income per ADR 17
 			DevFundSystemIncomeBps:              500,                // allocate 500bps (5%) RUNE of all system income to dev fund per ADR 18
 			PoolShareAdjustmentBasisPoints:      10_000,             // Incentive curve adjustment lever, reducing will increase rewards to nodes, set to maintain pool share factor of 0.37 as of 2024-09-17
+			ProtocolAffiliateFeeBps:             1200,               // Additional bps fee applied to txs that collect an affiliate fee. ADR 016.
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

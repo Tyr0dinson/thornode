@@ -157,6 +157,16 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				if strings.HasPrefix(pick.msg.Tx.Memo, "THOR-PREFERRED-ASSET") && pick.msg.Tx.FromAddress.Equals(affColAddress) {
 					triggerRefund = false
 				}
+
+				// Should not refund a failed protocol affiliate swap, the RUNE is still in the Reserve module
+				reserveAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
+				if err != nil {
+					ctx.Logger().Error("failed to retrieve Reserve module address", "error", err)
+				}
+
+				if strings.HasPrefix(pick.msg.Tx.Memo, "THOR-PROTOCOL-AFFILIATE") && pick.msg.Tx.ToAddress.Equals(reserveAddress) {
+					triggerRefund = false
+				}
 			}
 
 			if triggerRefund {

@@ -184,6 +184,14 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	SetupConfigForTest()
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewDepositHandler(mgr)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
 	tx := common.NewTx(
 		GetRandomTxHash(),
 		GetRandomTHORAddress(),
@@ -255,7 +263,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx1.ID, 0)
 	c.Assert(err, IsNil)
 	c.Assert(swap.Tx.Coins[0].Amount.IsZero(), Equals, false)
-	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/1000*888)), Equals, true)
+	c.Assert(swap.Tx.Coins[0].Amount.Equal(cosmos.NewUint(common.One/10*9)), Equals, true)
 
 	affiliateFeeAddr3, err := msg3.GetAffiliateAddress().AccAddress()
 	c.Assert(err, IsNil)
