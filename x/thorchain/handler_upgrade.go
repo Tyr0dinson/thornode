@@ -276,7 +276,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 		return fmt.Errorf("upgrade proposal not found: %s", name)
 	}
 
-	upgradeApproved, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
+	upgradeApproved, _, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}
@@ -304,7 +304,7 @@ func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) e
 		return nil
 	}
 
-	upgradeApproved, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
+	upgradeApproved, _, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return fmt.Errorf("failed to determine if upgrade is approved by majority threshold of validators: %w", err)
 	}

@@ -95,19 +95,21 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	c.Assert(plan.Height, Equals, upgradeHeight)
 	c.Assert(plan.Info, Equals, upgradeInfo)
 
-	approved, approvedPct, valsToQuorum, err := UpgradeApprovedByMajority(ctx, k, upgradeName)
+	approved, approvingVals, totalActive, valsToQuorum, err := UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, true)
-	c.Assert(approvedPct, Equals, "0.8333333333333334")
-	c.Assert(valsToQuorum, Equals, uint64(0))
+	c.Assert(approvingVals, Equals, 5)
+	c.Assert(totalActive, Equals, 6)
+	c.Assert(valsToQuorum, Equals, 0)
 
 	k.RejectUpgrade(ctx, na2.NodeAddress, upgradeName)
 
-	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
+	approved, approvingVals, totalActive, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, true)
-	c.Assert(approvedPct, Equals, "0.6666666666666666")
-	c.Assert(valsToQuorum, Equals, uint64(0))
+	c.Assert(approvingVals, Equals, 4)
+	c.Assert(totalActive, Equals, 6)
+	c.Assert(valsToQuorum, Equals, 0)
 
 	k.RejectUpgrade(ctx, na1.NodeAddress, upgradeName)
 
@@ -115,22 +117,24 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	_, ok = k.GetUpgradePlan(ctx)
 	c.Assert(ok, Equals, false)
 
-	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
+	approved, approvingVals, totalActive, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, false)
-	c.Assert(approvedPct, Equals, "0.5")
-	c.Assert(valsToQuorum, Equals, uint64(1))
+	c.Assert(approvingVals, Equals, 3)
+	c.Assert(totalActive, Equals, 6)
+	c.Assert(valsToQuorum, Equals, 1)
 
 	k.RejectUpgrade(ctx, na3.NodeAddress, upgradeName)
 	k.RejectUpgrade(ctx, na4.NodeAddress, upgradeName)
 	k.RejectUpgrade(ctx, na5.NodeAddress, upgradeName)
 	k.RejectUpgrade(ctx, na6.NodeAddress, upgradeName)
 
-	approved, approvedPct, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
+	approved, approvingVals, totalActive, valsToQuorum, err = UpgradeApprovedByMajority(ctx, k, upgradeName)
 	c.Assert(err, IsNil)
 	c.Assert(approved, Equals, false)
-	c.Assert(approvedPct, Equals, "0")
-	c.Assert(valsToQuorum, Equals, uint64(4))
+	c.Assert(approvingVals, Equals, 0)
+	c.Assert(totalActive, Equals, 6)
+	c.Assert(valsToQuorum, Equals, 4)
 
 	var rejects int
 	vIter = k.GetUpgradeVoteIterator(ctx, upgradeName)

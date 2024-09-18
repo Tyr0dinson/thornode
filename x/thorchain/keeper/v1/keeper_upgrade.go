@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"strconv"
 	"strings"
 
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -124,15 +123,15 @@ func (k KVStore) removeExpiredUpgradeProposalVotes(ctx cosmos.Context, name stri
 }
 
 // UpgradeApprovedByMajority returns true and no error if the upgrade is approved by 2/3 of Validators.
-// it additionally returns the current approval percentage and the
+// it additionally returns the current approving val count, the total active val count, and the
 // additional active validators needed to reach quorum, if not already approved.
-func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string) (bool, string, uint64, error) {
+func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string) (bool, int, int, int, error) {
 	iterA := k.GetNodeAccountIterator(ctx)
 	defer iterA.Close()
 
 	activeVals, err := k.ListActiveValidators(ctx)
 	if err != nil {
-		return false, "", 0, fmt.Errorf("failed to list active validators: %w", err)
+		return false, 0, 0, 0, fmt.Errorf("failed to list active validators: %w", err)
 	}
 
 	active := make(map[string]bool)
@@ -146,7 +145,7 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 	iterV := k.GetUpgradeVoteIterator(ctx, name)
 	defer iterV.Close()
 
-	var approvingVals int64
+	var approvingVals int
 
 	for ; iterV.Valid(); iterV.Next() {
 		key, vote := iterV.Key(), iterV.Value()
@@ -168,19 +167,15 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 
 	valThreshold := big.NewRat(int64(totalActive)*2, 3)
 
-	approval := big.NewRat(approvingVals, int64(totalActive))
-	approvalFlt, _ := approval.Float64()
-	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
-
 	t, _ := valThreshold.Float64()
 
 	if float64(approvingVals) >= t {
-		return true, approvalStr, 0, nil
+		return true, approvingVals, totalActive, 0, nil
 	}
 
-	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(approvingVals, 1))
+	neededForQuorum := new(big.Rat).Sub(valThreshold, big.NewRat(int64(approvingVals), 1))
 	nfq, _ := neededForQuorum.Float64()
 	valsToQuorum := math.Ceil(nfq)
 
-	return false, approvalStr, uint64(valsToQuorum), nil
+	return false, approvingVals, totalActive, int(valsToQuorum), nil
 }

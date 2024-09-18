@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -2600,10 +2601,14 @@ func queryUpgradeProposal(ctx cosmos.Context, path []string, _ abci.RequestQuery
 		return nil, fmt.Errorf("upgrade proposal not found: %s", name)
 	}
 
-	approved, approvedPct, valsToQuorum, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
+	approved, approvingVals, totalActive, valsToQuorum, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)
 	if err != nil {
 		return nil, fmt.Errorf("fail to check upgrade approval: %w", err)
 	}
+
+	approval := big.NewRat(int64(approvingVals), int64(totalActive))
+	approvalFlt, _ := approval.Float64()
+	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
 
 	vtq := int64(valsToQuorum)
 
@@ -2612,7 +2617,7 @@ func queryUpgradeProposal(ctx cosmos.Context, path []string, _ abci.RequestQuery
 		Height:             proposal.Height,
 		Info:               proposal.Info,
 		Approved:           &approved,
-		ApprovedPercent:    &approvedPct,
+		ApprovedPercent:    &approvalStr,
 		ValidatorsToQuorum: &vtq,
 	}
 
