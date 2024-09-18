@@ -101,7 +101,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43740987}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43740989}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -205,7 +205,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43049161}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43049168}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -276,7 +276,7 @@ asserts:
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6500760}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6500762}"
   - .[1]|.in_hash == "${INBOUND_TXID}"
   - .[1]|.coin.asset == "${INPUT_ASSET}"
   - .[1]|.coin.amount == "${REFUND_AMOUNT=4786000}"
@@ -371,7 +371,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=33861172}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=33861189}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -442,7 +442,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=318594}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=318595}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -591,8 +591,8 @@ asserts:
   ###
   - .[1].asset == "BTC.BTC"
   - .[1].outbound_fee == "14000"
-  - .[1].fee_withheld_rune == "11125385"
-  - .[1].fee_spent_rune == "8343054"
+  - .[1].fee_withheld_rune == "11125410"
+  - .[1].fee_spent_rune == "8343073"
   - .[1].surplus_rune == "2782331"
   - .[1].dynamic_multiplier_basis_points == "20000"
   ###
