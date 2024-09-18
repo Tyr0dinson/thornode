@@ -12,7 +12,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
-	"github.com/multiformats/go-multiaddr"
+	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
@@ -36,6 +36,7 @@ type TssServer struct {
 	preParams         *bkeygen.LocalPreParams
 	tssKeyGenLocker   *sync.Mutex
 	stopChan          chan struct{}
+	joinPartyChan     chan struct{}
 	partyCoordinator  *p2p.PartyCoordinator
 	stateManager      storage.LocalStateManager
 	signatureNotifier *keysign.SignatureNotifier
@@ -109,6 +110,7 @@ func NewTss(
 	}
 	pc := p2p.NewPartyCoordinator(comm.GetHost(), conf.PartyTimeout)
 	sn := keysign.NewSignatureNotifier(comm.GetHost())
+	sn.Start()
 	metrics := monitor.NewMetric()
 	if conf.EnableMonitor {
 		metrics.Enable()
@@ -133,7 +135,7 @@ func NewTss(
 
 // Start Tss server
 func (t *TssServer) Start() error {
-	log.Info().Msg("Starting the TSS servers")
+	t.logger.Info().Msg("starting the tss servers")
 	return nil
 }
 
@@ -146,7 +148,21 @@ func (t *TssServer) Stop() {
 		t.logger.Error().Msgf("error in shutdown the p2p server")
 	}
 	t.partyCoordinator.Stop()
-	log.Info().Msg("The Tss and p2p server has been stopped successfully")
+	t.signatureNotifier.Stop()
+	t.logger.Info().Msg("The tss and p2p server has been stopped successfully")
+}
+
+func (t *TssServer) setJoinPartyChan(jpc chan struct{}) {
+	t.joinPartyChan = jpc
+}
+func (t *TssServer) unsetJoinPartyChan() {
+	t.joinPartyChan = nil
+}
+
+func (t *TssServer) notifyJoinPartyChan() {
+	if t.joinPartyChan != nil {
+		t.joinPartyChan <- struct{}{}
+	}
 }
 
 func (t *TssServer) requestToMsgId(request interface{}) (string, error) {
@@ -222,7 +238,7 @@ func (t *TssServer) GetKnownPeers() []PeerInfo {
 	for _, conn := range host.Network().Conns() {
 		peer := conn.RemotePeer()
 		addrs := conn.RemoteMultiaddr()
-		ip, _ := addrs.ValueForProtocol(multiaddr.P_IP4)
+		ip, _ := addrs.ValueForProtocol(maddr.P_IP4)
 		pi := PeerInfo{
 			ID:      peer.String(),
 			Address: ip,

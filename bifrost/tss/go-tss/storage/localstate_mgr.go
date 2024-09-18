@@ -14,13 +14,23 @@ import (
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
-	ma "github.com/multiformats/go-multiaddr"
+	maddr "github.com/multiformats/go-multiaddr"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 )
 
+type LocalPartySaveData interface {
+}
+
 // KeygenLocalState is a structure used to represent the data we saved locally for different keygen
 type KeygenLocalState struct {
+	PubKey          string   `json:"pub_key"`
+	LocalData       []byte   `json:"local_data"`
+	ParticipantKeys []string `json:"participant_keys"` // the paticipant of last key gen
+	LocalPartyKey   string   `json:"local_party_key"`
+}
+
+type KeygenLocalStateOld struct {
 	PubKey          string                    `json:"pub_key"`
 	LocalData       keygen.LocalPartySaveData `json:"local_data"`
 	ParticipantKeys []string                  `json:"participant_keys"` // the paticipant of last key gen
@@ -106,7 +116,20 @@ func (fsm *FileStateMgr) GetLocalState(pubKey string) (KeygenLocalState, error) 
 	}
 	var localState KeygenLocalState
 	if err := json.Unmarshal(buf, &localState); nil != err {
-		return KeygenLocalState{}, fmt.Errorf("fail to unmarshal KeygenLocalState: %w", err)
+		// try unmarshalling with the old format
+		var localStateOld KeygenLocalStateOld
+		if err := json.Unmarshal(buf, &localStateOld); nil != err {
+			return KeygenLocalState{}, fmt.Errorf("fail to unmarshal KeygenLocalState with backwards compatibility: %w", err)
+		}
+
+		localState.PubKey = localStateOld.PubKey
+		localState.ParticipantKeys = localStateOld.ParticipantKeys
+		localState.LocalPartyKey = localStateOld.LocalPartyKey
+		localState.LocalData, err = json.Marshal(localStateOld.LocalData)
+
+		if err != nil {
+			return KeygenLocalState{}, fmt.Errorf("fail to marshal KeygenLocalState.LocalData for backwards compatibility: %w", err)
+		}
 	}
 	return localState, nil
 }
@@ -154,13 +177,13 @@ func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
 	}
 	fsm.writeLock.RUnlock()
 	data := strings.Split(string(input), "\n")
-	var peerAddresses []ma.Multiaddr
+	var peerAddresses []maddr.Multiaddr
 	for _, el := range data {
 		// we skip the empty entry
 		if len(el) == 0 {
 			continue
 		}
-		addr, err := ma.NewMultiaddr(el)
+		addr, err := maddr.NewMultiaddr(el)
 		if err != nil {
 			return nil, fmt.Errorf("invalid address in address book %w", err)
 		}

@@ -136,6 +136,8 @@ func (t *tssHelpSuite) TestGetMsgRound(c *C) {
 		messages.KEYSIGN5,
 		messages.KEYSIGN6,
 		messages.KEYSIGN7,
+		messages.KEYSIGN8,
+		messages.KEYSIGN9,
 	}
 	mockParty := btss.NewPartyID("12", "22", big.NewInt(2))
 	j := 0
