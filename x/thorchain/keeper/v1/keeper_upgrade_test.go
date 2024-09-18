@@ -55,12 +55,12 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	k.ApproveUpgrade(ctx, na5.NodeAddress, upgradeName)
 
 	var proposals int
-	var proposal types.Upgrade
+	var proposal *types.Upgrade
 	var proposalKey []byte
 	pIter := k.GetUpgradeProposalIterator(ctx)
 	for ; pIter.Valid(); pIter.Next() {
 		proposals++
-		k.cdc.MustUnmarshal(pIter.Value(), &proposal)
+		k.cdc.MustUnmarshal(pIter.Value(), proposal)
 		proposalKey = pIter.Key()
 	}
 

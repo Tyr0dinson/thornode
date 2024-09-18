@@ -75,9 +75,13 @@ func (h ProposeUpgradeHandler) validateV136(ctx cosmos.Context, msg *MsgProposeU
 	}
 
 	k := h.mgr.Keeper()
-	_, err := k.GetProposedUpgrade(ctx, msg.Name)
-	if err == nil {
-		return cosmos.ErrUnknownRequest(fmt.Sprintf("upgrade with name %s already proposed", msg.Name))
+	u, err := k.GetProposedUpgrade(ctx, msg.Name)
+	if err != nil {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("failed to get proposed upgrade: %s", msg.Name))
+	}
+
+	if u != nil {
+		return fmt.Errorf("upgrade proposal already exists: %s", msg.Name)
 	}
 
 	return nil
@@ -266,6 +270,10 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 	u, err := k.GetProposedUpgrade(ctx, name)
 	if err != nil {
 		return fmt.Errorf("failed to get proposed upgrade: %w", err)
+	}
+
+	if u == nil {
+		return fmt.Errorf("upgrade proposal not found: %s", name)
 	}
 
 	upgradeApproved, _, _, err := keeperv1.UpgradeApprovedByMajority(ctx, k, name)

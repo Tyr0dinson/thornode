@@ -53,11 +53,8 @@ func (k *TestUpgradeKeeper) ProposeUpgrade(_ cosmos.Context, name string, upgrad
 	return nil
 }
 
-func (k *TestUpgradeKeeper) GetProposedUpgrade(_ cosmos.Context, name string) (types.Upgrade, error) {
-	if k.proposedUpgrade == nil {
-		return types.Upgrade{}, fmt.Errorf("proposed upgrade not found for %s", name)
-	}
-	return *k.proposedUpgrade, nil
+func (k *TestUpgradeKeeper) GetProposedUpgrade(_ cosmos.Context, name string) (*types.Upgrade, error) {
+	return k.proposedUpgrade, nil
 }
 
 func (k *TestUpgradeKeeper) ApproveUpgrade(_ cosmos.Context, addr cosmos.AccAddress, name string) {
@@ -73,6 +70,10 @@ func (k *TestUpgradeKeeper) GetNodeAccountIterator(_ cosmos.Context) cosmos.Iter
 	nas = append(nas, k.activeAccounts...)
 	nas = append(nas, k.vaultNodeAccount, k.emptyNodeAccount)
 	return newMockNodeAccountIterator(k.Cdc(), nas)
+}
+
+func (k *TestUpgradeKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
+	return k.activeAccounts, nil
 }
 
 func (k *TestUpgradeKeeper) GetUpgradeVoteIterator(_ cosmos.Context, name string) cosmos.Iterator {

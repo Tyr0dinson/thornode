@@ -186,7 +186,7 @@ type KeeperUpgrade interface {
 	RemoveExpiredUpgradeProposals(ctx cosmos.Context) error
 
 	// query methods
-	GetProposedUpgrade(ctx cosmos.Context, name string) (Upgrade, error)
+	GetProposedUpgrade(ctx cosmos.Context, name string) (*Upgrade, error)
 	GetUpgradeProposalIterator(ctx cosmos.Context) cosmos.Iterator
 	GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator
 

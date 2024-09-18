@@ -46,21 +46,21 @@ func (k KVStore) ProposeUpgrade(ctx cosmos.Context, name string, upgrade types.U
 }
 
 // GetProposedUpgrade retrieves a proposed upgrade
-func (k KVStore) GetProposedUpgrade(ctx cosmos.Context, name string) (types.Upgrade, error) {
+func (k KVStore) GetProposedUpgrade(ctx cosmos.Context, name string) (*types.Upgrade, error) {
 	key := fmt.Sprintf("%s%s", prefixUpgradeProposals, name)
 	store := ctx.KVStore(k.storeKey)
 
 	v := store.Get([]byte(key))
 	if v == nil {
-		return types.Upgrade{}, fmt.Errorf("no proposed upgrade for name: %s", name)
+		return nil, nil
 	}
 
 	var upgrade types.Upgrade
 	if err := k.cdc.Unmarshal(v, &upgrade); err != nil {
-		return types.Upgrade{}, fmt.Errorf("failed to unmarshal proposed upgrade: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal proposed upgrade: %w", err)
 	}
 
-	return upgrade, nil
+	return &upgrade, nil
 }
 
 // ApproveUpgrade approves an upgrade as a validator
