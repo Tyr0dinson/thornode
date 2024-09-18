@@ -9,7 +9,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/constants
 asserts:
-  - .int_64_values.IncentiveCurveAdjustmentBasisPoints == 6602 
+  - .int_64_values.IncentiveCurveAdjustmentBasisPoints == 6630
 ---
 ########################################################################################
 # no mimir value currently set to override defaults
