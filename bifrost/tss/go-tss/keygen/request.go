@@ -1,6 +1,6 @@
 package keygen
 
-import "gitlab.com/thorchain/tss/go-tss/common"
+import "gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
 
 // Request request to do keygen
 type Request struct {

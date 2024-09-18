@@ -10,22 +10,22 @@ import (
 	"sync"
 	"time"
 
-	tsslibcommon "github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/ecdsa/signing"
-	btss "github.com/bnb-chain/tss-lib/tss"
+	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/ecdsa/keygen"
+	"github.com/binance-chain/tss-lib/ecdsa/signing"
+	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"go.uber.org/atomic"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/conversion"
-	"gitlab.com/thorchain/tss/go-tss/messages"
-	"gitlab.com/thorchain/tss/go-tss/p2p"
-	"gitlab.com/thorchain/tss/go-tss/storage"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/blame"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 )
 
 type TssKeySign struct {

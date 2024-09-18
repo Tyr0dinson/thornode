@@ -13,23 +13,23 @@ import (
 	"testing"
 	"time"
 
-	btss "github.com/bnb-chain/tss-lib/tss"
+	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 
-	"gitlab.com/thorchain/tss/go-tss/conversion"
-	"gitlab.com/thorchain/tss/go-tss/keysign"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign"
 
-	tsslibcommon "github.com/bnb-chain/tss-lib/common"
+	tsslibcommon "github.com/binance-chain/tss-lib/common"
 	"github.com/libp2p/go-libp2p-core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/messages"
-	"gitlab.com/thorchain/tss/go-tss/p2p"
-	"gitlab.com/thorchain/tss/go-tss/storage"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 )
 
 var (

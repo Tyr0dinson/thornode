@@ -12,20 +12,20 @@ import (
 
 	"go.uber.org/atomic"
 
-	tsslibcommon "github.com/bnb-chain/tss-lib/common"
-	eddsakeygen "github.com/bnb-chain/tss-lib/eddsa/keygen"
-	"github.com/bnb-chain/tss-lib/eddsa/signing"
-	btss "github.com/bnb-chain/tss-lib/tss"
+	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	eddsakeygen "github.com/binance-chain/tss-lib/eddsa/keygen"
+	"github.com/binance-chain/tss-lib/eddsa/signing"
+	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/conversion"
-	"gitlab.com/thorchain/tss/go-tss/messages"
-	"gitlab.com/thorchain/tss/go-tss/p2p"
-	"gitlab.com/thorchain/tss/go-tss/storage"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/blame"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 )
 
 type EDDSAKeySign struct {
@@ -281,4 +281,3 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 		}
 	}
 }
-

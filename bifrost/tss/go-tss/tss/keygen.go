@@ -4,13 +4,15 @@ import (
 	"errors"
 	"time"
 
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keygen"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keygen/ecdsa"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keygen/eddsa"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
-	"github.com/bnb-chain/tss-lib/crypto"
-	"gitlab.com/thorchain/binance-sdk/common/types"
 )
 
 func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {

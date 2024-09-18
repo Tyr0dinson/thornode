@@ -7,21 +7,21 @@ import (
 	"sync"
 	"time"
 
-	bcrypto "github.com/bnb-chain/tss-lib/crypto"
-	bkg "github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	btss "github.com/bnb-chain/tss-lib/tss"
+	bcrypto "github.com/binance-chain/tss-lib/crypto"
+	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
+	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"
 
-	"gitlab.com/thorchain/tss/go-tss/blame"
-	"gitlab.com/thorchain/tss/go-tss/common"
-	"gitlab.com/thorchain/tss/go-tss/conversion"
-	"gitlab.com/thorchain/tss/go-tss/keygen"
-	"gitlab.com/thorchain/tss/go-tss/messages"
-	"gitlab.com/thorchain/tss/go-tss/p2p"
-	"gitlab.com/thorchain/tss/go-tss/storage"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/blame"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keygen"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 )
 
 type TssKeyGen struct {

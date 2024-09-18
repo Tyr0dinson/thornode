@@ -15,17 +15,17 @@ import (
 	s256k1 "github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 
-	"github.com/bnb-chain/tss-lib/crypto"
-	btss "github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/crypto"
+	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	coseddkey "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/types"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	crypto2 "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"gitlab.com/thorchain/binance-sdk/common/types"
 
-	"gitlab.com/thorchain/tss/go-tss/messages"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
 )
 
 // GetPeerIDFromSecp256PubKey convert the given pubkey into a peer.ID

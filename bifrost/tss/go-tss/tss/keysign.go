@@ -15,15 +15,16 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign/ecdsa"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign/eddsa"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 
-	tsslibcommon "github.com/bnb-chain/tss-lib/common"
+	tsslibcommon "github.com/binance-chain/tss-lib/common"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
-
 )
 
 func (t *TssServer) waitForSignatures(msgID, poolPubKey string, msgsToSign [][]byte, sigChan chan string) (keysign.Response, error) {
