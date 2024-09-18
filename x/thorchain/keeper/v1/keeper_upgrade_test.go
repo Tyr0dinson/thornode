@@ -65,7 +65,7 @@ func (s *KeeperUpgradeSuite) TestUpgrade(c *C) {
 	}
 
 	c.Assert(proposals, Equals, 1)
-	c.Assert(proposalKey, DeepEquals, []byte("upgrade_proposals/berserk"))
+	c.Assert(proposalKey, DeepEquals, []byte("upgr_props/berserk"))
 	c.Assert(proposal.Height, Equals, upgradeHeight)
 	c.Assert(proposal.Info, Equals, upgradeInfo)
 

@@ -90,8 +90,8 @@ const (
 	prefixAffiliateCollector      types.DbPrefix = "affcol/"
 	prefixRollingPoolLiquidityFee types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixVersion                 types.DbPrefix = "version/"
-	prefixUpgradeProposals        types.DbPrefix = "upgrade_proposals/"
-	prefixUpgradeVotes            types.DbPrefix = "upgrade_votes/"
+	prefixUpgradeProposals        types.DbPrefix = "upgr_props/"
+	prefixUpgradeVotes            types.DbPrefix = "upgr_votes/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
