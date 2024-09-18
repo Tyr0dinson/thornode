@@ -89,7 +89,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_cat }}
       coins:
-        - amount: "10902896"
+        - amount: "10851058"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -137,7 +137,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "1467062409"
+  - .affiliate_collector_rune == "1467192720"
 ---
 ########################################################################################
 # streaming swap to trigger preferred asset swap
@@ -168,12 +168,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
 asserts:
-  - .deposit == "28500000"
-  - .in == "5700000"
+  - .deposit == "28320000"
+  - .in == "5664000"
   - .count == 1
   - .interval == 1
   - .quantity == 5
-  - .out == "557258500"
+  - .out == "553817300"
   - .last_height == 9
   - .trade_target == "0"
   - .failed_swaps|length == 0
@@ -183,9 +183,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.in_hash == "${IN_HASH=1937E2A32B07C36D1198C3C8FAB8605A40140E40B2AE35FB496A886FF7906474}"
+  - .[0]|.in_hash == "${IN_HASH=4B066C60B8CC8011E68EDF9574D086FF69103DDE68173CEA27EBCF789D6F646E}"
   - .[0]|.coin.asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "${OUT_AMOUNT=1301979400}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=1302093800}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -212,17 +212,17 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "145349743"
+  - .affiliate_collector_rune == "145360225"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
 asserts:
-  - .deposit == "28500000"
-  - .in == "17100000"
+  - .deposit == "28320000"
+  - .in == "16992000"
   - .count == 3
   - .interval == 1
   - .quantity == 5
-  - .out == "1633192400"
+  - .out == "1622938100"
   - .last_height == 11
   - .trade_target == "0"
   - .failed_swaps|length == 0
@@ -242,7 +242,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
   - .[0]|.coin.asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "2549702200"
+  - .[0]|.coin.amount == "2533163500"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -253,7 +253,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "2549702200"
+        - amount: "2533163500"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
       gas:
         - amount: "960000"
