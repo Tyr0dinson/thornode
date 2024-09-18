@@ -35,7 +35,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "11243459700"
+        - amount: "11243464900"
           asset: "${ASSET}"
           decimals: 8
       gas:
