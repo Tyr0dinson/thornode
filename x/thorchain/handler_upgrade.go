@@ -274,6 +274,10 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 	}
 
 	if upgradeApproved {
+		if upgradeScheduled {
+			return fmt.Errorf("a different upgrade is already scheduled: %s", upgradePlan.Name)
+		}
+
 		// upgrade approval is now over the majority threshold
 		return k.ScheduleUpgrade(ctx, upgradetypes.Plan{
 			Name:   name,
