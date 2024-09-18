@@ -52,6 +52,11 @@ asserts:
   - .approved_percent == "0.4"
   - .validators_to_quorum == 2
 ---
+type: check
+endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+asserts:
+- .plan == null
+---
 type: tx-approve-upgrade
 signer: {{ addr_thor_pig }}
 name: v0.1.2
@@ -69,6 +74,13 @@ asserts:
   - .approved == true
   - .approved_percent == "0.8"
   - .validators_to_quorum == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+asserts:
+- .plan.name == "v0.1.2"
+- .plan.info == "upgrade to version 0.1.2"
+- .plan.height == "100"
 ---
 type: tx-reject-upgrade
 signer: {{ addr_thor_frog }}

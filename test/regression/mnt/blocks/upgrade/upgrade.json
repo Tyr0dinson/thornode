@@ -367,7 +367,7 @@
           "data": "\n\u001a\n\u0018/types.MsgProposeUpgrade",
           "log": "[{\"events\":[{\"type\":\"approve_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"name\",\"value\":\"v0.1.2\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"propose_upgrade\"}]},{\"type\":\"propose_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr\"},{\"key\":\"name\",\"value\":\"v0.1.2\"},{\"key\":\"height\",\"value\":\"100\"},{\"key\":\"info\",\"value\":\"upgrade to version 0.1.2\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "107408",
+          "gas_used": "108635",
           "events": [
             {
               "fee": "",
@@ -463,7 +463,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "12BC58C4CCB429CFFB7644D3225E8764E8151BF9143F17FD3CA4286310318BC7",
-      "last_results_hash": "584404F15030ED82A48DBB1CD77DC5A8AF612EF33658E7B7F6BE416417EF6978",
+      "last_results_hash": "8C40C63FFC1A4D982EC62AE290B79FE5031803748FD120EDFBBB9FC124B46BD4",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -586,7 +586,7 @@
           "data": "\n\u001a\n\u0018/types.MsgApproveUpgrade",
           "log": "[{\"events\":[{\"type\":\"approve_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"name\",\"value\":\"v0.1.2\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"approve_upgrade\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "99590",
+          "gas_used": "100817",
           "events": [
             {
               "fee": "",
@@ -675,7 +675,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "06510D7D4580326D42428DF6671F6465DAE0FAC96CA6A0DF81469CE4F37C2467",
-      "last_results_hash": "028D913573719E184EF1690008C15C7748CA9A9F4519C045B080ADCC6559D508",
+      "last_results_hash": "ACD80561C25A722D04A3CC2744DCD55F84F69A9FD0FBB0AA9EE8E39E4EC24E3A",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -798,7 +798,7 @@
           "data": "\n\u001a\n\u0018/types.MsgApproveUpgrade",
           "log": "[{\"events\":[{\"type\":\"approve_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u\"},{\"key\":\"name\",\"value\":\"v0.1.2\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"approve_upgrade\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "99746",
+          "gas_used": "100973",
           "events": [
             {
               "fee": "",
@@ -903,7 +903,7 @@
           "data": "\n\u001a\n\u0018/types.MsgApproveUpgrade",
           "log": "[{\"events\":[{\"type\":\"approve_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43\"},{\"key\":\"name\",\"value\":\"v0.1.2\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"approve_upgrade\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "105426",
+          "gas_used": "106653",
           "events": [
             {
               "fee": "",
@@ -992,7 +992,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "4586431352B917C8C618CB2808A83A5B058BD5F5D7D3B1723F78620CFB00A27C",
-      "last_results_hash": "6F3262DA108113A9F5906F807533400BF73857935D9CAF4F3A390A17D9F318FD",
+      "last_results_hash": "59B5CAD02A7DD6424174D6ADF8A2B8CC50D1ABD8AFCD6487A16862540CA13C36",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1115,7 +1115,7 @@
           "data": "\n\u0019\n\u0017/types.MsgRejectUpgrade",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"reject_upgrade\"}]},{\"type\":\"reject_upgrade\",\"attributes\":[{\"key\":\"thor_address\",\"value\":\"tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43\"},{\"key\":\"name\",\"value\":\"v0.1.2\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "96205",
+          "gas_used": "97432",
           "events": [
             {
               "fee": "",
