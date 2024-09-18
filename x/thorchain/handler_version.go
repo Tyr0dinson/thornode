@@ -128,10 +128,10 @@ func validateVersionAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccA
 	return nil
 }
 
-// ActiveNodeAnteHandler called by the ante handler to gate mempool entry and
-// also during deliver to only active validator nodes. Store changes will persist
+// ValidatorAnteHandler called by the ante handler to gate mempool entry and
+// also during deliver to only validator nodes. Store changes will persist
 // if this function succeeds, regardless of the success of the transaction.
-func ActiveNodeAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, signer cosmos.AccAddress) error {
+func ValidatorAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, signer cosmos.AccAddress) error {
 	if err := validateVersionAuth(ctx, k, signer); err != nil {
 		return err
 	}
