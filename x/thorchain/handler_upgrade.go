@@ -316,3 +316,14 @@ func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) e
 
 	return nil
 }
+
+// ActiveValidatorAnteHandler called by the ante handler to gate mempool entry and
+// also during deliver to only active validator nodes. Store changes will persist
+// if this function succeeds, regardless of the success of the transaction.
+func ActiveValidatorAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, signer cosmos.AccAddress) error {
+	if err := signedByActiveNodeAccount(ctx, k, signer); err != nil {
+		return err
+	}
+
+	return k.DeductNativeTxFeeFromBond(ctx, signer)
+}
