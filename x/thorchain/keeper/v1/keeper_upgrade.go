@@ -130,18 +130,14 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 	iterA := k.GetNodeAccountIterator(ctx)
 	defer iterA.Close()
 
+	activeVals, err := k.ListActiveValidators(ctx)
+	if err != nil {
+		return false, "", 0, fmt.Errorf("failed to list active validators: %w", err)
+	}
+
 	active := make(map[string]bool)
 
-	for ; iterA.Valid(); iterA.Next() {
-		var na NodeAccount
-		if err := k.Cdc().Unmarshal(iterA.Value(), &na); err != nil {
-			return false, "", 0, fmt.Errorf("failed to unmarshal: %w", err)
-		}
-
-		if na.IsEmpty() || na.Status != NodeActive || na.Type != NodeTypeValidator {
-			continue
-		}
-
+	for _, na := range activeVals {
 		active[na.NodeAddress.String()] = true
 	}
 
