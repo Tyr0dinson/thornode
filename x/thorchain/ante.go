@@ -120,8 +120,13 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return NodePauseChainAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSetNodeKeys:
 		return SetNodeKeysAnteHandler(ctx, version, ad.keeper, *m)
-	case *types.MsgSetVersion, *types.MsgProposeUpgrade, *types.MsgApproveUpgrade, *types.MsgRejectUpgrade:
+	case *types.MsgSetVersion:
 		return ActiveNodeAnteHandler(ctx, version, ad.keeper, m.GetSigners()[0])
+	case *types.MsgProposeUpgrade, *types.MsgApproveUpgrade, *types.MsgRejectUpgrade:
+		if version.GTE(semver.MustParse("2.136.0")) {
+			return ActiveNodeAnteHandler(ctx, version, ad.keeper, m.GetSigners()[0])
+		}
+		return cosmos.ErrUnknownRequest("invalid message type")
 
 	// native handlers (non-consensus)
 	case *types.MsgDeposit:
