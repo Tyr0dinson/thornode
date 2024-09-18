@@ -12,10 +12,10 @@ import (
 
 	"go.uber.org/atomic"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
-	eddsakeygen "github.com/binance-chain/tss-lib/eddsa/keygen"
-	"github.com/binance-chain/tss-lib/eddsa/signing"
-	btss "github.com/binance-chain/tss-lib/tss"
+	tsslibcommon "github.com/bnb-chain/tss-lib/common"
+	eddsakeygen "github.com/bnb-chain/tss-lib/eddsa/keygen"
+	"github.com/bnb-chain/tss-lib/eddsa/signing"
+	btss "github.com/bnb-chain/tss-lib/tss"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tcrypto "github.com/tendermint/tendermint/crypto"

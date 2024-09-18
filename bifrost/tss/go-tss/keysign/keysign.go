@@ -1,7 +1,7 @@
 package keysign
 
 import (
-	bc "github.com/binance-chain/tss-lib/common"
+	bc "github.com/bnb-chain/tss-lib/common"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"

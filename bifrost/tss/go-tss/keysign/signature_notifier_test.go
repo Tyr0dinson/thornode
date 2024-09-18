@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
-	"github.com/binance-chain/tss-lib/ecdsa/signing"
+	tsslibcommon "github.com/bnb-chain/tss-lib/common"
 	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"
+	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
 )
 

@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/binance-chain/tss-lib/common"
+	"github.com/bnb-chain/tss-lib/common"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 	"github.com/tendermint/btcd/btcec"

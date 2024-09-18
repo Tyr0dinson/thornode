@@ -15,8 +15,8 @@ import (
 	s256k1 "github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 
-	"github.com/binance-chain/tss-lib/crypto"
-	btss "github.com/binance-chain/tss-lib/tss"
+	"github.com/bnb-chain/tss-lib/crypto"
+	btss "github.com/bnb-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	coseddkey "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"

@@ -21,7 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/p2p"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/storage"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	tsslibcommon "github.com/bnb-chain/tss-lib/common"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/crypto/secp256k1"

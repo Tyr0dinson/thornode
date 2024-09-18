@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/binance-chain/tss-lib/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 	maddr "github.com/multiformats/go-multiaddr"

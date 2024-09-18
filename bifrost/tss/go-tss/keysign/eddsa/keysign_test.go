@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	btss "github.com/binance-chain/tss-lib/tss"
+	btss "github.com/bnb-chain/tss-lib/tss"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	tsslibcommon "github.com/bnb-chain/tss-lib/common"
 	"github.com/libp2p/go-libp2p-core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
 	tcrypto "github.com/tendermint/tendermint/crypto"

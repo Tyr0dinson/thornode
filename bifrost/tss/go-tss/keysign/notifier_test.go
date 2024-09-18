@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"os"
 
-	tsslibcommon "github.com/binance-chain/tss-lib/common"
+	tsslibcommon "github.com/bnb-chain/tss-lib/common"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/common"

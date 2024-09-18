@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	bkg "github.com/binance-chain/tss-lib/ecdsa/keygen"
-	btss "github.com/binance-chain/tss-lib/tss"
+	bkg "github.com/bnb-chain/tss-lib/ecdsa/keygen"
+	btss "github.com/bnb-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/libp2p/go-libp2p-core/peer"
 	. "gopkg.in/check.v1"
