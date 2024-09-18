@@ -1516,10 +1516,8 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	totalBonded, _ := vm.getTotalActiveBond(ctx)
 
 	emissionCurve := vm.k.GetConfigInt64(ctx, constants.EmissionCurve)
-	incentiveCurveBasisPoints, err := vm.k.GetMimir(ctx, constants.IncentiveCurveAdjustmentBasisPoints.String())
-	if incentiveCurveBasisPoints < 0 || err != nil {
-		incentiveCurveBasisPoints = constAccessor.GetInt64Value(constants.IncentiveCurveAdjustmentBasisPoints)
-	}
+	incentiveCurveBasisPoints := vm.k.GetConfigInt64(ctx, constants.IncentiveCurveAdjustmentBasisPoints)
+
 	devFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.DevFundSystemIncomeBps)
 	systemIncomeBurnRateBps := vm.k.GetConfigInt64(ctx, constants.SystemIncomeBurnRateBps)
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
@@ -1712,8 +1710,6 @@ func (vm *NetworkMgrVCUR) getTotalActiveBond(ctx cosmos.Context) (cosmos.Uint, e
 	for _, node := range nodes {
 		totalBonded = totalBonded.Add(node.Bond)
 	}
-
-	ctx.Logger().Info("TotalBonded", "total", totalBonded)
 
 	return totalBonded, nil
 }
