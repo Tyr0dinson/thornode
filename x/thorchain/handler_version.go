@@ -62,7 +62,7 @@ func (h VersionHandler) validateV114(ctx cosmos.Context, msg MsgSetVersion) erro
 	if len(v.Build) > 0 || len(v.Pre) > 0 {
 		return cosmos.ErrUnknownRequest("THORChain doesn't use Pre/Build version")
 	}
-	if err := validateVersionAuth(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
+	if err := validateActiveNode(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
 		return cosmos.ErrUnauthorized(err.Error())
 	}
 	return nil
@@ -111,7 +111,7 @@ func (h VersionHandler) handleV115(ctx cosmos.Context, msg MsgSetVersion) error 
 	return nil
 }
 
-func validateVersionAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress) error {
+func validateActiveNode(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress) error {
 	nodeAccount, err := k.GetNodeAccount(ctx, signer)
 	if err != nil {
 		ctx.Logger().Error("fail to get node account", "error", err, "address", signer.String())
@@ -132,7 +132,7 @@ func validateVersionAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccA
 // also during deliver to only active validator nodes. Store changes will persist
 // if this function succeeds, regardless of the success of the transaction.
 func ActiveNodeAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, signer cosmos.AccAddress) error {
-	if err := validateVersionAuth(ctx, k, signer); err != nil {
+	if err := validateActiveNode(ctx, k, signer); err != nil {
 		return err
 	}
 
