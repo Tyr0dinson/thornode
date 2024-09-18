@@ -173,12 +173,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
 asserts:
-  - .deposit == "28500000"
-  - .in == "5700000"
+  - .deposit == "28320000"
+  - .in == "5664000"
   - .count == 1
   - .interval == 1
   - .quantity == 5
-  - .out == "557258500"
+  - .out == "553817300"
   - .last_height == 9
   - .trade_target == "0"
   - .failed_swaps|length == 0
@@ -222,8 +222,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
 asserts:
-  - .deposit == "28500000"
-  - .in == "17100000"
+  - .deposit == "28320000"
+  - .in == "16992000"
   - .count == 3
   - .interval == 1
   - .quantity == 5
