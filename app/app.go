@@ -212,24 +212,6 @@ func New(
 		),
 	)
 
-	app.mm.SetOrderBeginBlockers(
-		upgradetypes.ModuleName,
-		authtypes.ModuleName,
-		banktypes.ModuleName,
-		genutiltypes.ModuleName,
-		paramstypes.ModuleName,
-		thorchain.ModuleName,
-	)
-
-	app.mm.SetOrderEndBlockers(
-		authtypes.ModuleName,
-		banktypes.ModuleName,
-		genutiltypes.ModuleName,
-		paramstypes.ModuleName,
-		upgradetypes.ModuleName,
-		thorchain.ModuleName,
-	)
-
 	// NOTE: The genutils module must occur after staking so that pools are
 	// properly initialized with tokens from genesis accounts.
 	app.mm.SetOrderInitGenesis(
