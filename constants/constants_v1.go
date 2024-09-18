@@ -120,6 +120,7 @@ func NewConstantValue() *ConstantVals {
 			SaversEjectInterval:                 0,                  // number of blocks for savers check, disabled if zero
 			SystemIncomeBurnRateBps:             1,                  // burn 1bps (0.01%) RUNE of all system income per ADR 17
 			DevFundSystemIncomeBps:              500,                // allocate 500bps (5%) RUNE of all system income to dev fund per ADR 18
+			ProtocolAffiliateFeeBps:             1200,
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

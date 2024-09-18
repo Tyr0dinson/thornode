@@ -529,7 +529,7 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		}
 		if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
 			protocolBps := mgr.Keeper().GetConfigInt64(ctx, constants.ProtocolAffiliateFeeBps)
-			protocolAffilateBps := common.GetSafeShare(
+			protocolAffiliateBps := common.GetSafeShare(
 				cosmos.NewUint(uint64(protocolBps)),
 				cosmos.NewUint(10000),
 				msg.AffiliateBasisPoints,
@@ -542,7 +542,7 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			)
 
 			protocolAmt := common.GetSafeShare(
-				protocolAffilateBps,
+				protocolAffiliateBps,
 				cosmos.NewUint(10000),
 				msg.Tx.Coins[0].Amount,
 			)

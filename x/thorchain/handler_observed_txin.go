@@ -354,7 +354,7 @@ func (h ObservedTxInHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) 
 	// Check if affiliate fee should be paid out
 	if !msg.AffiliateBasisPoints.IsZero() && msg.AffiliateAddress.IsChain(common.THORChain) {
 		protocolBps := h.mgr.Keeper().GetConfigInt64(ctx, constants.ProtocolAffiliateFeeBps)
-		protocolAffilateBps := common.GetSafeShare(
+		protocolAffiliateBps := common.GetSafeShare(
 			cosmos.NewUint(uint64(protocolBps)),
 			cosmos.NewUint(10000),
 			msg.AffiliateBasisPoints,
@@ -367,7 +367,7 @@ func (h ObservedTxInHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) 
 		)
 
 		protocolAmt = common.GetSafeShare(
-			protocolAffilateBps,
+			protocolAffiliateBps,
 			cosmos.NewUint(10000),
 			msg.Tx.Coins[0].Amount,
 		)
