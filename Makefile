@@ -45,7 +45,8 @@ TEST_DIR?="./..."
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 GOBIN?=${GOPATH}/bin
-BINARIES=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
+BINARIES=./tools/recover-keyshare-backup
+#BINARIES=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 
 # docker tty args are disabled in CI
 ifndef CI
@@ -333,6 +334,19 @@ docker-gitlab-build:
 		-t registry.gitlab.com/thorchain/thornode:${GITREF} \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TAG=$(BUILDTAG)
+
+get-heighliner:
+	git clone https://github.com/strangelove-ventures/heighliner.git
+	cd heighliner && go install
+
+local-image:
+ifeq (,$(shell which heighliner))
+	echo 'heighliner' binary not found. Consider running `make get-heighliner`
+else
+	heighliner build -c thorchain --local
+endif
+
+.PHONY: get-heighliner local-image
 
 ########################################################################################
 # Tools
