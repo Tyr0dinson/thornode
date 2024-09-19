@@ -852,7 +852,7 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 	log := log.Output(zerolog.ConsoleWriter{Out: out})
 
 	// check that message is valid
-	err := msg.ValidateBasic()
+	err := msg.(sdk.HasValidateBasic).ValidateBasic()
 	if err != nil {
 		enc := json.NewEncoder(out) // json instead of yaml to encode amount
 		enc.SetIndent("", "  ")
@@ -892,7 +892,7 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 
 	// extract txhash from output json
 	var txRes sdk.TxResponse
-	err = encodingConfig.Marshaler.UnmarshalJSON(buf.Bytes(), &txRes)
+	err = encodingConfig.Codec.UnmarshalJSON(buf.Bytes(), &txRes)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to unmarshal tx response")
 	}

@@ -31,12 +31,14 @@ require (
 	cosmossdk.io/client/v2 v2.0.0-beta.1.0.20240118205803-02b5997c5192
 	cosmossdk.io/core v0.12.0
 	cosmossdk.io/errors v1.0.1
-	cosmossdk.io/log v1.3.1
+	cosmossdk.io/log v1.4.0
 	cosmossdk.io/math v1.3.0
 	cosmossdk.io/store v1.1.0
-	cosmossdk.io/x/tx v0.13.3
+	cosmossdk.io/tools/confix v0.1.2
+	cosmossdk.io/x/tx v0.13.4
 	cosmossdk.io/x/upgrade v0.1.1
 	filippo.io/age v1.0.0-rc.3
+	github.com/99designs/keyring v1.2.1
 	github.com/binance-chain/tss-lib v0.0.0-20201118045712-70b2cb4bf916
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/btcsuite/btcd v0.22.1
@@ -44,14 +46,15 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcutil v1.0.3-0.20211129182920-9c4bbabe7acd
 	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/cometbft/cometbft v0.38.10
+	github.com/cometbft/cometbft v0.38.11
 	github.com/cosmos/cosmos-db v1.0.2
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.8
 	github.com/cosmos/go-bip39 v1.0.0
-	github.com/cosmos/gogoproto v1.5.0
+	github.com/cosmos/gogoproto v1.6.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/deckarep/golang-set v1.8.0
+	github.com/decred/dcrd/dcrec/edwards v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
 	github.com/eager7/doglog v0.0.0-20200427040431-a0db59f0a792
@@ -90,7 +93,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
-	github.com/rs/zerolog v1.32.0
+	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cast v1.6.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
@@ -122,7 +125,6 @@ require (
 	cosmossdk.io/depinject v1.0.0-alpha.4 // indirect
 	filippo.io/edwards25519 v1.0.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
-	github.com/99designs/keyring v1.2.1 // indirect
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.5 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
@@ -140,6 +142,7 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
+	github.com/cockroachdb/apd/v2 v2.0.2 // indirect
 	github.com/cockroachdb/errors v1.11.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/pebble v1.1.0 // indirect
@@ -156,6 +159,8 @@ require (
 	github.com/cosmos/ledger-cosmos-go v0.13.3 // indirect
 	github.com/crate-crypto/go-ipa v0.0.0-20231025140028-3c0104f4b233 // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.0.0 // indirect
+	github.com/creachadair/atomicfile v0.3.1 // indirect
+	github.com/creachadair/tomledit v0.0.24 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
@@ -338,7 +343,7 @@ require (
 	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
