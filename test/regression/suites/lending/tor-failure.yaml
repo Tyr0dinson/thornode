@@ -67,7 +67,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001634526
+  - .balance_rune|tonumber == 300001083690
 ---
 ########################################################################################
 # 1/3 of tor anchor pools depeg (no significant effect)
@@ -80,7 +80,7 @@ params:
   to_asset: RUNE
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == ${INITIAL_EXPECTED_OUT=486545262}
+  - .expected_amount_out|tonumber == ${INITIAL_EXPECTED_OUT=486544099}
   - .expected_debt_issued|tonumber == ${INITIAL_EXPECTED_DEBT_ISSUED=490140000}
 ---
 type: tx-deposit
@@ -101,7 +101,7 @@ params:
   to_asset: RUNE
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 486932548 # some change (TODO below)
+  - .expected_amount_out|tonumber == 486905444 # some change (TODO below)
   - .expected_amount_out|tonumber != ${INITIAL_EXPECTED_OUT}
   - .expected_debt_issued|tonumber == ${INITIAL_EXPECTED_DEBT_ISSUED} # no change, since no median price change
 ---
@@ -120,7 +120,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "24951999800"
+        - amount: "24951999900"
           asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -142,8 +142,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .balance_asset|tonumber == 3962255700
-  - .balance_rune|tonumber == 3962285943
+  - .balance_asset|tonumber == 3878968590
+  - .balance_rune|tonumber == 3878986436
   - .derived_depth_bps|tonumber == 100 # squash to 1%
 ---
 type: tx-observed-in
@@ -190,8 +190,8 @@ params:
   to_asset: RUNE
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == ${INITIAL_EXPECTED_OUT=988298937}
-  - .expected_debt_issued|tonumber == 4095920000
+  - .expected_amount_out|tonumber == ${INITIAL_EXPECTED_OUT=967029309}
+  - .expected_debt_issued|tonumber == 4095860000
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -214,7 +214,7 @@ asserts:
   # the expected amount is up, but by less than the RUNE to manipulate
   - .expected_amount_out|tonumber > ${INITIAL_EXPECTED_OUT}
   - .expected_amount_out|tonumber-100000000000 < ${INITIAL_EXPECTED_OUT}
-  - .expected_debt_issued|tonumber == 1565380000
+  - .expected_debt_issued|tonumber == 1634810000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -231,7 +231,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "24951907500"
+        - amount: "24951907600"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -253,8 +253,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .balance_asset|tonumber == 1886131063
-  - .balance_rune|tonumber == 4919871603
+  - .balance_asset|tonumber == 1903168349
+  - .balance_rune|tonumber == 4753406293
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -284,7 +284,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 2
   - .[1]|.collateral_deposited == "494905"
-  - .[1]|.debt_issued == "186000000" # almost 3x less debt than no manipulation
+  - .[1]|.debt_issued == "194250000" # almost 3x less debt than no manipulation
   - .[1]|.collateral_withdrawn == "0"
   - .[1]|.debt_repaid == "0"
   - .[1]|.owner == "{{ addr_btc_pig }}"
@@ -292,15 +292,15 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .balance_asset|tonumber == 1886131063
-  - .balance_rune|tonumber == 4919871603
+  - .balance_asset|tonumber == 1903168349
+  - .balance_rune|tonumber == 4753406293
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - '[.end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")]|length == 1'
   # use this amount later to pay back the loan after anchor repegs
-  - .end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")|.coin == "${RUNE_BORROWED=399979715} THOR.RUNE"
+  - .end_block_events[]|select(.type=="outbound" and .to=="{{ addr_thor_pig }}")|.coin == "${RUNE_BORROWED=397459767} THOR.RUNE"
 ---
 ########################################################################################
 # 2/3 of tor anchor pools depeg and attacker prevents swaps for max anchor blocks
@@ -318,8 +318,8 @@ params:
   to_asset: RUNE
   destination: {{ addr_thor_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 1216303847
-  - .expected_debt_issued|tonumber == 1551380000
+  - .expected_amount_out|tonumber == 1178684951
+  - .expected_debt_issued|tonumber == 1620170000
 ---
 type: create-blocks
 count: 3
