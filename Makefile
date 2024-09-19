@@ -25,6 +25,9 @@ BRANCH?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GITREF?=$(shell git rev-parse --short HEAD 2>/dev/null)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
+# for dockerized protobuf tools
+DOCKER := $(shell which docker)
+
 # compiler flags
 VERSION:=$(shell cat version)
 TAG?=mocknet
@@ -55,20 +58,13 @@ endif
 
 # ------------------------------ Generate ------------------------------
 
-generate: go-generate openapi protob-docker
+generate: go-generate openapi proto-gen
 	@./scripts/generate.py
 	@cd test/simulation && go mod tidy
 
 go-generate:
 	@go install golang.org/x/tools/cmd/stringer@v0.15.0
 	@go generate ./...
-
-protob:
-	@./scripts/protocgen.sh
-
-protob-docker:
-	@docker run --rm -v $(shell pwd):/app -w /app golang:1.22.2 \
-		make protob
 
 openapi:
 	@docker run --rm \
@@ -80,6 +76,35 @@ openapi:
 	@find ./openapi/gen -type f | xargs sed -i '/^[- ]*API version.*$(shell cat version)/d;/APIClient.*$(shell cat version)/d'
 	@find ./openapi/gen -type f | grep model | xargs sed -i 's/MarshalJSON(/MarshalJSON_deprecated(/'
 
+protoVer=0.13.2
+protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
+protoImage=$(DOCKER) run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+
+proto-all: proto-format proto-lint proto-gen format
+
+proto-gen:
+	@echo "Generating bifrost protobuf files"
+	@docker run --rm -v $(shell pwd):/app -w /app golang:1.22.2 make bifrost-protosh
+	@go install cosmossdk.io/orm/cmd/protoc-gen-go-cosmos-orm@v1.0.0-beta.3
+	@echo "Generating Protobuf files"
+	@$(protoImage) sh ./scripts/protocgen.sh
+	@go mod tidy
+
+proto-format:
+	@echo "Formatting Protobuf files"
+	@$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
+
+proto-swagger-gen:
+	@./scripts/protoc-swagger-gen.sh
+
+proto-lint:
+	@$(protoImage) buf lint --error-format=json
+
+proto-check-breaking:
+	@$(protoImage) buf breaking --against $(HTTPS_GIT)#branch=main
+
+bifrost-protosh:
+	@./scripts/bifrostprotocgen.sh
 # ------------------------------ Docs ------------------------------
 
 docs-init:
