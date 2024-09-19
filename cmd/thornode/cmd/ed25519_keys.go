@@ -19,7 +19,7 @@ import (
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/spf13/cobra"
-	"github.com/tendermint/tendermint/crypto/ed25519"
+	"github.com/cometbft/cometbft/crypto/ed25519"
 
 	"gitlab.com/thorchain/thornode/app"
 )
@@ -49,7 +49,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), app.DefaultNodeHome(), password))
+	db, err := keyring.Open(getKeyringConfig(sdk.KeyringServiceName(), app.DefaultNodeHome, password))
 	if err != nil {
 		return fmt.Errorf("fail to open key store: %w", err)
 	}
