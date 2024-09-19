@@ -639,59 +639,56 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
 				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
-			} else {
-				// if pool units is zero, no asset fee is taken
-				if !pool.GetPoolUnits().IsZero() {
-					assetFee := transactionFeeAmount
-					if outputs[i].Coin.Amount.LTE(assetFee) {
-						assetFee = outputs[i].Coin.Amount // Fee is the full amount
-					}
+			} else if !pool.GetPoolUnits().IsZero() { // if pool units is zero, no asset fee is taken
+				assetFee := transactionFeeAmount
+				if outputs[i].Coin.Amount.LTE(assetFee) {
+					assetFee = outputs[i].Coin.Amount // Fee is the full amount
+				}
 
-					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
-					if outputs[i].Coin.Asset.IsSyntheticAsset() || outputs[i].Coin.Asset.IsDerivedAsset() {
-						// burn the native asset which used to pay for fee, that's only required when sending Synthetic/Derived assets from asgard
-						// (not for instance applicable for Trade/Secured Assets which are not (1-to-1) Cosmos-SDK coins transferred from the Pool Module)
-						if outputs[i].GetModuleName() == AsgardName {
-							if err := tos.keeper.SendFromModuleToModule(ctx,
-								AsgardName,
-								ModuleName,
-								common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
-								ctx.Logger().Error("fail to move native asset fee from asgard to Module", "error", err)
+				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
+				if outputs[i].Coin.Asset.IsSyntheticAsset() || outputs[i].Coin.Asset.IsDerivedAsset() {
+					// burn the native asset which used to pay for fee, that's only required when sending Synthetic/Derived assets from asgard
+					// (not for instance applicable for Trade/Secured Assets which are not (1-to-1) Cosmos-SDK coins transferred from the Pool Module)
+					if outputs[i].GetModuleName() == AsgardName {
+						if err := tos.keeper.SendFromModuleToModule(ctx,
+							AsgardName,
+							ModuleName,
+							common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
+							ctx.Logger().Error("fail to move native asset fee from asgard to Module", "error", err)
+						} else {
+							if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
+								ctx.Logger().Error("fail to burn native asset", "error", err)
 							} else {
-								if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
-									ctx.Logger().Error("fail to burn native asset", "error", err)
-								} else {
-									burnEvt := NewEventMintBurn(BurnSupplyType, outputs[i].Coin.Asset.Native(), assetFee, "burn_native_fee")
-									if err := tos.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
-										ctx.Logger().Error("fail to emit burn event", "error", err)
-									}
+								burnEvt := NewEventMintBurn(BurnSupplyType, outputs[i].Coin.Asset.Native(), assetFee, "burn_native_fee")
+								if err := tos.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
+									ctx.Logger().Error("fail to emit burn event", "error", err)
 								}
 							}
 						}
 					}
-
-					// drop any gas asset outputs below the dust threshold
-					if toi.Coin.Asset.IsGasAsset() && outputs[i].Coin.Amount.LT(toi.Chain.DustThreshold()) {
-						ctx.Logger().
-							With("inbound", toi.InHash).
-							With("amount", outputs[i].Coin.Amount).
-							With("fee", transactionFeeAmount).
-							Error("dropping gas asset output below dust threshold")
-						continue
-					}
-
-					poolDeduct := pool.RuneDisbursementForAssetAdd(assetFee)
-					if poolDeduct.GT(pool.BalanceRune) {
-						poolDeduct = pool.BalanceRune
-					}
-					finalRuneFee = finalRuneFee.Add(poolDeduct)
-					if !outputs[i].Coin.Asset.IsSyntheticAsset() {
-						pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
-					}
-					pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
-					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
-					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 				}
+
+				// drop any gas asset outputs below the dust threshold
+				if toi.Coin.Asset.IsGasAsset() && outputs[i].Coin.Amount.LT(toi.Chain.DustThreshold()) {
+					ctx.Logger().
+						With("inbound", toi.InHash).
+						With("amount", outputs[i].Coin.Amount).
+						With("fee", transactionFeeAmount).
+						Error("dropping gas asset output below dust threshold")
+					continue
+				}
+
+				poolDeduct := pool.RuneDisbursementForAssetAdd(assetFee)
+				if poolDeduct.GT(pool.BalanceRune) {
+					poolDeduct = pool.BalanceRune
+				}
+				finalRuneFee = finalRuneFee.Add(poolDeduct)
+				if !outputs[i].Coin.Asset.IsSyntheticAsset() {
+					pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+				}
+				pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
+				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
+				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 			}
 		}
 
