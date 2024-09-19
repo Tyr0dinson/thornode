@@ -88,7 +88,7 @@ require (
 	github.com/ltcsuite/ltcutil v1.0.2-beta
 	github.com/magiconair/properties v1.8.7
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/multiformats/go-multiaddr v0.13.0
+	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
