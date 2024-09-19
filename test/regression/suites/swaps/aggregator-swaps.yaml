@@ -34,7 +34,7 @@ asserts:
       chain: "ETH",
       clout_spent: "0",
       coin: {
-          amount: "81364281",
+          amount: "81364398",
           asset: "ETH.ETH"
       },
       gas_rate: 12,
@@ -62,7 +62,7 @@ asserts:
       vault_pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
       coin: {
         "asset": "ETH.ETH",
-        "amount": "81364281"
+        "amount": "81364398"
       },
       memo: "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
       max_gas: [
@@ -78,4 +78,4 @@ asserts:
       aggregator_target_asset: "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
       clout_spent: "0"
     }
-  - .signature == "o/9HdWpay+xi89+aQQ7PDA9LZQ1GNJ0Q9iOsjdd/mLocSwfAS0lnrqFAGtU392Bb2SOeRclJBEeylUJvahMpJw=="
+  - .signature == "mYKHUlOSdQZzkB+fWQkgASOSlCYrdJH7YaawwIeQG3ZdA9beAkUtVhvKYz9XIl1EjZybA0INCw0aHQFKeV7sKQ=="

@@ -89,7 +89,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_cat }}
       coins:
-        - amount: "10902903"
+        - amount: "10902928"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -137,7 +137,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "1467062409"
+  - .affiliate_collector_rune == "1463600965"
 ---
 ########################################################################################
 # streaming swap to trigger preferred asset swap
@@ -183,9 +183,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.in_hash == "${IN_HASH=1937E2A32B07C36D1198C3C8FAB8605A40140E40B2AE35FB496A886FF7906474}"
+  - .[0]|.in_hash == "${IN_HASH=875565B4FC4C3438826A60FE2D22B02CC283EA106C08D36A43F4CD36F92D6175}"
   - .[0]|.coin.asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "${OUT_AMOUNT=1301979400}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=1298712600}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -212,7 +212,7 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "145349743"
+  - .affiliate_collector_rune == "145349044"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
@@ -222,7 +222,7 @@ asserts:
   - .count == 3
   - .interval == 1
   - .quantity == 5
-  - .out == "1633192400"
+  - .out == "1633188700"
   - .last_height == 11
   - .trade_target == "0"
   - .failed_swaps|length == 0
@@ -242,7 +242,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
   - .[0]|.coin.asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "2549702200"
+  - .[0]|.coin.amount == "2549693600"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -253,7 +253,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "2549702200"
+        - amount: "2549693600"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
       gas:
         - amount: "960000"
