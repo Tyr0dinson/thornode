@@ -271,7 +271,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom=="eth/eth")|.amount|tonumber == 47127087
+  - .balances[]|select(.denom=="eth/eth")|.amount|tonumber == 47408679
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
@@ -300,7 +300,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499796405688
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2499796269982
 ---
 # observe token pool outbound
 type: tx-observed-out
@@ -351,7 +351,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BALANCE=2499796405724}
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BALANCE=2499796269982}
 ---
 type: tx-deposit
 signer: {{ addr_thor_cat }}
@@ -363,7 +363,7 @@ memo: "=:ETH.ETH:{{ addr_eth_cat }}"
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "47127015"
+  - amount: "47127015" 
     asset: "eth/eth"
 memo: "=:ETH.ETH:{{ addr_eth_fox }}:0/1/0"
 ---
