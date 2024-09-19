@@ -155,7 +155,7 @@ txs:
       from_address: {{ addr_btc_fox }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "500000"
+        - amount: "1000000" # increased to make sure that large enough for out fees
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -179,8 +179,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_deposited == "490147"
-  - .[0]|.debt_issued == "485340000"
+  - .[0]|.collateral_deposited == "970779"
+  - .[0]|.debt_issued == "951930000"
   - .[0]|.collateral_withdrawn == "0"
   - .[0]|.debt_repaid == "0"
   - .[0]|.owner == "{{ addr_btc_fox }}"
@@ -188,7 +188,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "10000950528"
+  - .result[]|select(.denom == "rune")|.amount == "10005803982"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -199,7 +199,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "349294100"
+        - amount:  "791201400"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -253,9 +253,9 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:500"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 7056628500
-  - .expected_collateral_deposited|tonumber == 70307582
-  - .expected_debt_issued|tonumber == 10331350000
+  - .expected_amount_out|tonumber == 6902726500
+  - .expected_collateral_deposited|tonumber == 69812184
+  - .expected_debt_issued|tonumber == 10103200000
 ---
 ########################################################################################
 # Open loan with preferred asset - make sure collateral_deposited / debt_issued matches sum of previous two quotes
@@ -263,7 +263,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "9996950528"
+  - .result[]|select(.denom == "rune")|.amount == "10001803982"
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -298,23 +298,23 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - (.[0]|.collateral_deposited|tonumber) == (490147)+(70307582)
-  - (.[0]|.debt_issued|tonumber) == (485340000)+(10331350000) 
+  - (.[0]|.collateral_deposited|tonumber) == (970779) + (69812184)
+  - (.[0]|.debt_issued|tonumber) == (951930000)+(10103200000)
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "9996950528"
+  - .result[]|select(.denom == "rune")|.amount == "10001803982"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "3395894363"
+  - .coins[]|select(.denom == "rune")|.amount == "3374677430"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "3395894363"
+  - .affiliate_collector_rune == "3374677430"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -325,7 +325,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "7056628500"
+        - amount: "6902726500"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -343,6 +343,22 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+
+---
+########################################################################################
+# Orion - debug
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/loan/open
+params:
+  from_asset: BTC.BTC
+  amount: 200000000
+  to_asset: ETH.USDX-9999
+  destination: {{ addr_eth_fox }}
+  affiliate: test
+  affiliate_bps: 50
+asserts:
+  - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:50"
 ---
 ########################################################################################
 # Open loan triggers preferred asset swap
@@ -356,7 +372,7 @@ txs:
       from_address: {{ addr_btc_fox }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "5000000"
+        - amount: "500000000" # increased to make sure that large enough for out fees
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -378,14 +394,14 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "9996950528"
+  - .result[]|select(.denom == "rune")|.amount == "10001803982"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 2
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].to_address == "{{ addr_btc_pig }}"
-  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "35241291"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "56136812"
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_asset == "BTC.BTC"
 ---
 type: tx-observed-out
@@ -413,7 +429,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_pig }}
       coins:
-        - amount: "35241291"
+        - amount: "56136812"
           asset: "BTC.BTC"
           decimals: 8
       gas:
