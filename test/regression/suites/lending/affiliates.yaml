@@ -346,21 +346,6 @@ asserts:
 
 ---
 ########################################################################################
-# Orion - debug
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/quote/loan/open
-params:
-  from_asset: BTC.BTC
-  amount: 200000000
-  to_asset: ETH.USDX-9999
-  destination: {{ addr_eth_fox }}
-  affiliate: test
-  affiliate_bps: 50
-asserts:
-  - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:50"
----
-########################################################################################
 # Open loan triggers preferred asset swap
 ########################################################################################
 type: tx-observed-in
@@ -368,16 +353,16 @@ signer: {{ addr_thor_dog }}
 txs:
   - tx:
       id: "{{ observe_txid 4 }}"
-      chain: BTC
-      from_address: {{ addr_btc_fox }}
-      to_address: {{ addr_btc_dog }}
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
       coins:
-        - amount: "500000000" # increased to make sure that large enough for out fees
-          asset: "BTC.BTC"
+        - amount: "200000000" # increased to make sure that large enough for out fees
+          asset: "ETH.ETH"
           decimals: 8
       gas:
         - amount: "10000"
-          asset: "BTC.BTC"
+          asset: "ETH.ETH"
       memo: "LOAN+:ETH.USDX-9999:{{ addr_eth_fox }}::test:50"
     block_height: 13
     finalise_height: 13
@@ -401,7 +386,7 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 2
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].to_address == "{{ addr_btc_pig }}"
-  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "56136812"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "35220400"
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_asset == "BTC.BTC"
 ---
 type: tx-observed-out
@@ -413,7 +398,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "45885100"
+        - amount: "5113760000"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -429,13 +414,13 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_pig }}
       coins:
-        - amount: "56136812"
+        - amount: "35220400"
           asset: "BTC.BTC"
           decimals: 8
       gas:
         - amount: "10500"
           asset: "BTC.BTC"
-      memo: "OUT:09A62B1151856574DF9D80D0CA6AB1DCDBA9934E70A5B7E27246D0192CD6B894"
+      memo: "OUT:BF7B4224099CF3BEB13A36FECC830C51B27074BE38CD50473104FB3FAE3E4B10"
     block_height: 14
     finalise_height: 14
     observed_pub_key: {{ pubkey_dog }}
@@ -477,12 +462,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "10061754427"
+  - .result[]|select(.denom == "rune")|.amount == "10047328816"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "1346568"
+  - .coins[]|select(.denom == "rune")|.amount == "69976974"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
