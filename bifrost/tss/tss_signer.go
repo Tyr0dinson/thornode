@@ -10,11 +10,11 @@ import (
 
 	"github.com/blang/semver"
 	sdkTypes "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+//	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tendermint/btcd/btcec"
-	"github.com/tendermint/tendermint/crypto"
+	"github.com/cometbft/cometbft/crypto"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/keysign"
 
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"
@@ -92,9 +92,9 @@ func (s *KeySign) Stop() {
 	close(s.taskQueue)
 }
 
-func (s *KeySign) Sign(msg legacytx.StdSignMsg) ([]byte, error) {
-	return nil, nil
-}
+// func (s *KeySign) Sign(msg legacytx.StdSignMsg) ([]byte, error) {
+// 	return nil, nil
+// }
 
 // RemoteSign send the request to local task queue
 func (s *KeySign) RemoteSign(msg []byte, poolPubKey string) ([]byte, []byte, error) {
