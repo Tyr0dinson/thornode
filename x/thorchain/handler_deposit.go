@@ -89,8 +89,8 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.136.0")):
-		h.addSwapDirectV136(ctx, msg)
+	case version.GTE(semver.MustParse("2.137.0")):
+		h.addSwapDirectV137(ctx, msg)
 	case version.GTE(semver.MustParse("1.131.0")):
 		h.addSwapDirectV131(ctx, msg)
 	}
@@ -251,7 +251,7 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 // addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
 // out into its own function to allow easier maintenance of original behavior vs order
 // book behavior.
-func (h DepositHandler) addSwapDirectV136(ctx cosmos.Context, msg MsgSwap) {
+func (h DepositHandler) addSwapDirectV137(ctx cosmos.Context, msg MsgSwap) {
 	if msg.Tx.Coins.IsEmpty() {
 		return
 	}
