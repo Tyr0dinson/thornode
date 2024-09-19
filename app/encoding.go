@@ -29,7 +29,7 @@ func MakeTestEncodingConfig(t testing.TB) params.EncodingConfig {
 }
 
 // MakeEncodingConfig creates a new EncodingConfig with all modules registered. For testing only
-func MakeBifrostEncodingConfig() params.EncodingConfig {
+func MakeEncodingConfig() params.EncodingConfig {
 	dir, err := os.MkdirTemp("", "temp_bifrost")
 	if err != nil {
 		panic("failed to create temp_bifrost dir: " + err.Error())

@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
-	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
+	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 
 	"gitlab.com/thorchain/thornode/common"
 )

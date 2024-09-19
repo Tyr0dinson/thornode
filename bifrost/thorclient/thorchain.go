@@ -179,7 +179,7 @@ func (b *thorchainBridge) GetContext() client.Context {
 	ctx = ctx.WithFromAddress(signerAddr)
 	ctx = ctx.WithBroadcastMode("sync")
 
-	encodingConfig := app.MakeBifrostEncodingConfig()
+	encodingConfig := app.MakeEncodingConfig()
 	ctx = ctx.WithCodec(encodingConfig.Codec)
 	ctx = ctx.WithInterfaceRegistry(encodingConfig.InterfaceRegistry)
 	ctx = ctx.WithTxConfig(encodingConfig.TxConfig)
