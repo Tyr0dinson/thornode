@@ -250,8 +250,8 @@ asserts:
   - .fees.liquidity == "9694"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
-  - .fees.slippage_bps == 96
-  - .fees.total_bps == 719
+  - .fees.slippage_bps == 95
+  - .fees.total_bps == 777
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -349,8 +349,8 @@ asserts:
   - .fees.liquidity == "18345"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
-  - .fees.slippage_bps == 187
-  - .fees.total_bps == 812
+  - .fees.slippage_bps == 186
+  - .fees.total_bps == 870
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -454,8 +454,8 @@ asserts:
   - .fees.liquidity == "8598066"
   - .fees.outbound == "2000000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
-  - .fees.slippage_bps == 93
-  - .fees.total_bps == 612
+  - .fees.slippage_bps == 92
+  - .fees.total_bps == 671
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -525,7 +525,7 @@ asserts:
   - .fees.outbound == "2000000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 466
-  - .fees.total_bps == 469
+  - .fees.total_bps == 468
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
@@ -542,7 +542,7 @@ asserts:
   - .fees.outbound == "2000000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 466
-  - .fees.total_bps == 469
+  - .fees.total_bps == 468
 ---
 ########################################################################################
 # quote and swap a streaming swap
@@ -567,7 +567,7 @@ asserts:
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}:0/10/0"
   - .max_streaming_quantity == 19
   - .streaming_swap_blocks == 180
-  - .fees.liquidity == "99237"
+  - .fees.liquidity == "99256"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 101
@@ -636,7 +636,7 @@ asserts:
   - .max_streaming_quantity == 19
   - .streaming_swap_blocks == 180
   - .streaming_swap_seconds == 1080
-  - .fees.liquidity == "99237"
+  - .fees.liquidity == "99256"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 101
