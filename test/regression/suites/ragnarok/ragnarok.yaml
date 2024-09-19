@@ -426,7 +426,7 @@ signer: {{ addr_thor_dog }}
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "46216908"
+  - amount: "46488599" 
     asset: "eth/eth"
 memo: "=:ETH.ETH:{{ addr_eth_fox }}"
 ---
@@ -473,7 +473,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_pig }}
       coins:
-        - amount: "8838815"
+        - amount: "8822321"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -489,7 +489,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "8774453"
+        - amount: "8758184"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -505,7 +505,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "8643424"
+        - amount: "8623809"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -531,6 +531,22 @@ txs:
     block_height: 2
     finalise_height: 2
     observed_pub_key: {{ pubkey_dog }}
+  - tx: # ORION ADDDED
+      id: "{{ observe_txid 12 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "31033497"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "15000"
+          asset: "ETH.ETH"
+      memo: "OUT:D0B3044287BF13D8A65A1355374EF72AB2D1E4BE961253C3E3BCE9F27BAB821F"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
 ---
 ########################################################################################
 # fourth block should eject last lp, but it will fail with insufficient funds
@@ -550,12 +566,12 @@ type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
   - tx:
-      id: "{{ observe_txid 12 }}"
+      id: "{{ observe_txid 13 }}"
       chain: ETH
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "86390517"
+        - amount: "86358594"
           asset: "ETH.ETH"
           decimals: 8
       gas:
