@@ -40,7 +40,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533170623
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533162794
 ---
 ########################################################################################
 # swap to asset
@@ -70,7 +70,7 @@ txs:
     from_address: {{ addr_btc_dog }}
     to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "8999108"
+      - amount: "9004558"
         asset: "BTC.BTC"
         decimals: 8
     gas:
@@ -120,7 +120,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=43734230}"
+  - .[0].coin.amount == "${OUT_AMOUNT=43605514}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
