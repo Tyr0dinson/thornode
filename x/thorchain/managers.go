@@ -8,7 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -129,7 +129,7 @@ type OrderBook interface {
 
 // Slasher define all the method to perform slash
 type Slasher interface {
-	BeginBlock(ctx cosmos.Context, req abci.RequestBeginBlock, constAccessor constants.ConstantValues)
+	PreBlock(ctx cosmos.Context, req *abci.RequestFinalizeBlock, constAccessor constants.ConstantValues)
 	LackSigning(ctx cosmos.Context, mgr Manager) error
 	SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error
 	IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress)

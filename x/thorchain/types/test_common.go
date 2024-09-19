@@ -15,7 +15,7 @@ import (
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/tendermint/tendermint/crypto"
+	"github.com/cometbft/cometbft/crypto"
 
 	"gitlab.com/thorchain/thornode/cmd"
 	"gitlab.com/thorchain/thornode/common"
@@ -220,8 +220,8 @@ func MakeTestCodec() *codec.LegacyAmino {
 	cdc := codec.NewLegacyAmino()
 	banktypes.RegisterLegacyAminoCodec(cdc)
 	authtypes.RegisterLegacyAminoCodec(cdc)
-	RegisterCodec(cdc)
-	cosmos.RegisterCodec(cdc)
+	RegisterLegacyAminoCodec(cdc)
+	cosmos.RegisterLegacyAminoCodec(cdc)
 	// codec.RegisterCrypto(cdc)
 	return cdc
 }

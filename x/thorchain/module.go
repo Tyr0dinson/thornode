@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,31 +11,38 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"cosmossdk.io/core/appmodule"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
-	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // type check to ensure the interface is properly implemented
 var (
 	_ module.AppModule      = AppModule{}
 	_ module.AppModuleBasic = AppModuleBasic{}
+	_ module.AppModuleGenesis = AppModule{}
+	_ module.HasABCIGenesis = AppModule{}
+	_ module.HasServices = AppModule{}
+	_ module.HasABCIEndBlock = AppModule{}
+	_ appmodule.HasBeginBlocker = AppModule{}
+//	_ appmodule.HasPreBlocker = AppModule{} // We do not have an expected PreBlocker
 )
 
 // AppModuleBasic app module Basics object
-type AppModuleBasic struct{}
+type AppModuleBasic struct{
+	cdc codec.Codec
+}
 
 // Name return the module's name
 func (AppModuleBasic) Name() string {
@@ -43,7 +51,7 @@ func (AppModuleBasic) Name() string {
 
 // RegisterLegacyAminoCodec registers the module's types for the given codec.
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	RegisterCodec(cdc)
+	RegisterLegacyAminoCodec(cdc)
 }
 
 // RegisterInterfaces registers the module's interface types
@@ -66,17 +74,12 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 	return ValidateGenesis(data)
 }
 
-// RegisterRESTRoutes register rest routes
-func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
-	rest.RegisterRoutes(ctx, rtr, StoreKey)
-	sdkRest.RegisterTxRoutes(ctx, rtr)
-	sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
-}
-
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the mint module.
 // thornode current doesn't have grpc endpoint yet
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	if err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)); err != nil {
+		panic(err)
+	}
 }
 
 // GetQueryCmd get the root query command of this module
@@ -97,6 +100,8 @@ type AppModule struct {
 	mgr              *Mgrs
 	keybaseStore     cosmos.KeybaseStore
 	telemetryEnabled bool
+	msgServer        types.MsgServer
+	queryServer      types.QueryServer
 }
 
 // NewAppModule creates a new AppModule Object
@@ -105,63 +110,51 @@ func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper
 	if err != nil {
 		panic(err)
 	}
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
-		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey),
+		mgr:              mgr,
 		keybaseStore:     kb,
 		telemetryEnabled: telemetryEnabled,
+		msgServer:        NewMsgServerImpl(mgr),
+		queryServer:      NewQueryServerImpl(mgr, kb),
 	}
 }
 
-func (AppModule) Name() string {
-	return ModuleName
-}
+func (AppModule) IsAppModule() {}
 
-func (AppModule) ConsensusVersion() uint64 {
-	return 1
-}
+func (AppModule) IsOnePerModuleType() {}
 
-func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
+// func (AppModule) Name() string {
+// 	return ModuleName
+// }
 
-func (am AppModule) Route() cosmos.Route {
-	return cosmos.NewRoute(RouterKey, NewExternalHandler(am.mgr))
-}
+// func (AppModule) ConsensusVersion() uint64 {
+// 	return 1
+// }
 
-func (am AppModule) NewHandler() sdk.Handler {
-	return NewExternalHandler(am.mgr)
-}
+func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 func (am AppModule) QuerierRoute() string {
-	return ModuleName
-}
-
-// LegacyQuerierHandler returns the capability module's Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return NewQuerier(am.mgr, am.keybaseStore)
+	return types.QuerierRoute
 }
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
-	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
+	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 }
 
-func (am AppModule) NewQuerierHandler() sdk.Querier {
-	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) ([]byte, error) {
-		return nil, nil
-	}
-}
-
-// BeginBlock called when a block get proposed
-func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
-	info := req.GetLastCommitInfo()
+// TODO: rename BeginBlock functions to PreBlock functions
+func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) error {
+	info := req.GetDecidedLastCommit()
 	var existingValidators []string
 	for _, v := range info.GetVotes() {
 		addr := sdk.ValAddress(v.Validator.GetAddress())
 		existingValidators = append(existingValidators, addr.String())
 	}
 
-	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
+	ctx.Logger().Debug("PreBlock", "height", ctx.BlockHeight())
 	// Check/Update the network version before checking the local version or checking whether to do a new-version store migration
 	if err := am.mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
@@ -185,15 +178,25 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}
-	am.mgr.Slasher().BeginBlock(ctx, req, am.mgr.GetConstants())
+	am.mgr.Slasher().PreBlock(ctx, req, am.mgr.GetConstants())
 	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
+
+	return nil
+}
+
+// BeginBlock called when a block get proposed
+func (am AppModule) BeginBlock(goCtx context.Context) error {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx.Logger().Debug("Begin Block", "height", ctx.BlockHeight())
+	return nil
 }
 
 // EndBlock called when a block get committed
-func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.ValidatorUpdate {
-	ctx.Logger().Debug("End Block", "height", req.Height)
+func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx.Logger().Debug("End Block", "height", ctx.BlockHeight())
 
 	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
@@ -237,7 +240,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		}
 	}
 
-	return validators
+	return validators, nil
 }
 
 // InitGenesis initialise genesis
