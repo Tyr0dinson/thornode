@@ -334,14 +334,14 @@ params:
 asserts:
   # anchor blocks must be set sufficiently high, otherwise debt can be manipulated with
   # no penalty on the debt outbound from the contracted virtual pool
-  - .expected_amount_out|tonumber == 3991091487
-  - .expected_debt_issued|tonumber == 1556190000
+  - .expected_amount_out|tonumber == 3988682934
+  - .expected_debt_issued|tonumber == 1625190000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .balance_asset|tonumber == 188613106302
-  - .balance_rune|tonumber == 491989202611
+  - .balance_asset|tonumber == 190316834908
+  - .balance_rune|tonumber == 475341815120
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -371,7 +371,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 3
   - .[2]|.collateral_deposited == "495098"
-  - .[2]|.debt_issued == "184250000" # almost 3x less debt than no manipulation
+  - .[2]|.debt_issued == "192420000" # almost 3x less debt than no manipulation
   - .[2]|.collateral_withdrawn == "0"
   - .[2]|.debt_repaid == "0"
   - .[2]|.owner == "{{ addr_btc_bird }}"
@@ -404,7 +404,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .balance_asset|tonumber == 99999999999
-  - .balance_rune|tonumber == 100001593642
+  - .balance_rune|tonumber == 100000959085
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -434,7 +434,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 4
   - .[1]|.collateral_deposited == "495122"
-  - .[1]|.debt_issued == "475950000"
+  - .[1]|.debt_issued == "475930000"
   - .[1]|.collateral_withdrawn == "0"
   - .[1]|.debt_repaid == "0"
   - .[1]|.owner == "{{ addr_btc_deer }}"
@@ -447,7 +447,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances[]|select(.denom == "rune")|.amount == "${RUNE_BORROWED}"
   # Prepare repay amount.
-  - ${RUNE_BORROWED} - 2000000 == ${REPAY_AMOUNT=397979715}
+  - ${RUNE_BORROWED} - 2000000 == ${REPAY_AMOUNT=395459767}
 ---
 type: tx-deposit
 signer: {{ addr_thor_pig }}
@@ -470,8 +470,8 @@ asserts:
   - .|length == 4
   - .[2]|.collateral_deposited   == "494905"
   - .[2]|.collateral_withdrawn == "494905"
-  - .[2]|.debt_issued   == "186000000"
-  - .[2]|.debt_repaid == "394824526" # over 2x the repaid debt
+  - .[2]|.debt_issued   == "194250000"
+  - .[2]|.debt_repaid == "392346721" # over 2x the repaid debt
   - .[2]|.owner == "{{ addr_btc_pig }}"
 ---
 type: check

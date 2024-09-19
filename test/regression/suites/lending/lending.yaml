@@ -32,8 +32,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - .|length == 5
-  - .[]|select(.asset=="BTC.BTC")|.asset_tor_price == "99999999803"
-  - .[]|select(.asset=="ETH.ETH")|.asset_tor_price == "9999999980"
+  - .[]|select(.asset=="BTC.BTC")|.asset_tor_price == "99999999819"
+  - .[]|select(.asset=="ETH.ETH")|.asset_tor_price == "9999999981"
   # ETH.USDX-*
   - .[2]|.asset_tor_price == "99999999"
   - .[3]|.asset_tor_price == "99999999"
@@ -102,13 +102,13 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
 asserts:
-  - .balance_rune | tonumber == 100000479608
+  - .balance_rune | tonumber == 100000481640
   - .balance_asset | tonumber == 100000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
 asserts:
-  - .balance_rune | tonumber == 100000479608
+  - .balance_rune | tonumber == 100000481640
   - .balance_asset | tonumber == 1000000000
 ---
 type: tx-observed-in
@@ -176,13 +176,13 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
 asserts:
-  - .balance_rune | tonumber == 99997218413
+  - .balance_rune | tonumber == 99997221462
   - .balance_asset | tonumber == 100003500
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
 asserts:
-  - .balance_rune | tonumber == 100000719418
+  - .balance_rune | tonumber == 100000722466
   - .balance_asset | tonumber == 1000000000
 ---
 ########################################################################################
@@ -198,7 +198,7 @@ params:
 asserts:
   - .memo == "$+:THOR.RUNE:{{ addr_thor_fox }}"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 483344424
+  - .expected_amount_out|tonumber == 483344439
   - .expected_collateral_deposited|tonumber == 495049
   - .expected_collateralization_ratio|tonumber == 10000
   - .expected_debt_issued|tonumber == 490110000
@@ -271,7 +271,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500483344424
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500483344439
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
@@ -461,8 +461,8 @@ params:
 asserts:
   - .memo == "$-:BTC.BTC:{{ addr_btc_fox }}"
   - .expected_collateral_withdrawn|tonumber == 0
-  - .expected_debt_repaid|tonumber == 500534493
-  - .expected_amount_in|tonumber == 505614241
+  - .expected_debt_repaid|tonumber == 500534491
+  - .expected_amount_in|tonumber == 505614262
   - .streaming_swap_seconds|tonumber == 6
   - .total_repay_seconds|tonumber == 6
   - .fees.total_bps|tonumber == 50
@@ -491,7 +491,7 @@ asserts:
   - .[0]|.debt_issued == "${DEBT_ISSUED}"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "0"
-  - .[0]|.debt_repaid == "495031959"
+  - .[0]|.debt_repaid == "495031937"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -513,7 +513,7 @@ asserts:
   - .inbound_address == "{{ addr_eth_dog }}"
   - .expected_amount_out|tonumber == 937138
   - .expected_collateral_withdrawn|tonumber == ${INITIAL_COLLATERAL_DEPOSITED}
-  - .expected_debt_repaid|tonumber == 485162852
+  - .expected_debt_repaid|tonumber == 485162882
   - .expected_amount_in|tonumber == 4906943
   - .streaming_swap_seconds|tonumber == 24
   - .total_repay_seconds|tonumber == 48
@@ -556,7 +556,7 @@ asserts:
   - .[0]|.debt_issued == "${DEBT_ISSUED}"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}" # should now be fully repaid
-  - .[0]|.debt_repaid == "${DEBT_REPAID=4675151237}" # over repaid
+  - .[0]|.debt_repaid == "${DEBT_REPAID=4675151461}" # over repaid
   - ${DEBT_REPAID} > ${DEBT_ISSUED}
   - ${DEBT_REPAID} > ${DEBT_ISSUED} * 4 # (Greatly over-repaid.)
 ---
@@ -631,7 +631,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2499981344424}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2499981344439}
 ---
 type: create-blocks
 count: 1
@@ -641,7 +641,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
   - .[0]|.collateral_deposited == "1484275"
-  - .[0]|.debt_issued == "5164071237"
+  - .[0]|.debt_issued == "5164071461"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0]|.debt_repaid == "${DEBT_REPAID}"
@@ -650,8 +650,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2503838171474}
-  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856827050}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2503838171895}
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856827456}
 ---
 type: create-blocks
 count: 1
@@ -691,7 +691,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2503838171474}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2503838171895}
 ---
 type: create-blocks
 count: 1
@@ -701,7 +701,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
   - .[0]|.collateral_deposited == "1978401"
-  - .[0]|.debt_issued == "5647981237"
+  - .[0]|.debt_issued == "5647981461"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0]|.debt_repaid == "${DEBT_REPAID}"
@@ -710,8 +710,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2504315438785}
-  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477267311}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2504315439235}
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477267340}
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} # Over-repayment output is greater than no-over-repayment output.
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} * 8
 
@@ -740,7 +740,7 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 353876000
+  - .expected_amount_out|tonumber == 353875300
   - .expected_collateral_deposited|tonumber == 493920
   - .expected_collateralization_ratio|tonumber == 10000
   - .expected_debt_issued|tonumber == 478970000
@@ -749,7 +749,7 @@ asserts:
   - .total_open_loan_seconds|tonumber == 624
   - .recommended_min_amount_in == "478572"
   - .fees.total_bps|tonumber == 2624
-  - .fees.outbound|tonumber == 116068900
+  - .fees.outbound|tonumber == 116069600
   - .fees.liquidity|tonumber == 9833200
 ---
 type: tx-observed-in
@@ -780,7 +780,7 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
   - .[0]|.collateral_deposited == "2472321"
-  - .[0]|.debt_issued == "6126951237"
+  - .[0]|.debt_issued == "6126951461"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0]|.debt_repaid == "${DEBT_REPAID}"
   - .[0]|.owner == "{{ addr_btc_fox }}"
@@ -790,7 +790,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=353876000}"
+  - .[0].coin.amount == "${OUT_AMOUNT=353875300}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -909,9 +909,9 @@ endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
   - .[0]|.collateral_deposited == "2961142"
-  - .[0]|.debt_issued == "6593071237"
+  - .[0]|.debt_issued == "6593071461"
   - .[0]|.collateral_withdrawn == "989954"
-  - .[0]|.debt_repaid == "4675151237"
+  - .[0]|.debt_repaid == "4675151461"
   - .[0]|.owner == "{{ addr_btc_fox }}"
 ---
 type: check
