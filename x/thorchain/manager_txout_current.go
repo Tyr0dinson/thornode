@@ -594,13 +594,11 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			outputs[i].GasRate = gasRate
 		}
 
-		runeFee := transactionFeeAmount // Fee is the prescribed fee
-
 		// Deduct OutboundTransactionFee from TOI and add to Reserve
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
 		if err == nil && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) && !toi.ToAddress.Equals(lendAddr) {
-			if outputs[i].Coin.IsRune() {
-				if outputs[i].Coin.Amount.LTE(transactionFeeAmount) {
+				runeFee := transactionFeeAmount // Fee is the prescribed RUNE fee
+				if runeFee.GT(outputs[i].Coin.Amount) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
 				finalRuneFee = finalRuneFee.Add(runeFee)
@@ -648,12 +646,9 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 						continue
 					}
 
-					var poolDeduct cosmos.Uint
-					runeFee = pool.RuneDisbursementForAssetAdd(assetFee)
-					if runeFee.GT(pool.BalanceRune) {
+					poolDeduct := pool.RuneDisbursementForAssetAdd(assetFee)
+					if poolDeduct.GT(pool.BalanceRune) {
 						poolDeduct = pool.BalanceRune
-					} else {
-						poolDeduct = runeFee
 					}
 					finalRuneFee = finalRuneFee.Add(poolDeduct)
 					if !outputs[i].Coin.Asset.IsSyntheticAsset() {
