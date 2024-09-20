@@ -94,9 +94,6 @@ proto-format:
 	@echo "Formatting Protobuf files"
 	@$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
 
-proto-swagger-gen:
-	@./scripts/protoc-swagger-gen.sh
-
 proto-lint:
 	@$(protoImage) buf lint --error-format=json
 
@@ -105,6 +102,11 @@ proto-check-breaking:
 
 bifrost-protosh:
 	@./scripts/bifrostprotocgen.sh
+
+proto-swagger-gen:
+	@$(protoImage) sh ./scripts/protoc-swagger-gen.sh
+
+.PHONY: proto-swagger-gen
 # ------------------------------ Docs ------------------------------
 
 docs-init:
