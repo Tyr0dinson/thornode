@@ -21,9 +21,7 @@ func (s *SwapV136Suite) SetUpSuite(c *C) {
 }
 
 func (s *SwapV136Suite) TestSwap(c *C) {
-	poolStorage := &TestSwapKeeper{
-		polAddress: GetRandomRUNEAddress(),
-	}
+	poolStorage := &TestSwapKeeper{}
 	inputs := []struct {
 		name          string
 		requestTxHash common.TxID
@@ -268,8 +266,6 @@ func (s *SwapV136Suite) TestSwap(c *C) {
 
 func (s *SwapV136Suite) TestSynthSwap_RuneSynthRune(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	pool := NewPool()
 	pool.Asset = common.ETHAsset
 	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
@@ -435,8 +431,6 @@ func (s *SwapV136Suite) TestSynthSwap_RuneSynthRune(c *C) {
 
 func (s *SwapV136Suite) TestSynthSwap_AssetSynth(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	pool := NewPool()
 	pool.Asset = common.ETHAsset
 	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
