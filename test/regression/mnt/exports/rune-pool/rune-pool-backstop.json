@@ -183,7 +183,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "406913819351",
+              "amount": "384606705285",
               "denom": "rune"
             }
           ]
@@ -201,7 +201,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34998078169470",
+              "amount": "34998186038967",
               "denom": "rune"
             }
           ]
@@ -214,7 +214,7 @@
               "denom": "btc/btc"
             },
             {
-              "amount": "2300012003748",
+              "amount": "2300011577640",
               "denom": "rune"
             }
           ]
@@ -223,7 +223,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "24489349",
+              "amount": "24489371",
               "denom": "btc/btc"
             },
             {
@@ -236,7 +236,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5005000007431",
+              "amount": "5027199678108",
               "denom": "rune"
             }
           ]
@@ -249,7 +249,7 @@
       },
       "supply": [
         {
-          "amount": "74488681",
+          "amount": "74488703",
           "denom": "btc/btc"
         },
         {
@@ -268,7 +268,7 @@
     "params": null,
     "thorchain": {
       "POL": {
-        "rune_deposited": "1975087646",
+        "rune_deposited": "1864533593",
         "rune_withdrawn": "0"
       },
       "THORNames": [],
@@ -290,8 +290,8 @@
           "pending_asset": "0",
           "pending_rune": "0",
           "rune_address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-          "rune_deposit_value": "986088038",
-          "units": "397377002"
+          "rune_deposit_value": "930892498",
+          "units": "397377072"
         },
         {
           "asset": "BTC.BTC",
@@ -347,7 +347,7 @@
       ],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "5000007431",
+        "bond_reward_rune": "27199678108",
         "total_bond_units": "7"
       },
       "network_fees": [
@@ -379,7 +379,7 @@
             {
               "chain": "BTC",
               "coin": {
-                "amount": "2382676",
+                "amount": "2517401",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
@@ -442,38 +442,38 @@
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "58369728",
+          "amount": "55259068",
           "asset": "BTC.BTC"
         }
       ],
       "pools": [
         {
-          "LP_units": "100397377002",
+          "LP_units": "100397377072",
           "asset": "BTC.BTC",
-          "balance_asset": "97617324",
-          "balance_rune": "406913819351",
+          "balance_asset": "97482599",
+          "balance_rune": "384606705285",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "59584014002"
+          "synth_units": "59584042085"
         }
       ],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
-        "reserve_units": "1975087646",
-        "rune_deposited": "1972176076",
-        "rune_withdrawn": "1992179824"
+        "reserve_units": "1864533593",
+        "rune_deposited": "1861784996",
+        "rune_withdrawn": "1881362636"
       },
       "rune_providers": [
         {
-          "deposit_amount": "1972176076",
+          "deposit_amount": "1861784996",
           "last_deposit_height": "4",
           "last_withdraw_height": "7",
           "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "units": "0",
-          "withdraw_amount": "1992179824"
+          "withdraw_amount": "1881362636"
         }
       ],
       "streaming_swaps": [],
@@ -482,19 +482,19 @@
         {
           "address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "reclaimed": "0",
-          "score": "119832222",
+          "score": "126569621",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "49999999817",
+          "score": "49999999488",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "12364753941",
+          "score": "12371502804",
           "spent": "0"
         }
       ],
@@ -508,7 +508,7 @@
               "chain": "BTC",
               "clout_spent": "0",
               "coin": {
-                "amount": "2382676",
+                "amount": "2517401",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
