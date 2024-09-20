@@ -20,5 +20,5 @@ message QueryInvariantResponse{
 message QueryInvariantsRequest{}
 
 message QueryInvariantsResponse{
-  repeated string invariant_routes = 1;
+  repeated string invariants = 1;
 }
