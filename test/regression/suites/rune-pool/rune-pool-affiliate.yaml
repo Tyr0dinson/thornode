@@ -88,10 +88,10 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1953880922}
+  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1864533593}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.pnl|tonumber == ${POL_PNL=-2880310}
+  - .pol.pnl|tonumber == ${POL_PNL=-2748597}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - .reserve.current_deposit|tonumber == ${POL_DEPOSIT}
   - .reserve.pnl|tonumber == ${POL_PNL}
@@ -109,7 +109,7 @@ asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE=1951000612}
+  - .pol.value|tonumber == ${POL_VALUE=1861784996}
   - .pol.pnl|tonumber == ${POL_PNL}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - .providers.units|tonumber == 0
@@ -145,7 +145,7 @@ asserts:
 type: check # Check pooler balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2298023823924}
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2298134215004}
 ---
 type: check # Check affiliate balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -190,10 +190,11 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "=:r:{{ addr_thor_dog }}"
+      memo: "DONATE:BTC.BTC"
     block_height: 1
     finalise_height: 1
     observed_pub_key: {{ pubkey_dog }}
+
 ---
 type: create-blocks
 count: 1
@@ -201,15 +202,15 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1697283667}
+  - .pol.rune_withdrawn|tonumber == ${POL_WITHDRAWN=1869289461}
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT} - ${POL_WITHDRAWN}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
-  - .pol.value|tonumber == 898826956
-  - .pol.pnl|tonumber == ${POL_PNL=621022977}
+  - .pol.value|tonumber == 989915702
+  - .pol.pnl|tonumber == ${POL_PNL=994671570}
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
-  - .providers.units|tonumber == 987543823
-  - .providers.pending_units|tonumber == 304275435
+  - .providers.units|tonumber == 932266797
+  - .providers.pending_units|tonumber == 287243846
 ---
 ########################################################################################
 # Withdraw RUNEPool with affiliate
@@ -217,7 +218,7 @@ asserts:
 type: check # Check pooler balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2299007911962}
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE=2299063107502}
 ---
 type: check # Check affiliate balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -227,7 +228,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
-  - .pnl|tonumber == ${POL_PNL=313007637}
+  - .pnl|tonumber == ${POL_PNL=499855879}
   - .value|tonumber == ${POL_VALUE}/2+${POL_PNL}
 ---
 type: tx-deposit
@@ -243,9 +244,9 @@ count: 1
 type: check # Check pooler balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2+${POL_PNL}/2-${GAS=2000000}+${ROUNDING=0.5}
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2+${POL_PNL}/2-${GAS=2000000}-${ROUNDING=0.5}
 ---
 type: check # Check affiliate balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POL_PNL}/2-${ROUNDING=0.5} # 50% of PNL
+  - .result[] | select(.denom == "rune")|.amount|tonumber == ${POL_PNL}/2+${ROUNDING=0.5} # 50% of PNL
