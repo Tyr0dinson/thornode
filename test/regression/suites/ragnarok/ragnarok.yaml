@@ -531,7 +531,7 @@ txs:
     block_height: 2
     finalise_height: 2
     observed_pub_key: {{ pubkey_dog }}
-  - tx: # ORION ADDDED
+  - tx:
       id: "{{ observe_txid 12 }}"
       chain: ETH
       from_address: {{ addr_eth_dog }}
