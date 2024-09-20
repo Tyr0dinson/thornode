@@ -1,12 +1,17 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
+	"net/http"
 	"os"
 	"sort"
 	"sync"
+
+	"github.com/gorilla/mux"
 
 	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
 	reflectionv1 "cosmossdk.io/api/cosmos/reflection/v1"
@@ -75,6 +80,7 @@ import (
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"
+	"gitlab.com/thorchain/thornode/client/docs"
 )
 
 const (
@@ -697,9 +703,26 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 	app.BasicModuleManager.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 
 	// register swagger API from root so that other applications can override easily
-	if err := server.RegisterSwaggerAPI(apiSvr.ClientCtx, apiSvr.Router, apiConfig.Swagger); err != nil {
+	if err := RegisterSwaggerAPI(apiSvr.Router, apiConfig.Swagger); err != nil {
 		panic(err)
 	}
+}
+
+// RegisterSwaggerAPI provides a common function which registers swagger route with API Server
+func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
+	if !swaggerEnabled {
+		return nil
+	}
+
+	root, err := fs.Sub(docs.SwaggerUI, "swagger-ui")
+	if err != nil {
+		return err
+	}
+
+	staticServer := http.FileServer(http.FS(root))
+	rtr.PathPrefix("/swagger/").Handler(http.StripPrefix("/swagger/", staticServer))
+
+	return nil
 }
 
 // RegisterTxService implements the Application.RegisterTxService method.

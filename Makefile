@@ -344,7 +344,7 @@ local-image:
 ifeq (,$(shell which heighliner))
 	echo 'heighliner' binary not found. Consider running `make get-heighliner`
 else
-	heighliner build -c thorchain --local
+	heighliner build -c thorchain --local -f chains.yaml
 endif
 
 .PHONY: get-heighliner local-image
