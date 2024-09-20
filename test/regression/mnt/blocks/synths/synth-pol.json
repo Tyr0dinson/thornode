@@ -77,6 +77,8 @@
       {
         "BTC.BTC": "1087646",
         "bond_reward": "22197",
+        "dev_fund_reward": "0",
+        "income_burn": "0",
         "type": "rewards"
       }
     ],
@@ -160,6 +162,8 @@
       {
         "BTC.BTC": "1087646",
         "bond_reward": "22197",
+        "dev_fund_reward": "0",
+        "income_burn": "0",
         "type": "rewards"
       }
     ],
@@ -319,6 +323,8 @@
       {
         "BTC.BTC": "1087646",
         "bond_reward": "22197",
+        "dev_fund_reward": "0",
+        "income_burn": "0",
         "type": "rewards"
       }
     ],
@@ -656,6 +662,8 @@
       {
         "BTC.BTC": "-9801237",
         "bond_reward": "10910763",
+        "dev_fund_reward": "0",
+        "income_burn": "0",
         "type": "rewards"
       }
     ],
@@ -1052,6 +1060,8 @@
       {
         "BTC.BTC": "-8882312",
         "bond_reward": "9991647",
+        "dev_fund_reward": "0",
+        "income_burn": "0",
         "type": "rewards"
       }
     ],
