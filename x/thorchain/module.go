@@ -98,23 +98,25 @@ func (AppModuleBasic) GetTxCmd() *cobra.Command {
 type AppModule struct {
 	AppModuleBasic
 	mgr              *Mgrs
-	keybaseStore     cosmos.KeybaseStore
 	telemetryEnabled bool
 	msgServer        types.MsgServer
 	queryServer      types.QueryServer
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool) AppModule {
-	kb, err := cosmos.GetKeybase(os.Getenv(cosmos.EnvChainHome))
-	if err != nil {
-		panic(err)
+func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool, testApp bool) AppModule {
+	kb := cosmos.KeybaseStore{}
+	var err error
+	if !testApp {
+		kb, err = cosmos.GetKeybase(os.Getenv(cosmos.EnvChainHome))
+		if err != nil {
+			panic(err)
+		}
 	}
 	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
 		mgr:              mgr,
-		keybaseStore:     kb,
 		telemetryEnabled: telemetryEnabled,
 		msgServer:        NewMsgServerImpl(mgr),
 		queryServer:      NewQueryServerImpl(mgr, kb),

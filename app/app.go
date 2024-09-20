@@ -338,6 +338,7 @@ func NewChainApp(
 
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
+	testApp := cast.ToBool(appOpts.Get(TestApp))
 	
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -346,7 +347,7 @@ func NewChainApp(
 	consensusModule := consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
-	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled)
+	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	
 	app.ModuleManager = module.NewManager(
@@ -365,7 +366,7 @@ func NewChainApp(
 	// By default it is composed of all the module from the module manager.
 	// Additionally, app module basics can be overwritten by passing them as argument.
 	app.BasicModuleManager = module.NewBasicManager(
-		genutilModule,
+		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
 		authModule,
 		bankModule,
 		upgradeModule,

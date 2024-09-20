@@ -5,12 +5,16 @@ import (
 	"testing"
 
 	dbm "github.com/cosmos/cosmos-db"
-
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"cosmossdk.io/log"
-
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
+	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 
 	"gitlab.com/thorchain/thornode/app/params"
+)
+
+const (
+	TestApp = "testApp"
 )
 
 // MakeEncodingConfig creates a new EncodingConfig with all modules registered. For testing only
@@ -23,7 +27,7 @@ func MakeTestEncodingConfig(t testing.TB) params.EncodingConfig {
 		dbm.NewMemDB(),
 		nil,
 		true,
-		simtestutil.NewAppOptionsWithFlagHome(t.TempDir()),
+		NewTestAppOptionsWithFlagHome(t.TempDir()),
 	)
 	return makeEncodingConfig(tempApp)
 }
@@ -42,7 +46,7 @@ func MakeEncodingConfig() params.EncodingConfig {
 		dbm.NewMemDB(),
 		nil,
 		false,
-		simtestutil.NewAppOptionsWithFlagHome(dir),
+		NewTestAppOptionsWithFlagHome(dir),
 	)
 	return makeEncodingConfig(tempApp)
 }
@@ -55,4 +59,11 @@ func makeEncodingConfig(tempApp *THORChainApp) params.EncodingConfig {
 		Amino:             tempApp.LegacyAmino(),
 	}
 	return encodingConfig
+}
+
+func NewTestAppOptionsWithFlagHome(homePath string) servertypes.AppOptions {
+	return simtestutil.AppOptionsMap{
+		flags.FlagHome: homePath,
+		TestApp: true,
+	}
 }
