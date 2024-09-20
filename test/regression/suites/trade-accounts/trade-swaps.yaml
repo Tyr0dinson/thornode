@@ -420,7 +420,7 @@ endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
-  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871081405}
+  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871088594}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network
