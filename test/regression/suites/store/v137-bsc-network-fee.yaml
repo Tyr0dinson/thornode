@@ -1,0 +1,102 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "100000000000"
+              denom: rune
+    thorchain:
+      liquidity_providers:
+        - asset: BSC.BNB
+          asset_address: {{ addr_bsc_cat }}
+          asset_deposit_value: "100000000"
+          last_add_height: "1"
+          pending_asset: "0"
+          pending_rune: "0"
+          rune_address: {{ addr_thor_cat }}
+          rune_deposit_value: "100000000000"
+          units: "100000000000"
+      pools:
+        - LP_units: "100000000000"
+          asset: BSC.BNB
+          balance_asset: "100000000"
+          balance_rune: "100000000000"
+          decimals: "8"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+      network_fees:
+        - chain: BSC
+          transaction_fee_rate: "5" # This is the focus on the TransactionFeeRate store migration.
+          transaction_size: "10000"
+      node_accounts:
+        - active_block_height: "0"
+          bond: "5000000000000"
+          ip_address: 1.1.1.1
+          node_address: {{ addr_thor_dog }}
+          bond_address: {{ addr_thor_dog }}
+          pub_key_set:
+            secp256k1: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            ed25519: "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql"
+          signer_membership: []
+          status: Active
+          # matches the priv_validator_key.json mounted in the test container
+          validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
+          version: "2.136.0"
+      store_version: "136"
+      vaults:
+        - block_height: "0"
+          chains:
+            - BSC
+          coins:
+            - amount: "100000000"
+              asset: BSC.BNB
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+skip_invariants: true
+---
+########################################################################################
+# Check the initial gas rate
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .|[.[]|select(.chain=="BSC")] | length == 1
+  - .[]|select(.chain=="BSC").gas_rate_units == "gwei"
+  - .[]|select(.chain=="BSC").gas_rate == "${BEFORE_MIGRATION_GAS_RATE=70}"
+---
+########################################################################################
+# Store migrate and re-check
+########################################################################################
+type: tx-version
+signer: {{ addr_thor_dog }}
+version: "2.137.0"
+---
+type: create-blocks
+count: 2 # One block to process the message, one block to carry out the store migration.
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - .|[.[]|select(.chain=="BSC")] | length == 1
+  - .[]|select(.chain=="BSC").gas_rate_units == "gwei"
+  - .[]|select(.chain=="BSC").gas_rate == "${AFTER_MIGRATION_GAS_RATE=10}"
+  - ${BEFORE_MIGRATION_GAS_RATE} == 7 * ${AFTER_MIGRATION_GAS_RATE}
+  # 10 Gwei is already more than necessary for actual BSC gas rates;
+  # 10 Gwei per gas unit is 1e-8 BSC.BNB per gas unit;
+  # in TxOutItem oversufficient gas rate calculation,
+  # 5 * 3/2 = 7.5 -> 7 = 70 Gwei;
+  # 1 * 3/2 = 1.5 -> 1 = 10 Gwei.
