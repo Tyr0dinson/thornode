@@ -6,3 +6,5 @@ package thorchain
 import "gitlab.com/thorchain/thornode/common/cosmos"
 
 func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {}
+
+func migrateStoreV137(ctx cosmos.Context, mgr *Mgrs) {}

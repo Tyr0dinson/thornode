@@ -229,3 +229,11 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 		}
 	}
 }
+
+func migrateStoreV137(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v137", "error", err)
+		}
+	}()
+}

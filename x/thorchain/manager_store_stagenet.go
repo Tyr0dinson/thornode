@@ -14,3 +14,5 @@ func migrateStoreV136(ctx cosmos.Context, mgr *Mgrs) {
 
 	restoreTotalCollateral(ctx, mgr)
 }
+
+func migrateStoreV137(ctx cosmos.Context, mgr *Mgrs) {}
