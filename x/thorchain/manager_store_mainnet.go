@@ -251,4 +251,16 @@ func migrateStoreV137(ctx cosmos.Context, mgr *Mgrs) {
 			ctx.Logger().Error("fail to migrate store to v137", "error", err)
 		}
 	}()
+
+	// Issue #2081: Only if Mainnet is still stuck on BSC TransactionFeeRate 5, store migrate it to 1.
+
+	bscNetworkFee, err := mgr.Keeper().GetNetworkFee(ctx, common.BSCChain)
+	if err != nil {
+		ctx.Logger().Error("fail to get bsc network fee", "error", err)
+	} else if bscNetworkFee.TransactionFeeRate == 5 {
+		bscNetworkFee.TransactionFeeRate = 1
+		if err := mgr.Keeper().SaveNetworkFee(ctx, common.BSCChain, bscNetworkFee); err != nil {
+			ctx.Logger().Error("fail to save bsc network fee", "error", err)
+		}
+	}
 }
