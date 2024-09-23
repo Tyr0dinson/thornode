@@ -124,7 +124,7 @@ txs:
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
 asserts:
-  - reduce .[] as $item (0; . + ($item.total_bond | tonumber)) == ${TOTAL_ACTIVE_BOND_RUNE=500000000000}
+  - "[.[].total_bond|tonumber] | add == ${TOTAL_ACTIVE_BOND_RUNE=500000000000}"
 ---
 ########################################################################################
 # Check total pooled RUNE
@@ -132,7 +132,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - reduce .[] as $item (0; . + ($item.balance_rune | tonumber)) == ${TOTAL_POOLED_RUNE=195304017281}
+  - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195304017281}"
 ---
 ########################################################################################
 # Check share factor

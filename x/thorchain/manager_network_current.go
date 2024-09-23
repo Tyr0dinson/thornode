@@ -8,6 +8,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -1766,8 +1767,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	systemIncome := blockReward.Add(totalLiquidityFees) // Get total system income for block
 	devFundSystemIncomeBpsUint := cosmos.SafeUintFromInt64(devFundSystemIncomeBps)
 	systemIncomeBurnRateBpsUint := cosmos.SafeUintFromInt64(systemIncomeBurnRateBps)
-	devFundDeduct = common.GetSafeShare(devFundSystemIncomeBpsUint, cosmos.NewUint(10_000), systemIncome)
-	systemIncomeBurnDeduct = common.GetSafeShare(systemIncomeBurnRateBpsUint, cosmos.NewUint(10_000), systemIncome)
+	devFundDeduct = common.GetSafeShare(devFundSystemIncomeBpsUint, cosmos.NewUint(constants.MaxBasisPts), systemIncome)
+	systemIncomeBurnDeduct = common.GetSafeShare(systemIncomeBurnRateBpsUint, cosmos.NewUint(constants.MaxBasisPts), systemIncome)
 
 	if !devFundDeduct.IsZero() {
 		systemIncome = common.SafeSub(systemIncome, devFundDeduct)
@@ -1786,7 +1787,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 		systemIncome,              // after devFundDeduct and systemIncomeBurnDeduct
 		incentiveCurveBasisPoints) // Get liquidity provider share
 	bonderSplit := common.SafeSub(systemIncome, lpSplit) // Remainder to Bonders
-	lpShare = common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(10_000))
+	lpShare = common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(constants.MaxBasisPts))
 
 	lpDeficit = cosmos.ZeroUint()
 	poolReward := cosmos.ZeroUint()
@@ -1837,7 +1838,7 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 	}
 
 	// calculate base shareFactor s * 10_000 = (bond + pool) / (bond - pool) * 10_000
-	shareFactor := (totalBonded.Add(pooledRune)).Mul(cosmos.NewUint(10_000)).QuoUint64(common.SafeSub(totalBonded, pooledRune).Uint64()) // s * 10_000
+	shareFactor := (totalBonded.Add(pooledRune)).Mul(cosmos.NewUint(constants.MaxBasisPts)).QuoUint64(common.SafeSub(totalBonded, pooledRune).Uint64()) // s * 10_000
 
 	// Pool share = rewards * f / s = rewards * i / (s * 10_000)
 	return common.GetSafeShare(cosmos.NewUint(uint64(incentiveCurveBasisPoints)), shareFactor, systemIncome)
