@@ -102,27 +102,27 @@ func (m *QueryInboundAddressesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]by
 
 func (m *QueryConstantValuesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	type constantVals struct {
-		int64Values map[string]int64 `json:"int_64_values"`
-		boolValues map[string]bool `json:"bool_values"`
-		stringValues map[string]string `json:"string_values"`
+		Int64Values map[string]int64 `json:"int_64_values"`
+		BoolValues map[string]bool `json:"bool_values"`
+		StringValues map[string]string `json:"string_values"`
 	}
 
 	c := constantVals{
-		int64Values: make(map[string]int64),
-		boolValues: make(map[string]bool),
-		stringValues: make(map[string]string),
+		Int64Values: make(map[string]int64),
+		BoolValues: make(map[string]bool),
+		StringValues: make(map[string]string),
 	}
 
 	for _, kv := range m.BoolValues {
-		c.boolValues[kv.Name] = kv.Value
+		c.BoolValues[kv.Name] = kv.Value
 	}
 
 	for _, kv := range m.Int_64Values {
-		c.int64Values[kv.Name] = kv.Value
+		c.Int64Values[kv.Name] = kv.Value
 	}
 
 	for _, kv := range m.StringValues {
-		c.stringValues[kv.Name] = kv.Value
+		c.StringValues[kv.Name] = kv.Value
 	}
 
 	return jsonify(c)
@@ -251,12 +251,48 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 		res.EndBlockEvents = append(res.EndBlockEvents, eventMap(event))
 	}
 
-}
-
-func eventMap(e *BlockEvents) map[string]string {
-
+	for i, tx := range m.Txs {
+		res.Txs[i].Hash = tx.Hash
+		res.Txs[i].Tx = tx.Tx
+		res.Txs[i].Result.Code = wrapInt64(tx.Result.Code)
+		res.Txs[i].Result.Data = wrapString(tx.Result.Data)
+		res.Txs[i].Result.Log = wrapString(tx.Result.Log)
+		res.Txs[i].Result.Info = wrapString(tx.Result.Info)
+		res.Txs[i].Result.GasWanted = wrapString(tx.Result.GasWanted)
+		res.Txs[i].Result.GasUsed = wrapString(tx.Result.GasUsed)
+		res.Txs[i].Result.Events = []map[string]string{}
+		for _, event := range tx.Result.Events{
+			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, eventMap(event))
+		}
+	}
+		
+	return jsonify(res)
 }
 
 func (m *QueryPoolSlipsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m.PoolSlips)
+}
+
+func eventMap(e *BlockEvent) map[string]string {
+	blockEventMap := make(map[string]string)
+	for _, kvpair := range e.EventKvPair{
+		blockEventMap[kvpair.Key] = kvpair.Value
+	}
+
+	return blockEventMap
+}
+
+
+func wrapString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func wrapInt64(d int64) *int64 {
+	if d == 0 {
+		return nil
+	}
+	return &d
 }

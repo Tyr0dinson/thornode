@@ -12,8 +12,8 @@ message QueryBlockRequest{}
 message QueryBlockResponse{
   BlockResponseId id = 1;
   BlockResponseHeader header = 2;
-  repeated BlockEvents begin_block_events = 3;
-  repeated BlockEvents end_block_events = 4;
+  repeated BlockEvent begin_block_events = 3;
+  repeated BlockEvent end_block_events = 4;
   repeated QueryBlockTx txs = 5;
 }
 
@@ -49,11 +49,11 @@ message BlockResponseHeaderVersion{
   string app = 2;
 }
 
-message BlockEvents{
-  repeated BlockEvent block_events = 1;
+message BlockEvent{
+  repeated EventKeyValuePair event_kv_pair = 1;
 }
 
-message BlockEvent{
+message EventKeyValuePair{
   string key = 1;
   string value = 2;
 }
@@ -71,6 +71,6 @@ message BlockTxResult{
   string info = 4;
   string gas_wanted = 5;
   string gas_used = 6;
-  BlockEvents events = 7;
+  repeated BlockEvent events = 7;
   string codespace = 8;
 }

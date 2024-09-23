@@ -40,9 +40,7 @@ var (
 )
 
 // AppModuleBasic app module Basics object
-type AppModuleBasic struct{
-	cdc codec.Codec
-}
+type AppModuleBasic struct{}
 
 // Name return the module's name
 func (AppModuleBasic) Name() string {

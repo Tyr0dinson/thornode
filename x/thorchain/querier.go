@@ -63,17 +63,7 @@ func getPeerIDFromPubKey(pubkey common.PubKey) string {
 	return peerID.String()
 }
 
-// Use this for json marshalling of query types
-func jsonify(ctx cosmos.Context, r any) ([]byte, error) {
-	res, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		ctx.Logger().Error("fail to marshal response to json", "error", err)
-		return nil, fmt.Errorf("fail to marshal response to json: %w", err)
-	}
-	return res, nil
-}
-
-func (qs queryServer) queryRagnarok(ctx cosmos.Context, req *types.QueryRagnarokRequest) (*types.QueryRagnarokResponse, error) {
+func (qs queryServer) queryRagnarok(ctx cosmos.Context, _ *types.QueryRagnarokRequest) (*types.QueryRagnarokResponse, error) {
 	ragnarokInProgress := qs.mgr.Keeper().RagnarokInProgress(ctx)
 	return &types.QueryRagnarokResponse{InProgress: ragnarokInProgress}, nil
 }
@@ -162,7 +152,7 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 	return &resp, nil
 }
 
-func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, req *types.QueryAsgardVaultsRequest) (*types.QueryAsgardVaultsResponse, error) {
+func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgardVaultsRequest) (*types.QueryAsgardVaultsResponse, error) {
 	vaults, err := qs.mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
@@ -218,7 +208,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	return result
 }
 
-func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, req *types.QueryVaultsPubkeysRequest) (*types.QueryVaultsPubkeysResponse, error) {
+func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVaultsPubkeysRequest) (*types.QueryVaultsPubkeysResponse, error) {
 	var resp types.QueryVaultsPubkeysResponse
 	resp.Asgard = make([]*types.VaultInfo, 0)
 	resp.Inactive = make([]*types.VaultInfo, 0)
@@ -272,7 +262,7 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, req *types.QueryVau
 	return &resp, nil
 }
 
-func (qs queryServer) queryRUNEPool(ctx cosmos.Context, req *types.QueryRunePoolRequest) (*types.QueryRunePoolResponse, error) {
+func (qs queryServer) queryRUNEPool(ctx cosmos.Context, _ *types.QueryRunePoolRequest) (*types.QueryRunePoolResponse, error) {
 	// gather pol data
 	pol, err := qs.mgr.Keeper().GetPOL(ctx)
 	if err != nil {
@@ -378,7 +368,7 @@ func (qs queryServer) queryRUNEProvider(ctx cosmos.Context, req *types.QueryRune
 }
 
 // queryRUNEProviders
-func (qs queryServer) queryRUNEProviders(ctx cosmos.Context, req *types.QueryRuneProvidersRequest) (*types.QueryRuneProvidersResponse, error) {
+func (qs queryServer) queryRUNEProviders(ctx cosmos.Context, _ *types.QueryRuneProvidersRequest) (*types.QueryRuneProvidersResponse, error) {
 	// get runepool value to determine current value and pnl
 	runePool, err := qs.mgr.Keeper().GetRUNEPool(ctx)
 	if err != nil {
@@ -415,7 +405,7 @@ func (qs queryServer) queryRUNEProviders(ctx cosmos.Context, req *types.QueryRun
 	return &types.QueryRuneProvidersResponse{Providers: runeProviders}, nil
 }
 
-func (qs queryServer) queryNetwork(ctx cosmos.Context, req *types.QueryNetworkRequest) (*types.QueryNetworkResponse, error) {
+func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequest) (*types.QueryNetworkResponse, error) {
 	data, err := qs.mgr.Keeper().GetNetwork(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get network", "error", err)
@@ -462,7 +452,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, req *types.QueryNetworkRe
 	return &result, nil
 }
 
-func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, req *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {
+func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {
 	active, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		ctx.Logger().Error("fail to get active vaults", "error", err)
@@ -724,7 +714,7 @@ func getNodeCurrentRewards(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, l
 
 // queryNodes return all the nodes that has bond
 // /thorchain/nodes
-func (qs queryServer) queryNodes(ctx cosmos.Context, req *types.QueryNodesRequest) (*types.QueryNodesResponse, error) {
+func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest) (*types.QueryNodesResponse, error) {
 	nodeAccounts, err := qs.mgr.Keeper().ListValidatorsWithBond(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get node accounts: %w", err)
@@ -1205,7 +1195,7 @@ func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.Query
 	}
 }
 
-func (qs queryServer) queryStreamingSwaps(ctx cosmos.Context, req *types.QueryStreamingSwapsRequest) (*types.QueryStreamingSwapsResponse, error) {
+func (qs queryServer) queryStreamingSwaps(ctx cosmos.Context, _ *types.QueryStreamingSwapsRequest) (*types.QueryStreamingSwapsResponse, error) {
 	var streams []*types.QueryStreamingSwapResponse
 	iter := qs.mgr.Keeper().GetStreamingSwapIterator(ctx)
 	defer iter.Close()
@@ -1394,7 +1384,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	return &p, nil
 }
 
-func (qs queryServer) queryPools(ctx cosmos.Context, req *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
+func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := qs.mgr.Keeper().DollarsPerRune(ctx)
 	pools := make([]*types.QueryPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
@@ -1553,7 +1543,7 @@ func (qs queryServer) queryPoolSlip(ctx cosmos.Context, req *types.QueryPoolSlip
 }
 
 // TODO: SAM127 find common code
-func (qs queryServer) queryPoolSlips(ctx cosmos.Context, req *types.QueryPoolSlipsRequest) (*types.QueryPoolSlipsResponse, error) {
+func (qs queryServer) queryPoolSlips(ctx cosmos.Context, _ *types.QueryPoolSlipsRequest) (*types.QueryPoolSlipsResponse, error) {
 	var assets []common.Asset
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1642,7 +1632,7 @@ func (qs queryServer) queryDerivedPool(ctx cosmos.Context,  req *types.QueryDeri
 	return &p, nil
 }
 
-func (qs queryServer) queryDerivedPools(ctx cosmos.Context, req *types.QueryDerivedPoolsRequest) (*types.QueryDerivedPoolsResponse, error) {
+func (qs queryServer) queryDerivedPools(ctx cosmos.Context, _ *types.QueryDerivedPoolsRequest) (*types.QueryDerivedPoolsResponse, error) {
 	pools := make([]*types.QueryDerivedPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1704,7 +1694,7 @@ func (qs queryServer) queryTradeUnit(ctx cosmos.Context, req *types.QueryTradeUn
 	return &tuResp, nil
 }
 
-func (qs queryServer) queryTradeUnits(ctx cosmos.Context, req *types.QueryTradeUnitsRequest) (*types.QueryTradeUnitsResponse, error) {
+func (qs queryServer) queryTradeUnits(ctx cosmos.Context, _ *types.QueryTradeUnitsRequest) (*types.QueryTradeUnitsResponse, error) {
 	pools, err := qs.mgr.Keeper().GetPools(ctx)
 	if err != nil {
 		return nil, errors.New("failed to get pools")
@@ -1918,7 +1908,7 @@ func countSigners(voter ObservedTxVoter) (int64, int64) {
 // Call newTxStagesResponse from both queryTxStatus (which includes the stages) and queryTxStages.
 // TODO: Remove isSwap and isPending arguments when SwapFinalised deprecated in favour of SwapStatus.
 // TODO: Deprecate InboundObserved.Started field in favour of the observation counting.
-func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) (result *types.QueryTxStagesResponse) {
+func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPending, pending bool, streamingSwap StreamingSwap) (result types.QueryTxStagesResponse) {
 	result.InboundObserved.PreConfirmationCount, result.InboundObserved.FinalCount = countSigners(voter)
 	result.InboundObserved.Completed = !voter.Tx.IsEmpty()
 
@@ -2054,7 +2044,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 	result := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
-	return result, nil
+	return &result, nil
 }
 
 func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatusRequest) (*types.QueryTxStatusResponse, error) {
@@ -2098,7 +2088,8 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 		result.OutTxs = voter.OutTxs
 	}
 
-	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	stages := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
+	result.Stages = &stages
 
 	return &result, nil
 }
@@ -2262,7 +2253,7 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr string, pubKey 
 }
 
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
-func (qs queryServer) queryQueue(ctx cosmos.Context, req *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
+func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	startHeight := ctx.BlockHeight() - signingTransactionPeriod
@@ -2385,7 +2376,7 @@ func (qs queryServer) queryLastBlockHeights(ctx cosmos.Context, chain string) (*
 	return &types.QueryLastBlocksResponse{LastBlocks: result}, nil
 }
 
-func (qs queryServer) queryConstantValues(ctx cosmos.Context, req *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
+func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
 	cv := constAccessor.GetConstantValsByKeyname()
 	
@@ -2412,7 +2403,7 @@ func (qs queryServer) queryConstantValues(ctx cosmos.Context, req *types.QueryCo
 	return &proto, nil
 }
 
-func (qs queryServer) queryVersion(ctx cosmos.Context, req *types.QueryVersionRequest) (*types.QueryVersionResponse, error) {
+func (qs queryServer) queryVersion(ctx cosmos.Context, _ *types.QueryVersionRequest) (*types.QueryVersionResponse, error) {
 	v, hasV := qs.mgr.Keeper().GetVersionWithCtx(ctx)
 	if !hasV {
 		// re-compute version if not stored
@@ -2444,7 +2435,7 @@ func (qs queryServer) queryMimirWithKey(ctx cosmos.Context, req *types.QueryMimi
 	}, nil
 }
 
-func (qs queryServer) queryMimirValues(ctx cosmos.Context, req *types.QueryMimirValuesRequest) (*types.QueryMimirValuesResponse, error) {
+func (qs queryServer) queryMimirValues(ctx cosmos.Context, _ *types.QueryMimirValuesRequest) (*types.QueryMimirValuesResponse, error) {
 	resp := types.QueryMimirValuesResponse{
 		Mimirs: make([]*types.Mimir, 0),
 	}
@@ -2473,7 +2464,7 @@ func (qs queryServer) queryMimirValues(ctx cosmos.Context, req *types.QueryMimir
 	return &resp, nil
 }
 
-func (qs queryServer) queryMimirAdminValues(ctx cosmos.Context, req *types.QueryMimirAdminValuesRequest) (*types.QueryMimirAdminValuesResponse, error) {
+func (qs queryServer) queryMimirAdminValues(ctx cosmos.Context, _ *types.QueryMimirAdminValuesRequest) (*types.QueryMimirAdminValuesResponse, error) {
 	resp := types.QueryMimirAdminValuesResponse{
 		AdminMimirs: make([]*types.Mimir, 0),
 	}
@@ -2496,7 +2487,7 @@ func (qs queryServer) queryMimirAdminValues(ctx cosmos.Context, req *types.Query
 	return &resp, nil
 }
 
-func (qs queryServer) queryMimirNodesAllValues(ctx cosmos.Context, req *types.QueryMimirNodesAllValuesRequest) (*types.QueryMimirNodesAllValuesResponse, error) {
+func (qs queryServer) queryMimirNodesAllValues(ctx cosmos.Context, _ *types.QueryMimirNodesAllValuesRequest) (*types.QueryMimirNodesAllValuesResponse, error) {
 	resp := types.QueryMimirNodesAllValuesResponse{
 		Mimirs: make([]types.NodeMimir, 0),
 	}
@@ -2515,7 +2506,7 @@ func (qs queryServer) queryMimirNodesAllValues(ctx cosmos.Context, req *types.Qu
 	return &resp, nil
 }
 
-func (qs queryServer) queryMimirNodesValues(ctx cosmos.Context, req *types.QueryMimirNodesValuesRequest) (*types.QueryMimirNodesValuesResponse, error) {
+func (qs queryServer) queryMimirNodesValues(ctx cosmos.Context, _ *types.QueryMimirNodesValuesRequest) (*types.QueryMimirNodesValuesResponse, error) {
 	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to fetch active node accounts", "error", err)
@@ -2689,7 +2680,7 @@ func (qs queryServer) queryBan(ctx cosmos.Context, req *types.QueryBanRequest) (
 	return &ban, nil
 }
 
-func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, req *types.QueryScheduledOutboundRequest) (*types.QueryOutboundResponse, error) {
+func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryScheduledOutboundRequest) (*types.QueryOutboundResponse, error) {
 	result := make([]*types.QueryTxOutItem, 0)
 	constAccessor := qs.mgr.GetConstants()
 	maxTxOutOffset, err := qs.mgr.Keeper().GetMimir(ctx, constants.MaxTxOutOffset.String())
@@ -2715,7 +2706,7 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, req *types.Quer
 	return &types.QueryOutboundResponse{TxOutItems: result}, nil
 }
 
-func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, req *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
+func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
@@ -2750,7 +2741,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, req *types.QueryP
 	return &types.QueryOutboundResponse{TxOutItems: result}, nil
 }
 
-func (qs queryServer) querySwapQueue(ctx cosmos.Context, req *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
+func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
 
 	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
@@ -2786,7 +2777,7 @@ func (qs queryServer) queryTssKeygenMetric(ctx cosmos.Context, req *types.QueryT
 	return &types.QueryTssKeygenMetricResponse{Metrics: result}, nil
 }
 
-func (qs queryServer) queryTssMetric(ctx cosmos.Context, req *types.QueryTssMetricRequest) (*types.QueryTssMetricResponse, error) {
+func (qs queryServer) queryTssMetric(ctx cosmos.Context, _ *types.QueryTssMetricRequest) (*types.QueryTssMetricResponse, error) {
 	var pubKeys common.PubKeys
 	// get all active asgard
 	vaults, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -2818,10 +2809,10 @@ func (qs queryServer) queryTssMetric(ctx cosmos.Context, req *types.QueryTssMetr
 	}, nil
 }
 
-func (qs queryServer) queryInvariants(ctx cosmos.Context, req *types.QueryInvariantsRequest) (*types.QueryInvariantsResponse, error) {
+func (qs queryServer) queryInvariants(_ cosmos.Context, _ *types.QueryInvariantsRequest) (*types.QueryInvariantsResponse, error) {
 	result := types.QueryInvariantsResponse{}
 	for _, route := range qs.mgr.Keeper().InvariantRoutes() {
-		result.InvariantRoutes = append(result.InvariantRoutes, route.Route)
+		result.Invariants = append(result.Invariants, route.Route)
 	}
 	return &result, nil
 }
@@ -2844,7 +2835,7 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 	return nil, fmt.Errorf("invariant not registered: %s", req.Path)
 }
 
-func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
+func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
 	initTendermintOnce.Do(initTendermint)
 	height := ctx.BlockHeight()
 
@@ -2899,10 +2890,10 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 		for _, attr := range event.Attributes {
 			if attr.Key == "mode" {
 				if attr.Value == "BeginBlock" {
-					res.BeginBlockEvents = append(res.BeginBlockEvents, blockEvents(sdk.Event(event)))
+					res.BeginBlockEvents = append(res.BeginBlockEvents, blockEvent(sdk.Event(event)))
 				}
 				if attr.Value == "EndBlock" {
-					res.EndBlockEvents = append(res.EndBlockEvents, blockEvents(sdk.Event(event)))
+					res.EndBlockEvents= append(res.EndBlockEvents, blockEvent(sdk.Event(event)))
 				}
 				continue
 			}
@@ -2930,7 +2921,7 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 		res.Txs[i].Result.GasWanted = strconv.FormatInt(results.TxsResults[i].GasWanted, 10)
 		res.Txs[i].Result.GasUsed = strconv.FormatInt(results.TxsResults[i].GasUsed, 10)
 		for _, event := range results.TxsResults[i].Events {
-			res.Txs[i].Result.Events = blockEvents(sdk.Event(event))
+			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, blockEvent(sdk.Event(event)))
 		}
 	}
 
@@ -2940,34 +2931,6 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 // -------------------------------------------------------------------------------------
 // Generic Helpers
 // -------------------------------------------------------------------------------------
-
-func wrapBool(b bool) *bool {
-	if !b {
-		return nil
-	}
-	return &b
-}
-
-func wrapString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-func wrapInt64(d int64) *int64 {
-	if d == 0 {
-		return nil
-	}
-	return &d
-}
-
-func wrapUintPtr(uintPtr *cosmos.Uint) *string {
-	if uintPtr == nil {
-		return nil
-	}
-	return wrapString(uintPtr.String())
-}
 
 func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 	return &types.QueryTxOutItem{
@@ -3022,20 +2985,20 @@ func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, e
 	return em.Events(), err
 }
 
-func blockEvents(e sdk.Event) *types.BlockEvents {
-	events := types.BlockEvents{}
-	events.BlockEvents = append(events.BlockEvents, &types.BlockEvent{
+func blockEvent(e sdk.Event) *types.BlockEvent {
+	event := types.BlockEvent{}
+	event.EventKvPair = append(event.EventKvPair, &types.EventKeyValuePair{
 		Key: "type",
 		Value: e.Type,
 	})
 
 	for _, a := range e.Attributes {
-		events.BlockEvents = append(events.BlockEvents, &types.BlockEvent{
+		event.EventKvPair = append(event.EventKvPair, &types.EventKeyValuePair{
 			Key: a.Key,
 			Value: a.Value,
 		})
 	}
-	return &events
+	return &event
 }
 
 func eventMap(e sdk.Event) map[string]string {
