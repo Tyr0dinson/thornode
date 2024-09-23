@@ -82,4 +82,5 @@ txs:
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=1
 asserts:
-  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 110984
+  - .end_block_events[] | select(.type == "rewards") | .bond_reward == "110984"
+  - .end_block_events[] | select(.type == "rewards") | keys | length == 4
