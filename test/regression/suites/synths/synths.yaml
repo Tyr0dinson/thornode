@@ -35,7 +35,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "9068387"
+  - amount: "9068418"
     asset: "btc/btc"
 memo: "=:THOR.RUNE"
 ---
@@ -46,7 +46,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108833652
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108862107
 ---
 ########################################################################################
 # swap btc to btc synth
@@ -78,8 +78,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 4757284
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499121031445
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 4757253
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108862107
 ---
 ########################################################################################
 # swap btc synth to btc
@@ -87,7 +87,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "4757259"
+  - amount: "4757253"
     asset: "btc/btc"
 memo: "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
@@ -98,7 +98,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108833652
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499106862107
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

@@ -169,7 +169,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "100333272188",
+              "amount": "100333243238",
               "denom": "rune"
             }
           ]
@@ -187,7 +187,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000020420593",
+              "amount": "35000020420588",
               "denom": "rune"
             }
           ]
@@ -196,11 +196,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "25",
-              "denom": "btc/btc"
-            },
-            {
-              "amount": "2499106833652",
+              "amount": "2499106862107",
               "denom": "rune"
             }
           ]
@@ -218,7 +214,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000539473567",
+              "amount": "5000539474067",
               "denom": "rune"
             }
           ]
@@ -230,10 +226,6 @@
         "send_enabled": []
       },
       "supply": [
-        {
-          "amount": "25",
-          "denom": "btc/btc"
-        },
         {
           "amount": "50100000000000",
           "denom": "rune"
@@ -288,7 +280,7 @@
       "network": {
         "LPIncomeSplit": "6369",
         "NodeIncomeSplit": "3631",
-        "bond_reward_rune": "539473567",
+        "bond_reward_rune": "539474067",
         "total_bond_units": "5"
       },
       "network_fees": [
@@ -320,11 +312,11 @@
             {
               "chain": "BTC",
               "coin": {
-                "amount": "4337764",
+                "amount": "4337759",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
-              "in_hash": "6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+              "in_hash": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
               "max_gas": [
                 {
                   "amount": "10500",
@@ -332,7 +324,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+              "memo": "OUT:42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
               "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
@@ -346,31 +338,31 @@
               "chain": "THOR",
               "coins": [
                 {
-                  "amount": "4757259",
+                  "amount": "4757253",
                   "asset": "BTC/BTC"
                 }
               ],
               "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "gas": null,
-              "id": "6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+              "id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
               "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+          "tx_id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
           "txs": [
             {
               "tx": {
                 "chain": "THOR",
                 "coins": [
                   {
-                    "amount": "4757259",
+                    "amount": "4757253",
                     "asset": "BTC/BTC"
                   }
                 ],
                 "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                 "gas": null,
-                "id": "6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+                "id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
                 "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
@@ -383,7 +375,7 @@
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "13970177",
+          "amount": "13970172",
           "asset": "BTC.BTC"
         }
       ],
@@ -391,13 +383,13 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "100662236",
-          "balance_rune": "100333272188",
+          "balance_asset": "100662241",
+          "balance_rune": "100333243238",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "11904"
+          "synth_units": "0"
         }
       ],
       "reserve_contributors": null,
@@ -414,13 +406,13 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "305175009",
+          "score": "305174345",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "1171970409",
+          "score": "1171972450",
           "spent": "0"
         }
       ],
@@ -434,11 +426,11 @@
               "chain": "BTC",
               "clout_spent": "0",
               "coin": {
-                "amount": "4337764",
+                "amount": "4337759",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
-              "in_hash": "6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+              "in_hash": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
               "max_gas": [
                 {
                   "amount": "10500",
@@ -446,7 +438,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:6BF7087BB53E4BFA7276E92E26DA5EC6151E89E5883C8288202C9D1F64D4C6B4",
+              "memo": "OUT:42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
               "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
