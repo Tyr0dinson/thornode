@@ -3273,7 +3273,6 @@ components:
         # so the schema should also be in alphabetical order.
         - bond_reward_rune
         - total_bond_units
-        - effective_security_bond
         - total_reserve
         - vaults_migrating
         - gas_spent_rune
@@ -3293,10 +3292,6 @@ components:
           type: string
           example: "0"
           description: total bonded RUNE
-        effective_security_bond:
-          type: string
-          example: "0"
-          description: effective security bond used to determine maximum pooled RUNE
         total_reserve:
           type: string
           example: "21999180112172346"

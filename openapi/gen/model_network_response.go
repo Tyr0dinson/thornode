@@ -20,8 +20,6 @@ type NetworkResponse struct {
 	BondRewardRune string `json:"bond_reward_rune"`
 	// total bonded RUNE
 	TotalBondUnits string `json:"total_bond_units"`
-	// effective security bond used to determine maximum pooled RUNE
-	EffectiveSecurityBond string `json:"effective_security_bond"`
 	// total reserve RUNE
 	TotalReserve string `json:"total_reserve"`
 	// Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults
@@ -50,11 +48,10 @@ type NetworkResponse struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNetworkResponse(bondRewardRune string, totalBondUnits string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string) *NetworkResponse {
+func NewNetworkResponse(bondRewardRune string, totalBondUnits string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string) *NetworkResponse {
 	this := NetworkResponse{}
 	this.BondRewardRune = bondRewardRune
 	this.TotalBondUnits = totalBondUnits
-	this.EffectiveSecurityBond = effectiveSecurityBond
 	this.TotalReserve = totalReserve
 	this.VaultsMigrating = vaultsMigrating
 	this.GasSpentRune = gasSpentRune
@@ -122,30 +119,6 @@ func (o *NetworkResponse) GetTotalBondUnitsOk() (*string, bool) {
 // SetTotalBondUnits sets field value
 func (o *NetworkResponse) SetTotalBondUnits(v string) {
 	o.TotalBondUnits = v
-}
-
-// GetEffectiveSecurityBond returns the EffectiveSecurityBond field value
-func (o *NetworkResponse) GetEffectiveSecurityBond() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.EffectiveSecurityBond
-}
-
-// GetEffectiveSecurityBondOk returns a tuple with the EffectiveSecurityBond field value
-// and a boolean to check if the value has been set.
-func (o *NetworkResponse) GetEffectiveSecurityBondOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.EffectiveSecurityBond, true
-}
-
-// SetEffectiveSecurityBond sets field value
-func (o *NetworkResponse) SetEffectiveSecurityBond(v string) {
-	o.EffectiveSecurityBond = v
 }
 
 // GetTotalReserve returns the TotalReserve field value
@@ -427,9 +400,6 @@ func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["total_bond_units"] = o.TotalBondUnits
-	}
-	if true {
-		toSerialize["effective_security_bond"] = o.EffectiveSecurityBond
 	}
 	if true {
 		toSerialize["total_reserve"] = o.TotalReserve
