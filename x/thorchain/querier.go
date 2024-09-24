@@ -2351,18 +2351,21 @@ func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConsta
 	cv := constAccessor.GetConstantValsByKeyname()
 
 	proto := types.QueryConstantValuesResponse{}
+	// analyze-ignore(map-iteration)
 	for k, v := range cv.Int64Values {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
 			Value: v,
 		})
 	}
+	// analyze-ignore(map-iteration)
 	for k, v := range cv.BoolValues {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
 			Name:  k,
 			Value: v,
 		})
 	}
+	// analyze-ignore(map-iteration)
 	for k, v := range cv.StringValues {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
 			Name:  k,
