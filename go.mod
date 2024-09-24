@@ -1,6 +1,6 @@
 module gitlab.com/thorchain/thornode
 
-go 1.22.0
+go 1.22
 
 require (
 	filippo.io/age v1.0.0-rc.3
