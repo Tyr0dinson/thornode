@@ -126,18 +126,18 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:100"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 349294100
-  - .expected_collateral_deposited|tonumber == 490147
+  - .expected_amount_out|tonumber == 348734600
+  - .expected_collateral_deposited|tonumber == 489559
   - .expected_collateralization_ratio|tonumber == 10000
-  - .expected_debt_issued|tonumber == 485340000
+  - .expected_debt_issued|tonumber == 484760000
   - .streaming_swap_blocks|tonumber == 4
   - .streaming_swap_seconds|tonumber == 24
   - .total_open_loan_seconds|tonumber == 624
   - .recommended_min_amount_in == "512000"
   - .fees.slippage_bps|tonumber == 194
-  - .fees.total_bps|tonumber == 2878
-  - .fees.outbound|tonumber == 126781200
-  - .fees.liquidity|tonumber == 9437600
+  - .fees.total_bps|tonumber == 2881
+  - .fees.outbound|tonumber == 126782600
+  - .fees.liquidity|tonumber == 9414900
   - .fees.affiliate|tonumber == 4999400
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .recommended_gas_rate == "10"
@@ -253,9 +253,9 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:500"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 7056634300
-  - .expected_collateral_deposited|tonumber == 70307582
-  - .expected_debt_issued|tonumber == 10331360000
+  - .expected_amount_out|tonumber == 7069781500
+  - .expected_collateral_deposited|tonumber == 70178031
+  - .expected_debt_issued|tonumber == 10359160000
 ---
 ########################################################################################
 # Open loan with preferred asset - make sure collateral_deposited / debt_issued matches sum of previous two quotes
