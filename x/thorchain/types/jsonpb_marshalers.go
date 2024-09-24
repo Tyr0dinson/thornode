@@ -21,40 +21,177 @@ func jsonify(r any) ([]byte, error) {
 // if wrong, check openapi swagger and open an issue to correct or a nested object, like kv pair could be it
 // i.e. I think /thorchain/trade/unit/{address} is incorrectly implemented or openapi swagger is wrong
 // QueryPoolResponse
-// QueryDerivedPoolResponse
-// QueryLiquidityProviderResponse
-// QueryRunePoolResponse
-// QueryRuneProviderResponse
-// QuerySaverResponse
-// QueryBorrowerResponse
-// QueryTxResponse
-// ObservedTxVoter
-// QueryTxStagesResponse
-// QueryTxStatusResponse
-// QueryNodeResponse
-// QueryVaultResponse
-// QueryVaultsPubkeysResponse
-// QueryNetworkResponse
-// QueryVersionResponse
-// BanVoter
-// QueryStreamingSwapResponse
-// SwapperClout
-// QueryTradeUnitResponse
-// QueryQueueResponse
-// QueryKeysignResponse
-// QueryKeygenResponse
-// QueryTssMetricResponse
-// QueryThornameResponse
-// QueryMimirNodesAllValuesResponse
-// QueryQuoteSwapResponse
-// QueryQuoteSaverDepositResponse
-// QueryQuoteSaverWithdrawResponse
-// QueryQuoteLoanOpenResponse
-// QueryQuoteLoanCloseResponse
-// QueryInvariantResponse
-// QueryInvariantsResponse
-// QueryBalanceModuleResponse
+func (m *QueryPoolResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
 
+// QueryDerivedPoolResponse
+func (m *QueryDerivedPoolResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryLiquidityProviderResponse
+func (m *QueryLiquidityProviderResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryRunePoolResponse -- Not needed, no int64s
+// func (m *QueryRunePoolResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryRuneProviderResponse
+func (m *QueryRuneProviderResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QuerySaverResponse
+func (m *QuerySaverResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryBorrowerResponse
+func (m *QueryBorrowerResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryTxResponse
+func (m *QueryTxResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// ObservedTxVoter
+func (m *ObservedTxVoter) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryTxStagesResponse
+func (m *QueryTxStagesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryTxStatusResponse
+func (m *QueryTxStatusResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryNodeResponse
+func (m *QueryNodeResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryVaultResponse
+func (m *QueryVaultResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryVaultsPubkeysResponse -- No int64s
+// func (m *QueryVaultsPubkeysResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryNetworkResponse -- No int64s
+// func (m *QueryNetworkResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryVersionResponse
+func (m *QueryVersionResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// BanVoter
+func (m *BanVoter) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryStreamingSwapResponse
+func (m *QueryStreamingSwapResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// SwapperClout
+func (m *SwapperClout) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryTradeUnitResponse -- no int64s
+// func (m *QueryTradeUnitResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryQueueResponse
+func (m *QueryQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryKeysignResponse
+func (m *QueryKeysignResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryKeygenResponse
+func (m *QueryKeygenResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryTssMetricResponse
+func (m *QueryTssMetricResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryThornameResponse
+func (m *QueryThornameResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryMimirNodesAllValuesResponse
+func (m *QueryMimirNodesAllValuesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryQuoteSwapResponse
+func (m *QueryQuoteSwapResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryQuoteSaverDepositResponse
+func (m *QueryQuoteSaverDepositResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryQuoteSaverWithdrawResponse
+func (m *QueryQuoteSaverWithdrawResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryQuoteLoanOpenResponse
+func (m *QueryQuoteLoanOpenResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryQuoteLoanCloseResponse
+func (m *QueryQuoteLoanCloseResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+// QueryInvariantResponse -- no int64s
+// func (m *QueryInvariantResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryInvariantsResponse -- no int64s
+// func (m *QueryInvariantsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+// 	return jsonify(m)
+// }
+
+// QueryBalanceModuleResponse
+func (m *QueryBalanceModuleResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+
+// ---------- custom json marshalling below is to support non-json-proto objects ---------
 
 func (m *QueryLastBlocksResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m.LastBlocks)

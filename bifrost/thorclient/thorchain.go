@@ -39,7 +39,7 @@ import (
 
 // Endpoint urls
 const (
-	AuthAccountEndpoint      = "/auth/accounts"
+	AuthAccountEndpoint      = "/cosmos/auth/v1beta1/accounts"
 	BroadcastTxsEndpoint     = "/"
 	KeygenEndpoint           = "/thorchain/keygen"
 	KeysignEndpoint          = "/thorchain/keysign"
