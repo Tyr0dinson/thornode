@@ -6,7 +6,6 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **BondRewardRune** | **string** | total amount of RUNE awarded to node operators | 
 **TotalBondUnits** | **string** | total bonded RUNE | 
-**EffectiveSecurityBond** | **string** | effective security bond used to determine maximum pooled RUNE | 
 **TotalReserve** | **string** | total reserve RUNE | 
 **VaultsMigrating** | **bool** | Returns true if there exist RetiringVaults which have not finished migrating funds to new ActiveVaults | 
 **GasSpentRune** | **string** | Sum of the gas the network has spent to send outbounds | 
@@ -23,7 +22,7 @@ Name | Type | Description | Notes
 
 ### NewNetworkResponse
 
-`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, ) *NetworkResponse`
+`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, ) *NetworkResponse`
 
 NewNetworkResponse instantiates a new NetworkResponse object
 This constructor will assign default values to properties that have it defined,
@@ -76,26 +75,6 @@ and a boolean to check if the value has been set.
 `func (o *NetworkResponse) SetTotalBondUnits(v string)`
 
 SetTotalBondUnits sets TotalBondUnits field to given value.
-
-
-### GetEffectiveSecurityBond
-
-`func (o *NetworkResponse) GetEffectiveSecurityBond() string`
-
-GetEffectiveSecurityBond returns the EffectiveSecurityBond field if non-nil, zero value otherwise.
-
-### GetEffectiveSecurityBondOk
-
-`func (o *NetworkResponse) GetEffectiveSecurityBondOk() (*string, bool)`
-
-GetEffectiveSecurityBondOk returns a tuple with the EffectiveSecurityBond field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetEffectiveSecurityBond
-
-`func (o *NetworkResponse) SetEffectiveSecurityBond(v string)`
-
-SetEffectiveSecurityBond sets EffectiveSecurityBond field to given value.
 
 
 ### GetTotalReserve
