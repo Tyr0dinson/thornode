@@ -28,13 +28,15 @@ type InboundAddress struct {
 	ChainTradingPaused *bool `json:"chain_trading_paused,omitempty"`
 	// Returns true if LP actions are paused for this chain
 	ChainLpActionsPaused *bool `json:"chain_lp_actions_paused,omitempty"`
+	// The chain's observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change.
+	ObservedFeeRate *string `json:"observed_fee_rate,omitempty"`
 	// The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
 	GasRate *string `json:"gas_rate,omitempty"`
 	// Units of the gas_rate.
 	GasRateUnits *string `json:"gas_rate_units,omitempty"`
 	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts
 	OutboundTxSize *string `json:"outbound_tx_size,omitempty"`
-	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.
+	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.  Can be observed_fee_rate * 1.5 * outbound_tx_size or else kept to an equivalent of Mimir key MinimumL1OutboundFeeUSD.
 	OutboundFee *string `json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
 	DustThreshold *string `json:"dust_threshold,omitempty"`
@@ -306,6 +308,38 @@ func (o *InboundAddress) SetChainLpActionsPaused(v bool) {
 	o.ChainLpActionsPaused = &v
 }
 
+// GetObservedFeeRate returns the ObservedFeeRate field value if set, zero value otherwise.
+func (o *InboundAddress) GetObservedFeeRate() string {
+	if o == nil || o.ObservedFeeRate == nil {
+		var ret string
+		return ret
+	}
+	return *o.ObservedFeeRate
+}
+
+// GetObservedFeeRateOk returns a tuple with the ObservedFeeRate field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *InboundAddress) GetObservedFeeRateOk() (*string, bool) {
+	if o == nil || o.ObservedFeeRate == nil {
+		return nil, false
+	}
+	return o.ObservedFeeRate, true
+}
+
+// HasObservedFeeRate returns a boolean if a field has been set.
+func (o *InboundAddress) HasObservedFeeRate() bool {
+	if o != nil && o.ObservedFeeRate != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetObservedFeeRate gets a reference to the given string and assigns it to the ObservedFeeRate field.
+func (o *InboundAddress) SetObservedFeeRate(v string) {
+	o.ObservedFeeRate = &v
+}
+
 // GetGasRate returns the GasRate field value if set, zero value otherwise.
 func (o *InboundAddress) GetGasRate() string {
 	if o == nil || o.GasRate == nil {
@@ -491,6 +525,9 @@ func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.ChainLpActionsPaused != nil {
 		toSerialize["chain_lp_actions_paused"] = o.ChainLpActionsPaused
+	}
+	if o.ObservedFeeRate != nil {
+		toSerialize["observed_fee_rate"] = o.ObservedFeeRate
 	}
 	if o.GasRate != nil {
 		toSerialize["gas_rate"] = o.GasRate

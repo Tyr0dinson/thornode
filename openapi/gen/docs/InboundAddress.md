@@ -12,10 +12,11 @@ Name | Type | Description | Notes
 **GlobalTradingPaused** | Pointer to **bool** | Returns true if trading is paused globally | [optional] 
 **ChainTradingPaused** | Pointer to **bool** | Returns true if trading is paused for this chain | [optional] 
 **ChainLpActionsPaused** | Pointer to **bool** | Returns true if LP actions are paused for this chain | [optional] 
+**ObservedFeeRate** | Pointer to **string** | The chain&#39;s observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change. | [optional] 
 **GasRate** | Pointer to **string** | The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9). | [optional] 
 **GasRateUnits** | Pointer to **string** | Units of the gas_rate. | [optional] 
 **OutboundTxSize** | Pointer to **string** | Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts | [optional] 
-**OutboundFee** | Pointer to **string** | The total outbound fee charged to the user for outbound txs in the gas asset of the chain. | [optional] 
+**OutboundFee** | Pointer to **string** | The total outbound fee charged to the user for outbound txs in the gas asset of the chain.  Can be observed_fee_rate * 1.5 * outbound_tx_size or else kept to an equivalent of Mimir key MinimumL1OutboundFeeUSD. | [optional] 
 **DustThreshold** | Pointer to **string** | Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored. | [optional] 
 
 ## Methods
@@ -231,6 +232,31 @@ SetChainLpActionsPaused sets ChainLpActionsPaused field to given value.
 `func (o *InboundAddress) HasChainLpActionsPaused() bool`
 
 HasChainLpActionsPaused returns a boolean if a field has been set.
+
+### GetObservedFeeRate
+
+`func (o *InboundAddress) GetObservedFeeRate() string`
+
+GetObservedFeeRate returns the ObservedFeeRate field if non-nil, zero value otherwise.
+
+### GetObservedFeeRateOk
+
+`func (o *InboundAddress) GetObservedFeeRateOk() (*string, bool)`
+
+GetObservedFeeRateOk returns a tuple with the ObservedFeeRate field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetObservedFeeRate
+
+`func (o *InboundAddress) SetObservedFeeRate(v string)`
+
+SetObservedFeeRate sets ObservedFeeRate field to given value.
+
+### HasObservedFeeRate
+
+`func (o *InboundAddress) HasObservedFeeRate() bool`
+
+HasObservedFeeRate returns a boolean if a field has been set.
 
 ### GetGasRate
 
