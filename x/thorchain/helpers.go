@@ -938,7 +938,6 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 }
 
 func atTVLCapV137(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
-
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get vaults for atTVLCap", "error", err)
