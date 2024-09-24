@@ -52,6 +52,8 @@ ifndef CI
 DOCKER_TTY_ARGS=-it
 endif
 
+HTTPS_GIT := gitlab.com/thorchain/thornode.git
+
 ########################################################################################
 # Targets
 ########################################################################################
@@ -98,7 +100,7 @@ proto-lint:
 	@$(protoImage) buf lint --error-format=json
 
 proto-check-breaking:
-	@$(protoImage) buf breaking --against $(HTTPS_GIT)#branch=main
+	@$(protoImage) buf breaking --against $(HTTPS_GIT)#branch=develop
 
 bifrost-protosh:
 	@./scripts/bifrostprotocgen.sh
