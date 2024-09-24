@@ -1,4 +1,5 @@
 package main
+
 /*
 // Thorchain has a custom testnet setup for their validators. This covers a typical cosmos chain.
 // DONTCOVER

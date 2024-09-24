@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 	tssMessages "gitlab.com/thorchain/thornode/bifrost/tss/go-tss/messages"
 
 	"gitlab.com/thorchain/thornode/common"

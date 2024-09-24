@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/go-metrics"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto"
 	cmttypes "github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -37,7 +37,6 @@ func (s *SlasherVCUR) PreBlock(ctx cosmos.Context, req *abci.RequestFinalizeBloc
 	// Iterate through any newly discovered evidence of infraction
 	// Slash any validators (and since-unbonded liquidity within the unbonding period)
 	// who contributed to valid infractions
-	//for _, evidence := range req.ByzantineValidators {
 	for _, misbehavior := range req.Misbehavior {
 		switch misbehavior.Type {
 		case abci.MisbehaviorType_DUPLICATE_VOTE:

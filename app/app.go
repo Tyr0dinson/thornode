@@ -75,16 +75,16 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
 
+	"gitlab.com/thorchain/thornode/client/docs"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"
-	"gitlab.com/thorchain/thornode/client/docs"
 )
 
 const (
-	appName      = "thornode"
-	NodeDir      = ".thornode"
+	appName = "thornode"
+	NodeDir = ".thornode"
 )
 
 // These constants are derived from the above variables.
@@ -97,7 +97,7 @@ var (
 
 // module account permissions
 var maccPerms = map[string][]string{
-	authtypes.FeeCollectorName:      nil,
+	authtypes.FeeCollectorName:       nil,
 	minttypes.ModuleName:             {authtypes.Minter},
 	stakingtypes.BondedPoolName:      {authtypes.Burner, authtypes.Staking},
 	stakingtypes.NotBondedPoolName:   {authtypes.Burner, authtypes.Staking},
@@ -125,8 +125,8 @@ type THORChainApp struct {
 	interfaceRegistry types.InterfaceRegistry
 
 	// keys to access the substores
-	keys    map[string]*storetypes.KVStoreKey
-	tkeys   map[string]*storetypes.TransientStoreKey
+	keys  map[string]*storetypes.KVStoreKey
+	tkeys map[string]*storetypes.TransientStoreKey
 
 	// keepers
 	AccountKeeper         authkeeper.AccountKeeper
@@ -171,7 +171,7 @@ func NewChainApp(
 	}
 	thorchain.DefineCustomGetSigners(&interfaceRegistrySigningOptions)
 	interfaceRegistry, err := types.NewInterfaceRegistryWithOptions(types.InterfaceRegistryOptions{
-		ProtoFiles: proto.HybridResolver,
+		ProtoFiles:     proto.HybridResolver,
 		SigningOptions: interfaceRegistrySigningOptions,
 	})
 	if err != nil {
@@ -338,7 +338,6 @@ func NewChainApp(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-
 	// get skipUpgradeHeights from the app options
 	skipUpgradeHeights := map[int64]bool{}
 	for _, h := range cast.ToIntSlice(appOpts.Get(server.FlagUnsafeSkipUpgrades)) {
@@ -362,7 +361,7 @@ func NewChainApp(
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
 	testApp := cast.ToBool(appOpts.Get(TestApp))
-	
+
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
 	authModule := auth.NewAppModule(appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
@@ -372,7 +371,7 @@ func NewChainApp(
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
 	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
-	
+
 	app.ModuleManager = module.NewManager(
 		genutilModule,
 		authModule,
@@ -397,7 +396,7 @@ func NewChainApp(
 		consensusModule,
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
-		app.ThorchainModule,	
+		app.ThorchainModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)

@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"os"
 
+	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/x/tx/signing"
 	"github.com/blang/semver"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"cosmossdk.io/core/appmodule"
-	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/cometbft/cometbft/abci/types"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -31,14 +31,15 @@ import (
 
 // type check to ensure the interface is properly implemented
 var (
-	_ module.AppModule      = AppModule{}
-	_ module.AppModuleBasic = AppModuleBasic{}
-	_ module.AppModuleGenesis = AppModule{}
-	_ module.HasABCIGenesis = AppModule{}
-	_ module.HasServices = AppModule{}
-	_ module.HasABCIEndBlock = AppModule{}
+	_ module.AppModule          = AppModule{}
+	_ module.AppModuleBasic     = AppModuleBasic{}
+	_ module.AppModuleGenesis   = AppModule{}
+	_ module.HasABCIGenesis     = AppModule{}
+	_ module.HasServices        = AppModule{}
+	_ module.HasABCIEndBlock    = AppModule{}
 	_ appmodule.HasBeginBlocker = AppModule{}
-//	_ appmodule.HasPreBlocker = AppModule{} // We do not have an expected PreBlocker
+
+// _ appmodule.HasPreBlocker = AppModule{} // We do not have an expected PreBlocker
 )
 
 // AppModuleBasic app module Basics object

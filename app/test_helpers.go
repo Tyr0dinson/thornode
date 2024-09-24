@@ -47,9 +47,9 @@ const chainID = "testing"
 
 // SetupOptions defines arguments that are passed into `ChainApp` constructor.
 type SetupOptions struct {
-	Logger   log.Logger
-	DB       *dbm.MemDB
-	AppOpts  servertypes.AppOptions
+	Logger  log.Logger
+	DB      *dbm.MemDB
+	AppOpts servertypes.AppOptions
 }
 
 func setup(

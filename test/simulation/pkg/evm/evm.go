@@ -272,7 +272,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	txData := &etypes.LegacyTx{
 		To:    &toAddress,
 		Data:  []byte(tx.Memo),
-		Gas:   21000 + 3000,                                   // standard transfer + memo
+		Gas:   21000 + 3000,                                       // standard transfer + memo
 		Value: tx.Coin.Amount.Mul(sdkmath.NewUint(1e10)).BigInt(), // 1e8 -> 1e18,
 	}
 

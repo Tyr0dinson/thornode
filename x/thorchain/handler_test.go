@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	storemetrics "cosmossdk.io/store/metrics"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
@@ -19,10 +22,7 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	dbm "github.com/cosmos/cosmos-db"
-	"github.com/cosmos/cosmos-sdk/types/module/testutil"
-	
+
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	. "gopkg.in/check.v1"
 
@@ -173,7 +173,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
-	
+
 	encodingConfig := testutil.MakeTestEncodingConfig(
 		bank.AppModuleBasic{},
 		auth.AppModuleBasic{},

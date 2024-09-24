@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	sdkmath "cosmossdk.io/math"
 	"cosmossdk.io/log"
+	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -879,7 +879,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 // Saver Deposit
 // -------------------------------------------------------------------------------------
 
-func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context,  req *types.QueryQuoteSaverDepositRequest) (*types.QueryQuoteSaverDepositResponse, error) {
+func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context, req *types.QueryQuoteSaverDepositRequest) (*types.QueryQuoteSaverDepositResponse, error) {
 	// validate required parameters
 	if len(req.Asset) == 0 {
 		return nil, fmt.Errorf("missing asset parameter")
@@ -921,9 +921,9 @@ func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context,  req *types.Que
 	}
 
 	swapMsg := types.QueryQuoteSwapRequest{
-		FromAsset: asset.String(),
-		ToAsset: asset.GetSyntheticAsset().String(),
-		Amount: depositAmount.String(),
+		FromAsset:   asset.String(),
+		ToAsset:     asset.GetSyntheticAsset().String(),
+		Amount:      depositAmount.String(),
 		Destination: string(GetRandomTHORAddress()),
 	}
 
@@ -983,7 +983,7 @@ func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context,  req *types.Que
 // Saver Withdraw
 // -------------------------------------------------------------------------------------
 
-func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context,  req *types.QueryQuoteSaverWithdrawRequest) (*types.QueryQuoteSaverWithdrawResponse, error) {
+func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context, req *types.QueryQuoteSaverWithdrawRequest) (*types.QueryQuoteSaverWithdrawResponse, error) {
 	// validate required parameters
 	if len(req.Asset) == 0 {
 		return nil, fmt.Errorf("missing asset parameter")
@@ -1039,9 +1039,9 @@ func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context,  req *types.Qu
 	amount := common.GetSafeShare(basisPoints, sdkmath.NewUint(10_000), lpShare)
 
 	swapMsg := types.QueryQuoteSwapRequest{
-		FromAsset: asset.String(),
-		ToAsset: asset.GetLayer1Asset().String(),
-		Amount: amount.String(),
+		FromAsset:   asset.String(),
+		ToAsset:     asset.GetLayer1Asset().String(),
+		Amount:      amount.String(),
 		Destination: string(GetRandomTHORAddress()), // required param, not actually used, spoof it
 	}
 

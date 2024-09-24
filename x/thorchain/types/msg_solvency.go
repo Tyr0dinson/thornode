@@ -3,7 +3,7 @@ package types
 import (
 	"crypto/sha256"
 	"fmt"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"

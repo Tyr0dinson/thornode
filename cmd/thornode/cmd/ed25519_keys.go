@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/99designs/keyring"
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/client/input"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -19,7 +20,6 @@ import (
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/spf13/cobra"
-	"github.com/cometbft/cometbft/crypto/ed25519"
 
 	"gitlab.com/thorchain/thornode/app"
 )

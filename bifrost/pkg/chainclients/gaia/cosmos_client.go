@@ -10,13 +10,14 @@ import (
 	"sync"
 	"time"
 
+	errorsmod "cosmossdk.io/errors"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	errortypes "github.com/cosmos/cosmos-sdk/types/errors"
-	errorsmod "cosmossdk.io/errors"
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
@@ -26,7 +27,6 @@ import (
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/cometbft/cometbft/crypto"
 	tssp "gitlab.com/thorchain/thornode/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/bifrost/blockscanner"
@@ -48,7 +48,7 @@ import (
 // CosmosSuccessCodes a transaction is considered successful if it returns 0
 // or if tx is unauthorized or already in the mempool (another Bifrost already sent it)
 var CosmosSuccessCodes = map[uint32]bool{
-	errorsmod.SuccessABCICode:                true,
+	errorsmod.SuccessABCICode:                 true,
 	errortypes.ErrTxInMempoolCache.ABCICode(): true,
 	errortypes.ErrWrongSequence.ABCICode():    true,
 }

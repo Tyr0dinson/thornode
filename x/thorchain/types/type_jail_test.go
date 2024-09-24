@@ -6,10 +6,10 @@ import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
 	storemetrics "cosmossdk.io/store/metrics"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	dbm "github.com/cosmos/cosmos-db"
-	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 

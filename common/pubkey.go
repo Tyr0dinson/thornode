@@ -20,8 +20,8 @@ import (
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 
-	eth "github.com/ethereum/go-ethereum/crypto"
 	"github.com/cometbft/cometbft/crypto"
+	eth "github.com/ethereum/go-ethereum/crypto"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )

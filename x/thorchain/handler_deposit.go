@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
-	se "github.com/cosmos/cosmos-sdk/types/errors"
 	tmtypes "github.com/cometbft/cometbft/types"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

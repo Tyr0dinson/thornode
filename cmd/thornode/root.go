@@ -21,8 +21,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/app/params"
-	thorconfig "gitlab.com/thorchain/thornode/config"
 	prefix "gitlab.com/thorchain/thornode/cmd"
+	thorconfig "gitlab.com/thorchain/thornode/config"
 )
 
 // NewRootCmd creates a new root command for chain app. It is called once in the

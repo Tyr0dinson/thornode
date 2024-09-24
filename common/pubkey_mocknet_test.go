@@ -8,8 +8,8 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 

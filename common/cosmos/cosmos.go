@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	sdkmath "cosmossdk.io/math"
+	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/client/input"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -20,8 +22,6 @@ import (
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	log "github.com/rs/zerolog/log"
-	sdkmath "cosmossdk.io/math"
-	storetypes "cosmossdk.io/store/types"
 )
 
 const (

@@ -3,8 +3,8 @@ package thorchain
 import (
 	"strconv"
 
-	"github.com/cosmos/cosmos-sdk/types"
 	sdkmath "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"

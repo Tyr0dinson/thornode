@@ -6,8 +6,8 @@ import (
 	"net"
 	"sort"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	abci "github.com/cometbft/cometbft/abci/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

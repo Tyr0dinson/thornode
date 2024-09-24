@@ -3,9 +3,9 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/hashicorp/go-metrics"
-	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdkmath "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

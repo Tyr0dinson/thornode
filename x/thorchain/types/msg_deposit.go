@@ -2,7 +2,7 @@ package types
 
 import (
 	"fmt"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"

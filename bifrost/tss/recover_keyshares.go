@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/itchio/lzma"
 	"github.com/rs/zerolog/log"
-	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 
 	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/bifrost/thorclient"

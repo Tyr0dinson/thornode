@@ -190,7 +190,6 @@ func (m *QueryBalanceModuleResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte,
 	return jsonify(m)
 }
 
-
 // ---------- custom json marshalling below is to support non-json-proto objects ---------
 
 func (m *QueryLastBlocksResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
@@ -239,14 +238,14 @@ func (m *QueryInboundAddressesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]by
 
 func (m *QueryConstantValuesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	type constantVals struct {
-		Int64Values map[string]int64 `json:"int_64_values"`
-		BoolValues map[string]bool `json:"bool_values"`
+		Int64Values  map[string]int64  `json:"int_64_values"`
+		BoolValues   map[string]bool   `json:"bool_values"`
 		StringValues map[string]string `json:"string_values"`
 	}
 
 	c := constantVals{
-		Int64Values: make(map[string]int64),
-		BoolValues: make(map[string]bool),
+		Int64Values:  make(map[string]int64),
+		BoolValues:   make(map[string]bool),
 		StringValues: make(map[string]string),
 	}
 
@@ -398,11 +397,11 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 		res.Txs[i].Result.GasWanted = wrapString(tx.Result.GasWanted)
 		res.Txs[i].Result.GasUsed = wrapString(tx.Result.GasUsed)
 		res.Txs[i].Result.Events = []map[string]string{}
-		for _, event := range tx.Result.Events{
+		for _, event := range tx.Result.Events {
 			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, eventMap(event))
 		}
 	}
-		
+
 	return jsonify(res)
 }
 
@@ -412,13 +411,12 @@ func (m *QueryPoolSlipsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, err
 
 func eventMap(e *BlockEvent) map[string]string {
 	blockEventMap := make(map[string]string)
-	for _, kvpair := range e.EventKvPair{
+	for _, kvpair := range e.EventKvPair {
 		blockEventMap[kvpair.Key] = kvpair.Value
 	}
 
 	return blockEventMap
 }
-
 
 func wrapString(s string) *string {
 	if s == "" {

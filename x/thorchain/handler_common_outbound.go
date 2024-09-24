@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/go-metrics"
+	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	sdkmath "cosmossdk.io/math"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

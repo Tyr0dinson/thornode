@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"

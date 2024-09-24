@@ -6,11 +6,11 @@ import (
 	"math/big"
 	"os"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	sdkmath "cosmossdk.io/math"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	
-	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	errorsmod "cosmossdk.io/errors"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
@@ -111,10 +111,10 @@ func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ 
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
-	
+
 	ctx = ctx.WithEventManager(sdk.NewEventManager())
 	result, err := handler.Run(ctx, msg)
-	
+
 	if result != nil && result.Size() > 0 {
 		return nil, fmt.Errorf("external handler, handler returned non-empty result, %s", msg)
 	}

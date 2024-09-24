@@ -3,10 +3,10 @@ package cmd
 import (
 	"testing"
 
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	bech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
 	"github.com/decred/dcrd/dcrec/edwards"
-	"github.com/cometbft/cometbft/crypto/ed25519"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/x/thorchain"

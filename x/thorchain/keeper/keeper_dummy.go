@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"cosmossdk.io/log"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"cosmossdk.io/log"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

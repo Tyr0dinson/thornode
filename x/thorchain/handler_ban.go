@@ -3,8 +3,8 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/blang/semver"
 	errorsmod "cosmossdk.io/errors"
+	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

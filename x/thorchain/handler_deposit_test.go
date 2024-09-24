@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	se "github.com/cosmos/cosmos-sdk/types/errors"
 	tmtypes "github.com/cometbft/cometbft/types"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"

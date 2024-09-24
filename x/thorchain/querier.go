@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
+	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	sdkmath "cosmossdk.io/math"
+	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/rs/zerolog/log"
-	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	"gitlab.com/thorchain/thornode/bifrost/tss/go-tss/conversion"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -29,13 +29,13 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// TODO: Does/should this query exist? 
+// TODO: Does/should this query exist?
 // QueryPOL = Query{Key: "pol", EndpointTemplate: "/%s/pol"}
-	// queries only available on regtest builds
+// queries only available on regtest builds
 // QueryExport = Query{Key: "export", EndpointTemplate: "/%s/export"}
 
 var (
-	//initManager   = func(mgr *Mgrs, ctx cosmos.Context) {}
+	// initManager   = func(mgr *Mgrs, ctx cosmos.Context) {}
 	tendermintClient   *tmhttp.HTTP
 	initTendermintOnce = sync.Once{}
 )
@@ -876,16 +876,16 @@ func (qs queryServer) queryBorrowers(ctx cosmos.Context, req *types.QueryBorrowe
 	borrowers := make([]*types.QueryBorrowerResponse, len(loans))
 	for i, loan := range loans {
 		borrowers[i] = &types.QueryBorrowerResponse{
-			Owner: loan.Owner.String(),
-			Asset: loan.Asset.String(),
-			DebtIssued: loan.DebtIssued.String(),
-			DebtRepaid: loan.DebtRepaid.String(),
-			DebtCurrent: loan.Debt().String(),
+			Owner:               loan.Owner.String(),
+			Asset:               loan.Asset.String(),
+			DebtIssued:          loan.DebtIssued.String(),
+			DebtRepaid:          loan.DebtRepaid.String(),
+			DebtCurrent:         loan.Debt().String(),
 			CollateralDeposited: loan.CollateralDeposited.String(),
 			CollateralWithdrawn: loan.CollateralWithdrawn.String(),
-			CollateralCurrent: loan.Collateral().String(),
-			LastOpenHeight: loan.LastOpenHeight,
-			LastReplayHeight: loan.LastRepayHeight,
+			CollateralCurrent:   loan.Collateral().String(),
+			LastOpenHeight:      loan.LastOpenHeight,
+			LastReplayHeight:    loan.LastRepayHeight,
 		}
 	}
 
@@ -919,16 +919,16 @@ func (qs queryServer) queryBorrower(ctx cosmos.Context, req *types.QueryBorrower
 	}
 
 	borrower := types.QueryBorrowerResponse{
-		Owner: loan.Owner.String(),
-		Asset: loan.Asset.String(),
-		DebtIssued: loan.DebtIssued.String(),
-		DebtRepaid: loan.DebtRepaid.String(),
-		DebtCurrent: loan.Debt().String(),
+		Owner:               loan.Owner.String(),
+		Asset:               loan.Asset.String(),
+		DebtIssued:          loan.DebtIssued.String(),
+		DebtRepaid:          loan.DebtRepaid.String(),
+		DebtCurrent:         loan.Debt().String(),
 		CollateralDeposited: loan.CollateralDeposited.String(),
 		CollateralWithdrawn: loan.CollateralWithdrawn.String(),
-		CollateralCurrent: loan.Collateral().String(),
-		LastOpenHeight: loan.LastOpenHeight,
-		LastReplayHeight: loan.LastRepayHeight,
+		CollateralCurrent:   loan.Collateral().String(),
+		LastOpenHeight:      loan.LastOpenHeight,
+		LastReplayHeight:    loan.LastRepayHeight,
 	}
 
 	return &borrower, nil
@@ -1161,7 +1161,7 @@ func (qs queryServer) querySaver(ctx cosmos.Context, req *types.QuerySaverReques
 	return saver, nil
 }
 
-func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.QueryStreamingSwapResponse{
+func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.QueryStreamingSwapResponse {
 	var sourceAsset common.Asset
 	// Leave the source_asset field empty if there is more than a single input Coin.
 	if len(msgSwap.Tx.Coins) == 1 {
@@ -1502,7 +1502,7 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.Q
 			if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 				return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
 			}
-	
+
 			// Display the swap slips of Available-pool Layer 1 assets.
 			if pool.Status != PoolAvailable || pool.Asset.IsNative() {
 				continue
@@ -1510,7 +1510,7 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.Q
 			assets = append(assets, pool.Asset)
 		}
 	}
-	
+
 	result := make([]*types.QueryPoolSlipResponse, len(assets))
 	for i := range assets {
 		result[i].Asset = assets[i].String()
@@ -1560,7 +1560,8 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.Q
 
 	return &types.QueryPoolSlipsResponse{PoolSlips: result}, nil
 }
-func (qs queryServer) queryDerivedPool(ctx cosmos.Context,  req *types.QueryDerivedPoolRequest) (*types.QueryDerivedPoolResponse, error) {
+
+func (qs queryServer) queryDerivedPool(ctx cosmos.Context, req *types.QueryDerivedPoolRequest) (*types.QueryDerivedPoolResponse, error) {
 	if len(req.Asset) == 0 {
 		return nil, errors.New("asset not provided")
 	}
@@ -2089,13 +2090,13 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 
 	observedTx := voter.GetTx(nodeAccounts)
 	result := types.QueryTxResponse{
-		ObservedTx: &observedTx,
+		ObservedTx:      &observedTx,
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
-		KeysignMetric:  keysignMetric,
+		KeysignMetric:   keysignMetric,
 	}
-	
+
 	return &result, nil
 }
 
@@ -2159,7 +2160,7 @@ func (qs queryServer) queryKeygen(ctx cosmos.Context, req *types.QueryKeygenRequ
 
 	return &types.QueryKeygenResponse{
 		KeygenBlock: &keygenBlock,
-		Signature: base64.StdEncoding.EncodeToString(sig),
+		Signature:   base64.StdEncoding.EncodeToString(sig),
 	}, nil
 }
 
@@ -2216,7 +2217,7 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr string, pubKey 
 	}
 
 	return &types.QueryKeysignResponse{
-		Keysign: txs,
+		Keysign:   txs,
 		Signature: base64.StdEncoding.EncodeToString(sig),
 	}, nil
 }
@@ -2348,23 +2349,23 @@ func (qs queryServer) queryLastBlockHeights(ctx cosmos.Context, chain string) (*
 func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
 	cv := constAccessor.GetConstantValsByKeyname()
-	
+
 	proto := types.QueryConstantValuesResponse{}
 	for k, v := range cv.Int64Values {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
-			Name: k,
+			Name:  k,
 			Value: v,
 		})
 	}
 	for k, v := range cv.BoolValues {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
-			Name: k,
+			Name:  k,
 			Value: v,
 		})
 	}
 	for k, v := range cv.StringValues {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
-			Name: k,
+			Name:  k,
 			Value: v,
 		})
 	}
@@ -2425,7 +2426,7 @@ func (qs queryServer) queryMimirValues(ctx cosmos.Context, _ *types.QueryMimirVa
 			continue
 		}
 		resp.Mimirs = append(resp.Mimirs, &types.Mimir{
-			Key: key,
+			Key:   key,
 			Value: value,
 		})
 	}
@@ -2437,7 +2438,7 @@ func (qs queryServer) queryMimirAdminValues(ctx cosmos.Context, _ *types.QueryMi
 	resp := types.QueryMimirAdminValuesResponse{
 		AdminMimirs: make([]*types.Mimir, 0),
 	}
-	
+
 	iter := qs.mgr.Keeper().GetMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2448,7 +2449,7 @@ func (qs queryServer) queryMimirAdminValues(ctx cosmos.Context, _ *types.QueryMi
 		}
 		k := strings.TrimPrefix(string(iter.Key()), "mimir//")
 		resp.AdminMimirs = append(resp.AdminMimirs, &types.Mimir{
-			Key: k,
+			Key:   k,
 			Value: value.GetValue(),
 		})
 
@@ -2460,7 +2461,7 @@ func (qs queryServer) queryMimirNodesAllValues(ctx cosmos.Context, _ *types.Quer
 	resp := types.QueryMimirNodesAllValuesResponse{
 		Mimirs: make([]types.NodeMimir, 0),
 	}
-	
+
 	iter := qs.mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2486,7 +2487,7 @@ func (qs queryServer) queryMimirNodesValues(ctx cosmos.Context, _ *types.QueryMi
 	resp := types.QueryMimirNodesValuesResponse{
 		Mimirs: make([]*types.Mimir, 0),
 	}
-	
+
 	iter := qs.mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2498,7 +2499,7 @@ func (qs queryServer) queryMimirNodesValues(ctx cosmos.Context, _ *types.QueryMi
 		k := strings.TrimPrefix(string(iter.Key()), "nodemimir//")
 		if v, ok := mimirs.HasSuperMajority(k, active); ok {
 			resp.Mimirs = append(resp.Mimirs, &types.Mimir{
-				Key: k,
+				Key:   k,
 				Value: v,
 			})
 		}
@@ -2517,7 +2518,7 @@ func (qs queryServer) queryMimirNodeValues(ctx cosmos.Context, req *types.QueryM
 	resp := types.QueryMimirNodeValuesResponse{
 		NodeMimirs: make([]*types.Mimir, 0),
 	}
-	
+
 	iter := qs.mgr.Keeper().GetNodeMimirIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -2530,7 +2531,7 @@ func (qs queryServer) queryMimirNodeValues(ctx cosmos.Context, req *types.QueryM
 		k := strings.TrimPrefix(string(iter.Key()), "nodemimir//")
 		if v, ok := mimirs.Get(k, acc); ok {
 			resp.NodeMimirs = append(resp.NodeMimirs, &types.Mimir{
-				Key: k,
+				Key:   k,
 				Value: v,
 			})
 		}
@@ -2735,14 +2736,14 @@ func (qs queryServer) queryTssKeygenMetric(ctx cosmos.Context, req *types.QueryT
 	if err != nil {
 		return nil, fmt.Errorf("fail to parse pubkey(%s) err:%w", req.PubKey, err)
 	}
-	
+
 	var result []*types.TssKeygenMetric
 	m, err := qs.mgr.Keeper().GetTssKeygenMetric(ctx, pkey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tss keygen metric for pubkey(%s):%w", pkey, err)
 	}
 	result = append(result, m)
-	
+
 	return &types.QueryTssKeygenMetricResponse{Metrics: result}, nil
 }
 
@@ -2771,9 +2772,9 @@ func (qs queryServer) queryTssMetric(ctx cosmos.Context, _ *types.QueryTssMetric
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keysign metric:%w", err)
 	}
-	
+
 	return &types.QueryTssMetricResponse{
-		Keygen: keygenMetrics,
+		Keygen:  keygenMetrics,
 		Keysign: keysignMetric,
 	}, nil
 }
@@ -2855,14 +2856,14 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest)
 	}
 
 	// parse the events
-	for _, event := range results.FinalizeBlockEvents{
+	for _, event := range results.FinalizeBlockEvents {
 		for _, attr := range event.Attributes {
 			if attr.Key == "mode" {
 				if attr.Value == "BeginBlock" {
 					res.BeginBlockEvents = append(res.BeginBlockEvents, blockEvent(sdk.Event(event)))
 				}
 				if attr.Value == "EndBlock" {
-					res.EndBlockEvents= append(res.EndBlockEvents, blockEvent(sdk.Event(event)))
+					res.EndBlockEvents = append(res.EndBlockEvents, blockEvent(sdk.Event(event)))
 				}
 				continue
 			}
@@ -2957,13 +2958,13 @@ func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, e
 func blockEvent(e sdk.Event) *types.BlockEvent {
 	event := types.BlockEvent{}
 	event.EventKvPair = append(event.EventKvPair, &types.EventKeyValuePair{
-		Key: "type",
+		Key:   "type",
 		Value: e.Type,
 	})
 
 	for _, a := range e.Attributes {
 		event.EventKvPair = append(event.EventKvPair, &types.EventKeyValuePair{
-			Key: a.Key,
+			Key:   a.Key,
 			Value: a.Value,
 		})
 	}

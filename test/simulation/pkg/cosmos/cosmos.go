@@ -207,7 +207,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	signBytes, err := authsigning.GetSignBytesAdapter(
 		context.Background(), modeHandler, signingtypes.SignMode_SIGN_MODE_DIRECT, signingData, txBuilder.GetTx(),
 	)
-	//signBytes, err := modeHandler.GetSignBytes(modeHandler.DefaultMode(), signingData, signable)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get sign bytes: %w", err)
 	}

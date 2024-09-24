@@ -4,11 +4,11 @@ import (
 	"os"
 	"testing"
 
+	"cosmossdk.io/log"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"cosmossdk.io/log"
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 
 	"gitlab.com/thorchain/thornode/app/params"
 )
@@ -64,6 +64,6 @@ func makeEncodingConfig(tempApp *THORChainApp) params.EncodingConfig {
 func NewTestAppOptionsWithFlagHome(homePath string) servertypes.AppOptions {
 	return simtestutil.AppOptionsMap{
 		flags.FlagHome: homePath,
-		TestApp: true,
+		TestApp:        true,
 	}
 }

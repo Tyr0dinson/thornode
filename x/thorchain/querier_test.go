@@ -1,4 +1,5 @@
 package thorchain
+
 /*
 import (
 	"encoding/json"
@@ -282,7 +283,7 @@ func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 		c.Fail()
 	}
 
-	// Check querier only returns nodes with bond 
+	// Check querier only returns nodes with bond
 	nodeAccount2.Bond = cosmos.NewUint(0)
 	c.Assert(keeper.SetNodeAccount(ctx, nodeAccount2), IsNil)
 
