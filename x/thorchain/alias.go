@@ -115,6 +115,7 @@ var (
 	NewMsgDonate                   = types.NewMsgDonate
 	NewMsgAddLiquidity             = types.NewMsgAddLiquidity
 	NewMsgWithdrawLiquidity        = types.NewMsgWithdrawLiquidity
+	NewMsgLpMint                   = types.NewMsgLpMint
 	NewMsgSwap                     = types.NewMsgSwap
 	NewKeygen                      = types.NewKeygen
 	NewKeygenBlock                 = types.NewKeygenBlock
@@ -270,6 +271,7 @@ type (
 	MsgLoanRepayment          = types.MsgLoanRepayment
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
+	MsgLpMint                 = types.MsgLpMint
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -365,6 +367,7 @@ type (
 	LoanRepaymentMemo          = mem.LoanRepaymentMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
+	MintLpMemo                 = mem.MintLpMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings
