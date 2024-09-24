@@ -2401,6 +2401,7 @@ components:
   schemas:
     Pool:
       example:
+        bank_units: "14694928607473"
         synth_units: "0"
         savers_fill_bps: "4500"
         loan_cr: "123456"
@@ -2455,11 +2456,18 @@ components:
           example: "123456"
           type: string
         pool_units:
-          description: "the total pool units, this is the sum of LP and synth units"
+          description: "the total pool units, this is the sum of LP, bank and synth\
+            \ units"
           example: "14694928607473"
           type: string
         LP_units:
-          description: the total pool liquidity provider units
+          description: the total pool liquidity provider units not accounted for with
+            x/bank tokens
+          example: "14694928607473"
+          type: string
+        bank_units:
+          description: the total pool liquidity provider units accounted for with
+            x/bank tokens
           example: "14694928607473"
           type: string
         synth_units:
@@ -2518,6 +2526,7 @@ components:
       - asset_tor_price
       - balance_asset
       - balance_rune
+      - bank_units
       - derived_depth_bps
       - loan_collateral
       - loan_collateral_remaining

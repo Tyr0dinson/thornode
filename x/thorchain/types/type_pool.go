@@ -53,6 +53,7 @@ func NewPool() Pool {
 		BalanceAsset:        cosmos.ZeroUint(),
 		SynthUnits:          cosmos.ZeroUint(),
 		LPUnits:             cosmos.ZeroUint(),
+		BankUnits:           cosmos.ZeroUint(),
 		PendingInboundRune:  cosmos.ZeroUint(),
 		PendingInboundAsset: cosmos.ZeroUint(),
 		Status:              PoolStatus_Available,
@@ -68,7 +69,11 @@ func (m Pool) Valid() error {
 }
 
 func (m *Pool) GetPoolUnits() cosmos.Uint {
-	return m.LPUnits.Add(m.SynthUnits)
+	return m.LPUnits.Add(m.SynthUnits).Add(m.BankUnits)
+}
+
+func (m *Pool) NativeLpDenomString() string {
+	return "lp." + m.Asset.Native()
 }
 
 func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
@@ -78,7 +83,7 @@ func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
 	if m.BalanceAsset.IsZero() || m.Asset.IsSyntheticAsset() {
 		m.SynthUnits = cosmos.ZeroUint()
 	} else {
-		numerator := m.LPUnits.Mul(s)
+		numerator := m.LPUnits.Add(m.BankUnits).Mul(s)
 		denominator := common.SafeSub(m.BalanceAsset.MulUint64(2), s)
 		if denominator.IsZero() {
 			denominator = cosmos.OneUint()
@@ -111,6 +116,7 @@ func (m Pool) String() string {
 	sb.WriteString(fmt.Sprintln("asset: " + m.Asset.String()))
 	sb.WriteString(fmt.Sprintln("synth-units: " + m.SynthUnits.String()))
 	sb.WriteString(fmt.Sprintln("lp-units: " + m.LPUnits.String()))
+	sb.WriteString(fmt.Sprintln("bank-units: " + m.BankUnits.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-rune: " + m.PendingInboundRune.String()))
 	sb.WriteString(fmt.Sprintln("pending-inbound-asset: " + m.PendingInboundAsset.String()))
 	sb.WriteString(fmt.Sprintln("status: " + m.Status.String()))

@@ -20,6 +20,7 @@ type DummyMgr struct {
 	orderBook     OrderBook
 	slasher       Slasher
 	tradeMgr      TradeAccountManager
+	lpMgr         LpTokenManager
 }
 
 func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
@@ -35,6 +36,7 @@ func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
 		poolMgr:       NewDummyPoolManager(),
 		slasher:       NewDummySlasher(),
 		tradeMgr:      NewDummyTradeAccountManager(),
+		lpMgr:         NewDummyLpTokenManager(),
 		// TODO add dummy swap queue
 		// TODO add dummy order book
 	}
@@ -53,6 +55,7 @@ func NewDummyMgr() *DummyMgr {
 		poolMgr:       NewDummyPoolManager(),
 		slasher:       NewDummySlasher(),
 		tradeMgr:      NewDummyTradeAccountManager(),
+		lpMgr:         NewDummyLpTokenManager(),
 		// TODO add dummy swap queue
 		// TODO add dummy order book
 	}
@@ -72,3 +75,4 @@ func (m DummyMgr) SwapQ() SwapQueue                         { return m.swapQ }
 func (m DummyMgr) Slasher() Slasher                         { return m.slasher }
 func (m DummyMgr) OrderBookMgr() OrderBook                  { return m.orderBook }
 func (m DummyMgr) TradeAccountManager() TradeAccountManager { return m.tradeMgr }
+func (m DummyMgr) LpTokenManager() LpTokenManager           { return m.lpMgr }

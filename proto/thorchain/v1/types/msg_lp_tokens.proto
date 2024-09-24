@@ -1,0 +1,26 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "common/common.proto";
+import "gogoproto/gogo.proto";
+
+message MsgLpMint {
+  common.Asset asset = 1 [(gogoproto.nullable) = false];
+  string account_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  bytes recipient = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes signer = 5 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  common.Tx tx = 6 [(gogoproto.nullable) = false];
+}
+
+
+message MsgLpRedeem {
+  common.Asset asset = 1 [(gogoproto.nullable) = false];
+  string account_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
+  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  bytes signer = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  common.Tx tx = 5 [(gogoproto.nullable) = false];
+}
+

@@ -42,6 +42,7 @@ func getWithdrawTestKeeper2(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddre
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 		Asset:        common.ETHAsset,
 		LPUnits:      cosmos.NewUint(200 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		SynthUnits:   cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}
@@ -73,6 +74,7 @@ func (k *WithdrawTestKeeper) GetPool(ctx cosmos.Context, asset common.Asset) (ty
 		BalanceRune:  cosmos.NewUint(100).MulUint64(common.One),
 		BalanceAsset: cosmos.NewUint(100).MulUint64(common.One),
 		LPUnits:      cosmos.NewUint(100).MulUint64(common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		SynthUnits:   cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 		Asset:        asset,
@@ -576,6 +578,7 @@ func (WithdrawSuite) TestWithdrawPendingRuneOrAsset(c *C) {
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 		Asset:        common.ETHAsset,
 		LPUnits:      cosmos.NewUint(200 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
@@ -642,6 +645,7 @@ func (s *WithdrawSuite) TestWithdrawPendingLiquidityShouldRoundToPoolDecimals(c 
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 		Asset:        common.ETHAsset,
 		LPUnits:      cosmos.NewUint(200 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 		Decimals:     int64(6),
 	}
@@ -684,6 +688,7 @@ func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddres
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 		Asset:        common.ETHAsset,
 		LPUnits:      cosmos.NewUint(100 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		SynthUnits:   cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}
@@ -719,6 +724,7 @@ func (WithdrawSuite) TestWithdrawSynth(c *C) {
 		BalanceAsset: coin.Amount,
 		Asset:        asset,
 		LPUnits:      cosmos.NewUint(200 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
@@ -770,6 +776,7 @@ func (WithdrawSuite) TestWithdrawSynthSingleLP(c *C) {
 		BalanceAsset: coin.Amount,
 		Asset:        asset,
 		LPUnits:      cosmos.NewUint(200 * common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)

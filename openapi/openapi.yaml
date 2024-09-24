@@ -1543,6 +1543,7 @@ components:
         - asset_tor_price
         - pool_units
         - LP_units
+        - bank_units
         - synth_units
         - synth_supply
         - savers_depth
@@ -1587,11 +1588,15 @@ components:
           description: the USD (TOR) price of the asset in 1e8
         pool_units:
           type: string
-          description: the total pool units, this is the sum of LP and synth units
+          description: the total pool units, this is the sum of LP, bank and synth units
           example: "14694928607473"
         LP_units:
           type: string
-          description: the total pool liquidity provider units
+          description: the total pool liquidity provider units not accounted for with x/bank tokens
+          example: "14694928607473"
+        bank_units:
+          type: string
+          description: the total pool liquidity provider units accounted for with x/bank tokens
           example: "14694928607473"
         synth_units:
           type: string

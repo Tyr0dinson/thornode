@@ -13,8 +13,9 @@ Name | Type | Description | Notes
 **BalanceAsset** | **string** |  | 
 **BalanceRune** | **string** |  | 
 **AssetTorPrice** | **string** | the USD (TOR) price of the asset in 1e8 | 
-**PoolUnits** | **string** | the total pool units, this is the sum of LP and synth units | 
-**LPUnits** | **string** | the total pool liquidity provider units | 
+**PoolUnits** | **string** | the total pool units, this is the sum of LP, bank and synth units | 
+**LPUnits** | **string** | the total pool liquidity provider units not accounted for with x/bank tokens | 
+**BankUnits** | **string** | the total pool liquidity provider units accounted for with x/bank tokens | 
 **SynthUnits** | **string** | the total synth units in the pool | 
 **SynthSupply** | **string** | the total supply of synths for the asset | 
 **SaversDepth** | **string** | the balance of L1 asset deposited into the Savers Vault | 
@@ -32,7 +33,7 @@ Name | Type | Description | Notes
 
 ### NewPool
 
-`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string, ) *Pool`
+`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, bankUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string, ) *Pool`
 
 NewPool instantiates a new Pool object
 This constructor will assign default values to properties that have it defined,
@@ -275,6 +276,26 @@ and a boolean to check if the value has been set.
 `func (o *Pool) SetLPUnits(v string)`
 
 SetLPUnits sets LPUnits field to given value.
+
+
+### GetBankUnits
+
+`func (o *Pool) GetBankUnits() string`
+
+GetBankUnits returns the BankUnits field if non-nil, zero value otherwise.
+
+### GetBankUnitsOk
+
+`func (o *Pool) GetBankUnitsOk() (*string, bool)`
+
+GetBankUnitsOk returns a tuple with the BankUnits field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetBankUnits
+
+`func (o *Pool) SetBankUnits(v string)`
+
+SetBankUnits sets BankUnits field to given value.
 
 
 ### GetSynthUnits

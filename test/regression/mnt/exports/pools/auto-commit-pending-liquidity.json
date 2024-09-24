@@ -318,6 +318,7 @@
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
           "balance_rune": "100206525829",
+          "bank_units": "0",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

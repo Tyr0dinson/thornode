@@ -1468,6 +1468,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 			BalanceRune:         pool.BalanceRune.String(),
 			PoolUnits:           pool.GetPoolUnits().String(),
 			LPUnits:             pool.LPUnits.String(),
+			BankUnits:           pool.BankUnits.String(),
 			SynthUnits:          pool.SynthUnits.String(),
 		}
 

@@ -41,6 +41,8 @@ const (
 	TxTradeAccountWithdrawal
 	TxRunePoolDeposit
 	TxRunePoolWithdraw
+	TxLpMint
+	TxLpRedeem
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -77,6 +79,8 @@ var stringToTxTypeMap = map[string]TxType{
 	"trade-":      TxTradeAccountWithdrawal,
 	"pool+":       TxRunePoolDeposit,
 	"pool-":       TxRunePoolWithdraw,
+	"lp+":         TxLpMint,
+	"lp-":         TxLpRedeem,
 }
 
 var txToStringMap = map[TxType]string{
@@ -100,6 +104,8 @@ var txToStringMap = map[TxType]string{
 	TxLoanRepayment:          "$-",
 	TxTradeAccountDeposit:    "trade+",
 	TxTradeAccountWithdrawal: "trade-",
+	TxLpMint:                 "lp+",
+	TxLpRedeem:               "lp-",
 }
 
 // converts a string into a txType

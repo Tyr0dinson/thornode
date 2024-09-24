@@ -42,6 +42,12 @@ type Manager interface {
 	OrderBookMgr() OrderBook
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
+	LpTokenManager() LpTokenManager
+}
+
+type LpTokenManager interface {
+	Mint(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint, recipient cosmos.AccAddress) (cosmos.Uint, error)
+	Redeem(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint) (cosmos.Uint, error)
 }
 
 type TradeAccountManager interface {
@@ -173,6 +179,7 @@ type Mgrs struct {
 	orderBook      OrderBook
 	slasher        Slasher
 	tradeManager   TradeAccountManager
+	lpTokenManager LpTokenManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
@@ -300,6 +307,11 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create trade manager: %w", err)
 	}
 
+	mgr.lpTokenManager, err = GetLpTokenManager(v, mgr.K, mgr.coinKeeper, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create trade manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -337,6 +349,8 @@ func (mgr *Mgrs) OrderBookMgr() OrderBook { return mgr.orderBook }
 func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
+
+func (mgr *Mgrs) LpTokenManager() LpTokenManager { return mgr.lpTokenManager }
 
 // GetKeeper return Keeper
 func GetKeeper(
@@ -477,6 +491,15 @@ func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper, eventM
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newTradeMgrVCUR(keeper, eventMgr), nil
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func GetLpTokenManager(version semver.Version, keeper keeper.Keeper, bank bankkeeper.Keeper, eventMgr EventManager) (LpTokenManager, error) {
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return newLpTokenMgrVCUR(keeper, bank, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

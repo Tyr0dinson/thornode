@@ -59,6 +59,7 @@ type Keeper interface {
 	KeeperPool
 	KeeperLastHeight
 	KeeperLiquidityProvider
+	KeeperLpToken
 	KeeperLoan
 	KeeperNodeAccount
 	KeeperUpgrade
@@ -150,6 +151,11 @@ type KeeperLiquidityProvider interface {
 	SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider)
 	RemoveLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider)
 	GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint
+}
+
+type KeeperLpToken interface {
+	KeeperPool
+	KeeperLiquidityProvider
 }
 
 type KeeperNodeAccount interface {

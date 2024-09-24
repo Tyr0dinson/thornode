@@ -68,6 +68,8 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTradeAccountWithdrawal{})] = NewTradeAccountWithdrawalHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgLpMint{})] = NewLpMintHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgLpRedeem{})] = NewLpRedeemHandler(mgr)
 	return m
 }
 
@@ -107,6 +109,18 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 	}
 
 	return NewMsgAddLiquidity(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, runeAddr, assetAddr, memo.AffiliateAddress, memo.AffiliateBasisPoints, signer), nil
+}
+
+func getMsgMintLpFromMemo(ctx cosmos.Context, memo MintLpMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgLpMint(
+		memo.GetAsset(),
+		// Accesses a user account. Must be validated
+		tx.Tx.FromAddress,
+		memo.Amount,
+		memo.Recipient,
+		signer,
+		tx.Tx,
+	), nil
 }
 
 func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -181,6 +195,13 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case WithdrawLiquidityMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgWithdrawFromMemo(m, tx, signer)
+	case MintLpMemo:
+		newMsg, err = getMsgMintLpFromMemo(ctx, m, tx, signer)
+	case RedeemLpMemo:
+		newMsg = NewMsgLpRedeem(memo.GetAsset(),
+			// Accesses a user account. Must be validated
+			tx.Tx.FromAddress,
+			memo.GetAmount(), signer, tx.Tx)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)

@@ -27,6 +27,8 @@ message QueryPoolResponse{
   string pool_units = 10 [(gogoproto.jsontag) = "pool_units"];
 	// the total pool liquidity provider units
   string LP_units = 11 [(gogoproto.jsontag) = "LP_units"];
+  // the total pool liquidity provider units accounted for with x/bank tokens
+  string bank_units = 24 [(gogoproto.jsontag) = "bank_units"];
 	// the total synth units in the pool
   string synth_units = 12 [(gogoproto.jsontag) = "synth_units"];
 	// the total supply of synths for the asset
@@ -51,6 +53,7 @@ message QueryPoolResponse{
   string loan_cr = 22 [(gogoproto.jsontag) = "loan_cr"];
 	// the depth of the derived virtual pool relative to L1 pool (in basis points)
   string derived_depth_bps = 23 [(gogoproto.jsontag) = "derived_depth_bps"];
+
 }
 
 message QueryPoolsRequest{
