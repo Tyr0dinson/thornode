@@ -764,6 +764,15 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
+// get total bond of all active nodes
+func getTotalActiveBond(nodeAccounts NodeAccounts) cosmos.Uint {
+	totalActiveBond := cosmos.ZeroUint()
+	for _, node := range nodeAccounts {
+		totalActiveBond = totalActiveBond.Add(node.Bond)
+	}
+	return totalActiveBond
+}
+
 // get the total bond of the bottom 2/3rds active nodes
 func getEffectiveSecurityBond(nas NodeAccounts) cosmos.Uint {
 	amt := cosmos.ZeroUint()
@@ -919,6 +928,74 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 // atTVLCap - returns bool on if we've hit the TVL hard cap. Coins passed in
 // are included in the calculation
 func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return atTVLCapV137(ctx, coins, mgr)
+	default:
+		return atTVLCapV1(ctx, coins, mgr)
+	}
+}
+
+func atTVLCapV137(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get vaults for atTVLCap", "error", err)
+		return true
+	}
+
+	// coins must be copied to a new variable to avoid modifying the original
+	coins = coins.Copy()
+	for _, vault := range vaults {
+		if vault.IsAsgard() && (vault.IsActive() || vault.IsRetiring()) {
+			coins = coins.Add(vault.Coins...)
+		}
+	}
+
+	runeCoin := coins.GetCoin(common.RuneAsset())
+	totalRuneValue := runeCoin.Amount
+	for _, coin := range coins {
+		if coin.IsEmpty() {
+			continue
+		}
+		asset := coin.Asset
+		// while asgard vaults don't contain native assets, the `coins`
+		// parameter might
+		if asset.IsSyntheticAsset() {
+			asset = asset.GetLayer1Asset()
+		}
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get pool for atTVLCap", "asset", coin.Asset, "error", err)
+			continue
+		}
+		if !pool.IsAvailable() && !pool.IsStaged() {
+			continue
+		}
+		if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
+			continue
+		}
+		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+	}
+
+	// get effectiveSecurity
+	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get validators to calculate TVL cap", "error", err)
+		return true
+	}
+
+	totalActiveBond := getTotalActiveBond(nodeAccounts)
+
+	if totalRuneValue.GT(totalActiveBond) {
+		ctx.Logger().Debug("reached TVL cap", "total rune value", totalRuneValue.String(), "total security, bond", totalActiveBond.String())
+		return true
+	}
+	return false
+}
+
+func atTVLCapV1(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get vaults for atTVLCap", "error", err)
