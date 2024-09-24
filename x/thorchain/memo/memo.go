@@ -102,7 +102,7 @@ var txToStringMap = map[TxType]string{
 	TxLoanRepayment:          "$-",
 	TxTradeAccountDeposit:    "trade+",
 	TxTradeAccountWithdrawal: "trade-",
-	TxLpMint:                 "mint",
+	TxLpMint:                 "lp+",
 }
 
 // converts a string into a txType
