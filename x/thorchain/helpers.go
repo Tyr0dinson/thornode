@@ -563,7 +563,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 
 	telemetry.SetGauge(telem(network.BondRewardRune), "thornode", "network", "bond_reward_rune")
 	telemetry.SetGauge(float32(network.TotalBondUnits.Uint64()), "thornode", "network", "total_bond_units")
-
+	telemetry.SetGauge(float32(network.NodeIncomeSplit), "thornode", "network", "node_income_split")
+	telemetry.SetGauge(float32(network.LPIncomeSplit), "thornode", "network", "lp_income_split")
 	// emit protocol owned liquidity data
 	pol, err := mgr.Keeper().GetPOL(ctx)
 	if err != nil {
