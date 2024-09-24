@@ -129,7 +129,7 @@ const (
 	SystemIncomeBurnRateBps
 	DevFundSystemIncomeBps
 	DevFundAddress
-	IncentiveCurveAdjustmentBasisPoints
+	PoolShareAdjustmentBasisPoints
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight

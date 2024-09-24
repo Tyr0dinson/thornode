@@ -286,7 +286,7 @@
       "loans": [],
       "mimirs": [
         {
-          "key": "INCENTIVECURVEADJUSTMENTBASISPOINTS",
+          "key": "POOLSHAREADJUSTMENTBASISPOINTS",
           "value": "5000"
         }
       ],

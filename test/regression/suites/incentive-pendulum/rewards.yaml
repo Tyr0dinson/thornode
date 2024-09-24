@@ -88,8 +88,8 @@ type: create-blocks
 count: 1
 ---
 type: tx-mimir
-key: IncentiveCurveAdjustmentBasisPoints
-value: ${INCENTIVECURVEADJUSTMENTBASISPOINTS=5000}
+key: PoolShareAdjustmentBasisPoints
+value: ${POOLSHAREADJUSTMENTBASISPOINTS=5000}
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
@@ -136,18 +136,18 @@ asserts:
 ---
 ########################################################################################
 # Check share factor
-# ShareFactor = ((bond + pool) / (bond - pool)) * IncentiveCurveAdjustmentBasisPoints / 10_000
+# ShareFactor = ((bond + pool) / (bond - pool)) * PoolShareAdjustmentBasisPoints / 10_000
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/ping
 asserts:
   - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
   - ${TOTAL_POOLED_RUNE} == 195304017281
-  - ${INCENTIVECURVEADJUSTMENTBASISPOINTS} == 5000
+  - ${POOLSHAREADJUSTMENTBASISPOINTS} == 5000
   # ShareFactor Check (s)
   - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22819
   # PoolShareFactor Check (f/s)
-  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${INCENTIVECURVEADJUSTMENTBASISPOINTS}) | floor == 11409  
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${POOLSHAREADJUSTMENTBASISPOINTS}) | floor == 11409  
 ---
 ########################################################################################
 # pool and bond reward calculations
