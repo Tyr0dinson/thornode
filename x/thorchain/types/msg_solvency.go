@@ -3,7 +3,10 @@ package types
 import (
 	"crypto/sha256"
 	"fmt"
+	
+	"google.golang.org/protobuf/proto"
 
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -59,4 +62,8 @@ func (m *MsgSolvency) GetSignBytes() []byte {
 // GetSigners Implements Msg.
 func (m *MsgSolvency) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgSolvencyCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgSolvency).Signer}, nil
 }

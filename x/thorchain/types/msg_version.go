@@ -2,7 +2,9 @@ package types
 
 import (
 	"github.com/blang/semver"
+	"google.golang.org/protobuf/proto"
 
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -44,4 +46,8 @@ func (m *MsgSetVersion) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgSetVersion) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgSetVersionCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgSetVersion).Signer}, nil
 }

@@ -7,11 +7,13 @@ import (
 	"os"
 
 	"github.com/blang/semver"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
@@ -254,4 +256,22 @@ func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.
 func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
 	gs := ExportGenesis(ctx, am.mgr.Keeper())
 	return ModuleCdc.MustMarshalJSON(&gs)
+}
+
+func DefineCustomGetSigners(signingOptions *signing.Options) {
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgBan"), types.MsgBanCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgDeposit"), types.MsgDepositCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgErrataTx"), types.MsgErrataCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgMimir"), types.MsgMimirCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNetworkFee"), types.MsgNetworkFeeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNodePauseChain"), types.MsgNodePauseChainCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxIn"), types.MsgObservedTxInCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxOut"), types.MsgObservedTxOutCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSend"), types.MsgSendCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetIPAddress"), types.MsgSetIPAddressCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetNodeKeys"), types.MsgSetNodeKeysCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolvency"), types.MsgSolvencyCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssKeysignFail"), types.MsgTssKeysignFailCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssPool"), types.MsgTssPoolCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetVersion"), types.MsgSetVersionCustomGetSigners)
 }

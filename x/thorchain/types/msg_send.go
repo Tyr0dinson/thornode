@@ -1,6 +1,9 @@
 package types
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -13,7 +16,7 @@ func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSen
 func (m *MsgSend) Route() string { return RouterKey }
 
 // Type Implements Msg.
-func (m MsgSend) Type() string { return "send" }
+func (m MsgSend) Type() string { return "types.MsgSend" }
 
 // ValidateBasic Implements Msg.
 func (m *MsgSend) ValidateBasic() error {
@@ -44,4 +47,9 @@ func (m *MsgSend) GetSignBytes() []byte {
 // GetSigners Implements Msg.
 func (m *MsgSend) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.FromAddress}
+}
+
+func MsgSendCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msgSend := m.(*types.MsgSend)
+	return [][]byte{msgSend.FromAddress}, nil
 }

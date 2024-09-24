@@ -161,24 +161,41 @@ func NewChainApp(
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *THORChainApp {
+	interfaceRegistrySigningOptions := signing.Options{
+		AddressCodec: address.Bech32Codec{
+			Bech32Prefix: sdk.GetConfig().GetBech32AccountAddrPrefix(),
+		},
+		ValidatorAddressCodec: address.Bech32Codec{
+			Bech32Prefix: sdk.GetConfig().GetBech32ValidatorAddrPrefix(),
+		},
+	}
+	thorchain.DefineCustomGetSigners(&interfaceRegistrySigningOptions)
 	interfaceRegistry, err := types.NewInterfaceRegistryWithOptions(types.InterfaceRegistryOptions{
 		ProtoFiles: proto.HybridResolver,
-		SigningOptions: signing.Options{
-			AddressCodec: address.Bech32Codec{
-				Bech32Prefix: sdk.GetConfig().GetBech32AccountAddrPrefix(),
-			},
-			ValidatorAddressCodec: address.Bech32Codec{
-				Bech32Prefix: sdk.GetConfig().GetBech32ValidatorAddrPrefix(),
-			},
-		},
+		SigningOptions: interfaceRegistrySigningOptions,
 	})
 	if err != nil {
 		panic(err)
 	}
 	appCodec := codec.NewProtoCodec(interfaceRegistry)
 	legacyAmino := codec.NewLegacyAmino()
-	txConfig := authtx.NewTxConfig(appCodec, authtx.DefaultSignModes)
+	txSigningOptions, err := tx.NewDefaultSigningOptions()
+	if err != nil {
+		panic(err)
+	}
 
+	thorchain.DefineCustomGetSigners(txSigningOptions)
+	txConfigOpts := tx.ConfigOptions{
+		EnabledSignModes: authtx.DefaultSignModes,
+		SigningOptions:   txSigningOptions,
+	}
+	txConfig, err := tx.NewTxConfigWithOptions(
+		appCodec,
+		txConfigOpts,
+	)
+	if err != nil {
+		panic(err)
+	}
 	std.RegisterLegacyAminoCodec(legacyAmino)
 	std.RegisterInterfaces(interfaceRegistry)
 
@@ -288,9 +305,10 @@ func NewChainApp(
 
 	// enable sign mode textual by overwriting the default tx config (after setting the bank keeper)
 	enabledSignModes := append(tx.DefaultSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
-	txConfigOpts := tx.ConfigOptions{
+	txConfigOpts = tx.ConfigOptions{
 		EnabledSignModes:           enabledSignModes,
 		TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),
+		SigningOptions:             txSigningOptions,
 	}
 	txConfig, err = tx.NewTxConfigWithOptions(
 		appCodec,

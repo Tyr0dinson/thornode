@@ -1,6 +1,9 @@
 package types
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -17,7 +20,7 @@ func NewMsgMimir(key string, value int64, signer cosmos.AccAddress) *MsgMimir {
 func (m *MsgMimir) Route() string { return RouterKey }
 
 // Type should return the action
-func (m MsgMimir) Type() string { return "set_mimir_attr" }
+func (m MsgMimir) Type() string { return "types.MsgMimir" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgMimir) ValidateBasic() error {
@@ -38,4 +41,8 @@ func (m *MsgMimir) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgMimir) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgMimirCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgMimir).Signer}, nil
 }

@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -193,4 +196,8 @@ func (m *MsgTssPool) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgTssPool) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgTssPoolCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgTssPool).Signer}, nil
 }

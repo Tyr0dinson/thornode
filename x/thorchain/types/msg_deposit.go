@@ -2,7 +2,10 @@ package types
 
 import (
 	"fmt"
+	
+	"google.golang.org/protobuf/proto"
 
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -21,7 +24,7 @@ func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) *M
 func (m *MsgDeposit) Route() string { return RouterKey }
 
 // Type should return the action
-func (m MsgDeposit) Type() string { return "deposit" }
+func (m MsgDeposit) Type() string { return "types.MsgDeposit" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgDeposit) ValidateBasic() error {
@@ -48,4 +51,9 @@ func (m *MsgDeposit) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgDeposit) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgDepositCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msgSend := m.(*types.MsgDeposit)
+	return [][]byte{msgSend.Signer}, nil
 }

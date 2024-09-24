@@ -1,6 +1,9 @@
 package types
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -42,4 +45,8 @@ func (m *MsgSetNodeKeys) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgSetNodeKeys) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgSetNodeKeysCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgSetNodeKeys).Signer}, nil
 }

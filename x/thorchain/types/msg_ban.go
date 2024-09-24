@@ -1,6 +1,9 @@
 package types
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -39,4 +42,8 @@ func (m *MsgBan) GetSignBytes() []byte {
 // GetSigners return all the signer who signed this message
 func (m *MsgBan) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgBanCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgBan).Signer}, nil
 }

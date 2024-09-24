@@ -2,7 +2,10 @@ package types
 
 import (
 	"net"
+	
+	"google.golang.org/protobuf/proto"
 
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -39,4 +42,8 @@ func (m *MsgSetIPAddress) GetSignBytes() []byte {
 // GetSigners defines whose signature is required
 func (m *MsgSetIPAddress) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgSetIPAddressCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgSetIPAddress).Signer}, nil
 }
