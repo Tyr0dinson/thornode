@@ -1517,14 +1517,14 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	totalBonded, _ := vm.getTotalActiveBond(ctx)
 
 	emissionCurve := vm.k.GetConfigInt64(ctx, constants.EmissionCurve)
-	incentiveCurveBasisPoints := vm.k.GetConfigInt64(ctx, constants.IncentiveCurveAdjustmentBasisPoints)
+	poolShareBasisPoints := vm.k.GetConfigInt64(ctx, constants.PoolShareAdjustmentBasisPoints)
 
 	devFundSystemIncomeBps := vm.k.GetConfigInt64(ctx, constants.DevFundSystemIncomeBps)
 	systemIncomeBurnRateBps := vm.k.GetConfigInt64(ctx, constants.SystemIncomeBurnRateBps)
 	blocksPerYear := constAccessor.GetInt64Value(constants.BlocksPerYear)
 	bondReward, totalPoolRewards, lpDeficit, lpShare, devFundDeduct, systemIncomeBurnDeduct := vm.calcBlockRewards(
 		availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve,
-		blocksPerYear, incentiveCurveBasisPoints, devFundSystemIncomeBps, systemIncomeBurnRateBps)
+		blocksPerYear, poolShareBasisPoints, devFundSystemIncomeBps, systemIncomeBurnRateBps)
 
 	if !devFundDeduct.IsZero() {
 		// Send to dev fund address
@@ -1746,7 +1746,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	totalLiquidityFees cosmos.Uint,
 	emissionCurve int64,
 	blocksPerYear int64,
-	incentiveCurveBasisPoints int64,
+	poolShareBasisPoints int64,
 	devFundSystemIncomeBps int64,
 	systemIncomeBurnRateBps int64) (
 	bondReward cosmos.Uint,
@@ -1784,8 +1784,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	lpSplit := vm.getPoolShare(
 		availablePoolsRune,
 		totalBonded,
-		systemIncome,              // after devFundDeduct and systemIncomeBurnDeduct
-		incentiveCurveBasisPoints) // Get liquidity provider share
+		systemIncome,         // after devFundDeduct and systemIncomeBurnDeduct
+		poolShareBasisPoints) // Get liquidity provider share
 	bonderSplit := common.SafeSub(systemIncome, lpSplit) // Remainder to Bonders
 	lpShare = common.GetSafeShare(lpSplit, systemIncome, cosmos.NewUint(constants.MaxBasisPts))
 
@@ -1808,7 +1808,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 //
 //	b = Active Bond Amount (RUNE)
 //	p = Pooled Amount (RUNE)
-//	i = IncentiveCurveAdjustmentBasisPoints
+//	i = PoolShareAdjustmentBasisPoints
 //	f = i/10_000
 //	s = ShareFactor = (b + p) / (b - p)
 //
@@ -1820,12 +1820,12 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 // pooledRune: RUNE value in pools
 // toalBonded: total RUNE value bonded
 // systemIncome: total RUNE rewards to be distributed
-// incentiveCurveBasisPoints: tuning factor for the incentive curve as set by the network
+// poolShareBasisPoints: tuning factor for the incentive curve as set by the network
 func (vm *NetworkMgrVCUR) getPoolShare(
 	pooledRune,
 	totalBonded,
 	systemIncome cosmos.Uint,
-	incentiveCurveBasisPoints int64,
+	poolShareBasisPoints int64,
 ) cosmos.Uint {
 	// when b <= p, no payments to liquidity providers - 100% to nodes
 	if totalBonded.LTE(pooledRune) {
@@ -1841,7 +1841,7 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 	shareFactor := (totalBonded.Add(pooledRune)).Mul(cosmos.NewUint(constants.MaxBasisPts)).QuoUint64(common.SafeSub(totalBonded, pooledRune).Uint64()) // s * 10_000
 
 	// Pool share = rewards * f / s = rewards * i / (s * 10_000)
-	return common.GetSafeShare(cosmos.NewUint(uint64(incentiveCurveBasisPoints)), shareFactor, systemIncome)
+	return common.GetSafeShare(cosmos.NewUint(uint64(poolShareBasisPoints)), shareFactor, systemIncome)
 }
 
 // deductPoolRewardDeficit - When swap fees accrued by the pools surpass what

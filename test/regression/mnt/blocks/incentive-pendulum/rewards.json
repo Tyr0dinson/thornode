@@ -392,7 +392,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "3C5E2C0ECA6171890D75CDE9EFC7B1DC744681DFBEBE92FB404215A60AA9942F",
+      "data_hash": "9CA9CD9B54CB325818F5E4FBCD4969357A8F9C18754AC241CC151C73076AFBE5",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -474,7 +474,7 @@
     ],
     "txs": [
       {
-        "hash": "B93415ABD9B2781D84845279CC97F0976B366B72C9507A34920B1CC3DE2C33B7",
+        "hash": "2D3F16711B44A7B2A8D0AE4C893BDF3229757FF9CB3CD9FBCA249C07881FC009",
         "tx": {
           "auth_info": {
             "fee": {
@@ -504,7 +504,7 @@
             "messages": [
               {
                 "@type": "/types.MsgMimir",
-                "key": "IncentiveCurveAdjustmentBasisPoints",
+                "key": "PoolShareAdjustmentBasisPoints",
                 "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
                 "value": "5000"
               }
@@ -513,15 +513,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "nEOrGkjujj2E71BqEE+3heG+89n4B/7Ca84bS8JUH3AZIw3QjVFidthasnaJKoWZsOYNWGdB27+kW5txG4A+tg=="
+            "fxXO9cdu5lTyb8Zg7atMPq6rABN22JelUMrX/vOu1bMUoapTQ7LYf56rSNjpoAfDdAqRC8xS+ID3YO+o0Gl0ZA=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0011\n\u000f/types.MsgMimir",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_mimir_attr\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"INCENTIVECURVEADJUSTMENTBASISPOINTS\"},{\"key\":\"value\",\"value\":\"5000\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_mimir_attr\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"POOLSHAREADJUSTMENTBASISPOINTS\"},{\"key\":\"value\",\"value\":\"5000\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "48879",
+          "gas_used": "48679",
           "events": [
             {
               "fee": "",
@@ -533,7 +533,7 @@
               "type": "tx"
             },
             {
-              "signature": "nEOrGkjujj2E71BqEE+3heG+89n4B/7Ca84bS8JUH3AZIw3QjVFidthasnaJKoWZsOYNWGdB27+kW5txG4A+tg==",
+              "signature": "fxXO9cdu5lTyb8Zg7atMPq6rABN22JelUMrX/vOu1bMUoapTQ7LYf56rSNjpoAfDdAqRC8xS+ID3YO+o0Gl0ZA==",
               "type": "tx"
             },
             {
@@ -541,7 +541,7 @@
               "type": "message"
             },
             {
-              "key": "INCENTIVECURVEADJUSTMENTBASISPOINTS",
+              "key": "POOLSHAREADJUSTMENTBASISPOINTS",
               "type": "set_mimir",
               "value": "5000"
             }
