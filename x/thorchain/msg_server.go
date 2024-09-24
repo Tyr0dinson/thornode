@@ -100,7 +100,7 @@ func (ms msgServer) SetVersion(goCtx context.Context, msg *types.MsgSetVersion) 
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// TODO (SAM127): is this still correct?
+	// TODO: is this still correct?
 	defer func() {
 		if r := recover(); r != nil {
 			// print stack
@@ -126,7 +126,7 @@ func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ 
 		return nil, err
 	}
 
-	// TODO (SAM127): is this still necessary?
+	// TODO: is this still necessary?
 	// if len(ctx.EventManager().Events()) > 0 {
 	// 	result.Events = ctx.EventManager().ABCIEvents()
 	// }

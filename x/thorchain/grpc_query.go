@@ -102,12 +102,12 @@ func (s queryServer) Nodes(c context.Context, req *types.QueryNodesRequest) (*ty
 
 func (s queryServer) PoolSlip(c context.Context, req *types.QueryPoolSlipRequest) (*types.QueryPoolSlipsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(c)
-	return s.queryPoolSlip(ctx, req)
+	return s.queryPoolSlips(ctx, req.Asset)
 }
 
 func (s queryServer) PoolSlips(c context.Context, req *types.QueryPoolSlipsRequest) (*types.QueryPoolSlipsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(c)
-	return s.queryPoolSlips(ctx, req)
+	return s.queryPoolSlips(ctx, "")
 }
 
 func (s queryServer) OutboundFee(c context.Context, req *types.QueryOutboundFeeRequest) (*types.QueryOutboundFeesResponse, error) {

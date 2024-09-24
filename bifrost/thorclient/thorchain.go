@@ -92,7 +92,7 @@ type ThorchainBridge interface {
 	GetPools() (stypes.Pools, error)
 	GetPubKeys() ([]PubKeyContractAddressPair, error)
 	GetAsgardPubKeys() ([]PubKeyContractAddressPair, error)
-	GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) sdk.Msg
+	GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency
 	GetTHORName(name string) (stypes.THORName, error)
 	GetThorchainVersion() (semver.Version, error)
 	IsCatchingUp() (bool, error)
@@ -326,7 +326,7 @@ func (b *thorchainBridge) GetErrataMsg(txID common.TxID, chain common.Chain) sdk
 }
 
 // GetSolvencyMsg create MsgSolvency from the given parameters
-func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) sdk.Msg {
+func (b *thorchainBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency {
 	// To prevent different MsgSolvency ID incompatibility between nodes with different coin-observation histories,
 	// only report coins for which the amounts are not currently 0.
 	coins = coins.NoneEmpty()

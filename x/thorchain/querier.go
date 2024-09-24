@@ -1486,79 +1486,31 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 	return &types.QueryPoolsResponse{Pools: pools}, nil
 }
 
-func (qs queryServer) queryPoolSlip(ctx cosmos.Context, req *types.QueryPoolSlipRequest) (*types.QueryPoolSlipsResponse, error) {
-	if len(req.Asset) == 0 {
-		return nil, errors.New("asset not provided")
-	}
-	asset, err := common.NewAsset(req.Asset)
-	if err != nil {
-		ctx.Logger().Error("fail to parse asset", "error", err, "asset", req.Asset)
-		return nil, fmt.Errorf("fail to parse asset (%s): %w", req.Asset, err)
-	}
-
-	result := make([]*types.QueryPoolSlipResponse, 1)
-	result[0].Asset = asset.String()
-
-	poolSlip, err := qs.mgr.Keeper().GetPoolSwapSlip(ctx, ctx.BlockHeight(), asset)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get swap slip for asset (%s) height (%d), err:%w", asset, ctx.BlockHeight(), err)
-	}
-	result[0].PoolSlip = poolSlip.Int64()
-
-	rollupCount, err := qs.mgr.Keeper().GetRollupCount(ctx, asset)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get rollup count for asset (%s) height (%d), err:%w", asset, ctx.BlockHeight(), err)
-	}
-	result[0].RollupCount = rollupCount
-
-	longRollup, err := qs.mgr.Keeper().GetLongRollup(ctx, asset)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get long rollup for asset (%s) height (%d), err:%w", asset, ctx.BlockHeight(), err)
-	}
-	result[0].LongRollup = longRollup
-
-	rollup, err := qs.mgr.Keeper().GetCurrentRollup(ctx, asset)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get rollup count for asset (%s) height (%d), err:%w", asset, ctx.BlockHeight(), err)
-	}
-	result[0].Rollup = rollup
-
-	// For performance, only sum the rollup swap slip for comparison
-	// when a single asset has been specified.
-	maxAnchorBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
-	var summedRollup int64
-	for i := ctx.BlockHeight() - maxAnchorBlocks; i < ctx.BlockHeight(); i++ {
-		poolSlip, err := qs.mgr.Keeper().GetPoolSwapSlip(ctx, i, asset)
-		if err != nil {
-			// Log the error, zero the sum, and exit the loop.
-			ctx.Logger().Error("fail to get swap slip", "error", err, "asset", asset, "height", i)
-			summedRollup = 0
-			break
-		}
-		summedRollup += poolSlip.Int64()
-	}
-	result[0].SummedRollup = summedRollup
-
-	return &types.QueryPoolSlipsResponse{PoolSlips: result}, nil
-}
-
-// TODO: SAM127 find common code
-func (qs queryServer) queryPoolSlips(ctx cosmos.Context, _ *types.QueryPoolSlipsRequest) (*types.QueryPoolSlipsResponse, error) {
+func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.QueryPoolSlipsResponse, error) {
 	var assets []common.Asset
-	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
-	for ; iterator.Valid(); iterator.Next() {
-		var pool Pool
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
+	if len(asset) > 0 {
+		assetObj, err := common.NewAsset(asset)
+		if err != nil {
+			ctx.Logger().Error("fail to parse asset", "error", err, "asset", asset)
+			return nil, fmt.Errorf("fail to parse asset (%s): %w", asset, err)
 		}
-
-		// Display the swap slips of Available-pool Layer 1 assets.
-		if pool.Status != PoolAvailable || pool.Asset.IsNative() {
-			continue
+		assets = []common.Asset{assetObj}
+	} else {
+		iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
+		for ; iterator.Valid(); iterator.Next() {
+			var pool Pool
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+				return nil, fmt.Errorf("fail to unmarshal pool: %w", err)
+			}
+	
+			// Display the swap slips of Available-pool Layer 1 assets.
+			if pool.Status != PoolAvailable || pool.Asset.IsNative() {
+				continue
+			}
+			assets = append(assets, pool.Asset)
 		}
-		assets = append(assets, pool.Asset)
 	}
-
+	
 	result := make([]*types.QueryPoolSlipResponse, len(assets))
 	for i := range assets {
 		result[i].Asset = assets[i].String()
@@ -1586,6 +1538,24 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, _ *types.QueryPoolSlips
 			return nil, fmt.Errorf("fail to get rollup count for asset (%s) height (%d), err:%w", assets[i], ctx.BlockHeight(), err)
 		}
 		result[i].Rollup = rollup
+	}
+
+	// For performance, only sum the rollup swap slip for comparison
+	// when a single asset has been specified.
+	if len(assets) == 1 {
+		maxAnchorBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxAnchorBlocks)
+		var summedRollup int64
+		for i := ctx.BlockHeight() - maxAnchorBlocks; i < ctx.BlockHeight(); i++ {
+			poolSlip, err := qs.mgr.Keeper().GetPoolSwapSlip(ctx, i, assets[0])
+			if err != nil {
+				// Log the error, zero the sum, and exit the loop.
+				ctx.Logger().Error("fail to get swap slip", "error", err, "asset", assets[0], "height", i)
+				summedRollup = 0
+				break
+			}
+			summedRollup += poolSlip.Int64()
+		}
+		result[0].SummedRollup = summedRollup
 	}
 
 	return &types.QueryPoolSlipsResponse{PoolSlips: result}, nil
@@ -2750,7 +2720,7 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
 			continue
 		}
-		// TODO: SAM127 - check to see if always displaying the order type is okay?
+		// TODO: - check to see if always displaying the order type is okay?
 		result = append(result, &msg)
 	}
 

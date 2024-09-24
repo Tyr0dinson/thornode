@@ -12,7 +12,6 @@ message QueryVaultRequest{
   string pub_key = 1;
 }
 
-// TODO: can we use type_vault?
 message QueryVaultResponse{
   int64 block_height = 1;
   string pub_key = 2;

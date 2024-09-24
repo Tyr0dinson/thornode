@@ -5553,7 +5553,6 @@ func (x *QueryVaultRequest) GetPubKey() string {
 	return ""
 }
 
-// TODO: can we use type_vault?
 type QueryVaultResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

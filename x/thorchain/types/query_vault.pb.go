@@ -69,7 +69,6 @@ func (m *QueryVaultRequest) GetPubKey() string {
 	return ""
 }
 
-// TODO: can we use type_vault?
 type QueryVaultResponse struct {
 	BlockHeight           int64                                      `protobuf:"varint,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
 	PubKey                string                                     `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`

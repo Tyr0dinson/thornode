@@ -68,7 +68,6 @@ func (m *QueryNodeRequest) GetAddress() string {
 	return ""
 }
 
-// TODO: update with comments and nullables
 type QueryNodeResponse struct {
 	NodeAddress         string               `protobuf:"bytes,1,opt,name=node_address,json=nodeAddress,proto3" json:"node_address,omitempty"`
 	Status              string               `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
@@ -309,7 +308,6 @@ func (m *QueryNodesRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_QueryNodesRequest proto.InternalMessageInfo
 
-// Update with pagination?
 type QueryNodesResponse struct {
 	Nodes []*QueryNodeResponse `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
 }

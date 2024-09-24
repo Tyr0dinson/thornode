@@ -738,6 +738,8 @@ func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
 
 	staticServer := http.FileServer(http.FS(root))
 	rtr.PathPrefix("/swagger/").Handler(http.StripPrefix("/swagger/", staticServer))
+	rtr.PathPrefix("/thorchain/doc").Handler(http.StripPrefix("/thorchain/doc", staticServer))
+	rtr.PathPrefix("/thorchain/doc/").Handler(http.StripPrefix("/thorchain/doc/", staticServer))
 
 	return nil
 }

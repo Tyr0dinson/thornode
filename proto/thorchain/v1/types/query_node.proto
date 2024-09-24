@@ -12,7 +12,6 @@ message QueryNodeRequest{
   string address = 1;
 }
 
-// TODO: update with comments and nullables
 message QueryNodeResponse{
   string node_address = 1;
   string status = 2;
@@ -39,7 +38,6 @@ message QueryNodeResponse{
 
 message QueryNodesRequest{}
 
-// Update with pagination?
 message QueryNodesResponse{
   repeated QueryNodeResponse nodes = 1;
 }

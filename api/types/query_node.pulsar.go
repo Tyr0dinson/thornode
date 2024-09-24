@@ -5664,7 +5664,6 @@ func (x *QueryNodeRequest) GetAddress() string {
 	return ""
 }
 
-// TODO: update with comments and nullables
 type QueryNodeResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -5886,7 +5885,6 @@ func (*QueryNodesRequest) Descriptor() ([]byte, []int) {
 	return file_types_query_node_proto_rawDescGZIP(), []int{2}
 }
 
-// Update with pagination?
 type QueryNodesResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
