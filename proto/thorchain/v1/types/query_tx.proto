@@ -16,7 +16,7 @@ message QueryTxStagesRequest{
 }
 
 message QueryTxStagesResponse{
-  InboundObservedStage inbound_observed = 1;
+  InboundObservedStage inbound_observed = 1 [(gogoproto.nullable) = false];
   InboundConfirmationCountedStage inbound_confirmation_counted = 2;
   InboundFinalisedStage inbound_finalised = 3;
   SwapStatus swap_status = 4;
@@ -33,7 +33,7 @@ message QueryTxStatusResponse{
   common.Tx tx = 1;
   repeated PlannedOutTx planned_out_txs = 2;
   repeated common.Tx out_txs = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Txs", (gogoproto.nullable) = false];
-  QueryTxStagesResponse stages = 4;
+  QueryTxStagesResponse stages = 4 [(gogoproto.nullable) = false];
 }
 
 message QueryTxRequest{

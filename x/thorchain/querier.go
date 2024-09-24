@@ -2088,8 +2088,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 		result.OutTxs = voter.OutTxs
 	}
 
-	stages := newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
-	result.Stages = &stages
+	result.Stages = newTxStagesResponse(ctx, voter, isSwap, isPending, pending, streamingSwap)
 
 	return &result, nil
 }
