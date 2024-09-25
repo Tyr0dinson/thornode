@@ -17,6 +17,7 @@ message QueryDerivedPoolResponse{
   int64  decimals = 3;
   string balance_asset = 4;
   string balance_rune = 5;
+  // the depth of the derived virtual pool relative to L1 pool (in basis points)
   string derived_depth_bps = 6;
 }
 

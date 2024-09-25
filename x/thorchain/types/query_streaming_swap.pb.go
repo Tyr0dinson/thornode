@@ -68,19 +68,33 @@ func (m *QueryStreamingSwapRequest) GetTxId() string {
 }
 
 type QueryStreamingSwapResponse struct {
-	TxId              string   `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
-	Interval          int64    `protobuf:"varint,2,opt,name=interval,proto3" json:"interval,omitempty"`
-	Quantity          int64    `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	Count             int64    `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
-	LastHeight        int64    `protobuf:"varint,5,opt,name=last_height,json=lastHeight,proto3" json:"last_height,omitempty"`
-	TradeTarget       string   `protobuf:"bytes,6,opt,name=trade_target,json=tradeTarget,proto3" json:"trade_target,omitempty"`
-	SourceAsset       string   `protobuf:"bytes,7,opt,name=source_asset,json=sourceAsset,proto3" json:"source_asset,omitempty"`
-	TargetAsset       string   `protobuf:"bytes,8,opt,name=target_asset,json=targetAsset,proto3" json:"target_asset,omitempty"`
-	Destination       string   `protobuf:"bytes,9,opt,name=destination,proto3" json:"destination,omitempty"`
-	Deposit           string   `protobuf:"bytes,10,opt,name=deposit,proto3" json:"deposit,omitempty"`
-	In                string   `protobuf:"bytes,11,opt,name=in,proto3" json:"in,omitempty"`
-	Out               string   `protobuf:"bytes,12,opt,name=out,proto3" json:"out,omitempty"`
-	FailedSwaps       []int64  `protobuf:"varint,13,rep,packed,name=failed_swaps,json=failedSwaps,proto3" json:"failed_swaps,omitempty"`
+	// the hash of a transaction
+	TxId string `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
+	// how often each swap is made, in blocks
+	Interval int64 `protobuf:"varint,2,opt,name=interval,proto3" json:"interval,omitempty"`
+	// the total number of swaps in a streaming swaps
+	Quantity int64 `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	// the amount of swap attempts so far
+	Count int64 `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	// the block height of the latest swap
+	LastHeight int64 `protobuf:"varint,5,opt,name=last_height,json=lastHeight,proto3" json:"last_height,omitempty"`
+	// the total number of tokens the swapper wants to receive of the output asset
+	TradeTarget string `protobuf:"bytes,6,opt,name=trade_target,json=tradeTarget,proto3" json:"trade_target,omitempty"`
+	// the asset to be swapped from
+	SourceAsset string `protobuf:"bytes,7,opt,name=source_asset,json=sourceAsset,proto3" json:"source_asset,omitempty"`
+	// the asset to be swapped to
+	TargetAsset string `protobuf:"bytes,8,opt,name=target_asset,json=targetAsset,proto3" json:"target_asset,omitempty"`
+	// the destination address to receive the swap output
+	Destination string `protobuf:"bytes,9,opt,name=destination,proto3" json:"destination,omitempty"`
+	// the number of input tokens the swapper has deposited
+	Deposit string `protobuf:"bytes,10,opt,name=deposit,proto3" json:"deposit,omitempty"`
+	// the amount of input tokens that have been swapped so far
+	In string `protobuf:"bytes,11,opt,name=in,proto3" json:"in,omitempty"`
+	// the amount of output tokens that have been swapped so far
+	Out string `protobuf:"bytes,12,opt,name=out,proto3" json:"out,omitempty"`
+	// the list of swap indexes that failed
+	FailedSwaps []int64 `protobuf:"varint,13,rep,packed,name=failed_swaps,json=failedSwaps,proto3" json:"failed_swaps,omitempty"`
+	// the list of reasons that sub-swaps have failed
 	FailedSwapReasons []string `protobuf:"bytes,14,rep,name=failed_swap_reasons,json=failedSwapReasons,proto3" json:"failed_swap_reasons,omitempty"`
 }
 

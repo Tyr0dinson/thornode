@@ -5558,12 +5558,13 @@ type QueryVaultResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	BlockHeight           int64           `protobuf:"varint,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
-	PubKey                string          `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
-	Coins                 []*common.Coin  `protobuf:"bytes,3,rep,name=coins,proto3" json:"coins,omitempty"`
-	Type_                 string          `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
-	Status                string          `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	StatusSince           int64           `protobuf:"varint,6,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
+	BlockHeight int64          `protobuf:"varint,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
+	PubKey      string         `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	Coins       []*common.Coin `protobuf:"bytes,3,rep,name=coins,proto3" json:"coins,omitempty"`
+	Type_       string         `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	Status      string         `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	StatusSince int64          `protobuf:"varint,6,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
+	// the list of node public keys which are members of the vault
 	Membership            []string        `protobuf:"bytes,7,rep,name=membership,proto3" json:"membership,omitempty"`
 	Chains                []string        `protobuf:"bytes,8,rep,name=chains,proto3" json:"chains,omitempty"`
 	InboundTxCount        int64           `protobuf:"varint,9,opt,name=inbound_tx_count,json=inboundTxCount,proto3" json:"inbound_tx_count,omitempty"`

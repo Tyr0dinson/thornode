@@ -1041,10 +1041,13 @@ type QueryQueueResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Swap                   int64  `protobuf:"varint,1,opt,name=swap,proto3" json:"swap,omitempty"`
-	Outbound               int64  `protobuf:"varint,2,opt,name=outbound,proto3" json:"outbound,omitempty"`
-	Internal               int64  `protobuf:"varint,3,opt,name=internal,proto3" json:"internal,omitempty"`
+	Swap int64 `protobuf:"varint,1,opt,name=swap,proto3" json:"swap,omitempty"`
+	// number of signed outbound tx in the queue
+	Outbound int64 `protobuf:"varint,2,opt,name=outbound,proto3" json:"outbound,omitempty"`
+	Internal int64 `protobuf:"varint,3,opt,name=internal,proto3" json:"internal,omitempty"`
+	// scheduled outbound value in RUNE
 	ScheduledOutboundValue string `protobuf:"bytes,4,opt,name=scheduled_outbound_value,json=scheduledOutboundValue,proto3" json:"scheduled_outbound_value,omitempty"`
+	// scheduled outbound clout in RUNE
 	ScheduledOutboundClout string `protobuf:"bytes,5,opt,name=scheduled_outbound_clout,json=scheduledOutboundClout,proto3" json:"scheduled_outbound_clout,omitempty"`
 }
 

@@ -16,25 +16,40 @@ message QueryRunePoolResponse{
 }
 
 message POL{
+	// total amount of RUNE deposited into the pools
   string rune_deposited = 1;
+	// total amount of RUNE withdrawn from the pools
   string rune_withdrawn = 2;
+	// total value of protocol's LP position in RUNE value
   string value = 3;
+	// profit and loss of protocol owned liquidity
   string pnl = 4;
+	// current amount of rune deposited
   string current_deposit = 5;
 }
 
 message RunePoolProviders{
+	// the units of RUNEPool owned by providers (including pending)
   string units = 1;
+	// the units of RUNEPool owned by providers that remain pending
   string pending_units = 2;
+	// the amount of RUNE pending
   string pending_rune = 3;
+	// the value of the provider share of the RUNEPool (includes pending RUNE)
   string value = 4;
+	// the profit and loss of the provider share of the RUNEPool
   string pnl = 5;
+	// the current RUNE deposited by providers
   string current_deposit = 6;
 }
 
 message RunePoolReserve{
+	// the units of RUNEPool owned by the reserve
   string units = 1;
+	// the value of the reserve share of the RUNEPool
   string value = 2;
+	// the profit and loss of the reserve share of the RUNEPool
   string pnl = 3;
+	// the current RUNE deposited by the reserve
   string current_deposit = 4;
 }

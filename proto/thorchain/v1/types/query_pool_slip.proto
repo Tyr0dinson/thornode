@@ -13,10 +13,15 @@ message QueryPoolSlipRequest{
 
 message QueryPoolSlipResponse{
   string asset = 1;
+	// Pool slip for this asset's pool for the current height
   int64  pool_slip = 2;
+	// Number of stored pool slips contributing to the current stored rollup
   int64  rollup_count = 3;
+	// Median of rollup snapshots over a long period
   int64  long_rollup = 4;
+	// Stored sum of pool slips over a number of previous block heights
   int64  rollup = 5;
+	// Summed pool slips over a number of previous block heights, to checksum the stored rollup
   int64  summed_rollup = 6  [(gogoproto.nullable) = true];
 }
 

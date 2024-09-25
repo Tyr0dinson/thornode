@@ -12,19 +12,33 @@ message QueryStreamingSwapRequest{
 }
 
 message QueryStreamingSwapResponse{
+	// the hash of a transaction
   string tx_id = 1;
+	// how often each swap is made, in blocks
   int64  interval = 2;
+	// the total number of swaps in a streaming swaps
   int64  quantity = 3;
+	// the amount of swap attempts so far
   int64  count = 4;
+	// the block height of the latest swap
   int64 last_height = 5;
+	// the total number of tokens the swapper wants to receive of the output asset
   string trade_target = 6;
+	// the asset to be swapped from
   string source_asset = 7;
+	// the asset to be swapped to
   string target_asset = 8;
+	// the destination address to receive the swap output
   string destination = 9;
+	// the number of input tokens the swapper has deposited
   string deposit = 10;
+	// the amount of input tokens that have been swapped so far
   string in = 11;
+	// the amount of output tokens that have been swapped so far
   string out = 12;
+	// the list of swap indexes that failed
   repeated int64 failed_swaps = 13;
+	// the list of reasons that sub-swaps have failed
   repeated string failed_swap_reasons = 14;
 }
 

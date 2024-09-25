@@ -120,10 +120,15 @@ func (m *QueryRunePoolResponse) GetReserve() *RunePoolReserve {
 }
 
 type POL struct {
-	RuneDeposited  string `protobuf:"bytes,1,opt,name=rune_deposited,json=runeDeposited,proto3" json:"rune_deposited,omitempty"`
-	RuneWithdrawn  string `protobuf:"bytes,2,opt,name=rune_withdrawn,json=runeWithdrawn,proto3" json:"rune_withdrawn,omitempty"`
-	Value          string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	Pnl            string `protobuf:"bytes,4,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// total amount of RUNE deposited into the pools
+	RuneDeposited string `protobuf:"bytes,1,opt,name=rune_deposited,json=runeDeposited,proto3" json:"rune_deposited,omitempty"`
+	// total amount of RUNE withdrawn from the pools
+	RuneWithdrawn string `protobuf:"bytes,2,opt,name=rune_withdrawn,json=runeWithdrawn,proto3" json:"rune_withdrawn,omitempty"`
+	// total value of protocol's LP position in RUNE value
+	Value string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	// profit and loss of protocol owned liquidity
+	Pnl string `protobuf:"bytes,4,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// current amount of rune deposited
 	CurrentDeposit string `protobuf:"bytes,5,opt,name=current_deposit,json=currentDeposit,proto3" json:"current_deposit,omitempty"`
 }
 
@@ -196,11 +201,17 @@ func (m *POL) GetCurrentDeposit() string {
 }
 
 type RunePoolProviders struct {
-	Units          string `protobuf:"bytes,1,opt,name=units,proto3" json:"units,omitempty"`
-	PendingUnits   string `protobuf:"bytes,2,opt,name=pending_units,json=pendingUnits,proto3" json:"pending_units,omitempty"`
-	PendingRune    string `protobuf:"bytes,3,opt,name=pending_rune,json=pendingRune,proto3" json:"pending_rune,omitempty"`
-	Value          string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
-	Pnl            string `protobuf:"bytes,5,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// the units of RUNEPool owned by providers (including pending)
+	Units string `protobuf:"bytes,1,opt,name=units,proto3" json:"units,omitempty"`
+	// the units of RUNEPool owned by providers that remain pending
+	PendingUnits string `protobuf:"bytes,2,opt,name=pending_units,json=pendingUnits,proto3" json:"pending_units,omitempty"`
+	// the amount of RUNE pending
+	PendingRune string `protobuf:"bytes,3,opt,name=pending_rune,json=pendingRune,proto3" json:"pending_rune,omitempty"`
+	// the value of the provider share of the RUNEPool (includes pending RUNE)
+	Value string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	// the profit and loss of the provider share of the RUNEPool
+	Pnl string `protobuf:"bytes,5,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// the current RUNE deposited by providers
 	CurrentDeposit string `protobuf:"bytes,6,opt,name=current_deposit,json=currentDeposit,proto3" json:"current_deposit,omitempty"`
 }
 
@@ -280,9 +291,13 @@ func (m *RunePoolProviders) GetCurrentDeposit() string {
 }
 
 type RunePoolReserve struct {
-	Units          string `protobuf:"bytes,1,opt,name=units,proto3" json:"units,omitempty"`
-	Value          string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	Pnl            string `protobuf:"bytes,3,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// the units of RUNEPool owned by the reserve
+	Units string `protobuf:"bytes,1,opt,name=units,proto3" json:"units,omitempty"`
+	// the value of the reserve share of the RUNEPool
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// the profit and loss of the reserve share of the RUNEPool
+	Pnl string `protobuf:"bytes,3,opt,name=pnl,proto3" json:"pnl,omitempty"`
+	// the current RUNE deposited by the reserve
 	CurrentDeposit string `protobuf:"bytes,4,opt,name=current_deposit,json=currentDeposit,proto3" json:"current_deposit,omitempty"`
 }
 

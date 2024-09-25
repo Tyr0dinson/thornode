@@ -21,25 +21,44 @@ message QueryQuoteSwapRequest{
 }
 
 message QueryQuoteSwapResponse{
+	// the inbound address for the transaction on the source chain
   string inbound_address = 1;
+	// the approximate number of source chain blocks required before processing
   int64  inbound_confirmation_blocks = 2;
+	// the approximate seconds for block confirmations required before processing
   int64  inbound_confirmation_seconds = 3;
+	// the number of thorchain blocks the outbound will be delayed
   int64  outbound_delay_blocks = 4;
+	// the approximate seconds for the outbound delay before it will be sent
   int64  outbound_delay_seconds = 5;
   QuoteFees fees = 6;
+	// the EVM chain router contract address
   string router = 7;
+	// expiration timestamp in unix seconds
   int64 expiry = 8;
+	// static warning message
   string warning = 9;
+	// chain specific quote notes
   string notes = 10;
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
   string dust_threshold = 11;
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
   string recommended_min_amount_in = 12;
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
   string recommended_gas_rate = 13;
+	// the units of the recommended gas rate
   string gas_rate_units = 14;
+	// generated memo for the swap
   string memo = 15;
+	// the amount of the target asset the user can expect to receive after fees
   string expected_amount_out = 16;
+	// the amount of the target asset the user can expect to receive after fees
   int64 max_streaming_quantity = 17;
+	// the number of blocks the streaming swap will execute over
   int64 streaming_swap_blocks = 18;
+	// approx the number of seconds the streaming swap will execute over
   int64 streaming_swap_seconds = 19;
+	// total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
   int64 total_swap_seconds = 20;
 }
 
@@ -51,22 +70,38 @@ message QueryQuoteSaverDepositRequest{
 }
 
 message QueryQuoteSaverDepositResponse{
+  // the inbound address for the transaction on the source chain
   string inbound_address = 1;
+	// the approximate number of source chain blocks required before processing
   int64  inbound_confirmation_blocks = 2;
+	// the approximate seconds for block confirmations required before processing
   int64  inbound_confirmation_seconds = 3;
+	// the number of thorchain blocks the outbound will be delayed
   int64  outbound_delay_blocks = 4;
+	// the approximate seconds for the outbound delay before it will be sent
   int64  outbound_delay_seconds = 5;
   QuoteFees fees = 6;
+	// the EVM chain router contract address
   string router = 7;
+	// expiration timestamp in unix seconds
   int64 expiry = 8;
+	// static warning message
   string warning = 9;
+	// chain specific quote notes
   string notes = 10;
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
   string dust_threshold = 11;
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
   string recommended_min_amount_in = 12;
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
   string recommended_gas_rate = 13;
+	// the units of the recommended gas rate
   string gas_rate_units = 14;
+	// generated memo for the deposit
   string memo = 15;
+	// same as expected_amount_deposit, to be deprecated in favour of expected_amount_deposit
   string expected_amount_out = 16;
+	// the amount of the target asset the user can expect to deposit after fees
   string expected_amount_deposit = 17;
 }
 
@@ -77,22 +112,38 @@ message QueryQuoteSaverWithdrawRequest{
 }
 
 message QueryQuoteSaverWithdrawResponse{
+	// the inbound address for the transaction on the source chain
   string inbound_address = 1;
+	// the approximate number of source chain blocks required before processing
   int64  inbound_confirmation_blocks = 2;
+	// the approximate seconds for block confirmations required before processing
   int64  inbound_confirmation_seconds = 3;
+	// the number of thorchain blocks the outbound will be delayed
   int64  outbound_delay_blocks = 4;
+	// the approximate seconds for the outbound delay before it will be sent
   int64  outbound_delay_seconds = 5;
   QuoteFees fees = 6;
+	// the EVM chain router contract address
   string router = 7;
+	// expiration timestamp in unix seconds
   int64 expiry = 8;
+	// static warning message
   string warning = 9;
+	// chain specific quote notes
   string notes = 10;
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
   string dust_threshold = 11;
+  // The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
   string recommended_min_amount_in = 12;
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
   string recommended_gas_rate = 13;
+	// the units of the recommended gas rate
   string gas_rate_units = 14;
+	// generated memo for the withdraw, the client can use this OR send the dust amount
   string memo = 15;
+	// the dust amount of the target asset the user should send to initialize the withdraw, the client can send this OR provide the memo
   string dust_amount = 16;
+	// the amount of the target asset the user can expect to withdraw after fees in 1e8 decimals
   string expected_amount_out = 17;
 }
 
@@ -107,27 +158,48 @@ message QueryQuoteLoanOpenRequest{
 }
 
 message QueryQuoteLoanOpenResponse{
+	// the inbound address for the transaction on the source chain
   string inbound_address = 1;
+	// the approximate number of source chain blocks required before processing
   int64  inbound_confirmation_blocks = 2;
+	// the approximate seconds for block confirmations required before processing
   int64  inbound_confirmation_seconds = 3;
+	// the number of thorchain blocks the outbound will be delayed
   int64  outbound_delay_blocks = 4;
+	// the approximate seconds for the outbound delay before it will be sent
   int64  outbound_delay_seconds = 5;
   QuoteFees fees = 6;
+	// the EVM chain router contract address
   string router = 7;
+	// expiration timestamp in unix seconds
   int64 expiry = 8;
+	// static warning message
   string warning = 9;
+	// chain specific quote notes
   string notes = 10;
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
   string dust_threshold = 11;
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
   string recommended_min_amount_in = 12;
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
   string recommended_gas_rate = 13;
+	// the units of the recommended gas rate
   string gas_rate_units = 14;
+	// generated memo for the loan open
   string memo = 15;
+	// the amount of the target asset the user can expect to receive after fees in 1e8 decimals
   string expected_amount_out = 16;
+	// the expected collateralization ratio in basis points
   string expected_collateralization_ratio = 17;
+	// the expected amount of collateral increase on the loan
   string expected_collateral_deposited = 18;
+	// the expected amount of TOR debt increase on the loan
   string expected_debt_issued = 19;
+	// The number of blocks involved in the streaming swaps during the open loan process.
   int64 streaming_swap_blocks = 20;
+	// The approximate number of seconds taken by the streaming swaps involved in the open loan process.
   int64 streaming_swap_seconds = 21;
+	// The total expected duration for a open loan, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
   int64 total_open_loan_seconds = 22;
 }
 
@@ -140,36 +212,64 @@ message QueryQuoteLoanCloseRequest{
 }
 
 message QueryQuoteLoanCloseResponse{
+	// the inbound address for the transaction on the source chain
   string inbound_address = 1;
+	// the approximate number of source chain blocks required before processing
   int64  inbound_confirmation_blocks = 2;
+	// the approximate seconds for block confirmations required before processing
   int64  inbound_confirmation_seconds = 3;
+	// the number of thorchain blocks the outbound will be delayed
   int64  outbound_delay_blocks = 4;
+	// the approximate seconds for the outbound delay before it will be sent
   int64  outbound_delay_seconds = 5;
   QuoteFees fees = 6;
+	// the EVM chain router contract address
   string router = 7;
+	// expiration timestamp in unix seconds
   int64 expiry = 8;
+	// static warning message
   string warning = 9;
+	// chain specific quote notes
   string notes = 10;
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
   string dust_threshold = 11;
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
   string recommended_min_amount_in = 12;
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
   string recommended_gas_rate = 13;
+	// the units of the recommended gas rate
   string gas_rate_units = 14;
+	// generated memo for the loan close
   string memo = 15;
+	// the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
   string expected_amount_out = 16;
+	// The quantity of the repayment asset to be sent by the user, calculated as the desired percentage of the loan's value, expressed in units of 1e8
   string expected_amount_in = 17;
+	// the expected amount of collateral decrease on the loan
   string expected_collateral_withdrawn = 18;
+	// the expected amount of TOR debt decrease on the loan
   string expected_debt_repaid = 19;
+	// The number of blocks involved in the streaming swaps during the repayment process.
   int64 streaming_swap_blocks = 20;
+	// The approximate number of seconds taken by the streaming swaps involved in the repayment process.
   int64 streaming_swap_seconds = 21;
+	// The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
   int64 total_repay_seconds = 22;
 }
 
 message QuoteFees{
+	// the target asset used for all fees
   string asset = 1;
+	// affiliate fee in the target asset
   string affiliate = 2;
+	// outbound fee in the target asset
   string outbound = 3;
+	// liquidity fees paid to pools in the target asset
   string liquidity = 4;
+	// total fees in the target asset
   string total = 5;
+	// the swap slippage in basis points
   int64 slippage_bps = 6;
+	// total basis points in fees relative to amount out
   int64 total_bps = 7;
 }

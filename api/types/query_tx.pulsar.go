@@ -8980,11 +8980,14 @@ type QueryTxResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ObservedTx      *ObservedTx       `protobuf:"bytes,1,opt,name=observed_tx,json=observedTx,proto3" json:"observed_tx,omitempty"`
-	ConsensusHeight int64             `protobuf:"varint,2,opt,name=consensus_height,json=consensusHeight,proto3" json:"consensus_height,omitempty"`
-	FinalisedHeight int64             `protobuf:"varint,3,opt,name=finalised_height,json=finalisedHeight,proto3" json:"finalised_height,omitempty"`
-	OutboundHeight  int64             `protobuf:"varint,4,opt,name=outbound_height,json=outboundHeight,proto3" json:"outbound_height,omitempty"`
-	KeysignMetric   *TssKeysignMetric `protobuf:"bytes,5,opt,name=keysign_metric,json=keysignMetric,proto3" json:"keysign_metric,omitempty"`
+	ObservedTx *ObservedTx `protobuf:"bytes,1,opt,name=observed_tx,json=observedTx,proto3" json:"observed_tx,omitempty"`
+	// the thorchain height at which the inbound reached consensus
+	ConsensusHeight int64 `protobuf:"varint,2,opt,name=consensus_height,json=consensusHeight,proto3" json:"consensus_height,omitempty"`
+	// the thorchain height at which the outbound was finalised
+	FinalisedHeight int64 `protobuf:"varint,3,opt,name=finalised_height,json=finalisedHeight,proto3" json:"finalised_height,omitempty"`
+	// the thorchain height for which the outbound was scheduled
+	OutboundHeight int64             `protobuf:"varint,4,opt,name=outbound_height,json=outboundHeight,proto3" json:"outbound_height,omitempty"`
+	KeysignMetric  *TssKeysignMetric `protobuf:"bytes,5,opt,name=keysign_metric,json=keysignMetric,proto3" json:"keysign_metric,omitempty"`
 }
 
 func (x *QueryTxResponse) Reset() {
@@ -9085,7 +9088,8 @@ type PlannedOutTx struct {
 	Chain     string       `protobuf:"bytes,1,opt,name=chain,proto3" json:"chain,omitempty"`
 	ToAddress string       `protobuf:"bytes,2,opt,name=to_address,json=toAddress,proto3" json:"to_address,omitempty"`
 	Coin      *common.Coin `protobuf:"bytes,3,opt,name=coin,proto3" json:"coin,omitempty"`
-	Refund    bool         `protobuf:"varint,4,opt,name=refund,proto3" json:"refund,omitempty"`
+	// returns true if the planned transaction has a refund memo
+	Refund bool `protobuf:"varint,4,opt,name=refund,proto3" json:"refund,omitempty"`
 }
 
 func (x *PlannedOutTx) Reset() {
@@ -9141,10 +9145,14 @@ type InboundObservedStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Started              bool  `protobuf:"varint,1,opt,name=started,proto3" json:"started,omitempty"`
+	// returns true if any nodes have observed the transaction (to be deprecated in favour of counts)
+	Started bool `protobuf:"varint,1,opt,name=started,proto3" json:"started,omitempty"`
+	// number of signers for pre-confirmation-counting observations
 	PreConfirmationCount int64 `protobuf:"varint,2,opt,name=pre_confirmation_count,json=preConfirmationCount,proto3" json:"pre_confirmation_count,omitempty"`
-	FinalCount           int64 `protobuf:"varint,3,opt,name=final_count,json=finalCount,proto3" json:"final_count,omitempty"`
-	Completed            bool  `protobuf:"varint,4,opt,name=completed,proto3" json:"completed,omitempty"`
+	// number of signers for final observations, after any confirmation counting complete
+	FinalCount int64 `protobuf:"varint,3,opt,name=final_count,json=finalCount,proto3" json:"final_count,omitempty"`
+	// returns true if no transaction observation remains to be done
+	Completed bool `protobuf:"varint,4,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
 func (x *InboundObservedStage) Reset() {
@@ -9200,12 +9208,18 @@ type InboundConfirmationCountedStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	CountingStartHeight             int64  `protobuf:"varint,1,opt,name=counting_start_height,json=countingStartHeight,proto3" json:"counting_start_height,omitempty"`
-	Chain                           string `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
-	ExternalObservedHeight          int64  `protobuf:"varint,3,opt,name=external_observed_height,json=externalObservedHeight,proto3" json:"external_observed_height,omitempty"`
-	ExternalConfirmationDelayHeight int64  `protobuf:"varint,4,opt,name=external_confirmation_delay_height,json=externalConfirmationDelayHeight,proto3" json:"external_confirmation_delay_height,omitempty"`
-	RemainingConfirmationSeconds    int64  `protobuf:"varint,5,opt,name=remaining_confirmation_seconds,json=remainingConfirmationSeconds,proto3" json:"remaining_confirmation_seconds,omitempty"`
-	Completed                       bool   `protobuf:"varint,6,opt,name=completed,proto3" json:"completed,omitempty"`
+	// the THORChain block height when confirmation counting began
+	CountingStartHeight int64 `protobuf:"varint,1,opt,name=counting_start_height,json=countingStartHeight,proto3" json:"counting_start_height,omitempty"`
+	// the external source chain for which confirmation counting takes place
+	Chain string `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
+	// the block height on the external source chain when the transaction was observed
+	ExternalObservedHeight int64 `protobuf:"varint,3,opt,name=external_observed_height,json=externalObservedHeight,proto3" json:"external_observed_height,omitempty"`
+	// the block height on the external source chain when confirmation counting will be complete
+	ExternalConfirmationDelayHeight int64 `protobuf:"varint,4,opt,name=external_confirmation_delay_height,json=externalConfirmationDelayHeight,proto3" json:"external_confirmation_delay_height,omitempty"`
+	// the estimated remaining seconds before confirmation counting completes
+	RemainingConfirmationSeconds int64 `protobuf:"varint,5,opt,name=remaining_confirmation_seconds,json=remainingConfirmationSeconds,proto3" json:"remaining_confirmation_seconds,omitempty"`
+	// returns true if no transaction confirmation counting remains to be done
+	Completed bool `protobuf:"varint,6,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
 func (x *InboundConfirmationCountedStage) Reset() {
@@ -9275,6 +9289,7 @@ type InboundFinalisedStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
 	Completed bool `protobuf:"varint,1,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
@@ -9310,6 +9325,7 @@ type SwapStatus struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// true when awaiting a swap
 	Pending   bool             `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
 	Streaming *StreamingStatus `protobuf:"bytes,2,opt,name=streaming,proto3" json:"streaming,omitempty"`
 }
@@ -9353,9 +9369,12 @@ type StreamingStatus struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// how often each swap is made, in blocks
 	Interval int64 `protobuf:"varint,1,opt,name=interval,proto3" json:"interval,omitempty"`
+	// the total number of swaps in a streaming swaps
 	Quantity int64 `protobuf:"varint,2,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	Count    int64 `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
+	// the amount of swap attempts so far
+	Count int64 `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
 }
 
 func (x *StreamingStatus) Reset() {
@@ -9404,6 +9423,7 @@ type SwapFinalisedStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
 	Completed bool `protobuf:"varint,1,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
@@ -9439,9 +9459,12 @@ type OutboundDelayStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	RemainingDelayBlocks  int64 `protobuf:"varint,1,opt,name=remaining_delay_blocks,json=remainingDelayBlocks,proto3" json:"remaining_delay_blocks,omitempty"`
+	// the number of remaining THORChain blocks the outbound will be delayed
+	RemainingDelayBlocks int64 `protobuf:"varint,1,opt,name=remaining_delay_blocks,json=remainingDelayBlocks,proto3" json:"remaining_delay_blocks,omitempty"`
+	// the estimated remaining seconds of the outbound delay before it will be sent
 	RemainingDelaySeconds int64 `protobuf:"varint,2,opt,name=remaining_delay_seconds,json=remainingDelaySeconds,proto3" json:"remaining_delay_seconds,omitempty"`
-	Completed             bool  `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
+	// returns true if no transaction outbound delay remains
+	Completed bool `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
 func (x *OutboundDelayStage) Reset() {
@@ -9490,9 +9513,12 @@ type OutboundSignedStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// THORChain height for which the external outbound is scheduled
 	ScheduledOutboundHeight int64 `protobuf:"varint,1,opt,name=scheduled_outbound_height,json=scheduledOutboundHeight,proto3" json:"scheduled_outbound_height,omitempty"`
-	BlocksSinceScheduled    int64 `protobuf:"varint,2,opt,name=blocks_since_scheduled,json=blocksSinceScheduled,proto3" json:"blocks_since_scheduled,omitempty"`
-	Completed               bool  `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
+	// THORChain blocks since the scheduled outbound height
+	BlocksSinceScheduled int64 `protobuf:"varint,2,opt,name=blocks_since_scheduled,json=blocksSinceScheduled,proto3" json:"blocks_since_scheduled,omitempty"`
+	// returns true if an external transaction has been signed and broadcast (and observed in its mempool)
+	Completed bool `protobuf:"varint,3,opt,name=completed,proto3" json:"completed,omitempty"`
 }
 
 func (x *OutboundSignedStage) Reset() {

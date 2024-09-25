@@ -70,20 +70,21 @@ func (m *QueryVaultRequest) GetPubKey() string {
 }
 
 type QueryVaultResponse struct {
-	BlockHeight           int64                                      `protobuf:"varint,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
-	PubKey                string                                     `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
-	Coins                 gitlab_com_thorchain_thornode_common.Coins `protobuf:"bytes,3,rep,name=coins,proto3,castrepeated=gitlab.com/thorchain/thornode/common.Coins" json:"coins"`
-	Type                  string                                     `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
-	Status                string                                     `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	StatusSince           int64                                      `protobuf:"varint,6,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
-	Membership            []string                                   `protobuf:"bytes,7,rep,name=membership,proto3" json:"membership,omitempty"`
-	Chains                []string                                   `protobuf:"bytes,8,rep,name=chains,proto3" json:"chains,omitempty"`
-	InboundTxCount        int64                                      `protobuf:"varint,9,opt,name=inbound_tx_count,json=inboundTxCount,proto3" json:"inbound_tx_count,omitempty"`
-	OutboundTxCount       int64                                      `protobuf:"varint,10,opt,name=outbound_tx_count,json=outboundTxCount,proto3" json:"outbound_tx_count,omitempty"`
-	PendingTxBlockHeights []int64                                    `protobuf:"varint,11,rep,packed,name=pending_tx_block_heights,json=pendingTxBlockHeights,proto3" json:"pending_tx_block_heights,omitempty"`
-	Routers               []*VaultRouter                             `protobuf:"bytes,12,rep,name=routers,proto3" json:"routers,omitempty"`
-	Addresses             []*VaultAddress                            `protobuf:"bytes,13,rep,name=addresses,proto3" json:"addresses,omitempty"`
-	Frozen                []string                                   `protobuf:"bytes,14,rep,name=frozen,proto3" json:"frozen,omitempty"`
+	BlockHeight int64                                      `protobuf:"varint,1,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`
+	PubKey      string                                     `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	Coins       gitlab_com_thorchain_thornode_common.Coins `protobuf:"bytes,3,rep,name=coins,proto3,castrepeated=gitlab.com/thorchain/thornode/common.Coins" json:"coins"`
+	Type        string                                     `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	Status      string                                     `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	StatusSince int64                                      `protobuf:"varint,6,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
+	// the list of node public keys which are members of the vault
+	Membership            []string        `protobuf:"bytes,7,rep,name=membership,proto3" json:"membership,omitempty"`
+	Chains                []string        `protobuf:"bytes,8,rep,name=chains,proto3" json:"chains,omitempty"`
+	InboundTxCount        int64           `protobuf:"varint,9,opt,name=inbound_tx_count,json=inboundTxCount,proto3" json:"inbound_tx_count,omitempty"`
+	OutboundTxCount       int64           `protobuf:"varint,10,opt,name=outbound_tx_count,json=outboundTxCount,proto3" json:"outbound_tx_count,omitempty"`
+	PendingTxBlockHeights []int64         `protobuf:"varint,11,rep,packed,name=pending_tx_block_heights,json=pendingTxBlockHeights,proto3" json:"pending_tx_block_heights,omitempty"`
+	Routers               []*VaultRouter  `protobuf:"bytes,12,rep,name=routers,proto3" json:"routers,omitempty"`
+	Addresses             []*VaultAddress `protobuf:"bytes,13,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	Frozen                []string        `protobuf:"bytes,14,rep,name=frozen,proto3" json:"frozen,omitempty"`
 }
 
 func (m *QueryVaultResponse) Reset()         { *m = QueryVaultResponse{} }

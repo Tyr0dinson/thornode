@@ -12,8 +12,11 @@ message QueryTradeUnitRequest{
 }
 
 message QueryTradeUnitResponse{
+	// trade account asset with \"~\" separator
   string asset = 1;
+	// total units of trade asset
   string units = 2;
+	// total depth of trade asset
   string depth = 3;
 }
 

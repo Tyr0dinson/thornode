@@ -1884,8 +1884,11 @@ type QueryTradeUnitResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// trade account asset with \"~\" separator
 	Asset string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	// total units of trade asset
 	Units string `protobuf:"bytes,2,opt,name=units,proto3" json:"units,omitempty"`
+	// total depth of trade asset
 	Depth string `protobuf:"bytes,3,opt,name=depth,proto3" json:"depth,omitempty"`
 }
 

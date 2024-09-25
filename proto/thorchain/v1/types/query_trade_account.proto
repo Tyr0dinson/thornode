@@ -12,10 +12,15 @@ message QueryTradeAccountRequest{
 }
 
 message QueryTradeAccountResponse{
+	// trade account asset with \"~\" separator
   string asset = 1;
+	// units of trade asset belonging to this owner
   string units = 2;
+	// thor address of trade account owner
   string owner = 3;
+	// last thorchain height trade assets were added to trade account
   int64  last_add_height = 4;
+	// last thorchain height trade assets were withdrawn from trade account
   int64  last_withdraw_height = 5;
 }
 

@@ -140,26 +140,45 @@ func (m *QueryQuoteSwapRequest) GetAffiliateBps() string {
 }
 
 type QueryQuoteSwapResponse struct {
-	InboundAddress             string     `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
-	InboundConfirmationBlocks  int64      `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
-	InboundConfirmationSeconds int64      `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
-	OutboundDelayBlocks        int64      `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
-	OutboundDelaySeconds       int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
-	Fees                       *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
-	Router                     string     `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
-	Expiry                     int64      `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Warning                    string     `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
-	Notes                      string     `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
-	DustThreshold              string     `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
-	RecommendedMinAmountIn     string     `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
-	RecommendedGasRate         string     `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
-	GasRateUnits               string     `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	Memo                       string     `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
-	ExpectedAmountOut          string     `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
-	MaxStreamingQuantity       int64      `protobuf:"varint,17,opt,name=max_streaming_quantity,json=maxStreamingQuantity,proto3" json:"max_streaming_quantity,omitempty"`
-	StreamingSwapBlocks        int64      `protobuf:"varint,18,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
-	StreamingSwapSeconds       int64      `protobuf:"varint,19,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
-	TotalSwapSeconds           int64      `protobuf:"varint,20,opt,name=total_swap_seconds,json=totalSwapSeconds,proto3" json:"total_swap_seconds,omitempty"`
+	// the inbound address for the transaction on the source chain
+	InboundAddress string `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
+	// the approximate number of source chain blocks required before processing
+	InboundConfirmationBlocks int64 `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
+	// the approximate seconds for block confirmations required before processing
+	InboundConfirmationSeconds int64 `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
+	// the number of thorchain blocks the outbound will be delayed
+	OutboundDelayBlocks int64 `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
+	// the approximate seconds for the outbound delay before it will be sent
+	OutboundDelaySeconds int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
+	Fees                 *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
+	// the EVM chain router contract address
+	Router string `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
+	// expiration timestamp in unix seconds
+	Expiry int64 `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// static warning message
+	Warning string `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
+	// chain specific quote notes
+	Notes string `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	DustThreshold string `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
+	RecommendedMinAmountIn string `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
+	RecommendedGasRate string `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
+	// the units of the recommended gas rate
+	GasRateUnits string `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	// generated memo for the swap
+	Memo string `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
+	// the amount of the target asset the user can expect to receive after fees
+	ExpectedAmountOut string `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
+	// the amount of the target asset the user can expect to receive after fees
+	MaxStreamingQuantity int64 `protobuf:"varint,17,opt,name=max_streaming_quantity,json=maxStreamingQuantity,proto3" json:"max_streaming_quantity,omitempty"`
+	// the number of blocks the streaming swap will execute over
+	StreamingSwapBlocks int64 `protobuf:"varint,18,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
+	// approx the number of seconds the streaming swap will execute over
+	StreamingSwapSeconds int64 `protobuf:"varint,19,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
+	// total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
+	TotalSwapSeconds int64 `protobuf:"varint,20,opt,name=total_swap_seconds,json=totalSwapSeconds,proto3" json:"total_swap_seconds,omitempty"`
 }
 
 func (m *QueryQuoteSwapResponse) Reset()         { *m = QueryQuoteSwapResponse{} }
@@ -404,23 +423,39 @@ func (m *QueryQuoteSaverDepositRequest) GetAffiliateBps() string {
 }
 
 type QueryQuoteSaverDepositResponse struct {
-	InboundAddress             string     `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
-	InboundConfirmationBlocks  int64      `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
-	InboundConfirmationSeconds int64      `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
-	OutboundDelayBlocks        int64      `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
-	OutboundDelaySeconds       int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
-	Fees                       *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
-	Router                     string     `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
-	Expiry                     int64      `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Warning                    string     `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
-	Notes                      string     `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
-	DustThreshold              string     `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
-	RecommendedMinAmountIn     string     `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
-	RecommendedGasRate         string     `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
-	GasRateUnits               string     `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	Memo                       string     `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
-	ExpectedAmountOut          string     `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
-	ExpectedAmountDeposit      string     `protobuf:"bytes,17,opt,name=expected_amount_deposit,json=expectedAmountDeposit,proto3" json:"expected_amount_deposit,omitempty"`
+	// the inbound address for the transaction on the source chain
+	InboundAddress string `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
+	// the approximate number of source chain blocks required before processing
+	InboundConfirmationBlocks int64 `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
+	// the approximate seconds for block confirmations required before processing
+	InboundConfirmationSeconds int64 `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
+	// the number of thorchain blocks the outbound will be delayed
+	OutboundDelayBlocks int64 `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
+	// the approximate seconds for the outbound delay before it will be sent
+	OutboundDelaySeconds int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
+	Fees                 *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
+	// the EVM chain router contract address
+	Router string `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
+	// expiration timestamp in unix seconds
+	Expiry int64 `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// static warning message
+	Warning string `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
+	// chain specific quote notes
+	Notes string `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	DustThreshold string `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
+	RecommendedMinAmountIn string `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
+	RecommendedGasRate string `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
+	// the units of the recommended gas rate
+	GasRateUnits string `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	// generated memo for the deposit
+	Memo string `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
+	// same as expected_amount_deposit, to be deprecated in favour of expected_amount_deposit
+	ExpectedAmountOut string `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
+	// the amount of the target asset the user can expect to deposit after fees
+	ExpectedAmountDeposit string `protobuf:"bytes,17,opt,name=expected_amount_deposit,json=expectedAmountDeposit,proto3" json:"expected_amount_deposit,omitempty"`
 }
 
 func (m *QueryQuoteSaverDepositResponse) Reset()         { *m = QueryQuoteSaverDepositResponse{} }
@@ -636,23 +671,39 @@ func (m *QueryQuoteSaverWithdrawRequest) GetWithdrawBps() string {
 }
 
 type QueryQuoteSaverWithdrawResponse struct {
-	InboundAddress             string     `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
-	InboundConfirmationBlocks  int64      `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
-	InboundConfirmationSeconds int64      `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
-	OutboundDelayBlocks        int64      `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
-	OutboundDelaySeconds       int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
-	Fees                       *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
-	Router                     string     `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
-	Expiry                     int64      `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Warning                    string     `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
-	Notes                      string     `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
-	DustThreshold              string     `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
-	RecommendedMinAmountIn     string     `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
-	RecommendedGasRate         string     `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
-	GasRateUnits               string     `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	Memo                       string     `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
-	DustAmount                 string     `protobuf:"bytes,16,opt,name=dust_amount,json=dustAmount,proto3" json:"dust_amount,omitempty"`
-	ExpectedAmountOut          string     `protobuf:"bytes,17,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
+	// the inbound address for the transaction on the source chain
+	InboundAddress string `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
+	// the approximate number of source chain blocks required before processing
+	InboundConfirmationBlocks int64 `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
+	// the approximate seconds for block confirmations required before processing
+	InboundConfirmationSeconds int64 `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
+	// the number of thorchain blocks the outbound will be delayed
+	OutboundDelayBlocks int64 `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
+	// the approximate seconds for the outbound delay before it will be sent
+	OutboundDelaySeconds int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
+	Fees                 *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
+	// the EVM chain router contract address
+	Router string `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
+	// expiration timestamp in unix seconds
+	Expiry int64 `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// static warning message
+	Warning string `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
+	// chain specific quote notes
+	Notes string `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	DustThreshold string `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
+	RecommendedMinAmountIn string `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
+	RecommendedGasRate string `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
+	// the units of the recommended gas rate
+	GasRateUnits string `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	// generated memo for the withdraw, the client can use this OR send the dust amount
+	Memo string `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
+	// the dust amount of the target asset the user should send to initialize the withdraw, the client can send this OR provide the memo
+	DustAmount string `protobuf:"bytes,16,opt,name=dust_amount,json=dustAmount,proto3" json:"dust_amount,omitempty"`
+	// the amount of the target asset the user can expect to withdraw after fees in 1e8 decimals
+	ExpectedAmountOut string `protobuf:"bytes,17,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
 }
 
 func (m *QueryQuoteSaverWithdrawResponse) Reset()         { *m = QueryQuoteSaverWithdrawResponse{} }
@@ -900,28 +951,49 @@ func (m *QueryQuoteLoanOpenRequest) GetAffiliateBps() string {
 }
 
 type QueryQuoteLoanOpenResponse struct {
-	InboundAddress                 string     `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
-	InboundConfirmationBlocks      int64      `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
-	InboundConfirmationSeconds     int64      `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
-	OutboundDelayBlocks            int64      `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
-	OutboundDelaySeconds           int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
-	Fees                           *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
-	Router                         string     `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
-	Expiry                         int64      `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Warning                        string     `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
-	Notes                          string     `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
-	DustThreshold                  string     `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
-	RecommendedMinAmountIn         string     `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
-	RecommendedGasRate             string     `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
-	GasRateUnits                   string     `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	Memo                           string     `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
-	ExpectedAmountOut              string     `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
-	ExpectedCollateralizationRatio string     `protobuf:"bytes,17,opt,name=expected_collateralization_ratio,json=expectedCollateralizationRatio,proto3" json:"expected_collateralization_ratio,omitempty"`
-	ExpectedCollateralDeposited    string     `protobuf:"bytes,18,opt,name=expected_collateral_deposited,json=expectedCollateralDeposited,proto3" json:"expected_collateral_deposited,omitempty"`
-	ExpectedDebtIssued             string     `protobuf:"bytes,19,opt,name=expected_debt_issued,json=expectedDebtIssued,proto3" json:"expected_debt_issued,omitempty"`
-	StreamingSwapBlocks            int64      `protobuf:"varint,20,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
-	StreamingSwapSeconds           int64      `protobuf:"varint,21,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
-	TotalOpenLoanSeconds           int64      `protobuf:"varint,22,opt,name=total_open_loan_seconds,json=totalOpenLoanSeconds,proto3" json:"total_open_loan_seconds,omitempty"`
+	// the inbound address for the transaction on the source chain
+	InboundAddress string `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
+	// the approximate number of source chain blocks required before processing
+	InboundConfirmationBlocks int64 `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
+	// the approximate seconds for block confirmations required before processing
+	InboundConfirmationSeconds int64 `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
+	// the number of thorchain blocks the outbound will be delayed
+	OutboundDelayBlocks int64 `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
+	// the approximate seconds for the outbound delay before it will be sent
+	OutboundDelaySeconds int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
+	Fees                 *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
+	// the EVM chain router contract address
+	Router string `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
+	// expiration timestamp in unix seconds
+	Expiry int64 `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// static warning message
+	Warning string `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
+	// chain specific quote notes
+	Notes string `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	DustThreshold string `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
+	RecommendedMinAmountIn string `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
+	RecommendedGasRate string `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
+	// the units of the recommended gas rate
+	GasRateUnits string `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	// generated memo for the loan open
+	Memo string `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
+	// the amount of the target asset the user can expect to receive after fees in 1e8 decimals
+	ExpectedAmountOut string `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
+	// the expected collateralization ratio in basis points
+	ExpectedCollateralizationRatio string `protobuf:"bytes,17,opt,name=expected_collateralization_ratio,json=expectedCollateralizationRatio,proto3" json:"expected_collateralization_ratio,omitempty"`
+	// the expected amount of collateral increase on the loan
+	ExpectedCollateralDeposited string `protobuf:"bytes,18,opt,name=expected_collateral_deposited,json=expectedCollateralDeposited,proto3" json:"expected_collateral_deposited,omitempty"`
+	// the expected amount of TOR debt increase on the loan
+	ExpectedDebtIssued string `protobuf:"bytes,19,opt,name=expected_debt_issued,json=expectedDebtIssued,proto3" json:"expected_debt_issued,omitempty"`
+	// The number of blocks involved in the streaming swaps during the open loan process.
+	StreamingSwapBlocks int64 `protobuf:"varint,20,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
+	// The approximate number of seconds taken by the streaming swaps involved in the open loan process.
+	StreamingSwapSeconds int64 `protobuf:"varint,21,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
+	// The total expected duration for a open loan, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
+	TotalOpenLoanSeconds int64 `protobuf:"varint,22,opt,name=total_open_loan_seconds,json=totalOpenLoanSeconds,proto3" json:"total_open_loan_seconds,omitempty"`
 }
 
 func (m *QueryQuoteLoanOpenResponse) Reset()         { *m = QueryQuoteLoanOpenResponse{} }
@@ -1188,28 +1260,49 @@ func (m *QueryQuoteLoanCloseRequest) GetLoanOwner() string {
 }
 
 type QueryQuoteLoanCloseResponse struct {
-	InboundAddress              string     `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
-	InboundConfirmationBlocks   int64      `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
-	InboundConfirmationSeconds  int64      `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
-	OutboundDelayBlocks         int64      `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
-	OutboundDelaySeconds        int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
-	Fees                        *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
-	Router                      string     `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
-	Expiry                      int64      `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
-	Warning                     string     `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
-	Notes                       string     `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
-	DustThreshold               string     `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
-	RecommendedMinAmountIn      string     `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
-	RecommendedGasRate          string     `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
-	GasRateUnits                string     `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	Memo                        string     `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
-	ExpectedAmountOut           string     `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
-	ExpectedAmountIn            string     `protobuf:"bytes,17,opt,name=expected_amount_in,json=expectedAmountIn,proto3" json:"expected_amount_in,omitempty"`
-	ExpectedCollateralWithdrawn string     `protobuf:"bytes,18,opt,name=expected_collateral_withdrawn,json=expectedCollateralWithdrawn,proto3" json:"expected_collateral_withdrawn,omitempty"`
-	ExpectedDebtRepaid          string     `protobuf:"bytes,19,opt,name=expected_debt_repaid,json=expectedDebtRepaid,proto3" json:"expected_debt_repaid,omitempty"`
-	StreamingSwapBlocks         int64      `protobuf:"varint,20,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
-	StreamingSwapSeconds        int64      `protobuf:"varint,21,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
-	TotalRepaySeconds           int64      `protobuf:"varint,22,opt,name=total_repay_seconds,json=totalRepaySeconds,proto3" json:"total_repay_seconds,omitempty"`
+	// the inbound address for the transaction on the source chain
+	InboundAddress string `protobuf:"bytes,1,opt,name=inbound_address,json=inboundAddress,proto3" json:"inbound_address,omitempty"`
+	// the approximate number of source chain blocks required before processing
+	InboundConfirmationBlocks int64 `protobuf:"varint,2,opt,name=inbound_confirmation_blocks,json=inboundConfirmationBlocks,proto3" json:"inbound_confirmation_blocks,omitempty"`
+	// the approximate seconds for block confirmations required before processing
+	InboundConfirmationSeconds int64 `protobuf:"varint,3,opt,name=inbound_confirmation_seconds,json=inboundConfirmationSeconds,proto3" json:"inbound_confirmation_seconds,omitempty"`
+	// the number of thorchain blocks the outbound will be delayed
+	OutboundDelayBlocks int64 `protobuf:"varint,4,opt,name=outbound_delay_blocks,json=outboundDelayBlocks,proto3" json:"outbound_delay_blocks,omitempty"`
+	// the approximate seconds for the outbound delay before it will be sent
+	OutboundDelaySeconds int64      `protobuf:"varint,5,opt,name=outbound_delay_seconds,json=outboundDelaySeconds,proto3" json:"outbound_delay_seconds,omitempty"`
+	Fees                 *QuoteFees `protobuf:"bytes,6,opt,name=fees,proto3" json:"fees,omitempty"`
+	// the EVM chain router contract address
+	Router string `protobuf:"bytes,7,opt,name=router,proto3" json:"router,omitempty"`
+	// expiration timestamp in unix seconds
+	Expiry int64 `protobuf:"varint,8,opt,name=expiry,proto3" json:"expiry,omitempty"`
+	// static warning message
+	Warning string `protobuf:"bytes,9,opt,name=warning,proto3" json:"warning,omitempty"`
+	// chain specific quote notes
+	Notes string `protobuf:"bytes,10,opt,name=notes,proto3" json:"notes,omitempty"`
+	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	DustThreshold string `protobuf:"bytes,11,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	// The recommended minimum inbound amount for this transaction type & inbound asset. Sending less than this amount could result in failed refunds.
+	RecommendedMinAmountIn string `protobuf:"bytes,12,opt,name=recommended_min_amount_in,json=recommendedMinAmountIn,proto3" json:"recommended_min_amount_in,omitempty"`
+	// the recommended gas rate to use for the inbound to ensure timely confirmation
+	RecommendedGasRate string `protobuf:"bytes,13,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
+	// the units of the recommended gas rate
+	GasRateUnits string `protobuf:"bytes,14,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	// generated memo for the loan close
+	Memo string `protobuf:"bytes,15,opt,name=memo,proto3" json:"memo,omitempty"`
+	// the amount of collateral asset the user can expect to receive after fees in 1e8 decimals
+	ExpectedAmountOut string `protobuf:"bytes,16,opt,name=expected_amount_out,json=expectedAmountOut,proto3" json:"expected_amount_out,omitempty"`
+	// The quantity of the repayment asset to be sent by the user, calculated as the desired percentage of the loan's value, expressed in units of 1e8
+	ExpectedAmountIn string `protobuf:"bytes,17,opt,name=expected_amount_in,json=expectedAmountIn,proto3" json:"expected_amount_in,omitempty"`
+	// the expected amount of collateral decrease on the loan
+	ExpectedCollateralWithdrawn string `protobuf:"bytes,18,opt,name=expected_collateral_withdrawn,json=expectedCollateralWithdrawn,proto3" json:"expected_collateral_withdrawn,omitempty"`
+	// the expected amount of TOR debt decrease on the loan
+	ExpectedDebtRepaid string `protobuf:"bytes,19,opt,name=expected_debt_repaid,json=expectedDebtRepaid,proto3" json:"expected_debt_repaid,omitempty"`
+	// The number of blocks involved in the streaming swaps during the repayment process.
+	StreamingSwapBlocks int64 `protobuf:"varint,20,opt,name=streaming_swap_blocks,json=streamingSwapBlocks,proto3" json:"streaming_swap_blocks,omitempty"`
+	// The approximate number of seconds taken by the streaming swaps involved in the repayment process.
+	StreamingSwapSeconds int64 `protobuf:"varint,21,opt,name=streaming_swap_seconds,json=streamingSwapSeconds,proto3" json:"streaming_swap_seconds,omitempty"`
+	// The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
+	TotalRepaySeconds int64 `protobuf:"varint,22,opt,name=total_repay_seconds,json=totalRepaySeconds,proto3" json:"total_repay_seconds,omitempty"`
 }
 
 func (m *QueryQuoteLoanCloseResponse) Reset()         { *m = QueryQuoteLoanCloseResponse{} }
@@ -1400,13 +1493,20 @@ func (m *QueryQuoteLoanCloseResponse) GetTotalRepaySeconds() int64 {
 }
 
 type QuoteFees struct {
-	Asset       string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	Affiliate   string `protobuf:"bytes,2,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
-	Outbound    string `protobuf:"bytes,3,opt,name=outbound,proto3" json:"outbound,omitempty"`
-	Liquidity   string `protobuf:"bytes,4,opt,name=liquidity,proto3" json:"liquidity,omitempty"`
-	Total       string `protobuf:"bytes,5,opt,name=total,proto3" json:"total,omitempty"`
-	SlippageBps int64  `protobuf:"varint,6,opt,name=slippage_bps,json=slippageBps,proto3" json:"slippage_bps,omitempty"`
-	TotalBps    int64  `protobuf:"varint,7,opt,name=total_bps,json=totalBps,proto3" json:"total_bps,omitempty"`
+	// the target asset used for all fees
+	Asset string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	// affiliate fee in the target asset
+	Affiliate string `protobuf:"bytes,2,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
+	// outbound fee in the target asset
+	Outbound string `protobuf:"bytes,3,opt,name=outbound,proto3" json:"outbound,omitempty"`
+	// liquidity fees paid to pools in the target asset
+	Liquidity string `protobuf:"bytes,4,opt,name=liquidity,proto3" json:"liquidity,omitempty"`
+	// total fees in the target asset
+	Total string `protobuf:"bytes,5,opt,name=total,proto3" json:"total,omitempty"`
+	// the swap slippage in basis points
+	SlippageBps int64 `protobuf:"varint,6,opt,name=slippage_bps,json=slippageBps,proto3" json:"slippage_bps,omitempty"`
+	// total basis points in fees relative to amount out
+	TotalBps int64 `protobuf:"varint,7,opt,name=total_bps,json=totalBps,proto3" json:"total_bps,omitempty"`
 }
 
 func (m *QuoteFees) Reset()         { *m = QuoteFees{} }

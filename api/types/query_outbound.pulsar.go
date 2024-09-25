@@ -2452,7 +2452,8 @@ type QueryTxOutItem struct {
 	InHash      string         `protobuf:"bytes,8,opt,name=in_hash,json=inHash,proto3" json:"in_hash,omitempty"`
 	OutHash     string         `protobuf:"bytes,9,opt,name=out_hash,json=outHash,proto3" json:"out_hash,omitempty"`
 	Height      int64          `protobuf:"varint,10,opt,name=height,proto3" json:"height,omitempty"`
-	CloutSpent  string         `protobuf:"bytes,11,opt,name=clout_spent,json=cloutSpent,proto3" json:"clout_spent,omitempty"`
+	// clout spent in RUNE for the outbound
+	CloutSpent string `protobuf:"bytes,11,opt,name=clout_spent,json=cloutSpent,proto3" json:"clout_spent,omitempty"`
 }
 
 func (x *QueryTxOutItem) Reset() {

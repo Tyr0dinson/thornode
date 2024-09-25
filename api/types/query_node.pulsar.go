@@ -5669,27 +5669,37 @@ type QueryNodeResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	NodeAddress         string               `protobuf:"bytes,1,opt,name=node_address,json=nodeAddress,proto3" json:"node_address,omitempty"`
-	Status              string               `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	PubKeySet           *common.PubKeySet    `protobuf:"bytes,3,opt,name=pub_key_set,json=pubKeySet,proto3" json:"pub_key_set,omitempty"`
-	ValidatorConsPubKey string               `protobuf:"bytes,4,opt,name=validator_cons_pub_key,json=validatorConsPubKey,proto3" json:"validator_cons_pub_key,omitempty"`
-	PeerId              string               `protobuf:"bytes,5,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`
-	ActiveBlockHeight   int64                `protobuf:"varint,6,opt,name=active_block_height,json=activeBlockHeight,proto3" json:"active_block_height,omitempty"`
-	StatusSince         int64                `protobuf:"varint,7,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
-	NodeOperatorAddress string               `protobuf:"bytes,8,opt,name=node_operator_address,json=nodeOperatorAddress,proto3" json:"node_operator_address,omitempty"`
-	TotalBond           string               `protobuf:"bytes,9,opt,name=total_bond,json=totalBond,proto3" json:"total_bond,omitempty"`
-	BondProviders       *NodeBondProviders   `protobuf:"bytes,10,opt,name=bond_providers,json=bondProviders,proto3" json:"bond_providers,omitempty"`
-	SignerMembership    []string             `protobuf:"bytes,11,rep,name=signer_membership,json=signerMembership,proto3" json:"signer_membership,omitempty"`
-	RequestedToLeave    bool                 `protobuf:"varint,12,opt,name=requested_to_leave,json=requestedToLeave,proto3" json:"requested_to_leave,omitempty"`
-	ForcedToLeave       bool                 `protobuf:"varint,13,opt,name=forced_to_leave,json=forcedToLeave,proto3" json:"forced_to_leave,omitempty"`
-	LeaveHeight         int64                `protobuf:"varint,14,opt,name=leave_height,json=leaveHeight,proto3" json:"leave_height,omitempty"`
-	IpAddress           string               `protobuf:"bytes,15,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
-	Version             string               `protobuf:"bytes,16,opt,name=version,proto3" json:"version,omitempty"`
-	SlashPoints         int64                `protobuf:"varint,17,opt,name=slash_points,json=slashPoints,proto3" json:"slash_points,omitempty"`
-	Jail                *NodeJail            `protobuf:"bytes,18,opt,name=jail,proto3" json:"jail,omitempty"`
-	CurrentAward        string               `protobuf:"bytes,19,opt,name=current_award,json=currentAward,proto3" json:"current_award,omitempty"`
-	ObserveChains       []*ChainHeight       `protobuf:"bytes,20,rep,name=observe_chains,json=observeChains,proto3" json:"observe_chains,omitempty"`
-	PreflightStatus     *NodePreflightStatus `protobuf:"bytes,21,opt,name=preflight_status,json=preflightStatus,proto3" json:"preflight_status,omitempty"`
+	NodeAddress string            `protobuf:"bytes,1,opt,name=node_address,json=nodeAddress,proto3" json:"node_address,omitempty"`
+	Status      string            `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	PubKeySet   *common.PubKeySet `protobuf:"bytes,3,opt,name=pub_key_set,json=pubKeySet,proto3" json:"pub_key_set,omitempty"`
+	// the consensus pub key for the node
+	ValidatorConsPubKey string `protobuf:"bytes,4,opt,name=validator_cons_pub_key,json=validatorConsPubKey,proto3" json:"validator_cons_pub_key,omitempty"`
+	// the P2PID (:6040/p2pid endpoint) of the node
+	PeerId string `protobuf:"bytes,5,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`
+	// the block height at which the node became active
+	ActiveBlockHeight int64 `protobuf:"varint,6,opt,name=active_block_height,json=activeBlockHeight,proto3" json:"active_block_height,omitempty"`
+	// the block height of the current provided information for the node
+	StatusSince         int64  `protobuf:"varint,7,opt,name=status_since,json=statusSince,proto3" json:"status_since,omitempty"`
+	NodeOperatorAddress string `protobuf:"bytes,8,opt,name=node_operator_address,json=nodeOperatorAddress,proto3" json:"node_operator_address,omitempty"`
+	// current node bond
+	TotalBond     string             `protobuf:"bytes,9,opt,name=total_bond,json=totalBond,proto3" json:"total_bond,omitempty"`
+	BondProviders *NodeBondProviders `protobuf:"bytes,10,opt,name=bond_providers,json=bondProviders,proto3" json:"bond_providers,omitempty"`
+	// the set of vault public keys of which the node is a member
+	SignerMembership []string `protobuf:"bytes,11,rep,name=signer_membership,json=signerMembership,proto3" json:"signer_membership,omitempty"`
+	RequestedToLeave bool     `protobuf:"varint,12,opt,name=requested_to_leave,json=requestedToLeave,proto3" json:"requested_to_leave,omitempty"`
+	// indicates whether the node has been forced to leave by the network, typically via ban
+	ForcedToLeave bool  `protobuf:"varint,13,opt,name=forced_to_leave,json=forcedToLeave,proto3" json:"forced_to_leave,omitempty"`
+	LeaveHeight   int64 `protobuf:"varint,14,opt,name=leave_height,json=leaveHeight,proto3" json:"leave_height,omitempty"`
+	// the currently set version of the node
+	IpAddress string `protobuf:"bytes,15,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
+	Version   string `protobuf:"bytes,16,opt,name=version,proto3" json:"version,omitempty"`
+	// the accumulated slash points, reset at churn but excessive slash points may carry over
+	SlashPoints  int64     `protobuf:"varint,17,opt,name=slash_points,json=slashPoints,proto3" json:"slash_points,omitempty"`
+	Jail         *NodeJail `protobuf:"bytes,18,opt,name=jail,proto3" json:"jail,omitempty"`
+	CurrentAward string    `protobuf:"bytes,19,opt,name=current_award,json=currentAward,proto3" json:"current_award,omitempty"`
+	// the last observed heights for all chain by the node
+	ObserveChains   []*ChainHeight       `protobuf:"bytes,20,rep,name=observe_chains,json=observeChains,proto3" json:"observe_chains,omitempty"`
+	PreflightStatus *NodePreflightStatus `protobuf:"bytes,21,opt,name=preflight_status,json=preflightStatus,proto3" json:"preflight_status,omitempty"`
 }
 
 func (x *QueryNodeResponse) Reset() {
@@ -6097,7 +6107,9 @@ type NodePreflightStatus struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// the next status of the node
 	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// the reason for the transition to the next status
 	Reason string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	Code   int64  `protobuf:"varint,3,opt,name=code,proto3" json:"code,omitempty"`
 }

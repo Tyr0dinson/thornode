@@ -12,8 +12,11 @@ message QueryInvariantRequest{
 }
 
 message QueryInvariantResponse{
+	// The name of the invariant.
   string invariant = 1;
+	// Returns true if the invariant is broken.
   bool   broken = 2;
+	// Informative message about the invariant result.
   repeated string msg = 3;
 }
 

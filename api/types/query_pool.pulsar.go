@@ -3154,29 +3154,44 @@ type QueryPoolResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset                   string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	ShortCode               string `protobuf:"bytes,2,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
-	Status                  string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Decimals                int64  `protobuf:"varint,4,opt,name=decimals,proto3" json:"decimals,omitempty"`
-	PendingInboundAsset     string `protobuf:"bytes,5,opt,name=pending_inbound_asset,json=pendingInboundAsset,proto3" json:"pending_inbound_asset,omitempty"`
-	PendingInboundRune      string `protobuf:"bytes,6,opt,name=pending_inbound_rune,json=pendingInboundRune,proto3" json:"pending_inbound_rune,omitempty"`
-	BalanceAsset            string `protobuf:"bytes,7,opt,name=balance_asset,json=balanceAsset,proto3" json:"balance_asset,omitempty"`
-	BalanceRune             string `protobuf:"bytes,8,opt,name=balance_rune,json=balanceRune,proto3" json:"balance_rune,omitempty"`
-	AssetTorPrice           string `protobuf:"bytes,9,opt,name=asset_tor_price,json=assetTorPrice,proto3" json:"asset_tor_price,omitempty"`
-	PoolUnits               string `protobuf:"bytes,10,opt,name=pool_units,json=poolUnits,proto3" json:"pool_units,omitempty"`
-	LPUnits                 string `protobuf:"bytes,11,opt,name=LP_units,json=LPUnits,proto3" json:"LP_units,omitempty"`
-	SynthUnits              string `protobuf:"bytes,12,opt,name=synth_units,json=synthUnits,proto3" json:"synth_units,omitempty"`
-	SynthSupply             string `protobuf:"bytes,13,opt,name=synth_supply,json=synthSupply,proto3" json:"synth_supply,omitempty"`
-	SaversDepth             string `protobuf:"bytes,14,opt,name=savers_depth,json=saversDepth,proto3" json:"savers_depth,omitempty"`
-	SaversUnits             string `protobuf:"bytes,15,opt,name=savers_units,json=saversUnits,proto3" json:"savers_units,omitempty"`
-	SaversFillBps           string `protobuf:"bytes,16,opt,name=savers_fill_bps,json=saversFillBps,proto3" json:"savers_fill_bps,omitempty"`
+	Asset               string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	ShortCode           string `protobuf:"bytes,2,opt,name=short_code,json=shortCode,proto3" json:"short_code,omitempty"`
+	Status              string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Decimals            int64  `protobuf:"varint,4,opt,name=decimals,proto3" json:"decimals,omitempty"`
+	PendingInboundAsset string `protobuf:"bytes,5,opt,name=pending_inbound_asset,json=pendingInboundAsset,proto3" json:"pending_inbound_asset,omitempty"`
+	PendingInboundRune  string `protobuf:"bytes,6,opt,name=pending_inbound_rune,json=pendingInboundRune,proto3" json:"pending_inbound_rune,omitempty"`
+	BalanceAsset        string `protobuf:"bytes,7,opt,name=balance_asset,json=balanceAsset,proto3" json:"balance_asset,omitempty"`
+	BalanceRune         string `protobuf:"bytes,8,opt,name=balance_rune,json=balanceRune,proto3" json:"balance_rune,omitempty"`
+	// the USD (TOR) price of the asset in 1e8
+	AssetTorPrice string `protobuf:"bytes,9,opt,name=asset_tor_price,json=assetTorPrice,proto3" json:"asset_tor_price,omitempty"`
+	// the total pool units, this is the sum of LP and synth units
+	PoolUnits string `protobuf:"bytes,10,opt,name=pool_units,json=poolUnits,proto3" json:"pool_units,omitempty"`
+	// the total pool liquidity provider units
+	LPUnits string `protobuf:"bytes,11,opt,name=LP_units,json=LPUnits,proto3" json:"LP_units,omitempty"`
+	// the total synth units in the pool
+	SynthUnits string `protobuf:"bytes,12,opt,name=synth_units,json=synthUnits,proto3" json:"synth_units,omitempty"`
+	// the total supply of synths for the asset
+	SynthSupply string `protobuf:"bytes,13,opt,name=synth_supply,json=synthSupply,proto3" json:"synth_supply,omitempty"`
+	// the balance of L1 asset deposited into the Savers Vault
+	SaversDepth string `protobuf:"bytes,14,opt,name=savers_depth,json=saversDepth,proto3" json:"savers_depth,omitempty"`
+	// the number of units owned by Savers
+	SaversUnits string `protobuf:"bytes,15,opt,name=savers_units,json=saversUnits,proto3" json:"savers_units,omitempty"`
+	// the filled savers capacity in basis points, 4500/10000 = 45%
+	SaversFillBps string `protobuf:"bytes,16,opt,name=savers_fill_bps,json=saversFillBps,proto3" json:"savers_fill_bps,omitempty"`
+	// amount of remaining capacity in asset
 	SaversCapacityRemaining string `protobuf:"bytes,17,opt,name=savers_capacity_remaining,json=saversCapacityRemaining,proto3" json:"savers_capacity_remaining,omitempty"`
-	SynthMintPaused         bool   `protobuf:"varint,18,opt,name=synth_mint_paused,json=synthMintPaused,proto3" json:"synth_mint_paused,omitempty"`
-	SynthSupplyRemaining    string `protobuf:"bytes,19,opt,name=synth_supply_remaining,json=synthSupplyRemaining,proto3" json:"synth_supply_remaining,omitempty"`
-	LoanCollateral          string `protobuf:"bytes,20,opt,name=loan_collateral,json=loanCollateral,proto3" json:"loan_collateral,omitempty"`
+	// whether additional synths cannot be minted
+	SynthMintPaused bool `protobuf:"varint,18,opt,name=synth_mint_paused,json=synthMintPaused,proto3" json:"synth_mint_paused,omitempty"`
+	// the amount of synth supply remaining before the current max supply is reached
+	SynthSupplyRemaining string `protobuf:"bytes,19,opt,name=synth_supply_remaining,json=synthSupplyRemaining,proto3" json:"synth_supply_remaining,omitempty"`
+	// the amount of collateral collects for loans
+	LoanCollateral string `protobuf:"bytes,20,opt,name=loan_collateral,json=loanCollateral,proto3" json:"loan_collateral,omitempty"`
+	// the amount of remaining collateral collects for loans
 	LoanCollateralRemaining string `protobuf:"bytes,21,opt,name=loan_collateral_remaining,json=loanCollateralRemaining,proto3" json:"loan_collateral_remaining,omitempty"`
-	LoanCr                  string `protobuf:"bytes,22,opt,name=loan_cr,json=loanCr,proto3" json:"loan_cr,omitempty"`
-	DerivedDepthBps         string `protobuf:"bytes,23,opt,name=derived_depth_bps,json=derivedDepthBps,proto3" json:"derived_depth_bps,omitempty"`
+	// the current loan collateralization ratio
+	LoanCr string `protobuf:"bytes,22,opt,name=loan_cr,json=loanCr,proto3" json:"loan_cr,omitempty"`
+	// the depth of the derived virtual pool relative to L1 pool (in basis points)
+	DerivedDepthBps string `protobuf:"bytes,23,opt,name=derived_depth_bps,json=derivedDepthBps,proto3" json:"derived_depth_bps,omitempty"`
 }
 
 func (x *QueryPoolResponse) Reset() {

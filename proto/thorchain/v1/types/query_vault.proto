@@ -19,6 +19,7 @@ message QueryVaultResponse{
   string type = 4;
   string status = 5;
   int64 status_since = 6;
+	// the list of node public keys which are members of the vault
   repeated string membership = 7;
   repeated string chains = 8;
   int64 inbound_tx_count = 9;

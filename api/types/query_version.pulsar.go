@@ -1009,10 +1009,14 @@ type QueryVersionResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Current         string `protobuf:"bytes,1,opt,name=current,proto3" json:"current,omitempty"`
-	Next            string `protobuf:"bytes,2,opt,name=next,proto3" json:"next,omitempty"`
-	NextSinceHeight int64  `protobuf:"varint,3,opt,name=next_since_height,json=nextSinceHeight,proto3" json:"next_since_height,omitempty"`
-	Querier         string `protobuf:"bytes,4,opt,name=querier,proto3" json:"querier,omitempty"`
+	// current version
+	Current string `protobuf:"bytes,1,opt,name=current,proto3" json:"current,omitempty"`
+	// next version (minimum version for a node to become Active)
+	Next string `protobuf:"bytes,2,opt,name=next,proto3" json:"next,omitempty"`
+	// height at which the minimum joining version last changed
+	NextSinceHeight int64 `protobuf:"varint,3,opt,name=next_since_height,json=nextSinceHeight,proto3" json:"next_since_height,omitempty"`
+	// querier version
+	Querier string `protobuf:"bytes,4,opt,name=querier,proto3" json:"querier,omitempty"`
 }
 
 func (x *QueryVersionResponse) Reset() {

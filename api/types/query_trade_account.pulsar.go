@@ -2044,11 +2044,16 @@ type QueryTradeAccountResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset              string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	Units              string `protobuf:"bytes,2,opt,name=units,proto3" json:"units,omitempty"`
-	Owner              string `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
-	LastAddHeight      int64  `protobuf:"varint,4,opt,name=last_add_height,json=lastAddHeight,proto3" json:"last_add_height,omitempty"`
-	LastWithdrawHeight int64  `protobuf:"varint,5,opt,name=last_withdraw_height,json=lastWithdrawHeight,proto3" json:"last_withdraw_height,omitempty"`
+	// trade account asset with \"~\" separator
+	Asset string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	// units of trade asset belonging to this owner
+	Units string `protobuf:"bytes,2,opt,name=units,proto3" json:"units,omitempty"`
+	// thor address of trade account owner
+	Owner string `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
+	// last thorchain height trade assets were added to trade account
+	LastAddHeight int64 `protobuf:"varint,4,opt,name=last_add_height,json=lastAddHeight,proto3" json:"last_add_height,omitempty"`
+	// last thorchain height trade assets were withdrawn from trade account
+	LastWithdrawHeight int64 `protobuf:"varint,5,opt,name=last_withdraw_height,json=lastWithdrawHeight,proto3" json:"last_withdraw_height,omitempty"`
 }
 
 func (x *QueryTradeAccountResponse) Reset() {

@@ -1996,12 +1996,17 @@ type QueryPoolSlipResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset        string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	PoolSlip     int64  `protobuf:"varint,2,opt,name=pool_slip,json=poolSlip,proto3" json:"pool_slip,omitempty"`
-	RollupCount  int64  `protobuf:"varint,3,opt,name=rollup_count,json=rollupCount,proto3" json:"rollup_count,omitempty"`
-	LongRollup   int64  `protobuf:"varint,4,opt,name=long_rollup,json=longRollup,proto3" json:"long_rollup,omitempty"`
-	Rollup       int64  `protobuf:"varint,5,opt,name=rollup,proto3" json:"rollup,omitempty"`
-	SummedRollup int64  `protobuf:"varint,6,opt,name=summed_rollup,json=summedRollup,proto3" json:"summed_rollup,omitempty"`
+	Asset string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	// Pool slip for this asset's pool for the current height
+	PoolSlip int64 `protobuf:"varint,2,opt,name=pool_slip,json=poolSlip,proto3" json:"pool_slip,omitempty"`
+	// Number of stored pool slips contributing to the current stored rollup
+	RollupCount int64 `protobuf:"varint,3,opt,name=rollup_count,json=rollupCount,proto3" json:"rollup_count,omitempty"`
+	// Median of rollup snapshots over a long period
+	LongRollup int64 `protobuf:"varint,4,opt,name=long_rollup,json=longRollup,proto3" json:"long_rollup,omitempty"`
+	// Stored sum of pool slips over a number of previous block heights
+	Rollup int64 `protobuf:"varint,5,opt,name=rollup,proto3" json:"rollup,omitempty"`
+	// Summed pool slips over a number of previous block heights, to checksum the stored rollup
+	SummedRollup int64 `protobuf:"varint,6,opt,name=summed_rollup,json=summedRollup,proto3" json:"summed_rollup,omitempty"`
 }
 
 func (x *QueryPoolSlipResponse) Reset() {

@@ -68,9 +68,12 @@ func (m *QueryInvariantRequest) GetPath() string {
 }
 
 type QueryInvariantResponse struct {
-	Invariant string   `protobuf:"bytes,1,opt,name=invariant,proto3" json:"invariant,omitempty"`
-	Broken    bool     `protobuf:"varint,2,opt,name=broken,proto3" json:"broken,omitempty"`
-	Msg       []string `protobuf:"bytes,3,rep,name=msg,proto3" json:"msg,omitempty"`
+	// The name of the invariant.
+	Invariant string `protobuf:"bytes,1,opt,name=invariant,proto3" json:"invariant,omitempty"`
+	// Returns true if the invariant is broken.
+	Broken bool `protobuf:"varint,2,opt,name=broken,proto3" json:"broken,omitempty"`
+	// Informative message about the invariant result.
+	Msg []string `protobuf:"bytes,3,rep,name=msg,proto3" json:"msg,omitempty"`
 }
 
 func (m *QueryInvariantResponse) Reset()         { *m = QueryInvariantResponse{} }
