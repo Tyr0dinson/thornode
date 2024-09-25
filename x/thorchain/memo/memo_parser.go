@@ -107,6 +107,9 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseTradeAccountWithdrawal()
 	case TxLpMint:
 		return p.ParseMintLpMemo()
+	case TxLpRedeem:
+		return p.ParseRedeemLpMemo()
+
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
 	}

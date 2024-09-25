@@ -294,6 +294,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgWithdrawFromMemo(m, tx, signer)
 	case MintLpMemo:
 		newMsg, err = getMsgMintLpFromMemo(ctx, m, tx, signer)
+	case RedeemLpMemo:
+		newMsg = NewMsgLpRedeem(tx.Tx, memo.GetAsset(), tx.Tx.FromAddress, memo.GetAmount(), signer)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)

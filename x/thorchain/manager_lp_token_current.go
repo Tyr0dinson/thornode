@@ -71,3 +71,40 @@ func (s *LpTokenMgrVCUR) Mint(
 	s.keeper.SetLiquidityProvider(ctx, lp)
 	return amount, nil
 }
+
+func (s *LpTokenMgrVCUR) Redeem(
+	ctx cosmos.Context,
+	asset common.Asset,
+	accAddr common.Address,
+	amount cosmos.Uint,
+	txID common.TxID,
+) (cosmos.Uint, error) {
+	pool, err := s.keeper.GetPool(ctx, asset)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
+	lp, err := s.keeper.GetLiquidityProvider(ctx, asset, accAddr)
+	if err != nil {
+		return cosmos.ZeroUint(), ErrInternal(err, "fail to get liquidity provider")
+	}
+
+	coins := cosmos.NewCoins(cosmos.NewCoin(pool.NativeLpDenomString(), cosmos.Int(amount)))
+	err = s.bank.SendCoinsFromAccountToModule(ctx, cosmos.AccAddress(accAddr), ModuleName, coins)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
+	err = s.bank.BurnCoins(ctx, ModuleName, coins)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
+	lp.Units = lp.Units.Add(amount)
+	pool.BankUnits = pool.BankUnits.Sub(amount)
+	pool.LPUnits = pool.LPUnits.Add(amount)
+
+	s.keeper.SetPool(ctx, pool)
+	s.keeper.SetLiquidityProvider(ctx, lp)
+	return amount, nil
+}

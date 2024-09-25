@@ -61,3 +61,59 @@ func (m *MsgLpMint) GetSignBytes() []byte {
 func (m *MsgLpMint) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }
+
+// NewMsgLpRedeem is a constructor function for MsgLpRedeem
+func NewMsgLpRedeem(
+	tx common.Tx,
+	asset common.Asset,
+	accAddr common.Address,
+	amount cosmos.Uint,
+	signer cosmos.AccAddress,
+) *MsgLpRedeem {
+	return &MsgLpRedeem{
+		Tx:     tx,
+		Asset:  asset,
+		Amount: amount,
+		Signer: signer,
+	}
+}
+
+// Route should return the pooldata of the module
+func (m *MsgLpRedeem) Route() string { return RouterKey }
+
+// Type should return the action
+func (m MsgLpRedeem) Type() string { return "lp_redeem" }
+
+// ValidateBasic runs stateless checks on the message
+func (m *MsgLpRedeem) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+	if m.Asset.IsEmpty() {
+		return cosmos.ErrUnknownRequest("pool asset cannot be empty")
+	}
+	if err := m.Tx.Valid(); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	// There is no dedicate pool for RUNE, because every pool will have RUNE, that's by design
+	if m.Asset.IsRune() {
+		return cosmos.ErrUnknownRequest("asset cannot be rune")
+	}
+	if len(m.Tx.Coins) != 0 {
+		return cosmos.ErrUnknownRequest("not expecting coins")
+	}
+	if m.AccountAddress.IsEmpty() {
+		return cosmos.ErrUnknownRequest("account address cannot be empty")
+	}
+	return nil
+}
+
+// GetSignBytes encodes the message for signing
+func (m *MsgLpRedeem) GetSignBytes() []byte {
+	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+}
+
+// GetSigners defines whose signature is required
+func (m *MsgLpRedeem) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
+}

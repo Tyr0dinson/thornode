@@ -27,3 +27,23 @@ func (p *parser) ParseMintLpMemo() (MintLpMemo, error) {
 	recipient := p.getAccAddress(3, true, cosmos.AccAddress{})
 	return NewMintLpMemo(asset, amount, recipient), p.Error()
 }
+
+type RedeemLpMemo struct {
+	MemoBase
+	Amount cosmos.Uint
+}
+
+func (m RedeemLpMemo) GetAmount() cosmos.Uint { return m.Amount }
+
+func NewRedeemLpMemo(asset common.Asset, amt cosmos.Uint) RedeemLpMemo {
+	return RedeemLpMemo{
+		MemoBase: MemoBase{TxType: TxWithdraw, Asset: asset},
+		Amount:   amt,
+	}
+}
+
+func (p *parser) ParseRedeemLpMemo() (RedeemLpMemo, error) {
+	asset := p.getAsset(1, true, common.EmptyAsset)
+	amount := p.getUint(2, true, cosmos.ZeroUint().Uint64())
+	return NewRedeemLpMemo(asset, amount), p.Error()
+}
