@@ -1769,6 +1769,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	systemIncomeBurnRateBpsUint := cosmos.SafeUintFromInt64(systemIncomeBurnRateBps)
 	devFundDeduct = common.GetSafeShare(devFundSystemIncomeBpsUint, cosmos.NewUint(10_000), systemIncome)
 	systemIncomeBurnDeduct = common.GetSafeShare(systemIncomeBurnRateBpsUint, cosmos.NewUint(10_000), systemIncome)
+	assetsBps := cosmos.NewUint(uint64(vm.k.GetConfigInt64(ctx, constants.PendulumAssetsBasisPoints)))
 
 	pendulumIgnoreEffectiveSecurity, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity)
 	if err != nil {
@@ -1792,8 +1793,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 		systemIncome = common.SafeSub(systemIncome, systemIncomeBurnDeduct)
 	}
 
-	lpSplit := vm.getPoolShare(availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, systemIncome, ignoreEffectiveSecurity, ignoreL1Assets) // Get liquidity provider share
-	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                                                                                  // Remainder to Bonders
+	lpSplit := vm.getPoolShare(availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, systemIncome, assetsBps, ignoreEffectiveSecurity, ignoreL1Assets) // Get liquidity provider share
+	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                                                                                             // Remainder to Bonders
 
 	ctx.Logger().Info(
 		"incentive pendulum",
@@ -1806,6 +1807,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 		"dev_fund_reward", devFundDeduct.String(),
 		"income_burn", systemIncomeBurnDeduct.String(),
 		"total_pendulum_rewards", systemIncome.String(),
+		"pendulum_assets_basis_points", assetsBps.String(),
 		"ignore_layer_1_assets", ignoreL1Assets,
 		"ignore_effective_security", ignoreEffectiveSecurity,
 		"bond_rewards", bonderSplit.String(),
@@ -1837,7 +1839,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 // effectiveBond: total RUNE value bonded, with max per-node at 66th percentile
 // totalRewards: total RUNE rewards to be distributed
 func (vm *NetworkMgrVCUR) getPoolShare(
-	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards cosmos.Uint, ignoreEffectiveSecurity, ignoreL1Assets bool,
+	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards, assetsBps cosmos.Uint, ignoreEffectiveSecurity, ignoreL1Assets bool,
 ) cosmos.Uint {
 	securing := effectiveSecurityBond
 	secured := vaultLiquidity
@@ -1848,6 +1850,9 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 	if ignoreL1Assets {
 		secured = pooledRune
 	}
+
+	// Proportionally underestimate or overestimate the Assets (in terms of RUNE value) needing to be secured.
+	secured = common.GetUncappedShare(assetsBps, cosmos.NewUint(constants.MaxBasisPts), secured)
 
 	// no payments to liquidity providers when more liquidity than security
 	if securing.LTE(secured) {
