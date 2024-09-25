@@ -28,6 +28,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+// MsgEmpty is the return type for all current Msg Server messages
 type MsgEmpty struct {
 }
 

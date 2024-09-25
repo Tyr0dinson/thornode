@@ -382,6 +382,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// MsgEmpty is the return type for all current Msg Server messages
 type MsgEmpty struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

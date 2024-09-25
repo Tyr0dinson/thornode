@@ -377,4 +377,4 @@ events-gitlab-push:
 
 ictest-sim:
 	@echo "Running interchaintest sim test"
-	@cd test/interchaintest && go test -timeout 20m -v -run TestThorchainSim .
+	@cd test/interchaintest && go test -timeout 20m -v -run TestThorchainSim . -count 1
