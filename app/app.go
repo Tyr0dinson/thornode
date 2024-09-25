@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"sync"
@@ -724,6 +725,14 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 
 // RegisterSwaggerAPI provides a common function which registers swagger route with API Server
 func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
+	// Health Check Endpoint
+	rtr.HandleFunc(
+		fmt.Sprintf("/%s/ping", thorchain.ModuleName),
+		func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"ping":"pong"}`)
+		},
+	).Methods(http.MethodGet, http.MethodOptions)
+	
 	if !swaggerEnabled {
 		return nil
 	}
