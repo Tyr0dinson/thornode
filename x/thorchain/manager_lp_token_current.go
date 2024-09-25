@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -9,13 +10,15 @@ import (
 // LpTokenMgrVCUR is VCUR implementation of slasher
 type LpTokenMgrVCUR struct {
 	keeper   keeper.Keeper
+	bank     bankkeeper.Keeper
 	eventMgr EventManager
 }
 
 // newLpTokenMgrVCUR create a new instance of Slasher
-func newLpTokenMgrVCUR(keeper keeper.Keeper, eventMgr EventManager) *LpTokenMgrVCUR {
+func newLpTokenMgrVCUR(keeper keeper.Keeper, bank bankkeeper.Keeper, eventMgr EventManager) *LpTokenMgrVCUR {
 	return &LpTokenMgrVCUR{
 		keeper:   keeper,
+		bank:     bank,
 		eventMgr: eventMgr,
 	}
 }
@@ -49,12 +52,17 @@ func (s *LpTokenMgrVCUR) Mint(
 	lp.Units = lp.Units.Sub(amount)
 	pool.BankUnits = pool.BankUnits.Add(amount)
 	pool.LPUnits = pool.LPUnits.Sub(amount)
-	lpAsset, err := pool.GetLpAsset()
+	coins := cosmos.NewCoins(cosmos.NewCoin(pool.NativeLpDenomString(), cosmos.Int(amount)))
+	err = s.bank.MintCoins(ctx, ModuleName, coins)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
 
-	err = s.keeper.MintAndSendToAccount(ctx, recipient, common.NewCoin(lpAsset, amount))
+	err = s.bank.SendCoinsFromModuleToAccount(ctx, ModuleName, recipient, coins)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}

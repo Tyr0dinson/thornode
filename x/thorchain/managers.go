@@ -305,6 +305,11 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create trade manager: %w", err)
 	}
 
+	mgr.lpTokenManager, err = GetLpTokenManager(v, mgr.K, mgr.coinKeeper, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create trade manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -487,10 +492,10 @@ func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper, eventM
 	}
 }
 
-func GetLpTokenManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (LpTokenManager, error) {
+func GetLpTokenManager(version semver.Version, keeper keeper.Keeper, bank bankkeeper.Keeper, eventMgr EventManager) (LpTokenManager, error) {
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
-		return newLpTokenMgrVCUR(keeper, eventMgr), nil
+		return newLpTokenMgrVCUR(keeper, bank, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

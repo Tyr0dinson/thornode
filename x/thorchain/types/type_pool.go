@@ -72,8 +72,8 @@ func (m *Pool) GetPoolUnits() cosmos.Uint {
 	return m.LPUnits.Add(m.SynthUnits).Add(m.BankUnits)
 }
 
-func (m *Pool) GetLpAsset() (common.Asset, error) {
-	return common.NewAsset()
+func (m *Pool) NativeLpDenomString() string {
+	return "lp." + m.Asset.Native()
 }
 
 func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
@@ -83,7 +83,7 @@ func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
 	if m.BalanceAsset.IsZero() || m.Asset.IsVaultAsset() {
 		m.SynthUnits = cosmos.ZeroUint()
 	} else {
-		numerator := m.LPUnits.Mul(s)
+		numerator := m.LPUnits.Add(m.BankUnits).Mul(s)
 		denominator := common.SafeSub(m.BalanceAsset.MulUint64(2), s)
 		if denominator.IsZero() {
 			denominator = cosmos.OneUint()
