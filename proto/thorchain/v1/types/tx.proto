@@ -41,4 +41,5 @@ service Msg {
     rpc SetVersion(MsgSetVersion) returns (MsgEmpty);
 }
 
+// MsgEmpty is the return type for all current Msg Server messages
 message MsgEmpty {}

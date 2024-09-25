@@ -370,3 +370,11 @@ events-gitlab-push:
 	@docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
 	@docker push registry.gitlab.com/thorchain/thornode:events-${GITREF}
 	@docker push registry.gitlab.com/thorchain/thornode:events
+
+###############################################################################
+###                               interchaintest                            ###
+###############################################################################
+
+ictest-sim:
+	@echo "Running interchaintest sim test"
+	@cd test/interchaintest && go test -timeout 20m -v -run TestThorchainSim .
