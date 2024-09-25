@@ -105,10 +105,6 @@ proto-check-breaking:
 bifrost-protosh:
 	@./scripts/bifrostprotocgen.sh
 
-proto-swagger-gen:
-	@$(protoImage) sh ./scripts/protoc-swagger-gen.sh
-
-.PHONY: proto-swagger-gen
 # ------------------------------ Docs ------------------------------
 
 docs-init:

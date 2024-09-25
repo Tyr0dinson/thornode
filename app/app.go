@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
-	"net/http"
 	"os"
 	"sort"
 	"sync"
@@ -75,7 +73,7 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
 
-	"gitlab.com/thorchain/thornode/client/docs"
+	"gitlab.com/thorchain/thornode/openapi"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
@@ -730,15 +728,11 @@ func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
 		return nil
 	}
 
-	root, err := fs.Sub(docs.SwaggerUI, "swagger-ui")
-	if err != nil {
-		return err
-	}
-
-	staticServer := http.FileServer(http.FS(root))
-	rtr.PathPrefix("/swagger/").Handler(http.StripPrefix("/swagger/", staticServer))
-	rtr.PathPrefix("/thorchain/doc").Handler(http.StripPrefix("/thorchain/doc", staticServer))
-	rtr.PathPrefix("/thorchain/doc/").Handler(http.StripPrefix("/thorchain/doc/", staticServer))
+	// api doc handlers
+	rtr.HandleFunc(fmt.Sprintf("/%s/doc/openapi.yaml", thorchain.ModuleName), openapi.HandleSpecYAML)
+	rtr.HandleFunc(fmt.Sprintf("/%s/doc/openapi.json", thorchain.ModuleName), openapi.HandleSpecJSON)
+	rtr.HandleFunc(fmt.Sprintf("/%s/doc", thorchain.ModuleName), openapi.HandleSwaggerUI)
+	rtr.HandleFunc(fmt.Sprintf("/%s/doc/", thorchain.ModuleName), openapi.HandleSwaggerUI)
 
 	return nil
 }
