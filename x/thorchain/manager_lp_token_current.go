@@ -26,7 +26,7 @@ func newLpTokenMgrVCUR(keeper keeper.Keeper, bank bankkeeper.Keeper, eventMgr Ev
 func (s *LpTokenMgrVCUR) Mint(
 	ctx cosmos.Context,
 	asset common.Asset,
-	runeAddr, assetAddr common.Address,
+	accAddr common.Address,
 	amount cosmos.Uint,
 	recipient cosmos.AccAddress,
 	txID common.TxID,
@@ -36,11 +36,7 @@ func (s *LpTokenMgrVCUR) Mint(
 		return cosmos.ZeroUint(), err
 	}
 
-	fetchAddr := runeAddr
-	if fetchAddr.IsEmpty() {
-		fetchAddr = assetAddr
-	}
-	lp, err := s.keeper.GetLiquidityProvider(ctx, asset, fetchAddr)
+	lp, err := s.keeper.GetLiquidityProvider(ctx, asset, accAddr)
 	if err != nil {
 		return cosmos.ZeroUint(), ErrInternal(err, "fail to get liquidity provider")
 	}

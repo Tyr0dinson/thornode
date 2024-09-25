@@ -13,7 +13,7 @@ func NewDummyLpTokenManager() *DummyLpTokenManager {
 
 func (d DummyLpTokenManager) Mint(ctx cosmos.Context,
 	asset common.Asset,
-	runeAddr, assetAddr common.Address,
+	accAddr common.Address,
 	amount cosmos.Uint,
 	recipient cosmos.AccAddress,
 	txID common.TxID) (cosmos.Uint, error) {

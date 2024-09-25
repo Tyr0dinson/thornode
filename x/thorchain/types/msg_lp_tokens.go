@@ -14,11 +14,13 @@ func NewMsgLpMint(
 	recipient, signer cosmos.AccAddress,
 ) *MsgLpMint {
 	return &MsgLpMint{
-		Tx:        tx,
-		Asset:     asset,
-		Amount:    amount,
-		Recipient: recipient,
-		Signer:    signer,
+		Tx:           tx,
+		Asset:        asset,
+		RuneAddress:  runeAddr,
+		AssetAddress: assetAddr,
+		Amount:       amount,
+		Recipient:    recipient,
+		Signer:       signer,
 	}
 }
 
