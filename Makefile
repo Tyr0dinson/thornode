@@ -266,7 +266,7 @@ stop-mocknet:
 halt-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down
 
-build-mocknet:
+build-mocknet: proto-gen
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build \
 		--build-arg COMMIT=$(COMMIT)
 
