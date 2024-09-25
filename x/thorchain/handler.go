@@ -149,6 +149,8 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgDonate{}.Type()] = NewDonateHandler(mgr)
 	m[MsgWithdrawLiquidity{}.Type()] = NewWithdrawLiquidityHandler(mgr)
 	m[MsgAddLiquidity{}.Type()] = NewAddLiquidityHandler(mgr)
+	m[MsgLpMint{}.Type()] = NewLpMintHandler(mgr)
+	m[MsgLpRedeem{}.Type()] = NewLpRedeemHandler(mgr)
 	m[MsgRefundTx{}.Type()] = NewRefundHandler(mgr)
 	m[MsgMigrate{}.Type()] = NewMigrateHandler(mgr)
 	m[MsgRagnarok{}.Type()] = NewRagnarokHandler(mgr)
