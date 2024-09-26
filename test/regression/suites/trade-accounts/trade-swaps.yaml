@@ -189,7 +189,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 20750890
 asserts:
-  - .expected_amount_out|tonumber == 2280488
+  - .expected_amount_out|tonumber == 2280078
   - .fees|.total_bps == 433
 ---
 type: tx-deposit
@@ -207,7 +207,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 7280488
+  - .[0].units|tonumber == 7280078
   - .[0].owner == "{{ addr_thor_fox }}"
   - .[1].asset == "ETH~ETH"
   - .[1].units|tonumber == 20750890 # 0.2 ETH
@@ -222,7 +222,7 @@ params:
   amount: 20750890
   streaming_interval: 1
 asserts:
-  - .expected_amount_out|tonumber == 2234076
+  - .expected_amount_out|tonumber == 2233664
   - .fees|.total_bps == 107
 ---
 type: tx-deposit
@@ -254,7 +254,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 9445571
+  - .[0].units|tonumber == 9444765
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 ########################################################################################
@@ -268,7 +268,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 10000
 asserts:
-  - .expected_amount_out|tonumber == 97918
+  - .expected_amount_out|tonumber == 97936
   - .fees.total_bps == 99
 ---
 type: tx-mimir
@@ -302,7 +302,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 10000
 asserts:
-  - .expected_amount_out|tonumber == 80114
+  - .expected_amount_out|tonumber == 80128
   - .fees.slippage_bps == 1900
   - .fees.total_bps == 1900
 ---
@@ -377,7 +377,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=9445571}
+  - .[0].units|tonumber == ${INITIAL_UNITS=9444765}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: check
@@ -420,7 +420,7 @@ endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
-  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871088594}
+  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871954143}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network
@@ -432,7 +432,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=8445571}
+  - .[0].units|tonumber == ${INITIAL_UNITS=8444765}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: tx-deposit

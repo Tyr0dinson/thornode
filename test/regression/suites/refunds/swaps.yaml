@@ -403,13 +403,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9071081
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9070869
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489982000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9071081
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9070869
 ---
 ########################################################################################
 # swap synth to rune failed limit
@@ -428,13 +428,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9069259
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9069050
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489980000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9069259
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9069050
 ---
 ########################################################################################
 # swap synth to l1 failed limit
@@ -453,13 +453,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9067437
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9067231
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489978000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9067437
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9067231
 ---
 ########################################################################################
 # swap synth to synth failed limit
@@ -478,13 +478,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9065615
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9065412
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489976000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9065615
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9065412
   - .supply|length == 3
 ---
 ########################################################################################
@@ -504,13 +504,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9063793
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9063593
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489974000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9063793
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9063593
 ---
 ########################################################################################
 # swap synth to non-existent synth
@@ -529,13 +529,13 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9061971
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9061774
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489972000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9061971
+  - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9061774
   - .supply|length == 3
 ---
 ########################################################################################

@@ -169,7 +169,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "100333243238",
+              "amount": "100800274386",
               "denom": "rune"
             }
           ]
@@ -187,7 +187,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000020420588",
+              "amount": "35000020473506",
               "denom": "rune"
             }
           ]
@@ -196,7 +196,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2499106862107",
+              "amount": "2499119033283",
               "denom": "rune"
             }
           ]
@@ -214,7 +214,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000539474067",
+              "amount": "5000060218825",
               "denom": "rune"
             }
           ]
@@ -278,9 +278,9 @@
       "loans": [],
       "mimirs": [],
       "network": {
-        "LPIncomeSplit": "6369",
-        "NodeIncomeSplit": "3631",
-        "bond_reward_rune": "539474067",
+        "LPIncomeSplit": "9605",
+        "NodeIncomeSplit": "395",
+        "bond_reward_rune": "60218825",
         "total_bond_units": "5"
       },
       "network_fees": [
@@ -312,11 +312,11 @@
             {
               "chain": "BTC",
               "coin": {
-                "amount": "4337759",
+                "amount": "4337763",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
-              "in_hash": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+              "in_hash": "12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
               "max_gas": [
                 {
                   "amount": "10500",
@@ -324,7 +324,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+              "memo": "OUT:12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
               "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
@@ -338,31 +338,31 @@
               "chain": "THOR",
               "coins": [
                 {
-                  "amount": "4757253",
+                  "amount": "4757258",
                   "asset": "BTC/BTC"
                 }
               ],
               "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "gas": null,
-              "id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+              "id": "12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
               "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+          "tx_id": "12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
           "txs": [
             {
               "tx": {
                 "chain": "THOR",
                 "coins": [
                   {
-                    "amount": "4757253",
+                    "amount": "4757258",
                     "asset": "BTC/BTC"
                   }
                 ],
                 "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                 "gas": null,
-                "id": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+                "id": "12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
                 "memo": "=:BTC.BTC:bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
@@ -375,7 +375,7 @@
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "13970172",
+          "amount": "14022537",
           "asset": "BTC.BTC"
         }
       ],
@@ -383,8 +383,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "100662241",
-          "balance_rune": "100333243238",
+          "balance_asset": "100662237",
+          "balance_rune": "100800274386",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -406,13 +406,13 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "305174345",
+          "score": "306140779",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "1171972450",
+          "score": "1173488058",
           "spent": "0"
         }
       ],
@@ -426,11 +426,11 @@
               "chain": "BTC",
               "clout_spent": "0",
               "coin": {
-                "amount": "4337759",
+                "amount": "4337763",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
-              "in_hash": "42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+              "in_hash": "12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
               "max_gas": [
                 {
                   "amount": "10500",
@@ -438,7 +438,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:42E7A6BE16A2FD89B1773059A45EF90300D72862D8A8B50A1C44C37A0CE49364",
+              "memo": "OUT:12B918B362E41A11DF8601DBD4E384631C9A190AEB7321AD3D7247E82212439D",
               "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
